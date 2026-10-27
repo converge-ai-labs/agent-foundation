@@ -127,13 +127,15 @@ compacted = await executable.compact(
     bindings=bindings,
 )
 summary = compacted.output_or_raise()
-# Commit compacted.state through the Host's fenced checkpoint path.
-continued = await executable.run("Continue", previous_state=compacted.state, bindings=bindings)
+# Save compacted.state through the Host's fenced checkpoint path, then stop.
+# No ordinary run() call is needed to finish compaction.
 ```
 
 请求接收完整历史，不进行裁剪。它保持相同的系统提示、工具 schema、输出配置和模型设置，在末尾追加内置的禁止调用工具等约束，再拼接 `instruction`。`None` 使用默认压缩指导；传入字符串则替换默认指导。保持 executable 和 bindings 稳定，以保留提供方的缓存前缀。缓存是否可用仍由提供方决定。
 
-现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。返回前恢复保留的工具发现并通知上下文监听器。若替换后恢复失败，失败结果保留待恢复标记，供下次普通 Run 继续恢复。摘要或恢复阶段的失败包含 `failure.details.phase` 和 `failure.details.state_replaced`；当 `state_replaced` 为 true 时，按 Host 的检查点策略保存替换结果，并通过普通 Run 恢复。
+现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。成功结果中的历史已经压缩完成，可以立即保存。下次普通 Run 会在继续任务前自动恢复保留的工具发现并通知上下文恢复监听器；保存检查点无需等待这一步。
+
+失败时继续使用原检查点，单独记录失败。失败结果提供安全的错误码、原因和 `failure.details.phase`；提前拒绝以及生成、导出、摘要通知失败还会发出 `compaction_failed`。取消发出取消失败通知并继续传播。准备、middleware 和清理错误沿用普通 Run 的异常契约。Host 只保存成功结果，并校验预期版本或执行所有权。保存失败或版本冲突需要明确反馈；只有发布提交成功后才提示保存完成。`CompactionSummaryEvent` 和 `compaction_completed` 表示检查点已生成，不代表持久化成功，也不会在后续恢复时重复发出。
 
 检查点必须处于已完成的边界：待处理工具、保留的执行、未恢复的 handoff 和待完成的压缩恢复应先通过普通 Run 的恢复流程完成。对这些状态调用 `compact()` 会返回 `compaction_boundary_pending`，不发起摘要请求，也不覆盖待恢复标记。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
 

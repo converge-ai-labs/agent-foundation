@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness._context_history import _COMPACTION_PROMPT
 from a13n_harness.capabilities import (
@@ -16,6 +16,7 @@ from a13n_harness.capabilities import (
     RuntimeContextCapability,
     WorkingStateCapability,
 )
+from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.filters.cold_start import ColdStartFilterCapability
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -68,9 +69,11 @@ async def test_compact_returns_resumable_state_without_continuing(instruction):
         assert instruction in tail
         assert _COMPACTION_PROMPT not in tail
     assert previous.model_dump_json() == frozen
-    assert result.state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is False
+    assert result.state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is True
     assert _COMPACTION_PROMPT not in str(result.state.message_history)
-    resumed = await agent.run("Continue", previous_state=result.state)
+    # Saving and loading is sufficient: no ordinary Run is needed to finish compact().
+    saved = HarnessState.model_validate_json(result.state.model_dump_json())
+    resumed = await agent.run("Continue", previous_state=saved)
     assert resumed.status == "completed"
     assert len(calls) == 2
     assert "migration plan" in str(calls[1])
@@ -173,7 +176,8 @@ async def test_compact_failure_preserves_history_and_never_dispatches_tools(kind
     assert result.status == "failed"
     assert result.state.message_history == previous.message_history
     assert calls == 1
-    assert result.failure.details == {"phase": "summary", "state_replaced": False}
+    assert result.failure.details == {"phase": "summary"}
+    assert result.state.model_dump_json() == previous.model_dump_json()
     assert "a13n.working-state" not in result.state.agent_context_state.entries
 
 
@@ -193,8 +197,21 @@ async def test_compact_rejects_ineligible_history_without_model_call(history):
         yield "unreachable"
 
     agent = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
-    result = await agent.compact(previous_state=HarnessState.new(message_history=history))
+    observed = []
+    result = await agent.compact(
+        previous_state=HarnessState.new(message_history=history),
+        bindings=RunBindings.embedded(producer_observer=observed.append),
+    )
     assert result.status == "failed"
+    assert result.failure.details == {"phase": "preflight"}
+    events = [
+        item.event.payload
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "context"
+    ]
+    assert [event["type"] for event in events] == ["compaction_started", "compaction_failed"]
+    assert events[1]["error_code"] == result.failure.code
+    assert events[1]["operation_id"] == events[0]["operation_id"]
 
 
 async def test_compact_rejects_pending_handoff_without_overwriting_it():
@@ -254,12 +271,22 @@ async def test_compact_cancellation_preserves_input_state():
     agent = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
     previous = _previous()
     frozen = previous.model_dump_json()
-    task = asyncio.create_task(agent.compact(previous_state=previous))
+    observed = []
+    task = asyncio.create_task(
+        agent.compact(previous_state=previous, bindings=RunBindings.embedded(producer_observer=observed.append))
+    )
     await asyncio.wait_for(started.wait(), timeout=5)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert previous.model_dump_json() == frozen
+    failures = [
+        item.event.payload
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "compaction_failed"
+    ]
+    assert len(failures) == 1
+    assert failures[0]["error_code"] == "compaction_cancelled"
 
 
 async def test_compact_can_compact_a_restored_checkpoint_again():
@@ -268,12 +295,13 @@ async def test_compact_can_compact_a_restored_checkpoint_again():
 
     agent = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
     first = await agent.compact(previous_state=_previous())
-    second = await agent.compact(previous_state=first.state)
+    restored = await agent.run("Continue", previous_state=first.state)
+    second = await agent.compact(previous_state=restored.state)
     assert second.status == "completed", second.failure
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_compact_restoration_failure_can_resume(cancel):
+async def test_compact_defers_restoration_and_ordinary_run_can_retry(cancel):
     from a13n_harness.capabilities.context import ContextRestoredEvent
     from pydantic_ai.capabilities import AbstractCapability
 
@@ -294,15 +322,10 @@ async def test_compact_restoration_failure_can_resume(cancel):
     agent = HarnessBuilder().build(
         AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream), capabilities=(Listener(),)
     )
-    if cancel:
-        with pytest.raises(asyncio.CancelledError):
-            await agent.compact(previous_state=_previous())
-        state = await contexts[0].deps.export_state(contexts[0].messages)
-    else:
-        failed = await agent.compact(previous_state=_previous())
-        assert failed.status == "failed"
-        assert failed.failure.details == {"phase": "restoration", "state_replaced": True}
-        state = failed.state
+    compacted = await agent.compact(previous_state=_previous())
+    assert compacted.status == "completed", compacted.failure
+    assert contexts == []
+    state = HarnessState.model_validate_json(compacted.state.model_dump_json())
     marker = state.agent_context_state.entries["a13n.compaction"]
     assert marker.data["restoration_pending"] is True
     frozen = state.model_dump_json()
@@ -310,11 +333,20 @@ async def test_compact_restoration_failure_can_resume(cancel):
     assert retried.status == "failed"
     assert retried.failure.code == "compaction_boundary_pending"
     assert len(calls) == 1
-    assert len(contexts) == 1
+    assert len(contexts) == 0
     assert retried.state.message_history == state.message_history
     assert retried.state.agent_context_state.entries["a13n.compaction"] == marker
     assert state.model_dump_json() == frozen
-    resumed = await agent.run("continue", previous_state=retried.state)
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            await agent.run("continue", previous_state=state)
+    else:
+        failed = await agent.run("continue", previous_state=state)
+        assert failed.status == "failed"
+    assert len(contexts) == 1
+    assert len(calls) == 1
+    assert state.model_dump_json() == frozen
+    resumed = await agent.run("continue", previous_state=state)
     assert resumed.status == "completed", resumed.failure
     assert len(contexts) == 2
     assert resumed.state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is False
@@ -397,3 +429,95 @@ async def test_compact_keeps_output_tools_without_business_validation():
 
     result = await agent.compact(previous_state=_previous())
     assert result.output_or_raise() == "summary, not an Answer"
+
+
+async def test_compact_completes_notifications_before_save_and_restores_once():
+    from a13n_harness.capabilities.context import CompactionSummaryEvent, ContextRestoredEvent
+    from pydantic import BaseModel
+    from pydantic_ai.capabilities import AbstractCapability
+
+    notifications = []
+    observed = []
+
+    class ListenerState(BaseModel):
+        summary: str
+
+    class Listener(AbstractCapability):
+        async def on_event(self, ctx, *, event):
+            if isinstance(event, CompactionSummaryEvent | ContextRestoredEvent):
+                notifications.append(event)
+            if isinstance(event, CompactionSummaryEvent):
+                await ctx.deps.state.write("test.summary-listener", ListenerState(summary=event.summary), version="1")
+
+    async def stream(messages, info):
+        yield "summary"
+
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream), capabilities=(Listener(),)
+    )
+    bindings = RunBindings.embedded(producer_observer=observed.append)
+    result = await agent.compact(previous_state=_previous(), bindings=bindings)
+    assert result.status == "completed", result.failure
+    assert [type(event) for event in notifications] == [CompactionSummaryEvent]
+    events = [
+        item.event.payload
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "context"
+    ]
+    assert [event["type"] for event in events] == ["compaction_started", "compaction_completed"]
+    assert events[0]["operation_id"] == events[1]["operation_id"]
+    saved = HarnessState.model_validate_json(result.state.model_dump_json())
+    assert saved.agent_context_state.entries["test.summary-listener"].data == {"summary": "summary"}
+    observed.clear()
+    resumed = await agent.run("Continue", previous_state=saved, bindings=bindings)
+    assert resumed.status == "completed", resumed.failure
+    assert [type(event) for event in notifications] == [CompactionSummaryEvent, ContextRestoredEvent]
+    assert notifications[0].operation_id == notifications[1].operation_id
+    assert resumed.state.agent_context_state.entries["test.summary-listener"].data == {"summary": "summary"}
+    assert not [
+        item
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "compaction_completed"
+    ]
+    assert resumed.state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is False
+
+
+@pytest.mark.parametrize("phase", ["checkpoint", "notification"])
+async def test_compact_post_summary_failure_returns_original_checkpoint(phase, monkeypatch):
+    from a13n_harness.capabilities.context import CompactionSummaryEvent
+    from a13n_harness.context import AgentContext
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class Listener(AbstractCapability):
+        async def on_event(self, ctx, *, event):
+            if phase == "notification" and isinstance(event, CompactionSummaryEvent):
+                raise RuntimeError("private listener failure")
+
+    async def fail_export(self, messages):
+        raise RuntimeError("private storage failure")
+
+    if phase == "checkpoint":
+        monkeypatch.setattr(AgentContext, "export_state", fail_export)
+
+    async def stream(messages, info):
+        yield "summary"
+
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream), capabilities=(Listener(),)
+    )
+    previous = _previous()
+    observed = []
+    result = await agent.compact(
+        previous_state=previous, bindings=RunBindings.embedded(producer_observer=observed.append)
+    )
+    assert result.status == "failed"
+    assert result.failure.details == {"phase": phase}
+    assert "private" not in result.failure.message
+    assert result.state.model_dump_json() == previous.model_dump_json()
+    events = [
+        item.event.payload
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "context"
+    ]
+    assert [event["type"] for event in events] == ["compaction_started", "compaction_failed"]
+    assert events[1]["failed_phase"] == phase

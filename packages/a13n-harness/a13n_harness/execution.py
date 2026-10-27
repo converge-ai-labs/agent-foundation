@@ -79,7 +79,10 @@ class ExecutableAgent[OutputT]:
         Built-in constraints and the caller's instruction are appended at the tail.
         When instruction is None, default compaction guidance is used instead.
         The Agent must support text output with its existing tool configuration.
-        Hosts own scheduling and publication of the returned checkpoint.
+        A completed result can be saved immediately; runtime restoration occurs
+        automatically on the next ordinary Run. Hosts publish only completed
+        results and retain the original checkpoint on failure or cancellation.
+        Scheduling, fenced publication, and save-failure notifications are Host-owned.
         """
         from a13n_harness._compaction_run import _CompactionRunStream
 

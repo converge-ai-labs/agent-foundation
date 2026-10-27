@@ -24,7 +24,7 @@ from pydantic_ai.models import ModelRequestContext
 from a13n_harness._context_history import _COMPACTION_PROMPT
 from a13n_harness._handoff import _HANDOFF_STATE_VERSION, HANDOFF_CAPABILITY_ID, _HandoffState
 from a13n_harness._run_stream import HarnessRunStream
-from a13n_harness.capabilities.context import _restore_compacted_state
+from a13n_harness.capabilities.context import CompactionSummaryEvent
 from a13n_harness.compaction import (
     COMPACTION_CAPABILITY_ID,
     CompactionBasis,
@@ -36,10 +36,15 @@ from a13n_harness.compaction import (
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.errors import DefinitionError, HarnessError, PluginError
-from a13n_harness.events import ContextOperationFailedPayload, ContextOperationStartedPayload, emit_harness_event
+from a13n_harness.events import (
+    ContextOperationCompletedPayload,
+    ContextOperationFailedPayload,
+    ContextOperationStartedPayload,
+    emit_harness_event,
+)
 from a13n_harness.model_context import _requires_exact_history
 from a13n_harness.plugins import PluginRunExchange
-from a13n_harness.result import HarnessRunResult
+from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.tools.invocation import disabled_tool_execution
 from a13n_harness.usage import UsageCapability
 
@@ -50,7 +55,6 @@ class _SummaryRequestCapability(AbstractCapability[AgentContext]):
 
     history: list[ModelMessage]
     context: RunContext[AgentContext] | None = None
-    request: ModelRequestContext | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost", wrapped_by=(UsageCapability,))
@@ -79,7 +83,6 @@ class _SummaryRequestCapability(AbstractCapability[AgentContext]):
                 code="compaction_text_output_required",
             )
         self.context = ctx
-        self.request = request_context
         return request_context
 
 
@@ -97,6 +100,61 @@ class _CompactionRunStream(HarnessRunStream[str]):
         return replace(await super()._create_context(environment), _compacting=True)
 
     async def _run_native(self, exchange: PluginRunExchange) -> HarnessRunResult[str]:
+        operation_id = f"compaction-{uuid4().hex}"
+        self._phase = "preflight"
+        await emit_harness_event(
+            self.context.events,
+            kind="context",
+            payload=ContextOperationStartedPayload(type="compaction_started", operation_id=operation_id),
+        )
+        try:
+            return await self._compact_checkpoint(exchange, operation_id)
+        except asyncio.CancelledError:
+            await self._emit_failure(operation_id, "compaction_cancelled")
+            raise
+        except Exception as exc:
+            self._diagnostic_error = exc
+            code = exc.code if isinstance(exc, HarnessError) else "compaction_failed"
+            await self._emit_failure(operation_id, code)
+            # Failed compaction never hands the Host a replacement checkpoint,
+            # even when export or notification failed after summary generation.
+            return self._record_inner_candidate(
+                HarnessRunResult(
+                    thread_id=self.thread_id,
+                    run_id=self.run_id,
+                    status="failed",
+                    output=None,
+                    state=self._previous_state,
+                    usage=self.usage,
+                    failure=SafeFailure.model_validate(
+                        {
+                            "code": code,
+                            "message": str(exc)
+                            if isinstance(exc, HarnessError)
+                            else f"Compaction failed during {self._phase}.",
+                            "details": {"phase": self._phase},
+                            "retry_hint": "dependency_change",
+                        }
+                    ),
+                    _messages=self._initial_history,
+                    _new_message_index=len(self._initial_history),
+                )
+            )
+
+    async def _emit_failure(self, operation_id: str, code: str) -> None:
+        await emit_harness_event(
+            self.context.events,
+            kind="context",
+            payload=ContextOperationFailedPayload(
+                type="compaction_failed",
+                operation_id=operation_id,
+                failed_phase=self._phase,
+                error_code=code,
+                retryable=False,
+            ),
+        )
+
+    async def _compact_checkpoint(self, exchange: PluginRunExchange, operation_id: str) -> HarnessRunResult[str]:
         if exchange.context is not self.context or exchange.input.value is not None:
             raise PluginError(
                 "Compaction middleware must preserve its context and empty input.", code="plugin_input_invalid"
@@ -105,9 +163,7 @@ class _CompactionRunStream(HarnessRunStream[str]):
         self._latest_messages = tuple(history)
         self._new_message_index = len(history)
         if not history or not any(isinstance(message, ModelRequest) for message in history):
-            return await self._failed_candidate(
-                code="compaction_history_empty", message="Compaction requires conversation history."
-            )
+            raise DefinitionError("Compaction requires conversation history.", code="compaction_history_empty")
         handoff = await self.context.state.read(HANDOFF_CAPABILITY_ID, _HandoffState, version=_HANDOFF_STATE_VERSION)
         previous = await self.context.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
         if (
@@ -116,19 +172,8 @@ class _CompactionRunStream(HarnessRunStream[str]):
             or (handoff is not None and handoff.summary is not None)
             or (previous is not None and previous.restoration_pending)
         ):
-            return await self._failed_candidate(
-                code="compaction_boundary_pending", message="Compaction requires a settled history boundary."
-            )
+            raise DefinitionError("Compaction requires a settled history boundary.", code="compaction_boundary_pending")
 
-        operation_id = f"compaction-{uuid4().hex}"
-        await emit_harness_event(
-            self.context.events,
-            kind="context",
-            payload=ContextOperationStartedPayload(
-                type="compaction_started",
-                operation_id=operation_id,
-            ),
-        )
         guidance = _COMPACTION_PROMPT if self._instruction is None else self._instruction
         prompt = (
             "Summarize only the existing conversation history. Return only the summary text. "
@@ -136,100 +181,88 @@ class _CompactionRunStream(HarnessRunStream[str]):
             "Record uncertainties for the resumed Agent.\n\n" + guidance
         )
         capture = _SummaryRequestCapability(_merge_consecutive_messages(deepcopy(history)))
-        phase = "summary"
-        try:
-            with disabled_tool_execution():
-                async with self._executable._agent.iter(
-                    prompt,
-                    message_history=deepcopy(history),
-                    deps=self.context,
-                    conversation_id=self.thread_id,
-                    usage=self._usage,
-                    usage_limits=self._usage_limits,
-                    capabilities=(*self._bindings.capabilities, capture),
-                ) as run:
-                    requested = False
-                    async for node in run:
-                        if Agent.is_model_request_node(node):
-                            if requested:
-                                raise DefinitionError(
-                                    "Compaction requested another model turn.", code="compaction_summary_invalid"
-                                )
-                            requested = True
-                            # Consume the native stream for provider compatibility, but publish
-                            # the summary only through compaction observations, not user input/output.
-                            async with node.stream(run.ctx) as events:
-                                async for _ in events:
-                                    pass
-                        elif Agent.is_call_tools_node(node):
-                            response = node.model_response
-                            if any(isinstance(part, (ToolCallPart, NativeToolCallPart)) for part in response.parts):
-                                raise DefinitionError(
-                                    "Compaction returned tool calls.", code="compaction_summary_invalid"
-                                )
-                            summary = "\n\n".join(
-                                part.content for part in response.parts if isinstance(part, TextPart)
-                            ).strip()
-                            if not summary:
-                                raise DefinitionError(
-                                    "Compaction returned an empty summary.", code="compaction_summary_invalid"
-                                )
-                            assert capture.context is not None and capture.request is not None
-                            # Commit a resumable pending-restoration boundary before notifying
-                            # listeners. Failure during restoration can safely resume next Run.
-                            result = CompactionResult(
-                                basis=CompactionBasis(
-                                    operation_id=operation_id,
-                                    thread_id=self.thread_id,
-                                    prefix_length=len(history),
-                                    prefix_digest=_prefix_digest(history),
-                                    replay_json="[]",
-                                ),
-                                summary=summary,
+        self._phase = "summary"
+        with disabled_tool_execution():
+            async with self._executable._agent.iter(
+                prompt,
+                message_history=deepcopy(history),
+                deps=self.context,
+                conversation_id=self.thread_id,
+                usage=self._usage,
+                usage_limits=self._usage_limits,
+                capabilities=(*self._bindings.capabilities, capture),
+            ) as run:
+                requested = False
+                async for node in run:
+                    if Agent.is_model_request_node(node):
+                        if requested:
+                            raise DefinitionError(
+                                "Compaction requested another model turn.", code="compaction_summary_invalid"
                             )
-                            messages, marker = _prepare_compaction(
-                                result, thread_id=self.thread_id, messages=history, previous=previous
+                        requested = True
+                        # Consume the native stream for provider compatibility, but publish
+                        # the summary only through compaction observations, not user input/output.
+                        async with node.stream(run.ctx) as events:
+                            async for _ in events:
+                                pass
+                    elif Agent.is_call_tools_node(node):
+                        response = node.model_response
+                        if any(isinstance(part, (ToolCallPart, NativeToolCallPart)) for part in response.parts):
+                            raise DefinitionError("Compaction returned tool calls.", code="compaction_summary_invalid")
+                        summary = "\n\n".join(
+                            part.content for part in response.parts if isinstance(part, TextPart)
+                        ).strip()
+                        if not summary:
+                            raise DefinitionError(
+                                "Compaction returned an empty summary.", code="compaction_summary_invalid"
                             )
-                            assert marker is not None
-                            await self.context.state.write(COMPACTION_CAPABILITY_ID, marker, version="1")
-                            self._latest_messages = tuple(messages)
-                            self._new_message_index = 0
-                            capture.context.messages[:] = messages
-                            phase = "restoration"
-                            restored = await _restore_compacted_state(capture.context, capture.request)
-                            self._latest_messages = tuple(restored.messages)
-                            state = await self.context.export_state(self._latest_messages)
-                            return self._record_inner_candidate(
-                                HarnessRunResult(
-                                    thread_id=self.thread_id,
-                                    run_id=self.run_id,
-                                    status="completed",
-                                    output=summary,
-                                    state=state,
-                                    usage=self.usage,
-                                    _messages=self._latest_messages,
-                                    _new_message_index=0,
-                                )
+                        assert capture.context is not None
+                        self._phase = "checkpoint"
+                        # Export the compressed checkpoint now. Runtime restoration uses
+                        # the next ordinary Run's current tool and event authority.
+                        result = CompactionResult(
+                            basis=CompactionBasis(
+                                operation_id=operation_id,
+                                thread_id=self.thread_id,
+                                prefix_length=len(history),
+                                prefix_digest=_prefix_digest(history),
+                                replay_json="[]",
+                            ),
+                            summary=summary,
+                        )
+                        messages, marker = _prepare_compaction(
+                            result, thread_id=self.thread_id, messages=history, previous=previous
+                        )
+                        assert marker is not None
+                        await self.context.state.write(
+                            COMPACTION_CAPABILITY_ID,
+                            marker.model_copy(update={"completion_emitted": True}),
+                            version="1",
+                        )
+                        self._phase = "notification"
+                        await capture.context.emit(CompactionSummaryEvent(operation_id=operation_id, summary=summary))
+                        self._phase = "checkpoint"
+                        state = await self.context.export_state(messages)
+                        self._phase = "notification"
+                        await emit_harness_event(
+                            self.context.events,
+                            kind="context",
+                            payload=ContextOperationCompletedPayload(
+                                type="compaction_completed", operation_id=operation_id
+                            ),
+                        )
+                        self._latest_messages = tuple(messages)
+                        self._new_message_index = 0
+                        return self._record_inner_candidate(
+                            HarnessRunResult(
+                                thread_id=self.thread_id,
+                                run_id=self.run_id,
+                                status="completed",
+                                output=summary,
+                                state=state,
+                                usage=self.usage,
+                                _messages=self._latest_messages,
+                                _new_message_index=0,
                             )
-                    raise DefinitionError("Compaction produced no model response.", code="compaction_summary_invalid")
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._diagnostic_error = exc
-            code = exc.code if isinstance(exc, HarnessError) else "compaction_failed"
-            await emit_harness_event(
-                self.context.events,
-                kind="context",
-                payload=ContextOperationFailedPayload(
-                    type="compaction_failed",
-                    operation_id=operation_id,
-                    failed_phase=phase,
-                    error_code=code,
-                    retryable=False,
-                ),
-            )
-            return await self._failed_candidate(
-                code=code,
-                message="Explicit compaction failed.",
-                details={"phase": phase, "state_replaced": phase == "restoration"},
-            )
+                        )
+                raise DefinitionError("Compaction produced no model response.", code="compaction_summary_invalid")

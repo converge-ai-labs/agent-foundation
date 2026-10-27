@@ -127,13 +127,15 @@ compacted = await executable.compact(
     bindings=bindings,
 )
 summary = compacted.output_or_raise()
-# Commit compacted.state through the Host's fenced checkpoint path.
-continued = await executable.run("Continue", previous_state=compacted.state, bindings=bindings)
+# Save compacted.state through the Host's fenced checkpoint path, then stop.
+# No ordinary run() call is needed to finish compaction.
 ```
 
 The request receives full history without trimming. It keeps the same system prompts, tool schemas, output configuration and model settings, and appends built-in no-tools constraints plus your `instruction`. `None` selects the default compaction guidance; a string replaces that guidance. Keep the executable and bindings stable to preserve the provider's cache prefix. Cache availability remains provider-controlled.
 
-The existing output mode must permit free text; native and prompted JSON modes fail instead of switching schemas. A tool call or empty summary fails without replacing history. The operation uses ordinary Run admission, usage, plugins, Environment cleanup and state export, and needs only the summary request's budget. It restores retained discovery and context listeners before returning. If restoration fails after replacement, the failed result retains a pending restoration marker for the next ordinary Run. Summary/restoration failures include `failure.details.phase` and `failure.details.state_replaced`; when `state_replaced` is true, save the replacement under the Host's checkpoint policy and recover through an ordinary Run.
+The existing output mode must permit free text; native and prompted JSON modes fail instead of switching schemas. A tool call or empty summary fails without replacing history. The operation uses ordinary Run admission, usage, plugins, Environment cleanup and state export, and needs only the summary request's budget. A completed result contains the compressed history ready for immediate storage. The next ordinary Run automatically restores retained discovery and notifies context-restoration listeners before continuing; that restoration is not required to save the checkpoint.
+
+On failure, keep the original checkpoint and record the failure separately. Failed results carry a safe error code/message and `failure.details.phase`; preflight rejection and generation/export/notification failures also emit `compaction_failed`. Cancellation emits a cancellation failure observation and propagates. Preparation, middleware and cleanup errors follow the ordinary Run exception contract. Save only a completed result, using the Host's expected-version or ownership check. Report save failures and conflicts explicitly; report saved success only after publication commits. `CompactionSummaryEvent` and `compaction_completed` describe the generated checkpoint, not a durable save, and are not repeated during later restoration.
 
 The checkpoint must have a settled boundary: pending tools, retained executions, unrestored handoffs and pending compaction restoration must finish through ordinary Run recovery first. Calling `compact()` on these states returns `compaction_boundary_pending` without dispatching a summary or overwriting the pending marker. The Host must prevent concurrent Thread progress and decide when to save the returned State. `compact()` leaves the supplied checkpoint unchanged. Idle timers and automatic scheduling belong to the Host.
 
