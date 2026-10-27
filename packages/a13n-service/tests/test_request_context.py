@@ -171,7 +171,7 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
             "/schedules/{schedule_id}",
             schedule_id=schedule["id"],
             request_body={"name": "Renamed"},
-            if_match=created["headers"]["etag"],
+            expected_version=created["headers"]["etag"],
         )
         assert changed["status"] == 200, changed
         for path, args in [("/schedules", {}), ("/schedules/{schedule_id}", {"schedule_id": schedule["id"]})]:
@@ -187,7 +187,7 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
             schedule_id=schedule["id"],
             request_body={},
             idempotency_key="context-dispatch",
-            if_match=changed["headers"]["etag"],
+            expected_version=changed["headers"]["etag"],
         )
         assert dispatched["status"] == 202, dispatched
         assert "private-context-value" not in json.dumps(dispatched)

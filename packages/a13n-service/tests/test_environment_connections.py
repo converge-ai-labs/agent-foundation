@@ -107,13 +107,13 @@ async def test_references_and_deletion_respect_workspace_and_write_access(servic
     assert refs.template_count == 0
     with pytest.raises(ServiceError) as denied:
         await environment_connections.delete(
-            service.runtime.storage, viewer, workspace, provider["id"], if_match=etag(provider)
+            service.runtime.storage, viewer, workspace, provider["id"], expected_version=etag(provider)
         )
     assert denied.value.code == "forbidden"
     other_workspace = await add_workspace(service)
     actor = principal(service, (other_workspace, "admin"))
     for operation in (environment_connections.references, environment_connections.delete):
-        kwargs = {"if_match": etag(provider)} if operation is environment_connections.delete else {}
+        kwargs = {"expected_version": etag(provider)} if operation is environment_connections.delete else {}
         with pytest.raises(ServiceError) as missing:
             await operation(service.runtime.storage, actor, other_workspace, provider["id"], **kwargs)
         assert missing.value.code == "not_found"
@@ -138,6 +138,6 @@ async def test_connection_reference_query_and_delete_are_available_through_mcp(s
             "DELETE",
             "/environment-providers/{provider_id}",
             provider_id=provider["id"],
-            if_match=etag(provider),
+            expected_version=etag(provider),
         )
         assert result["status"] == 204

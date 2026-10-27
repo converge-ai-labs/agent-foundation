@@ -36,19 +36,19 @@ MCP 不授予额外权限或审批权。例如，订阅管理仍要求工作区 
 
 ## 读取和更新资源
 
-API 工具使用原操作的路径、查询和已声明请求头参数。请求头参数使用小写 snake_case 名称：`If-Match` 对应 `if_match`，`Idempotency-Key` 对应 `idempotency_key`，`Last-Event-ID` 对应 `last_event_id`。参数名未知的调用会被拒绝，错误信息会列出可用的参数名。JSON 请求体放在 `request_body` 下；空对象、显式 `null` 和省略字段含义不同。例如更新 Memory：
+API 工具使用原操作的路径、查询和已声明请求头参数。请求头参数使用小写 snake_case 名称，例如 `Idempotency-Key` 对应 `idempotency_key`。写操作通过 `expected_version` 传入 `If-Match` 前置条件：传入读取到的版本 `{id}:{version}`（Model 为 `{key}:{version}`），可以带或不带 `headers.etag` 中的引号。只接受空对象的请求体（例如 schedule 的 `enable` 命令）可以省略。参数名未知的调用会被拒绝，错误信息会列出可用的参数名。JSON 请求体放在 `request_body` 下；空对象、显式 `null` 和省略字段含义不同。例如更新 Memory：
 
 ```json
 {
   "memory_id": "mem_REPLACE_WITH_RETURNED_ID",
-  "if_match": "\"mem_REPLACE_WITH_RETURNED_ID:1\"",
+  "expected_version": "mem_REPLACE_WITH_RETURNED_ID:1",
   "request_body": {"guide": null}
 }
 ```
 
 每个 API 结果包含 `status`、`headers` 和未经改写的 JSON `body`。如果原响应存在相应请求头，`headers` 会提供 `etag`、`x-request-id` 和 `retry-after`。`204` 响应的 `body` 为 `null`。分页信息保留在 API 响应体中。HTTP 失败会作为 MCP 工具错误返回，同时保留相同的结构化封装，包括 Service 错误码和详情。
 
-先读取资源，再把返回的 `headers.etag` 作为 **`if_match`** 参数。缺少前置条件返回 `428`，过期的条件返回 `412`。不要在未检查资源变化的情况下替换过期 ETag。MCP 不自动重试写入，也不生成幂等键。响应丢失后，先检查资源当前状态，再决定是否重新提交写入。
+先读取资源，再把返回的 `headers.etag` 作为 **`expected_version`** 参数。缺少前置条件返回 `428`，过期的条件返回 `412`。不要在未检查资源变化的情况下替换过期 ETag。MCP 不自动重试写入，也不生成幂等键。响应丢失后，先检查资源当前状态，再决定是否重新提交写入。
 
 ## 检查失败的运行
 

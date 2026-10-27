@@ -36,19 +36,19 @@ MCP does not grant additional permissions or approval authority. For example, ma
 
 ## Read and update resources
 
-API tools take their ordinary path, query, and declared header arguments. Header arguments use lowercase snake_case names: `if_match` for `If-Match`, `idempotency_key` for `Idempotency-Key`, and `last_event_id` for `Last-Event-ID`. A call with an unknown argument name is rejected, and the error lists the accepted names. JSON bodies stay under `request_body`; an empty object and explicit `null` are distinct from omission. For example, a memory update can use:
+API tools take their ordinary path, query, and declared header arguments. Header arguments use lowercase snake_case names, such as `idempotency_key` for `Idempotency-Key`. Writes take the `If-Match` precondition as `expected_version`: pass the version you read, `{id}:{version}` (`{key}:{version}` for a model), with or without the quotes that `headers.etag` contains. A body that accepts only an empty object, such as a schedule `enable` command, may be omitted. A call with an unknown argument name is rejected, and the error lists the accepted names. JSON bodies stay under `request_body`; an empty object and explicit `null` are distinct from omission. For example, a memory update can use:
 
 ```json
 {
   "memory_id": "mem_REPLACE_WITH_RETURNED_ID",
-  "if_match": "\"mem_REPLACE_WITH_RETURNED_ID:1\"",
+  "expected_version": "mem_REPLACE_WITH_RETURNED_ID:1",
   "request_body": {"guide": null}
 }
 ```
 
 Each API result contains `status`, `headers`, and the unchanged JSON `body`. `headers` includes `etag`, `x-request-id`, and `retry-after` when present. A `204` response has `body: null`. Pagination stays in the API body. HTTP failures are MCP tool errors with the same structured envelope, including Service error codes and details.
 
-Read the resource first and pass its returned `headers.etag` as the **`if_match`** argument. Missing preconditions produce `428`; stale ones produce `412`. Do not replace a stale ETag without inspecting the changed resource. MCP does not retry writes or manufacture idempotency keys. After a lost response, inspect existing resource state before deciding whether to submit another write.
+Read the resource first and pass its returned `headers.etag` as the **`expected_version`** argument. Missing preconditions produce `428`; stale ones produce `412`. Do not replace a stale ETag without inspecting the changed resource. MCP does not retry writes or manufacture idempotency keys. After a lost response, inspect existing resource state before deciding whether to submit another write.
 
 ## Inspect a failed run
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from a13n_service.api_tools import api_tools, tool_name
-from a13n_service.infra.http import ErrorEnvelope
+from a13n_service.infra.http import MCP_ENTITY_TAG, ErrorEnvelope, IfMatch, etag, install_error_envelope, require_match
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -236,3 +236,70 @@ def test_header_argument_names_must_stay_unique() -> None:
 
     with pytest.raises(ValueError, match="item_id collides"):
         tools(app)
+
+
+class Command(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+async def test_writes_take_expected_version_and_send_a_quoted_if_match() -> None:
+    app = FastAPI()
+    install_error_envelope(app)
+    seen = []
+    version = {"value": 3}
+
+    @app.get("/items/{item_id}", operation_id="read_item", openapi_extra=ADMIT)
+    async def read(item_id: str, response: Response) -> dict:
+        response.headers["etag"] = etag(item_id, version["value"])
+        return {"id": item_id, "version": version["value"]}
+
+    @app.patch("/items/{item_id}", operation_id="change_item", openapi_extra=ADMIT)
+    async def change(item_id: str, body: Nested, request: Request, if_match: IfMatch = None) -> dict:
+        seen.append(request.headers.get("if-match"))
+        require_match(if_match, item_id, version["value"])
+        version["value"] += 1
+        return {"id": item_id, "version": version["value"]}
+
+    @app.post("/items/{item_id}/pause", operation_id="pause_item", status_code=204, openapi_extra=ADMIT)
+    async def pause(item_id: str, body: Command, request: Request, if_match: IfMatch = None) -> Response:
+        seen.append((request.headers.get("if-match"), await request.json()))
+        require_match(if_match, item_id, version["value"])
+        version["value"] += 1
+        return Response(status_code=204)
+
+    mapped = tools(app)
+    change_schema = mapped["change_item"].parameters
+    assert set(change_schema["properties"]) == {"item_id", "expected_version", "request_body"}
+    assert "expected_version" not in change_schema["required"]
+    description = change_schema["properties"]["expected_version"]["description"]
+    assert "sch_x:3" in description and '"sch_x:3"' in description
+    assert MCP_ENTITY_TAG not in json.dumps(change_schema)
+    assert set(mapped["read_item"].parameters["properties"]) == {"item_id"}
+    # A body that admits only `{}` is optional.
+    pause_schema = mapped["pause_item"].parameters
+    assert set(pause_schema["properties"]) == {"item_id", "expected_version", "request_body"}
+    assert pause_schema["required"] == ["item_id"]
+    with caller():
+        read = (await mapped["read_item"].run({"item_id": "sch_x"})).structured_content
+        assert read["headers"]["etag"] == '"sch_x:3"'
+        unquoted = await mapped["change_item"].run(
+            {"item_id": "sch_x", "expected_version": "sch_x:3", "request_body": {}}
+        )
+        assert unquoted.structured_content["status"] == 200 and seen[-1] == '"sch_x:3"'
+        quoted = await mapped["change_item"].run(
+            {"item_id": "sch_x", "expected_version": '"sch_x:4"', "request_body": {"note": None}}
+        )
+        assert quoted.structured_content["status"] == 200 and seen[-1] == '"sch_x:4"'
+        stale = (
+            await mapped["change_item"].run({"item_id": "sch_x", "expected_version": "sch_x:4", "request_body": {}})
+        ).structured_content
+        assert stale["status"] == 412 and stale["body"]["error"]["details"]["current_etag"] == '"sch_x:5"'
+        missing = (await mapped["change_item"].run({"item_id": "sch_x", "request_body": {}})).structured_content
+        assert missing["status"] == 428 and missing["body"]["error"]["code"] == "precondition_required"
+        assert seen[-1] is None
+        paused = await mapped["pause_item"].run({"item_id": "sch_x", "expected_version": "sch_x:5"})
+        assert paused.structured_content["status"] == 204 and paused.structured_content["body"] is None
+        assert seen[-1] == ('"sch_x:5"', {})
+        with pytest.raises(ToolError) as rejected:
+            await mapped["change_item"].run({"item_id": "sch_x", "if_match": '"sch_x:6"', "request_body": {}})
+        assert "if_match" in str(rejected.value) and "expected_version" in str(rejected.value)

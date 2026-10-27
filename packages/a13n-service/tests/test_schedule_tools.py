@@ -135,7 +135,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "PATCH",
             "/schedules/{schedule_id}",
             **args,
-            if_match=read["headers"]["etag"],
+            expected_version=read["headers"]["etag"],
             request_body={"name": "Renamed"},
         )
         assert changed["status"] == 200 and changed["body"]["name"] == "Renamed"
@@ -145,7 +145,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/enable",
             **args,
-            if_match=read["headers"]["etag"],
+            expected_version=read["headers"]["etag"],
             request_body={},
         )
         assert stale["status"] == 412
@@ -155,7 +155,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/enable",
             **args,
-            if_match=changed["headers"]["etag"],
+            expected_version=changed["headers"]["etag"],
             request_body={},
         )
         assert enabled["status"] == 200 and enabled["body"]["state"] == "enabled"
@@ -167,13 +167,13 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/pause",
             **args,
-            if_match=enabled["headers"]["etag"],
+            expected_version=enabled["headers"]["etag"],
             request_body={},
         )
         assert paused["status"] == 200 and paused["body"]["state"] == "paused"
         dispatch_args = {
             **args,
-            "if_match": paused["headers"]["etag"],
+            "expected_version": paused["headers"]["etag"],
             "idempotency_key": "schedule-dispatch",
             "request_body": {},
         }
@@ -197,7 +197,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
         assert occurrence["body"]["snapshot"]["invocation"] == schedule["invocation"]
         assert occurrence["body"]["execution"]["initial_run"] is None
         archived = await call(
-            http, service, "DELETE", "/schedules/{schedule_id}", **args, if_match=paused["headers"]["etag"]
+            http, service, "DELETE", "/schedules/{schedule_id}", **args, expected_version=paused["headers"]["etag"]
         )
         assert archived["status"] == 204 and archived["body"] is None
         replay = await call(http, service, "POST", "/schedules/{schedule_id}/dispatch", **dispatch_args)
