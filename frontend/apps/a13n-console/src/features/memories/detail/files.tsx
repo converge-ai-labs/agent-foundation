@@ -126,7 +126,6 @@ export function MemoryFiles({ memory }: { memory: Memory }) {
   return (
     <>
       <FileBrowser
-        embedded
         label={t("Memory files")}
         fileMenu={fileMenu}
         count={files.data.length}

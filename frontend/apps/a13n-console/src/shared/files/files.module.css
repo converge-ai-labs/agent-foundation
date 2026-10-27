@@ -15,20 +15,6 @@
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
 }
-.browser[data-embedded] {
-  border-radius: 0;
-  background: transparent;
-}
-.browser[data-embedded] .tree {
-  padding-left: 0;
-}
-.browser[data-embedded] .treeHeading {
-  margin-left: 0;
-  margin-bottom: 0;
-}
-.browser[data-embedded] .treeHeading > :first-child {
-  flex: none;
-}
 .tree {
   display: flex;
   flex-direction: column;

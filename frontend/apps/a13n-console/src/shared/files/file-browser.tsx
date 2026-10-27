@@ -24,7 +24,6 @@ export type FileView = "preview" | "source";
 /** A tree of files at the left and the chosen file at the right. */
 export function FileBrowser({
   label,
-  embedded = false,
   count,
   actions,
   nodes,
@@ -36,8 +35,6 @@ export function FileBrowser({
 }: {
   /** Names the tree for assistive technology, such as "Package files". */
   label: string;
-  /** Join the surrounding page when its tabs already name and count the files. */
-  embedded?: boolean;
   count: number;
   /** Controls beside the tree heading, such as New file. */
   actions?: ReactNode;
@@ -52,15 +49,11 @@ export function FileBrowser({
 }) {
   const { t } = useTranslation();
   return (
-    <div className={styles.browser} data-embedded={embedded || undefined}>
+    <div className={styles.browser}>
       <nav className={`${styles.tree} a13n-scrollbar`} aria-label={label}>
         <div className={styles.treeHeading}>
-          {!embedded && (
-            <>
-              <span>{t("Files")}</span>
-              <span className={styles.treeCount}>{count}</span>
-            </>
-          )}
+          <span>{t("Files")}</span>
+          <span className={styles.treeCount}>{count}</span>
           {actions}
         </div>
         <div className={`${styles.treeBody} a13n-scrollbar`}>
