@@ -24,7 +24,9 @@ export function AnnotationText({
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   useEffect(() => {
-    input.current?.focus();
+    // Canvas pointerdown mounts this input before mousedown's default focus.
+    const frame = requestAnimationFrame(() => input.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, []);
   const apply = () => {
     if (!composing.current) onApply({ ...mark, text: value });

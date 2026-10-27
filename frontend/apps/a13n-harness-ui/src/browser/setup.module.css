@@ -27,10 +27,8 @@
   font-size: 17px;
   font-weight: 600;
 }
-.heading p,
 .summary,
-.instructions > p,
-.actions > p {
+.instructions > p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
   font-size: 12px;
@@ -73,12 +71,6 @@
   font-size: 13px;
   font-weight: 500;
 }
-.buttons {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .requirements li > div > span,
 .state {
   color: var(--a13n-secondary);
@@ -111,21 +103,19 @@
   font-size: 11px;
   line-height: 1.6;
 }
-.actions {
-  flex-shrink: 0;
-  padding: 12px 20px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
 .error {
   color: var(--a13n-text);
   font-size: 12px;
   line-height: 1.6;
 }
 
-.actions > a {
+.recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.recovery > a {
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 3px;

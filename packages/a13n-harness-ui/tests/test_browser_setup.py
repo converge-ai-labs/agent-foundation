@@ -118,15 +118,6 @@ async def test_missing_components_only_produce_manual_guidance(host, monkeypatch
     module.probe.assert_not_awaited()
 
 
-@pytest.mark.parametrize("platform", ["windows", "other"])
-async def test_other_platforms_report_browser_but_never_offer_linux_runtime(host, monkeypatch, platform):
-    monkeypatch.setattr(module, "host_platform", lambda: platform)
-    setup = await module.inspect_browser(host)
-    assert setup.browser and not setup.supported and not setup.ready
-    assert setup.vnc is None and not setup.steps
-    assert "Linux or macOS Host" in setup.message
-
-
 @pytest.mark.parametrize("sharing", [False, True])
 @pytest.mark.parametrize("password", ["", "testpass"])
 async def test_macos_requires_native_sharing_and_host_only_password(host, monkeypatch, sharing, password):
@@ -139,6 +130,39 @@ async def test_macos_requires_native_sharing_and_host_only_password(host, monkey
     assert [item.name for item in setup.requirements] == ["Browser", "Screen Sharing", "VNC password"]
     assert not password or password not in setup.model_dump_json()
     module.probe.assert_awaited_once_with(host.executable, "--version")
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_macos_selects_browser_without_discovering_linux_components(host, monkeypatch, explicit):
+    monkeypatch.setattr(module, "host_platform", lambda: "macos")
+    monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=True))
+    monkeypatch.setenv(module.PASSWORD_ENV, "testpass")
+    browser = BrowserExecutable(name="Chrome", path="/Applications/Chrome", source="system")
+    discovered = Mock(return_value=[browser])
+    monkeypatch.setattr(module, "system_browsers", discovered)
+    monkeypatch.setattr(module, "linux_distribution", Mock(side_effect=AssertionError("Linux only")))
+    monkeypatch.setattr(module, "find_program", Mock(side_effect=AssertionError("Linux only")))
+    configuration = BrowserConfiguration(executable=browser.path if explicit else None)
+    setup = await module.inspect_browser(configuration)
+    assert setup.ready and setup.browser and setup.browser.path == browser.path
+    assert setup.browser.source == ("custom" if explicit else "system")
+    assert setup.vnc is None
+    assert configuration.vnc_executable is None
+    if explicit:
+        discovered.assert_not_called()
+    else:
+        discovered.assert_called_once_with("macos")
+
+
+@pytest.mark.parametrize("platform", ["windows", "other"])
+async def test_other_platforms_report_platform_limit_without_probing_or_missing_components(host, monkeypatch, platform):
+    monkeypatch.setattr(module, "host_platform", lambda: platform)
+    setup = await module.inspect_browser(host)
+    assert not setup.supported and not setup.ready
+    assert setup.browser is None and setup.vnc is None
+    assert not setup.steps and not setup.requirements
+    assert "Linux or macOS Host" in setup.message
+    module.probe.assert_not_awaited()
 
 
 @pytest.mark.parametrize(("identifier", "version"), [("ubuntu", "20.04"), ("debian", "11")])
@@ -211,19 +235,16 @@ async def test_scan_lists_supported_candidates_once_without_launching_or_install
 
 
 @pytest.mark.parametrize("missing", ["executable", "vnc_executable", "both"])
-async def test_missing_binding_never_selects_an_installed_candidate(host, monkeypatch, missing):
-    system = Mock(side_effect=AssertionError("Readiness must not choose a browser"))
-    monkeypatch.setattr(module, "system_browsers", system)
+async def test_missing_bindings_automatically_select_installed_candidates_without_changing_configuration(host, missing):
     configuration = host.model_copy(
         update={field: None for field in ("executable", "vnc_executable") if field == missing or missing == "both"}
     )
+    original = configuration.model_dump()
     setup = await module.inspect_browser(configuration)
-    assert not setup.ready
-    if missing in {"executable", "both"}:
-        assert setup.browser is None and "Select a browser" in setup.requirements[0].detail
-    if missing in {"vnc_executable", "both"}:
-        assert setup.vnc is None and "Select a VNC" in setup.requirements[1].detail
-    system.assert_not_called()
+    assert setup.ready and setup.browser and setup.vnc
+    assert setup.browser.source == ("system" if missing in {"executable", "both"} else "custom")
+    assert setup.vnc.source == ("system" if missing in {"vnc_executable", "both"} else "custom")
+    assert configuration.model_dump() == original
 
 
 @pytest.mark.parametrize("manager", ["openbox", "fluxbox", "icewm", "twm", None])
@@ -395,3 +416,45 @@ async def test_disabled_sharing_blocks_browser_discovery_before_probing(tmp_path
             await app.check_browser_configuration(BrowserConfiguration())
     scan.assert_not_awaited()
     check.assert_not_awaited()
+
+
+@pytest.mark.parametrize("complete", [True, False])
+async def test_automatic_vnc_prefers_complete_adapter_and_retains_missing_diagnostics(host, monkeypatch, complete):
+    monkeypatch.setattr(
+        module,
+        "scan_browsers",
+        AsyncMock(
+            return_value=module.BrowserScan(
+                vncs=(
+                    module.VncExecutable(kind="x11vnc", path="/x11vnc", source="system"),
+                    module.VncExecutable(kind="wayvnc", path="/wayvnc", source="system"),
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(module, "find_program", lambda *names: "/sway" if complete and "sway" in names else None)
+    setup = await module.inspect_browser(host.model_copy(update={"vnc_executable": None}))
+    assert setup.vnc and setup.ready == complete
+    assert setup.vnc.kind == ("wayvnc" if complete else "x11vnc")
+    assert setup.vnc.xrandr is None
+    if not complete:
+        assert any(item.name == "Display server" and not item.installed for item in setup.requirements)
+
+
+@pytest.mark.parametrize("field", ["executable", "vnc_executable"])
+async def test_automatic_other_component_does_not_replace_invalid_override(host, monkeypatch, field):
+    monkeypatch.setattr(module, "executable_path", lambda path: None if path == "/missing" else path)
+    configuration = BrowserConfiguration(**{field: "/missing"})
+    setup = await module.inspect_browser(configuration)
+    assert not setup.ready
+    if field == "executable":
+        assert setup.browser is None and setup.vnc is not None
+    else:
+        assert setup.vnc is None and setup.browser is not None
+
+
+async def test_automatic_components_still_require_explicit_root_sandbox_opt_out(host, monkeypatch):
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0)
+    setup = await module.inspect_browser()
+    assert not setup.ready and "--browser-no-sandbox" in setup.message
+    assert (await module.inspect_browser(no_sandbox=True)).ready

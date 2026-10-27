@@ -137,6 +137,8 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
             return request_context
         from a13n_harness.capabilities.context import (

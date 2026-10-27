@@ -5,6 +5,7 @@ import {
   historyReducer,
   meaningfulAnnotation,
   replaceAnnotation,
+  resizeAnnotation,
   startAnnotation,
   type Document,
   type DrawingTool,
@@ -45,6 +46,42 @@ it.each<DrawingTool>([
   if ("width" in end)
     expect(end).toMatchObject({ x: 20, y: 50, width: 80, height: 50 });
 });
+it.each<DrawingTool>([
+  "rectangle",
+  "ellipse",
+  "arrow",
+  "pen",
+  "mosaic",
+  "redact",
+])(
+  "bakes a nonuniform %s resize into geometry without scaling its stroke",
+  (kind) => {
+    const mark = drawAnnotation(
+      startAnnotation(kind, { x: 20, y: 40 }, appearance, "mark"),
+      { x: 20, y: 40 },
+      { x: 120, y: 90 },
+      false,
+    );
+    const resized = resizeAnnotation(mark, {
+      x: 30,
+      y: 50,
+      scaleX: 1.5,
+      scaleY: 2,
+    });
+    expect(resized).toMatchObject({
+      x: 30,
+      y: 50,
+      scaleX: 1,
+      scaleY: 1,
+      strokeWidth: 4,
+    });
+    if ("width" in resized)
+      expect(resized).toMatchObject({ width: 150, height: 100 });
+    else if ("points" in resized)
+      expect(resized.points.slice(-2)).toEqual([150, 100]);
+    expect(mark).toMatchObject({ x: 20, y: 40, scaleX: 1, scaleY: 1 });
+  },
+);
 it("constrains shapes and arrows with Shift", () => {
   const start = { x: 10, y: 10 },
     end = { x: 90, y: 40 };

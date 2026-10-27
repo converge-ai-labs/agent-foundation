@@ -332,3 +332,45 @@ it("prepares native Screen Sharing on macOS without a Linux VNC selector", async
   ).toBeTruthy();
   expect(screen.queryByLabelText(/password/i)).toBeNull();
 });
+it("returns an explicit executable override to automatic selection", async () => {
+  show('schema_version: "1"\nbrowser: {executable: /saved/chrome}\n');
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Scan" });
+  await user.click(
+    screen.getByRole("combobox", { name: "Browser executable" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Automatic" }));
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      "/api/browser/check",
+      expect.objectContaining({
+        body: { executable: null, vnc_executable: null },
+      }),
+    ),
+  );
+  expect(
+    parse(screen.getByTestId("source").textContent!).browser.executable,
+  ).toBeNull();
+  expect(
+    screen.queryByRole("textbox", { name: "Browser executable path" }),
+  ).toBeNull();
+});
+it("shows a platform explanation instead of unusable settings on unsupported Hosts", async () => {
+  post.mockImplementation(async (url: string) => ({
+    data: url.endsWith("/scan")
+      ? discovered
+      : {
+          platform: "windows",
+          supported: false,
+          ready: false,
+          requirements: [],
+          message: "The Host browser requires a Linux or macOS Host.",
+        },
+  }));
+  show();
+  await screen.findByText("The Host browser requires a Linux or macOS Host.");
+  expect(
+    screen.queryByRole("combobox", { name: "Browser executable" }),
+  ).toBeNull();
+  expect(screen.queryByText(/Missing a program/)).toBeNull();
+});

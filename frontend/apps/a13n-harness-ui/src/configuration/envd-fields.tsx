@@ -5,6 +5,7 @@ import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
+import styles from "../shell/workbench.module.css";
 
 type FieldsProps = { source: string; onChange: (source: string) => void };
 
@@ -58,6 +59,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Runtime"
             hideLabel
+            className={styles.settingControl}
             value={custom ? selected : direct ? "direct" : "envd"}
             options={[
               { value: "direct", label: "Direct" },
@@ -97,6 +99,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
               <ChoiceField
                 label="Permissions"
                 hideLabel
+                className={styles.settingControl}
                 value={sandbox ? "sandbox" : "full-control"}
                 options={[
                   { value: "full-control", label: "Full Control" },
@@ -204,6 +207,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Runtime source"
             hideLabel
+            className={styles.settingControl}
             disabled={!runtime.data}
             value={custom ? "custom" : "managed"}
             options={[
@@ -219,7 +223,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           />
         </SettingsRow>
         {custom && (
-          <div className="p-4">
+          <div className={styles.fieldGroup}>
             <TextField
               label="Executable path"
               value={executable}
@@ -235,6 +239,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Metrics collection interval"
             hideLabel
+            className={styles.settingControl}
             disabled={!runtime.data}
             value={String(interval)}
             options={[

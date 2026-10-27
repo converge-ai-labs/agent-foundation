@@ -116,6 +116,29 @@ The summary request uses the same Agent and complete history. The summary replac
 
 Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
 
+### Host-triggered compaction
+
+Call `compact()` between Runs to summarize the selected checkpoint without continuing the task. No `CompactionCapability` or threshold is required:
+
+```python
+compacted = await executable.compact(
+    previous_state=latest_state,
+    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
+    bindings=bindings,
+)
+summary = compacted.output_or_raise()
+# Save compacted.state through the Host's fenced checkpoint path, then stop.
+# No ordinary run() call is needed to finish compaction.
+```
+
+The request receives full history without trimming. It keeps the same system prompts, tool schemas, output configuration and model settings, and appends built-in no-tools constraints plus your `instruction`. `None` selects the default compaction guidance; a string replaces that guidance. Keep the executable and bindings stable to preserve the provider's cache prefix. Cache availability remains provider-controlled.
+
+The existing output mode must permit free text; native and prompted JSON modes fail instead of switching schemas. An unfinished response, tool call or empty summary fails without replacing history. The operation uses ordinary Run admission, usage, plugins, Environment cleanup and state export, and needs only the summary request's budget. A completed result contains the compressed history ready for immediate storage. The next ordinary Run automatically restores retained discovery and notifies context-restoration listeners before continuing; that restoration is not required to save the checkpoint.
+
+On failure, keep the original checkpoint and record the failure separately. Failed results carry a safe error code/message and `failure.details.phase`; preflight rejection and generation/export/notification failures also emit `compaction_failed`. Cancellation emits a cancellation failure observation and propagates. Preparation, middleware and cleanup errors follow the ordinary Run exception contract. Save only a completed result, using the Host's expected-version or ownership check. Report save failures and conflicts explicitly; report saved success only after publication commits. `CompactionSummaryEvent` and `compaction_completed` describe the generated checkpoint, not a durable save, and are not repeated during later restoration.
+
+The checkpoint must have a settled boundary: pending tools, retained executions, unrestored handoffs and pending compaction restoration must finish through ordinary Run recovery first. Calling `compact()` on these states returns `compaction_boundary_pending` without dispatching a summary or overwriting the pending marker. A freshly compacted checkpoint also has pending restoration: save it immediately, but wait for an ordinary Run to restore it before compacting again. Retrying `compact()` on that same checkpoint cannot clear the pending boundary. The Host must prevent concurrent Thread progress and decide when to save the returned State. `compact()` leaves the supplied checkpoint unchanged. Idle timers and automatic scheduling belong to the Host.
+
 ### Background compaction
 
 A Host can run summary generation independently of the foreground Run:

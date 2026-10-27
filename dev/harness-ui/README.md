@@ -83,6 +83,15 @@ uv run --locked pytest \
 
 The executable argument also enables the native tests; no browser test environment variables are needed. Tests create disposable profiles and do not download browsers. The Harness CDP scenarios run headless; the Harness UI scenarios require Linux and prepared VNC/display components from the [Host browser guide](../../docs/a13n-harness-ui/webui.md). Missing VNC adapters skip their own scenarios, and WayVNC requires a non-root account with a usable Chromium sandbox. An explicitly supplied invalid browser path fails rather than selecting another browser. The sandbox remains enabled by default; pass `--browser-no-sandbox` only when the test environment explicitly requires it. This test option is independent of the WebUI startup environment variable.
 
+For the macOS Screen Sharing integration test, first complete the [macOS preparation](../../docs/a13n-harness-ui/webui.md#install-host-components) and supply `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` in the Host environment. Then opt in explicitly:
+
+```bash
+A13N_TEST_MACOS_BROWSER='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+  uv run --locked pytest packages/a13n-harness-ui/tests/test_host_browser_macos.py
+```
+
+This test opens windows on the logged-in desktop and temporarily changes the system text clipboard, restoring its previous text afterward. It checks native VNC authentication, framebuffer delivery, Command-paste of Unicode text and handback. It uses a disposable browser profile and does not change Screen Sharing settings. Without this opt-in, the native test skips; fake TCP RFB and clipboard subprocess tests remain part of the ordinary suite.
+
 ## Deployment environment
 
 The committed template sets `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`. This labels new root and child traces as `local`; it is independent of execution Environment profiles, providers, and mount names. For an existing private `.env`, merge this attribute without replacing credentials or other resource attributes, then restart the CLI/App. Exported shell values take precedence. An embedding Host must set the resource on its own provider. Existing traces are not relabeled.

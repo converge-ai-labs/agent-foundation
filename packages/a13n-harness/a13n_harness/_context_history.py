@@ -60,7 +60,7 @@ def _build_compacted_history(
             [
                 *system_parts,
                 _context_protocol_part(
-                    "The previous conversation exceeded its configured context threshold. "
+                    "The previous conversation is being compacted. "
                     "Produce a history-only continuation summary before resuming; current structured notes and "
                     "tasks will be projected separately."
                 ),

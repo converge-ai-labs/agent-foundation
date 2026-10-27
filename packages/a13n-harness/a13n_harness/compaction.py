@@ -73,6 +73,7 @@ class _CompactionState(BaseModel):
     basis_digest: str
     disposition: Literal["applied", "skipped"]
     restoration_pending: bool = False
+    completion_emitted: bool = False
 
 
 class CompactionBasis(BaseModel):

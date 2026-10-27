@@ -13,6 +13,7 @@ import {
   Text,
   Transformer,
 } from "react-konva";
+import { resizeAnnotation } from "./annotation-model";
 import type {
   Annotation,
   Bounds,
@@ -105,14 +106,17 @@ export function AnnotationCanvas({
       onDblTap: () => onText(mark),
       onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) =>
         onChange({ ...mark, x: event.target.x(), y: event.target.y() }),
-      onTransformEnd: (event: Konva.KonvaEventObject<Event>) =>
-        onChange({
-          ...mark,
+      onTransformEnd: (event: Konva.KonvaEventObject<Event>) => {
+        const resized = resizeAnnotation(mark, {
           x: event.target.x(),
           y: event.target.y(),
           scaleX: event.target.scaleX(),
           scaleY: event.target.scaleY(),
-        }),
+        });
+        // react-konva only reapplies changed props; reset the imperative transform too.
+        event.target.scale({ x: resized.scaleX, y: resized.scaleY });
+        onChange(resized);
+      },
     };
     switch (mark.kind) {
       case "arrow":

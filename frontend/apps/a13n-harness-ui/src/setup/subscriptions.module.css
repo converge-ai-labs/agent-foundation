@@ -1,4 +1,6 @@
 .section {
+  container: subscription-section / inline-size;
+  min-width: 0;
   display: grid;
   gap: 16px;
   margin-bottom: 32px;
@@ -7,7 +9,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.heading > :first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.heading > button {
+  flex-shrink: 0;
 }
 .heading h2 {
   margin: 0;
@@ -53,6 +63,8 @@
   gap: 12px;
 }
 .accountName {
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -313,6 +325,8 @@
   font-size: 12px;
 }
 .groupDetail {
+  container: subscription-section / inline-size;
+  min-width: 0;
   display: grid;
   gap: 24px;
 }
@@ -322,7 +336,7 @@
 }
 .groupFields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   align-items: start;
   gap: 32px;
   padding: 0;
@@ -376,7 +390,7 @@
   border-radius: 12px;
   color: var(--a13n-secondary);
 }
-@media (max-width: 700px) {
+@container subscription-section (max-width: 560px) {
   .accountCard {
     padding: 14px;
   }

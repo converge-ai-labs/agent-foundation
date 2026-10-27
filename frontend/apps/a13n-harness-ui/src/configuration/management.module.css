@@ -27,6 +27,7 @@
 }
 .modelPickerRow {
   display: grid;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 12px;
@@ -182,11 +183,6 @@
   align-items: flex-start;
   padding-block: 16px;
 }
-.collectionHeader > header {
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
-}
 .collectionSearch {
   max-width: 320px;
 }
@@ -201,7 +197,7 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-@media (max-width: 600px) {
+@container (max-width: 420px) {
   .modelPickerRow {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;

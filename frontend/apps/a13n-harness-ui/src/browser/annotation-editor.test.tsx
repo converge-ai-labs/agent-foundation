@@ -118,7 +118,10 @@ it("keeps native multiline composition separate from document history", async ()
   click("Text (T)");
   click("Start mark");
   const input = screen.getByRole("textbox", { name: "Annotation text" });
-  expect(document.activeElement).toBe(input);
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(
+    screen.getByText(/Editing text · Ctrl\/⌘ Enter to apply/),
+  ).toBeTruthy();
   fireEvent.compositionStart(input);
   fireEvent.change(input, { target: { value: "中文\nsecond line" } });
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, isComposing: true });
@@ -137,6 +140,73 @@ it("keeps native multiline composition separate from document history", async ()
   expect(state().annotations).toHaveLength(0);
   click("Undo (Ctrl/⌘ Z)");
   expect(state().annotations[0].text).toBe("中文\nsecond line");
+});
+it.each(["close", "escape"])(
+  "confirms %s without losing edits or undo history",
+  async (method) => {
+    const { onClose } = await show();
+    click("Start mark");
+    click("Move mark");
+    click("End mark");
+    if (method === "close") click("Close annotation");
+    else fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await screen.findByRole("dialog", { name: "Discard annotations?" });
+    expect(onClose).not.toHaveBeenCalled();
+    click("Keep editing");
+    expect(state().annotations).toHaveLength(1);
+    click("Undo (Ctrl/⌘ Z)");
+    expect(state().annotations).toHaveLength(0);
+    // Redo history is local work too, even when the current image is unchanged.
+    click("Close annotation");
+    await screen.findByRole("dialog", { name: "Discard annotations?" });
+    click("Discard");
+    expect(onClose).toHaveBeenCalledOnce();
+  },
+);
+it("preserves an unapplied text draft when closing is cancelled", async () => {
+  const { onClose } = await show();
+  click("Text (T)");
+  click("Start mark");
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Keep this draft" },
+  });
+  click("Close annotation");
+  await screen.findByRole("dialog", { name: "Discard annotations?" });
+  click("Keep editing");
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+    "Keep this draft",
+  );
+  click("Apply text (Ctrl/⌘ Enter)");
+  expect(state().annotations[0].text).toBe("Keep this draft");
+  expect(onClose).not.toHaveBeenCalled();
+});
+it("closes an untouched capture without confirmation", async () => {
+  const { onClose } = await show();
+  click("Close annotation");
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(screen.queryByText("Discard annotations?")).toBeNull();
+});
+it("focuses Copy after clipboard readiness without stealing an active tool's focus", async () => {
+  let ready!: () => void;
+  await show(
+    new Promise<void>((resolve) => {
+      ready = resolve;
+    }),
+  );
+  const popup = screen.getByRole("dialog");
+  await waitFor(() => expect(document.activeElement).toBe(popup));
+  const tool = screen.getByRole("button", { name: "Text (T)" });
+  tool.focus();
+  await act(async () => ready());
+  expect(document.activeElement).toBe(tool);
+});
+it("initially focuses Copy rather than Download", async () => {
+  await show();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Copy PNG (Ctrl/⌘ Enter)" }),
+    ),
+  );
 });
 it("waits for text writes, preserves edits on failed copy, and offers download or retry", async () => {
   let ready!: () => void;

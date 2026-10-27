@@ -418,6 +418,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Live"
                     hideLabel
+                    className={styles.settingControl}
                     value={
                       get(["live", "enabled"]) === true ? "enabled" : "disabled"
                     }
@@ -445,6 +446,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Voice"
                     hideLabel
+                    className={styles.settingControl}
                     value={text(["live", "voice"]) || "cove"}
                     options={[
                       "cove",
@@ -486,6 +488,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Live file access"
                     hideLabel
+                    className={styles.settingControl}
                     value={
                       get(["live", "files_enabled"]) === false
                         ? "disabled"
@@ -500,15 +503,17 @@ export function ResourceFields({
                     }
                   />
                 </SettingsRow>
-                <FormField label="Live instructions">
-                  <Textarea
-                    value={text(["live", "instructions"])}
-                    onChange={(event) =>
-                      set(["live", "instructions"], event.target.value)
-                    }
-                    rows={3}
-                  />
-                </FormField>
+                <div className={styles.fieldGroup}>
+                  <FormField label="Live instructions">
+                    <Textarea
+                      value={text(["live", "instructions"])}
+                      onChange={(event) =>
+                        set(["live", "instructions"], event.target.value)
+                      }
+                      rows={3}
+                    />
+                  </FormField>
+                </div>
               </SettingsSection>
             </details>
             <details className={layout.disclosure}>

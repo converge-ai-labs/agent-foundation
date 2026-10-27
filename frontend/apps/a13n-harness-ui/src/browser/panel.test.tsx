@@ -33,7 +33,24 @@ vi.mock("./desktop", () => ({
   ),
 }));
 afterEach(cleanup);
-function show({ resizeAvailable = true, status = "ready" } = {}) {
+function show({
+  resizeAvailable = true,
+  status = "ready",
+  threadId = "thread-a",
+  fullControl = true,
+  setup = {
+    ready: true,
+    supported: true,
+    platform: "linux",
+    requirements: [] as {
+      name: string;
+      installed: boolean;
+      detail: string;
+      required: boolean;
+    }[],
+    message: "",
+  },
+} = {}) {
   let state = {
     session_id: status === "disabled" ? "" : "binding-a",
     status,
@@ -48,9 +65,7 @@ function show({ resizeAvailable = true, status = "ready" } = {}) {
   };
   const client = {
     GET: vi.fn(async (url: string) => ({
-      data: url.endsWith("/setup")
-        ? { ready: true, supported: true, platform: "linux" }
-        : state,
+      data: url.endsWith("/setup") ? setup : state,
     })),
     POST: vi.fn(async (url: string, options: { body?: { preset: string } }) => {
       if (url.endsWith("enable"))
@@ -98,16 +113,26 @@ function show({ resizeAvailable = true, status = "ready" } = {}) {
   const view = (threadId: string) => (
     <QueryClientProvider client={queries}>
       <TransportContext value={{ client } as unknown as Transport}>
-        <BrowserPanel threadId={threadId} fullControl />
+        <BrowserPanel
+          threadId={threadId || undefined}
+          fullControl={fullControl}
+        />
       </TransportContext>
     </QueryClientProvider>
   );
-  const result = render(view("thread-a"));
+  const result = render(view(threadId));
   return { client, switchThread: () => result.rerender(view("thread-b")) };
 }
-it("starts a new browser with one click and restarts without enabling again", async () => {
+async function toggleBrowser() {
+  const toggle = screen.getByRole("switch", { name: "Enable browser" });
+  await waitFor(() =>
+    expect(toggle.getAttribute("aria-disabled")).not.toBe("true"),
+  );
+  fireEvent.click(toggle);
+}
+it("starts a new browser with one toggle and restarts without enabling again", async () => {
   const { client } = show({ status: "disabled" });
-  fireEvent.click(await screen.findByRole("button", { name: "Start browser" }));
+  await toggleBrowser();
   await screen.findByTestId("stream");
   expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
     "/api/threads/{thread_id}/browser/enable",
@@ -117,10 +142,9 @@ it("starts a new browser with one click and restarts without enabling again", as
     "/api/threads/{thread_id}/browser/start",
     expect.objectContaining({ body: { session_id: "binding-enabled" } }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Stop browser" }));
-  const restart = await screen.findByRole("button", { name: "Start browser" });
-  await waitFor(() => expect(restart.hasAttribute("disabled")).toBe(false));
-  fireEvent.click(restart);
+  await toggleBrowser();
+  await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
+  await toggleBrowser();
   await screen.findByTestId("stream");
   expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
     "/api/threads/{thread_id}/browser/enable",
@@ -161,7 +185,11 @@ it("keeps local zoom available without control and exposes scoped lifecycle butt
   const user = userEvent.setup();
   await screen.findByTestId("stream");
   expect(screen.getByRole("button", { name: "Reset browser" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Stop browser" })).toBeTruthy();
+  expect(
+    screen
+      .getByRole("switch", { name: "Enable browser" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
   expect(screen.queryByLabelText("Page address")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Browser options" }));
   expect(
@@ -232,7 +260,93 @@ it("resets and stops only the current conversation and clears its control author
       body: { session_id: "binding-a" },
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Stop browser" }));
-  await screen.findByRole("button", { name: "Start browser" });
-  expect(screen.queryByTestId("stream")).toBeNull();
+  await toggleBrowser();
+  await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
+});
+
+it.each([true, false])(
+  "asks to start a conversation before checking permissions (%s)",
+  (fullControl) => {
+    const { client } = show({ threadId: "", fullControl });
+    expect(screen.getByText("Start a conversation first")).toBeTruthy();
+    expect(screen.queryByText("Browser unavailable")).toBeNull();
+    expect(client.GET).not.toHaveBeenCalled();
+    expect(client.POST).not.toHaveBeenCalled();
+  },
+);
+it("keeps the permission explanation for an existing non-Full-Control conversation", () => {
+  const { client } = show({ fullControl: false });
+  expect(screen.getByText("Use a Full Control conversation.")).toBeTruthy();
+  expect(client.GET).not.toHaveBeenCalled();
+});
+it("only checks components after a failed attempt and retries the full startup", async () => {
+  const { client } = show({
+    status: "disabled",
+    setup: {
+      ready: false,
+      supported: true,
+      platform: "linux",
+      message: "Resolve missing components.",
+      requirements: [
+        {
+          name: "Browser",
+          installed: true,
+          required: true,
+          detail: "/usr/bin/chromium",
+        },
+        {
+          name: "VNC server",
+          installed: false,
+          required: true,
+          detail: "Install TigerVNC.",
+        },
+        {
+          name: "Window management",
+          installed: false,
+          required: false,
+          detail: "Optional window manager",
+        },
+      ],
+    },
+  });
+  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
+  expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
+  client.POST.mockRejectedValueOnce(new Error("Missing VNC"));
+  await toggleBrowser();
+  await screen.findByText("Install TigerVNC.");
+  expect(screen.queryByText("/usr/bin/chromium")).toBeNull();
+  expect(screen.queryByText("Optional window manager")).toBeNull();
+  expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByTestId("stream");
+  expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
+});
+it("shows unsupported platforms without dependency installation or settings detours", async () => {
+  const { client } = show({
+    status: "disabled",
+    setup: {
+      ready: false,
+      supported: false,
+      platform: "macos",
+      requirements: [],
+      message: "The Host browser currently requires Linux.",
+    },
+  });
+  client.POST.mockRejectedValueOnce(new Error("Unsupported platform"));
+  await toggleBrowser();
+  await screen.findByText("Linux Host required");
+  expect(
+    screen.queryByRole("list", { name: "Browser requirements" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Advanced browser settings" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+});
+it("keeps runtime failures visible when component checks succeed", async () => {
+  const { client } = show({ status: "disabled" });
+  client.POST.mockRejectedValueOnce(new Error("Profile is in use"));
+  await toggleBrowser();
+  await screen.findByText("Profile is in use");
+  expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
 });

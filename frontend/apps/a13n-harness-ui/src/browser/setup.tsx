@@ -1,5 +1,5 @@
 import { Button } from "a13n-ui";
-import { ArrowClockwise, Monitor } from "@phosphor-icons/react";
+import { ArrowClockwise } from "@phosphor-icons/react";
 import {
   BrowserRequirements,
   BrowserInstallInstructions,
@@ -11,63 +11,53 @@ export function BrowserSetup({
   setup,
   loading,
   error,
-  check,
-  busy,
+  retry,
 }: {
   setup?: Schema<"BrowserSetup">;
   loading: boolean;
-  error: Error | null;
-  check: () => void;
-  busy: boolean;
+  error: string;
+  retry: () => void;
 }) {
-  const platform =
-    setup &&
-    {
-      linux: "Linux",
-      macos: "macOS",
-      windows: "Windows",
-      other: "Unsupported platform",
-    }[setup.platform];
+  const unsupported = setup?.supported === false;
+  const missing = (setup?.requirements ?? []).filter(
+    (item) => !item.installed && item.required !== false,
+  );
   return (
-    <div className={styles.setup} aria-label="Browser preparation">
+    <div className={styles.setup} aria-label="Browser troubleshooting">
       <div className={styles.content}>
         <header className={styles.heading}>
-          <Monitor size={28} />
-          <div>
-            <h3>
-              {setup && !setup.supported
-                ? "Browser unavailable"
-                : "Browser setup"}
-            </h3>
-            <p>
-              {setup?.distribution ||
-                (platform ? `${platform} Host` : "Checking the Host")}
-            </p>
-          </div>
+          <h3>
+            {unsupported ? "Linux Host required" : "Browser needs attention"}
+          </h3>
         </header>
-        <p className={styles.summary}>
-          {setup?.message || "Checking browser components…"}
+        <p className={styles.summary} role="alert">
+          {unsupported || missing.length
+            ? setup?.message
+            : error || "Browser could not start."}
         </p>
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error.message}
+        {loading ? (
+          <p className={styles.summary} role="status">
+            Checking components…
           </p>
+        ) : (
+          !unsupported && (
+            <>
+              {missing.length > 0 && (
+                <BrowserRequirements requirements={missing} />
+              )}
+              <BrowserInstallInstructions steps={setup?.steps ?? []} />
+            </>
+          )
         )}
-        {setup && (
-          <BrowserRequirements requirements={setup.requirements ?? []} />
+        {!unsupported && (
+          <div className={styles.recovery}>
+            <Button variant="outline" disabled={loading} onClick={retry}>
+              <ArrowClockwise />
+              Try again
+            </Button>
+            <a href="/settings#browser">Advanced browser settings</a>
+          </div>
         )}
-        <BrowserInstallInstructions steps={setup?.steps ?? []} />
-      </div>
-      <div className={styles.actions}>
-        <div className={styles.buttons}>
-          <Button variant="default" disabled={busy || loading} onClick={check}>
-            <ArrowClockwise />
-            {loading ? "Checking…" : "Check again"}
-          </Button>
-        </div>
-        <a href="/settings#browser">
-          Scan and select programs in Browser settings
-        </a>
       </div>
     </div>
   );

@@ -689,6 +689,8 @@ class HandoffCapability(AbstractModelContextCapability):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         prepared = await self._restore_history(ctx, request_context)
         if prepared is not request_context:
             from a13n_harness.tools.discovery import finish_discovery_replacement
@@ -898,7 +900,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if self._depth > 0 or (state is not None and state.restoration_pending):
+        if ctx.deps._compacting or self._depth > 0 or (state is not None and state.restoration_pending):
             return request_context
         if self.background:
             prepared = await self._background_history(ctx, request_context)
@@ -1246,12 +1248,13 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
     # Keep pending provenance until every listener succeeds. A failed/cancelled
     # restoration can retry without inserting discovery twice or losing resets.
     await ctx.emit(ContextRestoredEvent(source="compact", operation_id=state.operation_id))
-    await ctx.emit(CompactionSummaryEvent(operation_id=state.operation_id, summary=summary))
-    await emit_harness_event(
-        ctx.deps.events,
-        kind="context",
-        payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.operation_id),
-    )
+    if not state.completion_emitted:
+        await ctx.emit(CompactionSummaryEvent(operation_id=state.operation_id, summary=summary))
+        await emit_harness_event(
+            ctx.deps.events,
+            kind="context",
+            payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.operation_id),
+        )
     await finish_discovery_replacement(ctx)
     # AgentContextState.write suspends only before mutation while acquiring its
     # lock. No suspension separates clearing pending from publishing history.

@@ -4,6 +4,8 @@ import {
   Button,
   Dialog,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogPopup,
   DialogTitle,
 } from "a13n-ui";
@@ -102,6 +104,8 @@ export default function AnnotationEditor({
   const [text, setText] = useState<TextMark | null>(null);
   const content = useRef<Konva.Group>(null);
   const popup = useRef<HTMLDivElement>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 500 });
   const [zoom, setZoom] = useState("fit");
   const [ready, setReady] = useState(false);
@@ -129,6 +133,16 @@ export default function AnnotationEditor({
       active = false;
     };
   }, [clipboardReady]);
+  useEffect(() => {
+    if (ready && window.document.activeElement === popup.current)
+      copyButton.current?.focus();
+  }, [ready]);
+  const requestClose = () => {
+    if (saving) return;
+    if (text || history.past.length || history.future.length)
+      setConfirmClose(true);
+    else onClose();
+  };
   // The dialog portal mounts after the editor: observe when its viewport attaches.
   const viewport = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
@@ -304,13 +318,12 @@ export default function AnnotationEditor({
       open
       onOpenChange={(open, details) => {
         if (open) return;
-        if (saving) details.cancel();
-        else if (text || gesture.current) {
-          details.cancel();
-          setText(null);
+        details.cancel();
+        if (saving) return;
+        if (gesture.current) {
           cancelGesture();
           popup.current?.focus();
-        } else onClose();
+        } else requestClose();
       }}
     >
       <DialogPopup
@@ -318,6 +331,9 @@ export default function AnnotationEditor({
         showCloseButton={false}
         className={styles.editor}
         finalFocus={false}
+        initialFocus={() =>
+          copyButton.current?.disabled ? popup.current : copyButton.current
+        }
         onKeyDown={(event) => {
           event.stopPropagation();
           if (event.nativeEvent.isComposing) return;
@@ -327,7 +343,7 @@ export default function AnnotationEditor({
             event.target instanceof HTMLSelectElement
           )
             return;
-          if (saving || text) return;
+          if (saving || text || confirmClose) return;
           const key = event.key.toLowerCase(),
             modifier = event.ctrlKey || event.metaKey;
           if (modifier && key === "z") {
@@ -382,6 +398,7 @@ export default function AnnotationEditor({
             </Button>
             <Button
               size="icon"
+              ref={copyButton}
               aria-label="Copy PNG (Ctrl/⌘ Enter)"
               disabled={!ready || saving || !!text || !!draft || !!cropDraft}
               onClick={() => save(true)}
@@ -393,7 +410,7 @@ export default function AnnotationEditor({
               variant="ghost"
               aria-label="Close annotation"
               disabled={saving}
-              onClick={onClose}
+              onClick={requestClose}
             >
               <X />
             </Button>
@@ -599,8 +616,10 @@ export default function AnnotationEditor({
           <span role="status">
             {saving
               ? "Exporting PNG…"
-              : message ||
-                `${document.crop.width} × ${document.crop.height} px`}
+              : text
+                ? "Editing text · Ctrl/⌘ Enter to apply · Esc to cancel"
+                : message ||
+                  `${document.crop.width} × ${document.crop.height} px`}
           </span>
           {!!document.annotations.length && (
             <select
@@ -624,6 +643,28 @@ export default function AnnotationEditor({
             </select>
           )}
         </footer>
+        <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+          <DialogPopup showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Discard annotations?</DialogTitle>
+              <DialogDescription>
+                Closing removes your local edits and undo history. Copy or
+                download the PNG first if you want to keep it.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmClose(false)}
+              >
+                Keep editing
+              </Button>
+              <Button variant="destructive" onClick={onClose}>
+                Discard
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
       </DialogPopup>
     </Dialog>
   );
