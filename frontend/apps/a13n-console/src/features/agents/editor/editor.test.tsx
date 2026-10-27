@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
@@ -191,10 +197,11 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  const editor = (readonly = false) => (
     <QueryClientProvider client={cache}>
       <MemoryRouter>
         <AgentEditor
+          readonly={readonly}
           id="compaction-form"
           initial={{ model: "test" }}
           pending={false}
@@ -202,14 +209,15 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
           submit={submit}
         />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const { rerender } = render(editor());
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
   const toggle = screen.getByRole("switch", {
-    name: "Enable background compaction",
+    name: "Enabled",
   });
   const threshold = screen.getByRole("spinbutton", {
-    name: "Blocking threshold (%)",
+    name: "Wait for compaction at (%)",
   }) as HTMLInputElement;
   expect(toggle.getAttribute("aria-checked")).toBe("false");
   expect(threshold.value).toBe("95");
@@ -219,12 +227,19 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
   fireEvent.submit(document.getElementById("compaction-form")!);
   expect(submit).not.toHaveBeenCalled();
   expect(
-    screen.getByText(
-      "Blocking threshold must be greater than 0% and at most 100%.",
-    ),
+    screen.getByText("Enter a percentage greater than 0 and at most 100."),
   ).toBeTruthy();
+  expect(threshold.getAttribute("aria-invalid")).toBe("true");
+  expect(
+    document.getElementById(threshold.getAttribute("aria-describedby")!)
+      ?.textContent,
+  ).toBe("Enter a percentage greater than 0 and at most 100.");
   fireEvent.change(threshold, { target: { value: "" } });
   expect(threshold.value).toBe("");
+  expect(threshold.getAttribute("aria-invalid")).not.toBe("true");
+  expect(
+    screen.queryByText("Enter a percentage greater than 0 and at most 100."),
+  ).toBeNull();
   fireEvent.submit(document.getElementById("compaction-form")!);
   expect(
     submit.mock.lastCall?.[0].background_compaction.blocking_threshold,
@@ -243,4 +258,12 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
       background_compaction: { enabled: false, blocking_threshold: 0.925 },
     }),
   );
+  rerender(editor(true));
+  const inspection = within(
+    screen.getByRole("region", { name: "Background compaction" }),
+  );
+  expect(inspection.queryByRole("switch")).toBeNull();
+  expect(inspection.queryByRole("spinbutton")).toBeNull();
+  expect(inspection.getByText("Off")).toBeTruthy();
+  expect(inspection.getByText("92.5")).toBeTruthy();
 });

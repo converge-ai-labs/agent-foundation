@@ -167,10 +167,10 @@ export function AgentEditor({
   function save(event: FormEvent<HTMLFormElement>) {
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
+    setAttempted(true);
     // Creation's button stays enabled: a refused save points at what is
     // missing instead of explaining a disabled button.
     if (incomplete) {
-      setAttempted(true);
       if (unnamed) onUnnamed?.();
       else
         document
@@ -186,6 +186,8 @@ export function AgentEditor({
       } else if (built.stage === "toolSearch") {
         setAdvancedExpanded(true);
         setToolSearchValidation(built.error);
+      } else if (built.stage === "compaction") {
+        setAdvancedExpanded(true);
       } else if (built.stage === "reviewer") {
         setReviewPanel({ validation: built.error });
       } else {
@@ -356,13 +358,17 @@ export function AgentEditor({
               <Section
                 title={t("Background compaction")}
                 description={t(
-                  "Summarize older context while the conversation continues. Subagents compact synchronously.",
+                  "Summarize older messages while the agent continues.",
                 )}
-                className={styles.parameterSection}
               >
                 <CompactionSection
                   draft={draft}
                   readOnly={configurationReadonly}
+                  error={
+                    attempted && !built.ok && built.stage === "compaction"
+                      ? built.error.message
+                      : undefined
+                  }
                 />
               </Section>
               <Section

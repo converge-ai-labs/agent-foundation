@@ -181,7 +181,7 @@ export type DraftBuild =
   | { ok: true; config: AgentConfig }
   | {
       ok: false;
-      stage: "model" | "reviewer" | "toolSearch" | "advanced";
+      stage: "model" | "reviewer" | "toolSearch" | "compaction" | "advanced";
       error: Error;
     };
 
@@ -252,12 +252,14 @@ export function buildDraftConfig(
           : new Error(t("Invalid configuration")),
     };
   }
+  const threshold = draft.backgroundCompaction.blocking_threshold;
+  if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
+    return {
+      ok: false,
+      stage: "compaction",
+      error: new Error(t("Enter a percentage greater than 0 and at most 100.")),
+    };
   try {
-    const threshold = draft.backgroundCompaction.blocking_threshold;
-    if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
-      throw new Error(
-        t("Blocking threshold must be greater than 0% and at most 100%."),
-      );
     if (!validSpaceSelection(draft.memory))
       throw new Error(
         t(

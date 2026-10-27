@@ -92,6 +92,7 @@
 .advancedBody
   :is(
     [data-slot="execution-fields"],
+    [data-slot="compaction-fields"],
     [data-slot="tool-discovery-fields"],
     [data-slot="session-memory-fields"]
   )
@@ -101,7 +102,11 @@
 .mediaSection [data-slot="settings-section-content"] > div + div,
 .advancedBody > section > div > * + *,
 .advancedBody
-  :is([data-slot="execution-fields"], [data-slot="tool-discovery-fields"])
+  :is(
+    [data-slot="execution-fields"],
+    [data-slot="compaction-fields"],
+    [data-slot="tool-discovery-fields"]
+  )
   > *
   + * {
   border-top: 1px solid var(--a13n-border);
@@ -171,12 +176,13 @@
 .advancedBody > section > div {
   gap: 0;
 }
-/* Execution, discovery and memory have an inner row collection. */
+/* Advanced settings expose their inner row collections without extra insets. */
 .advancedBody
   > section
   > div
   > :is(
     [data-slot="execution-fields"],
+    [data-slot="compaction-fields"],
     [data-slot="tool-discovery-fields"],
     [data-slot="session-memory-fields"]
   ) {

@@ -1,14 +1,17 @@
 import { FormField, Input, Switch } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formSectionStyles } from "../../../shared/forms";
 import type { AgentDraft } from "./draft";
 
 export function CompactionSection({
   draft,
   readOnly,
+  error,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
+  error?: string;
 }) {
   const { t } = useTranslation();
   const policy = draft.backgroundCompaction;
@@ -17,26 +20,28 @@ export function CompactionSection({
     String(Number(((policy.blocking_threshold ?? 0.95) * 100).toFixed(10))),
   );
   return (
-    <div className="flex flex-col gap-4">
-      <label className="flex items-center gap-2">
+    <div data-slot="compaction-fields" className={formSectionStyles.fieldRows}>
+      <FormField label={t("Enabled")} readOnly={readOnly}>
         <Switch
           checked={enabled}
-          disabled={readOnly}
+          value={t(enabled ? "On" : "Off")}
           onCheckedChange={(enabled) =>
             draft.setBackgroundCompaction({ ...policy, enabled })
           }
         />
-        {t("Enable background compaction")}
-      </label>
+      </FormField>
       <FormField
-        label={t("Blocking threshold (%)")}
-        description={t(
-          "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.",
-        )}
+        label={t("Wait for compaction at (%)")}
+        description={
+          !error &&
+          t(
+            "Wait when input uses this much of the context window. The model may wait sooner to leave room for its reply. Empty uses 95%.",
+          )
+        }
+        error={error}
         readOnly={readOnly}
       >
         <Input
-          className="max-w-32"
           type="number"
           min={0}
           max={100}
