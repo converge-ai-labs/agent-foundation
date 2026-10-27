@@ -169,10 +169,21 @@ it.each([
   },
 );
 
-it("opens the Schedule from its fixed Session without listing historical Threads", async () => {
+it("opens execution history from a Schedule's fixed Session", async () => {
   const requested = show([root], "/sessions/ses_1", "sch_1");
-  expect(await screen.findByText("/schedules/sch_1")).toBeTruthy();
-  expect(requested).not.toContain("/api/v1/sessions/ses_1/threads");
+  expect(
+    await screen.findByText(
+      "/sessions/ses_1/threads/thr_root/runs/run_root?follow=latest",
+    ),
+  ).toBeTruthy();
+  expect(requested).toContain("/api/v1/threads");
+  expect(screen.queryByText("/schedules/sch_1")).toBeNull();
+});
+
+it("keeps a Schedule's empty Session accessible before its first trigger", async () => {
+  show([], "/sessions/ses_1", "sch_1");
+  expect(await screen.findByText("No threads yet")).toBeTruthy();
+  expect(screen.queryByText("/schedules/sch_1")).toBeNull();
 });
 
 it("loads only the selected Schedule Thread when opening historical output", async () => {

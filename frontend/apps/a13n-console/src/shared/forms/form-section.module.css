@@ -110,6 +110,11 @@
   grid-row: 1;
   padding-top: 7px;
 }
+.fieldRows
+  :global([data-slot="read-only-field"] > [data-slot="read-only-label"]) {
+  padding-top: 0;
+  line-height: 1.5rem;
+}
 .fieldRows :global([data-slot="field-label-row"]) {
   flex-direction: column;
   align-items: flex-start;

@@ -14,9 +14,33 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.summary a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .notice {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+  line-height: 1.6;
+}
+.summary dd.resourceId {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  margin-top: 4px;
+}
+.instructions {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  margin-bottom: 24px;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+}
+.instructionText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--a13n-text-md);
   line-height: 1.6;
 }
 .notice + section {

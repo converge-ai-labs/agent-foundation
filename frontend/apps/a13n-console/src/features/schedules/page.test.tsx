@@ -19,6 +19,7 @@ import { SchedulesPage } from "./list";
 
 let client: Client, cache: QueryClient;
 let viewer = "usr_one";
+let permissions = ["read", "write", "run", "admin"];
 vi.mock("../../auth/context", () => ({
   useClient: () => client,
   useAuth: () => ({ data: { user: { value: { id: viewer } } } }),
@@ -28,7 +29,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_one" },
     basePath: "/workspace/ws_one",
-    can: () => true,
+    can: (verb: string) => permissions.includes(verb),
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -45,6 +46,7 @@ afterEach(() => {
   cache.clear();
   client.close();
   viewer = "usr_one";
+  permissions = ["read", "write", "run", "admin"];
   vi.restoreAllMocks();
 });
 
@@ -117,7 +119,18 @@ function show(
     baseUrl: "https://service.example",
     auth: { type: "session", csrfToken: "test-csrf" },
     maxReadRetries: 0,
-    fetch: async (input, init) => fetch(new Request(input, init)),
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      if (
+        new URL(request.url).pathname ===
+        `/api/v1/agents/${schedule.invocation.agent_id}`
+      )
+        return Response.json({
+          id: schedule.invocation.agent_id,
+          name: "Reporter",
+        });
+      return fetch(request);
+    },
   });
   cache = new QueryClient({
     defaultOptions: {
@@ -329,10 +342,7 @@ it("explains an empty one-time preview and clears the message when timing change
     });
   });
   await user.click(
-    await screen.findByRole("button", { name: "More schedule actions" }),
-  );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "Edit schedule" }),
   );
   await user.click(screen.getByRole("button", { name: "Preview next times" }));
   const message =
@@ -865,13 +875,112 @@ it("allows another writer to stop a schedule without offering creator-only actio
     return Response.json({ ...schedule, state: "enabled", pause_reason: null });
   });
   expect(await screen.findByRole("button", { name: "Pause" })).toBeTruthy();
-  await userEvent.click(
-    screen.getByRole("button", { name: "More schedule actions" }),
-  );
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "More schedule actions" }));
   expect(await screen.findByRole("menuitem", { name: "Archive" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Run once" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Run once" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Edit schedule" })).toBeNull();
+  expect(
+    screen.getByText(
+      "Only the account that created this schedule can edit it. You are signed in with a different account.",
+    ),
+  ).toBeTruthy();
 });
+
+it("shows every saved input part and links to the target agent and session", async () => {
+  const instructions =
+    "First line\n" + "Long instruction. ".repeat(300) + "\nFinal line";
+  const content: Schema["Schedule"]["invocation"]["payload"]["content"] = [
+    { type: "text", text: instructions },
+    {
+      type: "json",
+      value: { audience: "team", include: ["issues", "pull requests"] },
+    },
+    { type: "text", text: "Send the meeting reminder after the report." },
+  ];
+  show("/workspace/ws_one/schedules/sch_one", (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/stream")) return live(request, []);
+    if (path.endsWith("/status")) return Response.json(status);
+    if (path.endsWith("/occurrences"))
+      return Response.json({ items: [], next_cursor: null });
+    // The backend authorizes the creator, independently of the execution principal.
+    return Response.json({
+      ...schedule,
+      principal_id: "usr_executor",
+      description: "Summary only",
+      invocation: { ...schedule.invocation, payload: { content } },
+    });
+  });
+  const section = within(
+    await screen.findByRole("region", { name: "Execution instructions" }),
+  );
+  expect(
+    section.getByText((_text, node) => node?.textContent === instructions),
+  ).toBeTruthy();
+  expect(section.getByText(/"audience": "team"/).textContent).toContain(
+    '"pull requests"',
+  );
+  expect(
+    section.getByText("Send the meeting reminder after the report."),
+  ).toBeTruthy();
+  expect(
+    (await section.findByRole("link", { name: "Reporter" })).getAttribute(
+      "href",
+    ),
+  ).toBe(`/workspace/ws_one/agents/${schedule.invocation.agent_id}`);
+  expect(
+    section
+      .getByRole("link", { name: schedule.session_id })
+      .getAttribute("href"),
+  ).toBe("/workspace/ws_one/sessions/ses_one");
+  expect(screen.getByRole("button", { name: "Edit schedule" })).toBeTruthy();
+});
+
+it.each([
+  {
+    state: "archived",
+    verbs: ["write", "run"],
+    reason: "Archived schedules cannot be edited.",
+  },
+  {
+    state: "completed",
+    verbs: ["write", "run"],
+    reason: "Schedules that have finished cannot be edited.",
+  },
+  {
+    state: "paused",
+    verbs: ["run"],
+    reason:
+      "Editing this schedule requires both write and run permissions in this workspace.",
+  },
+  {
+    state: "paused",
+    verbs: ["write"],
+    reason:
+      "Editing this schedule requires both write and run permissions in this workspace.",
+  },
+])(
+  "explains why a $state schedule with $verbs permissions cannot be edited",
+  async ({ state, verbs, reason }) => {
+    permissions = verbs;
+    show("/workspace/ws_one/schedules/sch_one", (request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith("/stream")) return live(request, []);
+      if (path.endsWith("/status")) return Response.json(status);
+      if (path.endsWith("/occurrences"))
+        return Response.json({ items: [], next_cursor: null });
+      return Response.json({ ...schedule, state });
+    });
+    expect(await screen.findByText(reason)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit schedule" })).toBeNull();
+    expect(
+      screen.getByRole("region", { name: "Execution instructions" }),
+    ).toBeTruthy();
+  },
+);
 
 it("preserves execution across occurrence frames and refreshes unchanged submission versions on thread changes", async () => {
   const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
@@ -980,10 +1089,7 @@ it("keeps an open draft's original ETag after live configuration changes", async
     return Response.json({ ...schedule, version });
   });
   await user.click(
-    await screen.findByRole("button", { name: "More schedule actions" }),
-  );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "Edit schedule" }),
   );
   const dialog = screen.getByRole("dialog");
   expect(
@@ -1088,10 +1194,11 @@ it("keeps completed one-time history visible while only offering archive", async
   expect(await screen.findByText("Scheduling finished")).toBeTruthy();
   expect(await screen.findByText("No input submitted")).toBeTruthy();
   expect(screen.getByText("Pending or unfinished work")).toBeTruthy();
-  await userEvent.click(
-    screen.getByRole("button", { name: "More schedule actions" }),
-  );
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "More schedule actions" }));
   expect(await screen.findByRole("menuitem", { name: "Archive" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Run once" })).toBeNull();
   for (const name of ["Enable", "Pause", "Edit schedule", "Run once"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
@@ -1118,10 +1225,7 @@ it("preserves an unchanged one-time instant when editing metadata after its time
     return Response.json(once);
   });
   await user.click(
-    await screen.findByRole("button", { name: "More schedule actions" }),
-  );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "Edit schedule" }),
   );
   const dialog = screen.getByRole("dialog");
   await user.type(within(dialog).getByLabelText("Name"), " edited");

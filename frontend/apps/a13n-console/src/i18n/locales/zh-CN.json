@@ -3419,7 +3419,7 @@
   "Agent, environment and memories for the new conversation.": "为新会话选择智能体、环境和记忆。",
   "Settings modified": "设置已修改",
   "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter 发送",
-  "More schedule actions": "更多定时任务操作",
+  "More schedule actions": "更多计划操作",
   "Execution permissions": "执行权限",
   "Click to copy": "点击复制",
   "Basic information": "基本信息",
@@ -3541,5 +3541,13 @@
   "Viewing usage for": "正在查看",
   "Clear member filter": "清除成员筛选",
   "Members with usage in this period": "当前时间范围内有用量的成员",
-  "Shared bots are attributed to their service account. View a member’s usage to filter the entire page.": "共享 Bot 计入其服务账号。点击「查看用量」可筛选整个页面。"
+  "Shared bots are attributed to their service account. View a member’s usage to filter the entire page.": "共享 Bot 计入其服务账号。点击「查看用量」可筛选整个页面。",
+  "Execution instructions": "执行指令",
+  "This input is sent to the agent on every trigger.": "每次触发时，以下内容会发送给 Agent。",
+  "Target agent": "目标 Agent",
+  "Target session": "目标会话",
+  "Archived schedules cannot be edited.": "计划已归档，无法编辑。",
+  "Schedules that have finished cannot be edited.": "计划已结束，无法编辑。",
+  "Only the account that created this schedule can edit it. You are signed in with a different account.": "只有创建此计划的账号可以编辑。当前登录账号与创建者不同。",
+  "Editing this schedule requires both write and run permissions in this workspace.": "编辑此计划需要同时拥有当前工作区的写入和运行权限。"
 }
