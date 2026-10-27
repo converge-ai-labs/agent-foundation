@@ -12,7 +12,7 @@ from pathlib import Path
 from platform import freedesktop_os_release
 from typing import Literal
 
-from a13n_harness_ui.browser_macos import password_ready, screen_sharing_available
+from a13n_harness_ui.browser_macos import preview_available
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.surfaces import SurfaceModel
 
@@ -208,7 +208,7 @@ async def probe(path: str, argument: str) -> str:
 
 
 async def inspect_browser(
-    configuration: BrowserConfiguration | None = None, *, no_sandbox: bool = False, macos_password: str | None = None
+    configuration: BrowserConfiguration | None = None, *, no_sandbox: bool = False
 ) -> BrowserSetup:
     configuration = configuration or BrowserConfiguration()
     platform = host_platform()
@@ -253,28 +253,23 @@ async def inspect_browser(
                 purpose="Chrome, Chromium or Edge stores the shared browser profile.",
             ),
             BrowserRequirement(
-                name="Screen Sharing",
-                installed=await screen_sharing_available(),
-                detail="Enable System Settings → General → Sharing → Screen Sharing, then enable VNC viewers in its settings.",
-                purpose="Shares the entire logged-in macOS desktop, including other applications and windows.",
-            ),
-            BrowserRequirement(
-                name="VNC password",
-                installed=password_ready(macos_password),
-                detail="Enter the VNC password configured in this Mac's Screen Sharing settings (1-8 Latin-1 characters).",
-                purpose="Saved on this Host for Screen Sharing connections; not your Mac login password.",
+                name="Window preview",
+                installed=await asyncio.to_thread(preview_available),
+                required=False,
+                detail="On macOS 14+, allow Screen Recording for the app running Harness UI in System Settings → Privacy & Security.",
+                purpose="Read-only preview of the Harness browser window. Automation works without this permission.",
             ),
         )
-        ready = all(item.installed for item in requirements)
+        ready = browser is not None
         return BrowserSetup(
             platform=platform,
             supported=True,
             ready=ready,
             browser=browser,
             requirements=requirements,
-            message="macOS shares the entire desktop. Keep this account logged in; Harness UI does not change Screen Sharing settings."
+            message="Keep this Mac account logged in. Window preview is optional; pause automation before operating the browser on this Mac."
             if ready
-            else "Prepare the browser, Screen Sharing and its VNC password on this Mac, then recheck.",
+            else "Install Chrome, Chromium or Edge on this Mac, then recheck.",
         )
 
     resizing = await asyncio.to_thread(find_program, "xrandr") if supported else None

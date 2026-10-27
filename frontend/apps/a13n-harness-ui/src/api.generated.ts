@@ -665,23 +665,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/browser/macos/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Save Macos Browser Password */
-        post: operations["save_macos_browser_password_api_browser_macos_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/browser/macos/settings": {
         parameters: {
             query?: never;
@@ -863,23 +846,6 @@ export interface paths {
         put?: never;
         /** Browser Access */
         post: operations["browser_access_api_threads__thread_id__browser_access_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/browser/clipboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Browser Clipboard */
-        post: operations["browser_clipboard_api_threads__thread_id__browser_clipboard_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3243,17 +3209,18 @@ export interface components {
         Availability: "available" | "absent" | "incompatible" | "unsupported";
         /** BrowserAccess */
         BrowserAccess: {
+            /**
+             * Protocol
+             * @default vnc
+             * @enum {string}
+             */
+            protocol?: "vnc" | "jpeg";
             /** Ticket */
             ticket: string;
             /** Control */
             control: boolean;
             /** Password */
             password: string;
-        };
-        /** BrowserClipboard */
-        BrowserClipboard: {
-            /** Text */
-            text: string;
         };
         /** BrowserControl */
         BrowserControl: {
@@ -8910,14 +8877,6 @@ export interface components {
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
-        /** MacVncPasswordInput */
-        MacVncPasswordInput: {
-            /**
-             * Password
-             * Format: password
-             */
-            password: string;
-        };
         /** BrowserCommand */
         BrowserCommand: {
             /** Session Id */
@@ -8943,18 +8902,6 @@ export interface components {
              * @default
              */
             control_token?: string;
-        };
-        /** BrowserClipboardRequest */
-        BrowserClipboardRequest: {
-            /** Session Id */
-            session_id: string;
-            /**
-             * Control Token
-             * @default
-             */
-            control_token?: string;
-            /** Text */
-            text?: string | null;
         };
         /** TerminalCreate */
         TerminalCreate: {
@@ -10697,28 +10644,6 @@ export interface operations {
             };
         };
     };
-    save_macos_browser_password_api_browser_macos_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MacVncPasswordInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     open_macos_browser_settings_api_browser_macos_settings_post: {
         parameters: {
             query?: never;
@@ -11062,41 +10987,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserAccess"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    browser_clipboard_api_threads__thread_id__browser_clipboard_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BrowserClipboardRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BrowserClipboard"];
                 };
             };
             /** @description Validation Error */

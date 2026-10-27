@@ -21,6 +21,8 @@ import {
   LockSimple,
   MagnifyingGlassPlus,
   Monitor,
+  Pause,
+  Play,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -204,6 +206,14 @@ export function BrowserPanel({
     !busy &&
     !!(error || session?.error || session?.status === "failed");
   const human = session?.control === "human";
+  const mac = session?.platform === "macos";
+  const controlLabel = mac
+    ? human
+      ? "Resume automation"
+      : "Pause automation"
+    : human
+      ? "Hand back to Agent"
+      : "Take control";
   const canResize = !busy && !!controlToken && !!session?.resize_available;
   const viewport = session?.viewports?.find(
     (item) => item.preset === session.viewport,
@@ -212,7 +222,7 @@ export function BrowserPanel({
     <>
       <Button
         size="sm"
-        aria-label={human ? "Hand back to Agent" : "Take control"}
+        aria-label={controlLabel}
         variant={human ? "default" : "outline"}
         title={
           human
@@ -222,8 +232,18 @@ export function BrowserPanel({
         disabled={busy}
         onClick={() => void command(human ? "handback" : "take-control")}
       >
-        {human ? <HandArrowUp /> : <HandArrowDown />}
-        {human ? "Hand back" : "Take control"}
+        {mac ? (
+          human ? (
+            <Play />
+          ) : (
+            <Pause />
+          )
+        ) : human ? (
+          <HandArrowUp />
+        ) : (
+          <HandArrowDown />
+        )}
+        {mac ? controlLabel : human ? "Hand back" : "Take control"}
       </Button>
       <Button
         size="icon-sm"
@@ -336,7 +356,9 @@ export function BrowserPanel({
         <>
           {session.platform === "macos" && (
             <p className={styles.notice}>
-              Screen Sharing shows the entire Mac desktop.
+              {human
+                ? "Automation paused. Operate this browser on the Mac, then resume here."
+                : "Read-only window preview. Pause automation before operating this browser on the Mac."}
             </p>
           )}
           <Desktop

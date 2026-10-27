@@ -40,15 +40,12 @@ from pydantic_ai.messages import TextContent, UserContent
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
-    BrowserClipboard,
-    BrowserClipboardRequest,
     BrowserCommand,
     BrowserControl,
     BrowserState,
     BrowserViewportRequest,
     HostBrowsers,
 )
-from a13n_harness_ui.browser_macos import MacVncPasswordInput
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
@@ -1839,10 +1836,6 @@ class HarnessUiApp:
         async with self._operation():
             return await self.browsers().inspect(configuration)
 
-    async def save_macos_browser_password(self, request: MacVncPasswordInput) -> None:
-        async with self._operation():
-            await self.browsers().save_macos_password(request)
-
     async def open_macos_browser_settings(self) -> None:
         async with self._operation():
             await self.browsers().open_macos_settings()
@@ -1850,10 +1843,6 @@ class HarnessUiApp:
     async def browser_access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         async with self._operation():
             return await self.browsers().access(thread_id, request)
-
-    async def browser_clipboard(self, thread_id: str, request: BrowserClipboardRequest) -> BrowserClipboard:
-        async with self._operation():
-            return await self.browsers().clipboard(thread_id, request)
 
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():

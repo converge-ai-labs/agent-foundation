@@ -42,14 +42,12 @@ from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
-    BrowserClipboard,
-    BrowserClipboardRequest,
     BrowserCommand,
     BrowserControl,
     BrowserState,
     BrowserViewportRequest,
 )
-from a13n_harness_ui.browser_macos import MacVncPasswordInput
+from a13n_harness_ui.browser_capture import WindowPreview
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.models import BrowserConfiguration
@@ -1132,11 +1130,6 @@ def create_webui(
     async def check_browser_configuration(request: Request) -> BrowserSetup:
         return await app().check_browser_configuration(await _document(request, BrowserConfiguration))
 
-    @server.post("/api/browser/macos/password", status_code=204, openapi_extra=_body(MacVncPasswordInput))
-    async def save_macos_browser_password(request: Request) -> Response:
-        await app().save_macos_browser_password(await _document(request, MacVncPasswordInput))
-        return Response(status_code=204)
-
     @server.post("/api/browser/macos/settings", status_code=204)
     async def open_macos_browser_settings() -> Response:
         await app().open_macos_browser_settings()
@@ -1202,14 +1195,6 @@ def create_webui(
     async def browser_access(thread_id: str, request: Request) -> BrowserAccess:
         return await app().browser_access(thread_id, await _document(request, BrowserAccessRequest))
 
-    @server.post(
-        "/api/threads/{thread_id}/browser/clipboard",
-        response_model=BrowserClipboard,
-        openapi_extra=_body(BrowserClipboardRequest),
-    )
-    async def browser_clipboard(thread_id: str, request: Request) -> BrowserClipboard:
-        return await app().browser_clipboard(thread_id, await _document(request, BrowserClipboardRequest))
-
     @server.websocket("/api/threads/{thread_id}/browser/connect")
     async def connect_browser(
         socket: WebSocket, thread_id: str, ticket: Annotated[str, Query(min_length=16, max_length=80)]
@@ -1227,7 +1212,14 @@ def create_webui(
 
                 async def output() -> None:
                     try:
-                        while data := await connection.read(64 * 1024):
+                        while True:
+                            data = (
+                                await connection.receive()
+                                if isinstance(connection, WindowPreview)
+                                else await connection.read(64 * 1024)
+                            )
+                            if not data:
+                                break
                             async with asyncio.timeout(10):
                                 await socket.send_bytes(data)
                     finally:
@@ -1237,6 +1229,10 @@ def create_webui(
                     try:
                         while True:
                             message = await socket.receive()
+                            if isinstance(connection, WindowPreview):
+                                # This transport has no input protocol. Any client
+                                # message (including disconnect) ends the viewer.
+                                break
                             data = message.get("bytes")
                             if not isinstance(data, bytes) or len(data) > 64 * 1024:
                                 break

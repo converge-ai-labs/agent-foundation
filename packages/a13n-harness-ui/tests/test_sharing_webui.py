@@ -72,14 +72,13 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         for method, path in (
             ("POST", "/api/browser/scan"),
             ("POST", "/api/browser/check"),
-            ("POST", "/api/browser/macos/password"),
             ("POST", "/api/browser/macos/settings"),
             ("GET", f"/api/threads/{thread.thread_id}/browser"),
             ("POST", f"/api/threads/{thread.thread_id}/browser/access"),
             ("GET", f"/api/threads/{thread.thread_id}/browser/setup"),
             *(
                 ("POST", f"/api/threads/{thread.thread_id}/browser/{action}")
-                for action in ("enable", "start", "reset", "stop", "take-control", "handback", "viewport", "clipboard")
+                for action in ("enable", "start", "reset", "stop", "take-control", "handback", "viewport")
             ),
         ):
             assert (await client.request(method, path, headers=headers)).status_code == 401

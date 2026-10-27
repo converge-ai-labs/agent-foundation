@@ -118,25 +118,22 @@ async def test_missing_components_only_produce_manual_guidance(host, monkeypatch
     module.probe.assert_not_awaited()
 
 
-@pytest.mark.parametrize("sharing", [False, True])
-@pytest.mark.parametrize("password", ["", "testpass"])
-async def test_macos_requires_native_sharing_and_host_only_password(host, monkeypatch, sharing, password):
+@pytest.mark.parametrize("permission", [False, True])
+async def test_macos_preview_permission_does_not_gate_browser(host, monkeypatch, permission):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
-    monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=sharing))
-    monkeypatch.setenv("A13N_HARNESS_UI_MACOS_VNC_PASSWORD", password)
+    monkeypatch.setattr(module, "preview_available", lambda: permission)
     setup = await module.inspect_browser(host)
-    assert setup.supported and setup.ready == (sharing and bool(password))
+    assert setup.supported and setup.ready
     assert setup.vnc is None and not setup.steps
-    assert [item.name for item in setup.requirements] == ["Browser", "Screen Sharing", "VNC password"]
-    assert not password or password not in setup.model_dump_json()
+    assert [item.name for item in setup.requirements] == ["Browser", "Window preview"]
+    assert setup.requirements[1].installed == permission and not setup.requirements[1].required
     module.probe.assert_awaited_once_with(host.executable, "--version")
 
 
 @pytest.mark.parametrize("explicit", [False, True])
 async def test_macos_selects_browser_without_discovering_linux_components(host, monkeypatch, explicit):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
-    monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=True))
-    monkeypatch.setenv("A13N_HARNESS_UI_MACOS_VNC_PASSWORD", "testpass")
+    monkeypatch.setattr(module, "preview_available", lambda: False)
     browser = BrowserExecutable(name="Chrome", path="/Applications/Chrome", source="system")
     discovered = Mock(return_value=[browser])
     monkeypatch.setattr(module, "system_browsers", discovered)

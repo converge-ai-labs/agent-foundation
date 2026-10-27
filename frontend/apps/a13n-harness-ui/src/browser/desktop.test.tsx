@@ -28,6 +28,9 @@ vi.mock("./annotation-editor", () => ({
   ),
 }));
 
+const preview = vi.hoisted(() => ({ connect: vi.fn() }));
+vi.mock("./window-preview", () => ({ connectWindowPreview: preview.connect }));
+
 const { connections } = vi.hoisted(() => ({
   connections: [] as (EventTarget & {
     viewOnly: boolean;
@@ -74,10 +77,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function show(returnToChat = vi.fn()) {
+async function show(
+  returnToChat = vi.fn(),
+  platform: "linux" | "macos" = "linux",
+) {
   const post = vi.fn(
     async (_url: string, options: { body: { control_token: string } }) => ({
       data: {
+        protocol: platform === "macos" ? "jpeg" : "vnc",
         ticket: "fixture-ticket",
         password: "fixture-password",
         control: !!options.body.control_token,
@@ -92,6 +99,7 @@ async function show(returnToChat = vi.fn()) {
         <Desktop
           threadId="thread-a"
           session={{
+            platform,
             session_id: "binding-a",
             status: "ready",
             control: token ? "human" : "agent",
@@ -249,4 +257,52 @@ it("suspends controller input while editing and returns to chat after copy", asy
   expect(connections[1].viewOnly).toBe(false);
   expect(connections).toHaveLength(2);
   expect(connections[1].disconnect).not.toHaveBeenCalled();
+});
+
+it("keeps Mac preview read-only during pause, supports capture and clears it on reconnect", async () => {
+  const stops: ReturnType<typeof vi.fn>[] = [];
+  let fail!: () => void;
+  preview.connect.mockImplementation((_url, canvas, rendered, failed) => {
+    canvas.width = 800;
+    canvas.height = 600;
+    fail = failed;
+    rendered();
+    const stop = vi.fn(() => {
+      canvas.width = canvas.height = 0;
+    });
+    stops.push(stop);
+    return stop;
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    putImageData: vi.fn(),
+    getImageData: () => ({ width: 800, height: 600, data: [0, 0, 0, 255] }),
+  } as unknown as CanvasRenderingContext2D);
+  const view = await show(vi.fn(), "macos");
+  expect(connections).toHaveLength(0);
+  expect(
+    screen.queryByRole("button", { name: "Read-only browser" }),
+  ).toBeNull();
+  const first = document.querySelector<HTMLCanvasElement>(
+    "[data-browser-screen] canvas",
+  )!;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture and annotate screenshot" }),
+  );
+  await screen.findByRole("dialog", { name: "Screenshot editor" });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel screenshot" }));
+  view.update("pause-token");
+  await waitFor(() => expect(stops).toHaveLength(2));
+  expect(stops[0]).toHaveBeenCalledOnce();
+  expect(first.width).toBe(0);
+  expect(connections).toHaveLength(0);
+  expect(
+    screen.queryByRole("textbox", { name: "Remote browser keyboard input" }),
+  ).toBeNull();
+  act(() => fail());
+  expect(screen.getByRole("status").textContent).toContain(
+    "Automation can continue",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(stops).toHaveLength(3));
+  expect(view.post).toHaveBeenCalledTimes(3);
 });

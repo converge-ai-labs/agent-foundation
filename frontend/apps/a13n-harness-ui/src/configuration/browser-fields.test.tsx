@@ -289,7 +289,7 @@ it("checks unsaved VNC selections, switches requirements and preserves optional 
   ).toBe("/custom/invalid");
 });
 
-it("prepares native Screen Sharing on macOS without a Linux VNC selector", async () => {
+it("opens optional Mac capture settings without passwords or a Linux VNC selector", async () => {
   post.mockImplementation(async (url: string) => ({
     data:
       url === "/api/browser/scan"
@@ -297,7 +297,7 @@ it("prepares native Screen Sharing on macOS without a Linux VNC selector", async
         : {
             platform: "macos",
             supported: true,
-            ready: false,
+            ready: true,
             requirements: [
               {
                 name: "Browser",
@@ -306,55 +306,30 @@ it("prepares native Screen Sharing on macOS without a Linux VNC selector", async
                 detail: "/opt/chrome",
               },
               {
-                name: "Screen Sharing",
-                required: true,
+                name: "Window preview",
+                required: false,
                 installed: false,
-                detail: "Enable Screen Sharing in System Settings.",
-              },
-              {
-                name: "VNC password",
-                required: true,
-                installed: false,
-                detail: "Enter your existing Screen Sharing password.",
+                detail: "Allow Screen Recording in System Settings.",
               },
             ],
             steps: [],
           },
   }));
   show();
-  await screen.findByText("Screen Sharing");
+  await screen.findByText("Window preview");
+  expect(screen.getByText("Optional")).toBeTruthy();
   expect(
     screen.getByRole("combobox", { name: "Browser executable" }),
   ).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "VNC executable" })).toBeNull();
-  const input = (await screen.findByLabelText(
-    "Mac VNC password",
-  )) as HTMLInputElement;
-  expect(input.type).toBe("password");
+  expect(screen.queryByLabelText("Mac VNC password")).toBeNull();
   const source = screen.getByTestId("source").textContent;
   const user = userEvent.setup();
   await user.click(
-    screen.getByRole("button", { name: "Open Mac Sharing settings" }),
+    screen.getByRole("button", { name: "Open Mac Screen Recording settings" }),
   );
   expect(post).toHaveBeenCalledWith("/api/browser/macos/settings");
-  await user.type(input, "vnc-test");
-  post.mockRejectedValueOnce(
-    new Error("Could not authenticate with Screen Sharing."),
-  );
-  await user.click(
-    screen.getByRole("button", { name: "Verify and save password" }),
-  );
-  await screen.findByText("Could not authenticate with Screen Sharing.");
-  expect(input.value).toBe("vnc-test");
-  post.mockResolvedValueOnce({});
-  await user.click(
-    screen.getByRole("button", { name: "Verify and save password" }),
-  );
-  await screen.findByText("Password verified and saved. No restart needed.");
-  expect(post).toHaveBeenCalledWith("/api/browser/macos/password", {
-    body: { password: "vnc-test" },
-  });
-  expect(input.value).toBe("");
+  await screen.findByText(/Settings opened on the Mac/);
   expect(screen.getByTestId("source").textContent).toBe(source);
 });
 it("returns an explicit executable override to automatic selection", async () => {

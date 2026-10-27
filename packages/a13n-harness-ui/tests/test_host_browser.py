@@ -58,6 +58,38 @@ def browsers(tmp_path):
     return host
 
 
+@pytest.mark.parametrize(
+    "snapshots,expected",
+    [
+        ([OSError("unavailable"), {456}], None),
+        ([{456}, OSError("unavailable")], None),
+        ([{456}, {456, 789}], 789),
+        ([set(), {789}], 789),
+        ([set(), {456, 789}], None),
+    ],
+)
+async def test_macos_preview_binds_only_a_proven_new_window(browsers, monkeypatch, snapshots, expected):
+    from a13n_harness_ui import browser as module
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    browsers.desktop = MacDesktop()
+    browsers.process = Mock(pid=123)
+    browsers.launch = AsyncMock()
+    page = Page("new-target", "new-session")
+    browsers.runtime.pages[page.target] = page
+    browsers.runtime.create = AsyncMock(return_value=page)
+    item = browsers.bindings["new-thread"] = Binding()
+    discover = Mock(side_effect=snapshots)
+    monkeypatch.setattr(module, "window_ids", discover)
+    state = await browsers.start("new-thread", item.identity)
+    assert state.status == "ready"
+    assert item.preview_window == expected
+    assert item.page is page
+    if isinstance(snapshots[0], OSError):
+        discover.assert_called_once_with(123)
+    browsers.process = None
+
+
 async def test_viewer_admission_is_readonly_and_tickets_are_single_use(browsers, monkeypatch):
     identity = browsers.state("thread-a").session_id
     access = await browsers.access("thread-a", BrowserAccessRequest(session_id=identity))
@@ -761,40 +793,49 @@ async def test_recreated_window_reports_creation_when_takeover_precedes_layout(b
     browsers.layout.assert_not_awaited()
 
 
-async def test_native_clipboard_requires_controller_and_handback_drains_transfer(browsers):
-    from a13n_harness_ui.browser import BrowserClipboardRequest
+async def test_macos_pause_never_grants_remote_input(browsers, monkeypatch):
+    from a13n_harness_ui.browser_capture import WindowPreview
     from a13n_harness_ui.browser_macos import MacDesktop
 
     browsers.desktop = MacDesktop()
-    entered, finish = asyncio.Event(), asyncio.Event()
-
-    async def transfer(text):
-        entered.set()
-        await finish.wait()
-        return text
-
-    browsers.desktop.clipboard = AsyncMock(side_effect=transfer)
-    identity = browsers.state("thread-a").session_id
-    control = await browsers.control("thread-a", identity, human=True)
-    request = BrowserClipboardRequest(session_id=identity, control_token=control.control_token, text="你好 🚀")
-    with pytest.raises(HarnessUiError, match="controlling viewer"):
-        await browsers.clipboard("thread-a", request)
-    viewer = Mock(is_closing=Mock(return_value=False), wait_closed=AsyncMock())
-    browsers.controller = viewer
-    browsers.connections[viewer] = "thread-a"
-    transfer_task = asyncio.create_task(browsers.clipboard("thread-a", request))
-    await entered.wait()
-    handback = asyncio.create_task(browsers.control("thread-a", identity, human=False))
-    await asyncio.sleep(0)
-    assert not handback.done() and not browsers.released.is_set()
-    finish.set()
-    assert (await transfer_task).text == "你好 🚀"
-    await handback
+    browsers.process = Mock(pid=123)
+    item = browsers.bindings["thread-a"]
+    item.preview_window = 456
+    control = await browsers.control("thread-a", item.identity, human=True)
+    access = await browsers.access(
+        "thread-a",
+        BrowserAccessRequest(
+            session_id=item.identity,
+            control_token=control.control_token,
+        ),
+    )
+    assert access.protocol == "jpeg" and not access.control and not access.password
+    viewer = Mock(spec=WindowPreview, wait_closed=AsyncMock())
+    start = AsyncMock(return_value=viewer)
+    monkeypatch.setattr(WindowPreview, "start", start)
+    assert await browsers.connect("thread-a", access.ticket) is viewer
+    start.assert_awaited_once_with(123, 456)
+    assert browsers.controller is None
+    await browsers.control("thread-a", item.identity, human=False)
+    viewer.close.assert_called()
     viewer.wait_closed.assert_awaited_once()
-    assert not browsers.connections and browsers.released.is_set()
-    with pytest.raises(HarnessUiError, match="Take control"):
-        await browsers.clipboard("thread-a", request)
-    browsers.desktop.clipboard.assert_awaited_once()
+    assert item.page.requires_observation and browsers.released.is_set()
+
+
+async def test_macos_missing_window_never_falls_back_to_another_window(browsers, monkeypatch):
+    from a13n_harness_ui.browser_capture import WindowPreview
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    browsers.desktop = MacDesktop()
+    browsers.process = Mock(pid=123)
+    start = AsyncMock()
+    monkeypatch.setattr(WindowPreview, "start", start)
+    item = browsers.bindings["thread-a"]
+    access = await browsers.access("thread-a", BrowserAccessRequest(session_id=item.identity))
+    with pytest.raises(HarnessUiError, match="Window preview unavailable"):
+        await browsers.connect("thread-a", access.ticket)
+    start.assert_not_awaited()
+    assert item.status == "ready"
 
 
 async def test_macos_layout_keeps_physical_resolution(browsers):

@@ -34,6 +34,7 @@ vi.mock("./desktop", () => ({
 }));
 afterEach(cleanup);
 function show({
+  platform = "linux",
   resizeAvailable = true,
   status = "ready",
   threadId = "thread-a",
@@ -52,6 +53,7 @@ function show({
   },
 } = {}) {
   let state = {
+    platform,
     session_id: status === "disabled" ? "" : "binding-a",
     status,
     control: "agent",
@@ -351,39 +353,20 @@ it("keeps runtime failures visible when component checks succeed", async () => {
   expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
 });
 
-it("lets owners replace a present but incorrect Mac password from troubleshooting", async () => {
-  const { client } = show({
-    status: "disabled",
-    setup: {
-      ready: true,
-      supported: true,
-      platform: "macos",
-      message: "",
-      requirements: [
-        {
-          name: "Screen Sharing",
-          installed: true,
-          required: true,
-          detail: "Available",
-        },
-        {
-          name: "VNC password",
-          installed: true,
-          required: true,
-          detail: "Configured",
-        },
-      ],
-    },
-  });
-  client.POST.mockRejectedValueOnce(new Error("Could not authenticate"));
-  await toggleBrowser();
-  const input = await screen.findByLabelText("Mac VNC password");
-  fireEvent.change(input, { target: { value: "new-pass" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Verify and save password" }),
-  );
+it("pauses Mac automation for local operation and resumes it without remote takeover", async () => {
+  const { client } = show({ platform: "macos", resizeAvailable: false });
   await screen.findByTestId("stream");
-  expect(client.POST).toHaveBeenCalledWith("/api/browser/macos/password", {
-    body: { password: "new-pass" },
-  });
+  expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Pause automation" }));
+  await screen.findByRole("button", { name: "Resume automation" });
+  expect(client.POST).toHaveBeenCalledWith(
+    "/api/threads/{thread_id}/browser/take-control",
+    expect.objectContaining({ body: { session_id: "binding-a" } }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Resume automation" }));
+  await screen.findByRole("button", { name: "Pause automation" });
+  expect(client.POST).toHaveBeenLastCalledWith(
+    "/api/threads/{thread_id}/browser/handback",
+    expect.objectContaining({ body: { session_id: "binding-a" } }),
+  );
 });

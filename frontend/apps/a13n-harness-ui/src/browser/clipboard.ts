@@ -18,7 +18,6 @@ export function bindClipboard({
   connection,
   shortcut,
   notice,
-  nativeClipboard,
 }: {
   root: HTMLElement;
   active: () => boolean;
@@ -28,7 +27,6 @@ export function bindClipboard({
   >;
   shortcut: (action: "copy" | "cut" | "paste") => void;
   notice: (message: string) => void;
-  nativeClipboard?: (text?: string) => Promise<string>;
 }) {
   let stopped = false;
   let suspended = false;
@@ -80,14 +78,12 @@ export function bindClipboard({
     }
   };
   const send = async (text: string) => {
-    if (nativeClipboard) await nativeClipboard(bounded(text));
-    else connection.clipboardPasteFrom(bounded(text));
+    connection.clipboardPasteFrom(bounded(text));
     last = text;
     notice("");
   };
   const sync = (gesture = false) => {
-    // Browsers have no clipboard-change event. macOS also needs a native read:
-    // Apple's legacy RFB notifications cannot represent every Unicode change.
+    // Browsers have no clipboard-change event.
     if (!allowed() || queued || (readBlocked && !gesture)) return;
     const before = revision;
     const local = readLocal();
@@ -97,8 +93,6 @@ export function bindClipboard({
       readBlocked = text === undefined;
       if (text === undefined) notice(unavailable);
       else if (text !== last) await send(text);
-      else if (nativeClipboard)
-        await writeLocal(await nativeClipboard(), current);
     });
   };
   const writeLocal = async (text: string, current: () => boolean) => {
@@ -123,8 +117,7 @@ export function bindClipboard({
     const received = (event as CustomEvent<{ text: string }>).detail.text;
     revision++;
     enqueue(async (current) => {
-      const text = nativeClipboard ? await nativeClipboard() : received;
-      await writeLocal(text, current);
+      await writeLocal(received, current);
     });
   };
   const paste = (content: Promise<{ text: string | undefined }>) =>
@@ -132,7 +125,7 @@ export function bindClipboard({
       const { text } = await content;
       if (!current()) return;
       if (text === undefined) throw new Error(unavailable);
-      // Native clipboard writes must settle before the VNC paste shortcut.
+      // Send the clipboard contents before the VNC paste shortcut.
       if (text !== last) await send(text);
       if (current()) shortcut("paste");
     });

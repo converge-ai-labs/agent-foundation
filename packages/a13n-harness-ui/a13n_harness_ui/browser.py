@@ -1,4 +1,4 @@
-"""Shared headed Chromium: cdp-use automation and private native VNC viewing."""
+"""Shared headed Chromium: cdp-use automation and platform-native viewing."""
 
 from __future__ import annotations
 
@@ -25,8 +25,9 @@ from a13n_harness.capabilities.browser.cdp import Chromium, Page
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from pydantic import Field
 
+from a13n_harness_ui.browser_capture import WindowPreview, window_ids
 from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
-from a13n_harness_ui.browser_macos import MacDesktop, MacVncCredentials, MacVncPasswordInput, open_sharing_settings
+from a13n_harness_ui.browser_macos import MacDesktop, open_capture_settings
 from a13n_harness_ui.browser_setup import BrowserPlatform, BrowserSetup, host_platform, inspect_browser
 from a13n_harness_ui.browser_vnc import VncConnection
 from a13n_harness_ui.configuration.models import BrowserConfiguration
@@ -75,20 +76,13 @@ class BrowserAccessRequest(BrowserCommand):
     control_token: str = Field(default="", max_length=80, repr=False)
 
 
-class BrowserClipboardRequest(BrowserAccessRequest):
-    text: str | None = Field(default=None, max_length=65536, repr=False)
-
-
-class BrowserClipboard(SurfaceModel):
-    text: str = Field(repr=False)
-
-
 class BrowserViewportRequest(BrowserCommand):
     control_token: str = Field(default="", max_length=80, repr=False)
     preset: BrowserPreset
 
 
 class BrowserAccess(SurfaceModel):
+    protocol: Literal["vnc", "jpeg"] = "vnc"
     ticket: str
     control: bool
     password: str = Field(repr=False)
@@ -113,10 +107,8 @@ def failure(message: str, code: str = "operation_failed") -> HarnessUiError:
     return HostBrowserError(message, code="browser_" + code)
 
 
-async def require_browser(
-    configuration: BrowserConfiguration, *, no_sandbox: bool = False, macos_password: str | None = None
-) -> BrowserSetup:
-    setup = await inspect_browser(configuration, no_sandbox=no_sandbox, macos_password=macos_password)
+async def require_browser(configuration: BrowserConfiguration, *, no_sandbox: bool = False) -> BrowserSetup:
+    setup = await inspect_browser(configuration, no_sandbox=no_sandbox)
     if not setup.ready or setup.browser is None:
         raise failure(setup.message, "runtime_not_ready")
     return setup
@@ -127,6 +119,7 @@ class Binding:
     identity: str = field(default_factory=lambda: "browser_" + secrets.token_hex(12))
     status: Literal["enabled", "ready", "stopped", "failed"] = "enabled"
     scope: CdpBrowserBackend | None = None
+    preview_window: int | None = None
     viewport: BrowserPreset = "desktop"
     closed: asyncio.Event = field(default_factory=asyncio.Event)
     error: str | None = None
@@ -154,7 +147,6 @@ class HostBrowsers:
         self.configuration = configuration or BrowserConfiguration()
         self.no_sandbox = no_sandbox
         self.root = root / "profile"
-        self.macos_credentials = MacVncCredentials(root.parent / "auth.json")
         self.available, self.authorize = available, authorize
         self.bindings: dict[str, Binding] = {}
         self.human_tabs: dict[str, tuple[str, str]] = {}
@@ -173,7 +165,7 @@ class HostBrowsers:
         self.human_thread = ""
         self.control_token = ""
         self.tickets: dict[str, tuple[str, str, int, bool, float]] = {}
-        self.connections: dict[VncConnection, str] = {}
+        self.connections: dict[VncConnection | WindowPreview, str] = {}
         self.controller: VncConnection | None = None
         self.generation = 0
 
@@ -210,45 +202,21 @@ class HostBrowsers:
             raise failure("Browser session changed. Refresh before acting.", "session_conflict")
         return item
 
-    async def macos_password(self) -> str | None:
-        return await self.macos_credentials.load() if host_platform() == "macos" else None
-
     async def inspect(self, configuration: BrowserConfiguration) -> BrowserSetup:
-        return await inspect_browser(
-            configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
-        )
+        return await inspect_browser(configuration, no_sandbox=self.no_sandbox)
 
     def require_macos(self) -> None:
         if not self.available:
             raise failure("Enable WebUI Host computer sharing first.", "disabled")
         if host_platform() != "macos":
-            raise failure("Screen Sharing setup requires a macOS Host.", "unsupported")
-
-    async def save_macos_password(self, request: MacVncPasswordInput) -> None:
-        self.require_macos()
-        password = request.password.get_secret_value()
-        async with self.lifecycle:
-            # Verify before replacing a working credential. This sends no desktop input.
-            probe = MacDesktop(password)
-            try:
-                await probe.start()
-            except (OSError, TimeoutError, ValueError, asyncio.IncompleteReadError):
-                raise failure(
-                    "Could not authenticate with Screen Sharing. Enable VNC access on this Mac and check its password.",
-                    "authentication_failed",
-                ) from None
-            finally:
-                await probe.close()
-            await self.macos_credentials.save(password)
-            if isinstance(self.desktop, MacDesktop):
-                self.desktop.set_password(password)
+            raise failure("Screen Recording settings require a macOS Host.", "unsupported")
 
     async def open_macos_settings(self) -> None:
         self.require_macos()
         try:
-            await open_sharing_settings()
+            await open_capture_settings()
         except (OSError, TimeoutError):
-            raise failure("Could not open Sharing settings on this Mac.", "settings_unavailable") from None
+            raise failure("Could not open Screen Recording settings on this Mac.", "settings_unavailable") from None
 
     async def setup(self, thread_id: str) -> BrowserSetup:
         await self.authorize(thread_id)
@@ -258,9 +226,7 @@ class HostBrowsers:
 
     async def enable(self, thread_id: str) -> BrowserState:
         await self.authorize(thread_id)
-        await require_browser(
-            self.configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
-        )
+        await require_browser(self.configuration, no_sandbox=self.no_sandbox)
         self.bindings.setdefault(thread_id, Binding())
         return self.state(thread_id)
 
@@ -314,12 +280,10 @@ class HostBrowsers:
         ):
             return
         await self.close_runtime()
-        preparation = await require_browser(
-            self.configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
-        )
+        preparation = await require_browser(self.configuration, no_sandbox=self.no_sandbox)
         assert preparation.browser is not None
         if preparation.platform == "macos":
-            self.desktop = MacDesktop(await self.macos_password())
+            self.desktop = MacDesktop()
         else:
             assert preparation.vnc is not None
             self.desktop = VncDesktop(preparation.vnc)
@@ -403,6 +367,15 @@ class HostBrowsers:
         except BaseException:
             await self.close_runtime()
             raise
+
+    def preview_windows(self) -> set[int] | None:
+        if not isinstance(self.desktop, MacDesktop) or not self.process:
+            return set()
+        try:
+            return window_ids(self.process.pid)
+        except (ImportError, OSError):
+            # An unknown baseline cannot establish a newly created window.
+            return None
 
     async def native_window(self, page: Page) -> int:
         assert self.runtime and self.desktop
@@ -510,6 +483,7 @@ class HostBrowsers:
                 await self.launch()
                 assert self.runtime is not None
                 if item.page is None:
+                    before = self.preview_windows()
                     page = await self.runtime.create(new_window=True)
 
                     def check_access() -> None:
@@ -520,6 +494,19 @@ class HostBrowsers:
                         item.viewport = "desktop"
                     await self.layout(page, item)
                     await self.focus(page)
+                    if isinstance(self.desktop, MacDesktop) and before is not None:
+                        # Bind once at Host-created window admission. Ambiguity
+                        # disables preview; never select another existing window.
+                        for _ in range(40):
+                            after = self.preview_windows()
+                            if after is None:
+                                break
+                            candidates = after - before
+                            if candidates:
+                                if len(candidates) == 1:
+                                    item.preview_window = candidates.pop()
+                                break
+                            await asyncio.sleep(0.05)
                 item.status = "ready"
             except Exception as exc:
                 item.status, item.error = "failed", str(exc)
@@ -689,21 +676,6 @@ class HostBrowsers:
             raise failure("Take control before operating this page.", "control_required")
         return item
 
-    async def clipboard(self, thread_id: str, request: BrowserClipboardRequest) -> BrowserClipboard:
-        await self.authorize(thread_id)
-        async with self.control_lock:
-            self.require_control(thread_id, request.session_id, request.control_token)
-            if not self.controller or self.controller.is_closing():
-                raise failure("Connect the controlling viewer before transferring clipboard text.", "control_required")
-            if not isinstance(self.desktop, MacDesktop):
-                raise failure("This desktop transfers clipboard text through VNC.", "clipboard_unavailable")
-            try:
-                text = await self.desktop.clipboard(request.text)
-            except (OSError, TimeoutError, UnicodeError) as exc:
-                raise failure("macOS clipboard transfer failed.", "clipboard_unavailable") from exc
-            self.require_control(thread_id, request.session_id, request.control_token)
-            return BrowserClipboard(text=text)
-
     async def access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         await self.authorize(thread_id)
         async with self.control_lock:
@@ -711,11 +683,12 @@ class HostBrowsers:
             if item.status != "ready" or self.desktop is None:
                 raise failure("Start the browser before viewing.", "not_ready")
             controlling = (
-                self.human_thread == thread_id
+                not isinstance(self.desktop, MacDesktop)
+                and self.human_thread == thread_id
                 and bool(request.control_token)
                 and secrets.compare_digest(request.control_token, self.control_token)
             )
-            if request.control_token and not controlling:
+            if request.control_token and not controlling and not isinstance(self.desktop, MacDesktop):
                 raise failure("Human input authority has been revoked.", "control_conflict")
             if item.page is not None and (not self.human_thread or controlling):
                 await self.focus(item.page)
@@ -726,12 +699,13 @@ class HostBrowsers:
             ticket = secrets.token_urlsafe(24)
             self.tickets[ticket] = (thread_id, request.session_id, self.generation, controlling, now + 30)
             return BrowserAccess(
+                protocol="jpeg" if isinstance(self.desktop, MacDesktop) else "vnc",
                 ticket=ticket,
                 control=controlling,
                 password=self.desktop.password if controlling else self.desktop.readonly_password,
             )
 
-    async def connect(self, thread: str, ticket: str) -> VncConnection:
+    async def connect(self, thread: str, ticket: str) -> VncConnection | WindowPreview:
         claim = self.tickets.pop(ticket, None)
         if claim is None or claim[0] != thread or claim[4] <= time.monotonic():
             raise failure("Viewer access expired.", "access_expired")
@@ -742,7 +716,15 @@ class HostBrowsers:
             raise failure("Viewer access was revoked.", "access_expired")
         if len(self.connections) >= 8 or (controlling and self.controller is not None):
             raise failure("Too many viewers or another controller is connected.", "limit")
-        connection = await self.desktop.connect(controlling=controlling)
+        connection: VncConnection | WindowPreview
+        if isinstance(self.desktop, MacDesktop):
+            if controlling or item.preview_window is None or self.process is None:
+                raise failure(
+                    "Window preview unavailable. Reset the browser to bind a new window.", "preview_unavailable"
+                )
+            connection = await WindowPreview.start(self.process.pid, item.preview_window)
+        else:
+            connection = await self.desktop.connect(controlling=controlling)
         try:
             await self.authorize(thread)
             item = self.checked(thread, binding)
@@ -759,11 +741,11 @@ class HostBrowsers:
             await connection.wait_closed()
             raise
         self.connections[connection] = thread
-        if controlling:
+        if controlling and isinstance(connection, VncConnection):
             self.controller = connection
         return connection
 
-    async def disconnect(self, connection: VncConnection) -> None:
+    async def disconnect(self, connection: VncConnection | WindowPreview) -> None:
         connection.close()
         if self.controller is connection:
             async with self.control_lock:

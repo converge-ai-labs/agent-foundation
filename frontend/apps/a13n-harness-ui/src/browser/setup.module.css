@@ -151,19 +151,6 @@
 .configuration .requirements li + li {
   border-top: 1px solid var(--border);
 }
-.passwordRow {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-  width: 100%;
-}
-.passwordRow > :first-child {
-  flex: 1 1 180px;
-}
-.passwordRow > button {
-  flex-shrink: 0;
-}
 .configuration .requirements li > svg {
   margin-top: 1px;
 }

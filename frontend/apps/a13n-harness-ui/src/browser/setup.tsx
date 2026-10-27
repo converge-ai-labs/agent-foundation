@@ -6,7 +6,7 @@ import {
 } from "./requirements";
 import type { Schema } from "../transport/client";
 import styles from "./setup.module.css";
-import { MacSharingSettings, MacVncPassword } from "./macos-setup";
+import { MacCaptureSettings } from "./macos-setup";
 
 export function BrowserSetup({
   setup,
@@ -26,8 +26,7 @@ export function BrowserSetup({
   const requirements = (setup?.requirements ?? []).filter(
     (item) =>
       missing.includes(item) ||
-      (setup?.platform === "macos" &&
-        ["Screen Sharing", "VNC password"].includes(item.name)),
+      (setup?.platform === "macos" && item.name === "Window preview"),
   );
   return (
     <div className={styles.setup} aria-label="Browser troubleshooting">
@@ -57,8 +56,7 @@ export function BrowserSetup({
                   controls={
                     setup?.platform === "macos"
                       ? {
-                          "Screen Sharing": <MacSharingSettings />,
-                          "VNC password": <MacVncPassword onSaved={retry} />,
+                          "Window preview": <MacCaptureSettings />,
                         }
                       : {}
                   }

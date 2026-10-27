@@ -8,7 +8,7 @@ import {
   BrowserRequirements,
   BrowserInstallInstructions,
 } from "../browser/requirements";
-import { MacSharingSettings, MacVncPassword } from "../browser/macos-setup";
+import { MacCaptureSettings } from "../browser/macos-setup";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../browser/setup.module.css";
 
@@ -77,10 +77,10 @@ export function BrowserFields({
   const requirements = setup?.requirements ?? [
     { name: "Browser", installed: false, detail: "", required: true },
     {
-      name: mac ? "Screen Sharing" : "VNC server",
+      name: mac ? "Window preview" : "VNC server",
       installed: false,
       detail: "",
-      required: true,
+      required: !mac,
     },
   ];
   return (
@@ -117,10 +117,7 @@ export function BrowserFields({
                 checking ? "Checking…" : !setup ? "Not checked" : undefined
               }
               controls={{
-                "Screen Sharing": mac ? <MacSharingSettings /> : undefined,
-                "VNC password": mac ? (
-                  <MacVncPassword onSaved={() => void preparation.refetch()} />
-                ) : undefined,
+                "Window preview": mac ? <MacCaptureSettings /> : undefined,
                 Browser: (
                   <ExecutableField
                     label="Browser executable"

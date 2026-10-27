@@ -26,6 +26,8 @@ import { result, type Schema } from "../transport/client";
 import { bindClipboard, waitForClipboardWrites } from "./clipboard";
 import { bindKeyboard } from "./keyboard";
 import { bindTextInput } from "./text-input";
+import { connectWindowPreview } from "./window-preview";
+import { MacCaptureSettings } from "./macos-setup";
 import styles from "./panel.module.css";
 import { ReturnToChat } from "../native/capture";
 
@@ -133,6 +135,7 @@ export function Desktop({
     },
     [],
   );
+  const nativePreview = session.platform === "macos";
   const zoom = scale === "fit" ? 1 : Number(scale) / 100;
   const interactive = canControl && !busy && !capture;
   inputAllowed.current = interactive && !!controlToken;
@@ -147,6 +150,8 @@ export function Desktop({
   }, [interactive]);
   useEffect(() => {
     let disposed = false;
+    let stopPreview: (() => void) | undefined;
+    let previewCanvas: HTMLCanvasElement | undefined;
     let bridge: ReturnType<typeof bindClipboard> | undefined;
     let keyboard: ReturnType<typeof bindKeyboard> | undefined;
     let input: ReturnType<typeof bindTextInput> | undefined;
@@ -190,8 +195,6 @@ export function Desktop({
     setClipboardError("");
     void (async () => {
       try {
-        const { default: RFB } = await import("@novnc/novnc");
-        if (disposed) return;
         const access = await result(
           client.POST("/api/threads/{thread_id}/browser/access", {
             params: { path: { thread_id: threadId } },
@@ -208,6 +211,31 @@ export function Desktop({
         );
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.searchParams.set("ticket", access.ticket);
+        if (access.protocol === "jpeg") {
+          previewCanvas = document.createElement("canvas");
+          previewCanvas.className = styles.windowPreview;
+          host.current!.append(previewCanvas);
+          stopPreview = connectWindowPreview(
+            url.toString(),
+            previewCanvas,
+            () => {
+              if (disposed) return;
+              setStatus("");
+              setConnected(true);
+            },
+            () => {
+              if (disposed) return;
+              setConnected(false);
+              setCanReconnect(true);
+              setStatus(
+                "Window preview unavailable. Unlock the Mac, keep the browser window visible, and check Screen Recording permission, then reconnect. If the window closed, reset the browser. Automation can continue without preview.",
+              );
+            },
+          );
+          return;
+        }
+        const { default: RFB } = await import("@novnc/novnc");
+        if (disposed) return;
         const connection = new RFB(host.current!, url.toString(), {
           credentials: { password: access.password },
         });
@@ -263,25 +291,6 @@ export function Desktop({
                 connection,
                 shortcut: keyboard.shortcut,
                 notice: setClipboardError,
-                nativeClipboard:
-                  session.platform === "macos"
-                    ? async (text) => {
-                        const clipboard = await result(
-                          client.POST(
-                            "/api/threads/{thread_id}/browser/clipboard",
-                            {
-                              params: { path: { thread_id: threadId } },
-                              body: {
-                                session_id: session.session_id!,
-                                control_token: controlToken,
-                                text,
-                              },
-                            },
-                          ),
-                        );
-                        return clipboard.text;
-                      }
-                    : undefined,
               });
               clipboard.current = bridge;
               if (editing.current) void bridge.suspend();
@@ -326,6 +335,8 @@ export function Desktop({
     return () => {
       retain();
       disposed = true;
+      stopPreview?.();
+      previewCanvas?.remove();
       observer.disconnect();
       cancelAnimationFrame(frame);
       inputAllowed.current = false;
@@ -348,7 +359,13 @@ export function Desktop({
   ]);
   const captureFrame = () => {
     try {
-      const pixels = rfb.current?.getImageData();
+      const canvas = host.current?.querySelector("canvas");
+      const pixels =
+        nativePreview && canvas?.width && canvas.height
+          ? canvas
+              .getContext("2d")
+              ?.getImageData(0, 0, canvas.width, canvas.height)
+          : rfb.current?.getImageData();
       if (
         !connected ||
         !pixels?.width ||
@@ -404,7 +421,11 @@ export function Desktop({
       )}
       <div
         className={`${styles.desktop} ${scale === "fit" ? styles.desktopFit : ""}`}
-        aria-label="Remote browser desktop"
+        aria-label={
+          nativePreview
+            ? "Read-only browser window preview"
+            : "Remote browser desktop"
+        }
         aria-busy={!connected || busy}
       >
         <div
@@ -434,7 +455,7 @@ export function Desktop({
           aria-hidden="true"
           hidden
         />
-        {!interactive && (
+        {!nativePreview && !interactive && (
           <button
             type="button"
             className={styles.readOnlyGuard}
@@ -447,7 +468,7 @@ export function Desktop({
             }}
           />
         )}
-        {showControlHint && !interactive && (
+        {!nativePreview && showControlHint && !interactive && (
           <div className={styles.controlOverlay}>
             <div className={styles.controlHint} role="status">
               <HandArrowDown size={28} aria-hidden="true" />
@@ -479,6 +500,7 @@ export function Desktop({
           <div className={styles.streamStatus}>
             <div className={styles.controlHint}>
               <strong role="status">{status}</strong>
+              {nativePreview && canReconnect && <MacCaptureSettings />}
               {canReconnect && (
                 <Button
                   size="sm"
