@@ -175,7 +175,7 @@ Back up `memory/` beside the selected YAML separately from application data. `.a
 
 ### Host browser
 
-Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null` and require an absolute path on the Host. For example, after installing Chromium and TigerVNC at these paths:
+Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null`, which automatically selects compatible installed programs when you enable the browser. No configuration save or restart is needed for automatic selection. To override a selection, provide an absolute Host path, for example:
 
 ```yaml
 browser:
@@ -183,7 +183,7 @@ browser:
   vnc_executable: /usr/bin/Xtigervnc
 ```
 
-Use **Settings → General → Host browser** to scan and select installed programs, or replace the example paths with your installation's paths. Save both bindings and restart Harness UI to apply them. Missing or invalid bindings block startup; runtime selection does not fall back to another program. Browser automation requires a Linux WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation.
+Use **Settings → General → Host browser** for advanced overrides, or replace the example paths with your installation's paths. Save and restart Harness UI to apply changed overrides. Choose **Automatic** to clear an override. Invalid explicit paths block startup without falling back to another program. Automatic detection never installs software or rewrites settings. Browser automation requires a Linux WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation.
 
 The bindings apply to all Projects. One browser instance and profile are shared; the profile lives at `<data_root>/browsers/profile` and has no separate path setting. See the [browser quick start](webui.md#first-time-setup) for Host packages, selection and first use, and [sandbox startup options](command-reference.md#webui) for deployments that explicitly require disabling Chromium's sandbox.
 

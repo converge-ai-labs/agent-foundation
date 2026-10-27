@@ -78,77 +78,87 @@ export function BrowserFields({
   ];
   return (
     <SettingsSection
-      title="Browser components"
-      description="Shared across all projects. Choose installed programs or select Other to enter a path. Checks preview unsaved selections; save and restart Harness UI to apply changes."
+      title="Advanced browser settings"
+      description="Components are selected automatically when you enable the browser in a conversation. Override an executable only when needed. Save and restart Harness UI to apply overrides."
     >
       <div className={styles.configuration}>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={scan.isFetching}
-            onClick={() => void scan.refetch()}
-          >
-            {scan.isFetching ? "Scanning…" : "Scan"}
-          </Button>
-        </div>
-        <ErrorNotice error={scan.error} />
-        <ErrorNotice error={pending ? null : preparation.error} />
-        <BrowserRequirements
-          requirements={requirements}
-          status={checking ? "Checking…" : !setup ? "Not checked" : undefined}
-          controls={{
-            Browser: (
-              <ExecutableField
-                label="Browser executable"
-                value={text("executable")}
-                candidates={(scan.data?.browsers ?? []).map((item) => ({
-                  value: item.path,
-                  label: `${item.name} — ${item.path}`,
-                }))}
-                disabled={disabled}
-                onChange={(value) => set("executable", value)}
-              />
-            ),
-            "VNC server": (
-              <ExecutableField
-                label="VNC executable"
-                value={text("vnc_executable")}
-                candidates={(scan.data?.vncs ?? []).map((item) => ({
-                  value: item.path,
-                  label: `${item.kind === "x11vnc" ? "x11vnc" : item.kind === "wayvnc" ? "WayVNC" : "TigerVNC Xvnc"} — ${item.path}`,
-                }))}
-                disabled={disabled}
-                onChange={(value) => set("vnc_executable", value)}
-              />
-            ),
-          }}
-        />
-        {notice && (
+        {setup?.supported === false ? (
           <p className="text-xs text-muted-foreground" role="status">
-            {notice}
+            {setup.message}
           </p>
+        ) : (
+          <>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={scan.isFetching}
+                onClick={() => void scan.refetch()}
+              >
+                {scan.isFetching ? "Scanning…" : "Scan"}
+              </Button>
+            </div>
+            <ErrorNotice error={scan.error} />
+            <ErrorNotice error={pending ? null : preparation.error} />
+            <BrowserRequirements
+              requirements={requirements}
+              status={
+                checking ? "Checking…" : !setup ? "Not checked" : undefined
+              }
+              controls={{
+                Browser: (
+                  <ExecutableField
+                    label="Browser executable"
+                    value={text("executable")}
+                    candidates={(scan.data?.browsers ?? []).map((item) => ({
+                      value: item.path,
+                      label: `${item.name} — ${item.path}`,
+                    }))}
+                    disabled={disabled}
+                    onChange={(value) => set("executable", value)}
+                  />
+                ),
+                "VNC server": (
+                  <ExecutableField
+                    label="VNC executable"
+                    value={text("vnc_executable")}
+                    candidates={(scan.data?.vncs ?? []).map((item) => ({
+                      value: item.path,
+                      label: `${item.kind === "x11vnc" ? "x11vnc" : item.kind === "wayvnc" ? "WayVNC" : "TigerVNC Xvnc"} — ${item.path}`,
+                    }))}
+                    disabled={disabled}
+                    onChange={(value) => set("vnc_executable", value)}
+                  />
+                ),
+              }}
+            />
+            {notice && (
+              <p className="text-xs text-muted-foreground" role="status">
+                {notice}
+              </p>
+            )}
+            {setup?.vnc && setup.vnc.kind !== "tigervnc" && (
+              <p className="text-xs text-muted-foreground">
+                This VNC adapter uses a fixed desktop size. Zoom is available;
+                Viewport size switching is unavailable.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Missing a program? Install a Chromium-based browser and VNC server
+              on this Host (inside the container for Docker), then Scan again.
+              Use Other for an installed program outside the detected locations.{" "}
+              <a
+                href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-4"
+              >
+                Browser setup guide
+              </a>
+            </p>
+            <BrowserInstallInstructions steps={setup?.steps ?? []} />
+          </>
         )}
-        {setup?.vnc && setup.vnc.kind !== "tigervnc" && (
-          <p className="text-xs text-muted-foreground">
-            This VNC adapter uses a fixed desktop size. Zoom is available;
-            Viewport size switching is unavailable.
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Missing a program? Install a Chromium-based browser and VNC server on
-          this Host (inside the container for Docker), then Scan again. Use
-          Other for an installed program outside the detected locations.{" "}
-          <a
-            href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-4"
-          >
-            Browser setup guide
-          </a>
-        </p>
-        <BrowserInstallInstructions steps={setup?.steps ?? []} />
       </div>
     </SettingsSection>
   );
@@ -174,14 +184,17 @@ function ExecutableField({
     <div className="flex min-w-0 flex-col gap-3">
       <ChoiceField
         label={label}
-        value={other ? "other" : value || undefined}
-        placeholder="Select a program"
+        value={other ? "other" : value || "automatic"}
         disabled={disabled}
         hideLabel
-        options={[...candidates, { value: "other", label: "Other" }]}
+        options={[
+          { value: "automatic", label: "Automatic" },
+          ...candidates,
+          { value: "other", label: "Other" },
+        ]}
         onValueChange={(next) => {
           setCustom(next === "other");
-          if (next !== "other") onChange(next);
+          if (next !== "other") onChange(next === "automatic" ? "" : next);
         }}
       />
       {other && (

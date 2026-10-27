@@ -115,18 +115,18 @@ Thread 链接直接打开对应的 Thread 页面，Project 链接增加简洁的
 ### 首次设置
 
 1. 按照[下方安装说明](#install-host-components)，在 Linux Host 上准备 Chromium 系浏览器和 VNC 服务。启动 `a13n-harness-ui webui` 时保持电脑共享开启。
-2. 打开 **Settings → General → Host browser**，等待自动扫描完成，选择 **Browser executable** 和 **VNC executable**。已安装的程序不在检测位置时，使用 **Other** 输入绝对路径。
-3. 检查 **Required** 项，点击 **Save changes**，然后使用同一配置重启 Harness UI 服务器并刷新 WebUI。仅刷新网页不会应用可执行文件的变更。
-4. 打开空闲的 **Full Control** 对话，打开 **Browser** 并点击 **Start browser**，再发送新提示让 Agent 浏览。已启用浏览器的对话在 Full Control Run 中自动获得浏览器工具，无需手动添加 Capability。
+2. 发送一条消息以开始对话。**Full Control** 对话空闲后，打开 **Browser** 并打开 **Enable browser** 开关。Harness UI 会自动探测兼容的已安装组件，并打开当前对话的窗口。
+3. 启动失败时，按提示处理缺失的必需组件，再点击 **Try again**。仅在需要覆盖程序路径时进入 **Advanced browser settings**。不支持的平台只显示 Linux Host 要求，不提供依赖安装流程。
+4. 发送新提示让 Agent 浏览。已启用浏览器的对话在 Full Control Run 中自动获得浏览器工具，无需手动添加 Capability。
 5. 登录或修正页面时点击 **Take control**，完成后点击 **Hand back to Agent**，再让 Agent 继续。
 
 ### 探测并选择可执行文件
 
-展开 **Settings → General → Host browser** 时会自动扫描已安装的程序，扫描成功后即可从浏览器和 VNC 下拉框选择检测到的程序。最后一项 **Other** 会显示绝对路径输入框，用于指定 Chromium 浏览器或兼容的 TigerVNC `Xvnc`、x11vnc 或 WayVNC 服务。启用浏览器前必须选择并保存这两个可执行文件的路径，然后重启 Harness UI。启动时不会自动选择程序；路径未配置或失效时会阻止启动。重新展开此设置区域会刷新扫描结果，也可以点击 **Scan** 手动刷新或重试。扫描不会修改已保存的配置。检测 `Xtigervnc`、`Xvnc`、`x11vnc` 和 `wayvnc` 程序名；自定义路径无效时明确报错，不会回退到其他程序。旁栏显示解析后的实际路径。Harness 负责启动和清理自己的浏览器及显示进程，不连接已有 VNC 桌面。
+默认情况下，启用浏览器会自动选择兼容的已安装组件，无需修改配置或重启。VNC 按完整可用组合选择：优先 TigerVNC，其次是带 Xvfb 的 x11vnc，最后是带 Sway 且使用非 root 账户的 WayVNC。如需覆盖，打开 **Settings → General → Host browser** 并选择检测到的程序。**Other** 用于输入绝对路径，**Automatic** 用于清除覆盖。修改覆盖项后需保存并重启 Harness UI；显式路径无效时会阻止启动，不会选择其他程序。重新展开此设置区域会刷新扫描结果，也可以点击 **Scan** 手动刷新或重试。扫描不会修改已保存的配置。检测 `Xtigervnc`、`Xvnc`、`x11vnc` 和 `wayvnc` 程序名；自定义路径无效时明确报错，不会回退到其他程序。旁栏显示解析后的实际路径。Harness 负责启动和清理自己的浏览器及显示进程，不连接已有 VNC 桌面。
 
 Linux 上的浏览器探测会在 WebUI 服务器的 `PATH` 中查找 `google-chrome`、`google-chrome-stable`、`chromium`、`chromium-browser`、`microsoft-edge` 和 `microsoft-edge-stable`，验证版本输出，并按解析后的路径去重。探测对象不是打开 WebUI 的客户端设备。列表为空时，先在 Host 上安装浏览器再点击 **Scan**，或通过 **Other** 指定已安装程序的绝对路径。修改服务器的 `PATH` 后，需要重启服务器才能继承变更。
 
-**Browser components** 面板统一展示程序选择和依赖检测。浏览器及 VNC 的路径直接在对应组件行配置；检测使用当前尚未保存的选择，包括自定义路径。每一项都显示用途、检测结果和 **Required**（必需）或 **Optional**（可选）标记。TigerVNC 自带显示服务，可选的 xrandr 用于切换 Viewport，X11 窗口管理器提供窗口控制。选择 x11vnc 时检测必需的 Xvfb；选择 WayVNC 时检测必需的 Sway 和非 root Host 账户。这两个适配器使用固定尺寸桌面，安装 xrandr 也不会启用 Viewport 切换。面板只展示用户需要在 Host 上准备的组件，内置程序库和 TigerVNC 自带的显示服务不单独列出。**Scan** 会重新扫描程序并刷新依赖检测，不会保存设置或启动浏览器。
+**Advanced browser settings** 面板统一展示程序选择和依赖检测。浏览器及 VNC 的路径直接在对应组件行配置；检测使用当前尚未保存的选择，包括自定义路径。每一项都显示用途、检测结果和 **Required**（必需）或 **Optional**（可选）标记。TigerVNC 自带显示服务，可选的 xrandr 用于切换 Viewport，X11 窗口管理器提供窗口控制。选择 x11vnc 时检测必需的 Xvfb；选择 WayVNC 时检测必需的 Sway 和非 root Host 账户。这两个适配器使用固定尺寸桌面，安装 xrandr 也不会启用 Viewport 切换。面板只展示用户需要在 Host 上准备的组件，内置程序库和 TigerVNC 自带的显示服务不单独列出。**Scan** 会重新扫描程序并刷新依赖检测，不会保存设置或启动浏览器。
 
 共享浏览器 Profile 保存在 `<data_root>/browsers/profile`，默认数据目录下即 `~/.a13n-harness-ui/data/browsers/profile`，不提供单独修改其位置的配置。所有对话和 Project 共用这个 Profile 和一个浏览器实例，并拥有各自的窗口及 Agent 标签页。现有 Profile 目录不会被移动或合并。
 
@@ -145,15 +145,15 @@ Debian/Ubuntu 上可选安装窗口控制和 TigerVNC 视口尺寸调整组件�
 sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 ```
 
-这些命令只安装桌面组件；Chromium 系浏览器需按照供应商或发行版说明另行安装。安装完成后返回 **Host browser** 并点击 **Scan**。界面中的 **Manual installation commands** 可以复制到 Host 上执行，UI 本身不会执行它们。
+这些命令只安装桌面组件；Chromium 系浏览器需按照供应商或发行版说明另行安装。安装完成后返回 Browser 旁栏并点击 **Try again**。界面中的 **Manual installation commands** 可以复制到 Host 上执行，UI 本身不会执行它们。
 
-其他发行版请使用自己的包管理器安装兼容的 VNC 服务。Harness UI 自行生成密码和 X11 认证文件，无需单独安装 `vncpasswd` 或 `xauth`。建议安装 X11 窗口管理器以支持窗口拖动和原生关闭按钮，可复用 Openbox、Fluxbox、IceWM 或 twm，不强制要求 Openbox。缺少窗口管理器时，基础浏览和面板中的 Stop/Reset 仍可使用，但可能没有原生窗口控件。Debian/Ubuntu 可选装 `x11-xserver-utils` 以支持桌面尺寸调整；缺少可用的 RandR 工具时仍可正常进行基础浏览，桌面尺寸固定，尺寸选择器会禁用并说明原因。通过可执行文件路径选择已安装的 Chromium 系浏览器；cdp-use 不会下载浏览器。使用 Docker 时，请在容器或镜像内安装依赖。检测通过不保证一定能启动：共享库缺失或显示访问权限等问题仍可能产生明确的启动错误。
+其他发行版请使用自己的包管理器安装兼容的 VNC 服务。Harness UI 自行生成密码和 X11 认证文件，无需单独安装 `vncpasswd` 或 `xauth`。建议安装 X11 窗口管理器以支持窗口拖动和原生关闭按钮，可复用 Openbox、Fluxbox、IceWM 或 twm，不强制要求 Openbox。缺少窗口管理器时，基础浏览和面板中的启用开关和 Reset 仍可使用，但可能没有原生窗口控件。Debian/Ubuntu 可选装 `x11-xserver-utils` 以支持桌面尺寸调整；缺少可用的 RandR 工具时仍可正常进行基础浏览，桌面尺寸固定，尺寸选择器会禁用并说明原因。通过可执行文件路径选择已安装的 Chromium 系浏览器；cdp-use 不会下载浏览器。使用 Docker 时，请在容器或镜像内安装依赖。检测通过不保证一定能启动：共享库缺失或显示访问权限等问题仍可能产生明确的启动错误。
 
 建议以非 root 用户运行 Harness UI，并保持 Chromium 沙箱启用。沙箱默认启用；如果以 root 运行且未明确关闭沙箱，准备检查和启动都会拒绝并说明处理方法，不会自动回退。部署明确需要关闭时，使用 `a13n-harness-ui webui --browser-no-sandbox`，或设置 `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`。这会移除 Chromium 的沙箱保护；`--browser-sandbox` 可以覆盖该环境变量，恢复默认行为。
 
 ### 启动与控制浏览器
 
-检测通过后，选择 **Start browser** 即可一步启用并启动浏览器。启用后 Agent 也可通过导航启动浏览器。桌面窗口在有窗口管理器时默认最大化；固定尺寸桌面会让浏览器铺满可用区域，并保留地址栏和浏览器控件。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
+打开 **Enable browser** 开关即可一步完成组件探测、启用绑定和启动窗口；仅在启动失败时显示依赖详情。启用后 Agent 也可通过导航启动浏览器。桌面窗口在有窗口管理器时默认最大化；固定尺寸桌面会让浏览器铺满可用区域，并保留地址栏和浏览器控件。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
 
 Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。cdp-use 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
 
@@ -165,9 +165,9 @@ Host 支持桌面尺寸调整时，接管后可通过浏览器工具栏中的尺
 
 接管期间，浏览器桌面获得焦点时会自动双向同步纯文本剪贴板。输入前先点击远端桌面。macOS 的 Command 会映射为 Linux Host 的 Ctrl，适用于全选、复制、粘贴和撤销等快捷键。使用平常的复制、粘贴快捷键即可，支持中文和 emoji，最多传输 65536 个字符。同步要求 HTTPS 或 localhost，并获得本机浏览器的剪贴板权限；权限被阻止时，面板会提示如何开启。交还控制权、断线或关闭查看面板后停止同步。剪贴板不传输图片或文件。文件对话框访问 Host 文件，尚不支持从客户端自动传文件。浏览器使用 Host 权限与网络，不继承 Sandbox 隔离。登录信息、浏览器保存的密码和设置通过所选数据目录的 `browsers/profile` 全局共享，不导入个人浏览器配置。每个对话拥有独立窗口及其标签页。接管会暂停所有对话的浏览器工具，并聚焦当前对话窗口。Stop 只关闭当前对话的窗口和标签页，Reset 只重建当前对话窗口并恢复其位置；其他对话的窗口及 Agent 绑定保持有效。VNC 仍显示共享桌面，人工控制者仍可看到和操作其他窗口。
 
-关闭旁栏、切换对话或结束 Run 都保留浏览器。**Stop browser** 只关闭当前对话的窗口，并显示 **Start browser**。**Reset browser**（圆形箭头）只重建当前对话窗口并恢复其位置，适合窗口被拖出视野的情况。两者都保留共享 Chromium 实例、VNC 服务和 profile。查看器断线时可以点击 **Reconnect**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后再次选择 **Start browser**。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
+关闭旁栏、切换对话或结束 Run 都保留浏览器。关闭 **Enable browser** 开关只会关闭当前对话的窗口。**Reset browser**（圆形箭头）只重建当前对话窗口并恢复其位置，适合窗口被拖出视野的情况。两者都保留共享 Chromium 实例、VNC 服务和 profile。查看器断线时可以点击 **Reconnect**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后再次打开 **Enable browser**。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
 
-关闭一个标签页会保留其他标签页。关闭某个对话的最后一个标签页后，绑定仍保持启用，但没有标签页。Agent 可以创建新标签页，你也可以通过 **Reset browser** 创建替代窗口。人工接管期间关闭标签页后，Agent 工具仍保持暂停，直到明确交还。内部保留一个最小化窗口，确保所有对话窗口关闭后 Chromium 仍保持运行。退出整个 Chromium 或必要的显示进程退出时，才停止共享运行时和所有对话窗口，需要时点击 **Start browser**；异常退出还会显示原因。停止后启动和 Reset 都保留原有配置，创建新的只读会话，需要时再次接管。正在等待交还的 Agent 工具会报告会话失效，不会无限暂停，也不会重放旧操作。受影响对话的上一轮 Run 无法操作替代窗口；发送新提示后，Agent 必须重新观察再操作。未保存的页面内容、崩溃前尚未写入的数据可能丢失。
+关闭一个标签页会保留其他标签页。关闭某个对话的最后一个标签页后，绑定仍保持启用，但没有标签页。Agent 可以创建新标签页，你也可以通过 **Reset browser** 创建替代窗口。人工接管期间关闭标签页后，Agent 工具仍保持暂停，直到明确交还。内部保留一个最小化窗口，确保所有对话窗口关闭后 Chromium 仍保持运行。退出整个 Chromium 或必要的显示进程退出时，才停止共享运行时和所有对话窗口，需要时再次打开 **Enable browser**；异常退出还会显示原因。停止后启动和 Reset 都保留原有配置，创建新的只读会话，需要时再次接管。正在等待交还的 Agent 工具会报告会话失效，不会无限暂停，也不会重放旧操作。受影响对话的上一轮 Run 无法操作替代窗口；发送新提示后，Agent 必须重新观察再操作。未保存的页面内容、崩溃前尚未写入的数据可能丢失。
 
 ## 查看 Memory
 

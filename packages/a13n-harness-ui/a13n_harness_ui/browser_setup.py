@@ -161,7 +161,7 @@ class BrowserScan(SurfaceModel):
 
 
 async def scan_browsers() -> BrowserScan:
-    """Enumerate supported installed executables only when explicitly requested."""
+    """Enumerate compatible installed executables without starting a desktop."""
     platform = host_platform()
     candidates = await asyncio.to_thread(system_browsers, platform)
     browsers = []
@@ -211,9 +211,19 @@ async def inspect_browser(
     configuration = configuration or BrowserConfiguration()
     platform = host_platform()
     supported = platform == "linux"
-    distribution = await asyncio.to_thread(linux_distribution) if supported else {}
+    if not supported:
+        return BrowserSetup(
+            platform=platform,
+            supported=False,
+            ready=False,
+            message="The Host browser currently requires Linux. Run Harness UI on a Linux Host to use it.",
+        )
+    distribution = await asyncio.to_thread(linux_distribution)
+    detected = (
+        await scan_browsers() if not configuration.executable or not configuration.vnc_executable else BrowserScan()
+    )
     browser = None
-    browser_detail = "Select a browser executable in General settings, save and restart Harness UI"
+    browser_detail = "No compatible browser found. Install Chrome, Chromium or Edge on this Host, then try again."
     if configuration.executable:
         path = await asyncio.to_thread(executable_path, configuration.executable)
         if path:
@@ -226,33 +236,48 @@ async def inspect_browser(
             browser = None
         else:
             browser_detail = f"{browser.path} ({browser.source})"
+    elif not configuration.executable and detected.browsers:
+        browser = detected.browsers[0]
+        browser_detail = f"{browser.path} (automatic)"
 
     resizing = await asyncio.to_thread(find_program, "xrandr") if supported else None
     manager = await asyncio.to_thread(find_program, "openbox", "fluxbox", "icewm", "twm") if supported else None
     vnc = None
-    vnc_detail = "Select a VNC executable in General settings, save and restart Harness UI"
-    if supported and configuration.vnc_executable:
+    vnc_detail = "No compatible VNC server found. Install TigerVNC, x11vnc or WayVNC on this Host, then try again."
+    candidates = detected.vncs
+    if configuration.vnc_executable:
+        candidates = ()
         path = await asyncio.to_thread(executable_path, configuration.vnc_executable)
         if not path:
             vnc_detail = "Configured VNC executable is missing or not executable"
         elif candidate := await inspect_vnc(path, "custom"):
-            display_server = None
-            if candidate.kind == "x11vnc":
-                display_server = await asyncio.to_thread(find_program, "Xvfb")
-                resizing = None
-            elif candidate.kind == "wayvnc":
-                display_server = await asyncio.to_thread(find_program, "sway")
-                manager = resizing = None
-            vnc = candidate.model_copy(
-                update={
-                    "window_manager": manager,
-                    "xrandr": resizing,
-                    "display_server": display_server,
-                }
-            )
-            vnc_detail = f"{path} ({vnc.kind})"
+            candidates = (candidate,)
         else:
             vnc_detail = "VNC executable is not a compatible TigerVNC Xvnc, x11vnc or WayVNC server"
+    for candidate in candidates:
+        display_server = None
+        if candidate.kind == "x11vnc":
+            display_server = await asyncio.to_thread(find_program, "Xvfb")
+        elif candidate.kind == "wayvnc":
+            display_server = await asyncio.to_thread(find_program, "sway")
+        prepared = candidate.model_copy(
+            update={
+                "window_manager": None if candidate.kind == "wayvnc" else manager,
+                "xrandr": resizing if candidate.kind == "tigervnc" else None,
+                "display_server": display_server,
+            }
+        )
+        usable = candidate.kind == "tigervnc" or (
+            display_server is not None and (candidate.kind != "wayvnc" or os.geteuid() != 0)
+        )
+        # Prefer a complete adapter, retaining the first candidate's diagnostics
+        # when none can start. Explicit bindings contain only one candidate.
+        if vnc is None or usable:
+            vnc = prepared
+        if usable:
+            break
+    if vnc:
+        vnc_detail = f"{vnc.path} ({vnc.kind})"
     requirements = [
         BrowserRequirement(
             name="Browser",
@@ -364,14 +389,12 @@ async def inspect_browser(
                     command="sudo apt-get install --no-install-recommends openbox",
                 )
             )
-    if not supported:
-        message = "The remote desktop currently requires a Linux Host. Browser detection is available on this platform."
-    elif sandbox_blocked:
+    if sandbox_blocked:
         message = sandbox_guidance
     elif ready:
         message = "Browser and VNC executables are ready. Harness manages their startup and cleanup."
     else:
-        message = "Select browser and VNC executables in General settings, save and restart Harness UI. Prepare any missing components on this Host."
+        message = "Browser could not start. Resolve the required components below, then try again. Custom executable paths are available in Browser settings."
         if not shutil.which("apt-get"):
             message += " Use your distribution's package manager for Chromium and a compatible VNC server."
     return BrowserSetup(

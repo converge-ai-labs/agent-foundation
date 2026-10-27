@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Switch,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -13,7 +14,6 @@ import {
 } from "a13n-ui";
 import {
   ArrowClockwise,
-  Stop,
   Devices,
   DotsThree,
   HandArrowDown,
@@ -70,7 +70,7 @@ export function BrowserPanel({
       !!threadId &&
       fullControl &&
       state.isSuccess &&
-      session?.status !== "ready",
+      session?.status === "failed",
     queryFn: () =>
       result(
         client.GET("/api/threads/{thread_id}/browser/setup", {
@@ -178,7 +178,18 @@ export function BrowserPanel({
   useEffect(() => {
     setAuthority(null);
   }, [threadId, session?.session_id]);
-  if (!threadId || !fullControl)
+  if (!threadId)
+    return (
+      <div className={styles.empty}>
+        <Monitor size={28} />
+        <strong>Start a conversation first</strong>
+        <p>
+          Send a message to start this conversation, then enable the browser
+          here.
+        </p>
+      </div>
+    );
+  if (!fullControl)
     return (
       <div className={styles.empty}>
         <LockSimple size={28} />
@@ -187,7 +198,11 @@ export function BrowserPanel({
       </div>
     );
   const ready = session?.status === "ready";
-  const stopped = session?.status === "stopped" || session?.status === "failed";
+  const enabled = ready || session?.status === "enabled";
+  const needsHelp =
+    !ready &&
+    !busy &&
+    !!(error || session?.error || session?.status === "failed");
   const human = session?.control === "human";
   const canResize = !busy && !!controlToken && !!session?.resize_available;
   const viewport = session?.viewports?.find(
@@ -219,16 +234,6 @@ export function BrowserPanel({
         onClick={() => void command("reset")}
       >
         <ArrowClockwise />
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Stop browser"
-        title="Stop this conversation’s browser window"
-        disabled={busy}
-        onClick={() => void command("stop")}
-      >
-        <Stop />
       </Button>
       <Menu>
         <MenuTrigger
@@ -301,7 +306,28 @@ export function BrowserPanel({
   ) : null;
   return (
     <section className={styles.panel} aria-label="Host browser">
-      {(error || state.error || session?.error) && (
+      <div className={styles.activation}>
+        <div>
+          <label htmlFor="browser-enabled">Enable browser</label>
+          <p role="status">
+            {busy
+              ? "Updating browser…"
+              : state.isLoading
+                ? "Loading…"
+                : enabled
+                  ? "Enabled for this conversation"
+                  : "Automatically detect and start installed components."}
+          </p>
+        </div>
+        <Switch
+          id="browser-enabled"
+          aria-label="Enable browser"
+          checked={enabled}
+          disabled={busy || !state.isSuccess}
+          onCheckedChange={(value) => void command(value ? "start" : "stop")}
+        />
+      </div>
+      {!needsHelp && (error || state.error || session?.error) && (
         <p className={styles.notice} role="alert">
           {error || state.error?.message || session?.error}
         </p>
@@ -318,24 +344,30 @@ export function BrowserPanel({
             scale={scale}
           />
         </>
-      ) : !preparation.data?.ready ? (
+      ) : needsHelp ? (
         <BrowserSetup
           setup={preparation.data}
-          loading={preparation.isFetching || state.isLoading}
-          error={preparation.error}
-          check={() => void preparation.refetch()}
-          busy={busy}
+          loading={preparation.isFetching}
+          error={error || session?.error || preparation.error?.message || ""}
+          retry={() => void command("start")}
         />
+      ) : state.isError ? (
+        <div className={styles.empty}>
+          <Button variant="outline" onClick={() => void state.refetch()}>
+            Try again
+          </Button>
+        </div>
       ) : (
         <div className={styles.empty}>
           <Monitor size={28} />
-          <strong>{stopped ? "Browser stopped" : "Ready to browse"}</strong>
-          <Button
-            disabled={busy || state.isLoading || preparation.isFetching}
-            onClick={() => void command("start")}
-          >
-            {busy ? "Starting…" : "Start browser"}
-          </Button>
+          <strong>
+            {busy ? "Preparing browser…" : "Browse with your Agent"}
+          </strong>
+          <p>
+            {busy
+              ? "Checking components and opening this conversation’s window."
+              : "Enable the browser to open a window for this conversation. Login sessions are shared across conversations."}
+          </p>
         </div>
       )}
     </section>
