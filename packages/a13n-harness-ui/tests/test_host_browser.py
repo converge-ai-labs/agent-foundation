@@ -469,7 +469,7 @@ async def test_private_x11_desktop_does_not_inherit_host_wayland(monkeypatch, ki
 
 @pytest.mark.parametrize("no_sandbox", [False, True])
 @pytest.mark.parametrize("platform", ["linux", "macos"])
-async def test_chromium_sandbox_requires_explicit_startup_opt_in(tmp_path, monkeypatch, no_sandbox, platform):
+async def test_chromium_launch_storage_and_sandbox_policy(tmp_path, monkeypatch, no_sandbox, platform):
     import a13n_harness_ui.browser as module
     from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup, VncExecutable
 
@@ -491,6 +491,7 @@ async def test_chromium_sandbox_requires_explicit_startup_opt_in(tmp_path, monke
     with pytest.raises(RuntimeError, match="exited during startup"):
         await host.launch()
     assert ("--no-sandbox" in spawn.call_args.args) is no_sandbox
+    assert ("--password-store=basic" in spawn.call_args.args) is (platform == "linux")
     assert ("--ozone-platform=x11" in spawn.call_args.args) is (platform == "linux")
     desktop.close.assert_awaited_once()
     assert host.desktop is None and host.process is None

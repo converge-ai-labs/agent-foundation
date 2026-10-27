@@ -130,6 +130,8 @@ Linux 上的浏览器探测会在 WebUI 服务器的 `PATH` 中查找 `google-ch
 
 共享浏览器 Profile 保存在 `<data_root>/browsers/profile`，默认数据目录下即 `~/.a13n-harness-ui/data/browsers/profile`，不提供单独修改其位置的配置。所有对话和 Project 共用这个 Profile 和一个浏览器实例，并拥有各自的窗口及 Agent 标签页。现有 Profile 目录不会被移动或合并。
 
+Linux 受管浏览器使用基础密码存储，避免等待被锁定的桌面钥匙环。保存的密码和 Cookie **不受操作系统钥匙环保护**，请像保护凭据一样保护 Profile 目录及其备份。系统钥匙环和 macOS 凭据存储保持不变。升级后重启 Harness UI 即可应用新的启动方式；现有 Profile 会保留，但此前使用钥匙环加密登录数据的网站可能需要重新登录。
+
 ### 安装 Host 组件
 
 macOS：

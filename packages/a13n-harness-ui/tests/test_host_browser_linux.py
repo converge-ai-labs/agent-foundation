@@ -152,6 +152,9 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         runtime = browsers.runtime
         page = browsers.bindings["thread-a"].page
         assert runtime and page and browsers.desktop
+        assert "Sign in" in (await backend.observe()).text
+        assert "Sign in" in await backend.read("text")
+        assert (await backend.screenshot()).data.startswith(b"\xff\xd8")
         if browsers.desktop.desktop.window_manager:
             async with asyncio.timeout(5):
                 while (await runtime.window(page))["bounds"]["windowState"] != "maximized":

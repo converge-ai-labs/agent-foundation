@@ -312,6 +312,10 @@ class HostBrowsers:
             "--no-default-browser-check",
             "about:blank",
         ]
+        if preparation.platform == "linux":
+            # The private desktop cannot unlock the Host's login keyring.
+            # Basic storage keeps cookie initialization from waiting on it.
+            arguments.append("--password-store=basic")
         if self.no_sandbox:
             arguments.append("--no-sandbox")
         self.process = await asyncio.create_subprocess_exec(

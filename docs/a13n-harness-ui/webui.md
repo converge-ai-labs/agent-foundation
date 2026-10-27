@@ -130,6 +130,8 @@ The **Advanced browser settings** panel combines executable selection and depend
 
 The shared browser profile is stored at `<data_root>/browsers/profile` (`~/.a13n-harness-ui/data/browsers/profile` with the default data root). Its location cannot be configured separately. Every conversation and Project shares this profile and one browser instance, with separate windows and Agent tabs. Existing profile directories are not moved or merged.
 
+On Linux, the managed browser uses basic password storage to avoid waiting for a locked desktop keyring. Saved passwords and cookies are **not protected by the OS keyring**; protect the profile directory and its backups as credentials. The system keyring and macOS credential storage are unchanged. After upgrading, restart Harness UI to apply this launch behavior. The existing profile is retained, but websites whose login data used keyring encryption may require you to sign in again.
+
 ### Install Host components
 
 On macOS:
