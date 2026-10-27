@@ -212,7 +212,7 @@
   transition: transform 150ms ease;
 }
 .toolsetCaretOpen {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 .toolsetGroupBody {
   border-top: 1px solid var(--a13n-border);
@@ -284,7 +284,7 @@
   transition: transform 150ms ease;
 }
 .webConfigTrigger[aria-expanded="true"] svg {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 .toolsetPermissions {
   display: inline-flex;
@@ -772,13 +772,13 @@
   height: 16px;
   margin-left: 4px;
   rotate: none;
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 .outlinedDisclosure
   [data-slot="disclosure-surface"]
   > button[aria-expanded="true"]
   > svg {
-  transform: rotate(270deg);
+  transform: rotate(90deg);
 }
 
 .outlinedDisclosure [data-slot="disclosure-surface"] > button {

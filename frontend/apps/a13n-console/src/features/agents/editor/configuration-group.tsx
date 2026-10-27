@@ -1,5 +1,5 @@
 import { Collapsible, CollapsiblePanel } from "a13n-ui";
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { useId, type ReactNode } from "react";
 import { SectionGroup } from "../../../shared/page";
 import styles from "./editor.module.css";
@@ -31,7 +31,7 @@ export function ConfigurationGroup({
           onClick={() => onOpenChange(!open)}
         >
           {title}
-          <CaretDownIcon size={14} aria-hidden="true" />
+          <CaretRightIcon size={14} aria-hidden="true" />
         </button>
       }
     >

@@ -156,7 +156,7 @@
   color: var(--a13n-secondary);
 }
 .mediaTrigger[aria-expanded="true"] > svg {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 .mediaTrigger:focus-visible {
   outline: 2px solid var(--a13n-focus);

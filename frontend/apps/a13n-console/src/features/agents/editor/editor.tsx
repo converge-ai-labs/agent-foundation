@@ -303,13 +303,6 @@ export function AgentEditor({
                   if (!draft.reviewer?.model) setReviewPanel({});
                 }}
               />
-              <PluginsSection
-                draft={draft}
-                readOnly={configurationReadonly}
-                pending={pending}
-                mark={mark("plugins")}
-                error={error}
-              />
               <MediaUnderstandingSection
                 draft={draft}
                 readOnly={configurationReadonly}
@@ -371,6 +364,13 @@ export function AgentEditor({
                   readOnly={configurationReadonly}
                 />
               </Section>
+              <PluginsSection
+                draft={draft}
+                readOnly={configurationReadonly}
+                pending={pending}
+                mark={mark("plugins")}
+                error={error}
+              />
               <Section
                 title={t("JSON")}
                 description={t("Edit options not shown above.")}

@@ -5,7 +5,7 @@ import {
   CollapsiblePanel,
   SettingsSection,
 } from "a13n-ui";
-import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, XIcon } from "@phosphor-icons/react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -377,7 +377,7 @@ export function MediaUnderstandingSection({
         title={
           <CollapsibleTrigger className={styles.mediaTrigger}>
             {t("Media understanding")}
-            <CaretDownIcon size={14} aria-hidden="true" />
+            <CaretRightIcon size={14} aria-hidden="true" />
           </CollapsibleTrigger>
         }
         titleActions={

@@ -268,6 +268,7 @@
 }
 .sectionBody {
   display: grid;
+  align-content: start;
   gap: 16px;
   min-width: 0;
 }
@@ -317,6 +318,10 @@
     align-self: start;
     flex-direction: column;
     gap: 12px;
+  }
+  /* The wrapping basis is a width only in the row layout. */
+  .sections > .section > .sectionHeader > :first-child {
+    flex: none;
   }
   .sections > .section > .sectionHeader .sectionActions {
     margin-block: 0;
