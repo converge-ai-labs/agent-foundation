@@ -694,3 +694,35 @@ async def test_resize_accepts_native_minimum_but_not_undersized_content(browser,
     else:
         with pytest.raises(BrowserError, match="did not resize"):
             await browser.resize_window(page, 390, 844, allow_minimum=True)
+
+
+@pytest.mark.parametrize("state", ["maximized", "fullscreen"])
+async def test_resize_restores_window_after_screen_change(browser, state):
+    page = Page("page", "session")
+    bounds = {"windowState": state, "width": 1288, "height": 891}
+    prepares = 0
+    restores = 0
+
+    async def prepare(width, height):
+        nonlocal prepares
+        prepares += 1
+        if prepares == 1:
+            # A delayed WM reaction to RandR overtakes the initial restore.
+            bounds["windowState"] = state
+
+    async def set_bounds(identity, values):
+        nonlocal restores
+        if "windowState" in values:
+            restores += 1
+            bounds.update(values)
+        elif bounds["windowState"] == "normal":
+            bounds.update(values)
+
+    browser.window = AsyncMock(side_effect=lambda page: {"windowId": 1, "bounds": dict(bounds)})
+    browser.window_bounds = AsyncMock(side_effect=set_bounds)
+    browser.evaluate = AsyncMock(
+        side_effect=lambda page, expression: {"width": bounds["width"] - 8, "height": bounds["height"] - 91}
+    )
+    await browser.resize_window(page, 768, 1024, prepare_bounds=prepare)
+    assert restores >= 2
+    assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}

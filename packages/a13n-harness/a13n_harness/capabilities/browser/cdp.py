@@ -446,6 +446,13 @@ class Chromium:
             async with asyncio.timeout(3):
                 while True:
                     bounds = (await self.window(page))["bounds"]
+                    if bounds.get("windowState", "normal") != "normal":
+                        # A WM reacting to a screen resize can overtake the
+                        # initial restore. Reassert it within the same deadline.
+                        await self.window_bounds(identity, {"windowState": "normal"})
+                        matched, previous, clamped = False, None, 0
+                        await asyncio.sleep(0.05)
+                        continue
                     content = await self.evaluate(page, "({width:innerWidth,height:innerHeight})")
                     correct = (
                         bounds.get("windowState", "normal") == "normal"

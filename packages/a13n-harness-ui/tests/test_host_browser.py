@@ -694,3 +694,52 @@ async def test_desktop_preparation_fits_requested_and_other_owned_windows(browse
     browsers.runtime.window = AsyncMock(return_value={"bounds": {"width": 1300, "height": 900}})
     await browsers.fit_desktop(776, 1115)
     browsers.desktop.resize.assert_awaited_once_with(1301, 1116)
+
+
+@pytest.mark.parametrize("state", ["maximized", "fullscreen", "minimized"])
+async def test_desktop_preparation_ignores_screen_managed_windows(browsers, state):
+    screen = {"width": 1400, "height": 1200}
+
+    async def window(page):
+        bounds = (
+            dict(screen, windowState=state)
+            if page.target == "thread-b"
+            else {"width": 776, "height": 1115, "windowState": "normal"}
+        )
+        return {"bounds": bounds}
+
+    async def resize(width, height):
+        screen.update(width=width, height=height)
+
+    browsers.runtime.window = AsyncMock(side_effect=window)
+    browsers.desktop.resize.side_effect = resize
+    for _ in range(5):
+        await browsers.fit_desktop(776, 1115)
+        assert screen == {"width": 777, "height": 1116}
+
+
+async def test_recreated_window_reports_creation_when_takeover_precedes_layout(browsers):
+    item = browsers.bindings["thread-a"]
+    runtime = browsers.runtime
+    runtime._destroyed({"targetId": item.page.target}, None)
+    page = Page("replacement", "replacement-session")
+    created = asyncio.Event()
+
+    async def create(**kwargs):
+        runtime.pages[page.target] = page
+        created.set()
+        return page
+
+    runtime.create = AsyncMock(side_effect=create)
+    await browsers.control_lock.acquire()
+    takeover = asyncio.create_task(browsers.control("thread-a", item.identity, human=True))
+    await asyncio.sleep(0)
+    creation = asyncio.create_task(browsers.backend("thread-a", item.identity).tabs("new"))
+    await created.wait()
+    browsers.control_lock.release()
+    await takeover
+    tabs = await creation
+    assert [tab.target for tab in tabs] == [page.target]
+    assert page.target in item.scope.targets
+    assert browsers.human_thread == "thread-a"
+    browsers.layout.assert_not_awaited()

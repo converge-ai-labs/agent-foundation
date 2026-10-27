@@ -452,6 +452,57 @@ async def test_saved_viewport_survives_window_lifecycle(tmp_path, browser_config
         await host.close()
 
 
+async def test_repeated_presets_with_another_maximized_thread(tmp_path, browser_configuration, request):
+    host = HostBrowsers(
+        root=tmp_path / "browser",
+        available=True,
+        authorize=AsyncMock(),
+        configuration=browser_configuration,
+        no_sandbox=request.config.getoption("--browser-no-sandbox"),
+    )
+    try:
+        state = await host.enable("a")
+        state = await host.start("a", state.session_id)
+        assert host.desktop
+        if not state.resize_available or not host.desktop.desktop.window_manager:
+            pytest.skip("Repeated native presets require RandR and a window manager")
+        second = await host.enable("b")
+        await host.start("b", second.session_id)
+        runtime = host.runtime
+        page = host.bindings["a"].page
+        other = host.bindings["b"].page
+        assert runtime and page and other, (
+            host.state("a").error,
+            [(name, process.returncode) for process, name in host.desktop.processes],
+        )
+        async with asyncio.timeout(5):
+            while (await runtime.window(other))["bounds"]["windowState"] != "maximized":
+                await asyncio.sleep(0.025)
+        control = await host.control("a", state.session_id, human=True)
+        screens = {}
+        for cycle in range(6):
+            for preset in ("desktop", "desktop", "tablet", "desktop", "phone", "laptop"):
+                await host.resize(
+                    "a",
+                    BrowserViewportRequest(
+                        session_id=state.session_id, control_token=control.control_token, preset=preset
+                    ),
+                )
+                # Read the X server's geometry, not renderer-cached screen.width.
+                match = re.search(r"current (\d+) x (\d+)", await host.desktop.randr("--current"))
+                assert match
+                dimensions = tuple(map(int, match.groups()))
+                if cycle == 0:
+                    screens[preset] = dimensions
+                else:
+                    assert dimensions == screens[preset], (cycle, preset, screens, dimensions)
+                if preset == "tablet":
+                    assert await runtime.evaluate(page, "[innerWidth,innerHeight]") == [768, 1024]
+                assert other.target in runtime.pages
+    finally:
+        await host.close()
+
+
 async def test_saved_password_autofill_after_restart_without_model_secret_values(
     tmp_path, site, browser_configuration, request
 ):

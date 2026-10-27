@@ -368,7 +368,10 @@ class HostBrowsers:
         for target in self.owners:
             if candidate := self.runtime.pages.get(target):
                 bounds = (await self.runtime.window(candidate))["bounds"]
-                width, height = max(width, bounds["width"]), max(height, bounds["height"])
+                # Maximized/fullscreen windows follow the desktop; including
+                # them would feed the screen size back into its own growth.
+                if bounds.get("windowState", "normal") == "normal":
+                    width, height = max(width, bounds["width"]), max(height, bounds["height"])
         # X11 constrains normal windows strictly below the screen dimensions.
         await self.desktop.resize(width + 1, height + 1)
 
@@ -827,6 +830,11 @@ class HostBrowserBackend:
             # Finish creation's admission before waiting for lifecycle locks:
             # Stop/takeover must still retire/drain an in-flight tab creation.
             async with self.browsers.control_lock, self.browsers.lifecycle:
+                self.browsers.checked(self.thread_id, self.binding)
+                if self.browsers.human_thread:
+                    # Creation completed before takeover. Return that result
+                    # without changing the human-controlled desktop.
+                    return tabs
                 async with self.operation() as scope:
                     item = self.browsers.checked(self.thread_id, self.binding)
                     if page.target not in scope.targets:
