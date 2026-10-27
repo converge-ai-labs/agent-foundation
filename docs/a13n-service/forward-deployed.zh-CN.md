@@ -67,7 +67,7 @@ agent 通过属于工作空间的模型 provider 调用模型。连接客户已�
 
 - Console 的 Debug 视图展示每次运行的执行细节、配置、用量和费用。
 - 配置 trace 后端后，每次尝试都会导出 span，Console 在 **Traces** 中显示它们。参阅 [Trace](agents-and-runs.md#traces)。
-- 在 **改进 → 发现（Improve → Findings）** 中查看诊断发现项，每项附带 trace 证据和改进建议。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
+- 在 **洞察 → 发现（Insights → Findings）** 中查看诊断发现项，每项附带 trace 证据和改进建议。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
 - 访问权限和账号安全的变更都记录为审计事件。参阅[审计](identity.md#audit)。
 - 日志、指标和工作空间用量，参阅[监控与排障](monitoring.md)。
 

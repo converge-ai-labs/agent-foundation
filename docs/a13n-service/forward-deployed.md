@@ -67,7 +67,7 @@ See [Model providers](models.md#model-providers). Each model call is recorded as
 
 - Console's Debug view shows the execution details, configuration, usage, and cost of each run.
 - With a trace backend configured, each attempt exports its spans, and Console shows them under **Traces**. See [Traces](agents-and-runs.md#traces).
-- **Improve → Findings** lists diagnostic findings with trace evidence and a suggestion. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
+- **Insights → Findings** lists diagnostic findings with trace evidence and a suggestion. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
 - Changes to access and account security are recorded as audit events. See [Audit](identity.md#audit).
 - For logs, metrics, and workspace usage, see [Monitor and troubleshoot](monitoring.md).
 

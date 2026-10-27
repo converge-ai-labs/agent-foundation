@@ -137,6 +137,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
             <Route path="memory-spaces" element={<p>Space directory</p>} />
             <Route path="memories" element={<p>Memory directory</p>} />
             <Route path="environments" element={<p>Template directory</p>} />
+            <Route path="monitoring" element={<p>Environment metrics</p>} />
             <Route
               path="environments/instances"
               element={<p>Instance directory</p>}
@@ -167,6 +168,12 @@ it("keeps resource categories in sidebar links and restores the selected categor
     screen
       .getByRole("link", { name: "Instances" })
       .getAttribute("aria-current"),
+  ).toBe("page");
+  await user.click(screen.getByRole("link", { name: "Metrics" }));
+  expect(screen.getByText("Environment metrics")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Templates" })).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Metrics" }).getAttribute("aria-current"),
   ).toBe("page");
   expect(screen.queryByRole("tablist")).toBeNull();
 });

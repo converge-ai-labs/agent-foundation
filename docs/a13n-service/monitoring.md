@@ -110,7 +110,7 @@ Per-workspace usage is recorded as facts in PostgreSQL, never in metrics. A work
 
 ### Workspace usage in the Console
 
-Open **Observe → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, run count, request count and average run time. Switch the daily chart between Spend and Tokens, then compare agents or models in the paginated breakdown.
+Open **Insights → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, run count, request count and average run time. Switch the daily chart between Spend and Tokens, then compare agents or models in the paginated breakdown.
 
 ![Console showing 30-day costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.webp)
 

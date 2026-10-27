@@ -3512,5 +3512,8 @@
   "Uses the first agent's memory settings when this session starts.": "会话开始时，使用首个 Agent 的记忆设置。",
   "Configure this session without changing the agent's defaults.": "单独设置本会话，不修改 Agent 默认配置。",
   "Built-in skill": "内置技能",
-  "Read-only. Updated with Service releases.": "只读内容，随 Service 版本更新。"
+  "Read-only. Updated with Service releases.": "只读内容，随 Service 版本更新。",
+  "Insights": "洞察",
+  "Monitor resource usage and performance across environments and devices.": "监控环境和设备的资源使用情况与性能。",
+  "Built-in": "内置"
 }

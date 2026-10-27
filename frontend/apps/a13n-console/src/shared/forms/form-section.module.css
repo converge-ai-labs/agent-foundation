@@ -8,6 +8,7 @@
   margin-top: 4px;
 }
 .section {
+  composes: form from "../controls.module.css";
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
@@ -64,10 +65,6 @@
 
 .fields > [data-slot="settings-row"] {
   padding-block: 0;
-}
-
-.section :global([data-slot="button"]) {
-  font-size: var(--a13n-text-sm);
 }
 
 /* Compact single-value fields share a label column. Long-form text keeps the

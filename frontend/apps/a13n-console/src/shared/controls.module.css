@@ -18,3 +18,14 @@
     height: 14px;
   }
 }
+
+/* Choice labels use interface typography; editable text keeps its input size. */
+.form :is(button, [data-slot="button"]) {
+  font-size: var(--a13n-text-sm);
+}
+@media (width < 768px) {
+  .form [data-slot="select-trigger"] {
+    height: 32px;
+    min-height: 32px;
+  }
+}

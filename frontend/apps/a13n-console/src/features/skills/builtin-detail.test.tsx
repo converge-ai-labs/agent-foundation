@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { strToU8, zipSync } from "fflate";
 import { createClient } from "../../service-client";
-import { BuiltinSkills } from "./builtin";
+import { SkillsPage } from "./list";
 import { BuiltinSkillDetail } from "./builtin-detail";
 
 const { download } = vi.hoisted(() => ({ download: vi.fn() }));
@@ -69,6 +69,8 @@ function setup({ direct = false, changed = false, denied = false } = {}) {
       const url = new URL(request.url);
       if (url.pathname === "/api/v1/builtin-skills")
         return Response.json({ items: [skill] });
+      if (url.pathname === "/api/v1/skills")
+        return Response.json({ items: [], next_cursor: null });
       if (denied)
         return Response.json(
           { error: { code: "forbidden", message: "Workspace access denied" } },
@@ -118,7 +120,7 @@ function setup({ direct = false, changed = false, denied = false } = {}) {
         <Routes>
           <Route
             path="/workspace/:workspaceId/skills"
-            element={<BuiltinSkills search="" />}
+            element={<SkillsPage />}
           />
           <Route
             path="/workspace/:workspaceId/skills/builtin/:name"
@@ -134,7 +136,7 @@ function setup({ direct = false, changed = false, denied = false } = {}) {
 it("opens a builtin skill by keyboard and shares file preview and cached download for a read-only member", async () => {
   const { user, requests, zip, skill } = setup();
   await screen.findByRole("link", { name: /platform-operations/ });
-  await user.tab();
+  screen.getByRole("link", { name: /platform-operations/ }).focus();
   await user.keyboard("{Enter}");
   await screen.findByRole("heading", { name: "Platform guide" });
   expect(

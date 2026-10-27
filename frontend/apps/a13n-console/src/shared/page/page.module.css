@@ -31,6 +31,7 @@
 }
 .header > :first-child {
   flex: 1 1 360px;
+  min-width: 0;
 }
 .titleRow {
   display: flex;
@@ -44,6 +45,7 @@
   font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
+  overflow-wrap: anywhere;
 }
 .count {
   align-self: flex-end;
@@ -65,7 +67,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -86,7 +89,7 @@
 .detailPage {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 48px 120px;
+  padding: 32px var(--console-page-gutter) 120px;
 }
 .identity {
   display: flex;
@@ -142,9 +145,8 @@
   overflow-wrap: anywhere;
 }
 .tabs {
+  composes: tabStrip from "../shared.module.css";
   margin-top: 24px;
-  overflow-x: auto;
-  padding-block: 2px;
 }
 .tabs [data-slot="tabs-tab"] > [data-slot="tab-count"] {
   margin-left: 6px;
@@ -231,9 +233,14 @@
 }
 .sectionHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+.sectionHeader > :first-child {
+  flex: 1 1 160px;
+  min-width: 0;
 }
 .sectionHeader h2 {
   margin: 0;
@@ -244,6 +251,9 @@
 }
 /* A section action centres on the title line, not on title and summary. */
 .sectionActions {
+  composes: compact from "../controls.module.css";
+  max-width: 100%;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -408,34 +418,11 @@
     padding-block: 16px 40px;
   }
   .header {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 12px;
   }
   .header > :first-child {
-    flex-basis: auto;
-    width: 100%;
-  }
-  .page > .header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 6px 12px;
-  }
-  .page > .header > :first-child {
-    display: contents;
-  }
-  .page > .header .titleRow {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .page > .header .description {
-    grid-column: 1 / -1;
-    margin: 0;
-  }
-  .page > .header > .actions {
-    grid-column: 2;
-    grid-row: 1;
+    flex: 1 1 200px;
   }
   .actions {
     justify-content: flex-start;
@@ -444,8 +431,11 @@
   .toolbar {
     margin-top: 14px;
   }
+  .identity {
+    align-items: flex-start;
+  }
   .detailPage {
-    padding: 20px var(--a13n-page-gutter-mobile) 140px;
+    padding: 16px var(--console-page-gutter) 140px;
   }
   .saveBar {
     flex-wrap: wrap;

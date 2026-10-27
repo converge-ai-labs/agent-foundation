@@ -3512,5 +3512,8 @@
   "Uses the first agent's memory settings when this session starts.": "Uses the first agent's memory settings when this session starts.",
   "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults.",
   "Built-in skill": "Built-in skill",
-  "Read-only. Updated with Service releases.": "Read-only. Updated with Service releases."
+  "Read-only. Updated with Service releases.": "Read-only. Updated with Service releases.",
+  "Insights": "Insights",
+  "Monitor resource usage and performance across environments and devices.": "Monitor resource usage and performance across environments and devices.",
+  "Built-in": "Built-in"
 }

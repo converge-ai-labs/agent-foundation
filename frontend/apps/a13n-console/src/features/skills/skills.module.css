@@ -42,21 +42,6 @@
 }
 
 /* Detail ----------------------------------------------------------------- */
-.builtinLink {
-  display: block;
-  border-radius: var(--a13n-radius-row);
-  color: inherit;
-  text-decoration: none;
-}
-.builtinLink:hover > div,
-.builtinLink:focus-visible > div {
-  background: var(--a13n-hover);
-}
-.builtinLink:focus-visible {
-  outline: 2px solid var(--a13n-text);
-  outline-offset: 2px;
-}
-
 .detailAvatar {
   width: 44px;
   height: 44px;

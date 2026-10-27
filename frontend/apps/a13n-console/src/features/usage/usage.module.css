@@ -1,8 +1,6 @@
 .filters {
-  display: flex;
-  align-items: center;
+  composes: toolbar from "../../shared/collection/collection.module.css";
   justify-content: space-between;
-  gap: 8px;
 }
 .footnote {
   color: var(--a13n-secondary);

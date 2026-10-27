@@ -106,10 +106,22 @@ it("searches the server from the first page and links by ID", async () => {
   const { cache, user } = renderList();
   const first = await screen.findByRole("link", { name: /First skill/ });
   const row = first.closest("tr")!;
+  const builtinRow = (
+    await screen.findByRole("link", { name: /platform-operations/ })
+  ).closest("tr")!;
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+  expect(within(builtinRow).getByText("Built-in")).toBeTruthy();
+  expect(within(builtinRow).getAllByText("—")).toHaveLength(3);
+  expect(screen.getByText("2 skills on this page")).toBeTruthy();
   expect(within(row).getByText("GitHub")).toBeTruthy();
   expect(within(row).getByText("v3")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByRole("link", { name: /Second skill/ });
+  expect(
+    screen.queryByRole("link", { name: /platform-operations/ }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Previous" }));
+  await screen.findByRole("link", { name: /platform-operations/ });
   const search = screen.getByRole("searchbox", { name: "Search skills" });
   await user.click(search);
   await user.paste("REVIEW");
@@ -203,7 +215,8 @@ it("shows builtin skills in an empty workspace and filters the complete builtin 
   );
   const { cache, user } = renderList();
   await screen.findByText("platform-operations");
-  expect(await screen.findByText("No workspace skills yet")).toBeTruthy();
+  expect(screen.queryByText("No workspace skills yet")).toBeNull();
+  expect(screen.getByText("1 skills on this page")).toBeTruthy();
   expect(
     screen
       .getByRole("link", { name: /platform-operations/ })
@@ -219,7 +232,7 @@ it("shows builtin skills in an empty workspace and filters the complete builtin 
   expect(screen.getByText("platform-operations")).toBeTruthy();
   await user.clear(search);
   await user.type(search, "missing");
-  expect(await screen.findByText("No matching built-in skills.")).toBeTruthy();
+  expect(await screen.findByText("No matching skills")).toBeTruthy();
   expect(
     http.GET.mock.calls.every(
       ([, options]) => options?.params?.query?.source !== "builtin",

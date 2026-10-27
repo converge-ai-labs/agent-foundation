@@ -181,7 +181,7 @@ function WorkspaceNavigation({
           <WorkspaceMenu onNavigate={close} compact={rail} />
         </SidebarHeader>
         <SidebarContent>
-          <nav aria-label={t("Resources")}>
+          <nav aria-label={t("Workspace navigation")}>
             {navigationGroups.map((group) => (
               <SidebarGroup key={group.label}>
                 {group.label &&

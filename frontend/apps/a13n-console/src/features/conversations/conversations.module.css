@@ -136,6 +136,7 @@ a.agentLink:focus-visible {
   margin-right: 8px;
 }
 .sessionControls {
+  composes: form from "../../shared/controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -342,6 +343,7 @@ a.agentLink:focus-visible {
     row-gap: 6px;
   }
   .sessionControls {
+    composes: form from "../../shared/controls.module.css";
     order: 1;
     flex-basis: 100%;
     gap: 4px;

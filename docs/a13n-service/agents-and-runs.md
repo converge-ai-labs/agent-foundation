@@ -554,7 +554,7 @@ The configured backend executes each search without a result cache. Langfuse rea
 
 ## Find and improve execution issues
 
-Open **Improve → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
+Open **Insights → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
 
 Filter findings by category, severity, assessment or open/closed state. Each finding uses one primary category for its central claim:
 

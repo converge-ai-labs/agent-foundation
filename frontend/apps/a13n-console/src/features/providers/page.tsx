@@ -8,6 +8,7 @@ import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
 import { providerCategories, providerCategory } from "./categories";
 import styles from "./providers.module.css";
+import shared from "../../shared/shared.module.css";
 
 const components = {
   models: Providers,
@@ -32,14 +33,16 @@ export function ProvidersPage() {
       value={category.value}
       onValueChange={(value) => update("category", String(value))}
     >
-      <TabsList variant="underline" aria-label={t("Provider category")}>
-        {providerCategories.map(({ value, label, icon: Icon }) => (
-          <TabsTab key={value} value={value}>
-            <Icon size={14} />
-            {t(label)}
-          </TabsTab>
-        ))}
-      </TabsList>
+      <div className={shared.tabStrip}>
+        <TabsList variant="underline" aria-label={t("Provider category")}>
+          {providerCategories.map(({ value, label, icon: Icon }) => (
+            <TabsTab key={value} value={value}>
+              <Icon size={14} />
+              {t(label)}
+            </TabsTab>
+          ))}
+        </TabsList>
+      </div>
       {providerCategories.map(({ value }) => {
         const Component = components[value];
         return (
