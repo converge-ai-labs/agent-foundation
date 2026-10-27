@@ -61,7 +61,7 @@ Open the printed login link and keep the foreground server running. Configure Mo
 
 ### Browser Use prerequisites
 
-The native **Browser** drawer runs a Chromium-based browser on a Linux or macOS WebUI Host. On Linux, install Chrome, Chromium or Edge and a compatible VNC server on that Host (inside the container for Docker), then select both executables in **Settings → General → Host browser**. TigerVNC provides the display and VNC server together. On macOS, select the browser and enable built-in Screen Sharing with a dedicated VNC password supplied through `A13N_HARNESS_UI_MACOS_VNC_PASSWORD`. The viewer displays the entire Mac desktop; no separate VNC program is needed. Run as a non-root user with Chromium's sandbox enabled.
+The native **Browser** drawer runs a Chromium-based browser on a Linux or macOS WebUI Host. On Linux, install Chrome, Chromium or Edge and a compatible VNC server on that Host (inside the container for Docker), then select both executables in **Settings → General → Host browser**. TigerVNC provides the display and VNC server together. On macOS, select the browser and enable built-in Screen Sharing with a dedicated VNC password, then enter that password in **Mac VNC password** and select **Verify and save password**. The viewer displays the entire Mac desktop; no separate VNC program is needed. Run as a non-root user with Chromium's sandbox enabled.
 
 Browser automation is included with Harness UI; no extra Python package, browser extension, MCP server or Node.js runtime is needed. Follow the [browser quick start](webui.md#first-time-setup) for installation commands, detection, saving and restarting, and your first browser session. Computer sharing must remain enabled; `--no-share-computer` also disables Host browser access.
 

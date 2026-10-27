@@ -8,6 +8,7 @@ import {
   BrowserRequirements,
   BrowserInstallInstructions,
 } from "../browser/requirements";
+import { MacSharingSettings, MacVncPassword } from "../browser/macos-setup";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../browser/setup.module.css";
 
@@ -84,8 +85,22 @@ export function BrowserFields({
   ];
   return (
     <SettingsSection
-      title="Advanced browser settings"
-      description="Components are selected automatically when you enable the browser in a conversation. Override an executable only when needed. Save and restart Harness UI to apply overrides."
+      title={
+        <span className="flex items-center justify-between gap-4">
+          <span>Advanced browser settings</span>
+          {setup?.supported !== false && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={scan.isFetching}
+              onClick={() => void scan.refetch()}
+            >
+              {scan.isFetching ? "Scanning…" : "Scan"}
+            </Button>
+          )}
+        </span>
+      }
+      description="Installed components are selected automatically. Executable overrides require saving and restarting Harness UI."
     >
       <div className={styles.configuration}>
         {setup?.supported === false ? (
@@ -94,16 +109,6 @@ export function BrowserFields({
           </p>
         ) : (
           <>
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={scan.isFetching}
-                onClick={() => void scan.refetch()}
-              >
-                {scan.isFetching ? "Scanning…" : "Scan"}
-              </Button>
-            </div>
             <ErrorNotice error={scan.error} />
             <ErrorNotice error={pending ? null : preparation.error} />
             <BrowserRequirements
@@ -112,6 +117,10 @@ export function BrowserFields({
                 checking ? "Checking…" : !setup ? "Not checked" : undefined
               }
               controls={{
+                "Screen Sharing": mac ? <MacSharingSettings /> : undefined,
+                "VNC password": mac ? (
+                  <MacVncPassword onSaved={() => void preparation.refetch()} />
+                ) : undefined,
                 Browser: (
                   <ExecutableField
                     label="Browser executable"
@@ -151,7 +160,7 @@ export function BrowserFields({
             )}
             <p className="text-xs text-muted-foreground">
               {mac
-                ? "macOS shares the entire logged-in desktop, including other applications. Enable Screen Sharing manually; no separate VNC server is needed. "
+                ? ""
                 : "Missing a program? Install a Chromium-based browser and VNC server on this Host (inside the container for Docker), then Scan again. Use Other for an installed program outside the detected locations. "}
               <a
                 href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"

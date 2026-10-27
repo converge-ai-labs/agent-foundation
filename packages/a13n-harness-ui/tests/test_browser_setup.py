@@ -123,7 +123,7 @@ async def test_missing_components_only_produce_manual_guidance(host, monkeypatch
 async def test_macos_requires_native_sharing_and_host_only_password(host, monkeypatch, sharing, password):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
     monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=sharing))
-    monkeypatch.setenv(module.PASSWORD_ENV, password)
+    monkeypatch.setenv("A13N_HARNESS_UI_MACOS_VNC_PASSWORD", password)
     setup = await module.inspect_browser(host)
     assert setup.supported and setup.ready == (sharing and bool(password))
     assert setup.vnc is None and not setup.steps
@@ -136,7 +136,7 @@ async def test_macos_requires_native_sharing_and_host_only_password(host, monkey
 async def test_macos_selects_browser_without_discovering_linux_components(host, monkeypatch, explicit):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
     monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=True))
-    monkeypatch.setenv(module.PASSWORD_ENV, "testpass")
+    monkeypatch.setenv("A13N_HARNESS_UI_MACOS_VNC_PASSWORD", "testpass")
     browser = BrowserExecutable(name="Chrome", path="/Applications/Chrome", source="system")
     discovered = Mock(return_value=[browser])
     monkeypatch.setattr(module, "system_browsers", discovered)
@@ -355,7 +355,7 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
     from .test_sharing_webui import shared_server
 
     checked = AsyncMock(return_value=module.BrowserSetup(platform="linux", supported=True, ready=False))
-    monkeypatch.setattr(app_module, "inspect_browser", checked)
+    monkeypatch.setattr(app_module.HostBrowsers, "inspect", checked)
     async with shared_server(tmp_path, share_computer=True) as (_, _, client):
         configuration = tmp_path / "a13n-harness-ui.yaml"
         saved = configuration.read_text()
@@ -368,7 +368,7 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
             "/api/browser/check", json=body, headers={"Authorization": "Bearer owner-test-key"}
         )
         assert response.status_code == 200 and response.json()["ready"] is False
-        checked.assert_awaited_once_with(BrowserConfiguration(**body), no_sandbox=False)
+        checked.assert_awaited_once_with(BrowserConfiguration(**body))
         assert configuration.read_text() == saved
         checked.reset_mock()
         invalid = await client.post(
@@ -403,7 +403,7 @@ async def test_disabled_sharing_blocks_browser_discovery_before_probing(tmp_path
 
     scan, check = AsyncMock(), AsyncMock()
     monkeypatch.setattr(app_module, "scan_browsers", scan)
-    monkeypatch.setattr(app_module, "inspect_browser", check)
+    monkeypatch.setattr(app_module.HostBrowsers, "inspect", check)
     async with app_module.open_harness_ui_app(
         _settings(tmp_path / "state"),
         configuration_path=_write_configuration(tmp_path),

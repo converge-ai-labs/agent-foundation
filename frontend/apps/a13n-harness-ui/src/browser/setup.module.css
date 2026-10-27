@@ -45,9 +45,9 @@
 }
 .requirements li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  padding: 8px 0;
+  padding: 12px 0;
 }
 .requirements li > svg {
   flex-shrink: 0;
@@ -134,7 +134,7 @@
 }
 
 .configuration {
-  padding-block: 16px;
+  padding-block: 4px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -142,9 +142,27 @@
 .requirementControl {
   margin-top: 8px;
 }
-.configuration .requirements li {
-  align-items: flex-start;
-  padding-block: 12px;
+.requirementHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.configuration .requirements li + li {
+  border-top: 1px solid var(--border);
+}
+.passwordRow {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+.passwordRow > :first-child {
+  flex: 1 1 180px;
+}
+.passwordRow > button {
+  flex-shrink: 0;
 }
 .configuration .requirements li > svg {
   margin-top: 1px;

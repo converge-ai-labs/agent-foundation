@@ -32,12 +32,22 @@ export function BrowserRequirements({
               <CircleDashed size={19} />
             )}
             <div>
-              <strong>
-                {requirement.name}
-                <small className={styles.requirementKind}>
-                  {requirement.required === false ? "Optional" : "Required"}
-                </small>
-              </strong>
+              <div className={styles.requirementHeading}>
+                <strong>
+                  {requirement.name}
+                  <small className={styles.requirementKind}>
+                    {requirement.required === false ? "Optional" : "Required"}
+                  </small>
+                </strong>
+                {(status || !requirement.installed) && (
+                  <span className={styles.state}>
+                    {status ??
+                      (requirement.required === false
+                        ? "Not installed"
+                        : "Missing")}
+                  </span>
+                )}
+              </div>
               {requirement.purpose && <span>{requirement.purpose}</span>}
               {requirement.detail &&
                 (!controls[requirement.name] || !requirement.installed) && (
@@ -49,14 +59,6 @@ export function BrowserRequirements({
                 </div>
               )}
             </div>
-            {(status || !requirement.installed) && (
-              <span className={styles.state}>
-                {status ??
-                  (requirement.required === false
-                    ? "Not installed"
-                    : "Missing")}
-              </span>
-            )}
           </li>
         ))}
     </ul>

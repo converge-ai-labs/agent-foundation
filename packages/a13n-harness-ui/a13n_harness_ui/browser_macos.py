@@ -4,10 +4,62 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
+
+from pydantic import Field, SecretStr, field_validator
 
 from a13n_harness_ui.browser_vnc import VncConnection, password_bytes, screen_sharing
+from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.model_accounts.auth import HostAuthDocument
+from a13n_harness_ui.surfaces import SurfaceModel
 
 PASSWORD_ENV = "A13N_HARNESS_UI_MACOS_VNC_PASSWORD"
+
+
+class MacVncPasswordInput(SurfaceModel):
+    password: SecretStr = Field(repr=False, min_length=1, max_length=8)
+
+    @field_validator("password")
+    @classmethod
+    def valid_password(cls, value: SecretStr) -> SecretStr:
+        password_bytes(value.get_secret_value())
+        return value
+
+
+class MacVncCredentials:
+    """Screen Sharing credentials in the shared, owner-only Host auth document."""
+
+    def __init__(self, path: Path) -> None:
+        self.document = HostAuthDocument(path)
+
+    async def load(self) -> str:
+        saved = (await self.document.read()).get("macos_vnc_password")
+        if saved is None:
+            return os.environ.get(PASSWORD_ENV, "")
+        if not isinstance(saved, str):
+            raise HarnessUiError("Invalid saved VNC credential.", code="browser_credential_invalid")
+        return saved
+
+    async def save(self, password: str) -> None:
+        password_bytes(password)
+        await self.document.update(lambda document: document.update(macos_vnc_password=password))
+
+
+async def open_sharing_settings() -> None:
+    process = await asyncio.create_subprocess_exec(
+        "/usr/bin/open",
+        "x-apple.systempreferences:com.apple.Sharing-Settings.extension",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        async with asyncio.timeout(5):
+            if await process.wait():
+                raise OSError("Could not open Sharing settings")
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
 
 
 async def screen_sharing_available() -> bool:
@@ -23,9 +75,9 @@ async def screen_sharing_available() -> bool:
         return False
 
 
-def password_ready() -> bool:
+def password_ready(password: str | None = None) -> bool:
     try:
-        password_bytes(os.environ.get(PASSWORD_ENV, ""))
+        password_bytes(os.environ.get(PASSWORD_ENV, "") if password is None else password)
     except ValueError:
         return False
     return True
@@ -40,10 +92,14 @@ class MacDesktop:
     chromium_arguments: tuple[str, ...] = ()
     password = readonly_password = ""
 
-    def __init__(self) -> None:
+    def __init__(self, password: str | None = None) -> None:
         self.env = dict(os.environ)
-        self._password = self.env.pop(PASSWORD_ENV, "")
+        environment_password = self.env.pop(PASSWORD_ENV, "")
+        self._password = environment_password if password is None else password
         self.processes: list[tuple[asyncio.subprocess.Process, str]] = []
+
+    def set_password(self, password: str) -> None:
+        self._password = password
 
     async def start(self) -> None:
         connection = await self.connect(controlling=False)

@@ -49,6 +49,7 @@ from a13n_harness_ui.browser import (
     BrowserState,
     BrowserViewportRequest,
 )
+from a13n_harness_ui.browser_macos import MacVncPasswordInput
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.models import BrowserConfiguration
@@ -1130,6 +1131,16 @@ def create_webui(
     @server.post("/api/browser/check", response_model=BrowserSetup, openapi_extra=_body(BrowserConfiguration))
     async def check_browser_configuration(request: Request) -> BrowserSetup:
         return await app().check_browser_configuration(await _document(request, BrowserConfiguration))
+
+    @server.post("/api/browser/macos/password", status_code=204, openapi_extra=_body(MacVncPasswordInput))
+    async def save_macos_browser_password(request: Request) -> Response:
+        await app().save_macos_browser_password(await _document(request, MacVncPasswordInput))
+        return Response(status_code=204)
+
+    @server.post("/api/browser/macos/settings", status_code=204)
+    async def open_macos_browser_settings() -> Response:
+        await app().open_macos_browser_settings()
+        return Response(status_code=204)
 
     @server.get("/api/threads/{thread_id}/browser", response_model=BrowserState)
     async def browser_state(thread_id: str) -> BrowserState:

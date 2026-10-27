@@ -12,7 +12,7 @@ from pathlib import Path
 from platform import freedesktop_os_release
 from typing import Literal
 
-from a13n_harness_ui.browser_macos import PASSWORD_ENV, password_ready, screen_sharing_available
+from a13n_harness_ui.browser_macos import password_ready, screen_sharing_available
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.surfaces import SurfaceModel
 
@@ -208,7 +208,7 @@ async def probe(path: str, argument: str) -> str:
 
 
 async def inspect_browser(
-    configuration: BrowserConfiguration | None = None, *, no_sandbox: bool = False
+    configuration: BrowserConfiguration | None = None, *, no_sandbox: bool = False, macos_password: str | None = None
 ) -> BrowserSetup:
     configuration = configuration or BrowserConfiguration()
     platform = host_platform()
@@ -260,9 +260,9 @@ async def inspect_browser(
             ),
             BrowserRequirement(
                 name="VNC password",
-                installed=password_ready(),
-                detail=f"Set {PASSWORD_ENV} to the Screen Sharing VNC password (1-8 Latin-1 characters) before starting Harness UI.",
-                purpose="The Host authenticates locally; this password is never sent to the WebUI.",
+                installed=password_ready(macos_password),
+                detail="Enter the VNC password configured in this Mac's Screen Sharing settings (1-8 Latin-1 characters).",
+                purpose="Saved on this Host for Screen Sharing connections; not your Mac login password.",
             ),
         )
         ready = all(item.installed for item in requirements)

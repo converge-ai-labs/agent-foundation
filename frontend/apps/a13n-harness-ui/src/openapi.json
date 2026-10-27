@@ -1682,6 +1682,38 @@
         }
       }
     },
+    "/api/browser/macos/password": {
+      "post": {
+        "summary": "Save Macos Browser Password",
+        "operationId": "save_macos_browser_password_api_browser_macos_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MacVncPasswordInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/browser/macos/settings": {
+      "post": {
+        "summary": "Open Macos Browser Settings",
+        "operationId": "open_macos_browser_settings_api_browser_macos_settings_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/browser": {
       "get": {
         "summary": "Browser State",
@@ -24990,6 +25022,24 @@
         "type": "object",
         "title": "BrowserConfiguration",
         "description": "Host executable bindings captured at App startup; never install dependencies."
+      },
+      "MacVncPasswordInput": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 1,
+            "format": "password",
+            "title": "Password",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "MacVncPasswordInput"
       },
       "BrowserCommand": {
         "additionalProperties": false,

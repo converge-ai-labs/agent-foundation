@@ -327,14 +327,14 @@ it("shows unsupported platforms without dependency installation or settings deto
     setup: {
       ready: false,
       supported: false,
-      platform: "macos",
+      platform: "windows",
       requirements: [],
-      message: "The Host browser currently requires Linux.",
+      message: "The Host browser requires Linux or macOS.",
     },
   });
   client.POST.mockRejectedValueOnce(new Error("Unsupported platform"));
   await toggleBrowser();
-  await screen.findByText("Linux Host required");
+  await screen.findByText("Linux or macOS Host required");
   expect(
     screen.queryByRole("list", { name: "Browser requirements" }),
   ).toBeNull();
@@ -349,4 +349,41 @@ it("keeps runtime failures visible when component checks succeed", async () => {
   await toggleBrowser();
   await screen.findByText("Profile is in use");
   expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+});
+
+it("lets owners replace a present but incorrect Mac password from troubleshooting", async () => {
+  const { client } = show({
+    status: "disabled",
+    setup: {
+      ready: true,
+      supported: true,
+      platform: "macos",
+      message: "",
+      requirements: [
+        {
+          name: "Screen Sharing",
+          installed: true,
+          required: true,
+          detail: "Available",
+        },
+        {
+          name: "VNC password",
+          installed: true,
+          required: true,
+          detail: "Configured",
+        },
+      ],
+    },
+  });
+  client.POST.mockRejectedValueOnce(new Error("Could not authenticate"));
+  await toggleBrowser();
+  const input = await screen.findByLabelText("Mac VNC password");
+  fireEvent.change(input, { target: { value: "new-pass" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Verify and save password" }),
+  );
+  await screen.findByTestId("stream");
+  expect(client.POST).toHaveBeenCalledWith("/api/browser/macos/password", {
+    body: { password: "new-pass" },
+  });
 });

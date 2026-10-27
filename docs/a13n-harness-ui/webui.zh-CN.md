@@ -136,7 +136,7 @@ macOS：
 
 1. 安装 Chrome、Chromium 或 Edge，并以已登录桌面的用户运行 Harness UI。
 2. 打开 **系统设置 → 通用 → 共享 → 屏幕共享**，启用屏幕共享和 **VNC 显示程序可以使用密码控制屏幕**。使用专用 VNC 密码，包含 1–8 个 Latin-1 字符且不含 NUL；不要使用 macOS 账户密码。
-3. 在启动 Harness UI 的环境中通过 `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` 提供该密码。不要写入 YAML 或聊天，修改后重启 Harness UI。
+3. 在 **Advanced browser settings** 或浏览器故障提示中，将已配置的密码填入 **Mac VNC password**，点击 **Verify and save password**。Harness UI 验证成功后将其保存在此 Host 的私有凭据文件中，无需重启即可生效。**Open Mac Sharing settings** 会在运行 Host 的 Mac 上打开共享设置，即使 WebUI 在另一台设备上访问也是如此。不要将密码写入 YAML 或聊天。未保存密码时，仍可通过环境变量 `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` 提供。
 4. 打开 **Browser** 并启用 **Enable browser**，已安装的浏览器会自动检测。非标准安装可在 **Advanced browser settings** 中覆盖浏览器路径，然后保存并重启。Chrome 的常见路径为 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，无需额外的 VNC 程序。
 
 屏幕共享显示整个 Mac 桌面，包括其他应用、菜单栏和程序坞。请保持用户登录且桌面解锁。Harness UI 只连接回环地址的 5900 端口，不修改系统共享或防火墙设置；请将直接屏幕共享访问限制在可信网络。查看器保持物理显示分辨率，提供本地缩放并禁用 Viewport 预设。停止 Harness UI 会关闭其浏览器和查看连接，不会停止屏幕共享。

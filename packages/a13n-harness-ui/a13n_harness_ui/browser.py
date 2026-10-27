@@ -26,7 +26,7 @@ from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from pydantic import Field
 
 from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
-from a13n_harness_ui.browser_macos import MacDesktop
+from a13n_harness_ui.browser_macos import MacDesktop, MacVncCredentials, MacVncPasswordInput, open_sharing_settings
 from a13n_harness_ui.browser_setup import BrowserPlatform, BrowserSetup, host_platform, inspect_browser
 from a13n_harness_ui.browser_vnc import VncConnection
 from a13n_harness_ui.configuration.models import BrowserConfiguration
@@ -113,8 +113,10 @@ def failure(message: str, code: str = "operation_failed") -> HarnessUiError:
     return HostBrowserError(message, code="browser_" + code)
 
 
-async def require_browser(configuration: BrowserConfiguration, *, no_sandbox: bool = False) -> BrowserSetup:
-    setup = await inspect_browser(configuration, no_sandbox=no_sandbox)
+async def require_browser(
+    configuration: BrowserConfiguration, *, no_sandbox: bool = False, macos_password: str | None = None
+) -> BrowserSetup:
+    setup = await inspect_browser(configuration, no_sandbox=no_sandbox, macos_password=macos_password)
     if not setup.ready or setup.browser is None:
         raise failure(setup.message, "runtime_not_ready")
     return setup
@@ -152,6 +154,7 @@ class HostBrowsers:
         self.configuration = configuration or BrowserConfiguration()
         self.no_sandbox = no_sandbox
         self.root = root / "profile"
+        self.macos_credentials = MacVncCredentials(root.parent / "auth.json")
         self.available, self.authorize = available, authorize
         self.bindings: dict[str, Binding] = {}
         self.human_tabs: dict[str, tuple[str, str]] = {}
@@ -207,15 +210,57 @@ class HostBrowsers:
             raise failure("Browser session changed. Refresh before acting.", "session_conflict")
         return item
 
+    async def macos_password(self) -> str | None:
+        return await self.macos_credentials.load() if host_platform() == "macos" else None
+
+    async def inspect(self, configuration: BrowserConfiguration) -> BrowserSetup:
+        return await inspect_browser(
+            configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
+        )
+
+    def require_macos(self) -> None:
+        if not self.available:
+            raise failure("Enable WebUI Host computer sharing first.", "disabled")
+        if host_platform() != "macos":
+            raise failure("Screen Sharing setup requires a macOS Host.", "unsupported")
+
+    async def save_macos_password(self, request: MacVncPasswordInput) -> None:
+        self.require_macos()
+        password = request.password.get_secret_value()
+        async with self.lifecycle:
+            # Verify before replacing a working credential. This sends no desktop input.
+            probe = MacDesktop(password)
+            try:
+                await probe.start()
+            except (OSError, TimeoutError, ValueError, asyncio.IncompleteReadError):
+                raise failure(
+                    "Could not authenticate with Screen Sharing. Enable VNC access on this Mac and check its password.",
+                    "authentication_failed",
+                ) from None
+            finally:
+                await probe.close()
+            await self.macos_credentials.save(password)
+            if isinstance(self.desktop, MacDesktop):
+                self.desktop.set_password(password)
+
+    async def open_macos_settings(self) -> None:
+        self.require_macos()
+        try:
+            await open_sharing_settings()
+        except (OSError, TimeoutError):
+            raise failure("Could not open Sharing settings on this Mac.", "settings_unavailable") from None
+
     async def setup(self, thread_id: str) -> BrowserSetup:
         await self.authorize(thread_id)
-        result = await inspect_browser(self.configuration, no_sandbox=self.no_sandbox)
+        result = await self.inspect(self.configuration)
         await self.authorize(thread_id)
         return result
 
     async def enable(self, thread_id: str) -> BrowserState:
         await self.authorize(thread_id)
-        await require_browser(self.configuration, no_sandbox=self.no_sandbox)
+        await require_browser(
+            self.configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
+        )
         self.bindings.setdefault(thread_id, Binding())
         return self.state(thread_id)
 
@@ -269,10 +314,12 @@ class HostBrowsers:
         ):
             return
         await self.close_runtime()
-        preparation = await require_browser(self.configuration, no_sandbox=self.no_sandbox)
+        preparation = await require_browser(
+            self.configuration, no_sandbox=self.no_sandbox, macos_password=await self.macos_password()
+        )
         assert preparation.browser is not None
         if preparation.platform == "macos":
-            self.desktop = MacDesktop()
+            self.desktop = MacDesktop(await self.macos_password())
         else:
             assert preparation.vnc is not None
             self.desktop = VncDesktop(preparation.vnc)

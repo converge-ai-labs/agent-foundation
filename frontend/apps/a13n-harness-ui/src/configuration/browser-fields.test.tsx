@@ -315,7 +315,7 @@ it("prepares native Screen Sharing on macOS without a Linux VNC selector", async
                 name: "VNC password",
                 required: true,
                 installed: false,
-                detail: "Set A13N_HARNESS_UI_MACOS_VNC_PASSWORD on the Host.",
+                detail: "Enter your existing Screen Sharing password.",
               },
             ],
             steps: [],
@@ -327,10 +327,35 @@ it("prepares native Screen Sharing on macOS without a Linux VNC selector", async
     screen.getByRole("combobox", { name: "Browser executable" }),
   ).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "VNC executable" })).toBeNull();
-  expect(
-    screen.getByText(/macOS shares the entire logged-in desktop/),
-  ).toBeTruthy();
-  expect(screen.queryByLabelText(/password/i)).toBeNull();
+  const input = (await screen.findByLabelText(
+    "Mac VNC password",
+  )) as HTMLInputElement;
+  expect(input.type).toBe("password");
+  const source = screen.getByTestId("source").textContent;
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Open Mac Sharing settings" }),
+  );
+  expect(post).toHaveBeenCalledWith("/api/browser/macos/settings");
+  await user.type(input, "vnc-test");
+  post.mockRejectedValueOnce(
+    new Error("Could not authenticate with Screen Sharing."),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Verify and save password" }),
+  );
+  await screen.findByText("Could not authenticate with Screen Sharing.");
+  expect(input.value).toBe("vnc-test");
+  post.mockResolvedValueOnce({});
+  await user.click(
+    screen.getByRole("button", { name: "Verify and save password" }),
+  );
+  await screen.findByText("Password verified and saved. No restart needed.");
+  expect(post).toHaveBeenCalledWith("/api/browser/macos/password", {
+    body: { password: "vnc-test" },
+  });
+  expect(input.value).toBe("");
+  expect(screen.getByTestId("source").textContent).toBe(source);
 });
 it("returns an explicit executable override to automatic selection", async () => {
   show('schema_version: "1"\nbrowser: {executable: /saved/chrome}\n');

@@ -48,7 +48,8 @@ from a13n_harness_ui.browser import (
     BrowserViewportRequest,
     HostBrowsers,
 )
-from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, inspect_browser, scan_browsers
+from a13n_harness_ui.browser_macos import MacVncPasswordInput
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -1836,7 +1837,15 @@ class HarnessUiApp:
 
     async def check_browser_configuration(self, configuration: BrowserConfiguration) -> BrowserSetup:
         async with self._operation():
-            return await inspect_browser(configuration, no_sandbox=self.browsers().no_sandbox)
+            return await self.browsers().inspect(configuration)
+
+    async def save_macos_browser_password(self, request: MacVncPasswordInput) -> None:
+        async with self._operation():
+            await self.browsers().save_macos_password(request)
+
+    async def open_macos_browser_settings(self) -> None:
+        async with self._operation():
+            await self.browsers().open_macos_settings()
 
     async def browser_access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         async with self._operation():

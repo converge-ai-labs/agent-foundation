@@ -665,6 +665,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser/macos/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Macos Browser Password */
+        post: operations["save_macos_browser_password_api_browser_macos_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/macos/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Macos Browser Settings */
+        post: operations["open_macos_browser_settings_api_browser_macos_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/browser": {
         parameters: {
             query?: never;
@@ -8876,6 +8910,14 @@ export interface components {
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
+        /** MacVncPasswordInput */
+        MacVncPasswordInput: {
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
         /** BrowserCommand */
         BrowserCommand: {
             /** Session Id */
@@ -10652,6 +10694,46 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BrowserSetup"];
                 };
+            };
+        };
+    };
+    save_macos_browser_password_api_browser_macos_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MacVncPasswordInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    open_macos_browser_settings_api_browser_macos_settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

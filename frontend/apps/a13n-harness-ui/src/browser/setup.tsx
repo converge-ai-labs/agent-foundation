@@ -6,6 +6,7 @@ import {
 } from "./requirements";
 import type { Schema } from "../transport/client";
 import styles from "./setup.module.css";
+import { MacSharingSettings, MacVncPassword } from "./macos-setup";
 
 export function BrowserSetup({
   setup,
@@ -22,12 +23,20 @@ export function BrowserSetup({
   const missing = (setup?.requirements ?? []).filter(
     (item) => !item.installed && item.required !== false,
   );
+  const requirements = (setup?.requirements ?? []).filter(
+    (item) =>
+      missing.includes(item) ||
+      (setup?.platform === "macos" &&
+        ["Screen Sharing", "VNC password"].includes(item.name)),
+  );
   return (
     <div className={styles.setup} aria-label="Browser troubleshooting">
       <div className={styles.content}>
         <header className={styles.heading}>
           <h3>
-            {unsupported ? "Linux Host required" : "Browser needs attention"}
+            {unsupported
+              ? "Linux or macOS Host required"
+              : "Browser needs attention"}
           </h3>
         </header>
         <p className={styles.summary} role="alert">
@@ -42,8 +51,18 @@ export function BrowserSetup({
         ) : (
           !unsupported && (
             <>
-              {missing.length > 0 && (
-                <BrowserRequirements requirements={missing} />
+              {requirements.length > 0 && (
+                <BrowserRequirements
+                  requirements={requirements}
+                  controls={
+                    setup?.platform === "macos"
+                      ? {
+                          "Screen Sharing": <MacSharingSettings />,
+                          "VNC password": <MacVncPassword onSaved={retry} />,
+                        }
+                      : {}
+                  }
+                />
               )}
               <BrowserInstallInstructions steps={setup?.steps ?? []} />
             </>
