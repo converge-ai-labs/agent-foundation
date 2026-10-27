@@ -40,7 +40,8 @@ export function BrowserPanel({
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState("");
+  const busy = !!pending;
   const [scale, setScale] = useState<BrowserScale>("fit");
   const [error, setError] = useState("");
   const [authority, setAuthority] = useState<{
@@ -50,14 +51,16 @@ export function BrowserPanel({
   } | null>(null);
   const state = useQuery({
     queryKey: ["browser", threadId],
-    enabled: !!threadId && fullControl,
-    queryFn: () =>
+    enabled: !!threadId && fullControl && !busy,
+    queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/browser", {
           params: { path: { thread_id: threadId! } },
+          signal,
         }),
       ),
     refetchInterval: 2000,
+    staleTime: 2000,
     retry: false,
   });
   const session = state.data;
@@ -88,8 +91,9 @@ export function BrowserPanel({
     kind: "start" | "reset" | "close" | "take-control" | "handback",
   ) => {
     if (!threadId || busy) return;
-    setBusy(true);
+    setPending(kind);
     setError("");
+    await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const path = {
         params: { path: { thread_id: threadId } },
@@ -137,18 +141,19 @@ export function BrowserPanel({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-      if (kind === "start" || kind === "reset") await preparation.refetch();
+      if (kind === "start" || kind === "reset") void preparation.refetch();
+      void refresh();
     } finally {
-      await refresh();
-      setBusy(false);
+      setPending("");
     }
   };
   const changeViewport = async (
     preset: Schema<"BrowserViewportRequest">["preset"],
   ) => {
     if (!threadId || !session?.session_id || !controlToken || busy) return;
-    setBusy(true);
+    setPending("viewport");
     setError("");
+    await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const value = await result(
         client.POST("/api/threads/{thread_id}/browser/viewport", {
@@ -163,9 +168,9 @@ export function BrowserPanel({
       queries.setQueryData(["browser", threadId], value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      void refresh();
     } finally {
-      await refresh();
-      setBusy(false);
+      setPending("");
     }
   };
   useEffect(() => {
@@ -202,13 +207,17 @@ export function BrowserPanel({
     !!(error || session?.error || session?.status === "failed");
   const human = session?.control === "human";
   const mac = session?.platform === "macos";
+  const transfer = human && !mac && !controlToken;
+  const handback = human && !transfer;
   const controlLabel = mac
     ? human
       ? "Resume automation"
       : "Pause automation"
-    : human
-      ? "Hand back to Agent"
-      : "Take control";
+    : transfer
+      ? "Take control here"
+      : human
+        ? "Hand back to Agent"
+        : "Take control";
   const canResize = !busy && !!controlToken && !!session?.resize_available;
   const viewport = session?.viewports?.find(
     (item) => item.preset === session.viewport,
@@ -220,12 +229,14 @@ export function BrowserPanel({
         aria-label={controlLabel}
         variant={human ? "default" : "outline"}
         title={
-          human
-            ? "Resume browser tools in all conversations"
-            : "Pause browser tools in all conversations"
+          transfer
+            ? "Move control to this browser while keeping Agent tools paused"
+            : human
+              ? "Resume browser tools in all conversations"
+              : "Pause browser tools in all conversations"
         }
         disabled={busy}
-        onClick={() => void command(human ? "handback" : "take-control")}
+        onClick={() => void command(handback ? "handback" : "take-control")}
       >
         {mac ? (
           human ? (
@@ -233,13 +244,33 @@ export function BrowserPanel({
           ) : (
             <Pause />
           )
-        ) : human ? (
+        ) : handback ? (
           <HandArrowUp />
         ) : (
           <HandArrowDown />
         )}
-        {mac ? controlLabel : human ? "Hand back" : "Take control"}
+        {pending === "take-control"
+          ? mac
+            ? "Pausing…"
+            : "Taking control…"
+          : pending === "handback"
+            ? "Handing back…"
+            : handback && !mac
+              ? "Hand back"
+              : controlLabel}
       </Button>
+      {transfer && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Hand back to Agent"
+          title="Resume browser tools in all conversations"
+          disabled={busy}
+          onClick={() => void command("handback")}
+        >
+          <HandArrowUp />
+        </Button>
+      )}
       <Button
         size="icon-sm"
         variant="ghost"
@@ -345,6 +376,16 @@ export function BrowserPanel({
             session={session}
             controlToken={human ? controlToken : ""}
             busy={busy}
+            activity={
+              pending === "take-control"
+                ? "Taking control…"
+                : pending === "handback"
+                  ? "Handing back…"
+                  : busy
+                    ? "Updating browser…"
+                    : ""
+            }
+            onReconnectControl={() => void command("take-control")}
             scale={scale}
             actions={actions}
           />

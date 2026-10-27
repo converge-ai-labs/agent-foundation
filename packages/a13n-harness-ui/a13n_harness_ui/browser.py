@@ -706,8 +706,11 @@ class HostBrowsers:
         async with self.control_lock:
             item = self.checked(thread_id, binding)
             if human:
-                if self.human_thread:
+                reconnecting = self.human_thread == thread_id
+                if self.human_thread and (not reconnecting or isinstance(self.desktop, MacDesktop)):
                     raise failure("Browser is already under human control.", "control_conflict")
+                # Explicit transfer or recovery replaces the previous controller
+                # without briefly releasing the automation barrier.
                 if item.status != "ready":
                     raise failure("Start the browser before taking control.", "not_ready")
                 self.human_thread = thread_id
@@ -745,7 +748,10 @@ class HostBrowsers:
                         if any(isinstance(result, BaseException) for result in results):
                             self.failed("Browser takeover failed. Start the browser again.")
                         if not self.runtime_failed:
-                            await self.release()
+                            if reconnecting:
+                                await self.revoke()
+                            else:
+                                await self.release()
                     except BaseException:
                         self.failed("Browser takeover cleanup failed. Start the browser again.")
                     raise

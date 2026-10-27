@@ -170,7 +170,9 @@ Linux Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选�
 
 Host 支持桌面尺寸调整时，接管后可通过浏览器工具栏中的尺寸选择器 切换桌面、笔记本、高清桌面、平板和手机尺寸，平板和手机均提供横竖屏预设。标注的是网页 CSS 视口尺寸，不包括浏览器外框。切换会触发响应式排版，不刷新页面，也不丢失登录状态；其他查看者会看到同样的尺寸。Close conversation tabs 和 Reset 保留当前选择，WebUI 服务器重启后恢复默认桌面尺寸。这些预设用于响应式布局，不模拟手机操作系统、User-Agent 或触摸硬件。
 
-Linux 上默认只能观看。**Take control** 会暂停 Agent 的浏览器操作、页面采集和截图，你可以直接完成登录、验证码或修正。**Hand back to Agent** 撤销人类输入，Agent 必须重新观察后才能继续操作。每次只有一个控制端，其他设备保持只读。控制设备断线后，Agent 仍保持暂停，需要已认证用户明确交还控制。
+Linux 上默认只能观看。**Take control** 会暂停 Agent 的浏览器操作、页面采集和截图，你可以直接完成登录、验证码或修正。**Hand back to Agent** 撤销人类输入，Agent 必须重新观察后才能继续操作。每次只有一个控制端。在另一个浏览器打开同一 Thread 后，点击 **Take control here** 即可直接转移控制权；原控制端失去输入权限，Agent 全程保持暂停。仅打开 Thread 仍为只读。控制设备断线后，Agent 仍保持暂停。点击 **Reconnect control** 可在不恢复 Agent 的情况下重新连接；点击 **Hand back to Agent** 则恢复自动化。
+
+等待当前浏览器操作结束时，工具栏显示 **Taking control…**；随后通过 **Connecting control…** 和 **Waiting for the first frame…** 显示连接进度。出现 **You have control** 后再输入或点击。连接期间可能保留上一帧画面，并在画面上显示等待提示。连接停滞会超时并提供重试按钮。连接等待或失败期间，也可以交还控制。
 
 Linux 查看器支持在你的设备上使用本机输入法组合文字、选择候选词。查看器仅通过剪贴板桥接粘贴最终选词结果，不会改写本机剪贴板。远端输入框需要允许粘贴。Linux 要求 VNC 服务端支持扩展 Unicode 剪贴板，可使用 TigerVNC 或 WayVNC；已测试的 x11vnc 服务端不支持该扩展。Host 也需要安装对应语言的字体。
 

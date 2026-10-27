@@ -150,6 +150,98 @@ async def test_losing_controller_revokes_input_without_resuming_agent(browsers):
     assert not browsers.released.is_set()
 
 
+async def test_reconnect_control_renews_authority_without_resuming_agent(browsers):
+    identity = browsers.state("thread-a").session_id
+    first = await browsers.control("thread-a", identity, human=True)
+    ticket = await browsers.access(
+        "thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token)
+    )
+    # A failed handshake may leave an unclaimed token; explicit retry replaces it.
+    second = await browsers.control("thread-a", identity, human=True)
+    assert second.control_token and second.control_token != first.control_token
+    assert not browsers.released.is_set()
+    assert all(item.scope._paused for item in browsers.bindings.values())
+    with pytest.raises(HarnessUiError, match="expired"):
+        await browsers.connect("thread-a", ticket.ticket)
+    with pytest.raises(HarnessUiError, match="revoked"):
+        await browsers.access("thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token))
+    writer = Mock(wait_closed=AsyncMock())
+    browsers.controller = writer
+    browsers.connections[writer] = "thread-a"
+    third = await browsers.control("thread-a", identity, human=True)
+    writer.close.assert_called()
+    writer.wait_closed.assert_awaited_once()
+    assert writer not in browsers.connections
+    assert third.control_token and third.control_token != second.control_token
+    assert browsers.human_thread == "thread-a" and not browsers.released.is_set()
+    replacement = Mock(wait_closed=AsyncMock())
+    browsers.controller = replacement
+    browsers.connections[replacement] = "thread-a"
+    # Cleanup from the replaced viewer cannot revoke the new controller.
+    await browsers.disconnect(writer)
+    assert browsers.controller is replacement
+    assert browsers.control_token == third.control_token
+    with pytest.raises(HarnessUiError, match="already under human control"):
+        await browsers.control("thread-b", browsers.state("thread-b").session_id, human=True)
+
+
+async def test_transfer_settles_old_controller_before_issuing_authority(browsers):
+    identity = browsers.state("thread-a").session_id
+    first = await browsers.control("thread-a", identity, human=True)
+    ticket = await browsers.access(
+        "thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token)
+    )
+    closing = asyncio.Event()
+    settled = asyncio.Event()
+
+    async def wait_closed():
+        closing.set()
+        await settled.wait()
+
+    writer = Mock(wait_closed=AsyncMock(side_effect=wait_closed))
+    browsers.controller = writer
+    browsers.connections[writer] = "thread-a"
+    transfer = asyncio.create_task(browsers.control("thread-a", identity, human=True))
+    await asyncio.wait_for(closing.wait(), 1)
+    assert not transfer.done() and not browsers.control_token
+    assert browsers.controller is None and not browsers.released.is_set()
+    assert all(item.scope._paused for item in browsers.bindings.values())
+    with pytest.raises(HarnessUiError, match="expired"):
+        await browsers.connect("thread-a", ticket.ticket)
+    settled.set()
+    second = await asyncio.wait_for(transfer, 1)
+    assert second.control_token and second.control_token != first.control_token
+    with pytest.raises(HarnessUiError, match="revoked"):
+        await browsers.access("thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token))
+
+
+async def test_competing_transfers_leave_only_the_latest_authority(browsers):
+    identity = browsers.state("thread-a").session_id
+    await browsers.control("thread-a", identity, human=True)
+    first, second = await asyncio.gather(
+        browsers.control("thread-a", identity, human=True),
+        browsers.control("thread-a", identity, human=True),
+    )
+    assert first.control_token != second.control_token == browsers.control_token
+    assert not browsers.released.is_set()
+    with pytest.raises(HarnessUiError, match="revoked"):
+        await browsers.access("thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token))
+
+
+async def test_failed_control_reconnect_preserves_pause(browsers):
+    identity = browsers.state("thread-a").session_id
+    await browsers.control("thread-a", identity, human=True)
+    browsers.focus.side_effect = RuntimeError("Focus failed")
+    with pytest.raises(RuntimeError, match="Focus failed"):
+        await browsers.control("thread-a", identity, human=True)
+    assert browsers.human_thread == "thread-a" and not browsers.released.is_set()
+    assert not browsers.control_token
+    assert all(item.scope._paused for item in browsers.bindings.values())
+    browsers.focus.side_effect = None
+    await browsers.control("thread-a", identity, human=False)
+    assert browsers.released.is_set()
+
+
 async def test_takeover_settles_operations_without_waiting_for_the_entire_agent_task(browsers):
     finished = asyncio.Event()
     release = asyncio.Event()

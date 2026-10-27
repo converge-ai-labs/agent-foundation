@@ -216,6 +216,25 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         await wait_value(runtime, page, "document.querySelector('input').value", "a")
         with pytest.raises(HarnessUiError, match="user controls"):
             await backend.observe()
+        # Transfer an active controller without releasing the automation pause.
+        old_controller = browsers.controller
+        assert old_controller is not None
+        renewed = await browsers.control("thread-a", state.session_id, human=True)
+        assert writable.is_closing()
+        assert not browsers.released.is_set()
+        await browsers.disconnect(old_controller)
+        assert browsers.control_token == renewed.control_token
+        assert renewed.control_token != control.control_token
+        with pytest.raises(HarnessUiError, match="revoked"):
+            await browsers.access(
+                "thread-a", BrowserAccessRequest(session_id=state.session_id, control_token=control.control_token)
+            )
+        _, writable, _ = await rfb(browsers, "thread-a", state.session_id, renewed.control_token)
+        key(writable, ord("b"))
+        await writable.drain()
+        await wait_value(runtime, page, "document.querySelector('input').value", "ab")
+        with pytest.raises(HarnessUiError, match="user controls"):
+            await backend.observe()
         await browsers.control("thread-a", state.session_id, human=False)
         assert writable.is_closing()
         if old_password:
