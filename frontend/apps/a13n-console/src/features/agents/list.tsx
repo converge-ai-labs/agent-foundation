@@ -35,6 +35,7 @@ import { workspaceModelsQuery } from "../models/api";
 import { ModelKeyLabel } from "../models/model-icon";
 import { AgentAvatar } from "./avatar";
 import { ExportAgent } from "./export";
+import { ConnectAgent } from "./connect";
 import { AgentCreationMenu } from "./import";
 import styles from "./agents.module.css";
 
@@ -203,6 +204,12 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
                   <PlayIcon aria-hidden="true" />
                   {t("Try agent")}
                 </MenuItem>
+              )}
+              {can("run") && (
+                <ConnectAgent
+                  key={`${workspace.id}:${agent.id}`}
+                  agent={agent}
+                />
               )}
               {revision && (
                 <ExportAgent

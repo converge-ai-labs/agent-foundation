@@ -3,7 +3,6 @@ import {
   IdentificationBadgeIcon,
   RobotIcon,
   ClipboardTextIcon,
-  KeyIcon,
   StackIcon,
   EyeIcon,
   DevicesIcon,
@@ -11,6 +10,7 @@ import {
   SlidersIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  TranslateIcon,
   UserIcon,
   UsersIcon,
   WebhooksLogoIcon,
@@ -48,6 +48,13 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Preferences",
       description: "Choose how Console looks and feels.",
       icon: SlidersHorizontalIcon,
+    },
+    {
+      value: "language",
+      layout: "form",
+      label: "Language",
+      description: "Used for navigation, dates, and controls.",
+      icon: TranslateIcon,
     },
     {
       value: "profile",
@@ -104,13 +111,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       description: "Manage the people who can access this workspace.",
       icon: UsersIcon,
       permission: "admin",
-    },
-    {
-      value: "api-keys",
-      label: "My API keys",
-      description:
-        "Your own credentials for this workspace. Keep them private.",
-      icon: KeyIcon,
     },
     {
       value: "member-keys",

@@ -123,6 +123,8 @@ const ModalSurface = memo(
     return (
       <DialogPopup
         data-a13n-modal
+        // Portal key events must not reach the hidden menu's typeahead.
+        onKeyDown={(event) => event.stopPropagation()}
         data-size={size}
         className={cn(
           keepVisibleWhenNested && "opacity-100",

@@ -3521,5 +3521,18 @@
   "Read-only. Updated with Service releases.": "只读内容，随 Service 版本更新。",
   "Insights": "洞察",
   "Monitor resource usage and performance across environments and devices.": "监控环境和设备的资源使用情况与性能。",
-  "Built-in": "内置"
+  "Built-in": "内置",
+  "Connect to app": "接入应用",
+  "Creating…": "创建中…",
+  "Copy for agent": "复制给 agent",
+  "Docs": "文档",
+  "Service URL": "服务地址",
+  "Agent ID": "Agent ID",
+  "Copy API key": "复制 API 密钥",
+  "Copy now. This key is shown only once.": "请立即复制，密钥仅显示一次。",
+  "Set A13N_API_KEY in your server environment.": "将 A13N_API_KEY 配置在服务端环境变量中。",
+  "Prompt preview": "预览提示词",
+  "Copy {{label}}": "复制{{label}}",
+  "Use a saved key, or create a new one.": "使用已保存的密钥，或创建新密钥。",
+  "No active personal key. Create one to get started.": "暂无可用的个人密钥，请先创建。"
 }

@@ -1,15 +1,8 @@
-import {
-  Button,
-  ChoiceField,
-  FormField,
-  Input,
-  MenuItem,
-  ModalFrame,
-} from "a13n-ui";
+import { Button, MenuItem, ModalFrame } from "a13n-ui";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import { PageActions } from "../../shared/page";
+import { Page, PageActions } from "../../shared/page";
 
 import { KeyIcon, PlusIcon, ProhibitIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -32,14 +25,25 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm } from "../../shared/dialogs";
-import { FormActions, SecretReveal } from "../../shared/forms";
+import { SecretReveal } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
-import {
-  expirationOptions,
-  expirationTimestamp,
-  type Expiration,
-} from "./expiration";
+import { CreateKeyForm, useCreateKey } from "./create-key";
+
+export function ApiKeysPage() {
+  const { t } = useTranslation();
+  const { workspace } = useWorkspace();
+  return (
+    <Page
+      title={t("API keys")}
+      description={t(
+        "Your own credentials for this workspace. Keep them private.",
+      )}
+    >
+      <ApiKeys key={workspace.id} />
+    </Page>
+  );
+}
 
 /** Keys a reader can hold: their own, every member's, or one account's. */
 type KeyScope = "personal" | "member" | "account";
@@ -261,48 +265,24 @@ function CreateKey({
   accountId?: string;
   triggerElement?: ReactElement;
 }) {
-  const { t } = useTranslation(),
-    client = useClient(),
-    { workspace } = useWorkspace(),
-    cache = useQueryClient();
-  const [open, setOpen] = useState(false),
-    [name, setName] = useState(""),
-    [expires, setExpires] = useState<Expiration>("never");
-  const create = useMutation({
-    gcTime: 0,
-    mutationFn: async () => {
-      const body = { name, expires_at: expirationTimestamp(expires) };
-      return accountId
-        ? client.http
-            .POST(
-              "/api/v1/workspaces/{workspace_id}/service-accounts/{account_id}/keys",
-              {
-                params: {
-                  path: { workspace_id: workspace.id, account_id: accountId },
-                },
-                body,
-              },
-            )
-            .then(data)
-        : client.http
-            .POST("/api/v1/users/me/keys", {
-              body: { ...body, workspace_id: workspace.id },
-            })
-            .then(data);
-    },
-    onSuccess: () => {
-      void cache.invalidateQueries({ queryKey: ["keys", workspace.id] });
-    },
-  });
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [secret, setSecret] = useState<string>();
+  const create = useCreateKey(setSecret, accountId);
+  const close = () => {
+    setOpen(false);
+    setSecret(undefined);
+    create.reset();
+  };
   return (
     <ModalFrame
-      onOpenChange={(value) => {
-        setOpen(value);
-        if (!create.isPending) {
-          create.reset();
-          setName("");
-          setExpires("never");
+      onOpenChange={(value, details) => {
+        if (create.isPending) {
+          details.cancel();
+          return;
         }
+        if (value) setOpen(true);
+        else close();
       }}
       trigger={
         triggerElement ?? (
@@ -320,59 +300,21 @@ function CreateKey({
       closeLabel={t("Close")}
       open={open}
     >
-      {create.data ? (
+      {secret ? (
         <div className={styles.stack}>
           <SecretReveal
-            value={create.data.secret}
+            value={secret}
             label={t("API key")}
             caution={t("Copy this key now. It will not be shown again.")}
           />
           <footer className={styles.formActions}>
-            <Button type="button" onClick={() => setOpen(false)}>
+            <Button type="button" onClick={close}>
               {t("Done")}
             </Button>
           </footer>
         </div>
       ) : (
-        <form
-          className={styles.form}
-          onSubmit={(event) => {
-            event.preventDefault();
-            create.mutate();
-          }}
-        >
-          <FormField className="min-w-0 w-full" label={t("Name")}>
-            <Input
-              required={true}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-              autoFocus
-            />
-          </FormField>
-          <ChoiceField
-            placeholder={t("Select expiration")}
-            value={expires}
-            className="min-w-0"
-            onValueChange={(value) => {
-              const option = expirationOptions.find(
-                (option) => option.value === value,
-              );
-              if (option) setExpires(option.value);
-            }}
-            label={t("Expires after")}
-            options={expirationOptions.map((option) => ({
-              ...option,
-              label: t(option.label),
-            }))}
-          />
-          <ErrorNotice error={create.error} />
-          <FormActions
-            onCancel={() => setOpen(false)}
-            pending={create.isPending}
-            label={t("Create key")}
-          />
-        </form>
+        open && <CreateKeyForm create={create} onCancel={close} />
       )}
     </ModalFrame>
   );

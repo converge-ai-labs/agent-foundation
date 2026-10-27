@@ -23,7 +23,7 @@ import {
 } from "a13n-ui";
 import {
   CaretDownIcon,
-  GearSixIcon,
+  KeyIcon,
   type Icon as PhosphorIcon,
   ListIcon,
   SidebarSimpleIcon,
@@ -248,10 +248,10 @@ function WorkspaceNavigation({
           <SidebarMenu>
             <SidebarMenuItem>
               <NavigationRow
-                to={destination("settings")}
-                label={t("Settings")}
-                icon={GearSixIcon}
-                active={pathname.startsWith(destination("settings"))}
+                to={destination("api-keys")}
+                label={t("API keys")}
+                icon={KeyIcon}
+                active={pathname === destination("api-keys")}
                 rail={rail}
                 onNavigate={close}
               />

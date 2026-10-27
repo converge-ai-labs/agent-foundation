@@ -64,7 +64,6 @@ export function WorkspaceSettings() {
           <MediaUnderstandingDefaults key={workspace.id} />
         ),
         members: <MemberSettings scope={scope} />,
-        "api-keys": <ApiKeys />,
         "member-keys": <ApiKeys memberKeys />,
         "service-accounts": accountId ? (
           <ServiceAccountDetail key={accountId} accountId={accountId} />

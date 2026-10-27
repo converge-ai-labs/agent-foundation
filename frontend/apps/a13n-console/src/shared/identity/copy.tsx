@@ -1,6 +1,6 @@
 import { Button, Tooltip, TooltipTrigger, TooltipPopup } from "a13n-ui";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -12,11 +12,13 @@ export function CopyButton({
   iconOnly = false,
   copyLabel,
   text,
+  variant,
 }: {
   value: string | (() => string);
   iconOnly?: boolean;
   copyLabel?: string;
   text?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
 }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<
@@ -47,7 +49,7 @@ export function CopyButton({
       className={
         text ? styles.label : iconOnly ? "text-muted-foreground" : undefined
       }
-      variant={text || iconOnly ? "ghost" : "outline"}
+      variant={variant ?? (text || iconOnly ? "ghost" : "outline")}
       size={iconOnly && !text ? "icon-xs" : "sm"}
       aria-label={label}
       disabled={status === "pending"}

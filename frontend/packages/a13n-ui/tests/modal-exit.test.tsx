@@ -1,7 +1,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { Button, ModalFrame } from "../src";
+import {
+  Button,
+  ModalFrame,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "../src";
 
 it("retains content when the caller clears it during exit and uses fresh content on reopen", async () => {
   const finished = new Promise<Animation>(() => {});
@@ -94,4 +101,38 @@ it("outside press dismisses only the topmost nested modal", async () => {
     expect(screen.queryByRole("dialog", { name: "Child" })).toBeNull(),
   );
   expect(screen.getByRole("dialog", { name: "Parent" })).toBeTruthy();
+});
+
+it("lets a dialog opened from a menu own typing and Escape", async () => {
+  const user = userEvent.setup();
+  render(
+    <Menu>
+      <MenuTrigger render={<Button />}>Actions</MenuTrigger>
+      <MenuPopup>
+        <ModalFrame
+          title="Create key"
+          closeLabel="Close"
+          trigger={
+            <MenuItem
+              nativeButton
+              render={<button type="button" />}
+              closeOnClick={false}
+            >
+              Create key
+            </MenuItem>
+          }
+        >
+          <input aria-label="Name" />
+        </ModalFrame>
+      </MenuPopup>
+    </Menu>,
+  );
+  await user.tab();
+  await user.keyboard("{ArrowDown}");
+  await user.click(await screen.findByRole("menuitem", { name: "Create key" }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await user.type(name, "Release app");
+  expect((name as HTMLInputElement).value).toBe("Release app");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

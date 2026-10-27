@@ -93,13 +93,13 @@ Console 使用 `POST /api/v1/auth/login` 和 `{email, password}` 登录。Servic
 
 API 密钥以其主体身份认证，始终**限定在一个工作空间内**。密钥本身不携带权限：每个请求读取主体当前的授权，并限制到该工作空间（组织层面仅有 `read`）。修改或移除授权会立即影响该主体的所有密钥。
 
-在 Console 的 **工作区设置 → 我的 API 密钥** 中创建个人密钥，或调用 `POST /api/v1/users/me/keys` 并传入 `{name, workspace_id, expires_at?}`。需要登录会话和该工作空间至少 `read` 权限；API 密钥不能创建其他密钥（`403 forbidden`）。响应只返回一次密钥值（`a13n_…`），Service 仅保存其哈希。将密钥作为 bearer token 发送；请求在该密钥所属工作空间中执行：
+在 Console 侧边栏的 **API 密钥** 中创建个人密钥，或调用 `POST /api/v1/users/me/keys` 并传入 `{name, workspace_id, expires_at?}`。需要登录会话和该工作空间至少 `read` 权限；API 密钥不能创建其他密钥（`403 forbidden`）。响应只返回一次密钥值（`a13n_…`），Service 仅保存其哈希。将密钥作为 bearer token 发送；请求在该密钥所属工作空间中执行：
 
 ```sh
 curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-在 **我的 API 密钥** 中列出和撤销自己的密钥（`GET /api/v1/users/me/keys`、`DELETE /api/v1/users/me/keys/{key_id}`）。工作空间管理员在 **成员密钥** 中查看和撤销限定于其工作空间的全部密钥（`/api/v1/workspaces/{workspace_id}/keys`）。`last_used_at` 显示最近使用时间，最多每分钟更新一次。
+在 **API 密钥** 中列出和撤销自己的密钥（`GET /api/v1/users/me/keys`、`DELETE /api/v1/users/me/keys/{key_id}`）。工作空间管理员在 **成员密钥** 中查看和撤销限定于其工作空间的全部密钥（`/api/v1/workspaces/{workspace_id}/keys`）。`last_used_at` 显示最近使用时间，最多每分钟更新一次。
 
 ## 服务账号
 

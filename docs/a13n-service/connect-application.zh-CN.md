@@ -7,7 +7,7 @@ description: 通过 Service SDK 开始对话、读取回答并发送后续消息
 
 ## 配置凭据
 
-在 **工作区设置 → 我的 API 密钥** 中创建 API 密钥。将密钥和 Service URL 保存在服务端配置中。密钥在所属工作空间中使用其主体的当前权限，主体是密钥所属的用户或服务账号。你需要该工作空间中的 **runner** 或更高角色；创建 agent 需要 **builder** 或 **admin**。团队应用请使用专用[服务账号](identity.md#service-accounts)。
+在 Console 中打开 agent 菜单，选择 **接入应用**。你可以查看接入文档，也可以将指引复制给 AI 编程助手。没有保存过密钥时，直接在同一窗口创建个人 API 密钥。侧边栏的 **API 密钥** 页面用于管理已有密钥。将密钥和 Service URL 保存在服务端配置中。密钥在所属工作空间中使用其主体的当前权限，主体是密钥所属的用户或服务账号。你需要该工作空间中的 **runner** 或更高角色；创建 agent 需要 **builder** 或 **admin**。团队应用请使用专用[服务账号](identity.md#service-accounts)。
 
 ## 从 SDK 开始
 

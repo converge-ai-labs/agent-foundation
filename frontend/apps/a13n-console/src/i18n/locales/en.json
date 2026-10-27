@@ -3521,5 +3521,18 @@
   "Read-only. Updated with Service releases.": "Read-only. Updated with Service releases.",
   "Insights": "Insights",
   "Monitor resource usage and performance across environments and devices.": "Monitor resource usage and performance across environments and devices.",
-  "Built-in": "Built-in"
+  "Built-in": "Built-in",
+  "Connect to app": "Connect to app",
+  "Creating…": "Creating…",
+  "Copy for agent": "Copy for agent",
+  "Docs": "Docs",
+  "Service URL": "Service URL",
+  "Agent ID": "Agent ID",
+  "Copy API key": "Copy API key",
+  "Copy now. This key is shown only once.": "Copy now. This key is shown only once.",
+  "Set A13N_API_KEY in your server environment.": "Set A13N_API_KEY in your server environment.",
+  "Prompt preview": "Prompt preview",
+  "Copy {{label}}": "Copy {{label}}",
+  "Use a saved key, or create a new one.": "Use a saved key, or create a new one.",
+  "No active personal key. Create one to get started.": "No active personal key. Create one to get started."
 }

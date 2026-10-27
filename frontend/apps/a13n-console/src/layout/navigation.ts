@@ -70,6 +70,7 @@ export function routeSkeleton(
 ): { variant: "page" | "detail"; columns: number } | undefined {
   const tail = pathname.replace(/^\/[^/]+\/[^/]+/, "");
   const lists: Record<string, number> = {
+    "/api-keys": 4,
     "/agents": 4,
     "/sessions": 4,
     "/schedules": 4,

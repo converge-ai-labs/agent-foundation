@@ -51,6 +51,11 @@ const CreateAgent = lazy(() =>
     default: module.CreateAgent,
   })),
 );
+const ApiKeysPage = lazy(() =>
+  import("./features/settings/keys").then((module) => ({
+    default: module.ApiKeysPage,
+  })),
+);
 const PersonalSettings = lazy(() =>
   import("./features/settings/personal").then((module) => ({
     default: module.PersonalSettings,
@@ -355,6 +360,7 @@ function AppContent() {
                         element={<MemoryDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
+                      <Route path="api-keys" element={<ApiKeysPage />} />
                       <Route
                         path="settings/service-accounts/:accountId"
                         element={<WorkspaceSettings />}
