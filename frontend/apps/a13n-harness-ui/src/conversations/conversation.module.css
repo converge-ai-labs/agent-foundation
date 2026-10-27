@@ -415,7 +415,7 @@
     inset-inline-end: 28px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
-    padding-inline-end: 36px;
+    padding-inline-end: 28px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
     display: none;
