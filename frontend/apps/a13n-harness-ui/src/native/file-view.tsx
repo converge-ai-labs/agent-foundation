@@ -26,6 +26,8 @@ import { CaptureContext, downloadBlob } from "./capture";
 import { FileMedia } from "./file-media";
 import { downloadFile, fileTransfer } from "./file-transfer";
 import { mediaKind, MAX_MEDIA_BYTES } from "./media-kind";
+import { modifierLabel } from "../platform";
+import shell from "../shell/workbench.module.css";
 import styles from "./native.module.css";
 
 export function FileView({
@@ -182,16 +184,13 @@ export function FileView({
   return (
     <section className={styles.file} aria-label="File content">
       <header className={styles.fileHeader}>
-        <strong>
-          {basename(path)}
-          {buffer.dirty ? " · Unsaved" : ""}
-        </strong>
-        <span>
+        <strong title={path}>{basename(path)}</strong>
+        {buffer.dirty && <span className={styles.unsaved}>Unsaved</span>}
+        <span className={styles.fileMeta}>
           {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
           {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
         </span>
       </header>
-      <div className={styles.path}>{path}</div>
       {symlink && (
         <div className={styles.notice}>
           Resolved target: {buffer.base.resolved_path}. This path is read-only;
@@ -400,9 +399,6 @@ export function FileView({
           line-ending style; opening or capturing does not change its bytes.
         </p>
       )}
-      {editable && mode === "text" && (
-        <small>⌘/Ctrl+G: go to line · ⌘/Ctrl+S: save</small>
-      )}
       {editable ? (
         mode === "preview" && markdown ? (
           <article
@@ -468,28 +464,39 @@ export function FileView({
           </p>
         </div>
       )}
-      <CaptureContext
-        key={`${path}:${buffer.base.entry.revision}`}
-        source={{
-          file: { ...buffer.base, entry: { ...buffer.base.entry, path } },
-        }}
-        threadId={threadId}
-        selection={mode === "text" ? selection : undefined}
-        compact
-        disabled={
-          buffer.dirty ||
-          buffer.saving ||
-          buffer.uncertain ||
-          buffer.conflict ||
-          read.isFetching ||
-          !!read.error ||
-          buffer.base.entry.size > 10 * 1024 * 1024
-        }
-      />
+      <footer className={styles.fileFooter}>
+        <CaptureContext
+          key={`${path}:${buffer.base.entry.revision}`}
+          source={{
+            file: { ...buffer.base, entry: { ...buffer.base.entry, path } },
+          }}
+          threadId={threadId}
+          selection={mode === "text" ? selection : undefined}
+          compact
+          disabled={
+            buffer.dirty ||
+            buffer.saving ||
+            buffer.uncertain ||
+            buffer.conflict ||
+            read.isFetching ||
+            !!read.error ||
+            buffer.base.entry.size > 10 * 1024 * 1024
+          }
+        />
+        {editable && mode === "text" && (
+          <small className={styles.shortcuts}>
+            <kbd className={shell.kbd}>{modifierLabel()} G</kbd> Go to line
+            <kbd className={shell.kbd}>{modifierLabel()} S</kbd> Save
+          </small>
+        )}
+      </footer>
       <details className={styles.metadata}>
-        <summary>File version</summary>
+        <summary>File details</summary>
+        <p>{path}</p>
+        {buffer.base.resolved_path !== path && (
+          <p>Resolved path: {buffer.base.resolved_path}</p>
+        )}
         <p>Server native filesystem · revision {buffer.base.entry.revision}</p>
-        <p>Resolved path: {buffer.base.resolved_path}</p>
       </details>
     </section>
   );

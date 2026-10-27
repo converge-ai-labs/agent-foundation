@@ -164,7 +164,9 @@ export function NativeWorkspace({
   };
   useEffect(() => {
     const trail = folderTrail.current;
-    if (trail) trail.scrollTop = trail.scrollHeight;
+    if (!trail) return;
+    trail.scrollLeft = trail.scrollWidth;
+    trail.dataset.clipped = String(trail.scrollLeft > 0);
   }, [directory, pane, view]);
   useEffect(() => {
     if (projectLoading) return;
@@ -901,6 +903,12 @@ export function NativeWorkspace({
                           ref={folderTrail}
                           className={styles.breadcrumbs}
                           aria-label="Current folder"
+                          onScroll={(event) => {
+                            const trail = event.currentTarget;
+                            trail.dataset.clipped = String(
+                              trail.scrollLeft > 0,
+                            );
+                          }}
                         >
                           <ol>
                             {directoryTrail.map((part, index) => (

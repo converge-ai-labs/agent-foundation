@@ -103,6 +103,9 @@
   margin-inline: auto;
   padding: 24px;
 }
+/* The drawer keeps one 12px content inset on every row: header and tab
+   controls sit 4px in so their ghost padding lands on the same line, and
+   the editor page trades 6px of padding for its stable scrollbar gutter. */
 .pane {
   flex: 0 0 var(--panel-width, 44%);
   min-width: 0;
@@ -113,6 +116,9 @@
   padding: 0;
   background: var(--a13n-canvas);
   overflow: auto;
+}
+.layout > .pane {
+  scrollbar-gutter: auto;
 }
 .paneBody[hidden] {
   display: none;
@@ -141,23 +147,25 @@
   flex-basis: 70%;
 }
 .pane > .paneHeader {
-  padding: 8px 12px;
-  min-height: 46px;
+  padding: 8px 4px;
+  min-height: 48px;
   border-bottom: 1px solid var(--a13n-border);
   flex-shrink: 0;
+}
+.pane > .paneHeader > .panelTools > strong {
+  padding-inline: 8px;
 }
 .pane > .location,
 .pane > .paneBody {
   margin: 0 12px;
 }
 .pane .editorPage {
-  padding: 12px;
+  padding: 12px 6px 12px 12px;
 }
 .terminalDock {
   display: contents;
 }
-.paneHeader,
-.fileHeader {
+.paneHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -171,8 +179,7 @@
 .paneHeader small {
   display: block;
 }
-.pane small,
-.fileHeader span {
+.pane small {
   color: var(--a13n-secondary);
   font-size: 11px;
   overflow-wrap: anywhere;
@@ -204,7 +211,7 @@
 }
 .folderNavigation {
   display: flex;
-  align-items: start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -228,14 +235,24 @@
   flex: 1;
   min-width: 0;
 }
+/* One scrolling line; the trail keeps its current folder in view and fades
+   its leading edge once earlier folders scroll out. */
 .breadcrumbs {
+  flex: 1;
   min-width: 0;
-  max-height: 96px;
-  overflow: auto;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.breadcrumbs[data-clipped="true"] {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.breadcrumbs::-webkit-scrollbar {
+  display: none;
 }
 .breadcrumbs ol {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   padding: 0;
   margin: 0;
@@ -244,8 +261,7 @@
 .breadcrumbs li {
   display: flex;
   align-items: center;
-  min-width: 0;
-  max-width: 100%;
+  flex-shrink: 0;
 }
 .breadcrumbs li > svg {
   width: 12px;
@@ -376,11 +392,61 @@
   padding: 0;
   min-width: 0;
 }
+/* One line: name, unsaved state and size; the full path lives in the
+   name's title and in File details. */
 .fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 20px;
   font-size: 13px;
 }
 .fileHeader strong {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileHeader > button,
+.fileMeta {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.fileMeta,
+.unsaved {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.unsaved {
+  flex-shrink: 0;
+}
+.unsaved::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+.fileFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.shortcuts kbd:not(:first-child) {
+  margin-left: 6px;
 }
 .path {
   font-size: 12px;
@@ -416,6 +482,10 @@
 .repo details {
   font-size: 11px;
   overflow-wrap: anywhere;
+}
+.metadata p {
+  margin: 0 0 4px;
+  color: var(--a13n-secondary);
 }
 .notice summary,
 .metadata summary,
@@ -518,10 +588,14 @@
 .fileTabs {
   display: flex;
   gap: 2px;
-  overflow: auto;
+  overflow-x: auto;
   flex-shrink: 0;
-  padding: 4px 16px;
+  padding: 4px;
   border-bottom: 1px solid var(--a13n-border);
+  scrollbar-width: none;
+}
+.fileTabs::-webkit-scrollbar {
+  display: none;
 }
 .fileTabs > span {
   display: inline-flex;
