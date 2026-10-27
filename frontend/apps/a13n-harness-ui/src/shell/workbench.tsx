@@ -340,7 +340,7 @@ function WorkbenchContent({
       >
         <header className={styles.sidebarHeader}>
           <Link to="/" className={styles.brand} aria-label="Harness UI home">
-            <Logo alt="" width={24} height={24} />
+            <Logo alt="" width={20} height={20} />
             <span>Harness</span>
           </Link>
           <div className={styles.headerActions}>

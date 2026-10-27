@@ -1,18 +1,18 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  gap: 7px;
+  min-height: 28px;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--a13n-text-supporting);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 18px;
   text-align: start;
   text-decoration: none;
   cursor: pointer;
@@ -21,8 +21,8 @@
     color 120ms ease-out;
 }
 .row > svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 .row:hover {
