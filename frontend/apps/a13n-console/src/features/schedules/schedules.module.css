@@ -104,6 +104,7 @@
 
 .overview {
   margin-top: 24px;
+  margin-bottom: 32px;
   padding: 20px;
   border: 1px solid var(--a13n-border);
   border-radius: 12px;

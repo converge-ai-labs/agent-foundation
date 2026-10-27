@@ -927,15 +927,20 @@ it("shows every saved input part and links to the target agent and session", asy
     section.getByText("Send the meeting reminder after the report."),
   ).toBeTruthy();
   expect(
-    (await section.findByRole("link", { name: "Reporter" })).getAttribute(
+    (await screen.findByRole("link", { name: "Reporter" })).getAttribute(
       "href",
     ),
   ).toBe(`/workspace/ws_one/agents/${schedule.invocation.agent_id}`);
   expect(
-    section
+    screen
       .getByRole("link", { name: schedule.session_id })
       .getAttribute("href"),
   ).toBe("/workspace/ws_one/sessions/ses_one");
+  expect(section.queryByText("Target agent")).toBeNull();
+  expect(section.queryByText("Target session")).toBeNull();
+  expect(section.queryByText("Agent version")).toBeNull();
+  expect(screen.getByText("Schedule description: Summary only")).toBeTruthy();
+  expect(section.queryByText(/Summary only/)).toBeNull();
   expect(screen.getByRole("button", { name: "Edit schedule" })).toBeTruthy();
 });
 

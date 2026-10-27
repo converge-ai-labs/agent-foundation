@@ -213,7 +213,14 @@ function ScheduleContent({
             />
           }
           resourceKey={schedule.id}
-          description={schedule.description}
+          expandableDescription
+          description={
+            schedule.description
+              ? t("Schedule description: {{description}}", {
+                  description: schedule.description,
+                })
+              : undefined
+          }
           actions={
             <>
               {open && (
@@ -371,27 +378,6 @@ function ScheduleContent({
                   : t("No unfinished work")}
             </dd>
           </div>
-        </dl>
-        {schedule.state === "completed" && (
-          <p className={styles.notice}>
-            {t(
-              "Scheduling has finished. Check the trigger history for submission and execution results.",
-            )}
-          </p>
-        )}
-        {schedule.pause_reason && schedule.pause_reason !== "manual" && (
-          <p className={styles.notice}>
-            {t(`schedule.reason.${schedule.pause_reason}`, {
-              defaultValue: schedule.pause_reason,
-            })}
-          </p>
-        )}
-      </div>
-      <Section
-        title={t("Execution instructions")}
-        description={t("This input is sent to the agent on every trigger.")}
-      >
-        <dl className={styles.summary}>
           <div>
             <dt>{t("Target agent")}</dt>
             <dd>
@@ -414,6 +400,25 @@ function ScheduleContent({
             <dd>{schedule.invocation.agent_revision_id ?? t("Default")}</dd>
           </div>
         </dl>
+        {schedule.state === "completed" && (
+          <p className={styles.notice}>
+            {t(
+              "Scheduling has finished. Check the trigger history for submission and execution results.",
+            )}
+          </p>
+        )}
+        {schedule.pause_reason && schedule.pause_reason !== "manual" && (
+          <p className={styles.notice}>
+            {t(`schedule.reason.${schedule.pause_reason}`, {
+              defaultValue: schedule.pause_reason,
+            })}
+          </p>
+        )}
+      </div>
+      <Section
+        title={t("Execution instructions")}
+        description={t("This input is sent to the agent on every trigger.")}
+      >
         <div className={styles.instructions}>
           {schedule.invocation.payload.content.map((part, index) =>
             part.type === "text" ? (

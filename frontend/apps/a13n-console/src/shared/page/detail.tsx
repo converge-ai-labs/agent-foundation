@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import { ResourceKeyChip } from "../identity";
+import { ExpandableDescription } from "./expandable-description";
 import styles from "./page.module.css";
 
 export interface DetailTab {
@@ -131,6 +132,7 @@ export function DetailHeader({
   edit,
   resourceKey,
   description,
+  expandableDescription = false,
   actions,
 }: {
   avatar?: ReactNode;
@@ -139,11 +141,15 @@ export function DetailHeader({
   edit?: ReactNode;
   resourceKey?: string;
   description?: string | null;
+  expandableDescription?: boolean;
   actions?: ReactNode;
 }) {
   return (
     <header className={styles.header}>
-      <div className={styles.identity}>
+      <div
+        className={styles.identity}
+        data-expandable-description={expandableDescription || undefined}
+      >
         {avatar}
         <div className={styles.titleBlock}>
           <div className={styles.detailTitleRow}>
@@ -154,14 +160,17 @@ export function DetailHeader({
           {(resourceKey || description) && (
             <div className={styles.subtitle}>
               {resourceKey && <ResourceKeyChip value={resourceKey} />}
-              {resourceKey && description && (
+              {resourceKey && description && !expandableDescription && (
                 <span className={styles.dot}>·</span>
               )}
-              {description && (
-                <span className={styles.subtitleText} title={description}>
-                  {description}
-                </span>
-              )}
+              {description &&
+                (expandableDescription ? (
+                  <ExpandableDescription key={description} text={description} />
+                ) : (
+                  <span className={styles.subtitleText} title={description}>
+                    {description}
+                  </span>
+                ))}
             </div>
           )}
         </div>
