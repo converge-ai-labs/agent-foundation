@@ -175,7 +175,9 @@ memory:
 
 ### Host 浏览器
 
-根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`，启用浏览器时会自动选择已安装的兼容程序，无需保存配置或重启。`vnc_executable` 仅适用于 Linux。如需覆盖自动选择，可填写 Host 上的绝对路径，例如：
+根配置 `browser.mode` 默认为 `auto`，在 WebUI 启动时准备共享浏览器，并自动为符合条件的 Full Control Run 提供浏览器工具。Agent 实际浏览或用户选择 **Open browser** 时才打开对话页面。设置 `mode: disabled` 可关闭此功能；修改后需保存并重启 Harness UI。
+
+根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`，启动时会自动选择已安装的兼容程序，无需保存配置或重启。`vnc_executable` 仅适用于 Linux。如需覆盖自动选择，可填写 Host 上的绝对路径，例如：
 
 ```yaml
 browser:
@@ -183,7 +185,7 @@ browser:
   vnc_executable: /usr/bin/Xtigervnc
 ```
 
-在 **Settings → General → Host browser** 中设置高级覆盖项，或将示例路径替换为实际安装路径。修改覆盖项后需保存并重启 Harness UI；选择 **Automatic** 可清除覆盖。显式路径无效时会阻止启动，不会回退到其他程序。自动探测不会安装软件或改写配置。浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。macOS 自动化只需 Chromium。可选的只读窗口预览需要 macOS 14 或更高版本，以及运行 Harness UI 的应用的屏幕录制权限。**Open Screen Recording settings** 用于打开 Host 设置。无需 VNC 密码，不提供远程输入；缺少预览权限不阻止自动化。启动前请完成 [macOS 准备步骤](webui.md#install-host-components)。
+在 **Settings → General → Host browser** 中设置高级覆盖项，或将示例路径替换为实际安装路径。修改覆盖项后需保存并重启 Harness UI；选择 **Automatic** 可清除覆盖。显式路径无效时会阻止启动，不会回退到其他程序。自动探测不会安装软件或改写配置。浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及 Auto 模式下的 Full Control Run。macOS 自动化只需 Chromium。可选的只读窗口预览需要 macOS 14 或更高版本，以及运行 Harness UI 的应用的屏幕录制权限。**Open Screen Recording settings** 用于打开 Host 设置。无需 VNC 密码，不提供远程输入；缺少预览权限不阻止自动化。启动前请完成 [macOS 准备步骤](webui.md#install-host-components)。
 
 绑定对所有 Project 生效，所有对话共用一个浏览器实例和 Profile。Profile 位于 `<data_root>/browsers/profile`，没有单独的路径设置。Host 依赖、选择和首次使用见[浏览器快速开始](webui.md#first-time-setup)；部署明确需要关闭 Chromium 沙箱时，见[沙箱启动选项](command-reference.md#webui)。
 

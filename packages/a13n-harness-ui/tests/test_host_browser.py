@@ -849,3 +849,85 @@ async def test_macos_layout_keeps_physical_resolution(browsers):
     await HostBrowsers.layout(browsers, item.page, item)
     assert not browsers.state("thread-a").resize_available
     assert browsers.runtime.window_bounds.await_args_list[-1].args == (42, {"windowState": "maximized"})
+
+
+async def test_auto_prepare_is_once_and_admission_allocates_no_pages(browsers):
+    browsers.launch = AsyncMock()
+    browsers.runtime.create = AsyncMock()
+    await asyncio.gather(browsers.prepare(), browsers.prepare())
+    first, second = await asyncio.gather(browsers.admit("new-thread"), browsers.admit("new-thread"))
+    assert first == second and first
+    browsers.launch.assert_awaited_once()
+    browsers.runtime.create.assert_not_awaited()
+    assert browsers.state("new-thread").page_count == 0
+    assert browsers.state("new-thread").status == "ready"
+
+
+@pytest.mark.parametrize("available,mode", [(False, "auto"), (True, "disabled")])
+async def test_auto_policy_gates_preparation_and_admission(tmp_path, available, mode):
+    from a13n_harness_ui.configuration.models import BrowserConfiguration
+
+    host = HostBrowsers(
+        root=tmp_path, available=available, authorize=AsyncMock(), configuration=BrowserConfiguration(mode=mode)
+    )
+    host.launch = AsyncMock()
+    await host.prepare()
+    assert await host.admit("thread") is None
+    assert host.state("thread").status == "disabled"
+    host.launch.assert_not_awaited()
+
+
+async def test_failed_preparation_is_optional_and_explicit_open_retries(browsers):
+    browsers.launch = AsyncMock(side_effect=BrowserError("Missing runtime"))
+    await browsers.prepare()
+    assert await browsers.admit("new-thread") is None
+    assert browsers.state("new-thread").error == "Missing runtime"
+    browsers.launch.assert_awaited_once()
+
+    async def recover():
+        browsers.runtime_failed = False
+
+    browsers.launch = AsyncMock(side_effect=recover)
+    page = Page("first", "first-session")
+    browsers.runtime.pages[page.target] = page
+    browsers.runtime.create = AsyncMock(return_value=page)
+    opened = await browsers.open("new-thread")
+    assert opened.status == "ready" and opened.page_count == 1
+    assert browsers.startup_error is None
+    browsers.runtime.create.assert_awaited_once()
+
+
+@pytest.mark.parametrize("action", ["navigate", "new"])
+async def test_close_pages_preserves_run_binding_and_can_reopen(browsers, action):
+    identity = browsers.state("thread-a").session_id
+    backend = browsers.backend("thread-a", identity)
+    other = browsers.bindings["thread-b"].page
+    closed = await browsers.close_pages("thread-a", identity)
+    assert closed.session_id == identity and closed.page_count == 0
+    assert not browsers.bindings["thread-a"].closed.is_set()
+    assert browsers.bindings["thread-b"].page is other
+    page = Page("replacement", "replacement-session")
+    browsers.runtime.pages[page.target] = page
+    browsers.runtime.create = AsyncMock(return_value=page)
+    if action == "navigate":
+        browsers.runtime.observe = AsyncMock(
+            side_effect=lambda page, query=None: setattr(page, "requires_observation", False)
+        )
+        await backend.navigate("https://example.com")
+        browsers.runtime.navigate.assert_awaited_once()
+    else:
+        await backend.tabs("new")
+    assert browsers.state("thread-a").page_count == 1
+    assert browsers.state("thread-a").session_id == identity
+
+
+async def test_auto_admission_during_takeover_retains_handback_barrier(browsers):
+    browsers.launch = AsyncMock()
+    await browsers.control("thread-a", browsers.state("thread-a").session_id, human=True)
+    identity = await browsers.admit("new-thread")
+    assert identity
+    backend = browsers.backend("new-thread", identity)
+    with pytest.raises(HarnessUiError, match="user controls"):
+        await backend.tabs("new")
+    await browsers.control("thread-a", browsers.state("thread-a").session_id, human=False)
+    assert await backend.tabs("list") == ()

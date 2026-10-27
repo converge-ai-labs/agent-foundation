@@ -1848,13 +1848,9 @@ class HarnessUiApp:
         async with self._operation():
             return await self.browsers().setup(thread_id)
 
-    async def enable_browser(self, thread_id: str) -> BrowserState:
-        async with self._operation(), self._root_runs.require_inactive(thread_id):
-            return await self.browsers().enable(thread_id)
-
-    async def start_browser(self, thread_id: str, command: BrowserCommand) -> BrowserState:
+    async def start_browser(self, thread_id: str) -> BrowserState:
         async with self._operation():
-            return await self.browsers().start(thread_id, command.session_id, explicit=True)
+            return await self.browsers().open(thread_id)
 
     async def reset_browser(self, thread_id: str, command: BrowserCommand) -> BrowserState:
         async with self._operation():
@@ -1864,9 +1860,9 @@ class HarnessUiApp:
         async with self._operation():
             return await self.browsers().resize(thread_id, request)
 
-    async def stop_browser(self, thread_id: str, command: BrowserCommand) -> BrowserState:
+    async def close_browser_pages(self, thread_id: str, command: BrowserCommand) -> BrowserState:
         async with self._operation():
-            return await self.browsers().stop(thread_id, command.session_id)
+            return await self.browsers().close_pages(thread_id, command.session_id)
 
     async def control_browser(self, thread_id: str, command: BrowserCommand, *, human: bool) -> BrowserControl:
         async with self._operation():
@@ -3742,6 +3738,7 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
                     if app._voice is not None:

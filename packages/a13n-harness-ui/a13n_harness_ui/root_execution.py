@@ -338,7 +338,7 @@ class RootRunExecutor:
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
             display=archive,
             browser_binding=(
-                self._browsers.binding(thread_id)
+                await self._browsers.admit(thread_id)
                 if self._browsers is not None
                 and published.value.environment_profile.profile_id == FULL_CONTROL_PROFILE_ID
                 else None

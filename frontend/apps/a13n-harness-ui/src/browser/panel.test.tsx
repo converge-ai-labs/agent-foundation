@@ -56,6 +56,7 @@ function show({
     platform,
     session_id: status === "disabled" ? "" : "binding-a",
     status,
+    page_count: status === "ready" ? 1 : 0,
     control: "agent",
     url: "https://example.com",
     viewport: "desktop",
@@ -70,8 +71,6 @@ function show({
       data: url.endsWith("/setup") ? setup : state,
     })),
     POST: vi.fn(async (url: string, options: { body?: { preset: string } }) => {
-      if (url.endsWith("enable"))
-        state = { ...state, status: "enabled", session_id: "binding-enabled" };
       if (url.endsWith("take-control")) {
         state = { ...state, control: "human" };
         return { data: { state, control_token: "controller-a" } };
@@ -80,17 +79,17 @@ function show({
         state = { ...state, control: "agent" };
         return { data: { state, control_token: "" } };
       }
-      if (url.endsWith("stop"))
+      if (url.endsWith("close"))
         state = {
           ...state,
-          status: "stopped",
+          page_count: 0,
           control: "agent",
-          session_id: "binding-stopped",
         };
       if (url.endsWith("reset"))
         state = {
           ...state,
           status: "ready",
+          page_count: 1,
           control: "agent",
           session_id: "binding-reset",
         };
@@ -98,6 +97,7 @@ function show({
         state = {
           ...state,
           status: "ready",
+          page_count: 1,
           control: "agent",
           session_id: "binding-started",
         };
@@ -125,38 +125,31 @@ function show({
   const result = render(view(threadId));
   return { client, switchThread: () => result.rerender(view("thread-b")) };
 }
-async function toggleBrowser() {
-  const toggle = screen.getByRole("switch", { name: "Enable browser" });
-  await waitFor(() =>
-    expect(toggle.getAttribute("aria-disabled")).not.toBe("true"),
-  );
-  fireEvent.click(toggle);
+async function openBrowser() {
+  fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
 }
-it("starts a new browser with one toggle and restarts without enabling again", async () => {
-  const { client } = show({ status: "disabled" });
-  await toggleBrowser();
+it("opens and closes conversation tabs without an enable switch", async () => {
+  const { client } = show({ status: "enabled" });
+  await openBrowser();
   await screen.findByTestId("stream");
-  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
-    "/api/threads/{thread_id}/browser/enable",
-    "/api/threads/{thread_id}/browser/start",
-  ]);
-  expect(client.POST).toHaveBeenLastCalledWith(
-    "/api/threads/{thread_id}/browser/start",
-    expect.objectContaining({ body: { session_id: "binding-enabled" } }),
+  expect(screen.queryByRole("switch")).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Browser options" }),
   );
-  await toggleBrowser();
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Close conversation tabs" }),
+  );
   await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByTestId("stream");
   expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
-    "/api/threads/{thread_id}/browser/enable",
     "/api/threads/{thread_id}/browser/start",
-    "/api/threads/{thread_id}/browser/stop",
+    "/api/threads/{thread_id}/browser/close",
     "/api/threads/{thread_id}/browser/start",
   ]);
   expect(client.POST).toHaveBeenLastCalledWith(
     "/api/threads/{thread_id}/browser/start",
-    expect.objectContaining({ body: { session_id: "binding-stopped" } }),
+    { params: { path: { thread_id: "thread-a" } } },
   );
 });
 it("uses one page stream for read-only and explicit control, then clears authority on handback", async () => {
@@ -187,11 +180,7 @@ it("keeps local zoom available without control and exposes scoped lifecycle butt
   const user = userEvent.setup();
   await screen.findByTestId("stream");
   expect(screen.getByRole("button", { name: "Reset browser" })).toBeTruthy();
-  expect(
-    screen
-      .getByRole("switch", { name: "Enable browser" })
-      .getAttribute("aria-checked"),
-  ).toBe("true");
+  expect(screen.queryByRole("switch")).toBeNull();
   expect(screen.queryByLabelText("Page address")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Browser options" }));
   expect(
@@ -262,7 +251,12 @@ it("resets and stops only the current conversation and clears its control author
       body: { session_id: "binding-a" },
     }),
   );
-  await toggleBrowser();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Browser options" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Close conversation tabs" }),
+  );
   await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
 });
 
@@ -283,7 +277,7 @@ it("keeps the permission explanation for an existing non-Full-Control conversati
 });
 it("only checks components after a failed attempt and retries the full startup", async () => {
   const { client } = show({
-    status: "disabled",
+    status: "enabled",
     setup: {
       ready: false,
       supported: true,
@@ -314,18 +308,18 @@ it("only checks components after a failed attempt and retries the full startup",
   await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
   expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
   client.POST.mockRejectedValueOnce(new Error("Missing VNC"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Install TigerVNC.");
   expect(screen.queryByText("/usr/bin/chromium")).toBeNull();
   expect(screen.queryByText("Optional window manager")).toBeNull();
-  expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+  expect(screen.queryByRole("switch")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByTestId("stream");
   expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
 });
 it("shows unsupported platforms without dependency installation or settings detours", async () => {
   const { client } = show({
-    status: "disabled",
+    status: "enabled",
     setup: {
       ready: false,
       supported: false,
@@ -335,7 +329,7 @@ it("shows unsupported platforms without dependency installation or settings deto
     },
   });
   client.POST.mockRejectedValueOnce(new Error("Unsupported platform"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Linux or macOS Host required");
   expect(
     screen.queryByRole("list", { name: "Browser requirements" }),
@@ -346,9 +340,9 @@ it("shows unsupported platforms without dependency installation or settings deto
   expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 });
 it("keeps runtime failures visible when component checks succeed", async () => {
-  const { client } = show({ status: "disabled" });
+  const { client } = show({ status: "enabled" });
   client.POST.mockRejectedValueOnce(new Error("Profile is in use"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Profile is in use");
   expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
 });

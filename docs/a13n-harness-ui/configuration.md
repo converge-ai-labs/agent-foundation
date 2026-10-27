@@ -175,7 +175,9 @@ Back up `memory/` beside the selected YAML separately from application data. `.a
 
 ### Host browser
 
-Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null`, which automatically selects compatible installed programs when you enable the browser. No configuration save or restart is needed for automatic selection. `vnc_executable` applies only to Linux. To override a selection, provide an absolute Host path, for example:
+Root `browser.mode` defaults to `auto`. It prepares a shared browser at WebUI startup and automatically provides browser tools to eligible Full Control Runs. Conversation pages open only when the Agent browses or you select **Open browser**. Set `mode: disabled` to turn this facility off. Save and restart Harness UI to apply the mode.
+
+Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null`, which automatically selects compatible installed programs at startup. No configuration save or restart is needed for automatic selection. `vnc_executable` applies only to Linux. To override a selection, provide an absolute Host path, for example:
 
 ```yaml
 browser:
@@ -183,7 +185,7 @@ browser:
   vnc_executable: /usr/bin/Xtigervnc
 ```
 
-Use **Settings → General → Host browser** for advanced overrides, or replace the example paths with your installation's paths. Save and restart Harness UI to apply changed overrides. Choose **Automatic** to clear an override. Invalid explicit paths block startup without falling back to another program. Automatic detection never installs software or rewrites settings. Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation. macOS requires only Chromium for automation. Optional read-only window preview requires macOS 14 or later and Screen Recording permission for the application running Harness UI. **Open Screen Recording settings** opens the Host settings. No VNC password or remote input is used; missing preview permission does not block automation. Follow the [macOS preparation steps](webui.md#install-host-components) before starting.
+Use **Settings → General → Host browser** for advanced overrides, or replace the example paths with your installation's paths. Save and restart Harness UI to apply changed overrides. Choose **Automatic** to clear an override. Invalid explicit paths block startup without falling back to another program. Automatic detection never installs software or rewrites settings. Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run with Auto mode. macOS requires only Chromium for automation. Optional read-only window preview requires macOS 14 or later and Screen Recording permission for the application running Harness UI. **Open Screen Recording settings** opens the Host settings. No VNC password or remote input is used; missing preview permission does not block automation. Follow the [macOS preparation steps](webui.md#install-host-components) before starting.
 
 The bindings apply to all Projects. One browser instance and profile are shared; the profile lives at `<data_root>/browsers/profile` and has no separate path setting. See the [browser quick start](webui.md#first-time-setup) for Host packages, selection and first use, and [sandbox startup options](command-reference.md#webui) for deployments that explicitly require disabling Chromium's sandbox.
 

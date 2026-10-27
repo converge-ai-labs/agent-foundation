@@ -2019,3 +2019,127 @@ it("resolves Shell command context at argument completion rather than each delta
     lookup.mockRestore();
   }
 });
+
+it("signals successful live native browser use without replaying it after reconnect", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(
+    compactFrame(101, [
+      compactItem(
+        "browser",
+        1,
+        {
+          toolCallId: "call",
+          toolCallName: "browser_navigate",
+          arguments: "{}",
+          outcome: "success",
+        },
+        "tool_call",
+      ),
+    ]),
+  );
+  expect(display.browserActivityRunId).toBeUndefined();
+  display.accept(
+    rawFrame(
+      102,
+      2,
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "live",
+        toolCallName: "browser_navigate",
+      },
+      "live",
+      "tool_call",
+    ),
+  );
+  display.accept(
+    rawFrame(
+      103,
+      3,
+      {
+        type: "CUSTOM",
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              tool_call_id: "live",
+              tool_name: "browser_navigate",
+              part_kind: "tool-return",
+              outcome: "success",
+              content: "navigated",
+            },
+          },
+        },
+      },
+      "live",
+      "tool_call",
+      "completed",
+    ),
+  );
+  expect(display.browserActivityRunId).toBe("run-one");
+  display.accept(snapshot(0));
+  expect(display.browserActivityRunId).toBe("run-one");
+});
+
+it.each([
+  ["browser_navigate", {}, "error", false],
+  ["browser_tabs", { action: "list" }, "success", false],
+  ["browser_tabs", { action: "close" }, "success", false],
+  ["browser_tabs", { action: "new" }, "success", true],
+  ["browser_tabs", { action: "select", tab: "t1" }, "success", true],
+] as const)(
+  "browser activity for %s %j (%s)",
+  (name, args, outcome, active) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    display.accept(
+      rawFrame(
+        101,
+        1,
+        { type: "TOOL_CALL_START", toolCallId: "call", toolCallName: name },
+        "call",
+        "tool_call",
+      ),
+    );
+    display.accept(
+      rawFrame(
+        102,
+        2,
+        {
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call",
+          delta: JSON.stringify(args),
+        },
+        "call",
+        "tool_call",
+      ),
+    );
+    display.accept(
+      rawFrame(
+        103,
+        3,
+        {
+          type: "CUSTOM",
+          name: "a13n.pydantic_ai.function_tool_result",
+          value: {
+            event: {
+              part: {
+                tool_call_id: "call",
+                tool_name: name,
+                part_kind: "tool-return",
+                outcome,
+                content: "result",
+              },
+            },
+          },
+        },
+        "call",
+        "tool_call",
+        "completed",
+      ),
+    );
+    expect(display.browserActivityRunId).toBe(active ? "run-one" : undefined);
+  },
+);

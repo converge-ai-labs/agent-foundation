@@ -19,6 +19,9 @@ import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
 
+vi.mock("../conversations/live-threads", () => ({
+  useLiveThread: () => ({ display: {} }),
+}));
 vi.mock("./files", () => ({
   Files: ({
     path,

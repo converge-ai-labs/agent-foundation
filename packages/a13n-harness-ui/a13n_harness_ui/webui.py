@@ -1143,15 +1143,9 @@ def create_webui(
     async def browser_setup(thread_id: str) -> BrowserSetup:
         return await app().browser_setup(thread_id)
 
-    @server.post("/api/threads/{thread_id}/browser/enable", response_model=BrowserState)
-    async def enable_browser(thread_id: str) -> BrowserState:
-        return await app().enable_browser(thread_id)
-
-    @server.post(
-        "/api/threads/{thread_id}/browser/start", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
-    )
-    async def start_browser(thread_id: str, request: Request) -> BrowserState:
-        return await app().start_browser(thread_id, await _document(request, BrowserCommand))
+    @server.post("/api/threads/{thread_id}/browser/start", response_model=BrowserState)
+    async def start_browser(thread_id: str) -> BrowserState:
+        return await app().start_browser(thread_id)
 
     @server.post(
         "/api/threads/{thread_id}/browser/reset", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
@@ -1168,10 +1162,10 @@ def create_webui(
         return await app().resize_browser(thread_id, await _document(request, BrowserViewportRequest))
 
     @server.post(
-        "/api/threads/{thread_id}/browser/stop", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+        "/api/threads/{thread_id}/browser/close", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
     )
-    async def stop_browser(thread_id: str, request: Request) -> BrowserState:
-        return await app().stop_browser(thread_id, await _document(request, BrowserCommand))
+    async def close_browser_pages(thread_id: str, request: Request) -> BrowserState:
+        return await app().close_browser_pages(thread_id, await _document(request, BrowserCommand))
 
     @server.post(
         "/api/threads/{thread_id}/browser/take-control",

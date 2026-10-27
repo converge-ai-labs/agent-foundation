@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Switch,
+  MenuItem,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -23,6 +23,7 @@ import {
   Monitor,
   Pause,
   Play,
+  X,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -84,7 +85,7 @@ export function BrowserPanel({
   });
   const refresh = () => queries.invalidateQueries({ queryKey: ["browser"] });
   const command = async (
-    kind: "start" | "reset" | "stop" | "take-control" | "handback",
+    kind: "start" | "reset" | "close" | "take-control" | "handback",
   ) => {
     if (!threadId || busy) return;
     setBusy(true);
@@ -95,17 +96,10 @@ export function BrowserPanel({
         body: { session_id: session?.session_id ?? "" },
       };
       if (kind === "start") {
-        if (!path.body.session_id) {
-          const enabled = await result(
-            client.POST("/api/threads/{thread_id}/browser/enable", {
-              params: path.params,
-            }),
-          );
-          queries.setQueryData(["browser", threadId], enabled);
-          path.body.session_id = enabled.session_id!;
-        }
         const value = await result(
-          client.POST("/api/threads/{thread_id}/browser/start", path),
+          client.POST("/api/threads/{thread_id}/browser/start", {
+            params: path.params,
+          }),
         );
         queries.setQueryData(["browser", threadId], value);
       }
@@ -116,9 +110,9 @@ export function BrowserPanel({
         queries.setQueryData(["browser", threadId], value);
         setAuthority(null);
       }
-      if (kind === "stop") {
+      if (kind === "close") {
         const value = await result(
-          client.POST("/api/threads/{thread_id}/browser/stop", path),
+          client.POST("/api/threads/{thread_id}/browser/close", path),
         );
         queries.setQueryData(["browser", threadId], value);
         setAuthority(null);
@@ -186,8 +180,8 @@ export function BrowserPanel({
         <Monitor size={28} />
         <strong>Start a conversation first</strong>
         <p>
-          Send a message to start this conversation, then enable the browser
-          here.
+          Send a message to start this conversation. Your Agent can browse when
+          needed.
         </p>
       </div>
     );
@@ -199,8 +193,9 @@ export function BrowserPanel({
         <p>Use a Full Control conversation.</p>
       </div>
     );
-  const ready = session?.status === "ready";
-  const enabled = ready || session?.status === "enabled";
+  const ready = session?.status === "ready" && !!session.page_count;
+  const preparing = busy || state.isLoading || session?.status === "starting";
+  const disabled = session?.status === "disabled";
   const needsHelp =
     !ready &&
     !busy &&
@@ -264,6 +259,10 @@ export function BrowserPanel({
           <DotsThree />
         </MenuTrigger>
         <MenuPopup align="end" className={styles.optionsMenu}>
+          <MenuItem disabled={busy} onClick={() => void command("close")}>
+            <X />
+            Close conversation tabs
+          </MenuItem>
           <MenuSub>
             <MenuSubTrigger>
               <MagnifyingGlassPlus />
@@ -326,27 +325,6 @@ export function BrowserPanel({
   ) : null;
   return (
     <section className={styles.panel} aria-label="Host browser">
-      <div className={styles.activation}>
-        <div>
-          <label htmlFor="browser-enabled">Enable browser</label>
-          <p role="status">
-            {busy
-              ? "Updating browser…"
-              : state.isLoading
-                ? "Loading…"
-                : enabled
-                  ? "Enabled for this conversation"
-                  : "Automatically detect and start installed components."}
-          </p>
-        </div>
-        <Switch
-          id="browser-enabled"
-          aria-label="Enable browser"
-          checked={enabled}
-          disabled={busy || !state.isSuccess}
-          onCheckedChange={(value) => void command(value ? "start" : "stop")}
-        />
-      </div>
       {!needsHelp && (error || state.error || session?.error) && (
         <p className={styles.notice} role="alert">
           {error || state.error?.message || session?.error}
@@ -388,13 +366,32 @@ export function BrowserPanel({
         <div className={styles.empty}>
           <Monitor size={28} />
           <strong>
-            {busy ? "Preparing browser…" : "Browse with your Agent"}
+            {preparing
+              ? "Preparing browser…"
+              : disabled
+                ? "Browser disabled"
+                : "Ready when you need it"}
           </strong>
           <p>
-            {busy
-              ? "Checking components and opening this conversation’s window."
-              : "Enable the browser to open a window for this conversation. Login sessions are shared across conversations."}
+            {preparing
+              ? "Preparing the shared Host browser."
+              : disabled
+                ? "Enable automatic browsing in browser settings."
+                : "Your Agent opens pages as needed. You can also open a window to sign in. Login sessions are shared across conversations."}
           </p>
+          {disabled ? (
+            <a href="/settings/resources#browser">Browser settings</a>
+          ) : (
+            !preparing && (
+              <Button
+                variant="outline"
+                disabled={!state.isSuccess}
+                onClick={() => void command("start")}
+              >
+                <Monitor /> Open browser
+              </Button>
+            )
+          )}
         </div>
       )}
     </section>

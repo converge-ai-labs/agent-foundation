@@ -1771,45 +1771,6 @@
         }
       }
     },
-    "/api/threads/{thread_id}/browser/enable": {
-      "post": {
-        "summary": "Enable Browser",
-        "operationId": "enable_browser_api_threads__thread_id__browser_enable_post",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrowserState"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/threads/{thread_id}/browser/start": {
       "post": {
         "summary": "Start Browser",
@@ -1843,16 +1804,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BrowserCommand"
               }
             }
           }
@@ -1957,10 +1908,10 @@
         }
       }
     },
-    "/api/threads/{thread_id}/browser/stop": {
+    "/api/threads/{thread_id}/browser/close": {
       "post": {
-        "summary": "Stop Browser",
-        "operationId": "stop_browser_api_threads__thread_id__browser_stop_post",
+        "summary": "Close Browser Pages",
+        "operationId": "close_browser_pages_api_threads__thread_id__browser_close_post",
         "parameters": [
           {
             "name": "thread_id",
@@ -9867,6 +9818,7 @@
             "type": "string",
             "enum": [
               "disabled",
+              "starting",
               "enabled",
               "ready",
               "stopped",
@@ -9874,6 +9826,11 @@
             ],
             "title": "Status",
             "default": "disabled"
+          },
+          "page_count": {
+            "type": "integer",
+            "title": "Page Count",
+            "default": 0
           },
           "control": {
             "type": "string",
@@ -24914,6 +24871,15 @@
       },
       "BrowserConfiguration": {
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "disabled"
+            ],
+            "title": "Mode",
+            "default": "auto"
+          },
           "executable": {
             "anyOf": [
               {
@@ -24946,7 +24912,7 @@
         },
         "type": "object",
         "title": "BrowserConfiguration",
-        "description": "Host executable bindings captured at App startup; never install dependencies."
+        "description": "Host browser policy captured at App startup; never install dependencies."
       },
       "BrowserCommand": {
         "additionalProperties": false,
