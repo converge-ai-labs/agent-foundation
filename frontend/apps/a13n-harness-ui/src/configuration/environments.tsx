@@ -62,7 +62,7 @@ export function EnvironmentsEditor({
           label="Local mode"
           description={
             profile?.mode === "full-control"
-              ? "Full Control runs as the server account, without a sandbox."
+              ? "Runs as the server account without a sandbox."
               : profile?.description
           }
           value={value.environment_profile_id ?? ""}

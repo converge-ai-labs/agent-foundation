@@ -1,4 +1,4 @@
-import { SettingsRow } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { ChoiceField } from "a13n-ui";
 import { useSelectors } from "../transport/context";
 import { readDocument, updateDocument } from "./documents";
@@ -17,7 +17,7 @@ export function MediaUnderstandingFields({
   const selectors = useSelectors();
   const document = readDocument(source);
   return (
-    <>
+    <SettingsSection variant="outlined">
       {mediaKinds.map((kind) => (
         <SettingsRow key={kind} label={mediaLabels[kind]}>
           <ChoiceField
@@ -51,6 +51,6 @@ export function MediaUnderstandingFields({
           />
         </SettingsRow>
       ))}
-    </>
+    </SettingsSection>
   );
 }

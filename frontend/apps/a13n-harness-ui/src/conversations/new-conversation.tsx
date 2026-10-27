@@ -531,9 +531,8 @@ function NewConversation({
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),
           ) && (
             <p role="alert">
-              Some attachments are unavailable. Local files are not saved across
-              reloads, and uploaded files belong to their original chat. Remove
-              unavailable attachments and attach the files again before sending.
+              Reattach unavailable files before sending. Local attachments do
+              not survive reloads; uploads belong to their original chat.
             </p>
           )}
           <ErrorNotice

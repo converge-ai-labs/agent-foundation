@@ -40,6 +40,7 @@ import styles from "../shell/workbench.module.css";
 import layout from "./settings.module.css";
 import {
   SettingsChoice as ChoiceField,
+  SettingsSection,
   SettingsTextField as TextField,
 } from "../shell/settings";
 
@@ -319,44 +320,51 @@ export function SourcesPage({
         title="Add configuration"
         closeLabel="Close"
         footer={
-          <Button
-            disabled={!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(id)}
-            onClick={() => {
-              const choice = resourceKinds.find((item) => item.value === kind)!;
-              const path = `${choice.directory}/${id}.${kind === "subagent" ? "md" : "yaml"}`;
-              if (
-                sources.data?.sources.some(
-                  (source) => source.relative_path === path,
-                ) ||
-                drafts.has(path)
-              ) {
-                const unpublished =
-                  drafts.get(path)?.digest === null &&
-                  !sources.data?.sources.some(
+          <>
+            <Button variant="outline" onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(id)}
+              onClick={() => {
+                const choice = resourceKinds.find(
+                  (item) => item.value === kind,
+                )!;
+                const path = `${choice.directory}/${id}.${kind === "subagent" ? "md" : "yaml"}`;
+                if (
+                  sources.data?.sources.some(
                     (source) => source.relative_path === path,
+                  ) ||
+                  drafts.has(path)
+                ) {
+                  const unpublished =
+                    drafts.get(path)?.digest === null &&
+                    !sources.data?.sources.some(
+                      (source) => source.relative_path === path,
+                    );
+                  navigate(
+                    `/settings/source?path=${encodeURIComponent(path)}${unpublished ? "&new=1" : ""}`,
                   );
-                navigate(
-                  `/settings/source?path=${encodeURIComponent(path)}${unpublished ? "&new=1" : ""}`,
-                );
-              } else {
-                drafts.set(path, {
-                  content: template(kind, id),
-                  base: null,
-                  digest: null,
-                  replacement: true,
-                });
-                navigate(
-                  `/settings/source?path=${encodeURIComponent(path)}&new=1`,
-                );
-              }
-              setCreating(false);
-            }}
-          >
-            Continue
-          </Button>
+                } else {
+                  drafts.set(path, {
+                    content: template(kind, id),
+                    base: null,
+                    digest: null,
+                    replacement: true,
+                  });
+                  navigate(
+                    `/settings/source?path=${encodeURIComponent(path)}&new=1`,
+                  );
+                }
+                setCreating(false);
+              }}
+            >
+              Continue
+            </Button>
+          </>
         }
       >
-        <div className={styles.stack}>
+        <SettingsSection>
           <ChoiceField
             label="Resource type"
             value={kind}
@@ -375,7 +383,7 @@ export function SourcesPage({
             onChange={setId}
             description="Use the resource prefix and a lowercase hyphenated name."
           />
-        </div>
+        </SettingsSection>
       </ModalFrame>
     </section>
   );
@@ -398,7 +406,8 @@ export function SourceDocument({
 }: {
   path: string;
   isNew?: boolean;
-  title?: string;
+  /** Null omits the heading when the containing section already supplies one. */
+  title?: string | null;
   mediaOnly?: boolean;
   embedded?: boolean;
   section?: "envd" | "execution" | "connections";
@@ -535,58 +544,60 @@ export function SourceDocument({
     <div
       className={`${styles.sourceDocument} ${section || mediaOnly ? styles.sourceSubsection : ""}`}
     >
-      <div className={styles.sourceHeader}>
-        {!embedded && (
-          <Link className={styles.back} to={back}>
-            <ArrowLeft />
-            {backLabel}
-          </Link>
-        )}
-        <PageHeader
-          level={mediaOnly || section ? 2 : 1}
-          description={
-            mediaOnly
-              ? "Used when native input is unavailable."
-              : section === "envd"
-                ? "Settings for this whole server. Save, then restart Harness UI to apply them."
-                : section === "execution"
-                  ? "Default for new chats. Projects can override this selection."
-                  : undefined
-          }
-          title={
-            title ||
-            (isNew
-              ? `Add ${resourceLabel}`
-              : String(
-                  readDocument(draft?.content ?? "")?.get("name") ||
-                    path ||
-                    "Configuration",
-                ))
-          }
-          actions={
-            source.data?.writable &&
-            source.data.resource_kind !== "root" && (
-              <Menu>
-                <MenuTrigger
-                  aria-label="More configuration actions"
-                  render={<Button variant="ghost" size="icon" />}
-                >
-                  <DotsThree />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                  <MenuItem
-                    variant="destructive"
-                    onClick={() => setDeleting(true)}
+      {title !== null && (
+        <div className={styles.sourceHeader}>
+          {!embedded && (
+            <Link className={styles.back} to={back}>
+              <ArrowLeft />
+              {backLabel}
+            </Link>
+          )}
+          <PageHeader
+            level={mediaOnly || section ? 2 : 1}
+            description={
+              mediaOnly
+                ? "Used when native input is unavailable."
+                : section === "envd"
+                  ? "Settings for this whole server. Save, then restart Harness UI to apply them."
+                  : section === "execution"
+                    ? "Default for new chats. Projects can override this selection."
+                    : undefined
+            }
+            title={
+              title ||
+              (isNew
+                ? `Add ${resourceLabel}`
+                : String(
+                    readDocument(draft?.content ?? "")?.get("name") ||
+                      path ||
+                      "Configuration",
+                  ))
+            }
+            actions={
+              source.data?.writable &&
+              source.data.resource_kind !== "root" && (
+                <Menu>
+                  <MenuTrigger
+                    aria-label="More configuration actions"
+                    render={<Button variant="ghost" size="icon" />}
                   >
-                    <Trash />
-                    Delete configuration
-                  </MenuItem>
-                </MenuPopup>
-              </Menu>
-            )
-          }
-        />
-      </div>
+                    <DotsThree />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <MenuItem
+                      variant="destructive"
+                      onClick={() => setDeleting(true)}
+                    >
+                      <Trash />
+                      Delete configuration
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              )
+            }
+          />
+        </div>
+      )}
       <ErrorNotice error={source.error || remove.error} />
       {external && (
         <div className={styles.notice}>
@@ -662,7 +673,7 @@ export function SourceDocument({
                 }
               >
                 <summary>Advanced configuration</summary>
-                <div className={styles.stack}>
+                <div className={styles.sourceAdvanced}>
                   {readDocument(draft!.content)?.has("kind") && (
                     <TextField
                       label="Resource ID"
@@ -678,12 +689,16 @@ export function SourceDocument({
                       }
                     />
                   )}
-                  <h3>Configuration file</h3>
-                  <p>Use credential references for API keys.</p>
-                  <SourceEditor
-                    value={draft!.content}
-                    onChange={(content) => update({ ...draft!, content })}
-                  />
+                  <section className={styles.sourceCode}>
+                    <header>
+                      <h3>Configuration file</h3>
+                      <p>Use credential references for API keys.</p>
+                    </header>
+                    <SourceEditor
+                      value={draft!.content}
+                      onChange={(content) => update({ ...draft!, content })}
+                    />
+                  </section>
                   <Button
                     variant="outline"
                     loading={validate.isPending}

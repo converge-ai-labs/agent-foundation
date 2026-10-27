@@ -75,7 +75,7 @@ export function ClearContext({
           if (!open && !clear.isPending) setTarget(null);
         }}
         title="Clear chat context?"
-        description="Start the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded. Chat history, files, chat settings, and your unsent draft are kept."
+        description="Reset the Agent’s working state, including messages, notes, tasks, pending questions and approvals. Keep chat history, files, settings and your draft."
         closeLabel="Close confirmation"
         footer={
           <>

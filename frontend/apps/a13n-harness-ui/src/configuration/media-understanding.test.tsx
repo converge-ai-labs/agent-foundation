@@ -125,9 +125,6 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
   await user.click(await screen.findByRole("option", { name: "Vision" }));
   expect(state.put).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("heading", { name: "Fallback models", level: 2 }),
-  ).toBeTruthy();
-  expect(
     screen.queryByRole("button", { name: "Check configuration" }),
   ).toBeNull();
   const actions = screen.getByRole("contentinfo", {

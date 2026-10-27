@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Button } from "a13n-ui";
 import { Panel } from "./ui";
+import styles from "./workbench.module.css";
 
 type InstallPrompt = Event & {
   prompt: () => Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -115,7 +116,7 @@ export function InstallSettings() {
               </Button>
             </div>
           )}
-          <details>
+          <details className={styles.details}>
             <summary>Manual installation</summary>
             <p>
               Use your browser's Install app or Add to Home Screen option, when

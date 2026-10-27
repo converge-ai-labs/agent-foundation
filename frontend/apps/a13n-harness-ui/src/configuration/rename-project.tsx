@@ -4,7 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
+import {
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { readDocument, updateDocument } from "./documents";
 import { DraftContext } from "./sources";
 import styles from "../shell/workbench.module.css";
@@ -94,7 +98,7 @@ export function RenameProject({
     <ModalFrame
       open
       title="Rename project"
-      description="Change the display name without changing folders, project identity, or chats."
+      description="Update the name shown in your workspace."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -107,7 +111,9 @@ export function RenameProject({
           if (editable && name.trim() && !save.isPending) save.mutate();
         }}
       >
-        <TextField label="Project name" value={name} onChange={setName} />
+        <SettingsSection>
+          <TextField label="Project name" value={name} onChange={setName} />
+        </SettingsSection>
         <ErrorNotice
           error={sources.error || source.error || save.error}
           retry={
@@ -134,6 +140,14 @@ export function RenameProject({
           )}
         <div className={styles.actions}>
           <Button
+            type="button"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={close}
+          >
+            Cancel
+          </Button>
+          <Button
             type="submit"
             loading={save.isPending}
             disabled={
@@ -145,14 +159,7 @@ export function RenameProject({
           >
             Save name
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={save.isPending}
-            onClick={close}
-          >
-            Cancel
-          </Button>
+
           {!save.isPending && (
             <Link
               to={`/projects/${encodeURIComponent(projectId)}`}

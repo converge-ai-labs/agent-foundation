@@ -93,7 +93,7 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
-  min-height: 34px;
+  min-height: 36px;
   padding-block: 6px;
   font-size: 13px;
   font-weight: 400;
@@ -102,15 +102,15 @@
   margin-bottom: 0;
 }
 .groupDisclosure > div {
-  padding: 0 0 12px;
+  padding: 4px 0 8px;
 }
-.groupDisclosure > div > [data-slot="settings-row"] {
-  padding-top: 10px;
+.groupDisclosure > div:has(> p) {
+  gap: 8px;
 }
 .groupDisclosure > div > p,
 .groupDisclosure > div > [role="status"] {
   margin: 0;
-  padding-block: 4px;
+  padding-block: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 18px;

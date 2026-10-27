@@ -271,7 +271,7 @@ export function ModelsPage() {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="Fallback models"
+            title={null}
             mediaOnly
             embedded
           />

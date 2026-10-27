@@ -68,6 +68,9 @@ it("previews Project environments without applying until the reviewed action is 
     </QueryClientProvider>,
   );
   await user.click(
+    await screen.findByText("Apply Project defaults", { selector: "summary" }),
+  );
+  await user.click(
     await screen.findByRole("button", { name: "Preview Project environments" }),
   );
   const apply = await screen.findByRole("button", {

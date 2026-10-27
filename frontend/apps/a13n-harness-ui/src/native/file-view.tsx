@@ -451,9 +451,8 @@ export function FileView({
               : "File exceeds the text editor limit"}
           </h3>
           <p>
-            Only complete, NUL-free UTF-8 up to 512 KiB is editable here.
-            Uploads and whole-file captures support up to 10 MiB. Download the
-            original to inspect larger files.
+            Edit UTF-8 text up to 512 KiB without NUL characters. Uploads and
+            captures support 10 MiB. Download larger files to view them.
           </p>
         </div>
       )}

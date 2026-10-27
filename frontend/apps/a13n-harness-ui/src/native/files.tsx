@@ -2,6 +2,7 @@ import { useContext, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Checkbox,
   ModalFrame,
   Menu,
   MenuTrigger,
@@ -22,7 +23,10 @@ import {
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
-import { ErrorNotice, TextField, SearchField } from "../shell/ui";
+import { ErrorNotice, SearchField, TextField } from "../shell/ui";
+import { SettingsSection } from "../shell/settings";
+import layout from "../shell/workbench.module.css";
+import { DebugId } from "../shell/debug";
 import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
 import { useGitStatus } from "./changes";
 import styles from "./native.module.css";
@@ -379,6 +383,7 @@ export function Files({
             operation={operation}
             directory={directory}
             refresh={refresh}
+            cancel={() => setOperation(null)}
             done={(target) => {
               setOperation(null);
               if (target) open(target);
@@ -394,11 +399,13 @@ export function FileOperation({
   directory,
   refresh,
   done,
+  cancel,
 }: {
   operation: Operation;
   directory: string;
   refresh: () => void;
   done: (target?: string) => void;
+  cancel?: () => void;
 }) {
   const { client, fetch } = useTransport();
   const [destination, setDestination] = useState(
@@ -478,22 +485,20 @@ export function FileOperation({
       {"entry" in operation && (
         <div className={styles.path}>
           {operation.entry.path}
-          <small>Observed revision: {operation.entry.revision}</small>
+          <DebugId label="Observed revision" value={operation.entry.revision} />
         </div>
       )}
       {operation.kind === "delete" ? (
         <>
           <p>
-            Delete this {operation.entry.kind}? This affects everyone using the
-            server. There is no undo. Local unsaved buffers are retained
-            separately.
+            Permanently delete this {operation.entry.kind} for everyone using
+            the server? Unsaved editor text is kept.
           </p>
           {operation.entry.kind === "directory" && (
             <label className={styles.check}>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={recursive}
-                onChange={(event) => setRecursive(event.target.checked)}
+                onCheckedChange={(checked) => setRecursive(checked === true)}
               />
               Recursively delete this folder and its contents
             </label>
@@ -501,16 +506,19 @@ export function FileOperation({
         </>
       ) : operation.kind === "replace" ? (
         <p>
-          Replace this file's bytes with the chosen upload? This affects the
-          shared filesystem. Local unsaved text remains separate. The observed
-          revision is required; an external change causes a conflict.
+          Replace the shared file with this upload? Unsaved editor text is kept.
+          If the file has changed, replacement is blocked.
         </p>
       ) : (
-        <TextField
-          label="Absolute destination path"
-          value={destination}
-          onChange={setDestination}
-        />
+        <SettingsSection>
+          <div className={layout.fieldGroup}>
+            <TextField
+              label="Absolute destination path"
+              value={destination}
+              onChange={setDestination}
+            />
+          </div>
+        </SettingsSection>
       )}
       {(operation.kind === "upload" || operation.kind === "replace") && (
         <label className={styles.stack}>
@@ -528,8 +536,8 @@ export function FileOperation({
       )}
       {operation.kind !== "delete" && operation.kind !== "replace" && (
         <p>
-          The destination must not exist. To replace a file, open its reviewed
-          text and save with its observed revision, or choose a new upload name.
+          Choose a new path. To overwrite an existing file, use Replace from its
+          menu.
         </p>
       )}
       {operation.kind === "delete" && recursive && (
@@ -545,26 +553,39 @@ export function FileOperation({
           action. An interrupted response does not undo a native operation.
         </p>
       )}
-      <Button
-        type="submit"
-        loading={pending}
-        disabled={
-          attempted ||
-          !destination ||
-          ((operation.kind === "upload" || operation.kind === "replace") &&
-            (!upload || upload.size > 10 * 1024 * 1024))
-        }
-      >
-        {operation.kind === "delete"
-          ? "Confirm delete"
-          : operation.kind === "move"
-            ? "Move entry"
-            : operation.kind === "replace"
-              ? "Confirm replacement"
-              : operation.kind === "upload"
-                ? "Upload file"
-                : "Create"}
-      </Button>
+      <div className={`${styles.actions} justify-end`} data-a13n-form-actions>
+        {cancel && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={cancel}
+          >
+            Cancel
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant={operation.kind === "delete" ? "destructive" : "default"}
+          loading={pending}
+          disabled={
+            attempted ||
+            !destination ||
+            ((operation.kind === "upload" || operation.kind === "replace") &&
+              (!upload || upload.size > 10 * 1024 * 1024))
+          }
+        >
+          {operation.kind === "delete"
+            ? "Confirm delete"
+            : operation.kind === "move"
+              ? "Move entry"
+              : operation.kind === "replace"
+                ? "Confirm replacement"
+                : operation.kind === "upload"
+                  ? "Upload file"
+                  : "Create"}
+        </Button>
+      </div>
     </form>
   );
 }

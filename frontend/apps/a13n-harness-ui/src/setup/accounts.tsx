@@ -1,5 +1,6 @@
 import {
   SettingsChoice as ChoiceField,
+  SettingsSection,
   SettingsTextField as TextField,
 } from "../shell/settings";
 import { useEffect, useState } from "react";
@@ -360,9 +361,14 @@ export function ProviderAccount({
             {loginMethods.length > 1 && (
               <details className={accountStyles.advanced}>
                 <summary>Advanced login options</summary>
-                <div className={styles.stack}>
+                <SettingsSection>
                   <ChoiceField
                     label="Login method"
+                    description={
+                      method === "browser"
+                        ? "Needs a callback to this server. For remote servers, use device login or paste the full ChatGPT callback URL."
+                        : undefined
+                    }
                     value={method}
                     options={loginMethods.map((method) => ({
                       value: method,
@@ -379,15 +385,7 @@ export function ProviderAccount({
                       )
                     }
                   />
-                  {method === "browser" && (
-                    <p className={accountStyles.help}>
-                      The callback must reach the server's loopback listener.
-                      For a remote host or container, paste the complete
-                      callback URL for ChatGPT, or use device login where
-                      supported.
-                    </p>
-                  )}
-                </div>
+                </SettingsSection>
               </details>
             )}
             {activeLogin.data?.provider &&
@@ -552,11 +550,23 @@ export function ProviderAccount({
         onOpenChange={setSwitchOpen}
         title="Allow account switching?"
         description="The next login may replace this provider's saved account on the server for everyone using it."
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button loading={start.isPending} onClick={() => start.mutate(true)}>
-            Allow switch and log in
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={start.isPending}
+              onClick={() => setSwitchOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={start.isPending}
+              onClick={() => start.mutate(true)}
+            >
+              Allow switch and log in
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={start.error} />
@@ -574,15 +584,24 @@ export function ProviderAccount({
                 ? "Remove this host's credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
                 : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
         }
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            Log out
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={logout.isPending}
+              onClick={() => setLogoutOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={logout.isPending}
+              onClick={() => logout.mutate()}
+            >
+              Log out
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={logout.error} />

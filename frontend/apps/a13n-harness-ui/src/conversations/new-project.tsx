@@ -4,13 +4,17 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { template, updateDocument } from "../configuration/documents";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
+import {
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import {
   EnvironmentsEditor,
   invalidEnvironments,
   type EnvironmentSelection,
 } from "../configuration/environments";
-import styles from "./conversation.module.css";
+import layout from "../shell/workbench.module.css";
 
 export function NewProject({
   close,
@@ -82,19 +86,27 @@ export function NewProject({
       }}
     >
       <form
-        className={styles.form}
+        className={layout.configurationForm}
         onSubmit={(event) => {
           event.preventDefault();
           if (name.trim() && validRoots && !save.isPending) save.mutate();
         }}
       >
-        <TextField label="Project name" value={name} onChange={setName} />
-        <EnvironmentsEditor
-          requireWorkspace
-          value={environments}
-          profiles={selectors.data?.environments}
-          onChange={(patch) => setEnvironments({ ...environments, ...patch })}
-        />
+        <SettingsSection>
+          <TextField label="Project name" value={name} onChange={setName} />
+        </SettingsSection>
+        <SettingsSection title="Environments">
+          <div className={layout.fieldGroup}>
+            <EnvironmentsEditor
+              requireWorkspace
+              value={environments}
+              profiles={selectors.data?.environments}
+              onChange={(patch) =>
+                setEnvironments({ ...environments, ...patch })
+              }
+            />
+          </div>
+        </SettingsSection>
         <small className="text-muted-foreground">
           Agent and other defaults can be changed in Project settings after
           saving.

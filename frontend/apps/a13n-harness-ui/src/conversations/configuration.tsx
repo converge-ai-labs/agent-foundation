@@ -5,8 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyThreadMutation } from "./thread-updates";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
-import { Button } from "a13n-ui";
-import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { Button, Checkbox } from "a13n-ui";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsRow,
+  SettingsSection,
+} from "../shell/settings";
+import layout from "../shell/workbench.module.css";
 import { DebugData } from "../shell/debug";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -23,35 +28,70 @@ function ConfigurationSummary({
 }: {
   configuration: Schema<"ThreadConfiguration">;
 }) {
+  const { data: catalog } = useSelectors();
+  const resourceNames = (
+    ids: string[] | undefined,
+    resources: { resource_id: string; name: string }[] | undefined,
+  ) =>
+    ids
+      ?.map(
+        (id) =>
+          resources?.find((resource) => resource.resource_id === id)?.name ??
+          id,
+      )
+      .join(", ") || "None";
   return (
     <dl className={styles.detailGrid}>
       <div>
         <dt>Agent</dt>
-        <dd>{configuration.agent_source.id}</dd>
+        <dd>
+          {catalog?.agents?.find(
+            (agent) => agent.agent_id === configuration.agent_source.id,
+          )?.name ?? configuration.agent_source.id}
+        </dd>
       </div>
       <div>
         <dt>Default model</dt>
-        <dd>{configuration.default_model_id ?? "Follow Agent model"}</dd>
+        <dd>
+          {catalog?.models?.find(
+            (model) => model.model_id === configuration.default_model_id,
+          )?.name ??
+            configuration.default_model_id ??
+            "Follow Agent model"}
+        </dd>
       </div>
       <div className={styles.detailLongRow}>
         <dt>Environments</dt>
         <dd>
-          <EnvironmentsSummary value={configuration} />
+          <EnvironmentsSummary
+            value={configuration}
+            profiles={catalog?.environments}
+          />
         </dd>
       </div>
       <div>
         <dt>Harness plugins</dt>
-        <dd>{configuration.harness_plugin_ids?.join(", ") || "None"}</dd>
+        <dd>
+          {resourceNames(
+            configuration.harness_plugin_ids,
+            catalog?.harness_plugins,
+          )}
+        </dd>
       </div>
       <div>
         <dt>Environment extensions</dt>
         <dd>
-          {configuration.environment_run_extension_ids?.join(", ") || "None"}
+          {resourceNames(
+            configuration.environment_run_extension_ids,
+            catalog?.environment_run_extensions,
+          )}
         </dd>
       </div>
       <div>
         <dt>MCP servers</dt>
-        <dd>{configuration.mcp_server_ids?.join(", ") || "None"}</dd>
+        <dd>
+          {resourceNames(configuration.mcp_server_ids, catalog?.mcp_servers)}
+        </dd>
       </div>
     </dl>
   );
@@ -122,23 +162,134 @@ export function ConversationConfiguration({
         error={inspection.error || preview.error || apply.error}
         retry={() => void inspection.refetch()}
       />
+      {inspection.isPending && <p role="status">Loading settings…</p>}
       {data && (
         <>
-          <section>
-            <h3>
+          {data.next_run.configuration.agent_source.kind === "live" ? (
+            <section>
+              <h3>Live executor</h3>
+              <p>
+                Live uses its own workspace and lightweight tools. Change its
+                Model, voice and file access in General settings.
+              </p>
+              <p>Next model: {data.next_model_id || "Not configured"}</p>
+            </section>
+          ) : readOnly ? (
+            <section>
+              <h3>Automatic organization</h3>
+              <p>
+                Only this scope's memory tools are available. No Environment,
+                shared Agent tools, plugins, MCP servers or subagents are
+                attached.
+              </p>
+              <p>Next model: {data.next_model_id || "Not configured"}</p>
+            </section>
+          ) : (
+            <section>
+              <h3>Next run settings</h3>
+              <p>
+                Applies to your next run. Shared resources refresh when it
+                starts.
+              </p>
+              <DebugData
+                label="Where these settings come from"
+                value={{
+                  provenance: data.next_run.provenance,
+                  tool_search: data.next_tool_search,
+                }}
+              />
+              {!readOnly && (
+                <ThreadSelections
+                  key={threadId}
+                  threadId={threadId}
+                  embedded
+                  configuration={data.next_run.configuration}
+                />
+              )}
+            </section>
+          )}
+          {!readOnly && data.next_run.configuration.project_id && (
+            <details className={layout.details}>
+              <summary>Apply Project defaults</summary>
+              <p>Preview changes before replacing this chat’s settings.</p>
+              <Button
+                variant="outline"
+                loading={preview.isPending}
+                onClick={() => {
+                  setReviewed(null);
+                  apply.reset();
+                  setApplyEnvironments(false);
+                  preview.mutate(false);
+                }}
+              >
+                Preview defaults
+              </Button>
+              <Button
+                variant="outline"
+                loading={preview.isPending}
+                onClick={() => {
+                  setReviewed(null);
+                  apply.reset();
+                  setApplyEnvironments(true);
+                  preview.mutate(true);
+                }}
+              >
+                Preview Project environments
+              </Button>
+              <p>
+                Environment-only changes keep your Agent, model and connections.
+              </p>
+              {reviewed && (
+                <div className={styles.form}>
+                  <div className={styles.detailGrid}>
+                    <section>
+                      <h4>Before · version {reviewed.expected_version}</h4>
+                      <ConfigurationSummary configuration={reviewed.current} />
+                    </section>
+                    <section>
+                      <h4>After</h4>
+                      <ConfigurationSummary
+                        configuration={reviewed.replacement}
+                      />
+                    </section>
+                  </div>
+                  <Button
+                    loading={apply.isPending}
+                    disabled={
+                      !Object.keys(reviewed.patch).length || apply.isError
+                    }
+                    onClick={() => apply.mutate()}
+                  >
+                    {applyEnvironments
+                      ? "Apply reviewed environments"
+                      : "Apply reviewed defaults"}
+                  </Button>
+                  {apply.isError && (
+                    <p>
+                      Refresh the preview and review it again before applying.
+                      No changes were retried.
+                    </p>
+                  )}
+                </div>
+              )}
+            </details>
+          )}
+          <details className={layout.details}>
+            <summary>
               {data.capture_source === "active_operation"
-                ? "Current run configuration"
-                : "Selected continuation configuration"}
-            </h3>
+                ? "Current run settings"
+                : "Saved run settings"}
+            </summary>
             {data.captured ? (
               <>
                 <dl className={styles.detailGrid}>
                   <div>
-                    <dt>Agent / Model</dt>
-                    <dd>
-                      {data.captured.agent.name} /{" "}
-                      {data.captured.agent.model_id || "Not captured"}
-                    </dd>
+                    <dt>Agent</dt>
+                    <dd>{data.captured.agent.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Model</dt>
+                    <dd>{data.captured.agent.model_id || "Not captured"}</dd>
                   </div>
                   <div>
                     <dt>Thinking (requested)</dt>
@@ -177,125 +328,7 @@ export function ConversationConfiguration({
                   : "No captured configuration is available."}
               </p>
             )}
-          </section>
-          {data.next_run.configuration.agent_source.kind === "live" ? (
-            <section>
-              <h3>Live executor</h3>
-              <p>
-                Live uses its own workspace and lightweight tools. Change its
-                Model, voice and file access in General settings.
-              </p>
-              <p>Next model: {data.next_model_id || "Not configured"}</p>
-            </section>
-          ) : readOnly ? (
-            <section>
-              <h3>Automatic organization</h3>
-              <p>
-                Only this scope's memory tools are available. No Environment,
-                shared Agent tools, plugins, MCP servers or subagents are
-                attached.
-              </p>
-              <p>Next model: {data.next_model_id || "Not configured"}</p>
-            </section>
-          ) : (
-            <section>
-              <h3>Next run settings</h3>
-              <p>
-                Changes here affect later Runs, not an already running Agent.
-                Shared resource content is resolved again at the next Run.
-              </p>
-              <ConfigurationSummary
-                configuration={data.next_run.configuration}
-              />
-              <p>Model: {data.next_model_id || "Not configured"}</p>
-              <DebugData
-                label="Where these settings come from"
-                value={{
-                  provenance: data.next_run.provenance,
-                  tool_search: data.next_tool_search,
-                }}
-              />
-              {!readOnly && (
-                <ThreadSelections
-                  key={threadId}
-                  threadId={threadId}
-                  configuration={data.next_run.configuration}
-                />
-              )}
-              <Link to="/settings/resources">Manage shared resources</Link>
-            </section>
-          )}
-          {!readOnly && data.next_run.configuration.project_id && (
-            <section>
-              <h3>Apply Project defaults</h3>
-              <p>
-                Only settings specified by the Project are replaced. Unspecified
-                selections stay unchanged.
-              </p>
-              <Button
-                variant="outline"
-                loading={preview.isPending}
-                onClick={() => {
-                  setReviewed(null);
-                  apply.reset();
-                  setApplyEnvironments(false);
-                  preview.mutate(false);
-                }}
-              >
-                Preview defaults
-              </Button>
-              <Button
-                variant="outline"
-                loading={preview.isPending}
-                onClick={() => {
-                  setReviewed(null);
-                  apply.reset();
-                  setApplyEnvironments(true);
-                  preview.mutate(true);
-                }}
-              >
-                Preview Project environments
-              </Button>
-              <p>
-                Applying environments replaces local folders, local mode, remote
-                bindings and the default only. Agent, Model and other selections
-                stay unchanged.
-              </p>
-              {reviewed && (
-                <div className={styles.form}>
-                  <div className={styles.detailGrid}>
-                    <section>
-                      <h4>Before · version {reviewed.expected_version}</h4>
-                      <ConfigurationSummary configuration={reviewed.current} />
-                    </section>
-                    <section>
-                      <h4>After</h4>
-                      <ConfigurationSummary
-                        configuration={reviewed.replacement}
-                      />
-                    </section>
-                  </div>
-                  <Button
-                    loading={apply.isPending}
-                    disabled={
-                      !Object.keys(reviewed.patch).length || apply.isError
-                    }
-                    onClick={() => apply.mutate()}
-                  >
-                    {applyEnvironments
-                      ? "Apply reviewed environments"
-                      : "Apply reviewed defaults"}
-                  </Button>
-                  {apply.isError && (
-                    <p>
-                      Refresh the preview and review it again before applying.
-                      No changes were retried.
-                    </p>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
+          </details>
         </>
       )}
     </div>
@@ -304,9 +337,11 @@ export function ConversationConfiguration({
 export function ThreadSelections({
   threadId,
   configuration: current,
+  embedded = false,
 }: {
   threadId: string;
   configuration: Schema<"ThreadConfiguration">;
+  embedded?: boolean;
 }) {
   const transport = useTransport();
   const { client } = transport;
@@ -353,13 +388,9 @@ export function ThreadSelections({
       refreshActivity(queries, transport, threadId);
     },
   });
-  return (
-    <details className={styles.activity}>
-      <summary>Change settings for the next run</summary>
-      <fieldset
-        className={`${styles.form} ${styles.responseInputs}`}
-        disabled={mutation.isPending}
-      >
+  const fields = (
+    <fieldset className={styles.settingsFields} disabled={mutation.isPending}>
+      <SettingsSection>
         <ChoiceField
           label="Project"
           value={
@@ -405,96 +436,115 @@ export function ThreadSelections({
             })),
           ]}
         />
-        <p>
-          Changing Project only changes grouping. Use Apply Project environments
-          to replace environment selections.
+      </SettingsSection>
+      {patch.project_id !== undefined && (
+        <p className={styles.settingsHint}>
+          Moving a chat to a Project keeps its settings.
         </p>
-        <EnvironmentsEditor
-          value={{ ...configuration, ...patch }}
-          profiles={selectors.data?.environments}
-          inheritedProfile={configuration.environment_profile_id}
-          inheritLabel="Keep chat local mode"
-          onChange={(environments) => setPatch({ ...patch, ...environments })}
-        />
-        {(
-          [
-            {
-              key: "harness_plugin_ids",
-              label: "Harness plugins",
-              options: selectors.data?.harness_plugins,
-            },
-            {
-              key: "environment_run_extension_ids",
-              label: "Environment extensions",
-              options: selectors.data?.environment_run_extensions,
-            },
-            {
-              key: "mcp_server_ids",
-              label: "MCP servers",
-              options: selectors.data?.mcp_servers,
-            },
-          ] as const
-        ).map(({ key, label, options }) => (
-          <fieldset key={key} className={styles.question}>
-            <legend>{label}</legend>
-            {options?.map((option) => {
-              const selected = patch[key] ?? configuration[key] ?? [];
-              return (
-                <label className={styles.answerOption} key={option.resource_id}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(option.resource_id)}
-                    onChange={(event) =>
-                      setPatch({
-                        ...patch,
-                        [key]: event.target.checked
-                          ? [...selected, option.resource_id]
-                          : selected.filter((id) => id !== option.resource_id),
-                      })
-                    }
-                  />
-                  {option.name}
-                </label>
-              );
-            })}
-            {!options?.length && <p>No configured resources.</p>}
-          </fieldset>
-        ))}
-        <ErrorNotice
-          error={mutation.error || selectors.error || projects.error}
-        />
-        {(stale || mutation.isError) && (
-          <div className={styles.warning}>
-            <p>
-              Your edits are retained against version {configuration.version}.
-              Review the latest selections below before applying your changes.
-              No write was retried.
-            </p>
-            <h4>Latest selections · version {latest.version}</h4>
-            <ConfigurationSummary configuration={latest} />
-            <Button
-              variant="outline"
-              onClick={() => {
-                setBase(latest);
-                mutation.reset();
-              }}
-            >
-              Keep my edits against version {latest.version}
-            </Button>
+      )}
+      <details className={layout.details} open={!embedded || undefined}>
+        <summary>Environments</summary>
+        <SettingsSection>
+          <div className={layout.fieldGroup}>
+            <EnvironmentsEditor
+              value={{ ...configuration, ...patch }}
+              profiles={selectors.data?.environments}
+              inheritedProfile={configuration.environment_profile_id}
+              inheritLabel="Keep chat local mode"
+              onChange={(environments) =>
+                setPatch({ ...patch, ...environments })
+              }
+            />
           </div>
-        )}
-        <Button
-          loading={mutation.isPending}
-          disabled={
-            !Object.keys(patch).length ||
-            mutation.isError ||
-            stale ||
-            invalidEnvironments({ ...configuration, ...patch })
-          }
-          onClick={() => mutation.mutate()}
-        >
-          Save for next run
-        </Button>
+        </SettingsSection>
+      </details>
+      <details className={layout.details} open={!embedded || undefined}>
+        <summary>Connections</summary>
+        <SettingsSection>
+          {(
+            [
+              {
+                key: "harness_plugin_ids",
+                label: "Harness plugins",
+                options: selectors.data?.harness_plugins,
+              },
+              {
+                key: "environment_run_extension_ids",
+                label: "Environment extensions",
+                options: selectors.data?.environment_run_extensions,
+              },
+              {
+                key: "mcp_server_ids",
+                label: "MCP servers",
+                options: selectors.data?.mcp_servers,
+              },
+            ] as const
+          ).map(({ key, label, options }) => (
+            <div key={key}>
+              <SettingsRow label={label}>
+                <span className={layout.hint}>
+                  {options?.length
+                    ? `${(patch[key] ?? configuration[key] ?? []).length} selected`
+                    : "None configured"}
+                </span>
+              </SettingsRow>
+              {options?.map((option) => {
+                const selected = patch[key] ?? configuration[key] ?? [];
+                return (
+                  <SettingsRow
+                    key={option.resource_id}
+                    label={option.name}
+                    controlId={`thread-${threadId}-${key}-${option.resource_id}`}
+                  >
+                    <Checkbox
+                      id={`thread-${threadId}-${key}-${option.resource_id}`}
+                      checked={selected.includes(option.resource_id)}
+                      disabled={mutation.isPending}
+                      onCheckedChange={(checked) =>
+                        setPatch({
+                          ...patch,
+                          [key]: checked
+                            ? [...selected, option.resource_id]
+                            : selected.filter(
+                                (id) => id !== option.resource_id,
+                              ),
+                        })
+                      }
+                    />
+                  </SettingsRow>
+                );
+              })}
+            </div>
+          ))}
+        </SettingsSection>
+        <Link className={layout.hint} to="/settings/connections">
+          Manage connections
+        </Link>
+      </details>
+      <ErrorNotice
+        error={mutation.error || selectors.error || projects.error}
+      />
+      {(stale || mutation.isError) && (
+        <div className={styles.warning}>
+          <p>
+            Your edits are retained against version {configuration.version}.
+            Review the latest selections below before applying your changes. No
+            write was retried.
+          </p>
+          <h4>Latest selections · version {latest.version}</h4>
+          <ConfigurationSummary configuration={latest} />
+          <Button
+            variant="outline"
+            onClick={() => {
+              setBase(latest);
+              mutation.reset();
+            }}
+          >
+            Keep my edits against version {latest.version}
+          </Button>
+        </div>
+      )}
+      <div className={styles.settingsActions}>
         {!!Object.keys(patch).length && (
           <Button
             variant="ghost"
@@ -508,7 +558,28 @@ export function ThreadSelections({
             Discard selection edits
           </Button>
         )}
-      </fieldset>
+
+        <Button
+          loading={mutation.isPending}
+          disabled={
+            !Object.keys(patch).length ||
+            mutation.isError ||
+            stale ||
+            invalidEnvironments({ ...configuration, ...patch })
+          }
+          onClick={() => mutation.mutate()}
+        >
+          Save for next run
+        </Button>
+      </div>
+    </fieldset>
+  );
+  return embedded ? (
+    fields
+  ) : (
+    <details className={layout.details}>
+      <summary>Change settings for the next run</summary>
+      {fields}
     </details>
   );
 }

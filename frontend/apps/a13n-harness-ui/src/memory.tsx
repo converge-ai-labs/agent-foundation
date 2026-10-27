@@ -79,6 +79,13 @@ export function MemoryPage(props: {
     : "Global";
   const history = useMemoryThread(projectId, enabled);
   const thread = history.data?.threads[0];
+  if (!status.data)
+    return (
+      <div className={styles.empty}>
+        <ErrorNotice error={status.error} retry={() => void status.refetch()} />
+        {!status.error && <p role="status">Loading memory…</p>}
+      </div>
+    );
   if (!enabled)
     return (
       <div className={styles.empty}>
@@ -115,7 +122,7 @@ export function MemoryPage(props: {
         />
         <TabsList variant="underline" aria-label="Memory views">
           <TabsTab value="files">Files</TabsTab>
-          <TabsTab value="activity">Organization history</TabsTab>
+          <TabsTab value="activity">History</TabsTab>
         </TabsList>
       </div>
       <TabsPanel value="files" keepMounted className={styles.filesPanel}>
@@ -127,9 +134,9 @@ export function MemoryPage(props: {
         className={styles.history}
         aria-label="Memory organization history"
       >
-        <div className={styles.historyToolbar}>
-          <span>Automatic updates to this memory</span>
-          {thread && (
+        {thread && (
+          <div className={styles.historyToolbar}>
+            <span>Automatic memory updates</span>
             <Button
               variant="ghost"
               onClick={() =>
@@ -142,8 +149,8 @@ export function MemoryPage(props: {
             >
               Usage & details
             </Button>
-          )}
-        </div>
+          </div>
+        )}
         <ErrorNotice
           error={history.error}
           retry={() => void history.refetch()}
@@ -156,14 +163,8 @@ export function MemoryPage(props: {
           />
         ) : (
           <div className={styles.empty}>
-            <h2>
-              {history.isPending
-                ? "Loading history…"
-                : "No organization history yet"}
-            </h2>
-            <p>
-              Automatic organization appears here when saved memory is updated.
-            </p>
+            <h2>{history.isPending ? "Loading history…" : "No updates yet"}</h2>
+            <p>Automatic memory updates appear here.</p>
           </div>
         )}
       </TabsPanel>

@@ -135,9 +135,8 @@ export function DecisionForm({
     <section className={styles.decision} aria-label="Pending decisions">
       <h2>Your response is needed</h2>
       <p>
-        Submit the responses you want to provide, or send a message to continue.
-        Unanswered requests are denied, not approved. Another participant may
-        resolve this request set first.
+        Respond here or send a message to continue. Unanswered requests are
+        denied. Another participant may respond first.
       </p>
       {remaining !== null && (
         <p role="status" aria-live="off">

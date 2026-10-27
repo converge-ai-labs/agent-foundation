@@ -357,7 +357,7 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   fireEvent.click(screen.getByText("Delivery help"));
   expect(help.open).toBe(true);
   expect(help.textContent).toContain("Share → Add to Home Screen");
-  expect(help.textContent).toContain("six-hour delivery window");
+  expect(help.textContent).toContain("six hours");
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(
     screen.queryByText(/Without background delivery, keep WebUI open/),

@@ -558,23 +558,25 @@ export function NotificationSettings({
       <details className={styles.details}>
         <summary>Delivery help</summary>
         <p>
-          The server must stay running and reach your browser's push service. On
-          iPhone or iPad, use Safari's Share → Add to Home Screen, then enable
-          notifications from the Home Screen app.
+          Keep the server running and connected to your browser's push service.
         </p>
+        <ul>
+          <li>
+            iPhone / iPad: in Safari, choose Share → Add to Home Screen. Enable
+            notifications in the installed app.
+          </li>
+          <li>
+            Android: allow site and Chrome notifications. Battery restrictions,
+            force-stop and Do Not Disturb can block alerts.
+          </li>
+          <li>
+            Delivery stays active for six hours after a visible visit. Missed
+            alerts are not replayed.
+          </li>
+        </ul>
         <p>
-          On Android Chrome, allow this site's notifications and Chrome's system
-          notifications. Force-stopping the browser, battery restrictions, or Do
-          Not Disturb can prevent alerts. On iPhone or iPad, enable
-          notifications inside the Home Screen app, not a Chrome or Safari tab.
-          Send a test notification to check delivery.
-        </p>
-        <p>
-          In-app notices remain available without notification permission.
-          Background push uses your browser's push service and can show alerts
-          alongside in-app notices even for the chat you are viewing. Keeping a
-          WebUI page visible renews the six-hour delivery window. Missed history
-          is not replayed as new alerts.
+          In-app notices still work without permission. System alerts may also
+          appear for the chat you are viewing.
         </p>
       </details>
     </div>

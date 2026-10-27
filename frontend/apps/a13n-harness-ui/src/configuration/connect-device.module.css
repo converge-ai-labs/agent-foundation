@@ -1,0 +1,33 @@
+.steps {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.step {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.step h3 {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.steps p {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.step > button {
+  justify-self: start;
+}
+.command {
+  margin: 0;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

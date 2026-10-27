@@ -1,5 +1,6 @@
 import { useThreadWork, workCaption } from "./work";
-import { useState } from "react";
+import { TaskList, NoteList } from "./work-lists";
+import { useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import {
   Button,
@@ -22,23 +23,31 @@ import type { FocusDisplay } from "./stream";
 import { LiveOutput, RecoveryNotice } from "./transcript";
 import { sourceText } from "./tool-presentation";
 import { useChildControlState } from "./child-controls";
+import layout from "../shell/workbench.module.css";
 import styles from "./conversation.module.css";
 import { useThreadUsage, useContextUsage } from "./usage";
 import { DebugData, DebugId } from "../shell/debug";
-import { UsageDetails } from "./usage-details";
+import {
+  UsageDetails,
+  ContextDetails as ContextUsageDetails,
+} from "./usage-details";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 
 export function ConversationDetails({
   threadId,
   receipt,
   reconcile,
   readOnly = false,
+  management,
 }: {
   threadId: string;
   receipt?: string | null;
   continuation?: string | null;
   readOnly?: boolean;
+  management?: ReactNode;
   reconcile: () => void;
 }) {
+  const root = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState("execution");
   // Activity owns the latest process-local terminal receipt. Focus snapshots only
   // carry an active operation, so an inactive snapshot cannot substitute for it.
@@ -50,9 +59,15 @@ export function ConversationDetails({
     .find((item) => item.thread.thread_id === threadId);
   return (
     <Tabs
+      ref={root}
       className={styles.inspection}
       value={tab}
-      onValueChange={(value) => setTab(String(value))}
+      onValueChange={(value) => {
+        setTab(String(value));
+        root.current
+          ?.closest("[data-slot=scroll-area-viewport]")
+          ?.scrollTo({ top: 0 });
+      }}
     >
       <TabsList variant="underline" aria-label="Chat details">
         <TabsTab value="execution">Activity</TabsTab>
@@ -65,20 +80,30 @@ export function ConversationDetails({
             error={activity.error}
             retry={() => void activity.refetch()}
           />
-          <Operation
-            threadId={threadId}
-            receipt={receipt ?? row?.latest_operation?.receipt.receipt_id}
-          />
+          {!receipt && !readOnly && activity.isPending ? (
+            <p role="status">Loading activity…</p>
+          ) : !receipt && !row && activity.hasNextPage ? null : (
+            <Operation
+              threadId={threadId}
+              receipt={receipt ?? row?.latest_operation?.receipt.receipt_id}
+            />
+          )}
           {!row && activity.hasNextPage && (
             <Button
               variant="ghost"
               loading={activity.isFetchingNextPage}
               onClick={() => void activity.fetchNextPage()}
             >
-              Find this chat in remaining activity results
+              Load earlier activity
             </Button>
           )}
           <Children threadId={threadId} reconcile={reconcile} />
+          {!readOnly && management && (
+            <details className={layout.details}>
+              <summary>Chat management</summary>
+              {management}
+            </details>
+          )}
         </>
       </TabsPanel>
       <TabsPanel value="configuration">
@@ -105,73 +130,70 @@ function Operation({
   if (!receipt)
     return (
       <p>
-        No current-process operation receipt is available. Saved history does
-        not restore execution control after a server restart.
+        No run controls available. Server restarts preserve history but end
+        access to previous run controls.
       </p>
     );
+  const data = operation.data;
   return (
     <section>
-      <h3>Latest run</h3>
       <ErrorNotice
         error={operation.error}
         retry={() => void operation.refetch()}
       />
-      {operation.data && (
+      {operation.isPending && <p role="status">Loading run…</p>}
+      {data && (
         <>
-          <p>
-            {operation.data.status.charAt(0).toUpperCase() +
-              operation.data.status.slice(1)}
-          </p>
-          <DebugId label="Operation receipt" value={receipt} />
-          {operation.data.failure && (
-            <p role="alert">{operation.data.failure.message}</p>
-          )}
-          <dl className={styles.detailGrid}>
-            <div>
-              <dt>Started</dt>
-              <dd>
-                {operation.data.started_at
-                  ? new Date(operation.data.started_at).toLocaleString()
+          <SettingsSection title="Latest run">
+            <SettingsRow label="Status">
+              <span>
+                {data.status.charAt(0).toUpperCase() + data.status.slice(1)}
+              </span>
+            </SettingsRow>
+            <SettingsRow label="Started">
+              <span>
+                {data.started_at
+                  ? new Date(data.started_at).toLocaleString()
                   : "Preparing"}
-              </dd>
-            </div>
-            <div>
-              <dt>Completed</dt>
-              <dd>
-                {operation.data.completed_at
-                  ? new Date(operation.data.completed_at).toLocaleString()
+              </span>
+            </SettingsRow>
+            <SettingsRow label="Completed">
+              <span>
+                {data.completed_at
+                  ? new Date(data.completed_at).toLocaleString()
                   : "Not completed"}
-              </dd>
-            </div>
-          </dl>
-          {operation.data.outcome && (
+              </span>
+            </SettingsRow>
+          </SettingsSection>
+          <DebugId label="Operation receipt" value={receipt} />
+          {data.failure && <p role="alert">{data.failure.message}</p>}
+          {data.outcome && (
             <>
-              <dl className={styles.detailGrid}>
-                <div>
-                  <dt>Model execution</dt>
-                  <dd>{operation.data.outcome.execution.status}</dd>
-                </div>
-                <div>
-                  <dt>Saved continuation</dt>
-                  <dd>
-                    {operation.data.outcome.continuation.status.replaceAll(
-                      "_",
-                      " ",
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Environment publication</dt>
-                  <dd>
-                    {operation.data.outcome.environment.published} published ·{" "}
-                    {operation.data.outcome.environment.failed} failed
-                  </dd>
-                </div>
-              </dl>
+              <details className={layout.details}>
+                <summary>Run outcome</summary>
+                <SettingsSection>
+                  <SettingsRow label="Model execution">
+                    <span>
+                      {data.outcome.execution.status.replaceAll("_", " ")}
+                    </span>
+                  </SettingsRow>
+                  <SettingsRow label="Saved continuation">
+                    <span>
+                      {data.outcome.continuation.status.replaceAll("_", " ")}
+                    </span>
+                  </SettingsRow>
+                  <SettingsRow label="Environment publication">
+                    <span>
+                      {data.outcome.environment.published} published ·{" "}
+                      {data.outcome.environment.failed} failed
+                    </span>
+                  </SettingsRow>
+                </SettingsSection>
+              </details>
               {[
-                operation.data.outcome.execution.failure,
-                operation.data.outcome.continuation.failure,
-                ...(operation.data.outcome.environment.cleanup_failures ?? []),
+                data.outcome.execution.failure,
+                data.outcome.continuation.failure,
+                ...(data.outcome.environment.cleanup_failures ?? []),
               ]
                 .filter((failure) => !!failure)
                 .map((failure, index) => (
@@ -179,19 +201,18 @@ function Operation({
                     {failure.message}
                   </p>
                 ))}
+              <DebugData
+                label="Execution, continuation and Environment outcomes"
+                value={data.outcome}
+              />
             </>
-          )}
-          {operation.data.outcome && (
-            <DebugData
-              label="Execution, continuation and Environment outcomes"
-              value={operation.data.outcome}
-            />
           )}
         </>
       )}
     </section>
   );
 }
+
 export function useChildExecutions(threadId: string, enabled = true) {
   const { client } = useTransport();
   return useInfiniteQuery({
@@ -246,7 +267,7 @@ export function Children({
           loading={children.isFetchingNextPage}
           onClick={() => void children.fetchNextPage()}
         >
-          Load more children
+          Load more subagents
         </Button>
       )}
     </section>
@@ -556,100 +577,99 @@ function ContextDetails({ threadId }: { threadId: string }) {
           context.error
         }
       />
-      <section>
-        <h3>Tasks</h3>
-        <p>{workCaption(work.tasks.data, work.stale, tasks.isFetching)}</p>
+      <details
+        className={layout.details}
+        open={!!tasks.data?.tasks?.length || undefined}
+      >
+        <summary>
+          <span>
+            Tasks{" "}
+            <span className={styles.settingsHint}>
+              ·{" "}
+              {work.stale
+                ? "Stale"
+                : tasks.isPending
+                  ? "Loading…"
+                  : !tasks.data || tasks.data.available === false
+                    ? "Unavailable"
+                    : `${tasks.data.tasks?.length ?? 0}`}
+            </span>
+          </span>
+        </summary>
+        <p className={styles.settingsHint}>
+          {workCaption(work.tasks.data, work.stale, tasks.isFetching)}
+        </p>
         {!tasks.data ? (
           <p>
             {tasks.isPending
               ? "Loading tasks…"
               : "Task observation unavailable."}
           </p>
-        ) : tasks.data.available === false ? (
-          <p>Task projection is unavailable.</p>
-        ) : tasks.data?.tasks?.length ? (
-          tasks.data.tasks.map((task) => (
-            <div key={task.task_id} className={styles.activity}>
-              <strong>
-                {task.status === "in_progress"
-                  ? task.active_form || task.subject
-                  : task.subject}
-              </strong>
-              <p>
-                {task.status} · {task.owner || "Unassigned"}
-              </p>
-              {!!task.blocked_by?.length && (
-                <small>Blocked by: {task.blocked_by.join(", ")}</small>
-              )}
-            </div>
-          ))
         ) : (
-          <p>No tasks yet.</p>
+          <TaskList page={tasks.data} />
         )}
-        {!!tasks.data?.omitted && <p>{tasks.data.omitted} tasks omitted.</p>}
-      </section>
-      <section>
-        <h3>Notes</h3>
-        <p>{workCaption(work.notes.data, work.stale, notes.isFetching)}</p>
+      </details>
+      <details className={layout.details}>
+        <summary>
+          <span>
+            Notes{" "}
+            <span className={styles.settingsHint}>
+              ·{" "}
+              {work.stale
+                ? "Stale"
+                : notes.isPending
+                  ? "Loading…"
+                  : !notes.data
+                    ? "Unavailable"
+                    : `${notes.data.notes?.length ?? 0}`}
+            </span>
+          </span>
+        </summary>
+        <p className={styles.settingsHint}>
+          {workCaption(work.notes.data, work.stale, notes.isFetching)}
+        </p>
         {!notes.data ? (
           <p>
             {notes.isPending
               ? "Loading notes…"
               : "Note observation unavailable."}
           </p>
-        ) : notes.data.notes?.length ? (
-          notes.data.notes.map((note) => (
-            <details key={note.key} className={styles.activity}>
-              <summary>{note.key}</summary>
-              <MessageText text={note.value} />
-            </details>
-          ))
         ) : (
-          <p>No notes yet.</p>
+          <NoteList page={notes.data} />
         )}
-        {!!notes.data?.omitted && <p>{notes.data.omitted} notes omitted.</p>}
-      </section>
+      </details>
       <section>
-        <h3>Context</h3>
-        <p>Last reported request footprint, not a live token counter.</p>
+        <h3>Usage</h3>
+        {usage.isPending ? (
+          <p role="status">Loading usage…</p>
+        ) : (
+          <UsageDetails usage={usage.data} />
+        )}
+        <DebugData label="Usage and recent runs" value={usage.data ?? null} />
+      </section>
+      <details className={layout.details}>
+        <summary>Context</summary>
+        <ContextUsageDetails
+          used={context.data?.latest_request_tokens}
+          capacity={context.data?.context_window}
+        />
         <DebugId label="Chat ID" value={threadId} />
-        <dl className={styles.detailGrid}>
-          <div>
-            <dt>Request tokens</dt>
-            <dd>
-              {context.data?.latest_request_tokens?.toLocaleString() ??
-                "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Context window</dt>
-            <dd>
-              {context.data?.context_window?.toLocaleString() ?? "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Model</dt>
-            <dd>{context.data?.model_id ?? "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Thinking (last captured request)</dt>
-            <dd>{context.data?.thinking_summary ?? "Not reported"}</dd>
-          </div>
-        </dl>
-        <DebugData label="Context usage data" value={context.data ?? null} />
-      </section>
-      <section>
-        <h3>Observed usage</h3>
-        <UsageDetails usage={usage.data} />
-        {usage.data && (
-          <details className={styles.activity}>
-            <summary>Usage and recent runs</summary>
-            <pre className={styles.code}>
-              {JSON.stringify(usage.data, null, 2)}
-            </pre>
-          </details>
+        {(context.data?.model_id || context.data?.thinking_summary) && (
+          <SettingsSection>
+            {context.data.model_id && (
+              <SettingsRow label="Model">
+                <span>{context.data.model_id}</span>
+              </SettingsRow>
+            )}
+            {context.data.thinking_summary && (
+              <SettingsRow label="Thinking">
+                <span>{context.data.thinking_summary}</span>
+              </SettingsRow>
+            )}
+          </SettingsSection>
         )}
-      </section>
+        <DebugData label="Context usage data" value={context.data ?? null} />
+      </details>
     </div>
   );
 }

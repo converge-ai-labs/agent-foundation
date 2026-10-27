@@ -57,7 +57,7 @@ it("confirms clearing, sends the reviewed continuation, and refreshes only after
   const { POST, onPendingChange, onCleared, reconcile, queries } = setup();
   fireEvent.click(screen.getByRole("button", { name: "Clear context" }));
   expect(screen.getByRole("dialog").textContent).toContain(
-    "Chat history, files, chat settings, and your unsent draft are kept",
+    "Keep chat history, files, settings and your draft",
   );
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(POST).not.toHaveBeenCalled();

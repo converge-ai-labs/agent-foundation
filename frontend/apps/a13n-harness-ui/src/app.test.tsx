@@ -262,7 +262,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
     screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
-  fireEvent.click(screen.getByRole("tab", { name: "Organization history" }));
+  fireEvent.click(screen.getByRole("tab", { name: "History" }));
   await screen.findByRole("button", { name: "Usage & details" });
   await waitFor(() =>
     expect(
@@ -292,8 +292,8 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   expect(
     screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
   ).toBe("true");
-  fireEvent.click(screen.getByRole("tab", { name: "Organization history" }));
-  await screen.findByText("No organization history yet");
+  fireEvent.click(screen.getByRole("tab", { name: "History" }));
+  await screen.findByText("No updates yet");
   expect(screen.queryByText("Global-only memory")).toBeNull();
   expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
   expect(reads.some((path) => path.includes("project_id=project-main"))).toBe(

@@ -35,7 +35,7 @@
   padding-block: 8px;
 }
 .advanced[open] > summary {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .login {
   display: flex;

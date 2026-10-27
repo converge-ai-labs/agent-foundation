@@ -82,13 +82,10 @@
   font-size: 12px;
 }
 .advanced {
+  composes: details from "../shell/workbench.module.css";
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-.advanced > summary {
-  cursor: pointer;
-  padding-block: 4px;
 }
 .defaultDirectory {
   padding-top: 16px;

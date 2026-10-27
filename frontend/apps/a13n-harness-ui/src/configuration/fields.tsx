@@ -254,7 +254,7 @@ export function ResourceFields({
           <SettingsSection
             variant="outlined"
             title="Chat defaults"
-            description="Applies to new chats. Existing chats can explicitly apply Project defaults."
+            description="Used by new chats. Existing chats keep their settings."
           >
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             {referenceLists(["defaults"])}
@@ -262,15 +262,15 @@ export function ResourceFields({
           <SettingsSection
             variant="outlined"
             title="Environments"
-            description="Project defaults are copied into new chats. Applying them to an existing chat changes only the specified settings."
+            description="Used by new chats, or when you apply Project defaults."
           >
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "Device environments are unspecified: new chats add none; applying project defaults keeps the chat's selection."
+                  ? "Unspecified: new chats add no remote environments; existing selections stay unchanged."
                   : bindings.length
-                    ? "This selection replaces the chat's added environments when project defaults are applied."
-                    : "Empty: applying project defaults removes environments added to this chat."}
+                    ? "Applying defaults replaces the chat’s remote environments with this selection."
+                    : "Empty selection: applying defaults removes the chat’s remote environments."}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -446,6 +446,7 @@ export function ResourceFields({
                           description="Instructions for organizing memory."
                         >
                           <Textarea
+                            variant="soft"
                             value={text([
                               "memory",
                               "auto_organize",
@@ -563,6 +564,7 @@ export function ResourceFields({
                     <div className={styles.fieldGroup}>
                       <FormField label="Live instructions">
                         <Textarea
+                          variant="soft"
                           value={text(["live", "instructions"])}
                           onChange={(event) =>
                             set(["live", "instructions"], event.target.value)

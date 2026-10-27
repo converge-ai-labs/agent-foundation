@@ -16,6 +16,9 @@
 
 .sectionHeader > h2 {
   margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
 }
 
 .sectionHeader > button {

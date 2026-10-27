@@ -177,13 +177,19 @@ export function SourceEditor({
         EditorView.theme({
           "&": {
             fontSize: "12px",
-            ...(fill ? { height: "100%" } : {}),
+            ...(fill
+              ? { height: "100%" }
+              : {
+                  border: "1px solid var(--a13n-border)",
+                  borderRadius: "6px",
+                  overflow: "hidden",
+                }),
             backgroundColor: "var(--a13n-canvas)",
             color: "var(--a13n-text)",
           },
           ".cm-content": {
             fontFamily: "var(--a13n-mono)",
-            minHeight: fill ? "100%" : "240px",
+            minHeight: fill ? "100%" : "160px",
           },
           ".cm-gutters": {
             backgroundColor: "var(--a13n-surface)",
@@ -219,7 +225,7 @@ export function SourceEditor({
             borderColor: "var(--a13n-border)",
           },
           ".cm-scroller": {
-            maxHeight: fill ? "none" : "560px",
+            maxHeight: fill ? "none" : "min(400px, 50dvh)",
             overflow: "auto",
           },
         }),

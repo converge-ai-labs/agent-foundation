@@ -751,58 +751,73 @@ export function SubscriptionAccounts({
           }
         }}
         title={editing ? "Rename account" : "Add account"}
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            loading={create.isPending || update.isPending}
-            disabled={
-              editing
-                ? !name.trim()
-                : !connections.some((item) => item.provider === provider) ||
-                  (namedProvider && !name.trim())
-            }
-            onClick={() => {
-              if (editing) update.mutate({ id: editing.id, name: name.trim() });
-              else if (provider === "codex" || provider === "grok")
-                create.mutate(provider);
-              else {
-                const connection = connections.find(
-                  (item) => item.provider === provider,
-                );
-                if (connection) {
-                  setCreating(false);
-                  setConnectionLogin(connection);
-                }
+          <>
+            <Button
+              variant="outline"
+              disabled={create.isPending || update.isPending}
+              onClick={() => {
+                setCreating(false);
+                setEditing(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={create.isPending || update.isPending}
+              disabled={
+                editing
+                  ? !name.trim()
+                  : !connections.some((item) => item.provider === provider) ||
+                    (namedProvider && !name.trim())
               }
-            }}
-          >
-            {editing ? "Save name" : "Continue"}
-          </Button>
+              onClick={() => {
+                if (editing)
+                  update.mutate({ id: editing.id, name: name.trim() });
+                else if (provider === "codex" || provider === "grok")
+                  create.mutate(provider);
+                else {
+                  const connection = connections.find(
+                    (item) => item.provider === provider,
+                  );
+                  if (connection) {
+                    setCreating(false);
+                    setConnectionLogin(connection);
+                  }
+                }
+              }}
+            >
+              {editing ? "Save name" : "Continue"}
+            </Button>
+          </>
         }
       >
         <div className={styles.form}>
           <ErrorNotice error={create.error || update.error} />
-          {!editing && (
-            <ChoiceField
-              label="Provider"
-              value={provider}
-              onValueChange={(value) =>
-                setProvider(value as Schema<"AccountConnection">["provider"])
-              }
-              options={connections.map((item) => ({
-                value: item.provider,
-                label: item.label,
-              }))}
-            />
-          )}
-          {editing || namedProvider ? (
-            <TextField label="Account name" value={name} onChange={setName} />
-          ) : (
-            <p>
-              This provider uses one server-wide account. Continue to connect or
-              manage it.
-            </p>
-          )}
+          <SettingsSection>
+            {!editing && (
+              <ChoiceField
+                label="Provider"
+                value={provider}
+                onValueChange={(value) =>
+                  setProvider(value as Schema<"AccountConnection">["provider"])
+                }
+                options={connections.map((item) => ({
+                  value: item.provider,
+                  label: item.label,
+                }))}
+              />
+            )}
+            {editing || namedProvider ? (
+              <TextField label="Account name" value={name} onChange={setName} />
+            ) : (
+              <p>
+                This provider uses one server-wide account. Continue to connect
+                or manage it.
+              </p>
+            )}
+          </SettingsSection>
         </div>
       </ModalFrame>
       <ModalFrame
@@ -832,15 +847,24 @@ export function SubscriptionAccounts({
         }}
         title={`Delete ${deleting?.name ?? "account"}?`}
         description="Removes the managed credentials and stops future requests from using this account, including captured groups. Original CLI files remain unchanged."
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => deleting && remove.mutate(deleting)}
-          >
-            Delete account
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={remove.isPending}
+              onClick={() => setDeleting(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => deleting && remove.mutate(deleting)}
+            >
+              Delete account
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={remove.error} />
@@ -857,6 +881,12 @@ export function AccountGroups() {
   const id = params.get("group");
   const accounts = catalog.data?.accounts ?? [];
   const group = catalog.data?.groups.find((item) => item.id === id);
+  const groups =
+    catalog.data?.groups.filter((item) =>
+      `${item.name} ${item.provider}`
+        .toLowerCase()
+        .includes(filter.toLowerCase()),
+    ) ?? [];
   if (id && (group || id === "new"))
     return (
       <GroupEditor
@@ -873,10 +903,12 @@ export function AccountGroups() {
       {id && !catalog.isPending && !group && (
         <p role="status">Group not found.</p>
       )}
-      <p className={styles.help}>
-        Pool accounts from the same provider and choose how models use them.
-      </p>
       <div className={styles.listToolbar}>
+        {!catalog.data?.groups.length && (
+          <p className={styles.help}>
+            Combine accounts from the same provider.
+          </p>
+        )}
         {!!catalog.data?.groups.length && (
           <SearchField
             label="Search groups"
@@ -890,55 +922,51 @@ export function AccountGroups() {
         </Button>
       </div>
       <div className={styles.rows}>
-        {catalog.data?.groups
-          .filter((item) =>
-            `${item.name} ${item.provider}`
-              .toLowerCase()
-              .includes(filter.toLowerCase()),
-          )
-          .map((item) => (
-            <article key={item.id} className={styles.row}>
-              <div className={styles.identity}>
-                <strong>{item.name}</strong>
-                <span>
-                  {item.provider} ·{" "}
-                  {item.strategy === "weighted"
-                    ? "Weighted balance"
-                    : "Ordered consumption"}{" "}
-                  · {item.accounts?.length ?? 0} accounts
-                  {item.allow_credits
-                    ? " · Credits allowed"
-                    : " · Included allowance only"}
-                </span>
-                <div className={styles.members}>
-                  {item.accounts?.map((member) => {
-                    const view = accounts.find(
-                      (entry) => entry.account.id === member.account,
-                    );
-                    return (
-                      <span key={member.account}>
-                        {view?.account.name ?? "Deleted account"}
-                        {compactAllowance(view?.usage.usage) &&
-                          ` · ${compactAllowance(view?.usage.usage)}`}
-                        {item.strategy === "weighted"
-                          ? ` ×${member.weight ?? 1}`
-                          : ""}
-                      </span>
-                    );
-                  })}
-                </div>
+        {groups.map((item) => (
+          <article key={item.id} className={styles.row}>
+            <div className={styles.identity}>
+              <strong>{item.name}</strong>
+              <span>
+                {item.provider} ·{" "}
+                {item.strategy === "weighted"
+                  ? "Weighted balance"
+                  : "Ordered consumption"}{" "}
+                · {item.accounts?.length ?? 0} accounts
+                {item.allow_credits
+                  ? " · Credits allowed"
+                  : " · Included allowance only"}
+              </span>
+              <div className={styles.members}>
+                {item.accounts?.map((member) => {
+                  const view = accounts.find(
+                    (entry) => entry.account.id === member.account,
+                  );
+                  return (
+                    <span key={member.account}>
+                      {view?.account.name ?? "Deleted account"}
+                      {compactAllowance(view?.usage.usage) &&
+                        ` · ${compactAllowance(view?.usage.usage)}`}
+                      {item.strategy === "weighted"
+                        ? ` ×${member.weight ?? 1}`
+                        : ""}
+                    </span>
+                  );
+                })}
               </div>
-              <Button
-                variant="ghost"
-                onClick={() => setParams({ tab: "groups", group: item.id })}
-              >
-                Manage group
-              </Button>
-            </article>
-          ))}
-        {!catalog.isPending && !catalog.data?.groups.length && (
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => setParams({ tab: "groups", group: item.id })}
+            >
+              Manage group
+            </Button>
+          </article>
+        ))}
+        {!catalog.isPending && !groups.length && (
           <p className={layout.emptySection}>
-            No groups yet. Create one to combine accounts.
+            {catalog.data?.groups.length
+              ? "No matching groups."
+              : "No account groups yet."}
           </p>
         )}
       </div>
@@ -1193,15 +1221,12 @@ function GroupEditor({
       <header className={styles.heading}>
         <div>
           <h2>{initial ? initial.name : "New account group"}</h2>
-          <p>
-            Choose accounts and how Runs use them. Changes apply to the next
-            Run.
-          </p>
+          <p>Choose accounts for future runs.</p>
         </div>
       </header>
       <ErrorNotice error={sources.error || save.error || remove.error} />
       <fieldset className={styles.groupFields} disabled={!writable || busy}>
-        <SettingsSection title="Details">
+        <SettingsSection>
           <TextField
             label="Group name"
             value={draft.name}
@@ -1338,9 +1363,7 @@ function GroupEditor({
                 </div>
               ))}
               {!members.length && (
-                <p>
-                  No members. This group cannot run until you add an account.
-                </p>
+                <p>Add an account before using this group.</p>
               )}
               <ChoiceField
                 label="Add member"
@@ -1367,12 +1390,6 @@ function GroupEditor({
               This group is read-only. Edit its owning configuration source.
             </p>
           )}
-          {deleteConfirm && (
-            <p>
-              Delete this group? Models explicitly referencing it must be
-              updated first.
-            </p>
-          )}
         </SettingsSection>
       </fieldset>
       <div className={styles.editorFooter}>
@@ -1387,13 +1404,14 @@ function GroupEditor({
               variant="ghost"
               disabled={!writable || save.isPending}
               loading={remove.isPending}
-              onClick={() =>
-                deleteConfirm ? remove.mutate() : setDeleteConfirm(true)
-              }
+              onClick={() => setDeleteConfirm(true)}
             >
-              {deleteConfirm ? "Confirm delete group" : "Delete group…"}
+              Delete group…
             </Button>
           )}
+          <Button variant="outline" disabled={busy} onClick={close}>
+            Cancel
+          </Button>
           <Button
             loading={save.isPending}
             disabled={
@@ -1408,6 +1426,36 @@ function GroupEditor({
           </Button>
         </div>
       </div>
+      <ModalFrame
+        open={deleteConfirm}
+        onOpenChange={(open) => {
+          if (!busy) setDeleteConfirm(open);
+        }}
+        title="Delete account group?"
+        description="Update models that reference this group before deleting it."
+        closeLabel="Close"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setDeleteConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              disabled={!writable || save.isPending}
+              onClick={() => remove.mutate()}
+            >
+              Confirm delete group
+            </Button>
+          </>
+        }
+      >
+        <ErrorNotice error={remove.error} />
+      </ModalFrame>
     </section>
   );
 }

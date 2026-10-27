@@ -37,9 +37,8 @@ export function ProjectFolders({
       )}
       {!compact && (
         <p className={styles.hint}>
-          Existing absolute directories on the server or container, not this
-          browser's computer. The first folder is the local workspace. These are
-          path references; no files or directories are copied.
+          Use existing server or container directories. The first is your
+          workspace. Files stay in place.
         </p>
       )}
       {roots.map((root, index) => (

@@ -69,16 +69,27 @@ export function CoordinatorPromotion({
         if (!value) close();
       }}
       title="Make this chat a coordinator?"
-      closeLabel="Cancel"
-      description="This keeps its history and settings. A coordinator manages its own workers in this Project; existing chats are not adopted. This role cannot be reversed."
+      closeLabel="Close"
+      description="Manage new workers in this Project. Existing chats stay separate; history and settings are kept. This role cannot be reversed."
+      footer={
+        <>
+          <Button
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={close}
+          >
+            Cancel
+          </Button>
+          <Button
+            loading={mutation.isPending}
+            onClick={() => mutation.mutate(undefined, { onSuccess: close })}
+          >
+            Make Coordinator
+          </Button>
+        </>
+      }
     >
       <ErrorNotice error={mutation.error} />
-      <Button
-        loading={mutation.isPending}
-        onClick={() => mutation.mutate(undefined, { onSuccess: close })}
-      >
-        Make Coordinator
-      </Button>
     </ModalFrame>
   );
 }

@@ -101,7 +101,7 @@
   border-top: 1px solid var(--a13n-border);
 }
 .tasks li > svg {
-  margin-top: 4px;
+  margin-top: 10px;
   flex-shrink: 0;
 }
 .tasks details {
@@ -149,7 +149,7 @@
   color: var(--a13n-secondary);
 }
 .notes > details {
-  padding: 6px 0;
+  padding: 0;
 }
 .notes > details + details {
   border-top: 1px solid var(--a13n-border);
@@ -159,7 +159,7 @@
   overflow-wrap: anywhere;
 }
 .notes details > div {
-  margin: 6px 0 0 18px;
+  margin: 6px 0 0;
 }
 .notes details > div > :first-child {
   margin-top: 0;

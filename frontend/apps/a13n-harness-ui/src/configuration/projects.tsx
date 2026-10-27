@@ -1,4 +1,7 @@
-import { SettingsChoice as ChoiceField } from "../shell/settings";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation } from "@tanstack/react-query";
@@ -164,35 +167,33 @@ export function ReadinessPreview({
   const effectiveEnvironment = config?.environment_profile_id;
   const current = inspected === JSON.stringify(body);
   return (
-    <Panel title="New chat settings">
-      <div className={styles.stack}>
-        <ErrorNotice error={selectors.error || preview.error} />
-        <div className={styles.formGrid}>
-          <ChoiceField
-            label="Agent"
-            value={agent}
-            onValueChange={setAgent}
-            options={[
-              { value: "default", label: "Use default" },
-              ...(selectors.data?.agents.map((item) => ({
-                value: item.agent_id,
-                label: item.name,
-              })) ?? []),
-            ]}
-          />
-          <ChoiceField
-            label="Local mode"
-            value={environment}
-            onValueChange={setEnvironment}
-            options={[
-              { value: "default", label: "Use default" },
-              ...(selectors.data?.environments.map((item) => ({
-                value: item.profile_id,
-                label: item.name,
-              })) ?? []),
-            ]}
-          />
-        </div>
+    <div className={styles.stack}>
+      <ErrorNotice error={selectors.error || preview.error} />
+      <SettingsSection title="New chat settings">
+        <ChoiceField
+          label="Agent"
+          value={agent}
+          onValueChange={setAgent}
+          options={[
+            { value: "default", label: "Use default" },
+            ...(selectors.data?.agents.map((item) => ({
+              value: item.agent_id,
+              label: item.name,
+            })) ?? []),
+          ]}
+        />
+        <ChoiceField
+          label="Local mode"
+          value={environment}
+          onValueChange={setEnvironment}
+          options={[
+            { value: "default", label: "Use default" },
+            ...(selectors.data?.environments.map((item) => ({
+              value: item.profile_id,
+              label: item.name,
+            })) ?? []),
+          ]}
+        />
         {(
           [
             [
@@ -223,59 +224,54 @@ export function ReadinessPreview({
             }
           />
         ))}
-        <Button
-          loading={preview.isPending}
-          onClick={() => preview.mutate(body)}
-        >
-          Preview settings
-        </Button>
-        {config && (
-          <>
-            <p>
-              {current
-                ? "Accepted configuration preview. No thread or run was created."
-                : "Selections changed. Inspect again to refresh this preview."}
-            </p>
-            <EnvironmentsSummary
-              value={config}
-              profiles={selectors.data?.environments}
-            />
-            <p className="text-sm text-muted-foreground">
-              Readiness checks below cover the local mode only, not Device
-              connections.
-            </p>
-            <dl className={styles.definitionList}>
-              {Object.entries(preview.data!.provenance).map(
-                ([axis, origin]) => (
-                  <div key={axis}>
-                    <dt>{axis.replaceAll("_", " ")}</dt>
-                    <dd>
-                      <code>
-                        {JSON.stringify(config[axis as keyof typeof config]) ??
-                          "Default"}
-                      </code>
-                      <small>From {origin}</small>
-                    </dd>
-                  </div>
-                ),
-              )}
-            </dl>
-            {current &&
-              (effectiveEnvironment === "environment-native" ||
-                effectiveEnvironment === "environment-sandbox") && (
-                <Preflight
-                  profile={effectiveEnvironment}
-                  projectPath={projectPath}
-                />
-              )}
-          </>
-        )}
-        <p>
-          Readiness does not call a model or prove credentials are usable. Check
-          Accounts & API keys separately. Unsaved Project edits are not included
-          in this preview.
-        </p>
-      </div>
-    </Panel>
+      </SettingsSection>
+      <Button loading={preview.isPending} onClick={() => preview.mutate(body)}>
+        Preview settings
+      </Button>
+      {config && (
+        <>
+          <p>
+            {current
+              ? "Accepted configuration preview. No thread or run was created."
+              : "Selections changed. Inspect again to refresh this preview."}
+          </p>
+          <EnvironmentsSummary
+            value={config}
+            profiles={selectors.data?.environments}
+          />
+          <p className="text-sm text-muted-foreground">
+            Readiness checks below cover the local mode only, not Device
+            connections.
+          </p>
+          <dl className={styles.definitionList}>
+            {Object.entries(preview.data!.provenance).map(([axis, origin]) => (
+              <div key={axis}>
+                <dt>{axis.replaceAll("_", " ")}</dt>
+                <dd>
+                  <code>
+                    {JSON.stringify(config[axis as keyof typeof config]) ??
+                      "Default"}
+                  </code>
+                  <small>From {origin}</small>
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {current &&
+            (effectiveEnvironment === "environment-native" ||
+              effectiveEnvironment === "environment-sandbox") && (
+              <Preflight
+                profile={effectiveEnvironment}
+                projectPath={projectPath}
+              />
+            )}
+        </>
+      )}
+      <p>
+        Readiness does not call a model or prove credentials are usable. Check
+        Accounts & API keys separately. Unsaved Project edits are not included
+        in this preview.
+      </p>
+    </div>
   );
 }

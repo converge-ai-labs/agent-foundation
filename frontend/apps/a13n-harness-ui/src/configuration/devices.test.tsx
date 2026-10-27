@@ -165,10 +165,10 @@ it("generates the connect command from the browser origin without a status reque
     ),
   ).not.toBeNull();
   expect(
-    within(dialog).getByText(/localhost refers to the Device itself/),
+    within(dialog).getByText(/localhost points to the device itself/),
   ).not.toBeNull();
   expect(
-    within(dialog).getByText(/Saved identity and credentials are reused/),
+    within(dialog).getByText(/Identity and credentials are reused/),
   ).not.toBeNull();
   expect(requests).not.toContain("GET /api/status");
 });
@@ -207,7 +207,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
   let wizard = await screen.findByRole("dialog", { name: "Connect a Device" });
   expect(await within(wizard).findByText("ABCD-1234")).not.toBeNull();
   await user.click(
-    within(wizard).getByRole("checkbox", { name: /Enable shell execution/ }),
+    within(wizard).getByRole("switch", { name: /Enable shell execution/ }),
   );
   expect(
     within(wizard).getByText(

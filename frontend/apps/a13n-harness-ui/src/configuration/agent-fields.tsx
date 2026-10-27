@@ -331,6 +331,7 @@ export function AgentFields({
                 description="One exact name per line. An empty list removes optional tools; required infrastructure remains available."
               >
                 <Textarea
+                  variant="soft"
                   rows={3}
                   onBlur={(event) =>
                     onChange(
@@ -412,6 +413,7 @@ function CapabilityOptions({
         description="One directory per line, in addition to discovered skills."
       >
         <Textarea
+          variant="soft"
           rows={2}
           onBlur={(event) =>
             set(["roots"], event.target.value.split("\n").filter(Boolean))

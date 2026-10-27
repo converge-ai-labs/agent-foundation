@@ -205,6 +205,35 @@ it("saves a group to its owning source path with credits still opt-in", async ()
   });
 });
 
+it("can cancel group deletion and deletes only the reviewed source after confirmation", async () => {
+  const writes = mount({ groups: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Manage group" }));
+  const deleteButton = await screen.findByRole("button", {
+    name: "Delete group…",
+  });
+  await waitFor(() =>
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(deleteButton);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete account group?",
+  });
+  expect(writes).toEqual([]);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(writes).toEqual([]);
+  fireEvent.click(deleteButton);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm delete group" }),
+  );
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toEqual({
+    path: "/api/configuration/sources/subscription_groups/custom-name.yaml",
+    method: "DELETE",
+    body: null,
+  });
+});
+
 it("lists vouchers by expiry and requires confirmation after choosing Use", async () => {
   const writes = mount();
   fireEvent.click(

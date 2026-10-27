@@ -1,4 +1,8 @@
-import { SettingsTextField as TextField } from "../shell/settings";
+import {
+  SettingsTextField as TextField,
+  SettingsRow,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import {
   useMutation,
@@ -268,16 +272,28 @@ export function CredentialKeys({
             ? "Save a reusable key, then link it from a Model or Device."
             : "Linked Models and Devices will use the replacement when they next load this credential."
         }
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            type="submit"
-            form="save-credential-key"
-            loading={save.isPending}
-            disabled={!secret.trim() || !reference.trim() || !!duplicate}
-          >
-            Save key
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={save.isPending}
+              onClick={() => {
+                setEditing(null);
+                setSecret("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="save-credential-key"
+              loading={save.isPending}
+              disabled={!secret.trim() || !reference.trim() || !!duplicate}
+            >
+              Save key
+            </Button>
+          </>
         }
       >
         <form
@@ -290,26 +306,30 @@ export function CredentialKeys({
           }}
         >
           <ErrorNotice error={save.error} />
-          {editing === "new" ? (
+          <SettingsSection>
+            {editing === "new" ? (
+              <TextField
+                label="Saved key name"
+                value={reference}
+                onChange={setReference}
+              />
+            ) : (
+              <SettingsRow label="Saved key name">
+                <span>{reference}</span>
+              </SettingsRow>
+            )}
             <TextField
-              label="Saved key name"
-              value={reference}
-              onChange={setReference}
+              label="API key"
+              type="password"
+              value={secret}
+              onChange={setSecret}
             />
-          ) : (
-            <strong>{reference}</strong>
-          )}
+          </SettingsSection>
           {duplicate && (
             <p role="alert">
               This name is already saved. Use Replace key to update it.
             </p>
           )}
-          <TextField
-            label="API key"
-            type="password"
-            value={secret}
-            onChange={setSecret}
-          />
         </form>
       </ModalFrame>
       <ModalFrame
@@ -319,15 +339,24 @@ export function CredentialKeys({
         }}
         title="Remove saved key?"
         description="Models and Devices referencing this credential will need a replacement key to authenticate."
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => deleting && remove.mutate(deleting)}
-          >
-            Remove key
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={remove.isPending}
+              onClick={() => setDeleting(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => deleting && remove.mutate(deleting)}
+            >
+              Remove key
+            </Button>
+          </>
         }
       >
         <p>{deleting}</p>

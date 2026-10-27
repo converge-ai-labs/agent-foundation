@@ -173,10 +173,13 @@ export function ConnectionsPage() {
       <div className={layout.disclosures}>
         {root && (
           <details className={layout.disclosure}>
-            <summary>Chat defaults</summary>
+            <summary>
+              <span>Chat defaults</span>
+              <small>Connections and extensions for new chats</small>
+            </summary>
             <SourceDocument
               path={root.relative_path}
-              title="Default connections & extensions"
+              title={null}
               embedded
               section="connections"
             />
@@ -256,7 +259,7 @@ export function EnvironmentsPage() {
                 variant="outline"
               />
             </div>
-            <p>
+            <p className={layout.hint}>
               Control how agents run on this server: full control or a sandbox.
             </p>
             <DraftLinks kinds={["environment_profile"]} />
@@ -312,19 +315,18 @@ export function EnvironmentsPage() {
             </div>
           </section>
           <details className={layout.disclosure}>
-            <summary>Environment providers</summary>
-            <p>Create a profile from an installed provider.</p>
+            <summary>
+              <span>Environment providers</span>
+              <small>Create a profile from an installed provider</small>
+            </summary>
             <InstalledCatalog kind="environment_provider" />
           </details>
-          <details className={layout.disclosure}>
-            <summary>Environment extensions</summary>
-            <SourcesPage
-              kinds={["environment_run_extension"]}
-              headingLevel={2}
-              title="Environment extensions"
-              description="Optional extensions selected in project or global defaults."
-            />
-          </details>
+          <SourcesPage
+            kinds={["environment_run_extension"]}
+            headingLevel={2}
+            title="Environment extensions"
+            description="Optional extensions selected in project or global defaults."
+          />
         </>
       )}
       {selectedTab === "runtime" && <RuntimePage embedded />}
@@ -343,12 +345,17 @@ export function InstalledCatalog({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
-  const items = catalog.data?.filter(
-    (item) =>
-      item.kind === kind &&
-      `${item.key} ${item.distribution_name ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const available = catalog.data?.filter((item) => item.kind === kind);
+  const catalogLabel =
+    kind === "capability"
+      ? "capabilities"
+      : kind === "environment_provider"
+        ? "environment providers"
+        : "plugins";
+  const items = available?.filter((item) =>
+    `${item.key} ${item.distribution_name ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
   );
   const resource: ResourceKind | undefined =
     kind === "environment_provider"
@@ -359,11 +366,13 @@ export function InstalledCatalog({
   return (
     <div className={styles.stack}>
       <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
-      <SearchField
-        label="Search installed plugins"
-        value={search}
-        onChange={setSearch}
-      />
+      {!!available?.length && (
+        <SearchField
+          label={`Search installed ${catalogLabel}`}
+          value={search}
+          onChange={setSearch}
+        />
+      )}
       {catalog.isPending && <Skeleton className="h-32 w-full" />}
       <div className={styles.resourceList}>
         {items?.map((item) => (
@@ -379,7 +388,7 @@ export function InstalledCatalog({
               </small>
             </div>
             {!item.configurable ? (
-              <span>Unavailable to configure</span>
+              <span className={layout.hint}>Unavailable to configure</span>
             ) : resource ? (
               <NewResourceButton
                 kind={resource}
@@ -392,12 +401,18 @@ export function InstalledCatalog({
                 }}
               />
             ) : (
-              <span>Available to agents</span>
+              <span className={layout.hint}>Available to agents</span>
             )}
           </div>
         ))}
       </div>
-      {items?.length === 0 && <p>No matching installed plugins.</p>}
+      {items?.length === 0 && (
+        <p className={layout.hint}>
+          {available?.length
+            ? `No matching installed ${catalogLabel}.`
+            : `No installed ${catalogLabel}.`}
+        </p>
+      )}
     </div>
   );
 }

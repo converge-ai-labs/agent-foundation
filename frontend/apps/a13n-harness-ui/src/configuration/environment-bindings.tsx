@@ -1,5 +1,8 @@
-import { SettingsTextField as TextField } from "../shell/settings";
-import { SettingsChoice as ChoiceField } from "../shell/settings";
+import {
+  SettingsTextField as TextField,
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
@@ -306,7 +309,7 @@ export function EnvironmentBindings({
         }}
         title="Remove directory selection?"
         description="This removes the directory from the selection. Files, the Device connection and captured Runs stay unchanged."
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
           <>
             <Button
@@ -398,45 +401,50 @@ function DeviceEnvironmentEditor({
     );
   return (
     <div className={styles.editor}>
-      <ChoiceField
-        label="Device"
-        placeholder="Choose a Device"
-        value={deviceId}
-        onValueChange={selectDevice}
-        options={[
-          ...(deviceId && !availableDevices.some((item) => item.id === deviceId)
-            ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
-            : []),
-          ...availableDevices.map((item) => ({
-            value: item.id,
-            label: item.name,
-          })),
-        ]}
-      />
-      <ConnectDevice
-        label="Connect new Device"
-        onConnected={(device) => {
-          setConnected(device);
-          selectDevice(device.id);
-        }}
-      />
-      <ChoiceField
-        label="Allowed actions"
-        value={permission}
-        onValueChange={setPermission}
-        placeholder="Keep existing permissions"
-        options={[
-          { value: "read_only", label: "Read only" },
-          { value: "full", label: "Full control" },
-        ]}
-        description={
-          permission === "full"
-            ? "Applies to every directory below. Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to these directories; screenshots may be sent to the model and saved in history."
-            : permission === "read_only"
-              ? "Applies to every directory below. Read and browse files without changes, commands or desktop access."
-              : "Existing permissions stay unchanged for every directory unless you choose an option."
-        }
-      />
+      <SettingsSection>
+        <ChoiceField
+          label="Device"
+          placeholder="Choose a Device"
+          value={deviceId}
+          onValueChange={selectDevice}
+          options={[
+            ...(deviceId &&
+            !availableDevices.some((item) => item.id === deviceId)
+              ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
+              : []),
+            ...availableDevices.map((item) => ({
+              value: item.id,
+              label: item.name,
+            })),
+          ]}
+        />
+        <ChoiceField
+          label="Allowed actions"
+          value={permission}
+          onValueChange={setPermission}
+          placeholder="Keep existing permissions"
+          options={[
+            { value: "read_only", label: "Read only" },
+            { value: "full", label: "Full control" },
+          ]}
+          description={
+            permission === "full"
+              ? "Applies to every directory below. Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to these directories; screenshots may be sent to the model and saved in history."
+              : permission === "read_only"
+                ? "Applies to every directory below. Read and browse files without changes, commands or desktop access."
+                : "Existing permissions stay unchanged for every directory unless you choose an option."
+          }
+        />
+      </SettingsSection>
+      <div>
+        <ConnectDevice
+          label="Connect new Device"
+          onConnected={(device) => {
+            setConnected(device);
+            selectDevice(device.id);
+          }}
+        />
+      </div>
       {deviceId &&
         directories.map((directory, index) => (
           <div key={`${deviceId}:${index}`} className={styles.draftDirectory}>
@@ -450,10 +458,8 @@ function DeviceEnvironmentEditor({
                   : `Working directory ${index + 1}`
               }
             />
-            <details>
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                Advanced routing
-              </summary>
+            <details className={styles.advanced}>
+              <summary>Advanced routing</summary>
               <TextField
                 label={
                   index === 0

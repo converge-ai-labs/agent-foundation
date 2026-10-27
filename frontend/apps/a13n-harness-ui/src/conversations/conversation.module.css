@@ -1296,13 +1296,18 @@ dl.detailGrid > .detailLongRow dd {
   gap: 16px;
 }
 .inspection [data-slot="tabs-list"] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--a13n-elevated);
+  width: 100%;
   max-width: 100%;
   gap: 20px;
 }
 .inspection [data-slot="tabs-tab"] {
   font-size: 13px;
 }
-.inspection [data-slot="tabs-panel"] > section + section {
+.inspection [data-slot="tabs-content"] > section + section {
   margin-top: 20px;
 }
 .inspection section > h3 {
@@ -1311,8 +1316,8 @@ dl.detailGrid > .detailLongRow dd {
   font-weight: 500;
   line-height: 20px;
 }
-.inspection [data-slot="tabs-panel"] > section > p,
-.inspection [data-slot="tabs-panel"] > .form > section > p {
+.inspection [data-slot="tabs-content"] > section > p,
+.inspection [data-slot="tabs-content"] > .form > section > p {
   margin-block: 8px;
   color: var(--a13n-secondary);
   font-size: 12px;
@@ -1422,6 +1427,21 @@ dl.detailGrid > .detailLongRow dd {
   padding: 0;
   margin: 0;
   min-width: 0;
+}
+.settingsHint {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.settingsFields {
+  composes: responseInputs;
+  gap: 12px;
+}
+.settingsActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .attachmentCard {

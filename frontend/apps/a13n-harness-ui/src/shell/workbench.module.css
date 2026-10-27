@@ -544,7 +544,7 @@ a.resourceRow:hover {
 }
 :where(.details) > summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 12px;
+  grid-template-columns: minmax(0, 1fr) 40px;
   align-items: center;
   gap: 4px 16px;
   min-height: 36px;
@@ -594,7 +594,7 @@ a.resourceRow:hover {
 /* Opened content sits close to its summary; the parent's gap separates the
    disclosure from its siblings, so the last child adds no trailing space. */
 :where(.details)[open] > summary {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 :where(.details) > summary small {
   grid-column: 1;
@@ -606,7 +606,7 @@ a.resourceRow:hover {
   line-height: 18px;
 }
 :where(.details) > :not(summary):not(:last-child) {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 :where(.details) pre {
   font-size: 12px;
@@ -860,6 +860,11 @@ a.resourceRow:hover {
   font-size: 18px;
   line-height: 24px;
 }
+.settingsContent .pageHeader > div > h2 {
+  min-height: 24px;
+  font-size: 13px;
+  line-height: 20px;
+}
 .settingsContent .pageHeader p {
   font-size: 13px;
 }
@@ -899,7 +904,35 @@ a.resourceRow:hover {
   align-items: center;
 }
 .sourceSubsection {
-  gap: 24px;
+  gap: 12px;
+}
+.sourceAdvanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.sourceAdvanced > button {
+  align-self: flex-start;
+}
+.sourceCode {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sourceCode > header {
+  display: grid;
+  gap: 4px;
+}
+.sourceCode > header > h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.sourceCode > header > p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
 }
 .sourceHeader {
   display: grid;
@@ -942,12 +975,9 @@ a.resourceRow:hover {
   gap: 20px;
   min-width: 0;
 }
-.configurationForm > .stack {
-  gap: 20px;
-}
 /* Field groups use spacing to separate their controls. */
 .fieldGroup {
-  padding-block: 16px;
+  padding-block: 12px;
 }
 .fieldGroup:has(> .stack > [data-slot="settings-row"]) {
   padding-block: 0;

@@ -1080,8 +1080,12 @@ function ConversationContent({
           open={inspection}
           onOpenChange={setInspection}
           title="Chat details"
-          description="Activity, configuration and usage for this chat."
-          closeLabel="Close"
+          closeLabel="Close dialog"
+          footer={
+            <Button variant="outline" onClick={() => setInspection(false)}>
+              Close
+            </Button>
+          }
           size="lg"
         >
           <ConversationDetails
@@ -1089,26 +1093,28 @@ function ConversationContent({
             receipt={receipt}
             continuation={detail.data?.continuation_id}
             reconcile={reconcile}
+            management={
+              <div className={styles.detailActions}>
+                {!readOnly && thread && (
+                  <CoordinatorSettings
+                    thread={thread}
+                    pending={!!detail.data?.deferred_requests?.length}
+                  />
+                )}
+                {!thread?.archived &&
+                  detail.data?.available_actions?.includes("archive") && (
+                    <Button
+                      variant="outline"
+                      loading={metadata.isPending}
+                      onClick={() => metadata.mutate({ archived: true })}
+                    >
+                      Archive chat
+                    </Button>
+                  )}
+              </div>
+            }
             readOnly={readOnly}
           />
-          <div className={styles.detailActions} data-a13n-form-actions>
-            {!readOnly && thread && (
-              <CoordinatorSettings
-                thread={thread}
-                pending={!!detail.data?.deferred_requests?.length}
-              />
-            )}
-            {!thread?.archived &&
-              detail.data?.available_actions?.includes("archive") && (
-                <Button
-                  variant="outline"
-                  loading={metadata.isPending}
-                  onClick={() => metadata.mutate({ archived: true })}
-                >
-                  Archive chat
-                </Button>
-              )}
-          </div>
         </ModalFrame>
       </div>
     </ConversationOpening>

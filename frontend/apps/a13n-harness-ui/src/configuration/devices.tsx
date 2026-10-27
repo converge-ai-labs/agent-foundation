@@ -129,7 +129,7 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
       }}
       title={`Revoke ${device.name}?`}
       description="Disconnect this Device and block its saved credential. Runs using it lose their connection. Remote files and captured history are preserved."
-      closeLabel="Cancel"
+      closeLabel="Close"
       trigger={
         <Button size="sm" variant="ghost">
           Revoke

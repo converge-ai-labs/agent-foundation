@@ -51,8 +51,8 @@ export function ForgetEnvironment({
         }
       }}
       title={`Forget ${name}?`}
-      closeLabel="Cancel"
-      description="Remove this local connection or profile configuration, even if its target no longer exists. Remote files, Devices, active Runs and captured history are not deleted."
+      closeLabel="Close"
+      description="Remove this saved connection or profile. Remote files, devices, active runs and history are kept."
       trigger={
         <Button
           type="button"

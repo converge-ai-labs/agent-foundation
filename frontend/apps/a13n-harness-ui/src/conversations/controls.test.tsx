@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Schema, type Transport } from "../transport/client";
 import { ThreadSelections } from "./configuration";
@@ -26,7 +27,7 @@ function harness(client: object) {
     return (
       <QueryClientProvider client={queries}>
         <TransportContext value={{ client } as Transport}>
-          {children}
+          <MemoryRouter>{children}</MemoryRouter>
         </TransportContext>
       </QueryClientProvider>
     );
@@ -75,7 +76,7 @@ it("keeps dirty selections on external changes and requires review before versio
       }}
     />,
   );
-  expect((checkbox as HTMLInputElement).checked).toBe(true);
+  expect(checkbox.getAttribute("aria-checked")).toBe("true");
   expect(
     (
       screen.getByRole("button", {
@@ -302,9 +303,10 @@ it("disables selection editing during the submitted versioned write", async () =
   fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
   fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
-  expect(screen.getByRole("checkbox", { name: "B" }).matches(":disabled")).toBe(
-    true,
-  );
+  const blockedChoice = screen.getByRole("checkbox", { name: "B" });
+  expect(blockedChoice.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(blockedChoice);
+  expect(blockedChoice.getAttribute("aria-checked")).toBe("false");
   expect(
     screen.getByRole("combobox", { name: "Agent" }).matches(":disabled"),
   ).toBe(true);
