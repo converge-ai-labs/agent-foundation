@@ -7,6 +7,7 @@ import { ToolCall } from "../conversations/tool-call";
 import { MessageText } from "../conversations/message-text";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -20,9 +21,10 @@ import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
 
-vi.mock("../conversations/live-threads", () => ({
-  useLiveThread: () => ({ display: {} }),
+const live = vi.hoisted(() => ({
+  display: { browserActivityRunId: undefined as string | undefined },
 }));
+vi.mock("../conversations/live-threads", () => ({ useLiveThread: () => live }));
 vi.mock("./files", () => ({
   Files: ({
     path,
@@ -132,6 +134,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
+  live.display.browserActivityRunId = undefined;
 });
 function setup(
   initial: string,
@@ -143,7 +146,11 @@ function setup(
   content?: ReactNode,
   buffers = new Map(),
 ) {
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -242,6 +249,9 @@ function setup(
           Open peer repository
         </button>
         <button onClick={() => navigate("/threads/other")}>Another chat</button>
+        <button onClick={() => navigate("/threads/current")}>
+          Current chat
+        </button>
         <button
           onClick={() =>
             navigate("/settings/source?path=agents%2Ffixture.yaml")
@@ -274,21 +284,134 @@ function setup(
   );
   return { focus, get };
 }
-async function workspaceTool(
-  name: "Files" | "Changes" | "Terminal" | "Browser",
-) {
-  const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("button", { name: "Workspace tools" }),
+async function chooseView(name: "Files" | "Changes" | "Browser") {
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
+    ).toBe(false),
   );
-  await user.click(
-    await screen.findByRole("menuitem", {
-      name: name === "Terminal" ? /^(Terminal|Hide terminal)$/ : name,
-    }),
-  );
+  const existing = screen.queryByRole("tab", { name });
+  if (existing) {
+    fireEvent.click(existing);
+    return;
+  }
+  if (!screen.queryByRole("button", { name }))
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  fireEvent.click(await screen.findByRole("button", { name }));
 }
 
-it("native deep links, file tabs and diff selection update personal focus without moving the selected chat", async () => {
+it("adds files through the new-tab picker in one strip and closes views without discarding private buffers", async () => {
+  const dirty = { dirty: true, text: "Keep this private edit" };
+  const buffers = new Map([["/native/first.txt", dirty]]);
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <textarea aria-label="Private draft" defaultValue="Keep my draft" />,
+    buffers,
+  );
+  await screen.findByText("Editor /native/first.txt");
+  const conversation = screen.getByTestId("chat");
+  const draft = screen.getByLabelText("Private draft");
+  expect(screen.queryByRole("navigation", { name: "Open files" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Close file explorer" }),
+  ).toBeNull();
+  expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  expect(
+    screen.getByRole("tab", { name: "New tab", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
+  await screen.findByText("Editor /native/second.txt");
+  const strip = screen.getByRole("tablist", { name: "Workspace views" });
+  expect(within(strip).getAllByRole("tab")).toHaveLength(2);
+  expect(
+    screen.getByRole("tab", { name: "second.txt", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt · Unsaved" }));
+  const editor = await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close tab: second.txt" }),
+  );
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close tab: first.txt · Unsaved" }),
+  );
+  expect(
+    screen.getByRole("tab", { name: "New tab", selected: true }),
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Open a new tab" })).toBeTruthy();
+  expect(buffers.get("/native/first.txt")).toBe(dirty);
+  expect(screen.getByTestId("chat")).toBe(conversation);
+  expect(screen.getByLabelText("Private draft")).toBe(draft);
+});
+
+it("opening a new tab cancels a pending file open and its late response cannot replace the picker", async () => {
+  let finish!: (value: { data: { kind: string } }) => void;
+  const metadata = new Promise<{ data: { kind: string } }>((resolve) => {
+    finish = resolve;
+  });
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fslow.txt",
+    true,
+    metadata,
+  );
+  await screen.findByText("Opening…");
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  await act(async () => {
+    finish({ data: { kind: "file" } });
+  });
+  expect(screen.queryByRole("tab", { name: "slow.txt" })).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "New tab", selected: true }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+});
+
+it("an initial file link opens only its resource tab after the selected Project resolves", async () => {
+  setup("/?project=project-one&native=files&native_path=%2Fnative%2Ffirst.txt");
+  await screen.findByText("Editor /native/first.txt");
+  expect(
+    within(
+      screen.getByRole("tablist", { name: "Workspace views" }),
+    ).getAllByRole("tab"),
+  ).toHaveLength(1);
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+});
+
+it("an initial directory link navigates the Project's initial tab to Files", async () => {
+  setup("/?project=project-one&native=files&native_path=%2Fnative%2Fsrc");
+  await screen.findByText("Folder /native/src");
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(
+    screen.getByRole("tab", { name: "Files", selected: true }),
+  ).toBeTruthy();
+});
+
+it("restores each Project's resource tabs without mixing their locations", async () => {
+  setup("/threads/current", true, undefined, "project-one", "project-two");
+  await chooseView("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
+  await screen.findByText("Editor /native/second.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  await chooseView("Browser");
+  expect(screen.queryByRole("tab", { name: "second.txt" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  await screen.findByText("Editor /native/second.txt");
+  expect(
+    screen.getByRole("tab", { name: "second.txt", selected: true }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
+});
+
+it("native deep links, file tabs and diff selection update personal focus without moving the selected conversation", async () => {
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
@@ -299,9 +422,8 @@ it("native deep links, file tabs and diff selection update personal focus withou
       path: "/native/first.txt",
     }),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: /Back to (files|changes)/ }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
   await screen.findByText("Editor /native/second.txt");
   await waitFor(() =>
@@ -310,11 +432,11 @@ it("native deep links, file tabs and diff selection update personal focus withou
       path: "/native/second.txt",
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt" }));
   await screen.findByText("Editor /native/first.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
+  fireEvent.pointerDown(screen.getByTestId("chat"));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  await workspaceTool("Changes");
+  await chooseView("Changes");
   fireEvent.click(screen.getByRole("button", { name: "Select staged diff" }));
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
@@ -339,9 +461,9 @@ it("opens an assistant Host file link in the current chat drawer", async () => {
     ["/native"],
     <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
   );
-  await workspaceTool("Files");
+  await chooseView("Files");
   await screen.findByText("Folder /native");
-  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
+  fireEvent.pointerDown(screen.getByTestId("chat"));
   fireEvent.click(screen.getByRole("link", { name: "Open report" }));
   await screen.findByText("Editor /native/report.txt");
   expect(screen.getByTestId("chat").textContent).toContain("/threads/current");
@@ -398,9 +520,9 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
       terminal_id: "terminal-current",
     }),
   );
-  await workspaceTool("Terminal");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  await workspaceTool("Terminal");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "terminal",
@@ -415,8 +537,12 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
 
 it("narrow peer navigation reveals the requested native or configuration view, not a hidden view behind Terminal", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Workspace tools" });
-  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  await screen.findByRole("button", { name: "Terminal" });
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
   await screen.findByText("Patch reviewed.txt");
   expect(screen.getByLabelText("File explorer")).toBeTruthy();
@@ -455,40 +581,317 @@ it("Settings supersedes a pending file open and returning to Chat cannot be stol
   expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
 });
 
-it("retains open file tabs through Settings and closing the drawer returns focus to Chat", async () => {
+it("switches layouts and tabs without remounting the conversation or rereading the open file", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
+  const { get, focus } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <textarea aria-label="Private draft" defaultValue="Keep this draft" />,
+  );
+  const editor = await screen.findByText("Editor /native/first.txt");
+  const conversation = screen.getByTestId("chat");
+  const draft = screen.getByLabelText("Private draft");
+  const reads = get.mock.calls.filter(
+    ([url]) => url === "/api/host/files/metadata",
+  ).length;
+  expect(
+    conversation.closest('[role="tabpanel"]')?.hasAttribute("hidden"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+  await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
+  expect(screen.getByTestId("chat")).toBe(conversation);
+  expect(screen.getByLabelText("Private draft")).toBe(draft);
+  expect(editor.closest('[role="tabpanel"]')?.hasAttribute("hidden")).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt" }));
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  expect(
+    get.mock.calls.filter(([url]) => url === "/api/host/files/metadata"),
+  ).toHaveLength(reads);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use side-by-side layout" }),
+  );
+  expect(screen.getByRole("tablist", { name: "Workspace views" })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+  expect(screen.getByTestId("chat")).toBe(conversation);
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  expect(
+    screen.getByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("sidebar");
+  expect(
+    screen.queryByRole("button", { name: "Open panel as tab" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("tabs");
+  await chooseView("Browser");
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt" }));
+  const files = screen.getByRole("tab", { name: "first.txt" });
+  files.focus();
+  fireEvent.keyDown(files, { key: "Home" });
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Chat", selected: true }),
+  );
+  fireEvent.keyDown(document.activeElement!, { key: "End" });
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Browser", selected: true }),
+  );
+  expect(screen.getByRole("tabpanel", { name: "Browser" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Dock panel to the side" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+  expect(screen.queryByRole("tabpanel", { name: "Browser" })).toBeNull();
+});
+
+it("shows tab overflow hints only on edges with more content after scrolling or resizing", async () => {
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  const measurements: Array<() => void> = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(measure: () => void) {
+        measurements.push(measure);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  await screen.findByText("Editor /native/first.txt");
+  const tabs = screen.getByRole("tablist", { name: "Workspace views" });
+  let available = 160;
+  Object.defineProperties(tabs, {
+    clientWidth: { get: () => available },
+    scrollWidth: { value: 300 },
+  });
+  act(() => measurements.forEach((measure) => measure()));
+  expect(tabs.hasAttribute("data-overflow-left")).toBe(false);
+  expect(tabs.hasAttribute("data-overflow-right")).toBe(true);
+  tabs.scrollLeft = 60;
+  fireEvent.scroll(tabs);
+  expect(tabs.hasAttribute("data-overflow-left")).toBe(true);
+  expect(tabs.hasAttribute("data-overflow-right")).toBe(true);
+  tabs.scrollLeft = 140;
+  fireEvent.scroll(tabs);
+  expect(tabs.hasAttribute("data-overflow-right")).toBe(false);
+  available = 400;
+  tabs.scrollLeft = 0;
+  act(() => measurements.forEach((measure) => measure()));
+  expect(tabs.hasAttribute("data-overflow-left")).toBe(false);
+  expect(tabs.hasAttribute("data-overflow-right")).toBe(false);
+});
+
+it("keeps one drag reversible across tabs, split, and closed until release", async () => {
+  vi.stubGlobal(
+    "PointerEvent",
+    class extends MouseEvent {
+      pointerId: number;
+      constructor(type: string, init: PointerEventInit) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 0;
+      }
+    },
+  );
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  const editor = await screen.findByText("Editor /native/first.txt");
+  const conversation = screen.getByTestId("chat");
+  const prepareDrag = () => {
+    const separator = screen.getByRole("separator", {
+      name: "Resize supporting panel",
+    });
+    Object.defineProperty(separator.parentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    separator.parentElement!.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(separator, { clientX: 560, pointerId: 1 });
+    return separator;
+  };
+  const separator = prepareDrag();
+  const layout = separator.parentElement!;
+  expect(layout.setPointerCapture).toHaveBeenCalledWith(1);
+  fireEvent.pointerMove(layout, { clientX: 260, pointerId: 2 });
+  expect(separator.getAttribute("aria-valuenow")).toBe("44");
+  fireEvent.pointerMove(separator, { clientX: 320, pointerId: 1 });
+  expect(separator.getAttribute("aria-valuenow")).toBe("68");
+  fireEvent.pointerMove(separator, { clientX: 260, pointerId: 1 });
+  expect(screen.queryByRole("separator")).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+  expect(
+    conversation.closest('[role="tabpanel"]')?.hasAttribute("hidden"),
+  ).toBe(true);
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  fireEvent.pointerMove(layout, { clientX: 500, pointerId: 1 });
+  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+  expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe(
+    "50",
+  );
+  fireEvent.pointerMove(layout, { clientX: 760, pointerId: 1 });
+  expect(screen.queryByRole("separator")).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Workbench views" }),
+  ).toBeNull();
+  expect(screen.getByTestId("chat")).toBe(conversation);
+  expect(screen.queryByRole("tabpanel", { name: "first.txt" })).toBeNull();
+  // One held pointer can cross both edges repeatedly, even with no separator.
+  fireEvent.pointerMove(layout, { clientX: 560, pointerId: 1 });
+  expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe(
+    "44",
+  );
+  fireEvent.pointerMove(layout, { clientX: 260, pointerId: 1 });
+  expect(screen.getByRole("tab", { name: "Chat" })).toBeTruthy();
+  fireEvent.pointerMove(layout, { clientX: 760, pointerId: 1 });
+  expect(screen.queryByRole("separator")).toBeNull();
+  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+  fireEvent.pointerUp(layout, { clientX: 760, pointerId: 1 });
+  fireEvent.pointerMove(layout, { clientX: 560, pointerId: 1 });
+  expect(screen.queryByRole("separator")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open supporting panel" }),
+  );
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+  expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe(
+    "44",
+  );
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+});
+
+it("ignores superseded animation updates during a drag and ends on pointer cancellation", async () => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  await screen.findByText("Editor /native/first.txt");
+  const separator = screen.getByRole("separator");
+  const layout = separator.parentElement!;
+  Object.defineProperty(layout, "clientWidth", { value: 1000 });
+  layout.setPointerCapture = vi.fn();
+  const updates: Array<() => void> = [];
+  const motions: Set<string>[] = [];
+  const original = Object.getOwnPropertyDescriptor(
+    document,
+    "startViewTransition",
+  );
+  Object.defineProperty(document, "startViewTransition", {
+    configurable: true,
+    value: (update: () => void) => {
+      updates.push(update);
+      const types = new Set<string>();
+      motions.push(types);
+      return { ready: Promise.resolve(), skipTransition: vi.fn(), types };
+    },
+  });
+  try {
+    fireEvent.pointerDown(separator, { clientX: 560 });
+    fireEvent.pointerMove(layout, { clientX: 260 });
+    fireEvent.pointerMove(layout, { clientX: 760 });
+    fireEvent.pointerMove(layout, { clientX: 500 });
+    fireEvent.pointerMove(layout, { clientX: 460 });
+    expect(updates).toHaveLength(3);
+    expect(motions[1]?.has("panel-close")).toBe(true);
+    act(() => updates[2]!());
+    act(() => updates[1]!());
+    act(() => updates[0]!());
+    expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+    expect(screen.getByRole("separator").getAttribute("aria-valuenow")).toBe(
+      "54",
+    );
+    fireEvent.pointerCancel(layout);
+    fireEvent.pointerMove(layout, { clientX: 260 });
+    expect(updates).toHaveLength(3);
+    expect(layout.hasAttribute("data-resizing")).toBe(false);
+  } finally {
+    if (original)
+      Object.defineProperty(document, "startViewTransition", original);
+    else Reflect.deleteProperty(document, "startViewTransition");
+  }
+});
+
+it("uses tabs in narrow windows without replacing the saved desktop layout", async () => {
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  await screen.findByText("Editor /native/first.txt");
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+  expect(
+    screen
+      .getByTestId("chat")
+      .closest('[role="tabpanel"]')
+      ?.hasAttribute("hidden"),
+  ).toBe(false);
+  fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  expect(
+    screen.getByRole("tab", { name: "Files", selected: true }),
+  ).toBeTruthy();
+  expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("sidebar");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use side-by-side layout" }),
+  );
+  expect(screen.getByRole("tablist", { name: "Workspace views" })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Use tab layout" })).toBeTruthy();
+});
+
+it("retains resource tabs through Settings and direct Chat interaction updates focus", async () => {
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
   await screen.findByText("Editor /native/first.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
+  fireEvent.pointerDown(screen.getByTestId("chat"));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  expect(document.activeElement?.textContent).toContain("Chat remains mounted");
+
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   expect(screen.queryByLabelText("Open files")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
-  await workspaceTool("Files");
-  fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
+  fireEvent.click(screen.getByRole("tab", { name: "first.txt" }));
   await screen.findByText("Editor /native/first.txt");
 });
 
 it("mobile Chat and chat navigation reveal the chat instead of leaving it behind Terminal", async () => {
   setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Workspace tools" });
-  vi.stubGlobal("matchMedia", () => ({ matches: true }));
-  await workspaceTool("Terminal");
-  expect(screen.getByLabelText("Terminal panel").hasAttribute("hidden")).toBe(
-    true,
-  );
-  await workspaceTool("Terminal");
+  await screen.findByRole("button", { name: "Terminal" });
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Terminal" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
-  expect(screen.getByLabelText("Terminal panel").hasAttribute("hidden")).toBe(
-    true,
-  );
+  expect(
+    screen
+      .getByRole("button", { name: "Terminal" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
 });
 
-it.each(["Chat", "diff"])(
+it.each(["Chat", "Conversation tab", "diff"])(
   "an explicit %s view supersedes a pending file open without a route change",
   async (target) => {
+    if (target === "Conversation tab")
+      localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
     let finish!: (value: { data: { kind: string } }) => void;
     const metadata = new Promise<{ data: { kind: string } }>((resolve) => {
       finish = resolve;
@@ -503,12 +906,11 @@ it.each(["Chat", "diff"])(
         get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
       ).toBe(true),
     );
-    if (target === "Chat")
-      fireEvent.click(
-        screen.getByRole("button", { name: "Close file explorer" }),
-      );
+    if (target === "Chat") fireEvent.pointerDown(screen.getByTestId("chat"));
+    else if (target === "Conversation tab")
+      fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
     else {
-      await workspaceTool("Changes");
+      await chooseView("Changes");
       fireEvent.click(
         screen.getByRole("button", { name: "Select staged diff" }),
       );
@@ -516,7 +918,7 @@ it.each(["Chat", "diff"])(
     finish({ data: { kind: "file" } });
     await waitFor(() =>
       expect(focus).toHaveBeenLastCalledWith(
-        target === "Chat"
+        target !== "diff"
           ? null
           : {
               kind: "changes",
@@ -527,8 +929,8 @@ it.each(["Chat", "diff"])(
       ),
     );
     expect(screen.queryByText("Editor /native/slow.txt")).toBeNull();
-    if (target === "Chat")
-      expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
+    if (target !== "diff")
+      expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull();
     else expect(screen.getByText("Patch second.txt")).toBeTruthy();
   },
 );
@@ -558,6 +960,27 @@ it.each(["file", "diff"])(
     );
   },
 );
+it("a failed Host file link retains the active Browser tab and exposes its error", async () => {
+  const { get } = setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
+  );
+  await chooseView("Browser");
+  get.mockRejectedValueOnce(new Error("File unavailable"));
+  fireEvent.click(screen.getByRole("link", { name: "Open report" }));
+  await screen.findByText("File unavailable");
+  expect(
+    screen.getByRole("tab", { name: "Browser", selected: true }),
+  ).toBeTruthy();
+  expect(screen.getByRole("tabpanel", { name: "Browser" })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "report.txt" })).toBeNull();
+});
+
 it("shows pending and failed file opens beside the retained diff instead of hiding feedback in the explorer", async () => {
   const { get } = setup(
     "/threads/current?native=changes&native_path=%2Fnative&diff_path=deleted.txt&comparison=staged",
@@ -573,31 +996,36 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   reject(new Error("The file was deleted"));
   await screen.findByText("The file was deleted");
   expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
-  expect(screen.getByLabelText("File explorer")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("tab", { name: "deleted.txt · Changes" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
   expect(screen.queryByText("Opening…")).toBeNull();
 });
 
 it("Files, Changes and new-terminal context follow Thread roots instead of changed Project roots or remembered folders", async () => {
   localStorage.setItem("a13n-harness-ui.native-directory", "/unrelated");
   setup("/threads/current", true, undefined, "project-one", "project-two");
-  await workspaceTool("Files");
+  await chooseView("Files");
   await screen.findByText("Folder /native");
   expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   expect(screen.queryByLabelText("Project root")).toBeNull();
-  await workspaceTool("Changes");
+  await chooseView("Changes");
   await screen.findByText("Repository /native · Diff");
-  await workspaceTool("Terminal");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   await screen.findByText("Terminal context project-one · /native");
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  await chooseView("Changes");
   await screen.findByText("Repository /other · Diff");
   await screen.findByText("Terminal context project-two · /other");
-  await workspaceTool("Files");
+  await chooseView("Files");
   await screen.findByText("Folder /other");
 });
 
 it("a chat without a Project does not pick another Project's folder", async () => {
   const { get } = setup("/threads/current", true, undefined, null);
-  await workspaceTool("Files");
+  await chooseView("Files");
   await screen.findByText(
     "Open a chat in a project to see its files and changes.",
   );
@@ -631,9 +1059,7 @@ it.each(["directory", "file", "repository", "diff"])(
     await screen.findByText(
       target === "directory" || target === "file"
         ? "Folder /native"
-        : target === "diff"
-          ? "Repository /native · Diff first.txt"
-          : "Repository /native · Diff",
+        : "Repository /native · Diff",
     );
     expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   },
@@ -666,7 +1092,7 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
       "project-one",
       [root],
     );
-    await workspaceTool("Files");
+    await chooseView("Files");
     await screen.findByText(`Folder ${root}`);
     expect(
       screen
@@ -698,27 +1124,106 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
   },
 );
 
-it("file views retain folder navigation and a named return to the containing folder without losing the file tab", async () => {
+it.each(["Up", "breadcrumb", "working folder"])(
+  "%s navigation from a file stays in its current tab even when the destination is already open",
+  async (action) => {
+    setup(
+      "/threads/current?native=files&native_path=%2Fnative%2Fsrc%2Ffirst.txt",
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      ["/native", "/other"],
+    );
+    await screen.findByText("Editor /native/src/first.txt");
+    const fileTab = screen.getByRole("tab", { name: "first.txt" });
+    const id = fileTab.id;
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    if (action === "working folder")
+      fireEvent.click(
+        within(
+          screen.getByRole("navigation", { name: "Working folders" }),
+        ).getByRole("button", { name: "other" }),
+      );
+    else fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    const destination = action === "working folder" ? "/other" : "/native";
+    await screen.findByText(`Folder ${destination}`);
+    const otherTab = screen.getByRole("tab", { name: "Files", selected: true });
+    fireEvent.click(fileTab);
+    if (action === "Up")
+      fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    else if (action === "breadcrumb")
+      fireEvent.click(
+        within(
+          screen.getByRole("navigation", { name: "Current folder" }),
+        ).getByRole("button", { name: "native" }),
+      );
+    else
+      fireEvent.click(
+        within(
+          screen.getByRole("navigation", { name: "Working folders" }),
+        ).getByRole("button", { name: "other" }),
+      );
+    await screen.findByText(`Folder ${destination}`);
+    expect(screen.getByRole("tab", { name: "Files", selected: true }).id).toBe(
+      id,
+    );
+    expect(otherTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+    await screen.findByText(`Folder ${destination}/nested`);
+    expect(screen.getByRole("tab", { name: "Files", selected: true }).id).toBe(
+      id,
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+  },
+);
+
+it("Back to files navigates within the current tab even when that folder is already open and retains its private buffer", async () => {
+  const dirty = { dirty: true, text: "Keep this private edit" };
+  const buffers = new Map([["/native/src/first.txt", dirty]]);
   setup(
     "/threads/current?native=files&native_path=%2Fnative%2Fsrc%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <MessageText text="[Reopen file](/threads/current?native=files&native_path=%2Fnative%2Fsrc%2Ffirst.txt)" />,
+    buffers,
   );
   await screen.findByText("Editor /native/src/first.txt");
+  const fileTab = screen.getByRole("tab", { name: "first.txt · Unsaved" });
+  const id = fileTab.id;
   const trail = screen.getByRole("navigation", { name: "Current folder" });
   expect(
     within(trail)
       .getByRole("button", { name: "src" })
       .getAttribute("aria-current"),
   ).toBe("location");
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  const otherFolderTab = screen.getByRole("tab", {
+    name: "Files",
+    selected: true,
+  });
+  fireEvent.click(fileTab);
   fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
   await screen.findByText("Folder /native/src");
-  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
-  await screen.findByText("Editor /native/src/first.txt");
-  fireEvent.click(
-    within(trail).getByRole("button", { name: "Current project" }),
+  expect(screen.getByRole("tab", { name: "Files", selected: true }).id).toBe(
+    id,
   );
-  await screen.findByText("Folder /native");
-  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  expect(otherFolderTab.getAttribute("aria-selected")).toBe("false");
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(buffers.get("/native/src/first.txt")).toBe(dirty);
+  fireEvent.click(screen.getByRole("link", { name: "Reopen file" }));
   await screen.findByText("Editor /native/src/first.txt");
+  expect(
+    screen.getByRole("tab", { name: "first.txt · Unsaved", selected: true }).id,
+  ).toBe(id);
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(buffers.get("/native/src/first.txt")).toBe(dirty);
 });
 
 it("a failed parent open keeps the actual location and a late child response cannot undo successful Up navigation", async () => {
@@ -842,11 +1347,11 @@ it.each(["/?project=project-one", "/new?project=project-one"])(
   "uses the selected local Project for Files, Changes and Terminal on %s",
   async (path) => {
     setup(path);
-    await workspaceTool("Files");
+    await chooseView("Files");
     await screen.findByText("Folder /native");
-    await workspaceTool("Changes");
+    await chooseView("Changes");
     await screen.findByText("Repository /native · Diff");
-    await workspaceTool("Terminal");
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
     await screen.findByText("Terminal context project-one · /native");
   },
 );
@@ -883,7 +1388,7 @@ it.each(["Message", "Shared prompt"])(
 
 it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and create with the current Project root", async () => {
   setup("/threads/current");
-  await screen.findByRole("button", { name: "Workspace tools" });
+  await screen.findByRole("button", { name: "Terminal" });
   const terminalVisible = () =>
     screen.queryByLabelText("Terminal panel")?.hasAttribute("hidden") === false;
   const chord = { code: "Backquote", key: "`", ctrlKey: true };
@@ -917,7 +1422,7 @@ it.each([false, true])(
   async (sharing) => {
     setup("/threads/current", sharing, undefined, null);
     await screen.findByText("Chat remains mounted /threads/current");
-    if (sharing) await screen.findByRole("button", { name: "Workspace tools" });
+    if (sharing) await screen.findByRole("button", { name: "Terminal" });
     expect(
       fireEvent.keyDown(window, {
         code: "Backquote",
@@ -935,23 +1440,61 @@ it.each([false, true])(
   },
 );
 
-it("shows one resizable Browser drawer and restores Files without mounting both", async () => {
+it("keeps Browser and Files in one resizable tabbed supporting pane", async () => {
   setup("/threads/current");
-  await workspaceTool("Browser");
-  expect(
-    await screen.findByRole("complementary", { name: "Browser panel" }),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("complementary", { name: "File explorer" }),
-  ).toBeNull();
+  await chooseView("Browser");
+  const browserTab = screen.getByRole("tab", { name: "Browser" });
+  expect(await screen.findByRole("tabpanel", { name: "Browser" })).toBeTruthy();
+  expect(screen.queryByRole("tabpanel", { name: "Files" })).toBeNull();
   expect(
     screen.getByRole("separator", { name: "Resize supporting panel" }),
   ).toBeTruthy();
-  await workspaceTool("Files");
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  const newTab = screen.getByRole("tab", { name: "New tab", selected: true });
+  fireEvent.click(screen.getByRole("button", { name: "Browser" }));
+  expect(screen.getAllByRole("tab", { name: "Browser" })).toHaveLength(1);
+  expect(screen.getByRole("tab", { name: "Browser", selected: true })).toBe(
+    browserTab,
+  );
+  expect(screen.getByRole("tab", { name: "New tab" })).toBe(newTab);
+  fireEvent.click(newTab);
+  expect(screen.getByRole("heading", { name: "Open a new tab" })).toBeTruthy();
+  await chooseView("Files");
+  expect(await screen.findByRole("tabpanel", { name: "Files" })).toBeTruthy();
+  expect(screen.queryByRole("tabpanel", { name: "Browser" })).toBeNull();
+});
+
+it("opens new browser activity through the shared tab model in an empty split pane", async () => {
+  setup("/threads/current");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  live.display.browserActivityRunId = "run-new";
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  const browser = await screen.findByRole("tab", { name: "Browser" });
+  expect(browser.getAttribute("aria-selected")).toBe("true");
+  expect(screen.getAllByRole("tab", { name: "Browser" })).toHaveLength(1);
+});
+
+it("browser activity suggests the existing Browser without replacing a new tab", async () => {
+  setup("/threads/current");
+  await chooseView("Browser");
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  live.display.browserActivityRunId = "run-new";
+  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  const suggestion = await screen.findByRole("button", {
+    name: "View browser",
+  });
+  const newTabs = screen.getAllByRole("tab", { name: "New tab" }).length;
   expect(
-    await screen.findByRole("complementary", { name: "File explorer" }),
-  ).toBeTruthy();
+    screen.getByRole("tab", { name: "Browser" }).getAttribute("aria-selected"),
+  ).toBe("false");
+  fireEvent.click(suggestion);
+  expect(screen.getAllByRole("tab", { name: "Browser" })).toHaveLength(1);
   expect(
-    screen.queryByRole("complementary", { name: "Browser panel" }),
-  ).toBeNull();
+    screen.getByRole("tab", { name: "Browser" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.getAllByRole("tab", { name: "New tab" })).toHaveLength(newTabs);
 });
