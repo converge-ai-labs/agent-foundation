@@ -14,7 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
@@ -45,11 +45,10 @@ from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_harness.state import HistoryValidation
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import TextContent, UserContent
+from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -397,12 +396,11 @@ class _Offers:
         # Whether a model request carried the input: it is in every state exported after that.
         self.requested = False
 
-    def incorporated(self, state: HarnessState) -> tuple[list[str], HistoryValidation | None]:
-        messages, validation = state.read_message_history()
+    def incorporated(self, messages: Sequence[ModelMessage]) -> list[str]:
         ids = set(steering_input_ids(messages))
         if self.requested:
             ids |= self.initial
-        return [entry_id for entry_id in self.open if entry_id in ids], validation
+        return [entry_id for entry_id in self.open if entry_id in ids]
 
     def consumed(self, entry_ids: list[str]) -> None:
         for entry_id in entry_ids:
@@ -724,31 +722,33 @@ class _Attempt:
             if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
-        consumed, history_validation = self.offers.incorporated(state)
+        messages, prepared = RunState(
+            # The Service never restores accounting from state: every charge is in its usage records.
+            harness=without_usage(state),
+            seq=self.seq + 1,
+            attempt=self.lease.number,
+            deferred=deferred,
+            envd_sessions={
+                name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
+            }
+            if outcome is None
+            else {},
+            resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
+            or self.offers.requested,
+        ).prepare()
+        consumed = self.offers.incorporated(messages)
+        del messages
         usage = self.usage.pending()
         search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
-            RunState(
-                # The Service never restores accounting from state: every charge is in its usage records.
-                harness=without_usage(state),
-                seq=self.seq + 1,
-                attempt=self.lease.number,
-                deferred=deferred,
-                envd_sessions={
-                    name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
-                }
-                if outcome is None
-                else {},
-                resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
-                or self.offers.requested,
-            ),
+            prepared,
             snapshot,
             contents=self.contents,
             control=self.control,
-            history_validation=history_validation,
         )
+        del prepared
         display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker
         steers: list[Offered] = []

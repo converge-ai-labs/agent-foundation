@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -40,20 +39,6 @@ def decode_messages(value: bytes) -> tuple[ModelMessage, ...]:
 def clone_messages(messages: Any) -> tuple[ModelMessage, ...]:
     """Return a message sequence with no mutable aliases to the input."""
     return decode_messages(encode_messages(messages))
-
-
-@dataclass(frozen=True, slots=True, init=False)
-class HistoryValidation:
-    """An operation-local validation result for exact immutable history bytes, not decoded messages.
-
-    Only `HarnessState.read_message_history` produces this value. It is passed explicitly to serialization,
-    never stored on a state or serialized, and cannot validate replacement history.
-    """
-
-    _source: bytes = field(repr=False)
-
-    def __init__(self) -> None:
-        raise TypeError("Use HarnessState.read_message_history() to validate history")
 
 
 class CapabilityState(BaseModel):
@@ -232,43 +217,37 @@ class HarnessState(BaseModel):
         """Return a detached copy of the continuation history."""
         return decode_messages(cast(bytes, self.message_history_json))
 
-    def read_message_history(self) -> tuple[tuple[ModelMessage, ...], HistoryValidation | None]:
-        """Read detached messages and a validation result reusable while saving the same history bytes.
-
-        Subclasses keep their accessor/serializer behavior and receive no reusable validation result.
-        """
-        history = self.message_history_json
-        if type(self) is not HarnessState or type(history) is not bytes:
-            return self.message_history, None
-        messages = decode_messages(history)
-        validation = object.__new__(HistoryValidation)
-        object.__setattr__(validation, "_source", history)
-        return messages, validation
-
     @computed_field
     @property
     def environment_states(self) -> dict[str, EnvironmentState]:
         """Return detached portable state for each stateful Environment mount."""
         return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
-    def to_json_bytes(self, *, history_validation: HistoryValidation | None = None) -> bytes:
-        """Encode a complete continuation envelope with validated message history.
+    def prepare_serialization(self) -> tuple[tuple[ModelMessage, ...], bytes]:
+        """Return detached history and its complete JSON envelope from one validation pass.
 
-        Decode for validation unless the caller already read these exact immutable bytes. General Pydantic
-        serialization options and subclass serializers keep their normal path; all other fields still serialize.
+        The encoded result is independent of later edits to the returned messages. Nothing is cached on the state.
+        Subclasses retain their standard Pydantic serializer.
         """
         history = self.message_history_json
         if type(self) is not HarnessState or not isinstance(history, bytes):
-            return self.model_dump_json().encode()
+            encoded = self.model_dump_json().encode()
+            return self.message_history, encoded
         try:
-            if type(history_validation) is not HistoryValidation or history_validation._source is not history:
-                decode_messages(history)
+            messages = decode_messages(history)
         except (ValueError, TypeError):
-            # Preserve Pydantic's serialization error for invalid native dataclasses
-            # or an unchecked model_copy/model_construct value.
-            return self.model_dump_json().encode()
+            # Preserve Pydantic's serialization error for unchecked or invalid native message values.
+            encoded = self.model_dump_json().encode()
+            return self.message_history, encoded
         envelope = self.model_dump_json(exclude={"message_history"}).encode()
-        return b"".join((envelope[:-1], b',"message_history":', history, b"}"))
+        encoded = b"".join((envelope[:-1], b',"message_history":', history, b"}"))
+        return messages, encoded
+
+    def to_json_bytes(self) -> bytes:
+        """Encode the complete continuation envelope; subclasses retain their standard serializer."""
+        if type(self) is not HarnessState:
+            return self.model_dump_json().encode()
+        return self.prepare_serialization()[1]
 
     def fork(self, *, thread_id: str | None = None) -> HarnessState:
         """Copy portable continuation data into a distinct generated or Host-selected Thread."""

@@ -60,18 +60,16 @@ class HarnessState(BaseModel):
 
     def fork(*, thread_id: str | None = None) -> HarnessState: ...
 
-    def read_message_history(
+    def prepare_serialization(
         self,
-    ) -> tuple[tuple[ModelMessage, ...], HistoryValidation | None]: ...
+    ) -> tuple[tuple[ModelMessage, ...], bytes]: ...
 
-    def to_json_bytes(
-        self, *, history_validation: HistoryValidation | None = None
-    ) -> bytes: ...
+    def to_json_bytes(self) -> bytes: ...
 ```
 
 `HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary. `AgentContextStateSnapshot.get(capability_id)` returns one detached entry or `None`, without materializing unrelated namespace payloads. The complete `entries` view and serialized envelope remain unchanged; selective access does not replace complete validation during state construction or import.
 
-`HarnessState.to_json_bytes()` writes the complete UTF-8 JSON envelope for Host persistence. By default it decodes message history for validation on every call, then reuses the immutable history bytes instead of encoding those messages again. A Host that also needs to inspect history during the same save can call `read_message_history()`, which returns detached messages and a `HistoryValidation` value from `a13n_harness.state`. Passing that value as `history_validation` skips the second decode only for the exact same immutable bytes. The result holds no decoded messages, cannot be constructed directly, and is passed explicitly rather than cached on the state or in process/task-local storage. Copies that retain the same bytes may reuse it; replacement history is validated again. Subclasses return no reusable validation result and retain their standard serializer. Invalid history still fails serialization, and validation of other envelope fields is unchanged. Standard Pydantic dump methods and their options remain available. The state schema, detached public accessors, unknown envelope fields, and restoration behavior are unchanged. JSON member order is not a checkpoint identity contract.
+`HarnessState.prepare_serialization()` returns detached messages and the complete UTF-8 JSON envelope for Host persistence. It decodes and validates message history once, then builds the envelope using the immutable history bytes instead of encoding those messages again. A Host can inspect the returned messages and persist the prepared bytes; mutating those messages cannot change the prepared output. Each call validates afresh, with no state-level or process/task-local cache. `to_json_bytes()` returns only the prepared envelope. Subclasses retain their standard Pydantic serializer. Invalid history still fails serialization, and validation of other envelope fields is unchanged. Standard Pydantic dump methods and their options remain available. The state schema, detached public accessors, unknown envelope fields, and restoration behavior are unchanged. JSON member order is not a checkpoint identity contract.
 
 `thread_id` is an opaque provider-neutral correlation value for one independently advancing history. A generated value consists of the `thread-` prefix and 32 lowercase hexadecimal characters. A trusted Host may instead select a stable Foundation object ID in `<kind-prefix>_<lowercase-alphanumeric-suffix>` form, up to 256 characters. `HarnessState.new(thread_id=...)` selects that identity explicitly; omitting it generates one. Serialization, ordinary copies, exports, and resume preserve the value exactly; `RunBindings`, metadata, and run arguments do not duplicate or override State-owned identity.
 
