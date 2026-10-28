@@ -10,6 +10,7 @@ from anyio.lowlevel import checkpoint
 BLOCKED = (
     "Human takeover blocks all browser tools. This action was not executed. "
     "A handback notification is registered for this Thread, even if this turn ends. "
+    "Browser-runtime failure or Host shutdown cancels this process-local notification. "
     "Continue independent work if possible; otherwise briefly report the blocker and end this turn. "
     "Do not poll or retry browser tools while waiting. After notification, observe afresh before acting."
 )

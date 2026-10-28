@@ -293,7 +293,7 @@ async def test_app_handback_waits_for_real_approval_resolution(tmp_path, monkeyp
     from .test_app import _reconstructed, _settings, _write_configuration
 
     calls, effects = 0, []
-    delivered, proceed = Event(), Event()
+    delivered, attempted, proceed = Event(), Event(), Event()
     if not suspend_during_delivery:
         proceed.set()
 
@@ -345,11 +345,14 @@ async def test_app_handback_waits_for_real_approval_resolution(tmp_path, monkeyp
             accepted = await original(thread_id, prompt, current)
             if accepted:
                 delivered.set()
+            attempted.set()
             return accepted
 
         notices.deliver = delivery
         notices.released()
-        await wait_all_tasks_blocked()
+        # Projection and Run settlement can be blocked on I/O while tasks are idle.
+        with fail_after(15):
+            await attempted.wait()
         assert calls == 1 and effects == [] and not delivered.is_set()
         assert thread.thread_id in notices._pending
         detail = await app.get_thread(thread.thread_id)

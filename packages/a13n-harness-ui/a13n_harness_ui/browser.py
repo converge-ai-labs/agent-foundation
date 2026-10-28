@@ -695,7 +695,7 @@ class HostBrowsers:
                         await item.scope.attach(target, select=False)
                 self.human_tabs.clear()
             if previous:
-                for thread, item in self.bindings.items():
+                for thread, item in tuple(self.bindings.items()):
                     if item.status == "ready" and item.scope:
                         await self.sync_selected_tab(thread)
                         await self.release_keys(thread)

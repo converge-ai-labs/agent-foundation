@@ -268,6 +268,53 @@ async def test_global_handback_from_another_thread(browsers, mac, empty):
     browsers.authorize.assert_awaited_with("thread-b")
 
 
+async def test_handback_allows_enabling_another_thread_during_scope_sync(browsers, monkeypatch):
+    from a13n_harness_ui import browser as module
+
+    monkeypatch.setattr(module, "require_browser", AsyncMock())
+    entered, proceed = asyncio.Event(), asyncio.Event()
+    original = browsers.sync_selected_tab
+
+    async def sync(thread):
+        if thread == "thread-a":
+            entered.set()
+            await proceed.wait()
+        await original(thread)
+
+    browsers.sync_selected_tab = AsyncMock(side_effect=sync)
+    identity = browsers.state("thread-a").session_id
+    await browsers.control("thread-a", identity, human=True)
+    handback = asyncio.create_task(browsers.control("thread-a", identity, human=False))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        await browsers.enable("thread-c")
+    finally:
+        proceed.set()
+        await asyncio.wait_for(handback, 1)
+    assert not browsers.runtime_failed
+    assert browsers.released.is_set() and browsers.handback.available
+    assert browsers.state("thread-c").control == "agent"
+    assert all(browsers.bindings[thread].status == "ready" for thread in ("thread-a", "thread-b"))
+    assert browsers.sync_selected_tab.await_count == 2
+
+
+async def test_browser_failure_discards_pending_handback_notices(browsers):
+    from anyio import create_task_group, wait_all_tasks_blocked
+
+    browsers.handback.deliver = AsyncMock(return_value=True)
+    async with create_task_group() as group:
+        browsers.handback.start(group)
+        await browsers.control("thread-a", browsers.state("thread-a").session_id, human=True)
+        browsers.handback.blocked("thread-b")
+        browsers.failed("Browser process exited")
+        assert not browsers.handback.available
+        assert browsers.state("thread-b").status == "failed"
+        browsers.handback.released()
+        await wait_all_tasks_blocked()
+        browsers.handback.deliver.assert_not_awaited()
+        browsers.handback.stop()
+
+
 async def test_failed_cross_thread_transfer_preserves_global_pause(browsers):
     await browsers.control("thread-a", browsers.state("thread-a").session_id, human=True)
     browsers.focus.side_effect = RuntimeError("Focus failed")
