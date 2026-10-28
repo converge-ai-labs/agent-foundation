@@ -231,6 +231,52 @@ it.each([false, true])(
   },
 );
 
+it.each([false, true])(
+  "distinguishes inherited and explicit agents with long names (mobile: %s)",
+  async (onMobile) => {
+    mobile = onMobile;
+    const user = userEvent.setup();
+    const onAgentChange = vi.fn();
+    const name = "OpenAI GPT-6 Astra Coding";
+    render(
+      <ThreadRunChoices
+        catalog={{
+          ...catalog,
+          agents: [{ ...catalog.agents[0], name }],
+        }}
+        agentId=""
+        defaultAgentId="writer"
+        disabled={false}
+        controls={{}}
+        onAgentChange={onAgentChange}
+        onModelChange={() => {}}
+        onControlsChange={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Agent" }));
+    const inherited = screen.getByRole("button", {
+      name: /OpenAI GPT-6 Astra Coding\s*Default/,
+    });
+    const explicit = screen.getByRole("button", {
+      name: /OpenAI GPT-6 Astra Coding\s*writer/,
+    });
+    expect(inherited.getAttribute("aria-pressed")).toBe("true");
+    expect(explicit.getAttribute("aria-pressed")).toBe("false");
+    await user.click(explicit);
+    expect(onAgentChange).toHaveBeenCalledWith("writer");
+    await user.click(screen.getByRole("button", { name: "Agent" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: /OpenAI GPT-6 Astra Coding\s*Default/,
+      }),
+    );
+    expect(onAgentChange).toHaveBeenLastCalledWith("");
+  },
+);
+
 it("edits working folders in-place, cancels without applying, and locks pending selections", async () => {
   mobile = true;
   const user = userEvent.setup();
