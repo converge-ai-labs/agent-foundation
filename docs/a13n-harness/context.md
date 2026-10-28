@@ -194,7 +194,9 @@ flowchart TD
     class Usage,Threshold,Summary,Restore,Project,Request a13n
 ```
 
-The summary request uses the same Agent and complete history. After successful replacement, Harness replays current user input and delivered steering in order, including media, then projects current notes and tasks. The returned State contains the replacement. Budget for the additional model request.
+The summary request uses the same Agent and complete history. After successful replacement, Harness replays current user input and delivered steering in order, including media, then projects current notes and tasks. The returned State contains the replacement.
+
+Budget for up to three summary requests. Transient failures retry with exponential backoff; each attempt uses a fresh copy of the complete history and shares the Run's usage limits. Every retry reserves allowance for the pending ordinary request. Cancellation, Host refusal, and permanent failures are not retried.
 
 Add `HandoffCapability()` when the Agent should also call `summarize` explicitly. Its default reminder begins at 65% of the context window. Select the Capabilities as well as their thresholds: model characteristics alone do not enable either mechanism.
 
@@ -300,7 +302,9 @@ Harness summarizes a complete history prefix and retains later messages, includi
 | Failed operation and compaction still needed                    | Try synchronous recovery                         |
 | Ready, applicable result                                        | Replace the matching prefix; preserve the suffix |
 
-Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity; it is not repeatedly retried within the same Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+
+If continuation is blocked, `compaction_capacity_unavailable` reports the attempt count and failure type, or explains that the request budget cannot cover a summary and the pending ordinary request. It preserves the original exception as its cause without including provider response bodies. Retry in a new Run for a transient failure; increase the request limit when the diagnostic identifies insufficient budget.
 
 When a result becomes ready between Runs, use this integration fragment. `executable`, `bindings`, `latest_state`, `result`, `state_store`, and `retire_operation` come from your Host; `committed_state` must be the State your checkpoint store actually selected and committed:
 

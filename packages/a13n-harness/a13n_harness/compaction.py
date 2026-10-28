@@ -52,6 +52,14 @@ __all__ = [
 ]
 
 COMPACTION_CAPABILITY_ID = "a13n.compaction"
+_COMPACTION_MAX_ATTEMPTS = 3
+
+
+def _compaction_retry_delay(attempt: int) -> float:
+    """Equal-jitter exponential backoff after a zero-based failed attempt."""
+    ceiling = min(30.0, 2.0**attempt)
+    return uniform(ceiling / 2, ceiling)
+
 
 _PARAMETERS = TypeAdapter(ModelRequestParameters)
 _SETTINGS = TypeAdapter(dict[str, JsonValue])
@@ -276,7 +284,7 @@ async def generate_compaction(
     input: CompactionInput,
     request: CompactionModelRequest,
     *,
-    max_attempts: int = 3,
+    max_attempts: int = _COMPACTION_MAX_ATTEMPTS,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> CompactionResult:
     """Generate once for an admitted operation, retrying the same immutable input.
@@ -294,8 +302,7 @@ async def generate_compaction(
         except Exception as error:
             if attempt + 1 == max_attempts or not is_recoverable_model_failure(error):
                 raise
-            ceiling = min(30.0, 2.0**attempt)
-            await sleep(uniform(ceiling / 2, ceiling))
+            await sleep(_compaction_retry_delay(attempt))
             continue
         if any(isinstance(part, ToolCallPart) for part in response.parts):
             raise DefinitionError("Compaction returned a function-tool call.", code="compaction_summary_invalid")

@@ -15,7 +15,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import ModelRetry, ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.exceptions import ModelHTTPError, ToolFailed
 from pydantic_ai.messages import (
     BaseToolReturnPart,
     CapabilityEvent,
@@ -55,12 +55,14 @@ from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
+    _COMPACTION_MAX_ATTEMPTS,
     COMPACTION_CAPABILITY_ID,
     BackgroundCompactionPolicy,
     CompactionInput,
     CompactionOperation,
     CompactionOperator,
     CompactionResult,
+    _compaction_retry_delay,
     _CompactionState,
     _prefix_matches,
     _prepare_compaction,
@@ -93,6 +95,7 @@ from a13n_harness.model_context import (
     _requires_exact_history,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
+from a13n_harness.recovery import is_recoverable_model_failure
 from a13n_harness.tools.invocation import disabled_tool_execution
 from a13n_harness.toolsets.context import HandoffToolset
 
@@ -865,6 +868,8 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self.operator = operator
         self._depth = 0
         self._failed_fallback_id: str | None = None
+        self._summary_failure: Exception | None = None
+        self._summary_attempts = 0
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.usage import UsageCapability
@@ -1059,9 +1064,29 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             prepared = await self._compact_history(ctx, request, force=fits is not True, failed=failed)
         if prepared is request:
             if fits is not True:
+                cause = self._summary_failure
+                if cause is not None:
+                    detail = type(cause).__name__
+                    if isinstance(cause, ModelHTTPError):
+                        detail += f", HTTP {cause.status_code}"
+                    reason = f"summary generation failed after {self._summary_attempts} attempt(s) ({detail})"
+                    guidance = "Retry the run or check the model provider."
+                elif not _compaction_has_request_budget(ctx):
+                    reason = "the remaining request budget cannot cover a summary and the pending ordinary request"
+                    guidance = "Increase the request limit or retry in a new run."
+                else:
+                    reason = "no replacement summary was produced"
+                    guidance = "Retry compaction in a new run."
+                capacity = "exceeds the model window" if fits is False else "has unverified capacity"
                 raise DefinitionError(
-                    "Compaction could not free context capacity.", code="compaction_capacity_unavailable"
-                )
+                    f"Compaction could not free context capacity: {reason}. "
+                    f"Original history was preserved but {capacity}; the ordinary request was not sent. {guidance}",
+                    code="compaction_capacity_unavailable",
+                    details={"summary_attempts": self._summary_attempts},
+                    retry_hint="new_run"
+                    if cause is not None and is_recoverable_model_failure(cause)
+                    else "dependency_change",
+                ) from cause
         else:
             # Background mode runs inside the ordinary projection coordinator.
             # Full synchronous replacement needs fresh overlays before counting.
@@ -1104,8 +1129,9 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             )
         if not force and (snapshot is None or not snapshot[2]):
             return request_context
-        limits = ctx.usage_limits
-        if limits is not None and limits.request_limit is not None and limits.request_limit - ctx.usage.requests < 2:
+        self._summary_failure = None
+        self._summary_attempts = 0
+        if not _compaction_has_request_budget(ctx):
             # Optional compaction needs a summary request and the pending ordinary request.
             return request_context
 
@@ -1128,7 +1154,24 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 record_span_metadata(span, {"compaction.message_count_before": len(request_context.messages)})
                 from a13n_harness.tools.discovery import retain_discovery
 
-                summary = await _compact_with_same_agent(ctx, request_context)
+                for attempt in range(_COMPACTION_MAX_ATTEMPTS):
+                    self._summary_attempts = attempt + 1
+                    try:
+                        summary = await _compact_with_same_agent(ctx, request_context)
+                        break
+                    except Exception as exc:
+                        if (
+                            attempt + 1 == _COMPACTION_MAX_ATTEMPTS
+                            or not is_recoverable_model_failure(exc)
+                            or not _compaction_has_request_budget(ctx)
+                        ):
+                            raise
+                        await asyncio.sleep(_compaction_retry_delay(attempt))
+                        # Shared usage can advance while waiting; keep one ordinary request.
+                        if not _compaction_has_request_budget(ctx):
+                            raise
+                else:
+                    raise AssertionError("unreachable")
                 discovery, names = await retain_discovery(ctx, request_context)
                 messages = _build_compacted_history(
                     ctx.messages if self.background else request_context.messages,
@@ -1157,6 +1200,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         except ModelCallCheckError:
             raise
         except Exception as exc:
+            self._summary_failure = exc
             await emit_harness_event(
                 ctx.deps.events,
                 kind="context",
@@ -1318,6 +1362,14 @@ def _replace_context_history(
     replacement = _replace_messages(request, messages)
     refresh_codeact_descriptions(ctx, replacement, retained_names=retained_names)
     return replacement
+
+
+def _compaction_has_request_budget(ctx: RunContext[AgentContext]) -> bool:
+    limits = ctx.usage_limits
+    # Native usage can omit failures before the first response chunk. The Run
+    # ledger charges those dispatches as well as outstanding reservations.
+    used = max(ctx.usage.requests, ctx.deps.usage_attribution.requests.used)
+    return limits is None or limits.request_limit is None or limits.request_limit - used >= 2
 
 
 async def _compact_with_same_agent(
