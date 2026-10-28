@@ -111,7 +111,7 @@ export function ComposerStatus({
             ["Cache", summary.cache, "Chat usage"],
           ] as const
         )
-          .filter(([label]) => debug || label === "Cost" || label === "Context")
+          .filter(([label]) => debug || label !== "Tokens")
           .map(([label, value, title]) => (
             <Popover
               key={label}
@@ -187,14 +187,12 @@ export function ComposerStatus({
             <strong>{elapsedTime(operation, now)}</strong>
           </span>
         )}
-        {debug && (
-          <span
-            className={styles.metric}
-            title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
-          >
-            Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
-          </span>
-        )}
+        <span
+          className={styles.metric}
+          title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
+        >
+          Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
+        </span>
         {debug &&
           capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (
