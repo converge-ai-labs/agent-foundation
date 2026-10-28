@@ -32,7 +32,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_mcp_apps_demo.py": ("dev/harness-ui/mcp_apps.py",),
     "test_service_e2e_tooling.py": ("e2e/service/*", "dev/fixtures/*"),
     "test_fixture_process.py": ("dev/fixtures/*",),
-    "test_harness_ui_development.py": ("dev/harness-ui/cli.py",),
+    "test_harness_ui_development.py": ("dev/harness-ui/cli.py", "dev/harness-ui/review.py"),
     "test_pr_change_breakdown.py": (
         ".github/scripts/pr-change-*.cjs",
         ".github/workflows/pr-change-breakdown.yml",

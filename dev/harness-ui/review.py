@@ -107,6 +107,7 @@ def configuration(root: Path) -> Path:
         "a13n-harness-ui.yaml": {
             "schema_version": "1",
             "defaults": {"agent": "agent-review"},
+            "browser": {"mode": "disabled"},
             "memory": {"auto_organize": {"enabled": False}},
         },
         "models/review.yaml": {
