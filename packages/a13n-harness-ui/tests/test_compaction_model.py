@@ -226,6 +226,88 @@ async def test_detached_model_resources_usage_and_resumed_budget(
         await reopened.close()
 
 
+async def test_background_compaction_uses_captured_settings_with_native_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from openai.types.chat import ChatCompletion
+    from pydantic_ai.messages import ModelSettingsDeltaPart
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    model = OpenAIChatModel("gpt-5", provider=OpenAIProvider(api_key="test"))
+    create = AsyncMock(
+        return_value=ChatCompletion(
+            id="chatcmpl-summary",
+            created=0,
+            model="gpt-5",
+            object="chat.completion",
+            choices=[{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "summary"}}],
+            usage={"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+        )
+    )
+    monkeypatch.setattr(model.client.chat.completions, "create", create)
+
+    async def resolve(self, model_id, *, thread_id):
+        return model
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        async with transaction(database.sessions) as session:
+            session.add(
+                ThreadRecord(
+                    thread_id="thread_test",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                    initial_state_schema_version="1",
+                    initial_state_digest="a" * 64,
+                )
+            )
+        usage = ThreadUsageRepository(database.sessions)
+        owner = BackgroundCompaction(CompactionRepository(database.sessions), tmp_path)
+        run = CompactionRun(owner, HarnessUiModelResolver({}), None)
+        state = HarnessState.new(thread_id="thread_test")
+        instance = AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-test"
+        )
+        budget = await run.prepare(
+            instance=instance,
+            reporter=usage.reporter(state.thread_id),
+            state=state,
+            limits=UsageLimits(request_limit=1),
+        )
+        input = CompactionInput.create(
+            operation_id="compact-settings",
+            thread_id=state.thread_id,
+            run_id="run-original",
+            model_id="model-test",
+            model_name="gpt-5",
+            provider_name="openai",
+            messages=[
+                ModelRequest(parts=[UserPromptPart("old"), ModelSettingsDeltaPart(settings={"thinking": "low"})]),
+                ModelResponse(parts=[TextPart("answer")]),
+            ],
+            settings={"thinking": "high"},
+            parameters=ModelRequestParameters(),
+        )
+        try:
+            await run.submit(input)
+            ready = await run.wait(state.thread_id, input.basis.operation_id)
+            assert ready.status == "ready", ready
+            create.assert_awaited_once()
+            assert create.call_args.kwargs["reasoning_effort"] == "high"
+            assert input.request_messages[0].parts[1] == ModelSettingsDeltaPart(settings={"thinking": "low"})
+            assert budget.used == 1 and budget.pending == 0
+            records = await usage.model_records(
+                thread_id=state.thread_id, run_id="run-original", agent_instance_id=instance.agent_instance_id
+            )
+            assert len(records) == 1 and records[0].source == "compaction"
+            assert records[0].request_usage.input_tokens == 7
+        finally:
+            await owner.close()
+
+
 async def test_foreground_fallback_honors_shared_budget_after_background_consumption(tmp_path: Path) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
     from a13n_harness.capabilities.context import CompactionCapability

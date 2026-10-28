@@ -127,7 +127,7 @@ The current cross-group requirements are:
 | Harness                      | `a13n-envd-client`       | `>=0.5.0,<0.6.0`               |
 | Harness UI, Service          | `a13n-envd-client`       | `>=0.5.1,<0.6.0`               |
 
-Harness constrains Pydantic AI to one reviewed minor line, currently `==2.61.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
+Harness constrains Pydantic AI to one reviewed minor line, currently `==2.63.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
 
 Harness UI and Service dependency updates explicitly select an exact Harness-group release and validate it before publication. Other independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 

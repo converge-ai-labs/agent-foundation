@@ -267,20 +267,26 @@ def _reconcile_system_prompt(
         return tuple(messages)
 
     reconciled = list(messages)
-    first_request = True
     for index, message in enumerate(reconciled):
         if not isinstance(message, ModelRequest):
             continue
-        parts = [
-            (part, annotations)
-            for part, annotations in request_parts(message)
-            if not isinstance(part, SystemPromptPart)
-        ]
-        if first_request:
-            parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts]
-            first_request = False
+        parts = request_parts(message)
+        # Native construction places definition-owned static prompts at the front.
+        # Later prompts belong to conversation history, including capability nudges.
+        prefix_end = 0
+        for part, _ in parts:
+            if (
+                not isinstance(part, SystemPromptPart)
+                or part.dynamic_ref is not None
+                or part.scope != "conversation"
+                or part.metadata is not None
+            ):
+                break
+            prefix_end += 1
+        parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts[prefix_end:]]
         if tuple(part for part, _ in parts) != tuple(message.parts):
             reconciled[index] = replace_request_parts(message, parts)
+        break
     return tuple(reconciled)
 
 

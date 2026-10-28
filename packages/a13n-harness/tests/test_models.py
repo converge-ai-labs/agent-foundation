@@ -887,6 +887,7 @@ async def test_self_healing_clears_provider_native_ids_without_breaking_tool_pai
             parts=[ThinkingPart(content="reasoning", id="rs_old"), TextPart(content="answer"), call],
             provider_name="old-provider",
             provider_response_id="response-1",
+            canonical_system="old-provider",
         ),
         ModelRequest(parts=[result]),
     ]
@@ -899,6 +900,7 @@ async def test_self_healing_clears_provider_native_ids_without_breaking_tool_pai
     assert call.tool_call_id == result.tool_call_id == "call-1"
     assert isinstance(history[0], ModelResponse)
     assert history[0].provider_response_id is None
+    assert history[0].canonical_system is None
     assert all(not isinstance(part, ThinkingPart) for message in history for part in message.parts)
 
 

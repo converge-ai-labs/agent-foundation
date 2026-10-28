@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     RetryFeedbackPart,
     RetryPromptPart,
+    SystemPromptPart,
     TextContent,
     ToolAvailabilityDeltaPart,
     ToolCallPart,
@@ -328,10 +329,18 @@ def _commit_projection(
         # in the outgoing request (for example ToolAvailabilityDeltaPart).
         # Preserve the same preamble position before the canonical native part.
         input_index = next(
-            index
-            for index, part in enumerate(original_parts)
-            if isinstance(part[0], (UserPromptPart, ToolAvailabilityDeltaPart))
+            (
+                index
+                for index, part in enumerate(original_parts)
+                if isinstance(part[0], UserPromptPart | ToolAvailabilityDeltaPart)
+            ),
+            None,
         )
+        if input_index is None:
+            # A system-only enqueue renders as user text on fallback providers.
+            input_index = next(
+                index for index, part in enumerate(original_parts) if isinstance(part[0], SystemPromptPart)
+            )
     else:
         input_index = len(original_parts)
 

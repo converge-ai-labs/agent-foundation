@@ -19,6 +19,7 @@ from a13n_harness.usage import (
     UsageSnapshot,
     summarize_usage,
 )
+from pydantic_ai.direct import model_request
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
@@ -167,7 +168,13 @@ class CompactionRun(CompactionOperator):
                 model_request_parameters=parameters,
             )
             async with model:
-                return await MeteredModel(context, binding, None).request(messages, settings, parameters)
+                return await model_request(
+                    MeteredModel(context, binding, None),
+                    messages,
+                    model_settings=settings,
+                    model_request_parameters=parameters,
+                    instrument=False,
+                )
 
         return await self.owner.submit(input, request)
 

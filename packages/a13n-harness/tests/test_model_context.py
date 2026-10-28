@@ -40,9 +40,11 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    ModelSettingsDeltaPart,
     RetryFeedbackPart,
     RetryInfo,
     RetryPromptPart,
+    SystemPromptPart,
     TextContent,
     TextPart,
     ToolAvailabilityDeltaPart,
@@ -393,7 +395,8 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
 
 
 @pytest.mark.parametrize("placement", ["after", "between", "retry", "feedback", "retried", "rendered_native"])
-async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
+@pytest.mark.parametrize("native_kind", ["tools", "system"])
+async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement, native_kind):
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(RunContext, "emit", AsyncMock())
@@ -419,7 +422,11 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     deps = _ProjectionDeps(projection=projection)
     model = FunctionModel(lambda messages, info: "unused")
     ctx = RunContext(deps=cast(AgentContext, deps), model=model, usage=RunUsage(), messages=[original], run_id="run-1")
-    native = ToolAvailabilityDeltaPart(tools_added=["new_tool"])
+    native = (
+        ToolAvailabilityDeltaPart(tools_added=["new_tool"])
+        if native_kind == "tools"
+        else SystemPromptPart("capability reminder")
+    )
     if placement == "rendered_native":
         ctx.messages[:] = [ModelRequest(parts=results), ModelRequest(parts=(native,))]
     request = ModelRequestContext(
@@ -764,3 +771,18 @@ async def test_input_events_do_not_replay_restored_history_or_change_provider_pr
     original_wire = await model._map_messages(history, {}, ModelRequestParameters())
     observed_prefix = await model._map_messages(seen[: len(history)], {}, ModelRequestParameters())
     assert observed_prefix == original_wire
+
+
+def test_request_coalescing_preserves_settings_deltas_and_content_annotations() -> None:
+    from a13n_harness.content import merge_request_history
+
+    low = ModelSettingsDeltaPart(settings={"thinking": "low"}, top_level=True)
+    high = ModelSettingsDeltaPart(settings={"thinking": "high"})
+    first = ModelRequest(parts=[low, UserPromptPart("first")])
+    second = ModelRequest(parts=[high, UserPromptPart("second")])
+    merged = merge_request_history([first, second])
+    assert len(merged) == 1
+    request = merged[0]
+    assert isinstance(request, ModelRequest)
+    assert tuple(request.parts) == (low, first.parts[1], high, second.parts[1])
+    assert [item.value for item in request_input_content(request)] == ["first", "second"]

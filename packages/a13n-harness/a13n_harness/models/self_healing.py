@@ -130,12 +130,14 @@ def strip_provider_native_state(history: list[ModelMessage]) -> int:
             message.provider_url,
             message.provider_details,
             message.provider_response_id,
+            message.canonical_system,
         )
         changed += sum(value is not None for value in response_values)
         message.provider_name = None
         message.provider_url = None
         message.provider_details = None
         message.provider_response_id = None
+        message.canonical_system = None
 
         portable_parts = []
         for part in message.parts:
