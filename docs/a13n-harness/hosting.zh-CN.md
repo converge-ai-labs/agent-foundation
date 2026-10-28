@@ -1,11 +1,26 @@
 ---
 title: 在 Host 中嵌入 Harness
-description: 在进程内的 Harness API 周围接入定义选择、访问策略、检查点存储和结果交付。
+description: 先运行可持久化的对话，再接入当前权限、后台工具和可靠的结果交付。
 ---
 
-嵌入式应用可以直接调用 Harness。需要持久化的 Host 则在同一套进程内 API 周围增加定义选择、当前访问策略、检查点存储和结果交付。在引入 worker 或数据库之前，建议先运行[离线应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)。
+Host 就是调用 Harness 的应用。它选择 Agent，提供当前权限和客户端，保存已接受的状态，并向用户交付结果。先从单进程对话开始，应用需要多个 worker 时再增加协调机制。
+
+本页使用仓库中的离线 [Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)。需要 Python 3.13、uv 和仓库检出，无需 provider 凭据。如果希望先看只依赖 Harness 的独立状态文件程序，请阅读[状态与恢复](state-and-resume.md)。
 
 ## 核心接入流程
+
+从仓库根目录进入示例，安装依赖并执行两轮对话。请为本次练习选择一个尚未使用的状态文件名：
+
+```bash
+cd examples/agent-app
+uv sync --locked
+uv run agent-app-example --state ./hosting-demo.json "First turn" "Second turn"
+uv run agent-app-example --state ./hosting-demo.json "After restart"
+```
+
+第一次运行输出以 `Turn 1:` 和 `Turn 2:` 开头的回答；重启后的进程输出 `Turn 3:`。离线 Model 会统计收到的对话轮次，因此第三次回答可以验证保存的历史已传入新的应用实例。
+
+应用每轮都执行以下流程：
 
 ```mermaid
 sequenceDiagram
@@ -15,114 +30,237 @@ sequenceDiagram
     Client->>Host: 提交输入
     Host->>Host: 选择定义与检查点
     Host->>Harness: 构建或复用 executable
-    Host->>Harness: run(input, bindings, previous_state, environment)
-    Harness-->>Host: 事件与终结结果
-    Host->>Host: 确认并持久化结果
-    Host-->>Client: 交付结果
+    Host->>Harness: 传入当前绑定与已保存状态，开始流式执行
+    Harness-->>Host: 事件，随后是终结结果
+    Host->>Host: 检查状态并保存接受的结果
+    Host-->>Client: 确认结果已保存
 
     %% class Client,Host app
     %% class Harness a13n
 ```
 
-Harness 负责执行一次 Run；哪些结果最终持久化，由 Host 决定。
+Run 执行期间就可以向客户端输出文本。只有保存接受的终结结果后，才确认任务已持久完成。如果 Run 失败，或消费者提前退出流作用域，示例会保留上一份检查点。
 
 ## 重建可信定义
 
-由 Host 定义并保存配置 schema，涵盖模型选择、输出类型、工具、Capabilities、插件和子 Agent 拓扑。可信代码先将这些配置解析为 Python 对象，再调用 `HarnessBuilder`；不要从不可信输入中反序列化 Python callable 或插件。Harness UI 的 YAML 是一种 Host 配置格式，并不是通用的 SDK schema。
+将定义选择与每轮输入分开：
 
-如果工具目录较大，Host 可以从选定来源组装 `ToolSearchCapability(groups=...)`。参阅 [ToolSearch 的 Host 集成](tool-search.md#host-integration)。
+1. 选择应用信任的 Agent 修订版本。
+2. 将其中的 Model、输出类型、工具、Capabilities、插件和子 Agent 定义解析为已安装的 Python 对象。
+3. 用 `HarnessBuilder` 构建 executable。
+4. 只要可信定义的准确版本不变，就复用该 executable。
+
+保存应用自己的可序列化定义 schema 和修订版本。通过可信代码解析引用，不从客户端输入中反序列化 callable 或插件。Harness UI YAML 是一种 Host 格式。工具目录较大时，通过 [ToolSearch](tool-search.md#host-integration) 组合选定来源。
 
 ## 构建与复用
 
-以可信定义的准确修订版本作为缓存键，复用构建好的 executable；每次 Run 都传入当前输入：
+示例中的 `ConversationApplication` 缓存 executable，并用异步锁串行处理对话轮次。你也可以从另一个 Python 入口调用它。完成上面的安装后，在 `examples/agent-app` 下保存 `host_demo.py`：
 
-```python
-result = await executable.run(
-    input_value,
-    bindings=reconstruct_current_bindings(execution_attempt),
-    previous_state=selected_checkpoint,
-)
+```python title="host_demo.py"
+import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from a13n_agent_app_example import ConversationApplication, create_demo_environment
+from a13n_agent_app_example.cli import create_demo_model
+
+
+async def main() -> None:
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        application = ConversationApplication(
+            model=create_demo_model(),
+            state_path=root / "conversation.json",
+            environment_factory=lambda: create_demo_environment(root / "workspace"),
+        )
+        for prompt in ("First turn", "Second turn"):
+            async with application.stream_turn(prompt) as stream:
+                answer = "".join([text async for text in stream])
+            print(answer)
+
+        state = await application.load_state()
+        assert state is not None
+        print("Saved conversation state.")
+
+
+asyncio.run(main())
 ```
 
-通过 `async with executable.stream(...)` 管理流的作用域。executable 没有 `close()` 方法；Host 自己持有的客户端，应在各自生命周期结束时关闭。
+运行 `uv run python host_demo.py`，应看到两条带轮次编号的回答和 `Saved conversation state.`。此程序退出时删除临时数据；前面的 CLI 练习用于验证跨进程持久化。
+
+直接集成 Harness 时，使用 `async with executable.stream(...)`，或等待 `executable.run(...)`。executable 没有 `close()` 方法。应用自己创建的客户端应在所属生命周期结束时关闭，并确保所有 Run 和保留执行已先释放它们。
 
 ## 跨对话轮次保留工具执行
 
-将 `ToolExecutionCapability` 加入定义，并在 Host 生命周期内持有一个 `ToolExecutionRuntime`。每次 Run 都绑定该运行时；如果 CodeAct 写入需要在来源 Run 结束后继续可见，则为每个 Thread 单独持有一个 `CodeActStateOwner`。
+如果支持的工具调用需要在前台等待结束后继续运行，使用 Host 持有的 runtime。这与示例应用保存已完成轮次的状态文件是两个独立接入点：
+
+1. 在 Agent 定义中加入 `ToolExecutionCapability`。
+2. 在 Host 生命周期内持有一个 `ToolExecutionRuntime`。
+3. 为每个参与此流程的 Run 创建新的 `RunBindings`，并绑定该 runtime。
+4. 如果需要接收 CodeAct 延迟完成的显式状态写入，为每个 Thread 单独持有一个 `CodeActStateOwner`。
+5. 关闭时，先停止接收新工作并结束交互等待，再关闭并等待 runtime，最后关闭共享客户端。
+
+下面的函数展示完整绑定与关闭顺序。它接收应用选定的原生 `Model`，在同一个 Thread 中执行两轮：
 
 ```python
 from a13n_harness import (
+    AgentSpec,
     CodeActStateOwner,
+    HarnessBuilder,
     RunBindings,
     ToolExecutionConfig,
     ToolExecutionRuntime,
 )
 from a13n_harness.capabilities import ToolExecutionCapability
+from pydantic_ai.models import Model
 
-capability = ToolExecutionCapability(
-    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
-)
-runtime = ToolExecutionRuntime()
-thread_values = CodeActStateOwner()
-bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+
+async def run_host(model: Model) -> None:
+    runtime = ToolExecutionRuntime()
+    thread_values = CodeActStateOwner()
+    try:
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=model,
+            capabilities=(
+                ToolExecutionCapability(
+                    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
+                ),
+            ),
+        )
+        previous = None
+        for prompt in ("Start the task", "Continue the task"):
+            result = await executable.run(
+                prompt,
+                previous_state=previous,
+                bindings=RunBindings.embedded(
+                    tool_execution=runtime,
+                    codeact_state=thread_values,
+                ),
+            )
+            print(result.output_or_raise())
+            previous = result.state
+    finally:
+        await runtime.close(timeout_seconds=5.0)
+        await runtime.join()
 ```
 
-将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。转到后台要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用和完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行；仅添加 runtime 不会使它支持后台执行。CodeAct 的嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
+要在 `host_demo.py` 中离线运行此函数，请将末尾的 `asyncio.run(main())` 替换为此函数及其导入，再加上 `asyncio.run(run_host(create_demo_model()))`。Model 会返回两次回答。这验证了 runtime 绑定和清理流程，但没有调用后台工具。
 
-通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
+真正脱离前台等待，要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用或完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行。CodeAct 的嵌套调用等待实际值，顺序工具的执行屏障持续到工作结束。默认执行模式为 `inline`；`auto` 要求在 Run 准备时已绑定 runtime。
 
-`await stream.steer(message, immediate=True)` 在同一个逻辑 Run 中接收新输入并继续执行。主模型请求期间会中断请求并恢复执行尝试；工具阶段则保留当前尝试，完成审查和参数校验，并以真实结果或保留执行回执结束支持工具的前台等待。原生工具批次完成或挂起等待审批后，才进入下一次模型请求。返回的输入 ID 表示已接受，规范历史记录确认输入已纳入。自动模式独立地在前台等待到期时交还控制权。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
+完成绑定的 Agent 可以使用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel`，并收到仅含状态的上下文摘要。两种模式都要求同时启用 Capability 并绑定 runtime。读取限定在所属 Thread；真实结果进入规范历史后，才确认交付。默认内存 store 在 Host 进程生命周期内保留活动工作和最近完成的记录。自定义保留或持久化策略使用 `ToolExecutionStore`；通过 `on_completed` 安排投递，避免阻塞执行。只保存记录不会把正在运行的调用转移给替代 worker。
 
-如果原生 steering 尚未就绪，或仍有不支持交接的工具在运行，即时 steering 会在接受输入前最多等待 5 秒。超时抛出错误码为 `steering_timeout` 的 `RunError`，输入不会被接受。停止或关闭 Run 会及时结束等待。默认情况下，调用保持即时语义，不会回退为排队 steering；输入一旦被接受，等待期限即结束。
+向活动流发送新输入时，按交接要求选择：
 
-交互式投递可以传入 `immediate=True, best_effort=True`。如果有不支持交接的工具在运行，或未绑定工具 runtime，Harness 会立即接受为普通排队输入；否则请求即时交接。原生就绪仍采用相同的有界等待。输入只入队一次；非法输入、取消和 Run 已停止仍然会失败。`best_effort` 不影响普通 steering。`steering_input_enqueued` 事件通过 `handoff_requested` 区分即时交接请求与普通排队，两者都不表示模型已经读到输入。
+| 调用                                                            | 行为                                                            |
+| --------------------------------------------------------------- | --------------------------------------------------------------- |
+| `await stream.steer(message)`                                   | 为当前 Run 排队输入。                                           |
+| `await stream.steer(message, immediate=True)`                   | 确认支持即时交接后才接受输入。                                  |
+| `await stream.steer(message, immediate=True, best_effort=True)` | 工具无法交接或未绑定 runtime 时立即排队；其他情况请求即时交接。 |
 
-Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。只有 Run 同时启用 `ToolExecutionCapability` 并绑定 runtime，才会提供这些控制工具和仅含状态的上下文摘要；`inline` 与 `auto` 模式遵循同一规则。未绑定的 inline Run 不提供这两项。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
+即时 steering 会中断并恢复主 Model 请求。在工具阶段，它保留当前尝试，完成审查与校验，并以实际结果或保留执行回执结束支持工具的前台等待。原生工具批次完成或暂停等待审批后，才发起下一次 Model 请求。自动模式的前台超时独立生效。
 
-通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。
+如果原生 steering 尚未就绪，即时 steering 会在接受输入前最多等待 5 秒。严格的即时模式遇到不支持交接的工具时也会等待。超时抛出错误码为 `steering_timeout` 的 `RunError`，输入未被接受；停止或关闭 Run 会结束等待。`best_effort` 仍保留原生就绪等待，不改变普通 steering，并且仍会拒绝非法输入、取消或已停止的 Run。
+
+返回的输入 ID 表示已接受，不表示 Model 已读到内容。输入只入队一次，已接受但待处理的输入会进入正常状态导出。通过规范历史确认输入已纳入；`steering_input_enqueued` 事件的 `handoff_requested` 字段区分即时交接与排队。对话取消和工具取消分别由 Host 决定。runtime 的 `close` 限制取消等待时间；`join` 等待协作式清理结束，之后才可关闭共享资源。
 
 ## 每次执行都使用当前权限
 
-每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
+每次 Run 都重建当前身份与策略、Model 凭据、Provider 状态和 Environment 来源。从 `HarnessState` 加载历史，通过 `RunBindings` 提供当前协作对象。[Agent 与执行](agents-and-runs.md)列出了绑定字段。
 
-从 `a13n_harness` 导入 `RequestContext`，通过 `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))` 传入业务请求头。可信工具通过 `ctx.deps.request_context.headers` 读取独立复制的只读映射，名称统一为小写。内联子 Agent 继承该值。Host 负责保存上下文，并在恢复执行或创建独立子 Agent 时重新传入；`HarnessState` 不保存它，新 bindings 默认为空。请求头不会自动进入提示词、工具结果或 shell 环境。模型和 MCP 传输的转发由 Host 显式接入。
+需要业务请求头时，在调用处创建新的绑定：
 
-设置 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` 可改变模型 Provider 未显式传入 `forward_context_headers` 时的默认值。显式的 `true` 或 `false` 优先于环境变量；未设置环境变量时保持内置默认值 `true`。环境变量接受大小写不敏感的 `true` 和 `false`，忽略首尾空白，其他值会报错。默认值在构造配置时解析。Host 可调用 `a13n_harness.http.forward_context_headers_default()`，为自己的 MCP 集成使用同样的默认值。
+```python
+from a13n_harness import RequestContext, RunBindings
+
+bindings = RunBindings.embedded(
+    request_context=RequestContext(headers={"x-trace": "trace-123"})
+)
+```
+
+调用 `run()` 或 `stream()` 时传入 `bindings=bindings`。可信工具通过 `ctx.deps.request_context.headers` 读取名称已转为小写的独立只读映射。内联子 Agent 继承此值。恢复执行或创建独立子 Agent 时需重新构造：新绑定默认为空，`HarnessState` 不保存这些请求头。提示词、工具结果和 shell 环境中的投影，与显式配置的 Model 或 MCP 请求头转发是不同路径。
+
+Model Provider 的 `forward_context_headers` 选项省略时，使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`。未设置环境变量表示 `true`；显式布尔值优先。环境变量接受大小写不敏感的 `true` 或 `false`，忽略首尾空白，拒绝其他值。默认值在构造配置时解析。MCP 集成可以调用 `a13n_harness.http.forward_context_headers_default()` 使用同样的默认值。
 
 ### 发起模型调用前检查
 
-Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck.check(ModelCall)` 的对象。Harness 会在公开模型调用发出前执行检查：正常返回表示允许调用，抛出异常表示拒绝。这只是单次调用的准入检查，不能据此认定 HTTP 请求已经发出或产生了计费用量。检查对象属于当前 Run 的权限配置，绝不会序列化到 `HarnessState` 中。参阅[用量关联](usage-and-limits.md#usage)。
+如果应用必须逐次批准公开 Model 调用，通过 `RunBindings.model_call_check` 提供 `ModelCallCheck`。其 `check(ModelCall)` 方法正常返回表示允许发出调用，抛出异常表示拒绝。每次 Run 都应提供当前检查权限。实际用量需要另行记录：获准调用不代表 HTTP 请求已发出或已经计费。参阅[用量关联](usage-and-limits.md#usage)。
 
 ## 持久化状态的边界
 
-保存返回的 `HarnessState` 时，还应一并保存 Host 的定义修订版本、Run 与执行尝试的标识、选定的 Environment 状态、待处理的延后调用和交付状态。使用分布式 worker 时，还需保存租约、fence 和检查点来源信息。`HarnessState` 无法重建这些 Host 记录。
+保存返回的 `HarnessState` 时，同时保存解释和接受该状态所需的 Host 记录：
+
+| Host 记录                                | 用途                              |
+| ---------------------------------------- | --------------------------------- |
+| 定义修订版本、Run 与执行尝试标识         | 重建选定 executable，并关联工作。 |
+| 选定的 Environment 状态                  | 按当前策略重新连接到指定目标。    |
+| 待处理的延后调用与已接受反馈             | 恢复正确的外部工作。              |
+| 交付状态                                 | 区分结果已保存与客户端已收到。    |
+| 分布式 worker 的租约、fence 和检查点来源 | 防止失效 worker 覆盖更新的进展。  |
+
+文件示例只保存成功轮次，并由单个写入者更新。需要协调检查点发布时，按 [Host 检查点](state-and-resume.md#host-checkpointing)接入。
 
 ## 执行尝试与恢复
 
-启用 `ModelRecoveryPolicy` 时，Harness 可以在同一次 Run 中重试中断的模型尝试，这些模型尝试共用同一个 `run_id`。替代 worker 发起的执行尝试则是一次**新的** Run：使用新的 `run_id`、当前绑定、当前 Environment 来源，以及 Host 选定的检查点。如果上一次工具操作可能已修改数据，但结果无法确定，应先核实并处理实际状态，再决定是否重放。参阅[状态与恢复](state-and-resume.md)。
+区分两条恢复路径：
+
+- `ModelRecoveryPolicy` 在一个逻辑 Run 内重试中断的 Model 尝试，保留同一个 `run_id`。
+- 替代 worker 启动新的 Run，使用新的 `run_id`、当前绑定、当前 Environment 来源和 Host 选定的检查点。
+
+重放工具修改前，先核实结果不明确的外部操作。外部写入的响应丢失时，检查点本身无法判断写入是否已经发生。[状态与恢复](state-and-resume.md)介绍了声明式恢复和中断的延后输入。
 
 ## 事件与流式输出
 
-在异步作用域内消费 `HarnessRunStream`，并将公开事件转换为应用的输出流或存储记录。Harness 完成清理后，才会产生终结事件 `HarnessRunResultEvent`；只有先持久化结果，才能向客户端承诺任务已持久完成或结果已交付。
+在流的异步作用域内消费事件。将公开事件投影到应用输出流或观测存储，单独处理 `HarnessRunResultEvent`：
+
+1. 等待 Harness 清理完成后的终结结果。
+2. 检查结果状态和续接状态。
+3. 按应用的检查点接受规则保存状态。
+4. 向客户端确认任务已持久完成，并按需跟踪交付。
+
+示例的 `stream_turn()` 一边即时输出文本，一边按此顺序处理结果。提前退出作用域会关闭活动流，并保留上一份已完成的检查点。
 
 ## 延后执行的工作
 
-进入暂停状态的 Run 已经关闭。保存其待处理请求和检查点，验证外部结果后，通过 `DeferredToolResume` 启动新的 Run。如果恢复过程在已接受的结果写入历史之前中断，应保留这些结果。[恢复未完成的工具调用](state-and-resume.md#resume-unanswered-tool-calls)说明了请求与结果的约定。
+暂停的 Run 已经关闭。继续外部工作时：
 
-`RunBindings.deferred_tools_supported` 默认为 `True`，因此除非 Host 将其关闭，异步子 Agent 都可以暂停。支持异步子 Agent 延后调用的 Host 应保留子 Agent 的检查点及待处理请求。不具备这一生命周期的 Host 应为每次异步子 Agent 的 Run 设置 `deferred_tools_supported=False`；普通的提示词续接不需要延后支持。
+1. 将待处理请求与检查点一起保存。
+2. 验证外部结果，并与准确的待处理调用关联。
+3. 使用当前绑定和 `DeferredToolResume` 启动新的 Run。
+4. 在已接受反馈进入规范历史前保留它，包括恢复再次中断的情况。
+
+可运行示例见[延后恢复](state-and-resume.md#resume-unanswered-tool-calls)和[人机交互](human-in-the-loop.md)。
+
+`RunBindings.deferred_tools_supported` 默认为 `True`。支持异步子 Agent 延后调用的 Host，必须保留各子 Agent 的检查点和待处理请求。如果子 Agent 生命周期无法做到这一点，为每次异步子 Agent Run 设置 `deferred_tools_supported=False`。普通提示词续接无需延后支持。
 
 ## 环境
 
-Host 为每个目标提供 `EnvironmentSource`，通过 `environment=` 或具名的 `environments=` 映射传入。Harness 在首次使用时准备目标、打开独立 execution，并在结束时关闭 execution，不销毁目标。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 都由 Host 管理。挂载多个环境时，如果需要默认路由，请显式选择 `default_environment`。[环境](environments.md)中有可运行的示例。
+通过 `environment=` 或具名的 `environments=` 映射，为每个目标提供 Host 持有的 `EnvironmentSource`。多个挂载需要默认路由时，显式选择 `default_environment`。
+
+Harness 在首次使用时准备目标，打开新的 execution，并在结束时关闭 execution，不销毁目标。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 由 Host 管理。应用示例每轮创建一个新的 Direct Local 来源；工作区独立保留。按[环境](environments.md)章节接入真正的文件或 shell 操作。
 
 ## Shell 执行与观测
 
-独立的 `process-*` 引用只属于一个 Run，在 Run 关闭时随观测一起释放，不统一终止所有命令。绑定 Host 工具 runtime 的顶层 Shell 调用则保留原资源范围直到执行结束，存活的 `exec-*` 控制使用当前 Run 的授权。Host 或资源范围丢失后，如果后端仍保留命令，通过 Provider 状态或原生发现恢复。只持久化引用不能恢复执行权限。
+根据执行引用选择恢复路径：
+
+- 独立的 `process-*` 引用属于一个 Run。Run 关闭时释放其观测；命令是否存活由 Provider 的清理策略决定。
+- 绑定到 Host runtime 的顶层 Shell 调用保留原资源作用域，直到执行结束。活动 `exec-*` 控制使用当前 Run 的授权。
+- Host 或作用域丢失后，检查 Provider 状态；如果后端仍保留命令，可使用原生发现。保存引用本身不能恢复执行权限。
 
 ## 从简单应用到生产 Host
 
-单进程应用可以使用嵌入式绑定，只保存成功 Run 的 `HarnessState`。当多个 worker 或延后操作需要协调时，再增加持久化的请求接收记录、fencing、独立的 Environment 状态、待处理调用记录和交付跟踪。这些属于 Host 的工作流程，不是新增的 Harness 执行循环 API。
+针对具体生命周期需求增加协调机制：
+
+| 应用需求               | 增加的机制                                   |
+| ---------------------- | -------------------------------------------- |
+| 继续单进程对话         | 成功轮次的状态存储，每个 Thread 一个写入者。 |
+| 等待审批或客户端工作   | 待处理调用存储、经过认证的反馈与恢复。       |
+| 让支持的工具跨轮次运行 | 共享工具 runtime、Thread 所有权和关闭顺序。  |
+| 安全替换 worker        | 持久化准入、租约与 fencing、检查点发布。     |
+| 恢复客户端交付         | 保存结果并跟踪交付。                         |
 
 ## 可运行的示例
 
-[Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)支持以流式方式执行多个轮次、原子保存成功的 `HarnessState`，并在每次调用时创建新的 Direct Local Environment。[Provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)演示了如何选择已安装的 Provider，以及使用 Environment Run 扩展。
+在 [Agent 应用源码](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)中查看完整轮次锁、事件投影、状态文件原子替换和重启测试。[Provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)继续介绍已安装 Provider 的选择和 Environment Run 扩展。

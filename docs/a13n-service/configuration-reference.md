@@ -4,12 +4,13 @@ sidebarTitle: Settings reference
 description: Every field of the Service settings, with its environment variable, type, bounds, and default.
 ---
 
-> [!NOTE]
-> Generated from the `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing them instead of editing rows.
+Find a setting by its section, then use the row to choose its TOML key or environment variable and check the accepted type, bounds, and default. For a complete deployment configuration, start with [Configure Service](configuration.md); that guide covers precedence, role and storage requirements, and checks across fields.
 
-Use [Configure Service](configuration.md) for precedence, examples, role/storage requirements, and cross-field validation. Types and field constraints below do not replace those combined checks. Secret defaults are masked by the schema; this reference never reads deployment environment values. Defaults apply to the source version, not every historical release.
+For example, `server.port` is `port` in the TOML `[server]` section or `A13N_SERVER__PORT` in the environment. Rows marked **JSON field** share one environment variable: set `A13N_AUTH__MAIL` to a JSON object containing the mail settings. An environment value replaces that field's file value, including the whole object for nested settings.
 
-The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](/reference/service-settings.json).
+These tables describe the built-in settings at this source version. Secret defaults are masked. Download [Service settings JSON](/reference/service-settings.json) for the full schema, including named enum and union definitions. Distribution-specific extension settings are documented by their distribution.
+
+The tables are generated from `Settings`. Contributors updating those definitions regenerate the English reference with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 ## `server`
 

@@ -1,75 +1,33 @@
 ---
 title: Events and processors
-description: Convert a Harness Run into AG-UI events, read snapshots, and apply Host processors.
+description: Connect a Harness stream, publish event batches, and filter content before delivery.
 ---
 
-Use one `HarnessAguiStreamObserver` per root stream and feed it each public source item in order, including forwarded inline children. It converts observations, not private state. Start with the [offline example](getting-started.md), then add your Host's transport and persistence.
+Once the [offline quickstart](getting-started.md) works, replace its printing with your application's delivery path. Convert each public source item in order, serialize the returned batch, and store or send it through your Host.
 
 ## Observe a Harness Run
 
-Create one stream observer for each independently executed root or asynchronous child Run:
+This integration fragment assumes an existing `executable`, `input_value`, `bindings`, and a Host-owned `persist_and_publish()` method:
 
 ```python
 from a13n_stream_protocol import HarnessAguiStreamObserver
 
-observer = HarnessAguiStreamObserver()
+observer = HarnessAguiStreamObserver(retain_events=False)
 async with executable.stream(input_value, bindings=bindings) as run_stream:
     async for item in run_stream:
         new_events = observer.observe(item)
         await host.persist_and_publish(new_events)
-
-snapshot = observer.snapshot()
 ```
 
-The stream observer preserves child native IDs and adds `subagentRunId` to child output. Namespace display keys by root, child attribution, and native ID. A child terminal comes from the authoritative delegation result after output projection and retention, not the child's private Run result. If the source contains exactly one Run, `HarnessAguiObserver` remains the smaller API.
+`new_events` contains only events produced by the current item. A text part with initial content can produce both a start and a content event. An omitted observation can produce an empty batch. Publish these incremental batches rather than repeatedly sending the accumulated snapshot.
 
-`observe()` returns only the AG-UI events produced by that source item. A single source item can produce several events—for example, a text part with initial content produces both `TEXT_MESSAGE_START` and `TEXT_MESSAGE_CONTENT`.
+Create one stream observer per independently executed root or asynchronous child Run. It binds `thread_id` and `run_id` on the first successful observation and tracks forwarded inline children separately. A strictly single-Run source can use `HarnessAguiObserver`.
 
-The first successfully observed item binds `observer.thread_id` and `observer.run_id`. Later root items retain that correlation; each inline child has independently validated correlation and multipart state. Use another observer when the Harness starts another root Run or an asynchronous child Run, even when both Runs advance the same Thread.
-
-### Event mappings
-
-The observer uses standard AG-UI events when the semantics match directly:
-
-| Harness observation                          | AG-UI output                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| Text part start, delta, and end              | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END` |
-| Reasoning start, content, signature, and end | Reasoning message events and `REASONING_ENCRYPTED_VALUE`         |
-| Completed tool call                          | `TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`             |
-| Successful tool result                       | `TOOL_CALL_RESULT`                                               |
-| Completed Run result                         | `RUN_FINISHED`                                                   |
-| Logical Run start                            | `RUN_STARTED` with `protocolVersion: "1.0"`                      |
-| Cancelled Run result                         | `RUN_FINISHED` with cancelled outcome                            |
-| Suspended Run result                         | `RUN_FINISHED` with interrupt outcome                            |
-| Failed Run result                            | `RUN_ERROR`                                                      |
-| Inline delegation                            | `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, `SUBAGENT_ERROR`        |
-| Native Pydantic AI `CapabilityEvent`         | `CUSTOM` event named by the native `kind`                        |
-| Another unmatched public observation         | Namespaced `CUSTOM` event                                        |
-
-Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatched Pydantic AI events use names such as `a13n.pydantic_ai.final_result`. A native `CapabilityEvent` retains its concrete kind, Capability ID, optional Tool-call correlation, and public payload. Every custom value also retains the public Thread, Run, sequence, timestamp, and source-event representation.
-
-### Content and large custom events
-
-Capability events preserve their native name and payload, including user-defined kinds. A file edit remains before/after data, a summary remains summary data, and a shell status remains a status observation. The protocol does not turn them into Agent answers or pre-rendered panels. Clients decide their presentation. Input uses source-specific CUSTOM events with `role` and `message_id` inside `value.event` and top-level `ContentMetadata`; normal displays omit content marked `display: false`. Public tool execution values can contain ordered text, image, audio, video, or document parts. Supplemental tool media stays model-only; binary bytes never enter the public protocol.
-
-Custom events larger than 48 KiB use generic `a13n.stream.fragment` frames. Reassemble them before inspecting the original event:
-
-```python
-from a13n_stream_protocol import CustomEventAssembler
-
-assembler = CustomEventAssembler()
-
-# For each CUSTOM payload in one live subscription:
-complete = assembler.accept(payload)
-if complete is not None:
-    render_custom(complete["name"], complete["value"])
-```
-
-The framing preserves the complete JSON structure rather than truncating the source. The assembler bounds pending content and rejects incomplete or inconsistent sequences; check `assembler.gap` and replace the assembler when resetting a subscription. Reassembled custom events are best-effort observations, not a durable event log. See the [framing contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-stream-protocol/00-overview.md#large-custom-events) for limits and fields.
+Inline-child output carries `subagentRunId` while retaining its native message and tool-call IDs. Include that attribution in your display keys. Child completion follows the accepted delegation result after output projection and state retention, so the parent display reflects the result Harness actually accepted.
 
 ### Serialize events
 
-The returned values are typed `ag_ui.core.Event` models. Use the upstream Pydantic adapter when a transport or store needs JSON-compatible values:
+The observer returns typed AG-UI models. Serialize them with wire aliases before handing JSON-compatible payloads to a database or transport:
 
 ```python
 from ag_ui.core import Event
@@ -83,25 +41,51 @@ payloads = [
 ]
 ```
 
-The Host should wrap serialized events in its own durable IDs, ordering records, and delivery metadata rather than rewriting protocol correlation.
+Keep your durable delivery ID and cursor in a Host envelope around the event. This preserves the protocol's source correlation while giving consumers a stable reconnect position.
 
-## Read the Accumulated Snapshot
+### Event mappings
 
-`snapshot()` returns detached copies of all retained post-processor events observed so far:
+Use standard event types for messages, tool calls, and Run outcomes. Handle CUSTOM events by their names and payloads:
+
+| Source observation                     | AG-UI output                                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Logical Run start                      | `RUN_STARTED` with `protocolVersion: "1.0"`                                              |
+| Text start, content, end               | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END`                         |
+| Reasoning content and signature        | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                                 |
+| Completed tool-call arguments          | `TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`                                     |
+| Successful tool result                 | `TOOL_CALL_RESULT`                                                                       |
+| Completed, cancelled, or suspended Run | `RUN_FINISHED` with the corresponding outcome                                            |
+| Failed Run                             | `RUN_ERROR`                                                                              |
+| Inline delegation                      | `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, `SUBAGENT_ERROR`                                |
+| Native `CapabilityEvent`               | `CUSTOM` using its native `kind`                                                         |
+| Other unmatched public observation     | Namespaced `CUSTOM`, such as `a13n.harness.lifecycle` or `a13n.pydantic_ai.final_result` |
+
+A completed argument list marks the tool call's input, not successful execution. Read the result separately. [Terminal events](api-reference.md#terminal-events) describes outcomes and deferred-call IDs.
+
+### Content and large custom events
+
+Custom payloads retain their meaning: file edits carry before/after data, compaction summaries carry summary data, and shell observations carry status. Render each as the appropriate observation. A compaction summary can arrive before checkpoint publication; show “checkpoint saved” only after the Host has accepted and persisted the completed result.
+
+Input observations carry role and message ID inside `value.event`, with presentation metadata at the top level. Honor `display: false` in normal presentation. Tool results can contain ordered text, image, audio, video, or document parts. Public projection omits binary payloads and keeps supplemental tool media model-only; see [input metadata and media](api-reference.md#input-metadata-and-media).
+
+A CUSTOM event larger than 48 KiB becomes `a13n.stream.fragment` frames. Keep one assembler for the subscription and feed it each complete serialized CUSTOM envelope:
 
 ```python
-events = observer.snapshot()
+from a13n_stream_protocol import CustomEventAssembler
+
+assembler = CustomEventAssembler()
+
+# payload is a complete serialized CUSTOM event from this subscription.
+complete = assembler.accept(payload)
+if complete is not None:
+    render_custom(complete["name"], complete["value"])
 ```
 
-Mutating an event returned by `observe()` or `snapshot()` does not mutate the observer. The snapshot is process-local convenience state, not a durable event log or Harness continuation value.
-
-With the default `retain_events=True`, the journal has no retention cap. Read a fixed prefix in batches with `snapshot(start=..., stop=...)`, capturing `event_count` once as the upper bound. These positions are observer-local, not transport cursors.
-
-Set `retain_events=False` to convert and process without a journal. `observe()` produces the same events, `event_count` stays zero, and `snapshot()` raises `AguiObservationError`. For accumulated display content instead of raw token history, use [compact display checkpoints](replay.md#restore-a-compact-display-checkpoint).
+Interpret only the completed event. Check `assembler.gap` to report rejected or missing fragments, and reset the assembler when starting a new subscription. A missing final frame needs the Host's termination or timeout handling. The [fragment example](api-reference.md#fragment-a-complete-custom-event) demonstrates an offline round trip and lists the bounds.
 
 ## Apply a Host Processor
 
-A processor can omit an event or replace the mutable content fields listed in [Processor replacement limits](api-reference.md#processor-replacement-limits) before the event is accumulated and returned:
+Pass a synchronous processor when the Host needs to hide an event or change a permitted content field. This example suppresses diagnostic observations and strips leading and trailing null characters from text deltas:
 
 ```python
 from typing import Any
@@ -109,7 +93,7 @@ from typing import Any
 from ag_ui.core import Event
 from ag_ui.core.events import CustomEvent, TextMessageContentEvent
 from a13n_harness import HarnessStreamEvent
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiStreamObserver
 
 
 def process_event(
@@ -117,22 +101,31 @@ def process_event(
     event: Event,
 ) -> Event | None:
     del source
-
-    if (
-        isinstance(event, CustomEvent)
-        and event.name == "a13n.harness.diagnostic"
-    ):
+    if isinstance(event, CustomEvent) and event.name == "a13n.harness.diagnostic":
         return None
-
     if isinstance(event, TextMessageContentEvent):
         return event.model_copy(update={"delta": event.delta.strip("\x00")})
-
     return event
 
 
-observer = HarnessAguiObserver(processor=process_event)
+observer = HarnessAguiStreamObserver(processor=process_event, retain_events=False)
 ```
 
-A replacement must preserve the AG-UI event type and structural correlation, including message, tool, Thread, Run, lifecycle, and source fields. Invalid replacements raise `AguiObservationError` without committing the current source item.
+The observer applies the processor before fragmentation and validates every replacement. Keep event identity, correlation, and structure unchanged; the [replacement table](api-reference.md#processor-replacement-limits) lists writable fields. To suppress CUSTOM content, omit the whole event.
 
-A processor used with `resume()` must be replay-stable: the same ordered source history and stable Host configuration must produce the same retained event sequence. It must not retain mutable processing state or perform persistence, publication, acknowledgements, or other externally observable effects.
+Make the processor a pure function of its inputs and stable Host configuration. Replaying the same source must produce the same events. Store and publish after `observe()` returns, outside the processor. This also keeps an invalid replacement from partially committing the current source item.
+
+## Read the Accumulated Snapshot
+
+For debugging or in-process inspection, construct the observer with the default `retain_events=True`. Capture the current count and read a fixed prefix in batches:
+
+```python
+stop = observer.event_count
+for start in range(0, stop, 100):
+    events = observer.snapshot(start=start, stop=min(start + 100, stop))
+    inspect_batch(events)
+```
+
+Returned events are detached copies. Changes to those copies leave the observer unchanged. The journal has no retention cap, and its positions are local indices rather than transport cursors.
+
+With `retain_events=False`, `observe()` returns the same converted events, `event_count` stays zero, and `snapshot()` raises `AguiObservationError`. Choose [DisplayFold checkpoints](replay.md#restore-a-compact-display-checkpoint) when you need accumulated display content without retaining every token event.

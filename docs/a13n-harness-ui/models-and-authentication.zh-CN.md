@@ -1,418 +1,138 @@
 ---
 title: 模型与身份验证
-description: 创建 Model，通过订阅或 API 密钥登录，并设置工作上下文预算。
+description: 连接提供方、选择已保存 Model，并区分请求、连接和上下文设置。
 ---
 
-Model 资源定义提供方连接、请求设置和工作上下文预算。将其保存到**所选根配置旁的 `models/<name>.yaml`**，Agent 通过 `id` 引用。凭据独立存储：Model 身份验证只持有引用，不存密钥或 token。
+**Model** 是可复用的提供方连接及请求设置。**Agent** 通过 ID 选择 Model，并添加指令和工具。Model 文件位于[选中的根配置](configuration.md#locate-and-validate-your-files)旁的 `models/` 中；凭据独立存储。
 
 ## 按任务查找
 
-| 任务                          | 从这里开始                                                                        |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| 交互式创建 Model              | `a13n-harness-ui add model`                                                       |
-| 编写完整的 API 密钥 Model     | [配置用法](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
-| 连接兼容端点                  | [自定义端点用法](configuration-recipes.md#connect-an-openai-compatible-endpoint)  |
-| 查阅所有 Model 字段           | [Model 文件参考](#model-file-reference)                                           |
-| 修改请求参数                  | [原生请求设置](#native-request-settings-and-connection-wiring)                    |
-| 调整上下文或开启图像输入      | [上下文与模态策略](#context-and-modality-policy)                                  |
-| 管理账户、额度和故障切换组    | [账户与分组](#account-store-locations)                                            |
-| 使用订阅账户                  | [登录](#subscription-login-and-api-keys)、[Codex 示例](#codex-model-example)      |
-| 为当前 Project 切换 TUI Model | [TUI 选择](#change-the-agent-or-model-in-the-tui)                                 |
-
-`settings` 控制模型请求。`model_configuration` 控制 `base_url` 等连接设置。`model_characteristics` 控制本地上下文/输入策略。三者不能互换，也都不属于 `a13n-harness-ui.yaml` 根级设置。
+- **添加连接：** 按下文的创建流程操作。
+- **编写 YAML：** 使用[完整 API 密钥用法](configuration-recipes.md#change-the-model-reasoning-or-context-budget)或 [Codex 示例](#codex-model-example)。
+- **修改可用连接：** 查阅[字段参考](#model-file-reference)、[请求设置](#native-request-settings-and-connection-wiring)或[上下文策略](#context-and-modality-policy)。
+- **管理凭据和额度：** 见[登录](#subscription-login-and-api-keys)和[账户](#account-store-locations)。
 
 ## 创建与管理 Model
 
-在 WebUI 打开 **Settings → Models**，添加、编辑或克隆已保存的 Model。首次设置和 Agent 的 **Add model** 使用相同流程。保存 Model 不改变任何活动 Run。
+先安装 Harness UI，并准备一种支持的连接所需的凭据。第一个 Agent 使用[设置指南](setup.md)；此流程用于添加另一个 Model。
 
-1. 选择 **ChatGPT subscription**、**Codex subscription**、**Grok subscription**、**GitHub Copilot subscription** 或 API 连接。订阅保留原生账户存储和传输，不是 API 密钥预设。
-2. 选择 Codex/Grok 账户组、连接订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
-3. 选择建议项或输入区分大小写的模型 ID。建议描述已知路由，不代表账户权限；目录获取失败时仍可手动填写 ID。
-4. 在 **Model defaults** 下调整推理、速度和上下文预算。连接变更自动更新草稿并保留显式设置；需要重置时选择 **Restore recommended defaults**。选择 **Custom budget** 后可输入上下文数值上限。
-5. 保存 Model YAML。只有已保存 Model 出现在对话选择器中；仍可高级编辑 YAML。
+1. 在 WebUI 打开 **Settings → Models**，或运行：
 
-选择已保存 Model 后，在 **Agent** 上选择原生工具。改变 Model 不改写 Agent 工具。提供方资源要求和 YAML 示例见[原生工具](native-and-web-tools.md)。
+   ```console
+   a13n-harness-ui add model
+   ```
 
-CLI 命令 `setup`、`add model` 和 `add agent` 的新 Model 分支采用相同后端选项和准备规则。API 连接可复用已存密钥元数据或环境变量引用，不暴露密钥字节。订阅账户不可用时，设置提供直接设备/浏览器登录，或显式稍后配置的选项。
+2. 选择连接：API 提供方/协议，或 ChatGPT、Codex、Grok、GitHub Copilot 订阅。订阅连接使用各自的登录和传输。
 
-### Anthropic 缓存默认值
+3. 连接账户。API 访问可选择已存密钥、在隐藏字段保存新密钥，或指定服务器环境变量名。Codex/Grok 选择账户组。登录和密钥保存独立于 Model 草稿生效。
 
-通过 Anthropic 连接创建 Model 时，会保存以下显式分块缓存设置，自定义模型 ID 和兼容端点也适用：
+4. 选择建议模型，或输入区分大小写的提供方模型 ID。建议是发行版维护的起点；使用账户可访问的 ID。发现失败时仍可手工输入。
 
-```yaml
-settings:
-  anthropic_cache_instructions: true
-  anthropic_cache_tool_definitions: true
-  anthropic_cache_messages: true
-```
+5. 检查 **Model defaults**：推理、服务层级和工作上下文预算。**Custom budget** 接受数值；**Restore recommended defaults** 会主动替换已编写的设置。普通连接修改保留显式设置。
 
-所有 Anthropic 预设均包含这三个字段。为兼容端点，Harness UI 使用它们，而不是统一 `cache` 或顶层 `anthropic_cache`。高级设置仍可编辑：显式传入的映射，包括 `false`、缓存时长或空映射，均保持不变。OpenRouter 等其他协议不会仅因模型是 Claude 就获得这些字段。已有 Model 文件不会迁移；可手动添加这些字段，或显式应用预设来启用。
+6. 保存。已保存 Model 出现在对话选择器中。为新 Run 选择它，并发送简短提示。TUI 中用 `/model`，再用 `/status` 检查选择。
 
-对于已识别且支持自适应推理的模型，初始预设还会填入以下设置，包括 Claude Sonnet / Opus 4.6 和 Sonnet / Opus / Haiku 5.5：
+保存/验证 Model 证明配置有效；发送提示验证凭据和推理访问。保存不改变活动 Run。要作为 Agent 的永久选择，编辑该 Agent 的 `model` 字段，或使用其 Model 选择器。原生工具在 **Agent** 上选择；修改 Model 不改写工具。
 
-```yaml
-settings:
-  anthropic_thinking:
-    type: adaptive
-    display: summarized
-  anthropic_effort: high
-  max_tokens: 32768
-```
+`setup` 和 `add agent` 的新 Model 路径使用相同连接准备流程。可在登录前保存订阅配置，但首次请求前必须认证。取消草稿不会撤销已保存密钥、登录或独立保存的内联 Model。
 
-这些字段与缓存开关一同保存，不在运行时注入。可通过 Model 的推理控件调整 effort，也可直接编辑 YAML。Haiku 5.5 提供自适应 effort 控件；始终开启推理的模型不提供 **Off**。未知模型 ID 只获得缓存开关，不推测其推理设置。
+## 在 TUI 中切换 Agent 或 Model
 
-自适应预设不需要 `interleaved-thinking-2025-05-14` header。Harness UI 也不填入 `context-management-2025-06-27` 和 `context-1m-2025-08-07`：当前具备 1M 上下文的 Claude 模型默认支持该窗口。本地工作上下文预算与提供方上下文上限仍是独立设置。若兼容网关明确要求某个 beta，可在 `settings.anthropic_betas` 中显式配置。参见 Anthropic 的[推理模式](https://platform.claude.com/docs/en/build-with-claude/thinking)和[上下文窗口](https://platform.claude.com/docs/en/build-with-claude/context-windows)。
+| 命令                               | 效果                                  |
+| ---------------------------------- | ------------------------------------- |
+| `/agent` 或 `/agent agent-primary` | 选择完整 Agent 配置                   |
+| `/model` 或 `/model model-primary` | 只覆盖 Model；为当前 Project 记住选择 |
+| `/model default`                   | 清除 Model 覆盖和记住的 Project 选择  |
+| `/thinking`                        | 显示所选 Model 支持的推理控件         |
+| `/thinking default`                | 使用 Model 已保存的推理设置           |
+| `/status`                          | 检查选择和根级观测用量                |
 
-## 网关会话亲和性
+使用自己的已保存 ID。选择 Agent/Model 会清除临时推理、Fast 和 Pro 控制。记住的 Project Model 在对话导航、Agent 选择和 TUI 重启后保留；显式启动 `--agent`、无界面运行和 API 调用方不继承。命令保留历史和 Environment 选择，不编辑 YAML。
 
-在 **Add Model** 或首次设置中选择 **Gateway session affinity** 预设，或在 **Session affinity header** 中填写其他名称。CLI `add model` 提供同样预设和自定义输入。保存结果是普通 header 名称，不是预设引用：
-
-```yaml
-model_configuration:
-  base_url: https://gateway.example.com/v1
-  session_affinity_header: x-litellm-session-id
-```
-
-在 Model 文件中与 `base_url` 同级设置，**不要** 放在 `settings.extra_headers` 或根进程配置中。无需提供会话值：系统按[共享 Harness 派生规则](../a13n-harness/models.md#model-request-affinity)，自动从当前 Thread ID（对话即其根 Thread）生成稳定 UUID v5。派生值不存入 Model 配置或 Thread 状态。省略或设为 `null` 可关闭。替换预设只需改变名称，例如 `x-company-session`。
-
-| 预设                          | Header 名称            | 网关前置条件 / 边界                                 |
-| ----------------------------- | ---------------------- | --------------------------------------------------- |
-| LiteLLM                       | `x-litellm-session-id` | 在网关开启会话亲和性。                              |
-| Conversation ID               | `x-conversation-id`    | 配置优先读取此 header 的路由规则。                  |
-| Bifrost（API 密钥亲和性）     | `x-bf-session-id`      | 仅提供 API 密钥亲和性，不保证加权提供方或目标固定。 |
-| X-Session-ID（旧版 / 自定义） | `x-session-id`         | 网关明确配置识别此 header 时使用。                  |
-
-预设不会配置或检测网关。发送 header 只是请求亲和性，不能证明目标固定。需要验证时检查网关路由日志或目标标识。连接测试不能证明持久路由或缓存复用。
-
-同一 Thread 的各轮次和重试使用稳定值；独立 Thread、子 Thread 和 fork 使用各自 ID。名称在不可变 Run 配置中捕获。修改 Model 影响新组合，不影响已捕获 Run。这与 OpenAI 提示缓存和 Codex 订阅协议 headers 不同。原生 xAI gRPC 和订阅连接不提供该网关设置。
-
-**亲和性值升级：** 自动网关 headers、提示缓存键和绑定 Codex 原生会话默认值现在使用派生 UUID，不再直接使用 Thread ID。已有 Thread 可能一次性失去上游缓存或路由亲和性；本地 ID 和历史不变，无需迁移。
-
-**升级说明：** 旧版本隐式发送 `x-session-id`。现在省略字段会关闭网关亲和性，已有文件和捕获也如此。添加 `session_affinity_header: x-session-id` 后，此后启动的 Run 保留该行为。旧版进程级环境开关不覆盖 Harness UI Model 配置。配置文件绝不会自动改写。
-
-## 订阅登录与 API 密钥
-
-```console
-a13n-harness-ui auth status
-a13n-harness-ui login codex
-a13n-harness-ui login grok
-a13n-harness-ui login copilot
-a13n-harness-ui login chatgpt
-a13n-harness-ui login codex --browser
-a13n-harness-ui auth key list
-a13n-harness-ui auth key set key-primary
-a13n-harness-ui auth key delete key-primary
-```
-
-Codex、Grok 和 Copilot 默认使用设备授权，无须宿主机回调。自行打开打印的 URL。只有浏览器能访问宿主机回环回调时，才使用 `--browser`；Codex 使用 `http://localhost:1455/auth/callback`。不会自动回退到其他登录方式。授权十五分钟内到期。替换另一个共享账户需通过 CLI 使用 `--allow-account-switch`。
-
-使用 API 时，在首次设置、`a13n-harness-ui add model`，或 `a13n-harness-ui add agent` 的 **Create a new model** 分支选择 **API key** 。然后选择提供方或协议，确认基础 URL，并在隐藏输入框中输入密钥。选择模型建议，或输入区分大小写的模型 ID。最后选择设置预设，并检查工作上下文预算。也可用 `key:key-primary` 引用已存密钥，或 `env:OPENAI_API_KEY` 引用 Harness UI 进程可用的环境变量。新密钥立即以新引用保存在本地密钥存储中，与配置发布独立。不要将 API 密钥粘贴到普通输入框。
-
-已存 API 密钥以明文保存于数据根的独立 `auth.json`，文件权限为私有。保护宿主机和备份。配置和 Run 快照只含引用，不含密钥字节。凭据保存/登录与设置发布独立，取消设置不会撤销。
-
-## ChatGPT 订阅
-
-在 Add Model 选择 **ChatGPT subscription**，或运行 `a13n-harness-ui login chatgpt`。CLI 先显示登录链接，再通过隐藏输入要求提供**完整回调 URL**。授权后复制浏览器地址栏的全部 URL，即使回环页面无法访问也可以。不要粘贴到对话或分享给别人：其中包含一次性授权码。无效 URL 可以修正；交换失败则需要重新登录。
-
-WebUI 优先尝试自动回环回调。如果服务器位于远端，展开 **Callback cannot reach this server?** 并粘贴完整 URL。两条路径使用同一套校验和交换逻辑，绝不请求粘贴的 URL。这是授权码回调流程，不是设备验证码。
-
-```yaml
-schema_version: "1"
-kind: model
-id: model-chatgpt
-name: ChatGPT Subscription
-route: openai-chatgpt:YOUR_ACCOUNT_MODEL_SLUG
-authentication:
-  kind: chatgpt_subscription
-settings: {}
-model_configuration: {}
-```
-
-登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖或静态 API 密钥。官方 profile 忽略通用 temperature、Top P 和输出 token 上限；其他设置和工具序列化遵循原生 Model。
-
-凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除本地 token，保留已颁发注册信息供后续登录。请在 ChatGPT 设置中管理远端访问。活动 Model 可能仍使用缓存的 access token。到期和 401 刷新由官方 provider 处理，完整凭据保存到 Host 存储，不提供跨进程刷新互斥。更换账户会影响使用此 Host 的所有人。
-
-## GitHub Copilot 订阅
-
-在首次设置、Add Model 或 Add Agent 新 Model 分支中选择 **GitHub Copilot subscription**。可选择已有 Model，不必修改或重新登录。身份验证尚未就绪也可保存配置，但首次请求前需要凭据。取消 Agent 创建不会删除独立保存的内联 Model。
-
-原生登录使用官方 Copilot CLI 公共 App ID 的设备授权，无须应用注册、client secret、已安装 CLI 或 Copilot SDK Agent 循环。历史 CLI 权限基线请求 `read:user`、`read:org`、`repo` 和 `gist`；请在 GitHub 授权页检查较广的仓库权限。这里不宣称最小权限。Copilot 不支持浏览器回调登录。
-
-同级 `settings.json` 显式设置 `storeTokenPlaintext: true` 时，Harness UI 可复用 `$COPILOT_HOME/config.json`（默认 `~/.copilot/config.json`）中选中的官方 CLI GitHub.com 账户。支持经审查的旧 token 字符串、`{token: ...}` 文件形式及 snake_case 别名，不会复制 token 到 Harness UI。兼容性用合成 CLI 1.0.88 Linux 文件检查。当前 OS keychain 存储不受支持；Harness UI 不会回退到可能过时的文件。建议使用原生登录，不要仅为此集成降低 CLI 存储策略。
-
-原生凭据以明文保存于 `<data-root>/oauth/copilot.json`，以私有文件权限保护，且与 API 密钥 `auth.json` 分开。文件还记住选中账户和来源。凭据缺失或过期不会自动选择其他已存账户。**Choose account source** 显式改变绑定。CLI 提供同样操作：
-
-```console
-a13n-harness-ui auth sources copilot
-a13n-harness-ui auth select copilot --source copilot_cli_file --account YOUR_LOGIN
-a13n-harness-ui auth select copilot --source native --account YOUR_LOGIN
-a13n-harness-ui auth status copilot --format json
-a13n-harness-ui auth logout copilot
-```
-
-> [!WARNING]
-> **退出登录会删除选中的凭据。** 来源为 CLI 文件时，这也影响官方 CLI 和使用该账户文件的其他 Host。其他账户保留；记住的选择会保持缺失，直到在原位置恢复凭据或显式选择其他来源。它不会撤销 GitHub 授权。CLI 文件退出保留无关数据，但会将 JSON 注释/格式规范化为 JSON。
-
-连接后手动填写模型 ID，或显式选择 **Fetch account models**。这调用经身份验证的目录，不进行推理，只列出声明支持 Chat Completions 的模型，与公共 API 模型目录分开。设置、登录、保存 Model 和打开空对话不发出推理请求。目录存在和授权成功不能证明访问：订阅层级、组织策略、端点支持和可用性仍适用。此集成未通过真实订阅权限/推理验证。
-
-Copilot 不继承 Codex Fast 模式、上下文预算、原生工具预设，也不会猜测更便宜的审查模型。以上游原生模型配置为准。最小手工配置为：
-
-```yaml
-schema_version: "1"
-kind: model
-id: model-copilot
-name: Copilot
-route: github-copilot:YOUR_MODEL_ID
-authentication:
-  kind: copilot_subscription
-settings: {}
-model_configuration: {}
-```
-
-## 原生媒体输入
-
-设置、`add model` 和使用新连接的 `add agent` 自动保存已知模型输入能力。最终摘要显示选中的原生媒体类型，无须单独询问模型输入能力。默认值来自随包提供、经审查的模型目录，不是网络探测；描述模型输入能力，不代表账户权限或模型持续可用。
-
-例如已知支持图像的 OpenAI、Claude 或 Grok Model 包含：
-
-```yaml
-model_characteristics:
-  capabilities: [image_understanding]
-  context_window_tokens: 350000
-  proactive_context_management_threshold: 0.65
-  compact_threshold: 0.90
-```
-
-原生 Google API 的已知 Gemini Model 声明 `audio_understanding`、`video_understanding`，以及结构化的 `url_input.video: [youtube]`。默认值遵循所选协议：兼容路由不会自动获得音频、视频或原生 YouTube 支持。直接视频 URL 按二进制视频能力下载为有界内联内容。
-
-对于现有原生 Google Model，确认所选端点支持后，将以下结构化 URL 声明加入现有模型特征。无需 Agent Capability 或 reader：
-
-```yaml
-model_characteristics:
-  capabilities: [image_understanding, audio_understanding, video_understanding]
-  url_input:
-    video: [youtube]
-  video_input:
-    max_video_bytes: 10485760
-```
-
-Agent 可调用默认 `read_media_url(url, instructions=None, media_type=None)`。该工具读取直接图像、视频和音频资源，与 `view` 共用按类型配置的媒体理解模型。支持原生输入时返回 `BinaryContent`，否则由配置的辅助模型分析并返回文本。原生视频由 SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
-
-模型输入能力与 Agent Capability、Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配的模型输入能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
-
-未知模型 ID 标为未知，不自动开启媒体。确切已知 ID 在自定义基础 URL 后仍获得入门默认值；需验证端点支持声明的输入。可在 Model 文件中编辑 `model_characteristics.capabilities`。直接设置 API 调用方可显式提供模型输入能力（含 `[]`）覆盖默认值，不改变上下文策略。
-
-绝不会自动为已有 Model 文件补齐字段。如果旧设置为支持图像的模型生成了 `capabilities: []`，检查所选模型和端点后，仅将此字段改为 `[image_understanding]`。后续 Run 使用已接受配置；活动 Run 和历史捕获不变。添加复用 Model 的 Agent 时，完整保留该 Model。
-
-## 媒体理解默认值
-
-在 **Settings → Models → Media understanding** 选择已保存 Model 用于 Image、Video 或 Audio，再保存。Model 的 **Set as…** 菜单设置或清除相同默认值。TUI 中用 `/model defaults`（也可从 `/model` 进入），选择用途和 Model，再确认 **Save** 。这些是全局设置，与对话主 Model 和 TUI 记住的 Project Model 分开。
-
-```yaml
-# Root configuration, including when selected with --config
-media_understanding:
-  image: model-vision
-  video: model-video
-  audio: null
-```
-
-每个引用必须存在，并声明对应 `image_understanding`、`video_understanding` 或 `audio_understanding` 模型输入能力。不支持的 Model 不能选作该用途。删除 Model 或移除必需的模型输入能力前，先删除引用。
-
-文件 `view` 工具仍优先使用原生能力：
-
-1. 活动 Model 声明匹配的模型输入能力时，Harness 直接附加媒体，不初始化辅助 Model 或凭据。
-2. 否则，该媒体类型配置的 Model 描述或转写文件，返回文本。使用其自己的请求设置、连接配置、凭据引用和 Thread 亲和性；不继承主 Model 设置或临时 `/thinking`、`/fast` 覆盖。
-3. 省略或 `null` 引用使用该类型现有的 Harness 环境变量回退。**Environment** 表示对应模型环境变量已设置；**Not configured** 表示未设置。清除默认值不关闭环境变量回退。变量名和设置见 [Harness 多媒体配置](../a13n-harness/multimedia-understanding.md)。
-
-已配置 Model 失败会报告，不静默替换为环境变量回退。保存验证引用和模型输入能力声明，不发出提供方请求，也不证明账户访问。只有需要辅助推理时才加载凭据。可能产生提供方费用。
-
-新 Run 捕获所选 Model 完整配置，不含密钥字节。编辑影响未来捕获，不影响已捕获 Run 或恢复续接。子级 Run 使用相同配置版本和捕获规则。此设置控制文件 `view` 回退，不转换不受支持的输入框附件，也不会强制支持原生媒体的 Model 使用代理。
-
-## 入门模型选择
-
-首次设置和新 Model 创建提供以下显式订阅路由：
-
-| 提供方 | 模型                       | 适用场景                        |
-| ------ | -------------------------- | ------------------------------- |
-| Codex  | `gpt-6.1-sol`              | 默认；擅长编程和推理            |
-| Codex  | `gpt-6-astra`              | 要求最高的端到端推理和编程      |
-| Codex  | `gpt-5.6-terra`            | 模型成本较低的日常工作          |
-| Codex  | `gpt-6-sol`                | 上一代；编程和推理              |
-| Codex  | `gpt-5.6-sol`              | 更早一代；编程和推理            |
-| Grok   | `grok-4.7`                 | 默认；当前编程与 agent 任务模型 |
-| Grok   | `grok-4.5`                 | 上一代，推理可配置              |
-| Grok   | `grok-4.20-0309-reasoning` | 更早的长上下文推理模型          |
-
-Codex 入门选择由发行版维护。Grok 选择在 2026 年 9 月 7 日依据官方 [xAI 发行说明](https://docs.x.ai/developers/release-notes)和 [Grok 4.20 模型页](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning)审查。Grok 4.7 默认值在 2026 年 9 月 22 日依据官方 [Grok 4.7 指南](https://docs.x.ai/developers/grok-4-7)审查。这些选项不查询权限，也不保证所有订阅账户能访问每个模型。Grok 选项代表模型代际，不是三个经过验证的订阅价格层级。API 密钥设置提供提供方建议和自定义 ID。列表按终端可用空间展开，随聚焦选项滚动。建议是随包提供的入门选择，不是实时可用性检查。
-
-Codex 和 OpenAI API 建议使用同样的首选顺序：GPT-6.1 Sol、GPT-6 Astra、GPT-5.6 Terra、GPT-6 Sol，再到 GPT-5.6 Sol。GPT-6.1 Sol 预设写入原生 `openai_reasoning_effort`，因为内置运行时配置尚未识别该 ID。其控件提供 low、medium、high、xhigh 和 max，不提供 Off，与[官方模型参考](https://developers.openai.com/api/docs/models/gpt-6.1-sol)一致。agent 工具调用应使用 OpenAI Responses；该模型的 Chat Completions 端点不支持工具调用。GPT-6 Sol 继续使用内置推理配置。内置模型目录尚未声明这些 ID 的模型输入能力；需要时应显式配置支持的模型输入能力。已有 Model 不迁移。
-
-辅助 Model 命名为 **Codex shell review** 或 **Grok shell review** 。设置不会为它们创建 Agent；它们只用于 shell 审查。Codex 审查使用 low thinking 的 `openai-codex:gpt-5.6-luna`；Grok 审查使用 low thinking 的 `grok:grok-4.7`。用户编辑过的审查资源保留。
-
-## API 上下文默认值与名称
-
-API 设置推荐 **350,000 token**；内置目录的模型上下文窗口更小时采用该值。未知模型也默认 350,000；提示明确说明这是本地工作默认值，不是经验证的提供方上限。输入 `128000` 或 `128k` 等正 token 数可覆盖。端点或账户要求更低时应降低预算。
-
-新 API Model 使用与 Codex 相同的原生默认值：**65%** 时提醒生成摘要， **90%** 时自动压缩，使用标准 Harness 摘要提示。350k 时阈值为 **227,500** 和 **315,000** token。设置保存在 `model_characteristics`，在 Run 捕获/重建后保留；复用已有 Model 不改变它们。目录随包提供，设置不发出模型发现请求。
-
-生成名称用普通文字标识连接，例如 **OpenAI - GPT-5.6 Sol**、**Z.AI - GLM 5.3** 或 **Moonshot AI - Kimi K2.6** 。默认 Agent 名称追加 **- Coding**。建议和已保存名称使用同一规则，不受 TUI 标签、颜色或状态指示影响。add 命令建议不冲突的名称，也允许覆盖；自定义 Agent 名不会移除其新 Model 的描述性连接名。配置保持 UTF-8，自定义名可含 Unicode。不会重命名已有资源。
-
-## Codex 推理与上下文
-
-默认值是发行版建议，不代表每个账户支持全部模型或上下文大小。
-
-| 高级设置选项 | 工作上下文预算 | 何时选择                                         |
-| ------------ | -------------: | ------------------------------------------------ |
-| standard     |        272,000 | 保守本地预算，与当前 Codex 目录默认值一致        |
-| balanced     |        350,000 | 仓库工作的默认选择                               |
-| extended     |        872,000 | 账户支持目录最大值的大型任务；预计延迟和用量更高 |
-
-**工作上下文预算**（`context_window_tokens`）控制本地提醒和压缩，不提高提供方上限或授予访问。默认提醒阈值 65%，自动压缩从 90% 开始，依据最近报告的根请求占用，不依据累计 token。350k 时分别为 227,500 和 315,000 token。
-
-用 `/thinking` 查看所选 Model 和已安装适配器支持的选项。菜单可能提供强度级别、显式 token 预算预设或 Off，不是通用固定列表。`/thinking default` 返回所选 Model 的配置，包括提供方原生推理字段。状态行描述请求设置，不是测量的提供方结果。高推理与详细显示独立，可以高推理、简洁输出。只显示提供方公开的推理内容，部分提供方不返回这些内容。
-
-Codex 订阅请求**不会** 使用 API 设置预设的输出 token 上限。Codex 适配器移除 `max_tokens` 等不支持的通用设置；强制 `openai_store` 为 false。其他显式 `openai_*` 设置遵循上游验证，不经过另一套 Harness 过滤。
-
-## Pro 推理模式
-
-在支持的 OpenAI Responses 和 Codex Model 上，`/pro` 为后续 Run 切换请求的推理模式。`/pro on` 选择 Pro；`/pro off` 选择 Standard，**不是** 关闭推理；`/pro reset` 继承所选 Model 配置。Model 已配置 Pro 时，重置回到 Pro。未配置显示为 Provider default，不是 Standard。
-
-模式与 `/thinking` 强度、`/fast` 处理和 `openai_reasoning_summary`（提供方公开摘要偏好）独立。覆盖在 `/new` 和进程内 `/resume` 后保留，但改变 Agent 或 Model 会清除，新 TUI 进程不会从历史还原。不支持连接或冲突的 `extra_body.reasoning` 控件会拒绝显式选择，不静默忽略。可用性来自已安装 SDK 配置，不是账户访问检查。
-
-要设置永久默认值，编辑选中 Model：
-
-```yaml
-settings:
-  openai_reasoning_mode: pro  # or standard; remove for provider default
-  thinking: high
-  openai_reasoning_summary: detailed
-```
-
-WebUI 在 Agent & Model 设置中提供同样独立的 Reasoning mode 控件，显式 Default 选项显示继承目标。Model 资源编辑器保存永久 Standard/Pro 选择；Provider default 移除原生字段。修改不会重新标记已捕获 Run。Pro 访问、用量和延迟取决于提供方；选择 Pro 不保证有权限。
-
-## Fast 模式与服务层级
-
-对 Codex 订阅，首次设置在选择模型后增加 **Fast / Standard**，默认 **Fast** 。Fast 保存 `settings.openai_service_tier: priority`；Standard 保存 `settings.openai_service_tier: default`。使用 `add model` 或 `add agent` 创建新 Codex Model 时也提供该选项。复用 Model 或加载已有配置不改变层级。
-
-### 临时设置：使用 `/fast`
-
-空闲 TUI 中，以下命令影响后续 Run，不改写 YAML 或已保存 Thread 配置：
-
-| 命令              | 请求设置                                       |
-| ----------------- | ---------------------------------------------- |
-| `/fast`           | 开启/关闭实际优先处理                          |
-| `/fast on`        | `service_tier: priority`                       |
-| `/fast off`       | `service_tier: default`                        |
-| `/fast ultrafast` | Codex GPT-6 Astra 的 `service_tier: ultrafast` |
-| `/fast reset`     | 移除覆盖，继承 Model 配置                      |
-
-**Off 不等于重置：** Model 配置为 priority 时，`/fast off` 请求标准服务，`/fast reset` 则回到 Fast。覆盖持续到退出 TUI 为止，`/new` 和 `/resume` 后仍保留。选择 Model 或 Agent 会清除；重启不从历史还原层级覆盖。`/thinking` 独立修改推理，保留层级。
-
-这是通用 Model 设置，不只适用于 Codex。影响根 Model 和继承它的 Markdown subagent，不影响显式配置的子级或辅助 Model。状态栏 **Fast** 和 `/status` 请求层级描述实际请求，不证明提供方兑现了优先服务。支持因提供方/模型/账户而异；priority 可能消耗更多配额或费用，也不保证速度。不支持设置保留原生集成行为；Harness UI 不会静默换层级重试。
-
-### Codex GPT-6 Astra 的 Ultrafast
-
-选择路由为 `openai-codex:gpt-6-astra` 的 Model。在 WebUI 打开 **Agent & Model settings**，选择 **Fast** 旁的 **Ultrafast** 。两按钮互斥；点击已选按钮请求标准处理。**Use default** 恢复 Model 配置层级。HTTP 操作字段为 `fast: "ultrafast"`；已有 `true`、`false` 和 null 含义不变。TUI 对应 `/fast ultrafast`。
-
-OpenAI 当前要求 Pro $500 或符合条件的 Enterprise/Edu 工作区才能使用 Codex Ultrafast。在其他个人套餐购买额外额度不会解锁。GPT-6 Astra Ultrafast 对套餐内配额按 Standard 的 8 倍消耗，对购买额度按 6 倍；这些是用量倍数，不是端到端速度保证。当前可用性和工作区限制见 [Codex 速度与资格](https://developers.openai.com/codex/agent-configuration/speed)。Harness UI 本地检查 Model 连接，不检查账户权限；访问由 OpenAI 授予。其他模型（包括 Sol）不会通过此控件获得 Ultrafast 覆盖。
-
-Fast、Off 和 Ultrafast 替换实际请求层级，不改变推理强度或模式。状态显示单独记录请求的 **Ultrafast**，与模型默认值和实际服务结果分开。要作为 Astra Model 默认值，在其 YAML 设置 `settings.openai_service_tier: ultrafast`。
-
-### 永久设置：编辑 Model
-
-用 `/config` 定位选中配置目录。OpenAI/Codex 在 `models/<name>.yaml` 中添加或修改此字段，保留其他设置：
-
-```yaml
-settings:
-  openai_service_tier: priority
-```
-
-编写 OpenAI/Codex 配置使用 `openai_service_tier`。通用 `service_tier` 仍支持为兼容别名；两字段都有时，`openai_service_tier` 优先。只保留一项以免值冲突。其他提供方保留原生或通用服务层级设置。
-
-设置为 `default` 可永久采用标准服务，移除已配置层级字段则交由提供方选择。原生集成在支持时也接受通用 `auto` 和 `flex`；Fast 特指 `priority`，不是其他模型或推理级别。用 `a13n-harness-ui config validate` 验证（自定义配置传入同一 `--config`）。`/fast reset` 移除临时覆盖；未来 Run 加载 Model 当前文件设置。
+活动操作保留捕获值。Markdown 子级继承父级实际 Model；独立配置的子级和辅助 Model 保留自己的选择。观测费用是估算，不是订阅账单。见[选择与恢复](everyday-use.md#everyday-interaction)和[用量控制](everyday-use.md#tasks-usage-and-terminal-feedback)。
 
 ## Codex Model 示例
 
-保存为根配置旁的 `models/codex.yaml`。
+此例向已有配置添加一个 Codex 订阅 Model。
 
-`models/codex.yaml`:
+1. 运行 `a13n-harness-ui login codex` 并完成授权。
 
-```yaml
-schema_version: "1"
-kind: model
-id: model-codex
-name: Codex - GPT-6.1 Sol
-route: openai-codex:gpt-6.1-sol
-authentication:
-  kind: codex_subscription
-settings:
-  openai_reasoning_effort: high
-  openai_reasoning_summary: detailed
-  openai_store: false
-model_characteristics:
-  context_window_tokens: 350000
-  proactive_context_management_threshold: 0.65
-  compact_threshold: 0.90
-```
+2. 运行 `a13n-harness-ui config path`，找到 `configuration_path`。以该根 YAML 的父目录为起点，将以下完整文件保存为 `models/codex.yaml`。账户使用其他受支持模型时，替换路由中的模型 ID。
+
+   ```yaml title="models/codex.yaml — complete file"
+   schema_version: "1"
+   kind: model
+   id: model-codex
+   name: Codex
+   route: openai-codex:gpt-6.1-sol
+   authentication:
+     kind: codex_subscription
+   settings:
+     openai_reasoning_effort: high
+     openai_reasoning_summary: detailed
+     openai_store: false
+   model_characteristics:
+     context_window_tokens: 350000
+     proactive_context_management_threshold: 0.65
+     compact_threshold: 0.90
+   ```
+
+3. 运行 `a13n-harness-ui config validate`。自定义配置树应在每个子命令前使用相同的 `--config PATH`，包括登录。
+
+4. 在 TUI 选择 `/model model-codex`，发送简短提示，再检查 `/status`。作为 Agent 默认值时，设置其 `model: model-codex` 并清除临时 Model 覆盖。
+
+示例使用默认 Codex 账户组。[账户组](#account-store-locations)允许选择其他组，无须将 token 放入 YAML。
 
 ## Model 文件参考
 
-每个文件使用 `schema_version: "1"`、`kind: model`、唯一的 `model-` `id` 和易读 `name`。
+每个文件需要 `schema_version: "1"`、`kind: model`、以 `model-` 开头的唯一 ID，以及易读 `name`。
 
-| 字段                    | 默认值 | 含义                                                                             |
-| ----------------------- | ------ | -------------------------------------------------------------------------------- |
-| `route`                 | 必需   | 支持的提供方/模型路由，如 `openai-responses:gpt-5` 或 `openai-codex:gpt-6.1-sol` |
-| `authentication`        | 必需   | 下列显式身份验证形式之一                                                         |
-| `settings`              | `{}`   | 传入 Harness 和模型适配器的原生请求设置                                          |
-| `model_configuration`   | `{}`   | 支持的 HTTP/API 密钥提供方可选 `base_url` 和 `session_affinity_header`；订阅为空 |
-| `model_characteristics` | `null` | 可选原生 Harness 上下文与模型输入能力策略                                        |
+| 字段                    | 默认值 | 负责内容                                              |
+| ----------------------- | ------ | ----------------------------------------------------- |
+| `route`                 | 必需   | 提供方及其模型 ID，例如 `openai-responses:gpt-5`      |
+| `authentication`        | 必需   | 与路由匹配的凭据来源                                  |
+| `settings`              | `{}`   | 推理、输出限制等请求参数                              |
+| `model_configuration`   | `{}`   | 支持的连接设置：`base_url`、`session_affinity_header` |
+| `model_characteristics` | `null` | 本地上下文预算和输入策略                              |
 
-身份验证恰好接受一种形式：
+这些映射属于 **Model 文件**，不是根 YAML。API 认证恰好需要一个来源：
 
-```yaml
-# Environment variable, read at native use:
+```yaml title="Model file — read a process environment variable"
 authentication:
   kind: api_key
   env: OPENAI_API_KEY
 ```
 
-```yaml
-# Previously saved with `a13n-harness-ui auth key set key-primary`:
+```yaml title="Model file — use a saved key"
 authentication:
   kind: api_key
   credential_ref: key-primary
 ```
 
-```yaml
-# Native default account group, no literal token:
-authentication:
-  kind: codex_subscription
-```
+先用 `a13n-harness-ui auth key set key-primary` 保存 `key-primary`。环境引用填写变量名，不是密钥；使用时该变量必须存在于 Harness UI 进程中。凭据缺失会使请求失败，不会选择其他来源。
 
-Grok 使用 `kind: grok_subscription` 和兼容 `grok:` 路由。Copilot 使用 `kind: copilot_subscription` 和 `github-copilot:`。API 密钥身份验证要求 `env` 与 `credential_ref` 恰好有一项。订阅类型必须与路由匹配，不会静默回退到其他提供方凭据。
+订阅认证使用 `chatgpt_subscription`、`codex_subscription`、`grok_subscription` 或 `copilot_subscription`，对应 `openai-chatgpt:`、`openai-codex:`、`grok:` 或 `github-copilot:` 路由。Codex/Grok 可选 `group`。订阅端点不能覆盖。
 
 ### 上下文与模态策略
 
-在 `model_characteristics` 中：
+提供 `model_characteristics` 对象时，内部字段默认如下：
 
-| 字段                                     | 提供对象时的默认值 | 含义                                                                                                          |
-| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `capabilities`                           | `[]`               | 二进制输入声明：`image_understanding`、`video_understanding`、`audio_understanding`、`document_understanding` |
-| `url_input.video`                        | `[]`               | 原生视频 URL 子类型：`youtube`；与二进制视频能力独立                                                          |
-| `video_input.max_video_bytes`            | `10485760`         | 单个视频和整次请求所有内联视频的 Base64 编码后总字节上限                                                      |
-| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                     |
-| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                        |
-| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                      |
+| 字段                                     | 默认值     | 含义                                                                                                          |
+| ---------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `context_window_tokens`                  | `null`     | 正数本地工作预算；省略保留原生/目录行为                                                                       |
+| `proactive_context_management_threshold` | `0.65`     | 提醒比例，0–1；`null` 关闭派生阈值                                                                            |
+| `compact_threshold`                      | `0.90`     | 压缩比例，大于 0 且不超过 1                                                                                   |
+| `capabilities`                           | `[]`       | 二进制输入声明：`image_understanding`、`audio_understanding`、`video_understanding`、`document_understanding` |
+| `url_input.video`                        | `[]`       | 原生 URL 子类型，当前为 `youtube`；与二进制视频分开                                                           |
+| `video_input.max_video_bytes`            | `10485760` | Base64 编码后的视频预算，限制单个视频及请求总量                                                               |
 
-Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新序列化和编辑器保存使用 `context_window_tokens`；两者都提供时值必须一致。读取已有文件或对象不改写它们。核心 Harness Agent spec 要求规范名称。
-
-这些值指导 Harness 行为，不能让模型获得其本身缺少的模态或 token 权限。Agent 的 handoff 或压缩 Capability 上的显式 token 阈值仍优先。改变通用示例前，检查所选提供方支持的设置。
+预算控制本地行为，不授予提供方权限。Agent handoff/compaction Capability 的显式 token 阈值仍优先。Harness UI 接受旧 `context_window`；新保存使用 `context_window_tokens`，同时提供时两者必须一致。核心 Harness spec 要求规范名称。读取旧文件或捕获不会改写它们。
 
 ### 图片输入预处理
 
-模型文件支持 `model_characteristics.image_input`，它独立于上下文阈值与模型输入能力。省略时使用默认预处理，提供对象可自定义，设为 `null` 则关闭自动预处理：
+将此配置合并到 Model，可自定义图像预处理。省略 `image_input` 使用默认值，设为 `null` 关闭预处理：
 
-```yaml
+```yaml title="Model file — image preparation"
 model_characteristics:
   image_input:
     support_gif: false
@@ -421,31 +141,94 @@ model_characteristics:
     max_image_bytes: 5242880
 ```
 
-这个示例在首次超限时保留最新的 12 张图片，随后允许数量增长到 20，再进行下一次批量回收。`image_retention_ratio` 表示保留比例，不是移除比例；设为 `1` 时仅移除超限的图片。默认上限 20 是针对请求大小的保守折中，可根据端点能力调高。
+超限时保留最新 12 张图像，再允许增长到 20 张。比例表示保留量；`1` 只移除超限部分。字节按**每张图像**的 Base64 编码大小计算，不是原始文件或请求总大小。GIF 支持是声明策略，不是探测。未指定字段保留原生默认值；尺寸和切分见[完整图像策略](../a13n-harness/models.md#image-input-policy)。
 
-完整字段及默认值见共享的[图片输入策略参考](../a13n-harness/models.md#image-input-policy)，包括尺寸与切分控制。字节预算按**单张图片的 Base64 编码大小**计算，不是原始文件大小或整个请求的大小。对象中省略的字段保留原生默认值。GIF 支持是显式声明的策略，不会自动探测模型。
+根、独立子级和图像理解 Model 各自使用自身策略。捕获的 Run 在后续文件修改后仍保留完整策略。
 
-主模型、独立子 agent 的模型与图片理解模型各自使用自己的策略。Run 捕获会冻结完整策略；即使之后修改模型文件，恢复仍使用捕获的值。旧捕获保留原有序列化结果，不会被改写。
+## 原生请求设置与连接设置
+
+JSON 兼容请求参数放在 `settings`。嵌套对象、显式 `null` 和有意义的字符串空白会保留。已安装适配器/提供方在使用时验证含义；加载配置不发出推理请求。
+
+| 设置                                                                                  | 用途                              |
+| ------------------------------------------------------------------------------------- | --------------------------------- |
+| `max_tokens`、`temperature`、`stop_sequences`                                         | 生成控制                          |
+| `thinking`、`openai_reasoning_effort`、`anthropic_thinking`、`google_thinking_config` | 通用或原生推理控制                |
+| `service_tier`、`openai_service_tier`                                                 | 处理层级；原生 OpenAI 字段优先    |
+| `extra_headers`、`extra_body`                                                         | 原生请求扩展                      |
+| `openai_prompt_cache_key`、`openai_store`                                             | OpenAI 选项，受订阅适配器行为约束 |
+
+设置原样持久化，包括放在其中的秘密。使用专用凭据引用，分享前检查诊断内容。
+
+Host 连接构造使用 `model_configuration`。支持的 HTTP/API 密钥路由接受不含嵌入凭据、查询或片段的 HTTP(S) `base_url`；支持本地 HTTP。未知构造字段验证失败。订阅和原生 `xai:` gRPC 要求空连接配置。
+
+使用 API 密钥 **Google Cloud 网关**时，按下例修改完整 Model 的连接字段。这与向导的 `google:` Gemini Developer API 连接不同：
+
+```yaml title="Model file — Google Cloud gateway connection fields"
+route: google-cloud:your-gateway-model-id
+authentication:
+  kind: api_key
+  credential_ref: key-gateway
+model_configuration:
+  base_url: https://gateway.example.com
+```
+
+保存 `key-gateway`，填写网关模型 ID 和端点，验证后测试请求。SDK 添加版本/资源路径；追加 `/v1beta` 或 `/v1beta1` 不会切换传输。`google-gla:`、`google-vertex:` 和 `gemini:` 是 Cloud 别名。该路由提供 API 密钥认证，不配置 Cloud IAM/服务账户。
+
+## 网关会话亲和性
+
+网关已有读取会话 header 的路由规则时，可使用亲和性。在 Add Model 选择 **Gateway session affinity**，或填写 **Session affinity header**。保存的 Model 包含 header 名称：
+
+```yaml title="Model file — gateway wiring"
+model_configuration:
+  base_url: https://gateway.example.com/v1
+  session_affinity_header: x-litellm-session-id
+```
+
+替换端点和 header 为网关设置。字段放在 `model_configuration`，不放 `settings.extra_headers`。Harness 根据当前 Thread ID 派生稳定 UUID v5 作为值；不要自行填写值。省略/null 字段关闭。
+
+| 选择器预设            | 保存的 header          |
+| --------------------- | ---------------------- |
+| LiteLLM               | `x-litellm-session-id` |
+| Conversation ID       | `x-conversation-id`    |
+| Bifrost               | `x-bf-session-id`      |
+| X-Session-ID / 自定义 | `x-session-id`         |
+
+选择器配置客户端，不配置网关。通过网关日志验证实际路由；模型响应成功不证明亲和性或缓存复用。Bifrost 预设针对 API 密钥亲和性，不固定加权目标。原生 xAI gRPC 和订阅不提供此设置。
+
+同一 Thread 的轮次/重试保留值；子级、fork 和独立 Thread 使用各自 ID。header 名称按 Run 捕获。见[共享派生规则](../a13n-harness/models.md#model-request-affinity)。
+
+**升级旧文件：** 省略字段现在关闭旧版隐式 `x-session-id`；显式添加该名称可为后续 Run 保留行为。旧进程级开关不覆盖 Model 配置。自动网关/缓存/原生 Codex 默认值也由原始 Thread ID 改为派生 UUID，已有 Thread 可能一次性失去上游亲和性。本地历史和 ID 不变，文件不改写。
+
+## 订阅登录与 API 密钥
+
+Codex、Grok 或 Copilot 可运行一条登录命令，在浏览器完成打印的设备授权流程：
+
+```console
+a13n-harness-ui login codex
+```
+
+其他连接将 `codex` 替换为 `grok` 或 `copilot`。设备授权不需要 Host 回调，十五分钟内到期。浏览器能访问 Host 回环回调时，Codex/Grok 可使用 `--browser`；Codex 使用 1455 端口。没有自动方式回退；Copilot 没有浏览器回调模式。[ChatGPT](#chatgpt-subscription) 使用另一种回调流程。
+
+用 `a13n-harness-ui auth status` 检查登录状态。替换所选账户的其他身份需要 CLI `--allow-account-switch`。退出或替换前先检查选中的账户。
+
+API 访问可通过隐藏输入保存命名密钥：
+
+```console
+a13n-harness-ui auth key set key-primary
+a13n-harness-ui auth key list
+```
+
+然后在 Model 中使用 `credential_ref: key-primary`。向导也接受 `key:key-primary` 或 `env:OPENAI_API_KEY`。新输入密钥立即以新引用保存。不要将密钥放入对话。`auth key delete key-primary` 删除该密钥；先修改受影响的 Model 引用。
+
+密钥以明文保存在私有权限的 `<data-root>/auth.json`。捕获保存引用，不保存密钥字节。保护 Host 和备份。取消 Model 创建后，已完成密钥保存/登录仍保留。
 
 ### 账户存储位置
 
-Codex 和 Grok 凭据由 `<data-root>/oauth/accounts/<account-id>.json` 纳管。非敏感目录位于 `oauth/accounts.json`，用量快照位于 `oauth/state/`。这些文件以私有权限保存明文凭据，请保护 Host 和备份。
+使用 **Settings → Accounts & API keys** 添加、登录、重命名、暂停和分组 Codex/Grok 账户。**Ordered consumption** 按成员顺序使用；**Weighted balance** 按正整数权重分配 Run。在 **Settings → Models** 选择生成的组。
 
-升级后首次启动 App 时，Harness UI 一次性导入受支持的已有 Codex/Grok 登录。Codex 发现遵循 `CODEX_HOME` 和文件存储策略；Grok 依次检查 `GROK_AUTH_PATH`、`GROK_HOME`。不支持或无效的来源显示在 **Migration from existing CLI logins** 中，可通过原生登录恢复。原 CLI 文件保持不变。之后的刷新、登录、退出和删除只操作原生文件，不再导入外部登录。导入的副本与原 CLI 共享同一刷新授权：Harness UI 或原 CLI 任一方轮换凭据，都可能使另一方的登录失效，即使另一方的文件没有变化。请在受影响的客户端中分别重新登录。
+使用文件配置时，从账户页面复制账户 ID 并保存：
 
-已有 `codex_subscription` 或 `grok_subscription` Model 无需修改 YAML：省略 `group` 时选择 `codex-default` 或 `grok-default`，默认组初始包含迁移账户。删除默认组会被尊重；请恢复该组或显式选择其他组。
-
-打开 **Settings → Accounts & API keys**，添加并登录账户、重命名或暂停账户，以及创建同提供方账户组。**Ordered consumption** 按成员顺序使用，**Weighted balance** 按正整数权重分配 Run。在 **Settings → Models** 中为订阅 Model 选择账户组：
-
-```yaml
-authentication:
-  kind: codex_subscription
-  group: codex-work
-```
-
-账户组保存为 `subscription_groups/work.yaml` 等普通文件。从账户页面复制账户 ID，不要在配置中保存凭据：
-
-```yaml
+```yaml title="subscription_groups/work.yaml — complete file"
 schema_version: "1"
 kind: subscription_group
 id: codex-work
@@ -460,104 +243,235 @@ accounts:
     weight: 1
 ```
 
-Run 捕获组成员和策略，每次请求前检查账户暂停、退出、删除和凭据变化。优先使用套餐内额度；充值余额需要开启 **Allow rechargeable credits**。提供方快照可能落后于并发消耗，因此这是尽力控制，不是严格费用上限。认证或额度错误仅在响应交付前换号，不重放工具或已显示的流。对话的 **MAIN** 状态显示实际账户和选择原因，辅助推理不会覆盖它。Live 在连接时选择可用账户，并在该会话内固定使用。
+将组选择合并到订阅 Model，验证后用于新 Run：
 
-Codex 响应会立即更新其报告的用量窗口。请求前，若账户距离上次用量 API 检查已超过 **60 秒**，则刷新用量。空闲账户由 **10 分钟**的后台刷新兜底；重置时间不触发刷新。点击账户的 **Refresh**，或在 TUI 使用 `/usage accounts` 可立即刷新。`/usage subscription` 紧凑显示缓存的账户和组。刷新失败时保留最近成功快照并显示时间和错误。共享数据目录的多个 TUI 最终收敛到同一快照。**Reset voucher…** 和 `/usage reset` 单独要求选择账户、兑换券并明确确认；轮询和自动换号不会消耗兑换券。
-
-账户卡片按提供方显示对应额度：
-
-- **Codex：** 按实际时长显示 **5h**、**Weekly** 等窗口，每个窗口都有重置日期、本地时间和时区。模型专项额度与月度 credit 限制分开显示。无需打开 **Manage** 即可查看可用重置券数量和最早已知到期时间；充值 credits 是独立余额。兑换券详情查询失败时，仍保留用量接口返回的数量。
-- **Grok：** 显示当前周度或月度计费额度及下次重置时间，另列美元计价的已购 credits，以及提供方报告的旧版按量付费信息。查询使用 Grok Build 计费接口，不套用 Codex 窗口。缺少计费配置表示不可用，不是零；使用相同的账户刷新控件。
-- **GitHub Copilot：** 显示当前所选账户返回的额度类别，包括无限额度、剩余百分比或数量、额外用量权限和重置日期。进入页面时查询，之后每十分钟刷新，也可点击 **Refresh allowance**。查询使用官方客户端采用的内部接口；提供方拒绝查询时显示不可用。
-- **ChatGPT：** 直接链接到官方用量设置。此独立连接暂不提供数值额度，不会借用 Codex 的额度。
-
-```console
-a13n-harness-ui auth status codex --format json
-a13n-harness-ui auth logout codex
-a13n-harness-ui login codex --allow-account-switch
+```yaml title="Model file — select the account group"
+authentication:
+  kind: codex_subscription
+  group: codex-work
 ```
 
-退出和账户替换是显式凭据修改；先确认正在改变哪个原生账户。不要将账户文件、token 或已存密钥文件放入诊断报告。
+Run 捕获成员/策略，每次请求前检查账户暂停、删除、退出和凭据。优先使用套餐内额度；充值余额需要 **Allow rechargeable credits**。快照可能落后于并发消耗，因此不是严格支出上限。认证/额度失败可在响应交付前换号；不重放工具或可见流。**MAIN** 显示实际根账户和原因，辅助调用不替换它。Live 在连接时固定一个可用账户。
 
-## 在 TUI 中切换 Agent 或 Model
+凭据位于数据根下私有权限的明文 `oauth/accounts/<account-id>.json`。`oauth/accounts.json` 是非敏感目录；`oauth/state/` 保存用量快照。升级后首次启动可从 `CODEX_HOME` 或 `GROK_AUTH_PATH`/`GROK_HOME` 一次性导入支持的凭据。原文件不变，后续操作使用原生文件，不再导入。复制的刷新授权共享：任一客户端轮换可使另一方失效，需分别重新登录。不支持的导入显示在 **Migration from existing CLI logins**。
 
-`/agent` 列出已配置 Agent 和模型路由。`/agent agent-primary` 为下一操作切换完整 Agent 配置，并清除 `/thinking`、`/fast` 和 `/pro` 的临时覆盖。`/model` 列出已配置 Model；`/model <model-id>` 只覆盖模型，并按 Project 记住选择，不改变 Agent。`/model default` 清除覆盖和 Project 偏好。记住的 Project Model 在对话导航、Agent 选择和 TUI 重启后保留。显式启动 `--agent` 跳过偏好；无界面运行和 API 调用方不继承。恢复与重置见[日常模型选择](everyday-use.md#everyday-interaction)。历史和 Environment 选择保留，不改写 YAML。用 `a13n-harness-ui add agent` 添加其他使用模型的 Agent，再切换。
+省略组选择 `codex-default` 或 `grok-default`，初始包含迁移账户。删除默认组会被尊重；恢复该组或选择其他组。
 
-`/thinking low` 不编辑文件即可修改推理；`/thinking default` 返回实际 Model 配置。正在执行的操作保留捕获值。继承父级的 Markdown subagent 获得父级实际配置；独立引用的 Agent 保留自己的 Model。
+**刷新额度。** Codex 响应立即更新报告的窗口。请求前刷新至少 60 秒前的用量 API 观测；空闲账户每十分钟刷新。重置日期不安排轮询。**Refresh** 或 `/usage accounts` 立即刷新，`/usage subscription` 查看缓存摘要。失败保留最后观测及时间/错误。共享数据根的 TUI 最终共享这些观测。
 
-`/status` 显示根级观测用量，Codex 还提供只读订阅限制。`/usage reset` 独立打开需明确确认的额度兑换。本地观测费用是估计，不是订阅账单。见[用量与额度确认](everyday-use.md#tasks-usage-and-terminal-feedback)。
+卡片显示提供方各自额度：Codex 时长窗口、模型/月度限制、兑换券和充值余额；Grok 计费额度及美元购买额度；Copilot 返回的额度类别；ChatGPT 的官方用量设置链接，而非数值额度。缺失/失败数据表示不可用，不是零。Copilot 在进入时及每十分钟刷新，也提供 **Refresh allowance**。兑换券详情失败保留已知数量。**Reset voucher…** 或 `/usage reset` 需要账户、兑换券及明确确认；自动刷新/换号不兑换。
+
+## ChatGPT 订阅
+
+1. 在 Add Model 选择 **ChatGPT subscription**，或运行 `a13n-harness-ui login chatgpt`。
+2. 打开登录链接并授权。CLI 中将**完整回调 URL**粘贴到隐藏输入，即使浏览器回环页面无法加载也可以。WebUI 先自动尝试回调；远程 Host 可展开 **Callback cannot reach this server?** 粘贴。
+3. 使用发现的账户模型 slug 保存 Model，再选中它并测试提示。
+
+```yaml title="models/chatgpt.yaml — complete file; replace the slug"
+schema_version: "1"
+kind: model
+id: model-chatgpt
+name: ChatGPT Subscription
+route: openai-chatgpt:YOUR_ACCOUNT_MODEL_SLUG
+authentication:
+  kind: chatgpt_subscription
+settings: {}
+model_configuration: {}
+```
+
+回调含一次性授权码，不要放进对话或共享诊断。URL 被校验并用于交换，不作为 URL 抓取。无效 URL 可修正，交换失败需重新登录。这不是设备码流程。
+
+原生传输通过 Responses 发送完整历史/developer 指令，使用 `store: false` 和 `stream: true`，普通调用也收集必需流。其 profile 省略通用 temperature、Top P 和输出 token 限制。不支持静态 API 密钥或端点覆盖。账户目录可见后仍需测试推理。
+
+凭据保存在 Host `auth.json` 独立命名空间，不用 Codex 存储。`auth logout chatgpt` 删除本地 token，保留注册；远程授权在账户设置管理。活动 Model 可保留缓存 token。到期/401 刷新保存完整凭据集，无跨进程刷新互斥。替换 Host 账户影响其所有用户。
+
+## GitHub Copilot 订阅
+
+选择 **GitHub Copilot subscription**，通过设备登录授权，再选择 **Fetch account models** 或手工填 ID。发现列出已认证的 Chat Completions 模型，不进行推理。原生登录不需要安装 Copilot CLI、注册应用或 client secret。请检查授权页请求的 `read:user`、`read:org`、`repo` 和 `gist` 权限。
+
+```yaml title="models/copilot.yaml — complete file; replace the model ID"
+schema_version: "1"
+kind: model
+id: model-copilot
+name: Copilot
+route: github-copilot:YOUR_MODEL_ID
+authentication:
+  kind: copilot_subscription
+settings: {}
+model_configuration: {}
+```
+
+选中已保存 Model 并发送提示来验证实际访问。Copilot 使用原生 profile，不采用 Codex Fast/上下文/工具预设或自动选择的审查器。设置、登录、保存及空对话不发出推理。
+
+原生凭据及选中账户/来源位于私有权限的明文 `<data-root>/oauth/copilot.json`。**Choose account source** 可改为复用官方 GitHub.com CLI 文件，但要求 `$COPILOT_HOME/settings.json` 显式开启 `storeTokenPlaintext: true`；默认目录 `~/.copilot`。从 `config.json` 读取支持的旧字符串/对象 token 格式及 snake_case 别名，不复制凭据。兼容测试使用合成 CLI 1.0.88 Linux 文件；OS keychain 存储不回退到旧文件。优先原生登录，不要降低 CLI 存储保护。
+
+```console
+a13n-harness-ui auth sources copilot
+a13n-harness-ui auth select copilot --source native --account YOUR_LOGIN
+a13n-harness-ui auth status copilot --format json
+```
+
+用 `--source copilot_cli_file` 显式选择文件来源。凭据缺失/过期不会自动选择其他账户。
+
+> [!WARNING]
+> `a13n-harness-ui auth logout copilot` 删除选中的凭据。来源为 CLI 文件时，也会影响官方 CLI 和使用该文件的其他 Host。其他账户保留；需恢复选中凭据或选择其他来源。退出不撤销 GitHub 授权，保留文件无关数据，但将注释/格式规范化为 JSON。
+
+## API 上下文默认值与名称
+
+新 API 连接采用 **350,000 token** 工作预算，或更小的已知目录窗口。未知 ID 也以 350,000 作为本地默认值。可输入 `128000` 或 `128k` 等正数，并保持在端点实际容量内。
+
+保存的提醒和压缩比例为 65% 和 90%：350k 时为 227,500 和 315,000 token。依据最近根请求占用，不是累计用量，使用标准 Harness 摘要提示。复用 Model 保留其策略。
+
+生成名称描述连接和模型；Agent 建议添加 **- Coding**。add 命令避免名称冲突，允许自定义 Unicode 名称。名称是标签，引用仍用 ID，不重命名已有资源。
+
+## Codex 推理与上下文
+
+高级设置提供本地预算 **standard: 272,000**、**balanced: 350,000**（默认）和 **extended: 872,000**。选择端点/账户支持的预算。它控制提醒/压缩时机，不提高提供方限制。
+
+`/thinking` 显示适配器支持的强度、token 预算或 Off。`/thinking default` 恢复 Model 配置。推理强度与显示细节独立。状态行报告请求设置；只展示提供方公开的推理内容。
+
+Codex 移除 `max_tokens` 等不支持的通用设置，强制 `openai_store: false`。其他显式 `openai_*` 字段遵循原生验证。API 输出预算预设不用于 Codex 订阅创建。
+
+## Pro 推理模式
+
+支持的 Responses/Codex Model 中，`/pro on` 请求 Pro，`/pro off` 请求 Standard，**不是关闭推理**。`/pro reset` 恢复 Model 配置模式，该模式可能也是 Pro。未设置表示 Provider default。WebUI 在 **Agent & Model settings** 提供同样独立控件。
+
+永久选择可合并到选中 Model：
+
+```yaml title="Model file — reasoning mode"
+settings:
+  openai_reasoning_mode: pro
+  thinking: high
+  openai_reasoning_summary: detailed
+```
+
+使用 `standard` 选择 Standard，移除模式字段采用提供方默认。模式、强度、摘要偏好和 Fast 互相独立。临时模式在 `/new` 和进程内 `/resume` 后保留，选择 Agent/Model 后清除，新 TUI 不从历史恢复。不支持的连接或冲突 `extra_body.reasoning` 会拒绝显式选择。适配器支持不等于账户权限；捕获的 Run 保留原设置。
+
+## Fast 模式与服务层级
+
+新 Codex 设置默认 **Fast**，保存 `openai_service_tier: priority`；**Standard** 保存 `default`。复用已有 Model 保留层级。
+
+### 临时设置：使用 `/fast`
+
+| TUI 命令          | 请求层级                         |
+| ----------------- | -------------------------------- |
+| `/fast`           | 切换实际优先处理                 |
+| `/fast on`        | `priority`                       |
+| `/fast off`       | `default`                        |
+| `/fast ultrafast` | Codex GPT-6 Astra 的 `ultrafast` |
+| `/fast reset`     | 继承 Model 文件                  |
+
+文件指定 priority 时，Off 与 reset 不同。覆盖跨 `/new` 和 `/resume` 保留，直到退出或选择 Agent/Model。推理不变，继承的 Markdown 子级受影响，独立/辅助 Model 不变。YAML 和已保存 Thread 配置不改动。
+
+Fast 是请求设置，不是速度保证。状态显示请求层级，提供方支持、额度和费用决定实际服务。不支持层级按原生行为处理，不静默换层级重试。
+
+### Codex GPT-6 Astra 的 Ultrafast
+
+路由 `openai-codex:gpt-6-astra` 可使用 `/fast ultrafast`，或 WebUI Agent & Model 设置中 **Fast** 旁的 **Ultrafast**。按钮互斥，点击已选按钮请求 Standard，**Use default** 恢复文件值。HTTP 操作使用 `fast: "ultrafast"`；布尔/null 保留原含义。
+
+Harness UI 将此控件限制到支持的连接，不检查账户资格。选择前向提供方确认访问和用量条款。请求不改变推理强度或模式。永久设置可在该 Model 保存 `settings.openai_service_tier: ultrafast`。
+
+### 永久设置：编辑 Model
+
+将层级合并到选中 Model，保留其他设置：
+
+```yaml title="Model file — processing tier"
+settings:
+  openai_service_tier: priority
+```
+
+验证，用 `/fast reset` 清除临时覆盖，开始新 Run。`default` 请求 Standard，移除层级字段使用提供方默认。通用 `service_tier` 仍是别名，同时存在时 OpenAI 专用字段优先。只保留一个字段。其他提供方使用原生/通用字段；`auto`/`flex` 依赖适配器支持。
+
+## 原生媒体输入
+
+新 Model 创建从内置目录保存已知输入声明。未知 ID 不猜测媒体能力。确切已知 ID 在自定义端点后也可能获得同样默认值，因此需验证端点支持。已有文件不自动补齐。
+
+为已有 Model 开启受支持图像输入，可合并：
+
+```yaml title="Model file — image input declaration"
+model_characteristics:
+  capabilities: [image_understanding]
+```
+
+保留列表中其他所需声明。验证、开始新 Run，请 Agent 检查一张小图。这些是 **Model 输入**能力，与 Agent 工具/Capability 和输出模态不同。
+
+已知原生 Google 连接还可声明音频/视频及 YouTube 输入。端点支持时：
+
+```yaml title="Model file — native video and audio"
+model_characteristics:
+  capabilities: [image_understanding, audio_understanding, video_understanding]
+  url_input:
+    video: [youtube]
+  video_input:
+    max_video_bytes: 10485760
+```
+
+`view` 和 `read_media_url` 优先使用原生输入，再使用[配置的理解 Model](#media-understanding-defaults)。直接媒体 URL 下载有界二进制输入；粘贴的链接仍是文本。YouTube 保持原生 URL，不支持时无下载回退。URL 声明不需要单独 Agent Capability/reader。
+
+原生视频默认编码后单个/总量预算为 10 MiB，覆盖本地 `view` 和直接提供视频。不会自动压缩、切分、提取帧或上传。提供方 413/明确 payload 大小错误可移除内联图像/视频并重试一次；认证、权限、MIME、限流和下载错误保留各自处理。请求过滤/恢复保留原历史。
+
+## 媒体理解默认值
+
+1. 创建声明所需图像/视频/音频输入能力的已保存 Model。
+2. 打开 **Settings → Models → Media understanding**，选择每种回退并保存。**Set as…** 菜单或 TUI `/model defaults` 编辑同一全局选择。
+3. 使用没有对应原生输入能力的主 Model，开始新 Run，请它检查媒体文件。
+
+这些引用放在根文件，与前面的 Model 示例不同：
+
+```yaml title="a13n-harness-ui.yaml — merge global fallbacks"
+media_understanding:
+  image: model-vision
+  video: model-video
+  audio: null
+```
+
+替换为已有 ID。每个 Model 必须声明匹配输入能力；删除 Model 或声明前先移除引用。选择与主 Model/记住的 Project Model 分开。
+
+原生支持的主 Model 直接收到媒体，不初始化辅助 Model。否则所选 Model 使用自己的捕获设置、凭据、输入策略和 Thread 亲和性，返回文本，不继承临时主 Model 推理/Fast 覆盖。省略/null 使用 [Harness 环境变量回退](../a13n-harness/multimedia-understanding.md)；清除选择不关闭该回退。已配置 Model 失败会报告，不静默替换。
+
+保存检查引用/声明，不请求提供方。仅需使用时加载凭据，可能产生费用。捕获/恢复的 Run 和子级保留解析的配置。它控制文件理解，不转换不支持的输入框附件，也不强制原生输入经过代理。
+
+## 入门模型选择
+
+已安装发行版维护 setup 和 Add Model 的建议。选择提供的路由，或输入提供方的区分大小写 ID。建议不查询账户权限；API 和订阅访问可能不同。通过第一条提示检查实际连接，不把目录条目当作测试成功。
+
+单独创建的 **Codex shell review** 或 **Grok shell review** Model 负责审查，无需独立 Agent。设置保留用户编辑的审查资源。API 设置仅在选择审查器时开启快捷配置。见 [shell 审查](configuration-recipes.md#configure-shell-review)。
 
 ## API 提供方与设置预设
 
-使用 Cloudflare AI Gateway 时，选择 **Cloudflare AI Gateway**。基础 URL 填写 `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai`，使用具有 **Account → Workers AI → Read** 权限的 Cloudflare token（`CLOUDFLARE_API_TOKEN`）。模型 ID 保留厂商前缀，例如 `openai/gpt-5.4`。`cloudflare:` 路由对所有受支持的聊天模型统一使用网关的 Chat Completions API。切换厂商只需修改模型 ID，无需选择协议。在 Cloudflare 中配置默认别名的 BYOK 或统一计费。通过 `settings.extra_headers` 中的 `{"cf-aig-gateway-id": "your-gateway"}` 指定网关；省略时第三方模型使用默认网关。不暴露单独的 Workers AI 目录和原生服务端工具。
+有原生连接时，选择提供方原生连接。专用 `deepseek:`、`zai:` 和 `moonshotai:` 路由在工具续接和后续轮次保留提供方推理内容；通用 Chat Completions 可能失去该行为。xAI 提供 `grok:` Chat Completions 和带原生工具的 `xai:` gRPC。两种 API 密钥连接均独立于 Grok 订阅登录。
 
-向导式 HTTP/API 密钥目录包含 OpenAI Responses、OpenAI 兼容 Chat Completions、Anthropic、Google Gemini API、OpenRouter、DeepSeek、Z.AI / GLM、Moonshot AI / Kimi、Groq、Mistral、Together AI、Fireworks AI、Cerebras、SambaNova 和 Vercel AI Gateway 集成。xAI 有两种独立 API 密钥选项：`grok:` 使用 Chat Completions，`xai:` 使用原生 SDK 默认 gRPC 端点，提供原生 X Search 和其他 xAI 工具。原生 SDK 跳过 HTTP 基础 URL 步骤。两者都不同于 Grok 订阅身份验证。其他 OpenAI 兼容服务，选择 **OpenAI-compatible · Chat Completions**，填写服务 URL 和模型 ID。Cloud IAM 和订阅传输不是通用 URL/密钥连接。
+其他兼容 HTTP 服务选择 **OpenAI-compatible · Chat Completions**，再填写 URL 和模型 ID。Cloud IAM 和订阅需要各自传输。Cloudflare AI Gateway 使用以 `/ai` 结尾的账户 API URL、具有 Workers AI Read 权限的 token，以及带厂商前缀的模型 ID。可选 `settings.extra_headers.cf-aig-gateway-id` 选择网关，否则第三方模型使用默认别名。在网关配置 BYOK 或统一计费。该连接提供 Chat Completions，不提供独立 Workers AI 目录/原生服务端工具。
 
-预设选择器在推理旁显示输出上限；最后的 Environment 或命名问题在保存前显示组装的连接和设置。首次设置、`add model` 和新 Model 的 `add agent` 共用这些创建时预设。预设写入普通、可编辑 YAML：
+预设在**创建时**写入普通设置。选择器在保存前显示推理和输出上限。Provider defaults 不添加预设输出上限，但原生默认仍可限输出。已有文件和显式设置映射（含空映射）保留。
 
-- **OpenAI Responses：** 上游配置识别为支持推理的模型使用 high 推理、`openai_reasoning_summary: detailed` 和 `openai_store: false`。还提供 low、medium、extra-high（`xhigh`）和提供方默认选项。未知或非推理模型（如 GPT-4.1）默认中性设置，无推理摘要参数。Chat Completions 不接收 Responses 专用摘要字段。
-- **Anthropic：** 支持自适应的模型提供自适应推理、返回摘要和 high effort，以及提供方默认预设。较旧模型提供扩展推理，8192 token 预算和 16,384 token 输出上限，不再提供其不支持的自适应选项。Sonnet 4.5 等支持交错推理的旧模型保留 `interleaved-thinking-2025-05-14`；Haiku 4.5 和 Claude 3.7 使用不带该 beta 的普通扩展推理。自适应推理自动交错。
-- **Google Gemini：** 原生推理预设请求可用的思考摘要，并将强度映射到所选模型支持的级别或预算。
-- **OpenRouter：** 推理预设用 `exclude: false` 请求返回推理内容。
-- **DeepSeek、GLM 和 Kimi：** 专用原生集成保留返回的 `reasoning_content`，在工具续接和后续轮次发送回模型。已识别推理模型提供 **Thinking · preserved**（`thinking: true`）；GLM 还保存 `zai_clear_thinking: false` 并使用原生 Z.AI 请求转换。选择 `deepseek:`、`zai:` 或 `moonshotai:` 而非通用 OpenAI 兼容路由，以保留提供方专用行为。不提供通用“off”选项：部分模型始终推理，Kimi 原生关闭控制也不等同于统一 `thinking: false`。
+- **OpenAI Responses：** 已识别推理 profile 提供强度和返回摘要控制；Chat Completions 省略 Responses 专用摘要字段。
+- **Anthropic：** 原生 profile 选择自适应、扩展或交错推理。未知 ID 不获得猜测的推理控制。
+- **Google：** 强度映射到支持的级别/预算，并请求可用摘要。
+- **OpenRouter：** 推理预设用 `exclude: false` 请求返回推理。
+- **DeepSeek/GLM/Kimi：** 已识别模型提供 **Thinking · preserved**；GLM 还写入 `zai_clear_thinking: false`。不会为始终推理或采用其他控制的模型假设通用 Off。
 
-DeepSeek Reasoner/V4 Pro、GLM 4.7/5.3 和 Kimi K2.5/K2 Thinking 的流解析、工具结果续接和序列化下一轮重放，已用模拟原生 SDK HTTP 响应进行回归测试。测试验证本地请求准确性，不验证真实账户访问或提供方可用性。
+返回推理是提供方公开的内容或摘要。原生设置和端点接受情况仍由适配器/提供方负责。
 
-模型不支持建议推理设置时，选择 **Provider defaults**。它不插入 `max_tokens`；原生适配器/提供方保留默认值，仍可能限制输出。预设不授予权限或提高 token 上限。“Returned thinking”指提供方公开内容或摘要，不是私有内部推理。已有资源文件绝不迁移到新预设默认值。
+### Anthropic 缓存默认值
+
+Anthropic 创建预设保存显式分块缓存开关，自定义 ID/端点也适用：
+
+```yaml title="Anthropic Model — cache fields saved by presets"
+settings:
+  anthropic_cache_instructions: true
+  anthropic_cache_tool_definitions: true
+  anthropic_cache_messages: true
+```
+
+该连接预设使用这些字段而非统一缓存控制。显式 false、时长或已编写空设置映射仍优先。其他协议的 Claude 不自动获得这些字段。已有文件需主动编辑或应用预设。
+
+已识别自适应 profile 保存 `anthropic_thinking: {type: adaptive, display: summarized}` 和 high effort。自适应预设省略 interleaved-thinking、context-management 和 1M-context beta header。网关需要 beta 时，显式配置 `settings.anthropic_betas`。始终推理的模型不提供 Off。
 
 ### 配套输出预算
 
-对下面确切、经过审查的模型 ID，选择推理预设也保存 `settings.max_tokens`。这些是**每请求输出建议值**，不是 Run 总限制、模型最大值或强制输出量。推理可能按提供方原生计算消耗输出额度。工作上下文预算独立控制提醒和压缩；选择更小的预算不会按比例缩小这些值。
+部分经审查 API 模型 ID 将推理预设与 `settings.max_tokens` 配对。选择器显示确切值；保存前按端点和预期响应检查。这是**每请求输出上限**，不是 Run 总限制或目标长度。推理可能消耗其中一部分。上下文提醒/压缩独立，不调整上限。
 
-| 连接与经审查的模型 ID                                                                                                             | 推理选择                     |      保存的 `max_tokens` |
-| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -----------------------: |
-| OpenAI Responses / Chat Completions：`gpt-5`、`gpt-5.4`、`gpt-5.4-mini`、`gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra` | low / medium / high 或 xhigh | 16,384 / 32,768 / 65,536 |
-| Anthropic：`claude-sonnet-5-5`、`claude-opus-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-sonnet-4-6`、`claude-opus-4-6` | adaptive                     |                   32,768 |
-| Anthropic：`claude-haiku-4-5`、`claude-sonnet-4-5`                                                                                | extended / interleaved       |                   16,384 |
-| Google：`gemini-3.1-pro-preview`、`gemini-3.5-flash`、`gemini-2.5-pro`、`gemini-2.5-flash`                                        | low / medium 或 high         |          16,384 / 32,768 |
-| DeepSeek：`deepseek-v4-pro`、`deepseek-v4-flash`、`deepseek-reasoner`                                                             | Thinking · preserved         |                   32,768 |
-| Z.AI：`glm-5.3`、`glm-5.2`、`glm-4.7`、`glm-4.5`                                                                                  | Thinking · preserved         |                   32,768 |
-| Moonshot AI：`kimi-k2.6`、`kimi-k2.5`、`kimi-k2-thinking`                                                                         | Thinking · preserved         |                   32,768 |
-| OpenRouter：`openai/gpt-5.4`                                                                                                      | low / medium / high          | 16,384 / 32,768 / 65,536 |
-| OpenRouter：`anthropic/claude-sonnet-4.6`、`google/gemini-2.5-pro`                                                                | low / medium 或 high         |          16,384 / 32,768 |
+例如，经审查 OpenAI 强度预设对 low/medium/high-or-xhigh 使用 16,384/32,768/65,536；经审查 Claude 自适应预设使用 32,768，显式 8,192 token 扩展推理保留 16,384 输出。Gemini 2.5 high 在 32,768 输出上限内使用 24,576 思考预算。适用范围依确切经审查模型及原生 profile，而非名称前缀；未经审查 Claude 自适应保留 16,384 基线。其他未经审查路由不增加上限。订阅创建不使用 API 预设。
 
-所选原生模型配置仍决定可提供哪些推理预设。Gemini 2.5 原生 high 推理使用 24,576 token 思考预算，32,768 token 输出上限为回答留空间。Claude 显式 8192 token 扩展思考预算保留已有 16,384 token 上限，无论是否启用交错推理。未经审查的 Claude 自适应预设也保留 16,384 token 基线。其他未经审查模型和路由不加输出上限；增加建议项或匹配模型名前缀不会自动设置预算。确切经审查 ID 在自定义端点后获得同样可编辑建议，但端点限制可能不同。Codex、Grok 和 Copilot 订阅创建不使用 API 预设。
-
-根据端点、上下文大小、推理需要、延迟和费用检查保存值。之后可独立编辑 `settings.max_tokens`。改变 `/thinking` **不会** 重新计算。复用 Model、加载已有文件或向设置 API 显式传入设置，都不应用预设。没有运行时自动预算策略、上下文溢出保证、Harness 预设依赖，也不在设置时进行网络查询。
-
-发行版建议在 2026 年 9 月 10 日依据提供方参考检查：[OpenAI 模型限制](https://developers.openai.com/api/docs/models/gpt-5.6-sol)、[Claude 模型限制](https://platform.claude.com/docs/en/models/sonnet-4-6/overview)、[Gemini 输出限制](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro)、[DeepSeek 模型详情](https://api-docs.deepseek.com/quick_start/pricing)、[GLM 模型详情](https://docs.z.ai/guides/llm/glm-5.3)、[Moonshot 模型卡](https://huggingface.co/moonshotai/Kimi-K2.5)和 [OpenRouter 模型元数据](https://openrouter.ai/api/v1/models)。来源描述模型能力和示例，不保证自定义端点或账户接受每项设置。原生 SDK 请求序列化用模拟 HTTP 测试，不是真实提供方测试。特别是已安装原生 DeepSeek 适配器发送 `max_completion_tokens`，而 DeepSeek API 参考记录 `max_tokens`；该别名的接受和执行尚未在真实服务验证。Harness UI 不覆盖适配器字段映射。
-
-添加连接或 Agent 请按[设置流程](setup.md#add-another-connection-or-agent)操作。API 密钥设置只有在选定审查模型后才启用 shell 审查，审查器保存为使用同一连接的独立 Model。现有根审查策略保持不变。风险阈值和故障处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)；审查超时始终拒绝执行。
-
-## 原生请求设置与连接设置
-
-通过 API 密钥网关使用 **Google Cloud** 时，应显式编写 Model 路由；设置目录的 `google:` 连接使用 **Gemini Developer API** ，是不同传输：
-
-```yaml
-route: google-cloud:your-gateway-model-id
-authentication:
-  kind: api_key
-  credential_ref: key-gateway
-model_configuration:
-  base_url: https://gateway.example.com
-```
-
-保留网关模型 ID 和端点。原生 SDK 添加版本和资源路径；不要仅为切换传输追加 `/v1beta` 或 `/v1beta1`。已有 `google-gla:`、`google-vertex:` 和 `gemini:` 别名使用相同 Cloud 传输；`google-cloud:` 明确表示该选择。此 API 密钥路由不配置 Cloud IAM 或服务账户凭据。验证配置后测试真实请求：仅接受配置不证明网关或模型访问。
-
-`settings` 是传入 Harness 和模型适配器的 JSON 兼容对象，不是 Harness UI 参数允许列表。原生提供方专用及未来选项、嵌套对象、显式 `null` 和字符串空白，在保存组合和新 Agent 构造中都保留。已安装原生 Model 和 provider 负责参数含义、优先级、支持值及使用时错误。加载配置或创建 Project 不验证提供方请求参数，也不发出模型请求。
-
-使用已安装模型适配器和提供方支持的设置，例如：
-
-| 设置                                                                                  | 用途                                                       |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `max_tokens`、`temperature`、`stop_sequences`                                         | 原生生成控制；停止序列中的空白有意义                       |
-| `thinking`、`openai_reasoning_effort`、`anthropic_thinking`、`google_thinking_config` | 通用或提供方专用推理；原生优先级适用                       |
-| `service_tier`、`openai_service_tier`                                                 | 通用或 OpenAI 服务层级；已配置 OpenAI 专用值按原生规则优先 |
-| `extra_headers`、`extra_body`                                                         | 原生请求扩展，包括嵌套 JSON 值                             |
-| `openai_prompt_cache_key`、`openai_store`                                             | OpenAI 请求选项；Codex 仍采用原生订阅行为                  |
-
-例如已有 `settings.service_tier: priority` 不重命名也继续工作；新编写的 OpenAI/Codex 配置使用 `settings.openai_service_tier: priority`。TUI 显示配置的原生层级；显式 `/fast on` 或 `/fast off` 仅为后续 Run 覆盖适用层级，`/fast reset` 恢复文件选择。不改写源文件。
-
-不透明设置原样保留，不通过猜测字段名清除密钥。密钥应使用专用身份验证和 MCP 凭据来源；除非希望值被持久化到本地配置捕获，否则不要将凭据放入 settings 或扩展配置。分享前检查诊断信息和显示的设置。
-
-`model_configuration` 是独立 Host 连接设置，不是请求设置：对设置向导提供的 HTTP/API 密钥提供方、旧 `openai` 别名，以及原生 `google-cloud` 路由和别名，接受可选 `base_url`。支持的 HTTP/API 密钥提供方还接受可选 [`session_affinity_header`](#gateway-session-affinity)。使用不含嵌入凭据、查询参数或片段的 HTTP(S) URL。支持本地 HTTP 端点。订阅端点不能覆盖。`xai:` 原生 SDK 路由也要求空 `model_configuration`；它使用上游默认 gRPC 端点，不接受 HTTP `base_url`。未知 Host 构造字段和不支持路由仍失败，不静默忽略。
+之后可独立编辑 `settings.max_tokens`。`/thinking` 不重算它，加载/复用 Model 也不重新应用预设。自定义端点可能有其他限制。原生序列化决定线上字段；已安装 DeepSeek 适配器发送 `max_completion_tokens`，本地模拟响应测试未建立其真实接受情况。依赖该上限前需验证实际端点行为。

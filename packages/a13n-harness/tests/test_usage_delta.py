@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 import pytest
 from a13n_harness import HarnessBuilder, RunBindings
 from a13n_harness.metering import ModelUsageBinding
+from a13n_harness.state import AgentContextState
 from a13n_harness.usage import (
+    USAGE_CAPABILITY_ID,
     BoundedRequestUsage,
     ModelUsageRecord,
     UsageDelta,
@@ -202,6 +204,8 @@ async def test_delta_reporter_keeps_complete_checkpoint_and_explicit_resume():
     assert restored is not None and len(restored.records) == 2
     assert reports.received[-1].after_sequence == saved.sequence
     assert reports.received[-1].records == restored.records[1:]
+    assert reports.received[-1].scope == restored.scope
+    assert second.usage == restored.summary
 
 
 def test_delta_rejects_nonadvancing_progress_and_mismatched_contributions():
@@ -218,3 +222,140 @@ def test_delta_rejects_nonadvancing_progress_and_mismatched_contributions():
         )
     with pytest.raises(ValidationError, match="unique"):
         UsageDelta(scope=snapshot.scope, after_sequence=0, records=(*snapshot.records, *snapshot.records))
+
+
+@pytest.fixture
+def constructed(monkeypatch):
+    """Count the full snapshots the ledger builds."""
+    count = [0]
+
+    class CountingSnapshot(UsageSnapshot):
+        def __init__(self, **values):
+            count[0] += 1
+            super().__init__(**values)
+
+    monkeypatch.setattr("a13n_harness.usage.UsageSnapshot", CountingSnapshot)
+    return count
+
+
+def published(reporter, state):
+    ledger = ModelUsageBinding.standalone(source="test").ledger
+    ledger.reporter, ledger._state = reporter, state
+    return ledger
+
+
+def dump(snapshot: UsageSnapshot | None) -> dict:
+    assert snapshot is not None
+    return snapshot.model_dump(mode="json")
+
+
+async def stored(state: AgentContextState) -> UsageSnapshot | None:
+    return await state.read(USAGE_CAPABILITY_ID, UsageSnapshot, version="1")
+
+
+async def test_delta_delivery_builds_the_state_snapshot_only_when_read(constructed):
+    state = AgentContextState()
+    reports = Reports()
+    ledger = published(reports, state)
+    for index in range(20):
+        ledger._append(contribution(ledger, f"record-{index}"))
+        await ledger._flush(reason="model_request")
+    await ledger._flush(reason="terminal")
+    assert constructed[0] == 0
+    assert [(delta.after_sequence, delta.scope.sequence, len(delta.records)) for delta in reports.received] == [
+        (index, index + 1, 1) for index in range(20)
+    ]
+    exported = await state.snapshot()
+    assert constructed[0] == 1
+    entry = exported.get(USAGE_CAPABILITY_ID)
+    assert entry is not None and entry.version == "1"
+    assert entry.data == dump(ledger.snapshot)
+    await ledger._flush(reason="terminal")
+    assert await state.snapshot() is exported
+
+
+async def test_state_reads_see_the_latest_accounting_without_per_delivery_builds(constructed):
+    state = AgentContextState()
+    ledger = published(Reports(), state)
+    ledger._append(contribution(ledger))
+    await ledger._flush(reason="model_request")
+    assert dump(await stored(state)) == dump(ledger.snapshot)
+    before = constructed[0]
+    ledger._append(contribution(ledger, "second"))
+    ledger._append(contribution(ledger, tokens=9))
+    await ledger._flush(reason="model_request")
+    await ledger._flush(reason="model_request")
+    assert constructed[0] == before
+    latest = await stored(state)
+    assert latest is not None and latest.sequence == 3
+    assert [record.record_id for record in latest.records] == ["first", "second"]
+    ledger.model_usage_coverage = "responses_only"
+    await ledger._flush(reason="model_request")
+    covered = await stored(state)
+    assert covered is not None and covered.model_usage_coverage == "responses_only"
+    assert dump(covered) == dump(ledger.snapshot)
+
+
+async def test_state_publishes_even_when_host_delivery_fails(constructed):
+    state = AgentContextState()
+    reports = Reports()
+
+    class FailingOnce:
+        failed = False
+
+        async def report_delta(self, delta):
+            if not self.failed:
+                self.failed = True
+                raise OSError("host unavailable")
+            await reports.report_delta(delta)
+
+    ledger = published(FailingOnce(), state)
+    ledger._append(contribution(ledger))
+    with pytest.raises(UsageReportError):
+        await ledger._flush(reason="model_request")
+    saved = await stored(state)
+    assert saved is not None and saved.sequence == 1
+    await ledger._flush(reason="model_request")
+    assert [(delta.after_sequence, delta.scope.sequence) for delta in reports.received] == [(0, 1)]
+
+
+async def test_save_writes_the_state_snapshot_eagerly(constructed):
+    state = AgentContextState()
+    ledger = published(Reports(), state)
+    ledger._append(contribution(ledger))
+    await ledger._flush(reason="model_request")
+    assert constructed[0] == 0
+    await ledger.save()
+    assert constructed[0] == 1
+    assert dump(await stored(state)) == dump(ledger.snapshot)
+
+
+async def test_full_snapshot_reporter_still_receives_each_complete_snapshot(constructed):
+    received: list[UsageSnapshot] = []
+
+    class Snapshots:
+        async def report(self, snapshot: UsageSnapshot) -> None:
+            received.append(snapshot)
+
+    state = AgentContextState()
+    ledger = published(Snapshots(), state)
+    for name in ("first", "second", "third"):
+        ledger._append(contribution(ledger, name))
+        await ledger._flush(reason="model_request")
+    assert [(snapshot.sequence, [record.record_id for record in snapshot.records]) for snapshot in received] == [
+        (1, ["first"]),
+        (2, ["first", "second"]),
+        (3, ["first", "second", "third"]),
+    ]
+    assert constructed[0] == 3  # one per delivery, none for the state
+    assert dump(await stored(state)) == dump(received[-1])
+
+
+async def test_reported_progress_is_the_delivered_sequence_when_a_refinement_reorders_pending_changes():
+    ledger = ModelUsageBinding.standalone(source="test").ledger
+    ledger.reporter = Reports()
+    ledger._append(contribution(ledger))
+    ledger._append(contribution(ledger, "second"))
+    ledger._append(contribution(ledger, tokens=7))
+    await ledger._flush(reason="model_request")
+    assert ledger._reported_sequence == ledger._persisted_sequence == 3

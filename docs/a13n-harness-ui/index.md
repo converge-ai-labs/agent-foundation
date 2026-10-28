@@ -1,80 +1,58 @@
 ---
 title: Harness UI
 sidebarTitle: Overview
-description: Work with Agents in your terminal and browser, and coordinate tasks by voice.
+description: Start an Agent in your terminal or browser, then configure it for your work.
 ---
 
-Harness UI is a workbench for individuals and trusted small teams. Ask an Agent to explore a repository, edit files, run checks, or investigate a problem. Choose its Model, tools, Skills, and execution Environment to suit the work.
+Harness UI lets you work with an Agent on your own computer or a connected Environment. Use it to understand a repository, make changes, run checks, or investigate a problem. You supply a model subscription or API key; Harness UI supplies the conversation, tools, and configuration.
 
 ## Install and start
 
-Install with [uv](https://docs.astral.sh/uv/getting-started/installation/), then launch from your project:
+For your first session, follow these two guides in order:
 
-```console
-uv tool install a13n-harness-ui
-cd your-repository
-a13n-harness-ui
-```
+1. [Install Harness UI](installation.md). The package includes the terminal interface and WebUI.
+2. [Set up your first Agent](setup.md). Connect a Model, choose execution permissions, and send a test message.
 
-Setup connects a Model using a supported subscription or API key and lets you choose execution permissions. Full Control uses your Host account; Sandbox checks the [local isolation requirements](environments-and-projects.md#execution-permissions) before use. See [Setup](setup.md) for the steps and [Installation](installation.md) for upgrades.
-
-Try a first prompt:
-
-```text
-Explain this repository's main entry point and tests. Do not modify any files.
-```
+You do not need to write YAML or create a Project before starting. Once the first message works, use [the terminal guide](everyday-use.md) or [the WebUI guide](webui.md) to work with files and follow-up tasks.
 
 ## Choose how you work
 
-| Interface | Use it for                                                              | Start here                       |
-| --------- | ----------------------------------------------------------------------- | -------------------------------- |
-| TUI       | Prompt, steer, and inspect work from your terminal                      | [Use the TUI](everyday-use.md)   |
-| WebUI     | Work with conversations, files, Git changes, and terminals in a browser | [Use WebUI](webui.md)            |
-| Live      | Talk through tasks and decisions while moving around the workspace      | [Enable Live Mode](live-mode.md) |
+**Terminal:** launch `a13n-harness-ui` from the repository you want to work on. The terminal interface stays in that working directory. [Learn the conversation controls](everyday-use.md).
 
-Start the browser server with:
+**Browser:** launch `a13n-harness-ui webui` and open the printed login link. WebUI provides conversations, files, Git changes, and terminals. [Start a browser session](webui.md).
 
-```console
-a13n-harness-ui webui
-```
-
-Open its printed login link. The browser includes guided setup. Live adds continuous voice to WebUI using a supported Codex subscription Model and browser microphone access.
-
-## Shape your workflow
-
-Start with the setup defaults, then add what the task needs:
-
-| Goal                                                 | Guide                                                       |
-| ---------------------------------------------------- | ----------------------------------------------------------- |
-| Switch models, accounts, or reasoning settings       | [Models and authentication](models-and-authentication.md)   |
-| Define an Agent and delegate tasks                   | [Agents and subagents](agents-and-subagents.md)             |
-| Organize repositories and choose where tools execute | [Environments and Projects](environments-and-projects.md)   |
-| Add reusable instructions                            | [Skills and Content Plugins](skills-and-content-plugins.md) |
-| Connect external tools and interactive results       | [MCP](mcp.md) and [MCP Apps](mcp-apps.md)                   |
-| Search the web and read files or media               | [Native and Web tools](native-and-web-tools.md)             |
-
-In the terminal, `/agent` and `/model` change the current selection, `/status` shows settings and usage, and `/resume` opens saved conversations. See the [command reference](command-reference.md) for the full command set.
+**Voice:** enable [Live Mode](live-mode.md) in WebUI to talk through work. Live requires a supported Codex subscription Model and browser microphone access.
 
 ## Configure the workbench
 
-The default configuration lives in `~/.a13n-harness-ui/`. The root YAML selects defaults; sibling files define Models, Agents, Projects, and extensions. Edit them directly or use WebUI's configuration editor.
+Three resources explain most configuration tasks:
 
-```console
-a13n-harness-ui config path
-a13n-harness-ui config show --format json
-a13n-harness-ui config validate
-```
+- A **Model** defines the provider connection and request settings.
+- An **Agent** selects a Model and adds instructions and tools.
+- A **Project** groups working directories and creation defaults.
 
-Use [configuration recipes](configuration-recipes.md) for common edits and the [configuration reference](configuration.md) for fields and precedence. Add project instructions in the repository's `AGENTS.md`.
+Start with [common configuration recipes](configuration-recipes.md) when you want to change one of these. Use the [configuration reference](configuration.md) to look up fields and precedence.
+
+## Shape your workflow
+
+Add one capability at a time, after your first conversation works:
+
+- **Change how the Agent thinks:** [connect another Model](models-and-authentication.md), then [configure an Agent](agents-and-subagents.md).
+- **Choose where it works:** [select an Environment and organize Projects](environments-and-projects.md).
+- **Teach a repeatable task:** [add a Skill](skills-and-content-plugins.md).
+- **Connect another tool service:** [add an MCP server](mcp.md); use [MCP Apps](mcp-apps.md) for interactive results.
+- **Use provider tools or media:** [configure native and Web tools](native-and-web-tools.md).
+
+The [command reference](command-reference.md) lists terminal commands once you know the workflow you need.
 
 ## Share and continue work
 
-A shared WebUI instance gives trusted collaborators access to the same credentials, configuration, and files. Native Host file access and terminals are enabled by default; `--no-share-computer` disables them independently of Agent execution permissions.
+Keep Harness UI running while the Agent works. Closing a browser tab leaves active Runs running; stopping the application ends that live execution. After a restart, continue from the last saved checkpoint as described in [recovery](automation-and-troubleshooting.md).
 
-Keep the application running while Agents work. Closing the browser leaves Runs active. After an application restart, continue from the last saved checkpoint. [Automation and troubleshooting](automation-and-troubleshooting.md) covers saved state and recovery.
+Share a WebUI instance only with trusted collaborators. They use the same credentials, configuration, and files. Native Host file access and terminals are enabled by default; `--no-share-computer` disables that sharing separately from Agent execution permissions.
 
-For a team platform with managed users, roles, and durable execution, use [Service](../a13n-service/index.md).
+For managed users, roles, and durable execution across workers, use [Service](../a13n-service/index.md).
 
 ## Build on Harness UI
 
-Embed the [Python App](embedding.md) or use its [HTTP API](http-api.md) to build another interface. Both use the same configuration and conversation store as the TUI and WebUI. [Harness](../a13n-harness/index.md) provides the underlying Agent execution library.
+To build another interface over the same configuration and conversation store, use the [Python App](embedding.md) or [HTTP API](http-api.md). To embed Agent execution in your own application with your own storage and access policy, start with [Harness](../a13n-harness/getting-started.md).

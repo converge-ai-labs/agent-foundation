@@ -9,6 +9,7 @@ import type { Schema } from "../../shared/api";
 import { conversationKeys, type ViewLevel } from "./api";
 import { ForkRun } from "./fork-run";
 import {
+  fixtureNavigationPage,
   fixtureForkThread,
   fixtureRun,
   fixtureThread,
@@ -65,9 +66,10 @@ beforeEach(() => {
     conversationKeys("ws_1").session("ses_1"),
     fixtureSession(),
   );
-  cache.setQueryData(conversationKeys("ws_1").threads("ses_1"), [
-    fixtureThread(),
-  ]);
+  cache.setQueryData(
+    conversationKeys("ws_1").navigation("ses_1"),
+    fixtureNavigationPage([fixtureThread()]),
+  );
   client = createClient({
     baseUrl: "https://service.example",
     auth: { type: "session", csrfToken: "csrf" },
@@ -207,8 +209,12 @@ it.each(["chat", "debug"] as const)(
       cache.getQueryData(conversationKeys("ws_1").run("run_fork")),
     ).toEqual(next);
     expect(
-      cache.getQueryData(conversationKeys("ws_1").threads("ses_1")),
-    ).toContainEqual(fixtureForkThread);
+      cache.getQueryData(conversationKeys("ws_1").thread(fixtureForkThread.id)),
+    ).toEqual(fixtureForkThread);
+    expect(
+      cache.getQueryState(conversationKeys("ws_1").navigation("ses_1"))
+        ?.isInvalidated,
+    ).toBe(true);
   },
 );
 

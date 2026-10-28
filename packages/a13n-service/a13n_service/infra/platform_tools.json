@@ -658,6 +658,14 @@
   {
     "effect": "read",
     "group": "execution",
+    "key": "list_session_threads",
+    "method": "GET",
+    "path": "/api/v1/sessions/{session_id}/threads",
+    "summary": "List Session Threads"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
     "key": "list_threads",
     "method": "GET",
     "path": "/api/v1/threads",

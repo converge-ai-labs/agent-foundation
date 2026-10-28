@@ -307,11 +307,15 @@ function DashboardWorkspace() {
     ],
   );
   return (
-    <Page title={t("Metrics")} className={styles.dashboardPage}>
+    <Page
+      title={t("Metrics")}
+      description={t(
+        "Monitor resource usage and performance across environments and devices.",
+      )}
+    >
       <PageActions secondary>
         {can("write") && !draft && (
           <Button
-            className={styles.editDashboard}
             aria-label={t("Edit dashboard")}
             title={t("Edit dashboard")}
             disabled={!selected}
@@ -400,89 +404,84 @@ function DashboardWorkspace() {
               value={targetKey}
               onChange={(key) => updateParam("target", key)}
             />
-            <div className={styles.time}>
-              <TimeRangePicker
-                value={
-                  pinned
-                    ? {
-                        start: new Date(pinned.start * 1000),
-                        end: new Date(pinned.end * 1000),
-                      }
-                    : { preset: duration }
+            <TimeRangePicker
+              value={
+                pinned
+                  ? {
+                      start: new Date(pinned.start * 1000),
+                      end: new Date(pinned.end * 1000),
+                    }
+                  : { preset: duration }
+              }
+              presets={timePresets}
+              maxDays={90}
+              disabled={busy}
+              onChange={(value) => {
+                if ("start" in value) {
+                  setPinned({
+                    start: Math.floor(value.start.getTime() / 1000),
+                    end: Math.floor(value.end.getTime() / 1000),
+                  });
+                  return;
                 }
-                presets={timePresets}
-                maxDays={90}
-                disabled={busy}
-                onChange={(value) => {
-                  if ("start" in value) {
+                setSeconds(value.preset);
+                if (draft)
+                  setDraft({
+                    ...draft,
+                    config: { ...draft.config, range_seconds: value.preset },
+                  });
+                setPinned(undefined);
+                refreshNow();
+              }}
+            />
+            {pinned && (
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t("Zoom out")}
+                  title={t("Zoom out")}
+                  onClick={() => {
+                    const midpoint = (range.start + range.end) / 2;
+                    const half = Math.min(7776000 / 2, range.end - range.start);
                     setPinned({
-                      start: Math.floor(value.start.getTime() / 1000),
-                      end: Math.floor(value.end.getTime() / 1000),
+                      start: Math.floor(midpoint - half),
+                      end: Math.ceil(midpoint + half),
                     });
-                    return;
-                  }
-                  setSeconds(value.preset);
-                  if (draft)
-                    setDraft({
-                      ...draft,
-                      config: { ...draft.config, range_seconds: value.preset },
-                    });
-                  setPinned(undefined);
-                  refreshNow();
-                }}
-              />
-              {pinned && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label={t("Zoom out")}
-                    title={t("Zoom out")}
-                    onClick={() => {
-                      const midpoint = (range.start + range.end) / 2;
-                      const half = Math.min(
-                        7776000 / 2,
-                        range.end - range.start,
-                      );
-                      setPinned({
-                        start: Math.floor(midpoint - half),
-                        end: Math.ceil(midpoint + half),
-                      });
-                    }}
-                  >
-                    <MagnifyingGlassMinusIcon aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setPinned(undefined);
-                      refreshNow();
-                    }}
-                  >
-                    {t("Back to live")}
-                  </Button>
-                </>
-              )}
-              <ChoiceField
-                label={t("Auto refresh")}
-                variant="filter"
-                value={String(interval)}
-                disabled={busy}
-                options={refreshOptions(t)}
-                onValueChange={(value) => {
-                  const seconds = Number(
-                    value,
-                  ) as DashboardConfig["refresh_seconds"];
-                  setRefresh(seconds);
-                  if (draft)
-                    setDraft({
-                      ...draft,
-                      config: { ...draft.config, refresh_seconds: seconds },
-                    });
-                }}
-              />
-              <RefreshButton pending={fetching > 0} onRefresh={refreshNow} />
-            </div>
+                  }}
+                >
+                  <MagnifyingGlassMinusIcon aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPinned(undefined);
+                    refreshNow();
+                  }}
+                >
+                  {t("Back to live")}
+                </Button>
+              </>
+            )}
+            <ChoiceField
+              label={t("Auto refresh")}
+              variant="filter"
+              value={String(interval)}
+              disabled={busy}
+              options={refreshOptions(t)}
+              onValueChange={(value) => {
+                const seconds = Number(
+                  value,
+                ) as DashboardConfig["refresh_seconds"];
+                setRefresh(seconds);
+                if (draft)
+                  setDraft({
+                    ...draft,
+                    config: { ...draft.config, refresh_seconds: seconds },
+                  });
+              }}
+            />
+            <RefreshButton pending={fetching > 0} onRefresh={refreshNow} />
           </div>
           {draft && (
             <div className={styles.editBar}>

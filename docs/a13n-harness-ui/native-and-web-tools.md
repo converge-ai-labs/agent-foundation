@@ -1,73 +1,170 @@
 ---
 title: Native tools and Web providers
-description: Configure provider-native search, code execution, and image generation, plus Host Web providers.
+description: Give an Agent web access, choose provider-native tools, and verify saved image output.
 ---
 
-Native tools execute through the selected Model provider. Host tools execute through Harness UI and its Environment. They are independent: native search is not a local crawler, provider code execution is not your Environment shell, and provider file search does not index your Thread files.
+Use **Host Web** to search, read public pages, or download files through Harness UI. Use **native tools** when you want the selected Model's provider to perform a supported operation, such as search or image generation. Both are configured on the Agent.
 
-Configure provider-native tools on the Agent. Available choices depend on its provider, Model and account. Native image generation saves a completed result to the current Thread's `tmp/` and returns a path; it does not switch models or providers.
+Start with [guided setup](#guided-setup) for a new Agent, or the [Host Web recipe](#host-web-capability-every-built-in-provider) for an existing Model. Add native tools after checking the choices offered for that connection.
 
-| Selected native tool | Host Web behavior                                     |
-| -------------------- | ----------------------------------------------------- |
-| Native Web Search    | Host search off; Host fetch/download remain available |
-| Native Web Fetch     | Host scrape off; Host fetch/download remain available |
-| Neither              | Host search and scrape use their configured providers |
-
-These are creation-time setup choices; [Host Web configuration](#host-web-capability-every-built-in-provider) can be edited separately.
+| Task                             | Choose                             | Where the work happens                                      |
+| -------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| Search and read public web pages | Host `web`, or native search/fetch | Harness UI, or the Model provider                           |
+| Save a URL as a file             | Host `web` download                | The selected Environment's writable storage                 |
+| Generate and save an image       | `native_image_generation`          | Provider generation, then Harness UI saves to Thread `tmp/` |
+| Run code against Project files   | Environment shell                  | The selected Environment                                    |
+| Run provider-side code           | Native Code Execution              | The provider's environment                                  |
+| Search indexed provider files    | Native File Search                 | An existing provider store                                  |
 
 ## Guided setup
 
-1. Run `a13n-harness-ui setup`, or follow the first-launch landing screen.
-2. Choose a subscription or an API provider.
-3. Authenticate, then choose a model.
-4. Review **Choose native Agent tools** (skipped when the connection has no native candidates). Use Up/Down to move, Space to toggle, and Enter to confirm. You can also type comma-separated numbers or names, or `none`. Recommended choices start checked; unchecking every item selects no native tools. Host Web remains enabled, including fetch/download, keyless search and HTML-to-Markdown scraping. Native Web Search disables only Host search; Native Web Fetch disables only Host scrape. No separate web credential step is needed for the built-in providers.
-5. Selecting File Search asks for existing provider store IDs. Remote MCP asks for a provider-accessible URL and server label. Advisor asks for its provider model ID. Setup does not create those remote resources or check account entitlement.
-6. Review the final selection. Esc goes back; changing the connection or Model resets its tool suggestions and resource inputs.
-7. Setup saves ordinary Agent `capabilities`. Edit the YAML later and run `a13n-harness-ui config validate`. Validation checks configuration, not provider entitlement.
+1. Run `a13n-harness-ui setup`, or open the first-launch setup screen.
+2. Choose a connection, authenticate, and select a Model. See [Models and authentication](models-and-authentication.md) if the connection is not ready.
+3. Review **Choose native Agent tools**. In the terminal, move with Up/Down, toggle with Space, and confirm with Enter. You can also enter comma-separated numbers or names, or `none`. Connections without native candidates skip this step.
+4. Supply resources for the tools you select: existing store IDs for File Search, a public server URL and label for Remote MCP, or a provider model ID for Advisor.
+5. Review and save the Agent. Esc returns to the preceding step; changing the connection or Model resets its tool suggestions and resource inputs.
+6. Select the saved Agent in a conversation and send a small task that uses one selected tool. Inspect the tool result, rather than judging configuration success from the answer alone.
 
-**Add Agent** uses the same tool picker, including when reusing an existing Model. **Add Model** saves only the connection, then offers to create an Agent for that Model and configure its tools. Keeping only the Model or cancelling the subsequent Agent setup leaves the saved Model in place. Existing Agents and defaults are not silently changed. Model input capabilities in `model_characteristics.capabilities` are separate from Agent tools.
+Selecting no native tools still gives the new Agent Host search, scraping, fetch, and download. Selecting native Web Search turns off only Host search; selecting native Web Fetch turns off only Host scraping. Fetch and download remain available in both cases.
+
+**Add Agent** uses the same picker, including with an existing Model. **Add Model** first saves the connection, then offers to create an Agent. Cancelling that later step keeps the Model. These actions leave existing Agents and their tool choices unchanged.
 
 ### Recommendations and connection differences
 
-Host Web fetch/download is included for every connection below, even where the table lists only native tools. Its search and scrape functions remain enabled only when the corresponding native tool is not selected.
+The picker uses the installed adapter and model profiles to determine candidates. Its checked items are starter suggestions, not an account-access test.
 
-| Connection                                                       | Preselected tools                                                     | Other guided native options                                                              |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Codex subscription                                               | Live native Web Search, Host Web Fetch, saved native Image Generation | Only these reviewed subscription tools                                                   |
-| Grok subscription                                                | Native Web Search, Host Web Fetch                                     | No X Search or image-generation claim for this subscription transport                    |
-| OpenAI Responses, reviewed GPT models                            | Native Web Search, saved native Image Generation, Host Web Fetch      | Code Execution, File Search, Remote MCP                                                  |
-| Anthropic, reviewed Claude models                                | Native Web Search and Web Fetch                                       | Code Execution, Remote MCP, Advisor where the upstream model profile permits it          |
-| Gemini 3 coding models                                           | Native Web Search and Web Fetch                                       | Code Execution, File Search with existing stores and without other native tools          |
-| OpenRouter                                                       | Native Web Search for reviewed model IDs, Host Web Fetch              | Advisor                                                                                  |
-| xAI native SDK (`xai:`)                                          | Native Web Search, Host Web Fetch                                     | X Search, Code Execution, File Search, Remote MCP                                        |
-| Chat Completions, older Gemini combinations, other API providers | Host Web Search + Fetch                                               | No unsupported native tools inferred from an OpenAI-compatible API label                 |
-| Unknown model IDs                                                | Host Web Search + Fetch                                               | Official adapter candidates may be selected explicitly; no model entitlement is inferred |
-| Custom HTTP endpoints                                            | Host Web Search + Fetch                                               | Adapter candidates remain selectable; none are preselected. Verify endpoint support      |
+| Connection                                  | Picker behavior                                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Codex subscription                          | Web Search starts checked, with live web access. Image Generation is optional and starts unchecked.                       |
+| Grok subscription                           | Web Search starts checked.                                                                                                |
+| Reviewed API model on its standard endpoint | Supported recommended tools start checked. Other adapter candidates can be selected.                                      |
+| Unknown model ID or custom endpoint         | Adapter candidates remain available, with none checked initially.                                                         |
+| Chat Completions                            | Host Web is available; the picker does not infer Responses-native tools.                                                  |
+| Google coding connection                    | Candidates also depend on the model's function/native-tool combination support. Image-only models need a dedicated Agent. |
 
-API-key connections use the same picker as subscriptions. Selecting **OpenAI Responses** offers native Web Search and saved Image Generation even for custom model IDs or gateways; a non-default URL does not prove those tools are unsupported. Unreviewed model IDs and custom endpoints start with no native tools checked, so enabling them is an explicit choice rather than a claim of gateway compatibility. OpenAI Chat Completions does not expose these native tool objects; choose the Responses protocol only if your endpoint implements it.
+Codex and Grok subscription connections use Host Web for separate URL fetches and downloads; their picker has no independent native Web Fetch. For xAI's native SDK tools, choose **xAI · Native SDK (gRPC)** rather than its Chat Completions or Grok subscription connection.
 
-The picker derives native candidates from the installed upstream adapter and relevant model profiles, not an independent runtime compatibility engine. A model need not appear in the short suggestions menu to expose adapter candidates: for example, OpenAI documents image-generation tool support for `gpt-4.1` and `gpt-4o` as well as newer models. Check [OpenAI image-generation model support](https://developers.openai.com/api/docs/guides/tools-image-generation#supported-models) and [web-search support](https://developers.openai.com/api/docs/guides/tools-web-search) for actual provider requirements. Provider restrictions, account access and billing still apply. Recommendations are creation-time defaults, not a migration or a policy automatically recomputed when you switch Models.
+Changing an existing Agent's Model does not rewrite its tools. Review its Capabilities when switching protocols or providers. Model input declarations in `model_characteristics.capabilities` describe accepted input; they do not enable Agent tools.
 
-The Codex and Grok subscription connections currently use a Responses adapter, which has **no independent `WebFetchTool`**. Their always-enabled **Host Web** provides HTTP fetch, HTML scraping and downloads. xAI search may itself browse pages, but that does not implement a separate WebFetch tool.
+## Host Web Capability: every built-in provider
 
-For xAI's full native tool set, choose **xAI · Native SDK (gRPC)**, not **xAI · Chat Completions** and not Grok subscription. It uses `XAI_API_KEY` or the selected stored key with the upstream SDK's default endpoint; the wizard does not ask for an HTTP base URL. Example Model:
+This recipe creates a web-reading Agent using a Model you have already configured. The built-in Host providers need no separate web API key.
+
+1. Run `a13n-harness-ui config path`. Locate the root YAML shown as `configuration_path`.
+
+2. Create `agents/web-reader.yaml` beside that root's `agents/` peers. Replace `model-primary` with your saved Model ID. This is a complete Agent file:
+
+   ```yaml title="agents/web-reader.yaml"
+   schema_version: "1"
+   kind: agent
+   id: agent-web-reader
+   name: Web reader
+   model: model-primary
+   instructions: Read the requested sources and cite the URLs used.
+   capabilities:
+     - capability: web
+       configuration:
+         search: {mode: host, backend: default}
+         scrape: {mode: host, backend: default}
+   ```
+
+3. Validate the selected configuration tree:
+
+   ```bash
+   a13n-harness-ui config validate
+   ```
+
+   If you use a custom root, put `--config /absolute/path/a13n-harness-ui.yaml` before both `config` commands and use that same root when starting Harness UI.
+
+4. Select **Web reader** in a new conversation. Ask: “Read https://example.com and report its page title.” Inspect the fetch or scrape result. Then try a search separately.
+
+5. To test downloads, ask the Agent to download a public file to its Thread `tmp/` and return the saved path. Open that file to check the result. Downloads require writable file authority in the selected Environment.
+
+For an existing Agent, merge the `web` entry into its `capabilities` list, or edit its existing `web` entry. Keep the other Capabilities. Accepted edits apply to subsequent Runs.
+
+| Component      | Built-in provider                             | Result                               |
+| -------------- | --------------------------------------------- | ------------------------------------ |
+| Search         | `DuckDuckGoSearchProvider`, backend `default` | Keyless HTML search results          |
+| Fetch/download | `HttpxWebClient` with `HttpWebPolicy`         | Bounded HTTP(S) reads or saved files |
+| Scrape         | `HtmlScrapeProvider`, backend `default`       | HTML/text converted to Markdown      |
+
+Scraping reads the HTTP response without rendering JavaScript or using a Browser login. Use [Browser Use](webui.md#browse-on-the-host) for interactive sites. Host requests follow the captured allowed-host policy; an unset policy permits private destinations.
+
+To adjust limits, merge the following fields into the `web` entry's `configuration`. These are settings, not a standalone file:
 
 ```yaml
-schema_version: "1"
-kind: model
-id: model-xai
-name: xAI native
-route: xai:grok-4.6
-authentication:
-  kind: api_key
-  env: XAI_API_KEY
+deadline_seconds: 60
+max_redirects: 8
+max_search_results: 10
+max_text_bytes: 262144
+max_scrape_bytes: 524288
+max_download_bytes: 268435456
+download_concurrency: 4
 ```
 
-Gemini image-only models cannot run the coding starter Agent's function tools. Add such a Model separately and author a dedicated Agent with compatible Capabilities rather than enabling it on the coding starter. Earlier Gemini models also cannot combine native tools with the starter's function tools. See [Google tool combinations](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#google-tool-combinations).
+### Search modes and backend selection
+
+Choose an explicit search mode for a hand-authored Agent:
+
+| `search.mode` | Effect                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `host`        | Exposes the bound Host search provider. Stock Harness UI binds `default`.                                                       |
+| `off`         | Removes this Capability's search function; useful with a separate native search entry.                                          |
+| `native`      | Registers the upstream native Web Search tool. This shortcut exposes `search_context_size`, not the full native-tool options.   |
+| `auto`        | Registers native search and makes bound Host search available. It does not probe compatibility or retry a rejected native tool. |
+
+The schema default is `auto`; guided setup writes explicit modes. Scraping has its own `host` or `off` mode. Setup writes these combinations:
+
+| Selected native tools | `search.mode` | `scrape.mode` | Host fetch/download |
+| --------------------- | ------------- | ------------- | ------------------- |
+| Neither               | `host`        | `host`        | Enabled             |
+| Web Search            | `off`         | `host`        | Enabled             |
+| Web Fetch             | `host`        | `off`         | Enabled             |
+| Both                  | `off`         | `off`         | Enabled             |
+
+Removing the entire `web` Capability removes its Host toolset. Changing a search or scrape mode leaves ordinary fetch/download independently configured.
+
+`backend` selects an already bound implementation. `backend_priority` specifies preferences among bound implementations and cannot be combined with `backend`. Stock Harness UI provides only `default`; naming another vendor in YAML does not install a provider. A custom Host supplies providers through `WebBinding` and owns their credentials and lifecycle; see [Harness Capabilities](../a13n-harness/capabilities.md). Keep credentials out of Agent Capability values.
+
+Embedding code that constructs `WebCapability()` without configuration can read `A13N_HARNESS_WEB_SEARCH_MODE`, `..._SEARCH_BACKEND`, `..._SEARCH_BACKEND_PRIORITY`, `..._SEARCH_CONTEXT_SIZE`, and the corresponding scrape mode/backend variables. Harness UI supplies explicit configuration, so edit the Agent YAML to change its behavior.
+
+## Native search and image generation
+
+Use this recipe with a Model whose connection supports both tools. Start from a working Agent so authentication is already tested.
+
+1. Open the Agent file under `agents/` in the selected configuration tree.
+
+2. Add the two native entries below. Replace any existing `web` entry with the one shown, keeping the Agent's other Capabilities. This is an Agent fragment:
+
+   ```yaml
+   capabilities:
+     - capability: NativeTool
+       configuration:
+         kind: web_search
+         external_web_access: true
+     - capability: native_image_generation
+       configuration:
+         quality: auto
+         output_format: png
+     - capability: web
+       configuration:
+         search: {mode: "off"}
+         scrape: {mode: host}
+   ```
+
+3. Run `a13n-harness-ui config validate`, using the same `--config` root if applicable.
+
+4. Select that Agent and send a new message asking for a small generated image. A completed generation should return a saved image path in the current Thread's `tmp/`.
+
+5. Open the image. Copy important output to a retained Project destination; Thread temporary files may be pruned.
+
+6. Test native search in a separate message. The Host `web` entry keeps page scraping and downloads available without a second search function.
+
+This recipe opts into image generation. Codex setup does not preselect it. Validation checks the configuration; the test request checks whether the provider and account accept the chosen tool combination.
 
 ## Native tool configuration
 
-Put each selection under an Agent's `capabilities`. Repeated `NativeTool` entries compose different native tools. Both flat `configuration: {kind: web_search}` and explicit `configuration: {tool: {kind: web_search}}` use upstream deserialization. Do not add a second raw `ImageGenerationTool` alongside `native_image_generation`.
+The sections below are reference fragments for an existing Agent's `capabilities` list. Merge the needed entries rather than replacing the whole Agent file. Repeat `NativeTool` to add different tools. Both `configuration: {kind: web_search}` and `configuration: {tool: {kind: web_search}}` are accepted.
 
 ### Web Search
 
@@ -77,12 +174,9 @@ capabilities:
     configuration:
       kind: web_search
       search_context_size: medium
-  - capability: web
-    configuration:
-      search: {mode: off}
 ```
 
-The second entry retains Host fetch/scrape/download without a duplicate search function. Native search uses Model authentication, not a separate search-provider API key. Provider-specific options include `allowed_domains`, `blocked_domains`, `max_uses`, `user_location`, and `external_web_access`; not every provider implements every option. Codex recommendations set `external_web_access: true` so native search reads live web content by default. Set it to `false` only when you explicitly want cached search. OpenRouter uses its server-side web-search tool and provider-managed search billing. Consult the [upstream parameter support table](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#web-search-tool) before adding filters.
+Use the Model's authentication for native search. Set Host `web.search.mode: off` if you want only native search, or `host` to expose both independently. Codex setup adds `external_web_access: true`; compatible providers can accept `false` to request cached search. Domain filters and other options vary by adapter; consult the upstream parameter reference before adding them.
 
 ### Web Fetch
 
@@ -91,16 +185,9 @@ capabilities:
   - capability: NativeTool
     configuration:
       kind: web_fetch
-      max_uses: 5
-      enable_citations: true
-      max_content_tokens: 12000
-  - capability: web
-    configuration:
-      search: {mode: host}
-      scrape: {mode: off}
 ```
 
-This configured example is for Anthropic. Google maps `WebFetchTool` to URL context and does not implement these Anthropic parameters; use only `kind: web_fetch` there. Fetch brings URL content into the model's context. It does not recursively crawl a site, run a browser, save a local file, or provide the Host's HTML-to-Markdown API. References: [Anthropic Web Fetch](https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-fetch-tool), [Google URL context](https://ai.google.dev/gemini-api/docs/url-context).
+Native fetch brings a URL into provider context. Set Host `web.scrape.mode: off` to avoid offering both forms of page reading. Keep Host download for saving files. Anthropic-specific options such as `max_uses`, `enable_citations`, and `max_content_tokens` should only be added for an adapter that implements them.
 
 ### Image Generation
 
@@ -112,11 +199,13 @@ capabilities:
       quality: auto
 ```
 
-Harness UI injects its saver; no saver path or import is authored in YAML. The Capability instructs the model to present saved images in replies using `![brief description](<saved path or URL>)`, preserving the saver-provided location rather than inventing a URL. Completed images are saved under the **current Thread's `tmp/`**, including child Runs. Replies, transcripts and resumed history contain saved paths instead of raw image bytes. Preview frames are not saved as final images. A save failure fails the Run rather than reporting an unavailable image. The Agent can later `view` the file, but a stored path does not automatically resend its pixels to another Model.
+Harness UI supplies the saver automatically. Use this Capability instead of adding a second raw native image tool. It saves completed images under the current Thread's `tmp/`, including for child Runs, and instructs the model to present the saved location in its reply.
 
-Thread scratch survives ordinary Run completion and restart, but may be pruned. Copy important images to a retained Project destination. Generated images are not user attachments. Custom Hosts supply their own async saver to [Harness's native image Capability](../a13n-harness/capabilities.md). Native options and supported image models remain defined [upstream](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#image-generation-tool).
+History retains saved references instead of raw image bytes. Preview frames are excluded. A save failure fails the Run. An Agent can later read the image with `view`; storing its path alone does not send its pixels to another Model. Generated files survive ordinary Run completion and restart, but remain temporary storage. Custom Hosts supply their own async saver through [Harness's image Capability](../a13n-harness/capabilities.md).
 
 ### X Search and Code Execution
+
+This fragment is for an xAI native SDK connection:
 
 ```yaml
 capabilities:
@@ -129,31 +218,31 @@ capabilities:
       kind: code_execution
 ```
 
-X Search requires the xAI native SDK route. The native tool also accepts date limits and image/video-understanding options; see [X Search](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#x-search-tool).
-
-Code Execution is available through compatible Responses, Anthropic, Google and xAI adapters. It runs in the provider's environment, not the selected local/sandbox Environment, and is not governed by Host shell review. Optional `files` are provider-uploaded file references on supported adapters. Setup neither uploads Project files nor copies provider-generated code artifacts to Thread tmp. The image saver is not a general provider-artifact downloader. See [Code Execution](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#code-execution-tool).
+X Search searches provider-side X content. Code Execution is also offered by other compatible adapters. It uses provider-side files and compute, outside the selected Environment and Host shell-review policy. Setup does not upload Project files or download generated code artifacts. Use Environment tools for work on local Project files.
 
 ### File Search
 
-Create the provider resources first, upload/import the files, and wait for indexing to complete. Then select the tool and enter its store identifiers:
+1. Create a search store in the same provider account/project as the Model.
 
-```yaml
-capabilities:
-  - capability: NativeTool
-    configuration:
-      kind: file_search
-      file_store_ids: [vs_your_store_id]
-```
+2. Upload or import your files there and wait for indexing.
 
-| Provider          | Value in `file_store_ids`                              | Resource setup                                                                  |
-| ----------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| OpenAI Responses  | Vector store IDs such as `vs_...`                      | [OpenAI File Search](https://platform.openai.com/docs/guides/tools-file-search) |
-| Google Gemini API | File search store names such as `fileSearchStores/...` | [Gemini File Search](https://ai.google.dev/gemini-api/docs/file-search)         |
-| xAI native SDK    | Collection IDs                                         | [xAI Collections Search](https://docs.x.ai/developers/tools/collections-search) |
+3. Add the provider's store identifiers to the Agent:
 
-These are not filenames or Thread paths. Use the same provider account/project as the Model connection. Google File Search must not be combined with other native tools in this picker; Host Web can remain selected. Google's temporary uploaded file object and its imported search-store data have different lifetimes: do not assume the search store expires with the temporary upload. xAI additionally maps `max_num_results`, `instructions` and `retrieval_mode`; do not assume these fields have identical effects in the other adapters. Provider resource access, retention and charges remain provider-owned.
+   ```yaml
+   capabilities:
+     - capability: NativeTool
+       configuration:
+         kind: file_search
+         file_store_ids: [vs_your_store_id]
+   ```
+
+4. Ask a question whose answer appears in one indexed file. Check that the result references that source.
+
+Use vector-store IDs for Responses, file-search store names for Google, or collection IDs for xAI. The values identify provider resources, not local paths. The Google picker requires deselecting other native tools before File Search; Host Web can remain enabled. Consult the provider for indexing, retention, access, and charges.
 
 ### Remote MCP
+
+Use a public server reachable by the Model provider:
 
 ```yaml
 capabilities:
@@ -165,9 +254,9 @@ capabilities:
       allowed_tools: [search_docs]
 ```
 
-Supported adapters are Responses, Anthropic and xAI. The **provider** connects to the remote server; a local stdio server or a localhost URL on your machine is not reachable that way. The wizard configures public servers only. Review the server and its tool permissions: these are provider-executed tools, not Host tool calls, and the Responses adapter sends `require_approval: never`.
+Replace the URL and tool names with the server's actual values. The provider connects to this server; your local stdio server or Host localhost URL is not reachable through this declaration. Provider-executed calls do not use Host tool approval; the Responses adapter sends `require_approval: never`.
 
-Upstream `authorization_token` and `headers` are ordinary strings; `${TOKEN}` or `{env: TOKEN}` in a native-tool specification is **not** resolved by Harness UI. Do not place secrets in Agent Capabilities, which are captured in Run compositions. For authenticated native MCP, a trusted Host Capability must load credentials at runtime and construct the upstream tool. Alternatively, use Harness UI's [Host MCP integration](mcp.md), which already owns environment/header credential resolution. That integration uses Agent `mcp_servers` and is distinct from provider-hosted `MCPServerTool`.
+Use [Host MCP](mcp.md) for Harness UI-managed connections and environment/header credential references. Native-tool `authorization_token` and `headers` are plain values: `${TOKEN}` and `{env: TOKEN}` are not resolved here. Authenticated native MCP needs a trusted Host integration that loads credentials at runtime. Keep secrets out of the Agent file and captured Capability configuration.
 
 ### Advisor
 
@@ -180,103 +269,24 @@ capabilities:
       max_tokens: 4096
 ```
 
-Use an Anthropic advisor model ID, or an OpenRouter model slug such as `anthropic/claude-opus-4.6` on the OpenRouter route. This is not a Harness UI Model resource ID, a child Agent, or a second Host connection. The executor's provider handles consultation and billing. Anthropic executor/advisor pairing restrictions still apply. OpenRouter maps `max_tokens` to `max_completion_tokens`, fixes `forward_transcript` to false, and ignores Anthropic-only `max_uses` and `caching`. See [Advisor](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#advisor-tool).
+Replace `model` with an advisor ID accepted by the execution provider. Anthropic uses its model IDs; OpenRouter uses provider-qualified slugs. This is a provider-side consultation, not a Harness UI Model resource or child Agent. Pairing rules, options, and billing belong to the provider.
 
 ### Native memory tool: a Host integration prerequisite
 
-`NativeTool` can deserialize `kind: memory`, but **that alone is not an implementation**. Anthropic requires an executable function tool named exactly `memory` implementing its memory commands. Harness UI's ordinary state/task/history features are not that handler. Therefore the native memory tool is explained but not selectable in the stock wizard. A trusted Host integration must provide storage and the handler, then compose `NativeTool(MemoryTool())` with it. Follow the [upstream Memory example and command contract](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#memory-tool); no parallel memory subsystem is introduced here.
-
-## Native search and image generation
-
-For a compatible Model, add these entries to the Agent's `capabilities` list:
-
-```yaml
-capabilities:
-  - capability: NativeTool
-    configuration:
-      kind: web_search
-      external_web_access: true
-  - capability: native_image_generation
-    configuration:
-      quality: auto
-      output_format: png
-  - capability: web
-    configuration:
-      search:
-        mode: off
-```
-
-`NativeTool` accepts the upstream native tool specification, including the explicit `tool: {kind: web_search}` form. Multiple entries can select different native tools. The example enables live search, matching the Codex setup default; set `external_web_access: false` to explicitly request cached search on compatible providers. Options and availability depend on the actual Model/provider, not merely its brand or API compatibility label.
-
-Generated images are saved in Thread scratch storage. Copy important results to your Project; see [image saving and retention](#image-generation).
-
-The `web` entry above keeps fetch, scrape, and download available without registering a second search tool. Set its `search.mode` to `host` to expose the independent keyless DuckDuckGo search implementation, even alongside native search. Native search uses the selected Model provider's account and billing; Host search uses Harness UI's Web transport. Neither is implied merely by installing a Capability.
-
-Setup writes reviewed starter choices into **new Agent resources**: Codex uses live native search plus native image generation; Grok subscription uses native search. Compatible API templates use native tools where reviewed, otherwise Host search. Custom endpoints and older incompatible tool combinations are not assumed to support native tools. Existing resources and Agents are not migrated, and changing Models does not rewrite their tool selections. Edit the Agent YAML and run `a13n-harness-ui config validate` to change them.
-
-## Host Web Capability: every built-in provider
-
-New Agents include `web` by default. Each Run gets fresh instances of the following Host providers; native search/fetch selections control which Host functions are exposed.
-
-| Component          | UI implementation                     | Credentials / configuration                                                                                                                                                               |
-| ------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Search             | `DuckDuckGoSearchProvider`            | Keyless DuckDuckGo HTML search; select `search.mode: host`. Backend ID is `default`. Subject to public endpoint availability and rate limits.                                             |
-| Fetch and download | `HttpxWebClient` with `HttpWebPolicy` | Bounded HTTP(S) requests with the Run's allowed-host policy. An unset policy permits private destinations. No browser login or separate API key.                                          |
-| Scrape             | `HtmlScrapeProvider`                  | Fetches HTML/text through the same client and converts to Markdown. Select `scrape.mode: host`; backend ID is `default`. Does not render JavaScript, bypass logins, or recursively crawl. |
-
-A complete explicit Host configuration:
-
-```yaml
-capabilities:
-  - capability: web
-    configuration:
-      search:
-        mode: host
-        backend: default
-      scrape:
-        mode: host
-        backend: default
-      deadline_seconds: 60
-      max_redirects: 8
-      max_search_results: 10
-      max_text_bytes: 262144
-      max_scrape_bytes: 524288
-      max_download_bytes: 268435456
-      download_concurrency: 4
-```
-
-Fetch supports bounded inline reads and download writes through the current Environment's file authority. A Model/provider account does not grant additional filesystem or network access to these Host tools.
-
-### Search modes and backend selection
-
-- `off`: no search in this Capability; fetch, scrape and download remain. Use with a separate native search Capability to avoid duplicate search.
-- `host`: use a bound Host search provider. The stock UI binds only `default` (DuckDuckGo).
-- `native`: register upstream `WebSearchTool`; do not expose Host search. Unlike an explicit `NativeTool` entry, this convenience path offers only `search_context_size` (`low`, `medium`, `high`).
-- `auto`: register native search and make bound Host search available. It is not a provider-compatibility probe or automatic retry after native-tool rejection. Use explicit selections for known connections.
-
-Scrape mode is `host` or `off`. Disabling scrape does not disable ordinary fetch/download. Setup writes the two modes independently:
-
-| Selected native tools | `search.mode` | `scrape.mode` | Host fetch/download |
-| --------------------- | ------------- | ------------- | ------------------- |
-| Neither               | `host`        | `host`        | Enabled             |
-| Web Search            | `off`         | `host`        | Enabled             |
-| Web Fetch             | `host`        | `off`         | Enabled             |
-| Both                  | `off`         | `off`         | Enabled             |
-
-This is creation-time configuration, not a runtime fallback. Existing authored YAML is not rewritten; removing the entire `web` Capability explicitly removes the Host Web toolset.
-
-`backend` selects one exact bound backend ID. `backend_priority` lists preferences among bound backends and cannot be combined with `backend`. These values select existing implementations, not vendor names to install. A custom embedding Host can supply async `WebSearchProvider` / `WebScrapeProvider` implementations through `WebBinding(search_backends=..., scrape_backends=...)`; that Host owns API credentials, client lifetime, policy and error translation. See [Harness Capabilities](../a13n-harness/capabilities.md) for the provider ports and execution contract. Stock Harness UI does not offer YAML-only third-party backend installation. Its built-in providers need no keys, so there is no `api_key` field on `WebConfiguration`. Model credentials do not configure Host search/scrape. A key-based provider requires a real Host integration that resolves its own credential references (for example, an environment variable) and binds the provider; writing `backend: tavily` or an unused secret field cannot enable that service. Do not put literal keys in Agent Capability configuration.
-
-For embedding code constructing `WebCapability()` with no explicit configuration, `WebConfiguration.from_environment()` recognizes `A13N_HARNESS_WEB_SEARCH_MODE`, `A13N_HARNESS_WEB_SEARCH_BACKEND`, `A13N_HARNESS_WEB_SEARCH_BACKEND_PRIORITY`, `A13N_HARNESS_WEB_SEARCH_CONTEXT_SIZE`, and the corresponding `A13N_HARNESS_WEB_SCRAPE_MODE`, `..._BACKEND`, `..._BACKEND_PRIORITY`. Explicit Agent YAML is authoritative in Harness UI; do not expect these process defaults to override saved configuration.
+The native `kind: memory` declaration requires an executable function tool named `memory` that implements the provider's memory commands. A custom Host integration must supply that handler and storage. The standard picker omits this option; Harness UI's state, tasks, and history are separate features. Follow the upstream native-memory integration contract when implementing the handler.
 
 ## Validation and troubleshooting
 
-- Configuration accepted but provider rejects a tool: check the actual adapter, model ID, account and tool combination. “OpenAI-compatible” does not imply Responses-native tools.
-- Native fetch absent on Codex/Grok: expected; Host Web is included by default. Do not add an unsupported raw `web_fetch` entry to those subscription Agents.
-- Search works but a download is missing: native search/fetch returns provider context, not a local file. Use the included Host `web` tools and request a download destination.
-- Native memory fails with a missing `memory` tool: provide the Host handler; enabling its native schema alone is insufficient.
-- File Search has no results: verify provider store IDs, indexing status and account/project access, not local filesystem paths.
-- MCP cannot connect: determine whether the Host or the provider is making the connection before debugging URLs or credentials.
-- Saved image disappears later: Thread `tmp/` is scratch storage. Retain important output elsewhere.
+Check three stages in order: the saved configuration is accepted, the conversation selects the intended Agent/Model, and a small tool request produces the expected result.
 
-The implementation is checked against the locked model adapters and simulated provider responses. Setup itself makes no native provider request. Consult the linked upstream/provider docs for current limits and account entitlements rather than treating recommendations as a live check of provider support.
+| Symptom                                            | Check next                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Configuration validates, provider rejects the tool | Actual adapter, model ID, account access, and tool combination                           |
+| Codex/Grok has no native Fetch choice              | Use the included Host Web fetch/scrape tools                                             |
+| Search succeeds but no file appears                | Request a Host download with an explicit writable destination                            |
+| Generated image disappears later                   | Copy important output out of Thread `tmp/`                                               |
+| File Search returns nothing                        | Provider store ID, indexing state, and account/project access                            |
+| Remote MCP cannot connect                          | Determine whether the Host or provider connects, then check reachability and credentials |
+| Native memory reports a missing handler            | Supply the required Host `memory` function                                               |
+
+The [upstream native-tool reference](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/) describes adapter options and links to provider requirements. Setup offers choices without issuing a native-tool request; use the small test above to check your actual connection.

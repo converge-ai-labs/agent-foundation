@@ -4,35 +4,40 @@ sidebarTitle: Installation
 description: Build or download an Envd binary that matches your EIP client, or run the sandbox image.
 ---
 
-Choose a native daemon version that matches your EIP client. If you use only Harness UI's local Sandbox mode, Harness UI acquires the matching binary itself; you do not need a standalone installation on that computer. To connect another computer to Harness UI as a Device, install Envd on that computer.
+Install Envd on the computer that will execute file, command, or desktop operations. Harness UI acquires its own matching binary for local Sandbox mode. Use this guide when connecting another computer as a Device or when your application manages Envd directly.
 
 ## Build the matching binary
 
-These pages track `main`. Build `a13n-envd` from the same checkout as the Python workspace so the daemon and client pass Local Envd's exact release check:
+For repository development, build the daemon and Python client from the same checkout. These pages track `main`; Local Envd checks that their release versions match.
+
+1. Install Rust and build Envd from the repository root.
+2. In the same shell, set `A13N_ENVD_EXECUTABLE` to the resulting binary.
 
 ```bash
 cargo build --locked --package a13n-envd
 ```
 
-Then select that binary for Local Envd:
+Select the built executable:
 
 ```bash
 export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 ```
 
-The Python `a13n-envd-client` package does not discover, install, or launch the binary. A Provider or Host supplies process lifecycle and transport policy.
+The build produces `target/debug/a13n-envd`. Your Provider or Host launches it and chooses the transport; `a13n-envd-client` supplies the Python protocol client.
 
-For a published Local Envd installation, select the native `a13n-envd` release matching the installed `a13n-envd-client` version, not the independently versioned Harness or Harness UI. Python RC metadata such as `1.2.3rc1` corresponds to native `1.2.3-rc.1`. Harness UI manages this selection and acquisition for its Sandbox mode; standalone Hosts supply their executable explicitly. Do not combine an arbitrary published binary with a client built from the source workspace.
+For a published Local Envd installation, match the native release to the installed `a13n-envd-client`, which is versioned independently of Harness and Harness UI. Python RC version `1.2.3rc1` maps to native `1.2.3-rc.1`.
 
 ## Install a published binary
 
-The standalone installers download the native executable from GitHub Releases. Install the Python client separately and select the matching native version.
+The standalone scripts install the native executable from GitHub Releases. To select a version for a Python application, first install the [Python client](python-client.md#install) in the environment that will use Envd. The commands below read that installed package's version.
 
 ### Linux and macOS
 
-Requires a POSIX shell, `curl`, `tar`, and `sha256sum` or `shasum`. Automatic stable-version selection also requires `jq`; an explicit `--version` does not.
+Prepare a POSIX shell, `curl`, `tar`, and `sha256sum` or `shasum`. Automatic stable-version selection also needs `jq`; the explicit version below does not.
 
-Download the script, inspect it, then run it. With a **published** client installed in this Python environment, obtain its matching native version (including an RC when applicable):
+1. Select the Python environment containing your published client.
+2. Download and inspect the installer before running it.
+3. Read the client version, install the matching executable, and check `--version`.
 
 ```bash
 curl -fsSLo install-a13n-envd.sh \
@@ -45,7 +50,11 @@ sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bi
 
 ### Windows
 
-Use Windows PowerShell 5.1 or PowerShell 7 on Windows. With a **published** client installed in the selected Python environment:
+Use Windows PowerShell 5.1 or PowerShell 7.
+
+1. Select the Python environment containing your published client.
+2. Download and inspect the installer.
+3. Install the matching version and check the executable at the printed path.
 
 ```powershell
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.ps1' -OutFile install-a13n-envd.ps1
@@ -59,7 +68,7 @@ Run scripts according to your organization's PowerShell execution policy; the in
 
 ### Options and behavior
 
-Both scripts accept the same options:
+Choose an exact version and destination with these options. Both installers use the same names:
 
 | Option                               | Environment default             | Behavior                                                                                                                                                                                                                 |
 | ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -74,7 +83,12 @@ The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verif
 
 ## Update an existing installation
 
-Stop daemons using the installation before replacing it. Envd starts workers from its executable path, so replacing that path while a daemon is running can mix versions or prevent worker startup. The updater does not stop or restart services automatically.
+Use the installation owner's account and update during a stop/restart window. Envd starts workers from its executable path, so replacing a running daemon's binary can mix versions or prevent worker startup.
+
+1. Check the selected version and destination with `update --check`.
+2. Stop every daemon using that executable.
+3. Run the update, choosing an exact version below when needed.
+4. Verify `a13n-envd --version`, then restart Envd with its usual command or service.
 
 ```console
 a13n-envd update --check
@@ -88,7 +102,7 @@ a13n-envd update --version 1.2.3
 a13n-envd update --version 1.2.3 --force
 ```
 
-`--check` reports the current version, selected version and destination without installing. `--force` reinstalls the selected version; it cannot be combined with `--check`. The command updates the actual executable you invoked, including when invoked through a symlink. It does not change PATH or configuration or elevate privileges. Use the installation owner's account. Restart Envd with its usual command or service after success.
+`--force` reinstalls the selected version and cannot be combined with `--check`. The updater replaces the actual executable you invoked, including when reached through a symlink. It leaves PATH and configuration unchanged, uses your current privileges, and leaves service shutdown and restart to you.
 
 Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
 
@@ -98,8 +112,8 @@ For binaries without `update` support, use the standalone installer above once t
 
 ## Run the sandbox image
 
-For a ready-to-use agent development container, use the [sandbox image](sandbox.md). It runs Envd as root while commands and file operations use the provisioned `1000:1000` account, with passwordless sudo available. Shell commands are enabled and controlled egress is opt-in. The guide covers local builds, stdio and outbound Host connections, persistence and overrides.
+Use the standard [sandbox image](sandbox.md) for an agent development container with shell commands enabled. Envd runs as root; commands and file operations use the provisioned `1000:1000` account with passwordless sudo. Enable controlled egress explicitly when needed. The image guide covers local builds, stdio and outbound Host connections, persistence, and overrides.
 
 ## Next step
 
-Use the [Local Envd Provider](index.md#try-local-envd), or [configure a standalone daemon](configuration.md) when you own the transport and lifecycle. Read [execution boundaries](isolation.md) and select the Host's outer boundary before running untrusted work.
+With the matching binary selected, try the [Local Envd Provider](index.md#try-local-envd) or [configure your own daemon](configuration.md). Before running untrusted work, choose the Host's outer boundary using [Execution boundaries](isolation.md).

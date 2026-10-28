@@ -1,140 +1,180 @@
 ---
 title: MCP servers
-description: Configure command and Streamable HTTP MCP servers and enable them on an Agent.
+description: Connect an external tool server, select it for an Agent, and verify a tool call.
 ---
 
-Configure a command or Streamable HTTP server, then select its resource ID on an Agent. Creating a server file registers it; selecting its ID on an Agent or in defaults enables it. Use [Command reference](command-reference.md) for Harness UI shell commands. MCP command transports launch external programs.
+Adding MCP tools takes three steps: **register the server, select it, test a call**. You need an existing [Agent](agents-and-subagents.md) and either a Streamable HTTP endpoint or an installed command-line MCP server.
+
+Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the root YAML shown as `configuration_path`. Choose one of the formats below for each server; do not register the same ID twice.
+
+| Server information you have                          | Use                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| An HTTPS MCP endpoint                                | [Remote transport](#remote-transport)                   |
+| A command that serves MCP over standard input/output | [Command transport](#command-transport)                 |
+| A client configuration with `mcpServers`             | [Copy a JSON configuration](#copy-a-json-configuration) |
+
+## Remote transport
+
+1. Obtain the server's Streamable HTTP endpoint and authentication requirements. The example address below is a placeholder.
+
+2. Save this complete file as `mcp/docs.yaml`, replacing the URL:
+
+   ```yaml title="mcp/docs.yaml — complete file; replace endpoint"
+   schema_version: "1"
+   kind: mcp_server
+   id: mcp-docs
+   name: Documentation service
+   transport:
+     url: https://mcp.example.com/mcp
+     headers:
+       Authorization:
+         env: DOCS_MCP_AUTHORIZATION
+   ```
+
+3. Set `DOCS_MCP_AUTHORIZATION` in the process that launches Harness UI. Its value must be the entire header expected by the server, including a scheme such as `Bearer`. Omit `headers` for a server that needs none.
+
+4. [Enable the server](#enable-a-server) and test a documented read-only tool.
+
+Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loopback host with no configured headers. The client does not follow redirects; configure the final MCP endpoint directly. Remote transport is Streamable HTTP, not legacy SSE, and this configuration does not provide an OAuth login flow.
+
+## Command transport
+
+1. Install and inspect the MCP server you intend to run. Obtain its executable, arguments, and required environment variables from that server's documentation.
+
+2. Save a complete resource such as the following as `mcp/local.yaml`. Replace the executable and arguments with your installed server's values:
+
+   ```yaml title="mcp/local.yaml — complete file; replace executable and arguments"
+   schema_version: "1"
+   kind: mcp_server
+   id: mcp-local
+   name: Local tools
+   transport:
+     command: /absolute/path/to/mcp-server
+     arguments: []
+     environment:
+       API_TOKEN:
+         env: LOCAL_MCP_TOKEN
+   ```
+
+3. Set any required variables in the Harness UI process environment. Remove `environment` if the server needs none.
+
+4. [Enable `mcp-local`](#enable-a-server) and test one read-only tool.
+
+Harness UI launches this program on the Host. Selecting a Sandbox Environment does not sandbox the external MCP process. Use an absolute executable path when the launch process may have a different `PATH`; command, argument, and URL strings are not environment-variable templates.
 
 ## Copy a JSON configuration
 
-Create `mcp/servers.json` beside your selected root configuration. Common client-style `mcpServers` objects work directly:
+If your server documentation supplies `mcpServers`, save that object directly as `mcp/servers.json`. This example is an **alternative** to `mcp/docs.yaml`, with the same `mcp-docs` ID:
 
-```json
+```json title="mcp/servers.json — complete file; replace endpoint"
 {
   "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"]
-    },
     "docs": {
       "type": "http",
       "url": "https://mcp.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer example-token",
-        "X-Workspace": "${WORKSPACE_ID}"
+        "Authorization": "Bearer ${DOCS_MCP_TOKEN}"
       }
     }
   }
 }
 ```
 
-Replace the illustrative endpoint, path, and token. Enable these entries with `mcp_servers: [mcp-filesystem, mcp-docs]` on an Agent or under root `defaults`. Creating the JSON file alone does not enable them.
+Set `DOCS_MCP_TOKEN`, then select `mcp-docs` as below. This example inserts only the token after `Bearer`; the earlier YAML example reads an entire header value.
 
-A `mcpServers` file can define several servers. Its names normalize to `mcp-` IDs: `My_Server` becomes `mcp-my-server`. Duplicate IDs across files reject the configuration, so check the normalized IDs before adding a second file.
+A wrapper can contain several servers. Names normalize to `mcp-` IDs: `My_Server` becomes `mcp-my-server`. Duplicate IDs across files reject the configuration.
 
-For a command entry, use `command`, optional `args`, and optional `env`. For a remote entry, use `url` and optional `headers`. Optional `type` accepts `stdio` for commands and `http` or `streamable-http` for remote endpoints. Remote connections use Streamable HTTP, not legacy SSE. OAuth login, JSONC comments, trailing commas, `disabled`, and unrelated client-specific fields are not supported. `mcpServers` is a common client convention, not a universal MCP protocol configuration standard.
+| Wrapper entry | Fields                                                                |
+| ------------- | --------------------------------------------------------------------- |
+| Command       | `command`, optional `args`, optional `env`; optional `type: stdio`    |
+| Remote        | `url`, optional `headers`; optional `type: http` or `streamable-http` |
 
-Both `.yaml` and `.json` can also contain the single-resource format shown below; both accept the `mcpServers` wrapper. Existing YAML files continue to work without migration.
-
-## Literal values and environment references
-
-Command `env` (or canonical `transport.environment`) and remote `headers` accept:
-
-| Value                   | Behavior                                                        |
-| ----------------------- | --------------------------------------------------------------- |
-| `"example-token"`       | A literal string, including ordinary non-secret settings        |
-| `"${API_TOKEN}"`        | Read an environment variable when a Run starts                  |
-| `"Bearer ${API_TOKEN}"` | Substitute `${NAME}` occurrences in a string                    |
-| `{"env": "API_TOKEN"}`  | Existing explicit environment reference; works in YAML and JSON |
-
-Empty literal strings and whitespace are preserved. References require non-empty variables in the **Harness UI process** environment; exporting in another shell does not change an already-running process. Expansion is one pass, only for `${NAME}` with a valid environment-variable name; there is no shell execution or default-value syntax. These substitutions apply only to environment/header values, not commands, arguments, or URLs.
-
-Literal tokens and environment references are both supported. Keep credential-bearing files private and out of version control. Harness UI stores source locations and digests rather than literal environment/header values in configuration and Run captures. Keep a captured source unchanged until its client is constructed; otherwise an older Run or child continuation can fail with `mcp_source_changed`. New Runs use current configuration. Environment references can rotate without editing the source file.
-
-After editing, run `a13n-harness-ui config validate`. In the TUI, resume the conversation again (`/resume <id>` or restart with `--resume <id>`) to apply current MCP selections, or start a new conversation. WebUI and headless runs retain saved selections until explicitly changed. Validation does not connect to servers or verify credentials. A missing or empty environment reference fails the Run with `runtime_credential_missing`, naming the variable to set in the Harness UI process environment.
-
-## Command transport
-
-Create `mcp/github.yaml`:
-
-```yaml title="mcp/github.yaml"
-schema_version: "1"
-kind: mcp_server
-id: mcp-github
-name: GitHub
-transport:
-  command: npx
-  arguments: ["-y", "@modelcontextprotocol/server-github"]
-  environment:
-    GITHUB_TOKEN:
-      env: GITHUB_TOKEN
-```
-
-Install the required executable/package and provide its token. Review the command and package before enabling the server.
-
-## Remote transport
-
-Create `mcp/docs.yaml` using your actual MCP endpoint:
-
-```yaml title="mcp/docs.yaml"
-schema_version: "1"
-kind: mcp_server
-id: mcp-docs
-name: Documentation service
-transport:
-  url: https://mcp.example.com/mcp
-  headers:
-    Authorization:
-      env: DOCS_MCP_AUTHORIZATION
-```
-
-The environment variable contains the entire header value expected by the server, including any authentication scheme. Alternatively, use `"Bearer ${DOCS_MCP_TOKEN}"` to interpolate only the token. URLs must be credential-free HTTPS; plain HTTP is allowed only for a literal loopback host with no configured headers. Authenticated redirects cannot weaken transport or leak headers to another origin.
+Both `.yaml` and `.json` accept the wrapper or the single-resource format. Use strict JSON: comments and trailing commas are invalid. Remove unsupported client-specific fields such as `disabled`.
 
 ## Enable a server
 
-In an Agent file:
+1. Edit your Agent file, for example `agents/coder.yaml`. Merge the server ID into its list, preserving other selected IDs:
 
-```yaml
-mcp_servers: [mcp-github, mcp-docs]
-```
+   ```yaml title="Agent file — merge fragment"
+   mcp_servers: [mcp-docs]
+   ```
 
-Or in root YAML:
+   For the command recipe, use `mcp-local`. To provide a global creation default instead, merge this into the root YAML:
 
-```yaml
-defaults:
-  mcp_servers: [mcp-github]
-```
+   ```yaml title="a13n-harness-ui.yaml — merge into defaults"
+   defaults:
+     mcp_servers: [mcp-docs]
+   ```
 
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. TUI resume refreshes the saved MCP list using current Project defaults, then Agent defaults, then global defaults, including an explicitly empty list. This replaces any previous conversation-specific MCP selection; it does not connect to the server until a Run needs it. Other surfaces retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Selecting the Sandbox Environment mode does not sandbox an external MCP command or remote service.
+2. Run `a13n-harness-ui config validate`. With a custom tree, put `--config /absolute/path/a13n-harness-ui.yaml` before `config`.
+
+3. Start a new conversation with the Agent. Ask it to call a known read-only tool from the server with a small input. Inspect the tool result, rather than accepting a prose answer as connection proof.
+
+Agent `mcp_servers: null` inherits root defaults; `[]` selects none. Project defaults can supply the new Thread's selection ahead of Agent and global defaults. Registering a server or retaining its connection does not itself select tools.
+
+For an existing TUI conversation, `/resume <id>` or a restart with `--resume <id>` refreshes the MCP list from current Project → Agent → global defaults. This replaces the conversation-specific list, including when the current default is empty. WebUI and headless runs retain their saved lists until explicitly changed.
+
+| Symptom                             | Check                                                                        |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| No MCP tools                        | Correct resource ID, Agent/Thread selection, and any exact `tools` allowlist |
+| Executable missing                  | Server installation and the Harness UI process's executable path             |
+| `runtime_credential_missing`        | Named variable is non-empty in the Harness UI process environment            |
+| Configuration passes but calls fail | Actual endpoint, credentials, server readiness, and transport type           |
+| `mcp_source_changed`                | Start a new Run from current configuration; see captured sources below       |
+
+## Literal values and environment references
+
+Command `environment` (wrapper `env`) and remote `headers` accept these forms:
+
+| Value                   | Meaning                                        |
+| ----------------------- | ---------------------------------------------- |
+| `"us-east-1"`           | Literal string                                 |
+| `"${API_TOKEN}"`        | Read the named process environment variable    |
+| `"Bearer ${API_TOKEN}"` | Substitute the token into a string             |
+| `{"env": "API_TOKEN"}`  | Explicit environment reference in YAML or JSON |
+
+Expansion happens once at fresh Run construction. Referenced variables must be non-empty. Empty literal strings and whitespace are preserved. Only `${NAME}` with a valid variable name expands; there is no shell evaluation or default-value syntax. These substitutions apply only to environment/header values.
+
+Set variables before launching Harness UI. Exporting them in a different shell does not change an already-running process. Keep files containing literal credentials private and outside version control.
+
+Run captures store source locations and digests instead of literal environment/header values. A captured literal or template source must remain unchanged until its client is constructed; an older Run or child continuation otherwise reports `mcp_source_changed`. A new Run captures the current source. Environment references allow credential rotation without changing the file, provided the new value reaches the Host process.
 
 ## Connection lifetime and protocol
 
-To preserve a server's process-local state between Runs, configure the root document:
+The default client lifetime is one logical Run. To preserve a server's process-local state across Runs, merge this fragment into the root YAML:
 
-```yaml
+```yaml title="a13n-harness-ui.yaml — merge fragment"
 mcp:
   host_owned_servers: [mcp-docs]
   protocol_overrides:
     mcp-docs: auto
 ```
 
-`host_owned_servers` defaults to `[]`; it retains clients but does not select tools. Select the server on the Agent or Thread as usual. Each Thread has its own client, including child Threads. Run completion and browser disconnection leave retained clients open. Host shutdown, explicit close, Thread disposal, or a changed binding ends the connection. Connections are process-local. After disconnection, calls are not automatically replayed; activating an MCP App can establish a replacement.
+Keep the ordinary Agent/Thread selection from the earlier steps. `host_owned_servers` defaults to `[]`; `protocol_overrides` defaults to `{}`. All listed IDs must refer to configured servers.
 
-`protocol_overrides` defaults to `{}`. Each configured server ID accepts `auto`, `legacy`, or `2026-07-28`; an omitted ID uses `auto`. The override controls the upstream SDK's Core negotiation, independently of connection lifetime and the [MCP Apps UI wire protocol](mcp-apps.md). All policy IDs must name existing MCP resources. Existing YAML/JSON and saved recipes without these fields retain Run-local lifetime and automatic negotiation.
+Each Thread, including a child Thread, gets its own retained client. Run completion and browser disconnection leave that client open. Host shutdown, explicit close, Thread disposal, or a changed binding closes it. Connections remain process-local; continuations do not serialize client state or pending server input. Calls are not automatically replayed after disconnection. Enabled [MCP Apps](mcp-apps.md) retain their clients automatically, and App activation can establish a replacement connection.
+
+Each protocol override accepts `auto`, `legacy`, or `2026-07-28`; omission uses `auto`. Use `auto` unless the server requires a specific mode. This setting controls Core protocol negotiation, separately from connection lifetime and the MCP Apps UI protocol.
 
 ## Human input from MCP servers
 
-Answer MCP form and URL requests in the TUI or WebUI to continue the original operation. The conversation also shows requests from child Threads, labelled with their Thread, server, and available Run/tool/App source.
+A server can pause an operation for a form or an external URL flow. The TUI and WebUI show the server and Thread, including requests from children.
 
-Forms support primitive string, numeric and boolean fields, single-select enums and multi-select string enums, including titled options. The Host validates answers against the original schema. Unsupported schemas, remote references and declared sensitive fields are rejected; never enter passwords, tokens or other secrets into MCP forms. URL requests show the destination and require an explicit browser action outside the App iframe; complete the external flow before confirming.
+1. Inspect the request and its source. For a URL request, explicitly open the destination outside the App iframe and finish that flow before confirming.
+2. Choose accept, decline, or cancel within five minutes. Never enter passwords or tokens in MCP forms.
+3. After answering, inspect the tool result. Accepted input means the answer was delivered, not that the remote operation completed.
 
-Choose accept, decline, or cancel within five minutes. Cancellation, expiry, connection closure, or shutdown ends the request. If delivery is uncertain, inspect the request or resend the exact answer; conflicting answers are rejected. Input acceptance does not confirm that the remote operation finished. Embedded interfaces must enable their input handler; see [embedding](embedding.md#mcp-input-and-integration-control).
+Forms support primitive strings, numbers, booleans, single-select enums, and multi-select string enums, including titled options. The Host validates answers against the original schema and rejects unsupported schemas, remote references, and declared sensitive fields.
+
+Cancellation, expiry, connection closure, or shutdown ends the request. If answer delivery is uncertain, inspect the request or resend the identical answer; a conflicting answer is rejected. Embedded applications must enable an [input handler](embedding.md#mcp-input-and-integration-control).
 
 ## MCP field reference
 
-The shared fields are `schema_version: "1"`, `kind: mcp_server`, unique `mcp-` `id`, and `name`. `transport` accepts exactly one form:
+A single-resource file requires `schema_version: "1"`, `kind: mcp_server`, a unique `mcp-` `id`, a display `name`, and exactly one transport form:
 
-| Form    | Fields                                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Command | Required `command`; `arguments` defaults to `[]`; `environment` defaults to `{}`, values are strings or `{env: VARIABLE}` |
-| Remote  | Required `url`; `headers` defaults to `{}`, values are strings or `{env: VARIABLE}`                                       |
+| Transport | Required  | Optional                           |
+| --------- | --------- | ---------------------------------- |
+| Command   | `command` | `arguments: []`, `environment: {}` |
+| Remote    | `url`     | `headers: {}`                      |
+
+Environment and header values accept strings or `{env: VARIABLE}`. In a `mcpServers` wrapper, use `args` and `env` instead of `arguments` and `environment`.

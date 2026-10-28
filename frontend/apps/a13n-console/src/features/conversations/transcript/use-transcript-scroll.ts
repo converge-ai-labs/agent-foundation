@@ -27,11 +27,14 @@ export function useTranscriptScroll(
 ) {
   const [showJump, setShowJump] = useState(false);
   const controller = useRef<ScrollController | null>(null);
+  const inspection = useRef({ identity, startAtTop: level === "debug" });
   useLayoutEffect(() => {
     const element = content.current;
     const stage = element?.closest("[data-session-stage]");
     if (!element || !(stage instanceof HTMLElement)) return;
-    let mode: Mode = "following";
+    if (inspection.current.identity !== identity)
+      inspection.current = { identity, startAtTop: true };
+    let mode: Mode = inspection.current.startAtTop ? "reading" : "following";
     let readerScrolling = false;
     let movingAway = false;
     let lastTop = stage.scrollTop;
@@ -91,9 +94,11 @@ export function useTranscriptScroll(
       lastTop = stage.scrollTop;
     };
     const onScrollEnd = () => {
+      const readerEnded = readerScrolling;
       readerScrolling = false;
       // Output may have grown during the one explicit native animation.
-      if (mode === "jumping" || (atEnd() && !movingAway)) followLatest();
+      if (mode === "jumping" || (readerEnded && atEnd() && !movingAway))
+        followLatest();
       else updateJump();
     };
     const onGestureEnd = () => {
@@ -197,6 +202,10 @@ export function useTranscriptScroll(
       stage.addEventListener(event, readerScroll, { passive: true });
     for (const event of ["touchend", "pointerup", "keyup"])
       stage.addEventListener(event, onGestureEnd, { passive: true });
+    if (inspection.current.startAtTop) {
+      move(0);
+      anchor = capture();
+    }
     align();
     return () => {
       observer.disconnect();

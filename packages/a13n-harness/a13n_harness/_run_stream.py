@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import aclosing
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -1045,6 +1045,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         input_id: str | None = None,
         immediate: bool = False,
         best_effort: bool = False,
+        before_accept: Callable[[], None] | None = None,
     ) -> str:
         """Deliver one user steering value through native Pydantic enqueue.
 
@@ -1053,12 +1054,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         seconds for native readiness and unsupported calls, without accepting input while waiting.
         With `best_effort=True`, accept ordinary queued input when immediate handoff is unavailable.
         This option only affects immediate steering; it does not suppress input or lifecycle errors.
+        `before_accept` runs synchronously under the native queue lock; raising rejects the input.
         """
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
         context = self._context
         if not immediate:
-            return await context._steering.steer(input, input_id=input_id)
+            return await context._steering.steer(input, input_id=input_id, before_accept=before_accept)
         if context.tool_execution is None and not best_effort:
             raise RunError(
                 "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
@@ -1070,6 +1072,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         waiting = asyncio.timeout(_IMMEDIATE_STEERING_WAIT_SECONDS)
 
         def check_handoff() -> None:
+            if before_accept is not None:
+                before_accept()
             if self._steering_stopped.is_set():
                 raise RunError("The run is not active.", code="run_not_active")
             if context._tool_executions.unsupported_calls and not best_effort:

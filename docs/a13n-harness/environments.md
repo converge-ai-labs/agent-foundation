@@ -1,30 +1,40 @@
 ---
 title: Environments
-description: Supply Host-owned sources that prepare Environments on first use.
+description: Give an Agent a workspace, route several mounts, and manage file and process lifetimes.
 ---
 
-Harness owns Environment execution and shared types; Service owns target management. The Host supplies an `EnvironmentSource`: its `ensure_ready()` completes management and returns a fixed-target `EnvironmentConnector`. Harness owns Run-local mounts, permissions, routing, and execution cleanup.
+An Environment gives a Run access to files, commands, or a desktop selected by your application. Your Host supplies an `EnvironmentSource`; Harness opens it on first use, applies mount permissions, routes operations, and closes execution resources. The Host retains responsibility for creating and destroying the target.
 
-Choose **Native Execution** for quick deployment with Files & Shell: Local direct access, Docker local containerization, or E2B remote sandboxes. Choose **Envd Execution** for the general path, including OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Each managed vendor retains its own resource management provider. See the [execution model](../environments/index.md#choose-a-backend) for route selection and migration status.
+Start with Direct Local below to read a file without credentials or a server. For deployment, **Native Execution** offers Files & Shell through Local direct access, Docker containers, or E2B sandboxes. **Envd Execution** adds the general path for OS sandbox and Egress enforcement, Computer use, and Device metrics. Vendor resource management remains with its own provider. See the [backend selection guide](../environments/index.md#choose-a-backend).
 
 ## Start without an Environment
+
+Keep a text-only Agent's Run free of Environment inputs. In the async code where you already built `executable`, call:
 
 ```python
 result = await executable.run("Answer without using a workspace")
 ```
 
-Environment input is optional. A Run without mounts receives an empty facade and no Environment tools.
+The Run receives an empty Environment facade and no Environment tools. Add a source when your workflow needs actual file, command, or desktop operations.
 
 ## Supply a source
 
-```python
-from pathlib import Path
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+The following complete program creates a temporary workspace, exposes file tools, and uses a deterministic Model to call `view`. Use the Python environment from [Getting Started](getting-started.md); no external Model or Environment service is needed. Save it as `environment_demo.py`:
 
+```python title="environment_demo.py"
+import asyncio
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
 @dataclass(frozen=True)
@@ -50,20 +60,62 @@ class PreparedSource:
     async def ensure_ready(self) -> EnvironmentConnector:
         return self.connector
 
-connector = DIRECT_LOCAL.execution_connector(
-    {"root": {"path": str(Path("./workspace").resolve())}},
-    environment_id="env-workspace",
-)
-result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
+
+async def respond(messages, info):
+    returns = [
+        part for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        assert "view" in {tool.name for tool in info.function_tools}
+        yield {0: DeltaToolCall(
+            name="view", json_args='{"file_path":"/workspace/message.txt"}',
+        )}
+    else:
+        assert "Hello from the workspace." in str(returns[-1].content)
+        yield "Workspace file read successfully."
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
+    )
+    with TemporaryDirectory() as directory:
+        root = Path(directory).resolve()
+        path = root / "message.txt"
+        path.write_text("Hello from the workspace.\n", encoding="utf-8")
+        connector = DIRECT_LOCAL.execution_connector(
+            {"root": {"path": str(root)}}, environment_id="env-workspace",
+        )
+        result = await executable.run(
+            "Read message.txt.", environment=PreparedSource(connector),
+        )
+        print(result.output_or_raise())
+        assert path.is_file()  # Closing the Run preserves the Host's files.
+
+
+asyncio.run(main())
 ```
 
-The example directory must already exist. This Host has already prepared the target, so `ensure_ready()` returns its connector directly. Registration, metadata reads, tool injection, and state export do not prepare targets. The first environment operation, including input processing or skill loading, calls `ensure_ready()` and `open()`. Concurrent operations share one activation per mount; success and failure remain cached until replacement. Cancelling one waiter does not cancel preparation needed by others. Run exit closes only opened executions without destroying targets. Unused sources receive neither preparation nor cleanup calls; no `lazy` flag is needed.
+Run `python environment_demo.py`. It prints `Workspace file read successfully.` after checking the actual tool result. The file still exists when the Run has closed; `TemporaryDirectory` removes it only when the enclosing block exits.
 
-Enable `DynamicEnvironmentCapability` to expose permitted tools. `EnvironmentMount` adds Run-local path and permission policy.
+Three parts connect the workflow:
+
+1. `DIRECT_LOCAL.execution_connector(...)` describes one existing directory. It does not create that directory.
+2. `PreparedSource` implements the Host's readiness boundary. This target is already prepared, so `ensure_ready()` returns the connector directly.
+3. `DynamicEnvironmentCapability` exposes tools allowed by the mount and Provider. The first `view` activates the source and opens its execution.
+
+Registration, metadata access, tool injection, and state export leave sources inactive. Input processing or Skill loading can activate one before the first model tool call. Concurrent operations share one activation per mount, with success or failure cached until replacement; cancelling one waiter does not cancel preparation that others need. Unused sources receive no preparation or cleanup calls. Opened executions close in reverse opening order, including cleanup after partial opening failure.
+
+To use a real workspace, keep its directory alive and pass a configured [Model](models.md) to the builder. The source interface stays the same for remote targets; their Host preparation supplies a connector to the selected target.
 
 ## The Host owns management state
 
-The Host may prepare eagerly, as below, or defer management to its source’s `ensure_ready()`. Before returning the connector, save the authoritative `EnvironmentState`:
+For a managed target, publish its authoritative `EnvironmentState` before returning a ready connector. The source may perform management in `ensure_ready()`, or the Host may prepare it earlier. Harness then executes against that fixed target.
+
+This integration fragment reconnects to an **already prepared and recorded** target. It belongs inside your Host's async Run handler. Supply `environment_state_store`, `thread_id`, the selected provider `definition`, its `recipe`, backend configuration and credential, a built `executable`, and the accepted previous Harness state. Reuse `PreparedSource` from above:
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
@@ -76,47 +128,65 @@ result = await executable.run(
 )
 ```
 
-Execution uses this fixed state and produces no new target reference to publish at Run exit. `HarnessState.environment_states` aggregates mount state without replacing Host management records. After partial management failure or cancellation, the Host can obtain the known reference with `observed_environment_state()` and publish it; see [Lifecycle and state](../environments/lifecycle.md).
+The state store and its publication method belong to your application. `HarnessState.environment_states` summarizes the mounts; it does not replace authoritative management records. If preparation partially fails or is cancelled, use `observed_environment_state()` to obtain the known reference and publish it through the Host's recovery path. [Lifecycle and state](../environments/lifecycle.md) explains that sequence.
 
-Execution close never destroys the target. The Host calls the separate `EnvironmentProvider.destroy()` and clears management state only after confirmed completion. Previously generated connectors remain usable after the management client closes; the Host closes borrowed runtimes separately.
+Closing execution releases its resources and leaves the target intact. Destruction uses the separate `EnvironmentProvider.destroy()` operation; clear the management record after confirmed completion. A previously generated connector remains usable after the management client closes. Borrowed runtimes still need their own Host-managed lifetime.
 
 ## Use several Environments
 
-Pass `environments=` to name several Host sources. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
+Name the sources with `environments=` and choose the default explicitly. For example, keep source data read-only while allowing build output in another mount.
+
+This helper accepts two prepared sources and a Model. The data source must contain `input.txt`; the build source must have room for a new `output.txt`. The Host's input factory reads the data and writes uppercase output before invoking the Model:
 
 ```python
-from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
-from a13n_harness import EnvironmentMount
+from pydantic_ai.models import Model
 
-result = await executable.run(
-    "Read the source data and write the build output",
-    environments={
-        "build": build_environment,
-        "data": EnvironmentMount(
-            data_environment,
-            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
-        ),
-    },
-    default_environment="build",
-)
+from a13n_harness import AgentSpec, EnvironmentMount, HarnessBuilder
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness.environment.sources import EnvironmentSource
+
+
+async def build_from_data(
+    build_source: EnvironmentSource, data_source: EnvironmentSource, model: Model,
+) -> str:
+    async def prepare(context):
+        source = await context.environment.files.read_text("/environment/data/input.txt")
+        await context.environment.files.write_text(
+            "/workspace/output.txt", source.text.upper(), mode="create",
+        )
+        return "The Host wrote output.txt from input.txt. Confirm the operation is complete."
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=model)
+    result = await executable.run(
+        input_factory=prepare,
+        environments={
+            "build": build_source,
+            "data": EnvironmentMount(
+                data_source,
+                permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+            ),
+        },
+        default_environment="build",
+    )
+    return result.output_or_raise()
 ```
 
-The routing rules are deterministic:
+Call `await build_from_data(build_source, data_source, model)` from your async entry point. The output file is written under the build source's root. These are Host-side file operations; add `DynamicEnvironmentCapability` if the Model should also use Environment tools.
 
-| Input                                             | Mount name(s)  | Default route |
-| ------------------------------------------------- | -------------- | ------------- |
-| `environment=source`                              | `workspace`    | `workspace`   |
-| one `environments` entry                          | supplied name  | that entry    |
-| several entries with `default_environment="name"` | supplied names | named entry   |
-| several entries without `default_environment`     | supplied names | none          |
+| Run input                                         | Mount names         | Default         |
+| ------------------------------------------------- | ------------------- | --------------- |
+| `environment=source`                              | `workspace`         | `workspace`     |
+| One entry in `environments`                       | Your supplied name  | That entry      |
+| Several entries with `default_environment="name"` | Your supplied names | The named entry |
+| Several entries without `default_environment`     | Your supplied names | None            |
 
-Unless a mount sets `mount_path`, the default mount serves `/workspace` and every named mount is addressable at `/environment/{name}`. A mount with `mount_path` is addressable only at that root. With several entries and no explicit default, `/workspace/...` fails instead of selecting the first mapping entry. Mapping order never grants authority.
+By default, `/workspace` addresses the default mount and `/environment/{name}` addresses a named mount. A mount with an explicit `mount_path` is reachable only through that root. With several entries and no default, `/workspace/...` fails; mapping order never chooses one. Relative paths use the selected or default mount's working directory.
 
-Harness validates static input and publishes the complete mount set atomically. First-use activation failure on one mount does not remove other mounts. Opened executions close in reverse opening order; partial opening failures also clean up acquired resources.
+Harness validates the complete mount set before publishing it. A first-use failure on one mount leaves the other mounts available.
 
 ## Restrict a mount
 
-`EnvironmentMount` adds a permission ceiling and default working directory to one source:
+Wrap a source in `EnvironmentMount` to narrow its operations and set its default working directory. Here `docs_resource` must be a prepared source with an existing provider-local `/reference` directory; pass `read_only_docs` as a Run's Environment input:
 
 ```python
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
@@ -129,13 +199,22 @@ read_only_docs = EnvironmentMount(
 )
 ```
 
-`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to `FILE_EXECUTION_ACTIONS`: file and execution operations, excluding desktop `COMPUTER_ACTIONS`. A Host must explicitly include desktop actions to expose them. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. The Provider's supported operations always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
+Choose the permission set by the work you intend:
 
-`working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
+| Set                      | Operations admitted, subject to Provider support           |
+| ------------------------ | ---------------------------------------------------------- |
+| `FILE_READ_ACTIONS`      | File observation                                           |
+| `FILE_ACTIONS`           | The full `environment.file.*` family                       |
+| `FILE_EXECUTION_ACTIONS` | File and command execution operations; the default ceiling |
+| `COMPUTER_ACTIONS`       | Desktop operations, which the Host must include explicitly |
+
+`permission_ceiling` requires an `EnvironmentPermissionSet`. Effective actions are the intersection of this ceiling and Provider support. A ceiling controls Environment operations; it grants neither Host administration nor an OS sandbox against an allowed child process.
+
+`working_directory` is a canonical absolute provider path, without `.` or `..` segments. Leave it as `None` to use the source's configured default. Route roots and working directories select where operations run; they do not change OS isolation.
 
 ## Expose tools to the model
 
-The Environment can exist without model-facing tools. Add `DynamicEnvironmentCapability` when the model should receive a selected stable tool surface:
+Use `DynamicEnvironmentCapability` in the builder when the Model needs to operate the Environment. The earlier program includes it. To add the same surface to another Agent, pass this `capabilities` tuple to `HarnessBuilder.build` alongside the Agent's other capabilities:
 
 ```python
 from a13n_harness.environment import (
@@ -148,53 +227,54 @@ capabilities = (
 )
 ```
 
-Three decisions remain separate:
+Tool availability, invocation policy, and mount permission answer different questions:
 
-1. the Agent definition includes or omits the dynamic Environment Capability;
-2. an optional invocation policy can narrow a managed invocation for the current identity and arguments;
-3. the selected Environment mount and Provider enforce the exact operation.
+1. The Capability determines which tools the Model can discover.
+2. `InvocationPolicyCapability`, when supplied, can restrict an invocation for its current identity and arguments. Without one, managed Environment invocations default to allow at this boundary.
+3. The selected mount and Provider check the actual operation. A visible tool or an allowed invocation cannot add missing support, credentials, approval, or mount access.
 
-Without an explicit invocation policy (`InvocationPolicyCapability`), managed Environment tools default to allow at the Harness boundary. That default does not create Provider support, credentials, approval, or mount access. Tool injection improves discovery and cannot replace execution-time checks.
+### File tools and operation permissions
 
-Authorization applies to the requested operation and arguments, not a reserved backend. Canonical resources describe the mount and path observed during policy evaluation. If the Host replaces a mount or changes the default while policy or approval is waiting, execution selects the current route and checks its current permissions. Resource metadata and custom approval revisions do not guarantee that dispatch uses the observed backend. To pin the exact target, the Host enforces its policy on the execution path, for example in the Provider or through a Host-controlled stable binding.
+A read-only file mount normally provides `view`, `ls`, `glob`, and `grep`. The full file family adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`. Partial Providers expose the tools their supported actions can serve:
 
-After execution starts, compound file work stays on its selected scope. Document conversion retains that scope from source read through output publication, and downloads retain it while fetching and writing. Replacing a mount does not move an in-flight operation to another backend. Exact process handles, generation validation, Provider draining, and the prohibition on automatically replaying unknown outcomes remain unchanged.
+| Tool or operation                 | Required actions                                               |
+| --------------------------------- | -------------------------------------------------------------- |
+| `ls`, `glob`, `grep`              | List, query, and text-search respectively                      |
+| Text `view`                       | Text-read                                                      |
+| Media `view`                      | Stat and byte-read on the same mount                           |
+| Create/write text                 | Text-write; no read permission needed for creation             |
+| Edit an existing file             | Byte-read and text-write                                       |
+| Create missing parent directories | Mkdir; writing directly under a mount root does not require it |
+| Copy, including between mounts    | Copy-source on the source and copy-destination on the target   |
 
-The tool surface follows the effective actions of current mounts:
+Arguments are checked again at execution. With one shell-enabled mount, `shell_exec` replaces only `move`, `copy`, and `delete`; `mkdir` stays available. With multiple mounts, file mutations remain so one mount's shell does not hide another mount's operations. An empty Environment exposes none of these tools.
 
-- `FILE_READ_ACTIONS` exposes `view`, `ls`, `glob`, and `grep`;
-- `FILE_ACTIONS` adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`;
-- the default ceiling adds `shell_exec` when a Provider offers shell execution, and independently adds `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` according to their actions.
+`glob` and `grep` pass patterns, hidden/ignore policy, context width, and scan/result limits to the selected `FileOperator` in one call. Direct Local performs a worker-thread scan; Envd sends one `file.find` or `file.search` request. Set `include_ignored=True` when you intend to search ignored repository paths.
 
-Providers with partial operation support expose only usable tools: list, query, and text-search independently enable `ls`, `glob`, and `grep`; text-write can expose write/create-edit tools without read permission. Text `view` needs text-read, while media `view` needs stat plus byte-read on the same mount. Existing edits need byte-read plus text-write. Writing directly under a selected mount root does not require mkdir, including explicit roots without a default mount. Nested writes require mkdir when the tool creates the parent. Copy uses copy-source and copy-destination permissions, including across mounts. Actual arguments are checked again at execution.
+For images, audio, and video, `view` attaches native `BinaryContent` or calls a dedicated understanding Agent. Declare native support in the active `AgentSpec.model_characteristics`; a Model's name or `Model.profile` does not supply that declaration. Dedicated defaults use process environment variables, and a fresh `RunBindings.file_media_understanding` can override them. Continue with [Multimedia Understanding](multimedia-understanding.md) for supported inputs and usage accounting.
 
-On a single shell-enabled mount, `shell_exec` supersedes exactly `move`, `copy`, and `delete`; `mkdir` remains available. Multiple mounts retain file mutations so a shell on one mount does not hide operations on another. An empty Environment exposes no Environment tools.
+### Follow a running command
 
-A foreground-only mount exposes `shell_exec` with bounded inline output; it does not need standalone retained-output permissions. Process-capable mounts can add:
+A shell-enabled Provider exposes `shell_exec`. Process-capable mounts can additionally expose these independently authorized controls:
 
-| Tool           | Behavior                                                                                                                     |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `shell_exec`   | Starts a command; returns its result, a runtime receipt, or a local process reference according to the execution scope below |
-| `shell_info`   | Without an ID, lists discoverable native commands; with an ID, inspects current status only                                  |
-| `shell_wait`   | Waits boundedly, or polls with zero, then reads available stdout/stderr at explicit offsets                                  |
-| `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                                        |
-| `shell_signal` | Requests supported `interrupt`, `terminate`, or `kill` control without reading output                                        |
+| Tool           | Use it to                                                                              |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `shell_info`   | Inspect status; discover commands without an ID only when listing is supported         |
+| `shell_wait`   | Wait for a bounded interval, or poll with zero, then read output from explicit offsets |
+| `shell_input`  | Write UTF-8 stdin and optionally send EOF                                              |
+| `shell_signal` | Request supported `interrupt`, `terminate`, or `kill` control                          |
 
-On process-capable mounts, top-level `shell_exec` waits up to `ToolExecutionConfig.foreground_wait_seconds` (default five seconds) in both `inline` and `auto` modes. With a Host-held `ToolExecutionRuntime`, a command still running then returns an `exec-*` receipt. Foreground-only mounts retain the generic execution policy: `inline` waits for completion and `auto` permits timed handoff. Immediate steering can return that receipt earlier. The original command and capture stay alive across Runs of the same Thread in the same Host. On process-capable mounts, pass the live `execution_id` as `process_id` to Shell controls. After settlement, use `tool_execution_result` for the final status and bounded output.
+Start a command once, then follow the result it returns:
 
-Without runtime ownership, including Shell callbacks inside CodeAct, a process-capable mount returns native output and a Run-local `process-*` reference if the command remains live after the configured wait. Nested calls create no separate execution receipt; the outer CodeAct runner owns handoff.
+| Result                                                        | Next step                                                                                                                     |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Completed status and output                                   | Check the exit code and output coverage                                                                                       |
+| Live `exec-*` receipt from a Host-held `ToolExecutionRuntime` | On process-capable mounts, use the live ID as `process_id` for Shell controls; after settlement, read `tool_execution_result` |
+| Run-local `process-*` reference                               | Use Shell controls during this Run; the reference does not survive a new Run                                                  |
 
-Use `shell_wait.timeout_seconds` to set the duration of a subsequent wait. To impose a hard execution deadline, pass `execution_timeout_seconds` to `shell_exec`; the selected Provider must support enforcement. Providers such as native E2B reject unsupported deadlines before starting the command.
+On process-capable mounts, top-level `shell_exec` waits up to `ToolExecutionConfig.foreground_wait_seconds` (five seconds by default) in both `inline` and `auto` modes. A Host-held runtime retains a still-running command and returns its `exec-*` receipt; immediate steering can return it earlier. Foreground-only mounts use the general policy: `inline` waits for completion, while `auto` permits timed handoff. Their inline output needs no standalone retained-output permission.
 
-Use `shell_info(alias="workspace", limit=50)` to discover recoverable running commands only when the selected mount supports process listing. Direct Local supports inspection, not discovery: its `shell_info` schema requires a current Run's `process-*` reference or a live retained Shell `exec-*` identifier and omits `limit`. `shell_info(process_id=...)` only inspects; it does not attach, read, refresh or reset output. Listing and inspection are independently authorized. `alias` is an existing mount name from the Environment context, not a command/process label; omit it for default selection. An unknown or conflicting alias fails instead of retargeting a command or reference. Listing never exposes native PIDs, arbitrary arguments or environment variables.
-
-Output pages identify `origin` (`native_bytes` or `sdk_text`), coverage, whether observation is closed, and any partial-coverage reason. SDK-text offsets describe UTF-8 encoding of text delivered by the SDK, not original process bytes. Producer counts and completion are null when unknown. `next_offset` advances only over returned bytes; repeat the same offsets to reread, or use the last returned offsets for the next page. Harness keeps no unread cursor.
-
-Standalone `process-*` references belong to one Run. Retained `exec-*` controls can cross Runs while the same runtime holds the original handle and the current mount authorizes that target and every requested action. A reconnect preserves accumulated offsets but reports a gap. Native discovery in a later Run creates fresh references and observations; old references in messages alone are not authority. A standalone process exit hint does not establish complete output capture or descendant cleanup. A runtime-owned Shell execution settles only after native terminal evidence and closure of both captured output observations. Conversely, capped or closed output does not mean the process exited. E2B keeps checking native status within the wait budget after its output cap; if final exit evidence is lost, it reports missing/unknown rather than success. A tool result with `ok=true` means the invocation returned normally; inspect the process status and exit code to determine command success.
-
-Run cleanup releases standalone observations without blanket command termination. Runtime-owned operations retain their original scopes until settlement; execution cancellation attempts native termination, and Host shutdown drains owned work. After Host or scope loss, actual survival and recovery depend on the Provider. E2B can discover commands still running in the restored sandbox; Direct Local and Envd-backed Providers retain their own scope cleanup semantics.
-
-The standalone process path, used without runtime ownership or inside CodeAct, is:
+Without runtime ownership, a still-running command returns a `process-*` reference after the configured wait. Shell callbacks inside CodeAct use this path: nested calls return values, while only the outer runner can hand off. The following diagram shows that standalone path:
 
 ```mermaid
 sequenceDiagram
@@ -222,47 +302,55 @@ sequenceDiagram
     %% class Process ext
 ```
 
-`glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; Envd-backed Providers send one EIP `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.
+Use the returned `stdout.next_offset` and `stderr.next_offset` for each subsequent `shell_wait`. Reads are non-consuming, so repeating an offset rereads the same range; Harness keeps no unread cursor. A page reports `origin`, coverage, `observation_closed`, and any reason for missing output. `sdk_text` offsets count UTF-8 bytes of SDK-delivered text rather than original process bytes. Unknown producer counts or completion remain null. Reconnection preserves accumulated offsets and marks gaps.
 
-For supported image, audio, and video files, `view` either attaches native `BinaryContent` or invokes a dedicated understanding Agent. The `model_characteristics` construction value on the active Harness `AgentSpec` is the sole native-input authority; Harness never infers support from a model name or Pydantic AI `Model.profile`. Dedicated defaults read ordinary process environment variables, and a fresh `RunBindings.file_media_understanding` provider can override them.
+Keep three observations separate: command exit, complete output capture, and process-tree cleanup. `ok=true` says the tool call returned normally; command success requires a successful process status and exit code. A runtime-owned Shell execution settles after native terminal evidence and closure of both output observations. Capped output does not prove exit. E2B continues checking native status within the wait budget after a cap and reports missing/unknown when final exit evidence is unavailable.
 
-See [Multimedia Understanding](multimedia-understanding.md) for model input capability declarations, environment configuration, default prompt behavior, Run-scoped providers, usage attribution, and ordinary tool-result failures.
+`shell_wait.timeout_seconds` limits waiting. `shell_exec.execution_timeout_seconds` requests a hard deadline enforced by the Provider. Unsupported deadlines, including native E2B's, fail before the command starts.
+
+### Inspect and recover process observations
+
+Use `shell_info(process_id=...)` for status only; it does not attach, read, refresh, or reset output. Where process listing is supported, `shell_info(alias="workspace", limit=50)` can discover recoverable commands. Direct Local has inspection but no discovery, so its schema requires an ID and omits `limit`. Listing and inspection have independent authorization, and listings do not expose native PIDs, arbitrary arguments, or environment variables.
+
+`alias` names an existing mount. Omit it to use the default; an unknown alias or a conflict with a process reference fails. A saved reference alone does not restore authority. A retained `exec-*` remains controllable across Runs of the same Thread while the same runtime owns its original handle and the current mount authorizes that target and every requested action. Native discovery in a later Run creates fresh references and observations. Inspect uncertain outcomes before issuing new work; a missing command is not permission to restart it automatically.
+
+Run cleanup releases standalone observations. Backend cleanup determines command survival: Direct Local closes owned process trees, Envd closes Session-owned resources, and native Docker/E2B release observations without blanket termination. Runtime-owned work retains its original scope until settlement; cancellation attempts native termination, and Host shutdown drains owned work. Recovery after Host or scope loss depends on what the Provider actually retained. E2B can discover still-running commands in a restored sandbox.
+
+### Keep authorization tied to execution
+
+Canonical resource metadata describes the mount and path observed during policy evaluation. It does not reserve that backend while approval waits. If the Host replaces a mount or changes the default, dispatch selects the current route and checks current permissions. To require one exact target, enforce that requirement on the execution path, such as in the Provider or a Host-controlled stable binding; an approval revision alone does not pin it.
+
+Once a compound operation starts, it keeps its selected scope. Document conversion holds it from reading the source through publishing output; downloads hold it through fetch and write. Replacing a mount cannot redirect that in-flight operation. Process handles and generation checks retain their exact ownership, and uncertain outcomes are not replayed automatically.
 
 ## Manage Provider state outside Harness
 
-A production Host normally keeps desired Provider configuration and current `EnvironmentState` in its own authoritative records. For each independent Run it:
+For each independent Run, a production Host follows this sequence:
 
-1. selects the trusted Provider and validates desired configuration;
-2. loads current managed state, where authoritative `None` suppresses stale fallback state;
-3. supplies a source whose `ensure_ready()` performs required management and publishes observed state, including partial failure or cancellation;
-4. returns a fixed-target connector from the published state only when ready;
-5. invokes Harness, which opens and closes one fresh execution per used mount;
-6. invokes explicit destruction only when retention or prune policy authorizes it.
+1. Select a trusted Provider and validate the desired configuration.
+2. Load authoritative state. An authoritative `None` suppresses stale fallback state.
+3. Supply a source whose `ensure_ready()` performs required management and publishes observed state, including a known reference after partial failure or cancellation.
+4. Return a fixed-target connector only after the target is ready and state is published.
+5. Let Harness open and close a fresh execution for each used mount.
+6. Destroy the target separately when your retention or prune policy authorizes it.
 
-Execution does not update authoritative Provider state. A stopped or missing target fails opening; the Host must manage it explicitly before retrying.
-
-The shared package deliberately defines no Host table, lease, Thread-link, prune-candidate, pause-mode, or reconciliation-operation schema. A Host can add those models without moving lifecycle authority back into Harness.
+A stopped or missing target fails opening; explicitly manage it before retrying. Execution does not update authoritative Provider state. Tables, leases, Thread links, prune candidates, pause modes, and reconciliation records belong to the Host's application model.
 
 ## Advanced Run-local mount mutation
 
-Most applications should use `environment=` or `environments=`. Trusted Harness integrations can use the advanced Environment runtime when they need live Run-local `mount()`, `replace()`, `unmount()`, or `set_default()` behavior.
+Use ordinary `environment=` or `environments=` for a fixed Run setup. Trusted integrations that need live changes can supply an advanced runtime through `RunBindings.environment` and call `mount()`, `replace()`, `unmount()`, or `set_default()`. The advanced runtime and high-level Environment arguments are mutually exclusive.
 
-Each mutation accepts an `EnvironmentSource` or an `EnvironmentMount` containing one. Commit validates static metadata without activation; invalid input leaves the old mount unchanged. Replacement preserves default selection and creates a fresh mount incarnation with a new activation result. The retired mount stops accepting new activation and closes its execution after existing operation leases drain. First-use failure does not restore the old mount. Mutation never discovers a Provider, restores or persists state, or calls `destroy()`.
+A mutation accepts an `EnvironmentSource` or an `EnvironmentMount` wrapping one. Static validation happens before commit and leaves the old mount unchanged on invalid input. Replacement preserves default selection, creates a new mount incarnation, and resets activation. The retired mount accepts no new activation; its execution closes after admitted operations finish. A new mount's first-use failure does not restore the old one.
 
-High-level Environment arguments and an explicitly supplied advanced runtime are mutually exclusive. They use the same routing, permission, fencing, and non-destructive cleanup implementation.
+These changes use the same routing, permissions, and cleanup as ordinary inputs. They neither discover a Provider nor restore, persist, or destroy its target.
 
 ## Direct Local boundary
 
-`direct_local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
+Direct Local operates on an existing Host directory. The Host creates, selects, shares, retains, backs up, and removes that directory. Each Run opens a fresh execution to validate and use it. Its deterministic target needs no saved state, so `state` is `None`; closing or destroying the Provider never deletes the directory.
 
-- the Host creates, selects, retains, backs up, shares, and removes the directory;
-- a Direct Local connector opens a fresh execution that validates and uses it for one Run;
-- `state` returns `None` because the target is deterministic and stateless;
-- `close()` and `destroy()` never delete the directory;
-- the Provider root is always writable; a permission ceiling constrains Environment operations but is not an operating-system sandbox against an allowed child process.
-
-Use Local Envd or Docker when untrusted code needs an isolated execution boundary. Each Run opens a fresh execution. The Host owns the Local Envd daemon, while a Docker connector attaches to the exact running container represented by state.
+The Provider root is writable. Mount ceilings narrow file and command operations, but an allowed child process still has the Host account's OS authority. Use an appropriately configured Local Envd or Docker boundary for untrusted code. The Host owns the Local Envd daemon; a Docker connector attaches to the exact running container recorded in state.
 
 ## Temporary tool-result files
 
-Large tool results may include an `output_file_path` under a Run-private directory. It uses an explicit mount root or `/environment/{name}`, so changing the default mount does not redirect an earlier result. Cleanup removes owned temporary directories through their original mount selections. If that mount is replaced, unmounted, or unavailable, cleanup can leave temporary files behind rather than deleting anything on a replacement. These paths are not durable artifacts or permanent handles across mount replacement. Downloaded files and document-conversion exports are user output and are not removed by this cleanup.
+A large result can include an `output_file_path` in a Run-private directory. Its explicit mount root or `/environment/{name}` path keeps it on the original route when the default changes. Read it while that mount selection remains valid, and copy important results to a durable destination.
+
+Cleanup removes owned temporary directories through their original selections. If a mount was replaced, unmounted, or became unavailable, cleanup may leave files behind rather than delete from a replacement. Downloads and document-conversion exports are user output and are retained; temporary result paths are not permanent handles across mount replacement.

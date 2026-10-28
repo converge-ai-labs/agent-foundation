@@ -8,6 +8,7 @@ import {
 } from "a13n-ui";
 import { TrayIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import controls from "../controls.module.css";
 import { useOffersPageAction } from "../page/page-actions";
 
 /** Centred on a surface: icon tile, title, one line, and the primary action. */
@@ -32,7 +33,9 @@ export function Empty({
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
-      {action && <EmptyContent>{action}</EmptyContent>}
+      {action && (
+        <EmptyContent className={controls.compact}>{action}</EmptyContent>
+      )}
     </EmptyRoot>
   );
 }

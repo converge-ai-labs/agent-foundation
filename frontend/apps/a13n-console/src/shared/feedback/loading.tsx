@@ -71,8 +71,8 @@ function TableSkeleton({ columns, rows }: { columns: number; rows: number }) {
   const safeColumns = Math.max(1, columns);
   const template =
     safeColumns === 1
-      ? "minmax(12rem, 1fr)"
-      : `minmax(12rem, 2fr) repeat(${safeColumns - 1}, minmax(6rem, 1fr))`;
+      ? "minmax(0, 1fr)"
+      : `minmax(0, 2fr) repeat(${safeColumns - 1}, minmax(0, 1fr))`;
   const style = { gridTemplateColumns: template } as CSSProperties;
   return (
     <div className={styles.skeletonTable}>

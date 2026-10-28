@@ -1,146 +1,237 @@
 ---
 title: Usage, limits, and pricing
-description: Bound a Run with usage limits, read its usage records, and estimate cost with pricing policies.
+description: Run an offline accounting example, choose when usage resets, and configure cost estimates.
 ---
 
-Use usage limits to bound a logical Run, usage records to understand its work, and pricing policies to estimate cost. These are different concerns: a request budget is enforcement, an observed cost is not an invoice, and a terminal result is not a durable billing record.
+Set a budget before running an Agent, inspect its observed usage, then decide what your Host must persist. The example below shows a new accounting scope and an explicitly continued scope using the same saved conversation.
 
 ## Set a Run budget
 
+Use the environment from [Getting started](getting-started.md). Save this as `usage_demo.py` and run `uv run --locked python usage_demo.py` from the checkout root. It uses an offline Model and an in-memory reporter; no credentials are needed.
+
 ```python
-from a13n_harness import AgentSpec
+import asyncio
+from collections.abc import AsyncIterator
+
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness.usage import UsageSnapshot, select_usage_snapshot
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import UsageLimits
 
-spec = AgentSpec(
-    usage_limits=UsageLimits(request_limit=100, total_tokens_limit=200_000),
-    retries={"tools": 2, "output": 1},
-)
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    yield "done"
+
+
+class LatestUsage:
+    """In-memory replacement store for this single-writer example."""
+
+    def __init__(self) -> None:
+        self.snapshots: dict[str, UsageSnapshot] = {}
+
+    async def report(self, snapshot: UsageSnapshot) -> None:
+        previous = self.snapshots.get(snapshot.usage_id)
+        self.snapshots[snapshot.usage_id] = (
+            snapshot.model_copy(deep=True)
+            if previous is None
+            else select_usage_snapshot(previous, snapshot)
+        )
+
+
+async def main() -> None:
+    reporter = LatestUsage()
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            usage_limits=UsageLimits(request_limit=3, total_tokens_limit=10_000),
+            retries={"tools": 2, "output": 1},
+        ),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
+    first = await executable.run(
+        "Start work", bindings=RunBindings.embedded(usage_reporter=reporter)
+    )
+    assert first.output_or_raise() == "done"
+    assert first.state is not None
+    restored = HarnessState.model_validate_json(first.state.model_dump_json())
+    initial = UsageSnapshot.from_state(restored)
+    assert initial is not None
+
+    fresh = await executable.run(
+        "A new accounting scope", previous_state=restored,
+        bindings=RunBindings.embedded(usage_reporter=reporter),
+    )
+    continued = await executable.run(
+        "Continue the original accounting scope", previous_state=restored,
+        resume_usage=True,
+        bindings=RunBindings.embedded(usage_reporter=reporter),
+    )
+    assert fresh.output_or_raise() == continued.output_or_raise() == "done"
+    assert (first.usage.requests, fresh.usage.requests, continued.usage.requests) == (1, 1, 2)
+    assert continued.run_id != first.run_id
+    assert reporter.snapshots[initial.usage_id].summary.requests == 2
+    print("requests: first=1, fresh=1, continued=2")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-A Run may replace the complete `UsageLimits` value; it does not merge individual fields. Tool/output retries do not configure network retries or interrupted-model recovery. See [usage limits and retries](agents-and-runs.md#usage-limits-and-retries) for defaults, children, and overrides.
+The output is `requests: first=1, fresh=1, continued=2`. Each call makes one Model request. The third call retains the first call's accounting, so its summary contains two requests.
+
+`AgentSpec.usage_limits` supplies the budget. A Run's `usage_limits=` replaces that whole value; individual fields are not merged. Resumed accounting counts toward the selected budget. Tool and output retries control Agent-loop attempts; network retries and interrupted-model recovery have separate settings. See [usage limits and retries](agents-and-runs.md#usage-limits-and-retries) for defaults and child budgets.
 
 ## Usage
 
-`result.usage` and `stream.usage` return detached `RunUsageSummary` values: current model requests, token/audio counters, tool calls, provider receipts, Decimal USD cost, and explicit unknown-cost/incomplete coverage. They are not Pydantic AI's mutable `RunUsage`. `result.usage_records` contains current attributed contributions. Repeated observations of a provider-suspended generation refine one contribution, rather than adding another request or summing cumulative tokens.
+Read `result.usage` after a Run or `stream.usage` during streaming. Both return a detached `RunUsageSummary` with model requests, token/audio counters, tool calls, provider receipts, Decimal USD cost, and unknown-cost/incomplete-coverage fields. Read `result.usage_records` for the attributed contributions behind that summary.
 
-Model records have an optional `call_id` correlating the contribution with its original Model invocation, including the Host's optional [pre-dispatch check](hosting.md#check-model-calls-before-dispatch). Usage reports use schema version `1`; a record without `call_id` loads with `call_id=None`. That value means unknown dispatch correlation, not proof that no provider call occurred. The ID is not an HTTP request ID or an exactly-once billing key, and it does not change existing record deduplication. Interrupted calls retain only actually observed usage; a check or allocated ID alone does not establish a charge.
+A continued provider generation refines its existing contribution. Repeated cumulative observations do not add requests or tokens again. Provider integrations can add non-model receipts with `AgentContext.record_provider_usage()`; those receipts do not alter native model-token limits.
 
-Provider integrations can record stable non-model receipts through `AgentContext.record_provider_usage()`.
+Each model record can carry `call_id` for correlation with the original invocation and the Host's [pre-dispatch check](hosting.md#check-model-calls-before-dispatch). Historical version-1 reports without this field load it as `None`. Use contribution identities for deduplication: a call ID is neither an HTTP request ID nor an exactly-once billing key. Interrupted calls retain observed usage; allocating an ID alone establishes no charge.
 
 ### Save and resume accounting
 
-Usage is stored in the `a13n.usage` Capability namespace and exported with `HarnessState`. Every `run()` or `stream()` call resets accounting by default, including Runs that continue saved state, Runs on a forked Thread, and Runs that resume with human-in-the-loop answers. Steering within a running stream does not reset it. Previously persisted consumption is never deleted by reset.
+`HarnessState` exports accounting in the `a13n.usage` namespace. Choose the scope at the next call:
 
-To continue the same accounting scope explicitly:
+| Call                                          | Accounting behavior                                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `run()` or `stream()` with default settings   | Start a fresh scope, including saved-state continuation, forks, and human-answer resumes |
+| `resume_usage=True` with matching saved usage | Continue its `usage_id`, contribution ownership, and sequence under a new runtime Run ID |
+| Steering an active stream                     | Keep the active scope                                                                    |
 
-```python
-from a13n_harness.usage import UsageSnapshot
+The example's reporter stores one latest snapshot per `usage_id`. `select_usage_snapshot` validates replacement and preserves the newer compatible value. Production storage should commit that replacement atomically with one writer per scope. Resetting starts another scope; it does not delete previously persisted consumption. Missing or mismatched accounting fails explicit resume. Continuing a provider-suspended generation requires `resume_usage=True`.
 
-first = await executable.run("Start work")
-assert first.state is not None
-saved = UsageSnapshot.from_state(first.state)
-assert saved is not None
-continued = await executable.run(
-    "Continue work", previous_state=first.state, resume_usage=True
-)
-```
+For incremental storage, implement `UsageDeltaReporter.report_delta(delta)`. `delta.scope` carries identity, sequence, and tool-call count; `delta.records` carries the latest changed contributions after `delta.after_sequence`. Replace contributions and commit progress together. Accept retries and overlapping intervals after an uncertain commit; reject gaps beyond stored progress. When both reporter methods exist, Harness chooses `report_delta`. Complete checkpoints and result records remain available.
 
-The runtime Run ID changes, but the snapshot's `usage_id`, original contribution attribution and sequence continue. Missing or mismatched usage state fails explicitly. A provider-suspended generation requires this mode; resetting while continuing that generation is rejected before dispatch.
+Reporter delivery and display delivery are separate. A reporter receives detached accounting; `usage_report` display events contain bounded changed-record chunks. Consume one accounting ingestion path, rather than adding snapshots or display chunks as charges. Inline children inherit the reporter with independent scopes. Report failure stops execution and retains pending facts: retry delivery, not the Model work.
 
-A Host can bind an async `UsageReporter.report(snapshot: UsageSnapshot)` through `RunBindings.usage_reporter`. Store only the latest snapshot per `usage_id`, using `select_usage_snapshot` to validate replacement, and commit each scope atomically. Do not sum cumulative snapshots or use display chunks as another ingestion path. The stream's `usage_report` display events carry bounded changed-record chunks; the reporter receives the complete detached state. Inline children inherit the reporter with independent scopes. A failed report stops execution and must be retried as delivery, not as model work.
-
-For incremental storage, bind `UsageDeltaReporter.report_delta(delta: UsageDelta)` instead. `delta.scope` contains the scope identity, current sequence and tool-call count; `delta.records` contains only the latest values changed after `delta.after_sequence`. Commit these replacement contributions and scope progress atomically before returning. Accept retries and overlapping intervals after an uncertain commit, but reject gaps beyond stored progress. Harness retains unacknowledged changes for retry, independently of display delivery. If a reporter implements both methods, Harness calls `report_delta`. Complete checkpoints and result records remain available. Before `resume_usage=True`, ensure the restored accounting sequence and contributions are already durable in your storage.
-
-When durable accounting is newer than the selected execution checkpoint, use `latest_snapshot.restore(checkpoint)` before explicit accounting resume. This overlays accounting only; it does not move message history or restore execution authority. Serialize each scope's writer. Independent worker attempts need distinct scopes so a late older worker cannot overwrite newer accounting. Snapshots are bounded to 10,000 records and 16 MiB; reaching capacity fails instead of silently dropping observations.
+Before explicit accounting resume, make the restored sequence and contributions durable. If storage is newer than the execution checkpoint, apply `latest_snapshot.restore(checkpoint)` first. This overlays accounting while retaining that checkpoint's message history and current execution-authority requirements. Use separate scopes for independent worker attempts. Each snapshot is bounded to 10,000 records and 16 MiB; capacity exhaustion fails rather than dropping observations.
 
 ## Estimate model cost
 
-Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which freezes the current valid pricing catalog for the built Agent. Without Host-enabled updates this is bundled `genai-prices` data plus Harness supplements. `get_default_pricing_catalog()` always reads that bundled baseline; `get_current_pricing_catalog()` additionally adopts successful upstream and official supplement updates. Both return immutable catalogs without downloading anything. Read or export the current snapshot:
+Every built Agent has one model-cost policy. By default, `HarnessBuilder` inserts `CatalogModelCostCapability` with an immutable pricing catalog. Inspect the catalog installed in your process:
 
 ```python
 from a13n_harness.pricing import get_current_pricing_catalog
 
 pricing = get_current_pricing_catalog()
-entry = pricing["openai:gpt-5.5"]
+print(pricing.revision)
+print(list(pricing)[:5])
 exported = pricing.model_dump(mode="json")
 ```
 
+`get_default_pricing_catalog()` returns bundled `genai-prices` data plus packaged Harness supplements. `get_current_pricing_catalog()` also adopts successful process-local updates. Neither function downloads data. The export includes complete entries, rule conditions, source metadata, and a content revision; use it to inspect supported models and tariffs instead of maintaining a second model-price list.
+
 ### Keep Prices Current in a Host
 
-Pydantic AI exposes `prices.update_in_background()`. Start it once in your final application process, not during import or before forking worker processes. The following sketch uses your application's `serve()` function:
+Start updates once in the final application process. This helper accepts your async serving function and stops both update loops when serving ends:
 
 ```python
-from pydantic_ai import prices
+from collections.abc import Awaitable, Callable
 
-async def main():
-    with prices.update_in_background():
-        await serve()
+import anyio
+from pydantic_ai import prices
+from a13n_harness.model_catalog_updates import run_official_model_updates
+
+
+async def serve_with_price_updates(serve: Callable[[], Awaitable[None]]) -> None:
+    updater = prices.update_in_background()
+    try:
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(run_official_model_updates)
+            try:
+                await serve()
+            finally:
+                tasks.cancel_scope.cancel()
+    finally:
+        updater.stop()
 ```
 
-The upstream updater downloads immediately and then hourly. Startup need not wait for the first download: bundled prices are usable immediately, and failed downloads retain the last good data. Every later `HarnessBuilder.build()` automatically captures validated updates without restarting or clearing a cache. An already built executable keeps its old prices even when reused; rebuild it to adopt updates. The same rule keeps an active Run and its inline descendants stable.
+Call `await serve_with_price_updates(serve)` from your application entry point, where `serve` owns your server lifetime. Calling the helper enables downloads. Keep it out of imports and pre-fork initialization. Harness UI and Service already manage the official-model update loop.
 
-Harness maintains model context, media facts, and pricing supplements in one official document. To refresh it in an embedded async Host, start `a13n_harness.model_catalog_updates.run_official_model_updates` in your existing task group and cancel it at shutdown. Harness UI and Service already own this loop. It downloads from the repository's GitHub `main`, validates the complete document, and replaces both views together. Startup jitter, hourly refresh, exponential backoff, and a process-wide request schedule avoid per-Agent downloads. Network or validation failures keep the last valid or bundled document. Set `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0` to disable this loop independently of `genai-prices`. Neither updater rewrites saved model settings or alters active executions.
+The upstream updater downloads immediately, then hourly. The official loop refreshes the repository's shared model-facts/pricing document with startup jitter, hourly scheduling, and retry backoff. It validates the whole document before replacing both views. Process-wide scheduling avoids one download per Agent. Failures retain the last valid data, with bundled data available at startup. `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0` disables new official loops independently of upstream price updates.
 
-In an async Host, capture the catalog off the event loop and pass it to `HarnessBuilder.build()`. The explicit snapshot is used for default pricing only; a custom model-cost Capability still wins:
+New builds capture refreshed prices. Existing executables, active Runs, and inline descendants keep their selected policy. In an async Host, capture the catalog off the event loop:
 
 ```python
 from anyio import to_thread
-from a13n_harness import HarnessBuilder
+from a13n_harness import AgentDefinition, HarnessBuilder
 from a13n_harness.pricing import get_current_pricing_catalog
 
-catalog = await to_thread.run_sync(get_current_pricing_catalog)
-executable = HarnessBuilder().build(definition, pricing_catalog=catalog)
+
+async def build_with_current_prices(definition: AgentDefinition):
+    catalog = await to_thread.run_sync(get_current_pricing_catalog)
+    return HarnessBuilder().build(definition, pricing_catalog=catalog)
 ```
 
-Downloaded entries override packaged standard prices; missing entries keep bundled coverage. Because upstream `genai-prices` has no service-tier selector, current official service-tier rules supplement refreshed standard entries. Their prices and provenance contribute to the effective revision. Explicit complete-entry overrides can still replace or remove those rules. Conversion failures retain the previous valid catalog. Identical downloaded pricing content keeps the same revision regardless of retrieval time. No price history or disk cache is created. Stopping the updater does not erase already downloaded prices; pass `get_default_pricing_catalog()` as `pricing_catalog` when a build must use bundled data regardless of other process activity.
+Pass a complete definition, including its Model and output type, to `build_with_current_prices`. Downloaded standard entries replace matching packaged prices; missing entries retain bundled coverage. Official service-tier rules supplement upstream standard prices because the upstream catalog has no tier selector. Explicit complete-entry overrides take precedence over both.
+
+Catalog conversion failure keeps the last valid catalog. Equal effective content keeps the same revision regardless of download time. Updates create no disk cache or price history and do not rewrite saved Model settings. Stopping an updater leaves already published process-local data available. For a reproducible bundled baseline, pass `get_default_pricing_catalog()` as `pricing_catalog=`. An explicit custom cost Capability still wins over that build argument.
 
 ### Price the Served Service Tier
 
-Harness uses the **actual served tier** in `ModelResponse.provider_details`, not the request's `service_tier` setting. Pydantic AI exposes this for OpenAI Chat/Responses (including streaming) and Gemini Developer API. A priority request downgraded to `default` is priced at standard rates. Cost is calculated on each response before native usage accumulation, including inherited child and auxiliary policies.
+Harness prices each response before native usage accumulation using the actual served tier in `ModelResponse.provider_details`. A requested `service_tier` does not select a tariff. For example, a priority request served as `default` uses standard pricing.
 
-`ModelPriceRule.service_tier` selects an exact tier; omitted values describe standard pricing. The last active matching rule wins within that tier, independently of date/time conditions. Missing tier metadata uses standard prices; `default`, `standard`, and `on_demand` may use an untiered rule. Other tiers require an explicit matching rule: there is no universal discount/premium multiplier. OpenAI's `fast` response spelling selects its `priority` tariff. `max_input_tokens` bounds a tariff when the provider has not published prices above a context limit. Token-length cliffs remain `PriceComponent.tiers`, a separate dimension.
+| Rule field or response value                            | Effect                                                           |
+| ------------------------------------------------------- | ---------------------------------------------------------------- |
+| `ModelPriceRule.service_tier`                           | Exact tier match; the last active matching rule wins             |
+| No tier metadata, `default`, `standard`, or `on_demand` | May use an untiered standard rule                                |
+| OpenAI response tier `fast`                             | Selects `priority` rules                                         |
+| Another nonstandard tier                                | Requires an explicit rule; no universal discount or premium      |
+| `max_input_tokens`                                      | Inclusive upper bound; larger requests decline that tariff       |
+| `PriceComponent.tiers`                                  | Token-length price cliffs, independent of service-tier selection |
 
-Unknown or unsupported tiers decline Harness valuation rather than silently applying standard rates. Existing upstream cost, if any, remains available with its original cost source; otherwise cost is unknown, not zero. Malformed served-tier metadata reports pricing failure without failing the Run. Missing tier metadata does **not** prove standard serving.
+Unknown tiers decline Harness valuation and retain upstream cost if present; otherwise cost stays unknown. Malformed tier metadata records pricing failure without failing the Run. Missing metadata permits the legacy standard estimate but does not establish which tier served the request.
 
-The official supplement includes these public token-price rules:
+The catalog keeps endpoint-specific coverage. OpenAI and Gemini Developer API response metadata can select their published tier rules. Vertex `traffic_type` becomes a lower-case tier identifier, but the catalog does not borrow Developer API tier tariffs for Vertex. Supply an endpoint-specific policy for such traffic. Request-only capacity or speed preferences do not establish a served token tariff.
 
-| Provider                                                                                                                   | Public rules included                                                 | Important limits                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [OpenAI](https://developers.openai.com/api/docs/pricing)                                                                   | Read the installed pricing catalog for exact model IDs and tier rules | Each model gets only its published tiers. [Fast](https://developers.openai.com/api/docs/guides/fast-mode) also uses the `priority` spelling. Published long-context rates start above 272,000 input tokens. GPT-5.5 Fast, GPT-5.4 Fast, and GPT-5.5 Pro Flex decline above that boundary instead of inventing rates.            |
-| [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing)                                                      | Read the installed pricing catalog for exact model IDs and tier rules | Literal cache and audio prices are retained, including unchanged Flex cache prices for several models. Pro context cliffs start above 200,000 tokens. The 3.6–3.8 Flash introductory rates change January 1, 2027.                                                                                                              |
-| [Vertex AI](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo)                                     | No automatic tier tariff                                              | Actual `traffic_type` is passed as a lower-case tier identifier (for example `on_demand_priority`). Developer API tariffs are not borrowed for Vertex traffic. Author endpoint-specific rules in a custom policy.                                                                                                               |
-| [Anthropic](https://platform.claude.com/docs/en/api/service-tiers) and [Groq](https://console.groq.com/docs/service-tiers) | No inferred nonstandard tariff                                        | Anthropic priority and Groq performance are capacity contracts, not a universal token surcharge; Groq Flex has on-demand prices. Native upstream adapters do not currently expose their served tier. Anthropic Fast uses a separate served `speed` dimension, also unavailable here. Request settings are not billing evidence. |
+Read each installed entry for context bounds, cache/audio prices, and dated rules. Token estimates omit invoice adjustments such as regional uplifts, commitments, storage duration, grounding fees, and negotiated discounts. Recurring weekday rules do not model public-holiday calendars. Official tier supplements refresh through package or official-document updates, independently of upstream standard prices.
 
-These are token-cost estimates, not invoice parity: regional uplifts, capacity commitments, storage duration, grounding, other product fees, and negotiated prices are not derived from a service tier. DeepSeek's weekday peak/off-peak estimate does not account for Chinese public holidays. Official tier prices change with package updates or the official document refresh, not with the upstream standard-price downloader.
-
-For selected-Model `TokenPricingCapability` policies (including saved Service Model pricing), add tier rules to that complete entry. Existing standard-only entries are not silently replaced with public catalog rates; they decline nonstandard tiers until explicitly configured. In Service, the Console standard-price editor preserves authored tier rules.
+For a selected-Model `TokenPricingCapability`, author tier rules in its complete entry. A saved standard-only policy keeps that coverage until you change it; it is not silently replaced by public tariffs. Service's standard-price editor preserves existing authored tier rules.
 
 ### Override Pricing
 
-To replace prices, create complete `ModelPricingEntry` values and pass a shallow update dictionary. Each value replaces the entire entry at that `provider:model` key and wins over downloaded and bundled prices; nested fields are not merged:
+Provide a complete replacement entry for the response's `provider:model` key. This helper uses fictional rates of USD 1 and USD 2 per million input and output tokens; replace the identity and rates with your own policy:
 
 ```python
-from a13n_harness import HarnessBuilder
-from a13n_harness.pricing import CatalogModelCostCapability
+from decimal import Decimal
 
-costs = CatalogModelCostCapability(
-    pricing_updates={replacement.key: replacement},
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.pricing import (
+    CatalogModelCostCapability, ModelPriceRule, ModelPricingEntry, PriceComponent,
 )
-executable = HarnessBuilder().build(
-    spec,
-    output_type=str,
-    capabilities=(costs,),
-)
+from pydantic_ai.models import Model
+
+
+def build_with_custom_prices(model: Model):
+    replacement = ModelPricingEntry(
+        provider="demo", model="text-model",
+        source="host", source_revision="demo-v1",
+        rules=(ModelPriceRule(
+            rule_id="standard",
+            prices=(
+                PriceComponent(price_key="input_mtok", price=Decimal("1")),
+                PriceComponent(price_key="output_mtok", price=Decimal("2")),
+            ),
+        ),),
+    )
+    costs = CatalogModelCostCapability(pricing_updates={replacement.key: replacement})
+    return HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=model, capabilities=(costs,),
+    )
 ```
 
-One custom `AbstractModelCostCapability` supplied through build-time `capabilities=` atomically replaces the default. More than one is a definition error. Use `NoModelCostCapability()` to explicitly preserve only provider or upstream-library cost without Harness valuation. Inline child Runs inherit the parent's selected policy so the shared usage tree is valued consistently; the same child definition uses its own build-time policy when executed independently.
+Pass your configured native Model to `build_with_custom_prices`. The entry applies to responses identified as `demo:text-model`; other identities retain the catalog's coverage. `pricing_updates` replaces whole entries, including all tier rules, rather than merging nested fields.
 
-Pricing failure or model lookup miss does not fail the Agent Run. Usage records identify the pricing status, catalog revision, selected rule, and actual cost source. Durable aggregation, reconciliation, negotiated discounts, billing, and exporter delivery remain Host concerns.
+One build-time `AbstractModelCostCapability` replaces the default policy. More than one is a definition error. `NoModelCostCapability()` preserves provider/upstream cost without Harness valuation. Inline children inherit the parent's policy; independent execution of the same child uses its own build-time policy.
+
+A lookup miss or pricing failure leaves the Agent Run usable. Inspect each record's pricing status, revision, selected rule, and actual cost source. Unknown cost is distinct from zero.
 
 ## Design boundary
 
-- Pydantic AI owns native usage accumulation and limit checks.
-- Harness attributes root, child, and provider work and captures a pricing policy for the executable.
-- The Host owns durable aggregation, billing, negotiated prices, and whether to enable background catalog updates.
+Pydantic AI checks native usage limits. Harness attributes model, child, and provider work and values it with the executable's frozen policy. The Host persists and reconciles those observations, applies commercial billing rules, and owns updater lifetimes. A terminal result is an accounting input; durable billing requires the Host's commit.
 
-For metrics and traces rather than cost accounting, see [Observation](observation.md).
+For metrics and traces, continue to [Observation](observation.md).

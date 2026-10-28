@@ -59,9 +59,9 @@ Interaction results distinguish `dispatch` (`not_dispatched`, `dispatched`, or `
 
 ## Human Control and Lifecycle
 
-Human takeover is resource mutual exclusion. The Host pauses every scope sharing the controlled desktop before granting viewer input, prevents admission of new scopes during takeover, and revokes viewer input before resuming automation. Pausing blocks new calls immediately, drains an admitted operation, and invalidates references. This covers reads and screenshots as well as mutations. Unrelated Agent work can continue.
+Human takeover is resource mutual exclusion. The Host pauses every scope sharing the controlled desktop before granting viewer input, keeps newly created scopes paused during takeover, and revokes viewer input before resuming automation. Pausing blocks new calls immediately, drains an admitted operation, and invalidates references. This covers reads and screenshots as well as mutations. Unrelated Agent work can continue.
 
-A tool rejected before dispatch waits for handback and returns a fresh-observation instruction. It does not replay its original action. Operations already admitted may finish while pause drains them. Read-only wait loops check admission between polls so takeover does not wait for the whole condition deadline. If takeover or retirement interrupts tab creation, the late-created target remains owned for cleanup, and the tool reports interruption rather than navigating or silently retrying it.
+By default, a tool rejected before dispatch waits for handback and returns a fresh-observation instruction. A trusted Host can supply an explicit `on_human_control` callback to `BrowserUseCapability`: the capability invalidates its references and returns the callback's guidance immediately instead of waiting. The Host owns notification registration and subsequent input delivery. Neither policy replays the original action. Operations already admitted may finish while pause drains them. Read-only wait loops check admission between polls so takeover does not wait for the whole condition deadline. If takeover or retirement interrupts tab creation, the late-created target remains owned for cleanup, and the tool reports interruption rather than navigating or silently retrying it.
 
 The lifecycle boundaries are independent:
 

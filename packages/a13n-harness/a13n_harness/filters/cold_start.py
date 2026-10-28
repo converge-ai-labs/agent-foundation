@@ -55,6 +55,8 @@ class ColdStartFilterCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         last_response = _last_response(request_context.messages)
         if last_response is None or _idle_seconds(last_response[1].timestamp) < self.configuration.idle_seconds:
             return request_context

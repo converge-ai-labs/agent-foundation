@@ -7,7 +7,7 @@ from sqlalchemy import ForeignKeyConstraint, String
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
 # run's display pages by ordinal and pending answers by tool call. Desktop targets are keyed by native identity
 # so aliases share the same authority. Desktop execution fences are keyed by Run. Memory organization state is keyed by Space;
-# every other row has a Service object ID.
+# model dispatches are keyed by Harness call ID; every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
     "desktop_targets",
     "desktop_executions",
@@ -15,6 +15,7 @@ NOT_OBJECT_KEYED = {
     "memory_file_stores",
     "memory_record_sources",
     "model_provider_oauth",
+    "model_dispatches",
     "passwords",
     "pending_answers",
     "run_item_pages",
@@ -37,6 +38,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert [column.name for column in metadata.tables["model_dispatches"].primary_key.columns] == ["call_id"]
     assert [column.name for column in metadata.tables["desktop_targets"].primary_key.columns] == ["key"]
     assert [column.name for column in metadata.tables["desktop_executions"].primary_key.columns] == ["run_id"]
     assert [column.name for column in metadata.tables["thread_codeact"].primary_key.columns] == ["thread_id"]

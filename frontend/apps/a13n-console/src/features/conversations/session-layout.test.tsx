@@ -7,8 +7,10 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
 import { SessionLayout, ThreadLayout } from "./page";
 import {
+  fixtureNavigationPage,
   fixtureRun,
   fixtureRunPage,
+  fixtureSession,
   fixtureThread,
 } from "./transcript/fixture";
 
@@ -16,6 +18,7 @@ let client: Client;
 let cache: QueryClient;
 vi.mock("../../auth/context", () => ({
   useClient: () => client,
+  revalidateSession: vi.fn(),
   useAuth: () => ({ data: undefined }),
 }));
 vi.mock("../../layout/workspace", () => ({
@@ -24,7 +27,9 @@ vi.mock("../../layout/workspace", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("./session-header", () => ({ SessionHeader: () => null }));
+vi.mock("./session-header", () => ({
+  SessionHeader: () => <header data-testid="session-header" />,
+}));
 afterEach(() => {
   cleanup();
   cache.clear();
@@ -52,6 +57,7 @@ function show(
   threads: ReturnType<typeof fixtureThread>[],
   path: string,
   scheduleId: string | null = null,
+  navigationFails = false,
 ) {
   const requested: string[] = [];
   client = createClient({
@@ -62,13 +68,23 @@ function show(
       requested.push(url.pathname);
       if (url.pathname === "/api/v1/sessions/ses_1")
         return Response.json({ id: "ses_1", schedule_id: scheduleId });
-      if (url.pathname === "/api/v1/threads") {
-        // The root can be on a later page than recent child activity.
-        const next = url.searchParams.has("cursor");
-        return Response.json({
-          items: next ? threads.slice(1) : threads.slice(0, 1),
-          next_cursor: next ? null : "next",
-        });
+      if (
+        url.pathname === "/api/v1/sessions/ses_1/threads" ||
+        url.pathname === "/api/v1/threads"
+      ) {
+        if (navigationFails)
+          return Response.json(
+            {
+              error: {
+                code: "service_unavailable",
+                message: "Navigation unavailable",
+              },
+            },
+            { status: 503 },
+          );
+        // Root filtering is global; the first chronological Thread may be a child.
+        const page = fixtureNavigationPage(threads, url.searchParams);
+        return Response.json(page);
       }
       return Response.json(threads.find((t) => url.pathname.endsWith(t.id)));
     },
@@ -106,7 +122,7 @@ it("asks which history to open when more than one root exists", async () => {
   await screen.findByText("Choose a thread");
   await userEvent
     .setup()
-    .click(screen.getByRole("link", { name: /thr_other/ }));
+    .click(await screen.findByRole("link", { name: /thr_other/ }));
   expect(
     await screen.findByText(
       "/sessions/ses_1/threads/thr_other/runs/run_other?view=chat&follow=latest",
@@ -118,8 +134,18 @@ it("offers explicit histories instead of guessing when no root is available", as
   show([child, fork], "/sessions/ses_1?view=chat");
   await screen.findByText("Choose a thread");
   expect(
-    screen.getByRole("link", { name: /thr_fork/ }).getAttribute("href"),
+    (await screen.findByRole("link", { name: /thr_fork/ })).getAttribute(
+      "href",
+    ),
   ).toBe("/sessions/ses_1/threads/thr_fork?view=chat");
+});
+
+it("replaces pending Chat resolution with its retryable error", async () => {
+  show([root], "/sessions/ses_1?view=chat", null, true);
+  await screen.findByText("Navigation unavailable");
+  expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+  expect(document.querySelector("[data-session-loading]")).toBeNull();
+  expect(screen.queryByText("No threads yet")).toBeNull();
 });
 
 it.each([
@@ -143,10 +169,21 @@ it.each([
   },
 );
 
-it("opens the Schedule from its fixed Session without listing historical Threads", async () => {
+it("opens execution history from a Schedule's fixed Session", async () => {
   const requested = show([root], "/sessions/ses_1", "sch_1");
-  expect(await screen.findByText("/schedules/sch_1")).toBeTruthy();
-  expect(requested).not.toContain("/api/v1/threads");
+  expect(
+    await screen.findByText(
+      "/sessions/ses_1/threads/thr_root/runs/run_root?follow=latest",
+    ),
+  ).toBeTruthy();
+  expect(requested).toContain("/api/v1/threads");
+  expect(screen.queryByText("/schedules/sch_1")).toBeNull();
+});
+
+it("keeps a Schedule's empty Session accessible before its first trigger", async () => {
+  show([], "/sessions/ses_1", "sch_1");
+  expect(await screen.findByText("No threads yet")).toBeTruthy();
+  expect(screen.queryByText("/schedules/sch_1")).toBeNull();
 });
 
 it("loads only the selected Schedule Thread when opening historical output", async () => {
@@ -161,7 +198,7 @@ it("loads only the selected Schedule Thread when opening historical output", asy
     ),
   ).toBeTruthy();
   expect(requested).toContain("/api/v1/threads/thr_root");
-  expect(requested).not.toContain("/api/v1/threads");
+  expect(requested).not.toContain("/api/v1/sessions/ses_1/threads");
 });
 
 it("starts known thread, run, page and display reads while the session read is still pending", async () => {
@@ -216,4 +253,93 @@ it("starts known thread, run, page and display reads while the session read is s
     ),
   );
   await act(async () => finish(Response.json({ id: "ses_1" })));
+});
+
+it("keeps one opening surface and opens Run reads from one bounded Thread page", async () => {
+  let finishSession!: (response: Response) => void;
+  let finishTargets!: (response: Response) => void;
+  const sessionRead = new Promise<Response>((resolve) => {
+    finishSession = resolve;
+  });
+  const targetsRead = new Promise<Response>((resolve) => {
+    finishTargets = resolve;
+  });
+  const requested: URL[] = [];
+  const thread = fixtureThread();
+  const run = fixtureRun();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (input) => {
+      const url = new URL((input as Request).url);
+      requested.push(url);
+      if (url.pathname === "/api/v1/sessions/ses_1") return sessionRead;
+      if (url.pathname === "/api/v1/threads") return targetsRead;
+      if (url.pathname.endsWith("/items"))
+        return Response.json({ run, items: [], complete: true });
+      if (url.pathname === "/api/v1/threads/thr_1/runs")
+        return Response.json(fixtureRunPage([run]));
+      if (url.pathname === "/api/v1/runs/run_2") return Response.json(run);
+      return new Response("", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 15_000 } },
+  });
+  const view = render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={["/sessions/ses_1?view=debug"]}>
+        <Routes>
+          <Route path="/sessions/:sessionId" element={<SessionLayout />}>
+            <Route path="threads/:threadId" element={<ThreadLayout />}>
+              <Route path="runs/:runId" element={<Location />} />
+            </Route>
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const header = screen.getByTestId("session-header");
+  expect(
+    view.container.querySelectorAll("[data-session-loading]"),
+  ).toHaveLength(1);
+  await act(async () => finishSession(Response.json(fixtureSession())));
+  await waitFor(() =>
+    expect(requested.some((url) => url.pathname === "/api/v1/threads")).toBe(
+      true,
+    ),
+  );
+  expect(screen.getByTestId("session-header")).toBe(header);
+  expect(
+    view.container.querySelectorAll("[data-session-loading]"),
+  ).toHaveLength(1);
+  await act(async () =>
+    finishTargets(Response.json({ items: [thread], next_cursor: null })),
+  );
+  await waitFor(() =>
+    expect(
+      requested.filter((url) => url.pathname === "/api/v1/runs/run_2/items"),
+    ).toHaveLength(1),
+  );
+  expect(screen.getByTestId("session-header")).toBe(header);
+  expect(
+    requested
+      .filter((url) => url.pathname === "/api/v1/threads/thr_1/runs")
+      .map((url) => url.searchParams.get("anchor")),
+  ).toEqual(["run_2"]);
+  expect(
+    requested
+      .filter((url) => url.pathname === "/api/v1/threads")
+      .map((url) => url.search),
+  ).toEqual(["?session_id=ses_1&limit=1"]);
+  await screen.findByText(
+    "/sessions/ses_1/threads/thr_1/runs/run_2?view=debug&follow=latest",
+  );
+  expect(screen.getByTestId("session-header")).toBe(header);
+  expect(view.container.querySelector("[data-session-loading]")).toBeNull();
+  expect(
+    requested.filter((url) => url.pathname === "/api/v1/threads/thr_1"),
+  ).toHaveLength(0);
 });

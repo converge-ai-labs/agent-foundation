@@ -18,7 +18,7 @@ import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
 import { Audit } from "./audit";
 import { SettingsLayout } from "./layout";
-import { Preferences } from "./preferences";
+import { Preferences, LanguageSettings } from "./preferences";
 import { Profile } from "./profile";
 import { Security } from "./security";
 
@@ -29,6 +29,7 @@ export function PersonalSettings() {
       content={{
         profile: <Profile target={{ kind: "personal" }} />,
         preferences: <Preferences />,
+        language: <LanguageSettings />,
         security: <Security />,
         sessions: <BrowserSessions />,
         activity: <Audit scope={{ kind: "personal" }} />,

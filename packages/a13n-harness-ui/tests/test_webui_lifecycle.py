@@ -252,7 +252,8 @@ except KeyboardInterrupt:
 @pytest.mark.skipif(os.name != "posix", reason="POSIX signals and native PTY")
 @pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
 def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path, stop_signal: signal.Signals) -> None:
-    _write_configuration(tmp_path)
+    configuration = _write_configuration(tmp_path)
+    configuration.write_text(configuration.read_text() + "browser:\n  mode: disabled\n")
     # No personal shell startup files, provider traffic or browser dependency.
     env = {**os.environ, "HOME": str(tmp_path), "SHELL": "/bin/sh", "ENV": "/dev/null", "BASH_ENV": "/dev/null"}
     with socket.socket() as sock:

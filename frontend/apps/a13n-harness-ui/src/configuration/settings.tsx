@@ -209,7 +209,10 @@ export function EnvironmentsPage() {
         title="Environments"
         description="Choose where and how your agents work."
       />
-      <nav className={layout.tabs} aria-label="Environment sections">
+      <nav
+        className={`${layout.tabs} a13n-scrollbar`}
+        aria-label="Environment sections"
+      >
         {[
           ["local", "Local execution"],
           ["devices", "Devices"],

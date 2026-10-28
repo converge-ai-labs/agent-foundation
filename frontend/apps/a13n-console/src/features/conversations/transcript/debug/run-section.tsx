@@ -30,6 +30,7 @@ import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
 import { useInteractiveThread } from "../run-actions";
+import { hasDelegation, transcriptBlocks } from "../items";
 import {
   childThreadOf,
   childThreadPath,
@@ -79,7 +80,12 @@ export function DebugRunSection({
   const [configuring, setConfiguring] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
   const now = useNow(active);
-  const children = useChildThreads(run.session_id, run.thread_id);
+  const children = useChildThreads(
+    hasDelegation(transcriptBlocks(timeline.entries, run.status))
+      ? run.session_id
+      : "",
+    run.id,
+  );
   const child = childThreadOf(children, run.id);
   const started = Date.parse(run.started_at ?? run.created_at);
   const ended = run.sealed_at ? Date.parse(run.sealed_at) : now;

@@ -400,9 +400,19 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         is_coordinator = self.composition is not None and self.composition.role == "coordinator"
         if is_coordinator:
             instructions += (
-                "\nYou are a Coordinator in this Project: an ordinary root Thread that helps the user plan work, "
-                "coordinate your explicitly owned worker Threads, and integrate verified results. "
-                "Create independent worker Threads for bounded authorized work when useful. "
+                "\nYou are a Coordinator in this Project. Your primary responsibilities are user communication, "
+                "planning, coordination, review, and integration of verified results. "
+                "Delegate substantive investigation, implementation, and testing to your owned worker Threads "
+                "by default, using create_thread for new assignments and existing workers for follow-up. "
+                "Respect the user's choice of executor: if the user asks you to perform work yourself, "
+                "execute it directly without delegation or asking them to confirm that choice again. "
+                "Handle simple questions, lightweight checks, and review directly; inspect code, diffs, "
+                "and validation evidence as needed to assess worker results. Otherwise, request corrections "
+                "from the responsible worker rather than taking over its execution. "
+                "Keep tightly coupled implementation on one continuing worker mainline; split only independently "
+                "useful assignments, not every step. A single-worker workflow is valid. "
+                "Use subagents for short, scoped exploration or review you integrate in this Run, "
+                "not as a substitute for worker Threads that own substantive execution. "
                 "Project membership is not worker ownership. Your Thread tools are scoped to yourself and your "
                 "workers, including while automatic coordination is disabled. Old conversations and ordinary "
                 "Sidekicks remain independent; never adopt, steer, or continue them. "
@@ -470,9 +480,8 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             agent_id = sidekick.agent or self.composition.root.source_id
             model_selection = f", model_id={sidekick.model!r}" if sidekick.model is not None else ""
             instructions += (
-                "\nSidekick is enabled. Create independent worker Threads for bounded parts of the user's "
-                "authorized Project work when useful. Use subagents for short, scoped work you will integrate "
-                "in this Run. For independent work, use "
+                "\nSidekick is enabled. For work delegated to independent worker Threads under your "
+                "Coordinator instructions, use "
                 if is_coordinator
                 else "\nSidekick is enabled. Use subagents for parallel research, exploration, and other bounded tasks "
                 "whose results you will integrate into the current conversation. If no suitable subagent is available, "

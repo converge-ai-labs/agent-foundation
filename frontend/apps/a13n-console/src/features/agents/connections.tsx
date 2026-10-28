@@ -1,4 +1,4 @@
-import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, XIcon } from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
@@ -190,7 +190,7 @@ export function ConnectionGroup({
             ) : (
               <span className={styles.toolsetGroupCount}>{count}</span>
             )}
-            <CaretDownIcon
+            <CaretRightIcon
               size={16}
               className={
                 expanded ? styles.toolsetCaretOpen : styles.toolsetCaret

@@ -175,6 +175,62 @@ async def test_fill_replaces_existing_text(native_browser, markup, value_express
             assert await backend.browser.evaluate(backend.page, value_expression) == text
 
 
+async def test_empty_scope_reopens_in_its_own_window_and_resizes_content(native_browser):
+    endpoint, _ = native_browser
+    runtime = await Chromium.connect(endpoint)
+    try:
+        left, right = CdpBrowserBackend(runtime), CdpBrowserBackend(runtime)
+        await left.tabs("new")
+        await right.tabs("new")
+        right_window = (await runtime.window(right.page))["windowId"]
+        await left.tabs("close", target=left.page.target)
+        assert await left.tabs("list") == ()
+        await left.tabs("new")
+        assert (await runtime.window(left.page))["windowId"] != right_window
+        for width, height in ((768, 1024), (1280, 720), (390, 844)):
+            await runtime.resize_window(left.page, width, height)
+            assert await runtime.evaluate(left.page, "[innerWidth, innerHeight]") == [width, height]
+        assert len(await right.tabs("list")) == 1
+    finally:
+        await runtime.close()
+
+
+async def test_input_stays_on_target_when_another_page_is_activated(native_browser, monkeypatch):
+    endpoint, _ = native_browser
+    runtime = await Chromium.connect(endpoint)
+    try:
+        left, right = CdpBrowserBackend(runtime), CdpBrowserBackend(runtime)
+        for scope in (left, right):
+            await scope.tabs("new", url='data:text/html,<input aria-label="Editor">')
+        original_send = runtime.send
+        activations = 0
+
+        async def send(method, params=None, page=None):
+            nonlocal activations
+            if method.startswith("Input."):
+                # Interleave real presentation focus changes at dispatch boundaries.
+                await original_send("Page.bringToFront", page=right.page)
+                activations += 1
+            return await original_send(method, params, page)
+
+        monkeypatch.setattr(runtime, "send", send)
+        observation = await left.observe()
+        element = next(item for item in observation.elements if item.description == "Editor")
+        result = await left.interact(
+            Fill(kind="fill", target=Ref(kind="ref", ref=element.target), text="Target text"),
+            revision=observation.revision,
+        )
+        assert json.loads(result)["verification"] == "passed"
+        await left.observe()
+        result = await left.interact(Press(kind="press", key="!"))
+        assert json.loads(result)["dispatch"] == "dispatched"
+        assert activations > 1
+        assert await runtime.evaluate(left.page, "document.querySelector('input').value") == "Target text!"
+        assert await runtime.evaluate(right.page, "document.querySelector('input').value") == ""
+    finally:
+        await runtime.close()
+
+
 async def test_scopes_survive_runs_reconcile_popups_and_reattach(native_browser):
     from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
     from a13n_harness.capabilities.browser import BrowserError

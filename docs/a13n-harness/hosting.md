@@ -1,11 +1,26 @@
 ---
 title: Embedding in a Host
-description: Add definition selection, policy, checkpoints, and delivery around the process-local Harness API.
+description: Run a persistent conversation, then add current authority, background tools, and durable delivery.
 ---
 
-An embedded application calls Harness directly. A durable Host adds definition selection, current policy, checkpoint storage, and delivery around the same process-local API. Start with the [offline application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) before adding a worker or database.
+A Host is the application that calls Harness. It selects the Agent, supplies current access and clients, saves accepted state, and delivers results. Start with a single-process conversation; add worker coordination when your application needs it.
+
+This guide uses the repository's offline [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app). It needs Python 3.13, uv, and a repository checkout, but no provider credentials. For a standalone state-file program using only Harness, see [State and resume](state-and-resume.md).
 
 ## Core Integration Path
+
+From the repository root, install the example and run two turns. Choose a new state filename for this exercise:
+
+```bash
+cd examples/agent-app
+uv sync --locked
+uv run agent-app-example --state ./hosting-demo.json "First turn" "Second turn"
+uv run agent-app-example --state ./hosting-demo.json "After restart"
+```
+
+The first command prints answers beginning with `Turn 1:` and `Turn 2:`. The restarted process prints `Turn 3:`. The offline Model counts the conversation it receives, so the third answer verifies that saved history reached a new application instance.
+
+The application follows this sequence for each turn:
 
 ```mermaid
 sequenceDiagram
@@ -15,114 +30,237 @@ sequenceDiagram
     Client->>Host: submit input
     Host->>Host: select definition and checkpoint
     Host->>Harness: build or reuse executable
-    Host->>Harness: run(input, bindings, previous_state, environment)
-    Harness-->>Host: events and terminal result
-    Host->>Host: accept and persist result
-    Host-->>Client: deliver outcome
+    Host->>Harness: stream with fresh bindings and saved state
+    Harness-->>Host: events, then terminal result
+    Host->>Host: check status and save accepted state
+    Host-->>Client: confirm saved outcome
 
     %% class Client,Host app
     %% class Harness a13n
 ```
 
-Harness executes one Run; the Host decides which result becomes durable.
+Text can reach the client while the Run is active. Confirm durable completion only after saving the accepted terminal result. If the Run fails or the consumer leaves the stream early, this example keeps the previous checkpoint.
 
 ## Reconstruct Trusted Definitions
 
-Store a Host-owned schema for model selection, output type, tools, Capabilities, plugins, and child topology. Trusted code resolves those choices into Python objects before calling `HarnessBuilder`; do not deserialize a Python callable or plugin from untrusted input. Harness UI YAML is one Host format, not a universal SDK schema.
+Keep definition selection separate from turn input:
 
-For large tool catalogs, a Host can assemble `ToolSearchCapability(groups=...)` from selected sources. See [ToolSearch Host integration](tool-search.md#host-integration).
+1. Select the application's trusted Agent revision.
+2. Resolve its Model, output type, tools, Capabilities, plugins, and child definitions into installed Python objects.
+3. Build an executable with `HarnessBuilder`.
+4. Reuse that executable while the exact trusted definition remains unchanged.
+
+Store your own serializable definition schema and revision. Resolve references through trusted code rather than deserializing callables or plugins from client input. Harness UI YAML is one Host's format. For a large tool catalog, assemble selected sources with [ToolSearch](tool-search.md#host-integration).
 
 ## Build and Reuse
 
-Cache an executable by its exact trusted definition revision, then supply current inputs to each Run:
+The example's `ConversationApplication` caches its executable and serializes turns with an async lock. You can call it from another Python entry point. Save this as `host_demo.py` in `examples/agent-app`, after the setup above:
 
-```python
-result = await executable.run(
-    input_value,
-    bindings=reconstruct_current_bindings(execution_attempt),
-    previous_state=selected_checkpoint,
-)
+```python title="host_demo.py"
+import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from a13n_agent_app_example import ConversationApplication, create_demo_environment
+from a13n_agent_app_example.cli import create_demo_model
+
+
+async def main() -> None:
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        application = ConversationApplication(
+            model=create_demo_model(),
+            state_path=root / "conversation.json",
+            environment_factory=lambda: create_demo_environment(root / "workspace"),
+        )
+        for prompt in ("First turn", "Second turn"):
+            async with application.stream_turn(prompt) as stream:
+                answer = "".join([text async for text in stream])
+            print(answer)
+
+        state = await application.load_state()
+        assert state is not None
+        print("Saved conversation state.")
+
+
+asyncio.run(main())
 ```
 
-Scope streams with `async with executable.stream(...)`. The executable has no `close()` method; close Host-owned clients at their own lifespan boundary.
+Run `uv run python host_demo.py`. Expect two numbered answers and `Saved conversation state.`. This program removes its temporary data on exit; the CLI exercise above demonstrates persistence across processes.
+
+When integrating Harness directly, use `async with executable.stream(...)` or await `executable.run(...)`. The executable has no `close()` method. Close application-owned clients at their own lifespan boundary, after Runs and retained work have released them.
 
 ## Retain Tools Across Conversation Turns
 
-Add `ToolExecutionCapability` to the definition and hold one `ToolExecutionRuntime` for the Host lifetime. Bind the runtime to each Run; use a separate `CodeActStateOwner` per Thread when CodeAct writes must remain visible after the originating Run ends.
+Use a Host-held runtime when supported tool calls must continue after the foreground wait ends. This is a separate integration from the example application's completed-turn state file:
+
+1. Add `ToolExecutionCapability` to the Agent definition.
+2. Hold one `ToolExecutionRuntime` for the Host lifetime.
+3. Bind that runtime to every participating Run with fresh `RunBindings`.
+4. For late CodeAct explicit-state writes, hold a separate `CodeActStateOwner` for each Thread.
+5. On shutdown, stop accepting new work, settle interactive waiters, close and join the runtime, then close shared clients.
+
+The following function shows the complete wiring and shutdown order. It accepts an application-selected native `Model` and executes two turns in one Thread:
 
 ```python
 from a13n_harness import (
+    AgentSpec,
     CodeActStateOwner,
+    HarnessBuilder,
     RunBindings,
     ToolExecutionConfig,
     ToolExecutionRuntime,
 )
 from a13n_harness.capabilities import ToolExecutionCapability
+from pydantic_ai.models import Model
 
-capability = ToolExecutionCapability(
-    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
-)
-runtime = ToolExecutionRuntime()
-thread_values = CodeActStateOwner()
-bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+
+async def run_host(model: Model) -> None:
+    runtime = ToolExecutionRuntime()
+    thread_values = CodeActStateOwner()
+    try:
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=model,
+            capabilities=(
+                ToolExecutionCapability(
+                    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
+                ),
+            ),
+        )
+        previous = None
+        for prompt in ("Start the task", "Continue the task"):
+            result = await executable.run(
+                prompt,
+                previous_state=previous,
+                bindings=RunBindings.embedded(
+                    tool_execution=runtime,
+                    codeact_state=thread_values,
+                ),
+            )
+            print(result.output_or_raise())
+            previous = result.state
+    finally:
+        await runtime.close(timeout_seconds=5.0)
+        await runtime.join()
 ```
 
-Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Detachment requires a tool with retained execution ownership and a retainable resource scope, such as supported Environment Shell calls and whole CodeAct runners. An ordinary `async def` custom tool remains inline; adding the runtime alone does not make it detachable. CodeAct's nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
+To exercise the function offline in `host_demo.py`, replace its final `asyncio.run(main())` with this function and its imports, followed by `asyncio.run(run_host(create_demo_model()))`. The Model returns two answers. This checks runtime binding and cleanup; it does not invoke a background tool.
 
-Bind the Harness runtime through `RunBindings.tool_execution` to enable automatic background execution and immediate steering. The runtime owns active calls; its store retains records and results. Runs without this binding use blocking generic tools, queued steering, and the Environment's native shell process controls. Enabling `auto` requires the binding at Run preparation; requesting immediate steering requires it before input acceptance.
+Actual detachment requires a tool with retained execution ownership and a retainable resource scope, such as supported Environment Shell calls or whole CodeAct runners. An ordinary `async def` custom tool remains inline. CodeAct nested calls await actual values, and sequential tools keep their execution barrier until work settles. The default execution mode is `inline`; `auto` requires a runtime binding when the Run is prepared.
 
-`await stream.steer(message, immediate=True)` continues the same logical Run with new input. During a primary model request it interrupts the request and recovers the attempt. During tools it preserves the current attempt, finishes review and validation, and releases supported foreground waits with real results or retained execution receipts. The native tool batch settles or suspends for approval before the next model request. Its returned input ID confirms acceptance; canonical history confirms incorporation. Automatic mode independently returns control when the foreground wait expires. Ordinary steering defaults to `immediate=False`, and accepted pending input is included in normal state exports.
+A bound Agent gets `tool_execution_info`, `tool_execution_result`, `tool_execution_wait`, and `tool_execution_cancel`, plus a status-only context summary. Both the Capability and runtime binding are required, in either mode. Reads are scoped to the owning Thread; a real result entering canonical history acknowledges delivery. The default memory store retains active work and recent completed records for the Host process lifetime. Supply a `ToolExecutionStore` for your own retention or persistence policy, and use `on_completed` to schedule delivery without blocking execution. Durable records alone do not transfer a running invocation to a replacement worker.
 
-If native steering is not ready or an unsupported tool is active, immediate steering waits up to five seconds before acceptance. A timeout raises `RunError` with code `steering_timeout` and leaves the input unaccepted. Stopping or closing the Run ends this wait promptly. By default, the call keeps immediate semantics and does not fall back to queued steering; the deadline ends once input is accepted.
+For active-stream input, choose the required handoff behavior:
 
-For interactive delivery, pass `immediate=True, best_effort=True`. Harness accepts ordinary queued input immediately if an unsupported tool is active or no tool runtime is bound, and otherwise requests immediate handoff. Native readiness still has the same bounded wait. Input is enqueued once; invalid input, cancellation, and a stopped Run remain failures. `best_effort` has no effect for ordinary steering. The `steering_input_enqueued` event reports `handoff_requested` so Hosts can distinguish immediate handoff requests from queueing. Neither result means the model has already incorporated the input.
+| Call                                                            | Behavior                                                                                                 |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `await stream.steer(message)`                                   | Queue input for the active Run.                                                                          |
+| `await stream.steer(message, immediate=True)`                   | Require immediate handoff support before accepting input.                                                |
+| `await stream.steer(message, immediate=True, best_effort=True)` | Queue immediately if a tool cannot hand off or no runtime is bound; otherwise request immediate handoff. |
 
-The Agent inspects, retrieves, waits for and cancels work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. These controls and the status-only context summary appear only when the Run has both `ToolExecutionCapability` and a runtime binding, in either `inline` or `auto` mode. An unbound inline Run exposes neither. Reads are scoped to the owning Thread. A real result entering canonical history acknowledges delivery. The default memory store keeps active work and the most recently completed records; its contents last for the Host process lifetime. Hosts can supply a `ToolExecutionStore` with their own persistence and retention policy.
+Immediate steering interrupts and recovers a primary Model request. During tools it preserves the attempt, finishes review and validation, and releases supported foreground waits with actual results or retained receipts. The native tool batch settles or suspends for approval before the next Model request. Automatic foreground timeout operates independently.
 
-Use the runtime's `on_completed` callback to schedule Host delivery without blocking execution. Before closing shared clients, stop new Host admission, settle interactive waiters, then call `await runtime.close(timeout_seconds=...)` and `await runtime.join()`. `close` bounds its cancellation wait; `join` preserves ownership until cooperative cleanup finishes. Conversation cancellation and tool cancellation are separate policies.
+If native steering is not ready, immediate steering waits up to five seconds before acceptance. Strict immediate steering also waits when an unsupported tool is active. Timeout raises `RunError` with code `steering_timeout` and leaves the input unaccepted; stopping or closing the Run ends the wait. `best_effort` keeps the native-readiness wait, does not change ordinary steering, and still rejects invalid input, cancellation, or a stopped Run.
+
+The returned input ID means accepted, not yet incorporated by the Model. Input is enqueued once and pending accepted input appears in normal state exports. Use canonical history to confirm incorporation; the `steering_input_enqueued` event's `handoff_requested` field distinguishes handoff from queueing. Conversation cancellation and tool cancellation remain separate Host choices. Runtime `close` bounds its cancellation wait; `join` waits for cooperative cleanup before shared resources can close.
 
 ## Fresh Authority
 
-On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
+For every Run, reconstruct the current identity and policy, Model credentials, Provider state, and Environment sources. Load history from `HarnessState`; supply current collaborators through `RunBindings`. See [Agents and Runs](agents-and-runs.md) for binding fields.
 
-Pass business request headers through `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))`, importing `RequestContext` from `a13n_harness`. Trusted tools read the detached, read-only map at `ctx.deps.request_context.headers`. Names normalize to lower case. Inline children inherit it. Hosts retain and reconstruct context for recovery or independent children; `HarnessState` does not store it, and new bindings default to empty. Headers are not automatically exposed in prompts, tool results or shell environments. The Host explicitly wires forwarding to model and MCP transports.
+For business request headers, construct a fresh binding at the call site:
 
-Set `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` to change the default for an omitted model Provider `forward_context_headers` parameter. Explicit `true` or `false` wins over the environment; unset keeps the built-in default `true`. The environment accepts `true` and `false` case-insensitively with surrounding whitespace ignored, and rejects other values. Resolution happens when the configuration is constructed. Hosts can use `a13n_harness.http.forward_context_headers_default()` for the same default in their MCP integration.
+```python
+from a13n_harness import RequestContext, RunBindings
+
+bindings = RunBindings.embedded(
+    request_context=RequestContext(headers={"x-trace": "trace-123"})
+)
+```
+
+Pass `bindings=bindings` to `run()` or `stream()`. Trusted tools read `ctx.deps.request_context.headers`, a detached read-only map with lower-case names. Inline children inherit it. Reconstruct it for recovery and independent children: new bindings default to empty, and `HarnessState` does not save these headers. Prompt, tool-result, and shell-environment projection is separate from explicitly configured Model or MCP forwarding.
+
+The Model Provider's `forward_context_headers` option uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` when omitted. Unset means `true`; explicit booleans win over the environment. The variable accepts case-insensitive `true` or `false` with surrounding whitespace ignored, and rejects other values. Defaults resolve when constructing the configuration. Your MCP integration can use `a13n_harness.http.forward_context_headers_default()` for the same default.
 
 ### Check Model Calls Before Dispatch
 
-A Host may supply `RunBindings.model_call_check` implementing `ModelCallCheck.check(ModelCall)`. Harness invokes it before a public model call; return to permit the call or raise to refuse it. This is a per-call admission check, not a record that an HTTP request or billable usage occurred. The check is fresh Run authority and is never serialized into `HarnessState`. See [usage correlation](usage-and-limits.md#usage).
+Supply a `ModelCallCheck` through `RunBindings.model_call_check` when your application must admit each public Model call. Its `check(ModelCall)` method returns to allow dispatch or raises to refuse it. Recreate this authority for the current Run. Record actual usage separately: admission does not establish that an HTTP request was sent or billed. See [usage correlation](usage-and-limits.md#usage).
 
 ## Durable State Boundary
 
-Persist the returned `HarnessState` alongside your Host's definition revision, run/attempt identity, selected Environment state, pending deferred calls, and delivery status. For distributed workers, also keep lease/fence and checkpoint provenance. None of those Host records is recreated from `HarnessState`.
+Save the returned `HarnessState` together with the Host records needed to interpret and accept it:
+
+| Host record                                                    | Why it matters                                                  |
+| -------------------------------------------------------------- | --------------------------------------------------------------- |
+| Definition revision and Run/attempt identity                   | Reconstruct the selected executable and correlate work.         |
+| Selected Environment state                                     | Reconnect to the intended targets under current policy.         |
+| Pending deferred calls and accepted feedback                   | Resume the correct external work.                               |
+| Delivery status                                                | Distinguish saved completion from client receipt.               |
+| Lease/fence and checkpoint provenance, for distributed workers | Prevent an obsolete worker from publishing over newer progress. |
+
+The file example saves only successful turns and has one writer. For coordinated checkpoint publication, follow [Host Checkpointing](state-and-resume.md#host-checkpointing).
 
 ## Attempts and Recovery
 
-When `ModelRecoveryPolicy` is enabled, Harness may retry an interrupted model attempt within one Run; those model attempts share its `run_id`. A replacement worker attempt is a **new** Run with a fresh `run_id`, current bindings, current Environment sources, and the Host-selected checkpoint. If a previous tool mutation has an uncertain outcome, reconcile it before replaying. See [State and Resume](state-and-resume.md).
+Keep two recovery paths distinct:
+
+- `ModelRecoveryPolicy` retries interrupted Model attempts inside one logical Run, retaining its `run_id`.
+- A replacement worker starts a new Run with a fresh `run_id`, current bindings, current Environment sources, and the Host-selected checkpoint.
+
+Reconcile uncertain tool mutations before replaying them. A checkpoint cannot tell you whether an external write whose response was lost actually happened. [State and resume](state-and-resume.md) explains declared recovery and interrupted deferred input.
 
 ## Events and Streaming
 
-Consume `HarnessRunStream` within its async scope and project its public events to the application stream or store. A terminal `HarnessRunResultEvent` follows Harness cleanup; persist the result before promising durable completion or delivery to a client.
+Consume events inside the stream's async scope. Project public events into your application stream or observation store, then handle `HarnessRunResultEvent` separately:
+
+1. Wait for the terminal result, which follows Harness cleanup.
+2. Check its status and continuation state.
+3. Apply your checkpoint acceptance rule and save the state.
+4. Confirm durable completion to the client and track delivery as needed.
+
+The example's `stream_turn()` implements this order while yielding text immediately. Leaving that scope early closes the active stream and preserves the previous completed checkpoint.
 
 ## Deferred Work
 
-A suspended Run is closed. Store its pending request and checkpoint, authenticate the external result, then start a new Run with `DeferredToolResume`. Retain accepted results when a resume is interrupted before they enter history. [Deferred resume](state-and-resume.md#resume-unanswered-tool-calls) covers the request/result contract.
+A suspended Run is closed. To continue external work:
 
-`RunBindings.deferred_tools_supported` defaults to `True`, so async children can suspend unless the Host disables it. A Host that supports async child deferrals retains the child checkpoint and pending requests. A Host without that lifecycle sets `deferred_tools_supported=False` for each async child Run; ordinary prompt continuation does not require deferred support.
+1. Save the pending request with its checkpoint.
+2. Authenticate and correlate the external results with the exact pending calls.
+3. Start a new Run with current bindings and `DeferredToolResume`.
+4. Retain accepted feedback until it reaches canonical history, including across an interrupted resume.
+
+See [Deferred resume](state-and-resume.md#resume-unanswered-tool-calls) and [Human-in-the-loop](human-in-the-loop.md) for executable examples.
+
+`RunBindings.deferred_tools_supported` defaults to `True`. A Host that supports async child deferrals must retain each child's checkpoint and pending requests. If your child lifecycle cannot do that, set `deferred_tools_supported=False` on each async child Run. Ordinary prompt continuation needs no deferred support.
 
 ## Environments
 
-Supply a Host-owned `EnvironmentSource` for each target through `environment=` or a named `environments=` mapping. Harness prepares each target on first use, opens a fresh execution, and closes it without destroying the target; the Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. For multiple mounts, choose `default_environment` explicitly when a default route is needed. [Environments](environments.md) has runnable examples.
+Supply a Host-owned `EnvironmentSource` for each target through `environment=` or a named `environments=` mapping. Choose `default_environment` explicitly when multiple mounts need a default route.
+
+Harness prepares a target on first use, opens a fresh execution, and closes that execution without destroying the target. Your Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. The application example creates a fresh Direct Local source per turn; its workspace persists independently. Use [Environments](environments.md) to add real file or shell operations.
 
 ## Shell Executions and Observations
 
-Standalone `process-*` references belong to one Run and are released with its observations at Run close, without blanket command termination. Top-level Shell calls bound to the Host-held tool runtime instead retain their original scope until execution settlement, and live `exec-*` controls use current-Run authorization. After Host or scope loss, use Provider state/native discovery if the backend retained the command. Persisted references alone do not restore execution authority.
+Choose the recovery path from the execution reference:
+
+- Standalone `process-*` references belong to one Run. Run close releases their observations; the Provider's cleanup policy determines command survival.
+- Top-level Shell calls bound to the Host runtime retain their original resource scope until settlement. Live `exec-*` controls use current-Run authorization.
+- After Host or scope loss, inspect Provider state or use native discovery if the backend retained the command. A saved reference alone cannot restore execution authority.
 
 ## Minimal vs. Production Host
 
-A single-process application can use embedded bindings and persist only the `HarnessState` of successful Runs. Add durable acceptance, fencing, separate Environment state, pending-call records, and delivery tracking when multiple workers or deferred actions require them. These are Host workflows, not extra Harness loop APIs.
+Add coordination to solve a concrete lifecycle need:
+
+| Application need                           | Add                                                             |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| Continue a single-process conversation     | Successful-turn state storage and one writer per Thread.        |
+| Wait for approval or client work           | Pending-call storage, authenticated feedback, and resume.       |
+| Keep supported tools running between turns | A shared tool runtime, Thread ownership, and shutdown ordering. |
+| Replace workers safely                     | Durable admission, leases/fencing, and checkpoint publication.  |
+| Recover client delivery                    | Saved result and delivery tracking.                             |
 
 ## Runnable Example
 
-The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) streams turns, atomically stores successful `HarnessState`, and constructs a fresh Direct Local Environment on each call. [Provider plugin examples](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) show installed Provider selection and Environment Run extensions.
+Use the [Agent Application source](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) to inspect the completed-turn lock, event projection, atomic state-file replacement, and restart tests. The [Provider plugin examples](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) extend that integration with installed Provider selection and Environment Run extensions.

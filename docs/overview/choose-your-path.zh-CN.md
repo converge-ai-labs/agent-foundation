@@ -3,7 +3,7 @@ title: 选择使用方式
 description: 根据 agent 的运行位置和运维负责人，选择 Service、Harness 或 Harness UI。
 ---
 
-Agent Foundation 通过 Service 提供托管执行，通过 Harness 提供嵌入式执行，通过 Harness UI 提供交互式工作台。
+根据第一个任务选择指南：在 Python 应用内运行 agent，与 agent 交互式协作，或使用负责管理执行的 Service 部署。
 
 | 你的目标                   | 所需条件                                         | 从这里开始                                             |
 | -------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
@@ -16,9 +16,9 @@ Agent Foundation 通过 Service 提供托管执行，通过 Harness 提供嵌入
 
 ## 选择执行位置
 
-- **Service：** 应用向已运行的部署提交任务。Service 负责身份管理、会话保存和持久执行；Console 是它的浏览器应用。
-- **Harness：** Python 进程构建并运行 agent。存储、访问策略和结果交付由你的应用负责。
-- **Harness UI：** 终端和浏览器工作台使用自己的配置和会话历史来运行 agent。只与可信的协作者共享实例；Harness UI 没有按用户划分的权限或隔离。
+- **Service：** 通过 Console 或应用提交任务。Service 在已运行的部署中管理身份、保存对话并提供持久执行。
+- **Harness：** 在 Python 进程中构建并运行 agent。由你的应用提供存储、访问策略和结果交付。
+- **Harness UI：** 配置 agent，通过终端或 WebUI 与其协作。只与可信协作者共享实例：配置、对话和环境访问没有按用户隔离。
 
 ```mermaid
 flowchart TB
@@ -33,9 +33,11 @@ flowchart TB
     class Service,Harness a13n
 ```
 
-**Service SDK** 是远程执行的客户端。**Harness 库** 在你的进程中执行 agent。Console 和 Harness UI 的 WebUI 是两个独立的浏览器应用。
+Service 和 Harness UI 都内嵌 Harness。从其他应用调用 Service 部署时，安装 **Service SDK**；在该应用自己的进程中执行 agent 时，安装 **Harness 库**。Service 的浏览器界面是 Console，Harness UI 的浏览器界面是 WebUI。
 
 ## 单独使用组件
+
+根据集成需要添加组件：
 
 | 需求                                       | 指南                                                |
 | ------------------------------------------ | --------------------------------------------------- |
@@ -44,4 +46,4 @@ flowchart TB
 | 将 Harness 观测转换为 AG-UI 事件           | [Stream Protocol](../a13n-stream-protocol/index.md) |
 | 发行包名、导入路径和可运行示例             | [软件包目录](packages.md)                           |
 
-要了解一次对话的完整流程，请阅读[核心概念](core-concepts.md)。部署运维请参阅[运维 Service](../a13n-service/operations.md)。Service 客户端独立发布版本，请核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配你的部署。
+在[核心概念](core-concepts.md)中跟随一次 Service 对话，或通过[运维 Service](../a13n-service/operations.md)管理部署。选择 Service 客户端版本时，核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配该部署。

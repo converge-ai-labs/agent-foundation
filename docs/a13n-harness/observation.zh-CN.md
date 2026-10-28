@@ -1,161 +1,223 @@
 ---
 title: 观测
-description: 按需启用执行、模型与工具的 OpenTelemetry 追踪和指标，支持 Logfire 和 Langfuse 配置。
+description: 先在本地捕获 Run 的 span 和指标，再通过 Host 的 OpenTelemetry 管道导出。
 ---
 
-启用 OpenTelemetry 可检查 Run、模型和工具。在 Host 中配置 provider 和导出，再将 provider 传给 Harness。
+先用内存 exporter 观测一次离线 Run。确认能看到追踪和时长指标后，再将同一套埋点接入 collector、Logfire 或 Langfuse。Host 负责 provider 配置与导出，Harness 负责为自己构建的 Agent 埋点。
 
-`HarnessBuilder()` 在构建时直接从 `os.environ` 读取限定的 `A13N_HARNESS_*` 策略变量，绝不打开 `.env` 或其他配置文件。Host 进程、启动器、容器运行时或开发命令可以在 Harness 启动前加载文件并导出变量。默认不启用观测。传入 `instrumentation=None` 可显式禁用，不受环境变量影响；传入 `HarnessInstrumentation` 则以明确指定的 provider 覆盖环境配置。
+观测用于解释执行过程。判断工作是否完成并已持久保存，应检查 [Run 结果与已保存状态](hosting.md#events-and-streaming)。
 
 ## 在 Host 中配置 OpenTelemetry
 
-在作为可执行程序的 Host 中安装并配置 OpenTelemetry SDK，再把具体 provider 交给 Harness：
+使用[开始使用](getting-started.md)中的 Python 环境，再安装 OpenTelemetry SDK：
 
-```python
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-
-from a13n_harness import (
-    HarnessBuilder,
-    HarnessInstrumentation,
-    HarnessTraceContent,
-)
-
-resource = Resource.create({"service.name": "agent-worker"})
-tracer_provider = TracerProvider(resource=resource)
-meter_provider = MeterProvider(resource=resource)
-
-# Add Host-selected span processors, metric readers, and exporters here.
-
-builder = HarnessBuilder(
-    instrumentation=HarnessInstrumentation(
-        tracer_provider=tracer_provider,
-        meter_provider=meter_provider,
-        trace_content=HarnessTraceContent.STANDARD,
-    )
-)
+```bash
+uv pip install opentelemetry-sdk
 ```
 
-提供 `HarnessInstrumentation` 时，至少需要一个 provider：
+将完整程序保存为 `observe.py`。它不使用网络 exporter，也不需要 provider 凭据：
 
-- 只提供 tracer，启用追踪；
-- 只提供 meter，启用指标；
-- 两者都提供，同时启用追踪和指标；
-- `instrumentation=None` 同时禁用两者。
+```python title="observe.py"
+import asyncio
+from collections.abc import AsyncIterator
 
-Host 必须在进程退出时刷新并关闭 provider。Harness 不会在每次执行后刷新。
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    del messages, info
+    yield "Observed locally."
+
+
+async def main() -> None:
+    resource = Resource.create({"service.name": "observation-demo"})
+    spans = InMemorySpanExporter()
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
+    reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+    try:
+        instrumentation = HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+        )
+        executable = HarnessBuilder(instrumentation=instrumentation).build(
+            AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+        )
+        result = await executable.run("Check observation")
+        print(result.output_or_raise())
+        tracer_provider.force_flush()
+        roots = [span for span in spans.get_finished_spans() if span.name == "harness.run"]
+        assert len(roots) == 1
+        assert roots[0].parent is None
+        print("Logical Run spans:", len(roots))
+        data = reader.get_metrics_data()
+        assert data is not None
+        names = {
+            metric.name
+            for resource_metrics in data.resource_metrics
+            for scope_metrics in resource_metrics.scope_metrics
+            for metric in scope_metrics.metrics
+        }
+        assert "a13n.harness.run.duration" in names
+        print("Run duration metric recorded.")
+    finally:
+        meter_provider.shutdown()
+        tracer_provider.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+运行 `uv run python observe.py`，应输出：
+
+```text
+Observed locally.
+Logical Run spans: 1
+Run duration metric recorded.
+```
+
+程序构建 Model、完成 Run、检查导出的 span 和指标，最后关闭两个 provider。
+
+通过传给 `HarnessInstrumentation` 的 provider 选择信号：只有 tracer 时启用追踪，只有 meter 时启用指标，两者都有则同时启用。至少需要一个 provider。向 `HarnessBuilder` 传入 `instrumentation=None` 可显式关闭两者。在 Host 进程生命周期结束时刷新并关闭 provider；Harness 不会在每次 Run 后刷新它们。
 
 ## 分别选择追踪结构与内容
 
-追踪结构只有两种状态：
+分别选择追踪结构与载荷策略。提供 tracer provider 后，启用完整结构：`harness.run`、准备/收尾与 Skill 解析、原生 Agent/Model/工具 span，以及恢复、委派、handoff、压缩和工具审查操作。未提供 tracer provider 时，Harness 选择的追踪关闭。环境配置分别用 `verbose` 和 `off` 表示这两种状态。
 
-| 状态    | 所选结构                                                                                                                                   |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| off     | 不创建 Harness 选择的 span。                                                                                                               |
-| enabled | `harness.run`、准备/收尾和 skill 解析阶段、原生 Pydantic AI span，以及用于恢复、委派、handoff、压缩和工具审查的 `harness.operation` span。 |
+| 内容策略   | 普通文本与工具内容 | 二进制内容 | 序列化 Model 请求参数 |
+| ---------- | ------------------ | ---------- | --------------------- |
+| `none`     | 省略               | 省略       | 省略                  |
+| `standard` | 包含               | 省略       | 省略                  |
+| `full`     | 包含               | 包含       | 包含                  |
 
-显式 Python API 中，提供 tracer provider 就会启用完整结构。环境变量使用 `off` 和 `verbose` 表示这两种状态，没有摘要或中间结构模式。
+默认值为 `standard`。要修改本地示例，从 `a13n_harness` 导入 `HarnessTraceContent`，在 `HarnessInstrumentation(...)` 中加入 `trace_content=HarnessTraceContent.NONE`。Run span 和指标仍然存在，普通输入/输出正文被省略。关闭追踪时，内容设置不生效。
 
-内容策略控制原生 Pydantic AI 捕获和有界的逻辑执行输入/输出。原生设置如下：
+导出前检查哪些数据会进入遥测。`none` 不会对上游的 Agent 描述、元数据、工具定义、schema 默认值或异常文本统一脱敏。`standard` 也不能对任意自定义模型或 dataclass 内嵌的二进制值脱敏。
 
-| 策略       | 普通文本和工具内容 | 二进制内容 | 序列化模型请求参数 |
-| ---------- | ------------------ | ---------- | ------------------ |
-| `none`     | 省略               | 省略       | 省略               |
-| `standard` | 包含               | 省略       | 省略               |
-| `full`     | 包含               | 包含       | 包含               |
-
-内容默认值为 `standard`。追踪关闭时，该策略不生效，不产生数据，也不会让仅指标的配置变为无效。提供 tracer provider 后，完整追踪结构按所选内容策略启用。
-
-`none` 表示 Host 不采集普通执行载荷，不能作为上游 Pydantic AI 埋点字段的通用脱敏边界。启用追踪前，应视 agent 描述、元数据、工具定义和 schema 默认值，以及上游异常文本为遥测可见内容。`standard` 也无法对任意自定义模型或 dataclass 中嵌套的二进制值脱敏。
-
-Host 从 collector 读取 span 并展示给用户时，可通过 `a13n_harness.observation.redact_json` 处理内容。它返回独立副本，替换 `authorization`、`api_key`、`password`、`secret` 和 `token` 等携带权限的成员，保留 `input_tokens` 等用量计数，并替换字符串内的 `Bearer` 凭据。Harness 对扩展事件载荷应用相同规则。
+向用户展示 collector 内容时，`a13n_harness.observation.redact_json` 会返回独立副本，替换 `authorization`、`api_key`、`password`、`secret` 和 `token` 等携带权限的字段。它还会替换字符串中的 Bearer 凭据，同时保留 `input_tokens` 等用量计数。Harness 对扩展事件载荷应用相同规则。
 
 ## 通过环境变量启用观测并选择 collector
 
-builder 默认模式为 `instrumentation="environment"`。它读取一次以下 Harness 策略变量，并获取可执行 Host 已配置的 OpenTelemetry 全局 provider：
+启动器负责遥测后端时，使用环境配置。`HarnessBuilder()` 默认采用 `instrumentation="environment"`，从 `os.environ` 读取一次以下策略，再选择 Host 配置的全局 provider；它不加载 `.env` 文件。
 
-| 变量                         | 值                         | 默认值     |
+| Variable                     | Values                     | Default    |
 | ---------------------------- | -------------------------- | ---------- |
 | `A13N_HARNESS_TRACE_LEVEL`   | `off`, `verbose`           | `off`      |
 | `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full` | `standard` |
 | `A13N_HARNESS_METRICS`       | `off`, `standard`          | `off`      |
 
-无效值在 `HarnessBuilder()` 构建时失败。开发和生产默认值相同：关闭追踪、使用 standard 内容策略、关闭指标。
+非法值在构建 builder 时失败。开发与生产使用相同默认值。显式 `HarnessInstrumentation` 覆盖这些变量，显式 `None` 关闭观测。
 
-使用官方 OpenTelemetry Python distro 和 OTLP exporter 配置 SDK 与 collector 目标。Harness 不重复实现其环境变量处理：
+通过 OTLP 导出离线 Model 的追踪：
+
+1. 在同一个 Python 环境中安装 `opentelemetry-distro[otlp]`。
+2. 将 `collector_demo.py` 保存在 `observe.py` 旁边：
+
+```python title="collector_demo.py"
+import asyncio
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.models.function import FunctionModel
+
+from observe import respond
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+    )
+    result = await executable.run("Check collector export")
+    print(result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+3. 激活该环境，在 shell 中导出以下设置。将 `http://otel-collector:4318` 换成可连接的 collector 地址。命令使用 POSIX shell 语法。
 
 ```bash
-python -m pip install 'opentelemetry-distro[otlp]'
-
 export A13N_HARNESS_TRACE_LEVEL=verbose
 export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
-
 export OTEL_SERVICE_NAME=agent-worker
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` 选择公共 collector 端点；官方 OTLP/HTTP exporter 追加 `/v1/traces` 和 `/v1/metrics`。设置时，信号专属的 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 优先。资源、采样、批处理、请求头、TLS、压缩、超时和 temporality 也由标准 `OTEL_*` 变量管理。
+4. 在 collector 后端中找到服务 `agent-worker`，检查已完成的 `harness.run`。终端回答验证 Model 执行，后端 span 验证导出。如果有回答却没有追踪，另行检查 exporter 错误。
 
-`opentelemetry-instrument` 启动器在应用构建 `HarnessBuilder()` 前配置全局 SDK provider。`make harness-dev` 显式加载 `dev/harness/.env` 后执行相同包装。通过代码配置 provider 的可执行程序可以改用 `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`，或传入完整显式 `HarnessInstrumentation`。显式 builder 配置优先于 `A13N_HARNESS_*`；`instrumentation=None` 表示主动退出观测。
+启动器在应用代码执行前初始化全局 SDK provider，并管理其进程生命周期。OTLP/HTTP 在公共端点后追加 `/v1/traces` 和 `/v1/metrics`；信号专属的 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 优先。资源、采样、批处理、请求头、TLS、压缩、超时和 temporality 由标准 `OTEL_*` 变量配置。
 
-未选择后端时，使用以下安全进程环境默认值：
+通过代码管理 provider、通过环境选择信号时，使用 `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`。`make harness-dev` 会在 OTel 启动器前显式加载 `dev/harness/.env`；其他 Host 自行安排文件加载。
 
-```bash
-export A13N_HARNESS_TRACE_LEVEL=off
-export A13N_HARNESS_TRACE_CONTENT=standard
-export A13N_HARNESS_METRICS=off
-export OTEL_TRACES_EXPORTER=none
-export OTEL_METRICS_EXPORTER=none
-```
-
-后面的后端章节包含完整 Logfire 和 Langfuse 配置。将所选值直接放入进程环境，或由 Host 的部署工具导出。在 Host 启动器中加载配置文件，不要在构建 `HarnessBuilder()` 的代码中加载。
+关闭启动器配置时，将两个 Harness 信号设为 `off`，并将 `OTEL_TRACES_EXPORTER`、`OTEL_METRICS_EXPORTER` 和 `OTEL_LOGS_EXPORTER` 都设为 `none`。从下面选择一个后端配置，不要叠加彼此独立的 provider 初始化流程。
 
 ## 准备、skill 解析与清理 span
 
-`harness.run` 下，`harness.prepare` 衡量环境进入、输入准备和插件绑定。原生 agent/模型/工具 span 解释执行；`harness.finalize` 衡量资源清理和状态导出。最后一个 `a13n.phase.step` 和错误分类可定位准备/清理失败，无需为每个函数创建 span。这些 span 不添加新指标。Host 保存续接状态仍在 Harness 之外。
+从最外层 Run 向内阅读追踪：
 
-`harness.skills.resolve` 衡量实际 skill 目录解析。执行上的 `a13n.skills.available` 和 `a13n.skills.accessed` 列表区分提供过的 skill 与通过支持的文件工具成功读取的 skill。列表最多保留 16 个名称，并记录数量和截断信息。`access_count` 包含重复读取，不只是不同名称数量。原生文件工具 span 标识 skill 及来源。部分读取也算访问；不会推断 shell 读取、完整加载、遵循程度或从之前历史使用 skill。子执行保留独立摘要。
+| Span                       | 检查内容                              |
+| -------------------------- | ------------------------------------- |
+| `harness.run`              | 逻辑 Run 的生命周期和结果。           |
+| `harness.prepare`          | 环境进入、输入准备和插件绑定。        |
+| `harness.skills.resolve`   | 实际 Skill 目录选择。                 |
+| 原生 Agent/Model/工具 span | Model 尝试、请求和工具执行。          |
+| `harness.operation`        | 恢复、委派、handoff、压缩或工具审查。 |
+| `harness.finalize`         | 资源清理和状态导出。                  |
 
-阶段元数据说明选择或处理了什么；阶段输出描述本地结果，不再复制一份回答。例如，`harness.skills.resolve` 报告全部/显式选择和发现/选中/排除数量，输出中最多包含 16 对所选 skill 名称与来源。未知选择报告为拒绝，不视为空目录成功。准备阶段报告输入模式和 Capability/插件数量；收尾阶段报告状态可用性和清理失败。恢复区分退避与重试输入准备，压缩显示前后消息数。这些结构信息有可过滤的元数据别名。阶段输出遵循与执行输出相同的内容策略和限制，因此 `none` 保留元数据，不保留输出正文。操作完成不代表其子执行或所在执行成功。
+准备或清理失败时，检查最后一个 `a13n.phase.step` 和错误分类。阶段输出描述本地结果：选择数量、状态是否可用、清理失败、恢复退避与重试输入准备，或压缩前后的消息数。未知 Skill 选择会被拒绝，不会作为成功的空目录处理。这些字段具有可过滤的元数据别名。输出正文遵循 Run 的内容策略和大小限制；`none` 保留结构元数据。阶段 span 不增加新指标，Host 保存检查点仍在 Harness 之外。
+
+Run 的 `a13n.skills.available` 和 `a13n.skills.accessed` 列表分别记录提供的 Skill，以及通过支持的文件工具成功读取的 Skill。每个列表最多保留 16 个名称，并附带数量和截断信息。Skill 解析输出同样最多包含 16 对选中的名称与来源。`access_count` 包含重复读取，部分读取也算访问。准确的 Skill 和来源见原生文件工具 span。这些观测不推断 shell 读取、完整加载、遵循程度或从旧历史中的使用。子 Run 保留自己的摘要；一个操作完成后，仍需单独判断所在 Run 的结果。
 
 ## 部署环境
 
-本地开发的 `dev/harness/.env.example` 声明：
+在 Host 的 OpenTelemetry resource 中加入 `deployment.environment.name`，区分本地、预发布和生产追踪。在 `observe.py` 中替换 resource 构造：
 
-```bash
-OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local
+```python
+resource = Resource.create({
+    "service.name": "observation-demo",
+    "deployment.environment.name": "local",
+})
 ```
 
-将其合并到已有私有 `.env`，不要覆盖凭据或其他资源属性，然后重启 `make harness-dev`。这是追踪后端显示的部署标签，不是 Harness 执行环境。已有观测保留旧标签。显式 Host provider 必须自行携带资源，例如 `Resource.create({"service.name": "agent-worker", "deployment.environment.name": "local"})`；Harness 绝不修改该 provider。
+使用环境启动器时，设置 `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`，并保留已配置的其他属性。`dev/harness/.env.example` 使用该设置；合并到私有文件时不要覆盖凭据，随后重启 `make harness-dev`。此标签描述部署环境，不是 Harness 执行 Environment。已有观测保留旧标签，Harness 不修改传入 provider 的 resource。
 
 ## 使用同一条 OpenTelemetry 管道
 
-无论选择哪个后端，都用 OpenTelemetry API 创建 Host 根 span 和自定义生命周期 span。后端 SDK 配置 provider、处理器、导出器和厂商专属功能，不另建逻辑追踪。
+同一工作单元使用一套 provider 层级。通过 `HarnessInstrumentation.get_tracer()` 或 OpenTelemetry API 创建通用 Host span，通过处理器和 exporter 选择目的地。
 
-具体行为如下：
+- **Logfire：** `logfire.configure()` 安装全局追踪和指标 provider。
+- **Langfuse：** 通过通用 OTLP provider 导出，或向已有 provider 添加 `LangfuseSpanProcessor`。
+- **同时使用：** 将两个 exporter/处理器接到同一 provider，Host 和 Harness span 共享一条追踪。
 
-- 只使用 Logfire 时，`logfire.configure()` 安装全局 OpenTelemetry 追踪和指标 provider，所有 Harness 与 Host OTel span 都导出到 Logfire；
-- 只使用 Langfuse 时，通用 OTLP provider 或 `LangfuseSpanProcessor` 将同一 OTel 追踪导出到 Langfuse；
-- 同时使用两者时，一个共享 provider 同时包含 Logfire 处理器和 `LangfuseSpanProcessor`；不要分别创建 Logfire 根和 Langfuse 根；
-- Langfuse 的评分、提示管理或追踪更新 API 仍是厂商专属功能，不会自动复制到 Logfire。
-
-基于 OpenTelemetry 的 Langfuse Python SDK 创建的 span 仍是 OpenTelemetry span。两个 SDK 共享 Logfire 全局 provider 时，即使未配置 Langfuse exporter，它也会到达 Logfire。不过，通用 Host span 应通过 OpenTelemetry API（`HarnessInstrumentation.get_tracer()` 或 `opentelemetry.trace`）创建，不要使用厂商 SDK，使后端可替换。
+基于 OpenTelemetry 的 Langfuse SDK span 使用 Logfire 的共享 provider 时，也会到达 Logfire。Langfuse 的评分、提示管理和追踪更新仍是独立厂商 API。通用生命周期代码使用 OpenTelemetry，这样更换后端无需改变应用的追踪结构。
 
 ## 推荐的 Logfire 配置
 
-需要一个后端同时接收 Harness 追踪和指标时，建议使用 Logfire。Logfire SDK 基于 OpenTelemetry，并全局安装追踪和指标 provider。无需将通用 OTLP exporter 指向 Logfire Cloud。
+通过 Logfire SDK 同时发送追踪和指标时，使用此配置。它安装全局 OpenTelemetry provider；Harness 读取已启用的环境策略后选择这些 provider。
 
-在可执行 Host 中安装 Logfire 并设置 write token：
+在 `collector_demo.py` 使用的同一个 Python 环境中安装 Logfire，通过进程环境提供项目 write token：
 
 ```bash
-python -m pip install logfire
+uv pip install logfire
 
 export LOGFIRE_TOKEN=your-logfire-write-token
 export LOGFIRE_SERVICE_NAME=agent-worker
@@ -165,36 +227,21 @@ export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
 ```
 
-builder 构建前调用精简的后端初始化代码。通过条件判断，只需设置 `LOGFIRE_TOKEN` 就能启用 Logfire：
+将 `logfire_demo.py` 保存在 `collector_demo.py` 和 `observe.py` 旁边，激活环境后运行 `python logfire_demo.py`。它复用离线 Model，因此测试遥测无需 Model API key：
 
-```python
-import os
+```python title="logfire_demo.py"
+import asyncio
+import logfire
 
-from opentelemetry import trace
+from collector_demo import main
 
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
-)
-
-if os.environ.get("LOGFIRE_TOKEN"):
-    import logfire
-
-    logfire.configure()
-
-executable = HarnessBuilder().build(
-    AgentSpec(model="openai-responses:gpt-5"),
-    output_type=str,
-)
-host_tracer = trace.get_tracer("agent-host")
-
-with host_tracer.start_as_current_span("host.work"):
-    result = await executable.run("Complete the task")
+logfire.configure()
+asyncio.run(main())
 ```
 
-Logfire 仍需调用一次 `logfire.configure()`；环境变量配置该调用，不替代调用。`LOGFIRE_SERVICE_NAME` 提供 OpenTelemetry `service.name`，无需在 Python 中写死；`OTEL_SERVICE_NAME` 是标准回退别名。`LOGFIRE_TOKEN` 选择项目，`LOGFIRE_SEND_TO_LOGFIRE=if-token-present` 使同一初始化代码在无 token 进程中仍安全可用。
+在选定的 Logfire 项目中，按服务 `agent-worker` 查找 Run。`logfire.configure()` 在 `main()` 构建 builder 前初始化后端，环境变量用于配置该调用。`LOGFIRE_SERVICE_NAME` 提供 OpenTelemetry `service.name`，无需在 Python 中写死；`OTEL_SERVICE_NAME` 是标准回退别名。`LOGFIRE_TOKEN` 选择项目，`LOGFIRE_SEND_TO_LOGFIRE=if-token-present` 允许未提供 token 的进程运行初始化流程，但不向 Logfire 导出。SDK 在进程退出时关闭 exporter；长时间运行的 Host 应在应用生命周期结束时刷新并关闭 provider。
 
-`logfire.configure()` 创建全局 OpenTelemetry provider 和 Logfire exporter。默认 `HarnessBuilder()` 选择这些 provider。在可执行 Host 中调用初始化，并将 Pydantic AI 埋点交给 Harness；参阅[埋点职责](#instrumentation-ownership)。
+在可执行 Host 中调用初始化，并将 Pydantic AI 埋点交给 Harness；参阅[埋点职责](#instrumentation-ownership)。
 
 使用其他 OTLP 后端而非 Logfire Cloud 时，配置 Logfire `send_to_logfire=False`，并使用标准 `OTEL_EXPORTER_OTLP_*` 变量。参见 [Logfire 替代后端指南](https://pydantic.dev/docs/logfire/guides/alternative-backends/)和 [Logfire 配置参考](https://pydantic.dev/docs/logfire/manage/configuration/)。
 
@@ -202,7 +249,7 @@ Logfire 仍需调用一次 `logfire.configure()`；环境变量配置该调用�
 
 不需要在同一后端接收 Harness 指标时，推荐使用 Langfuse 作为 LLM 追踪后端。其 OTLP 端点接收追踪，但不能作为 Harness 指标后端。除非另行配置支持指标的 provider 或 collector，否则保持 `A13N_HARNESS_METRICS=off` 和 `OTEL_METRICS_EXPORTER=none`。
 
-通过标准 OTLP 变量配置 Langfuse Cloud 或自托管实例：
+复用 collector 练习中的 `collector_demo.py` 和已安装的 `opentelemetry-distro[otlp]`。提供 Langfuse 项目 key，选择项目区域或自托管 base URL，然后在已激活的 POSIX shell 中运行这份仅追踪配置：
 
 ```bash
 export LANGFUSE_PUBLIC_KEY=lf_pk_...
@@ -214,11 +261,12 @@ export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=off
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT="$LANGFUSE_BASE_URL/api/public/otel"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf '%s' "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 | tr -d '\n'),x-langfuse-ingestion-version=4"
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
 项目不在默认 EU 区域时，使用 `https://us.cloud.langfuse.com`、`https://jp.cloud.langfuse.com` 或所选区域 URL。仓库本地环境的端点为 `http://127.0.0.1:3000/api/public/otel`。
@@ -244,7 +292,7 @@ Harness 将可信常规 `user_id` 身份声明复制到 `langfuse.user.id`，并
 
 Langfuse v4 从根观测派生追踪输入和输出。`standard` 或 `full` 下，`harness.run` 在 `langfuse.observation.input` 和 `langfuse.observation.output` 记录准备后的输入和最终由中间件管理的结果，同时提供中立 `a13n.input` / `a13n.output` 等效字段。各自上限 8 KiB；原生媒体只描述，不存内容。`none` 省略正文。内容缺失或不完整时，检查对应 `a13n.input.capture` / `a13n.output.capture` 和截断字段。不要使用已弃用追踪输入/输出别名，也不要导出全部参数、状态、事件或用量记录。Host 有自己的实际根工作单元时，可在相同策略下使用 `HarnessInstrumentation.record_input()` 和 `record_output()`。
 
-例如，一个 Logfire 管理的 provider 可将同一追踪导出到两个后端：
+要同时导出到两个后端，在 Logfire 之外安装 Langfuse SDK。用下面的初始化代码替换 `logfire_demo.py` 中的 `logfire.configure()`，保留其后的 `asyncio.run(main())`。Model 和所有 Run 继续使用同一 provider：
 
 ```python
 import os
@@ -275,7 +323,7 @@ logfire.configure(additional_span_processors=[langfuse_processor])
 
 ### 本地运行 Langfuse
 
-仓库包含基于官方部署组合的独立 Langfuse v4 开发环境：
+使用本地后端时，先安装 Docker 和 Compose，再从仓库根目录运行以下命令。这会启动本机共享的 Langfuse v4 开发环境：
 
 ```bash
 make langfuse-up
@@ -306,27 +354,29 @@ export A13N_HARNESS_METRICS=off
 export OTEL_SERVICE_NAME=agent-worker
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:3000/api/public/otel
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic bGZfcGtfYWdlbnRfZm91bmRhdGlvbl9sb2NhbDpsZl9za19hZ2VudF9mb3VuZGF0aW9uX2xvY2Fs,x-langfuse-ingestion-version=4'
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
-Harness 执行完成后，追踪出现在本地项目中。此配置不向 Langfuse 发送指标。
+导出后，在本地项目中检查已完成的 `harness.run`。如果只看到终端回答，检查 exporter 端点、请求头和后端就绪状态。此配置不向 Langfuse 发送指标。
 
-停止环境并保留数据，或完全移除：
+停止环境并保留数据：
 
 ```bash
 make langfuse-down
-make langfuse-reset
 ```
+
+只有确定要删除共享开发环境及其数据时，才运行 `make langfuse-reset`。该操作也影响本机其他检出。
 
 该组合将 Langfuse UI 和媒体端点绑定到回环地址（默认端口 3000、3001），不复用 Service 的 PostgreSQL 或 Redis。本机所有检出共享同一个 Compose 项目及其卷；Service 重置保留 Langfuse 数据。凭据仅限本地开发。生产和高可用部署请遵循官方 [Langfuse 自托管文档](https://langfuse.com/self-hosting)，不要改造该开发组合。
 
 ## 为 Harness 根添加有界上下文
 
-需要 `harness.run` 作为根，并添加稳定分组字段，而无需额外外层 span 时，使用新 `HarnessObservationContext`：
+要按应用对话分组 Run，在 `observe.py` 中加入下面的导入，并在 `main()` 内用此绑定和调用替换 `result = await executable.run(...)` 那一行：
 
 ```python
 from a13n_harness import (
@@ -345,36 +395,37 @@ bindings = RunBindings.embedded(
 result = await executable.run("Complete the task", bindings=bindings)
 ```
 
-逻辑执行 span 接收 `a13n.observation.*` 字段及其 Langfuse 别名。名称和会话 ID 最多 256 UTF-8 字节。标签不重复，最多 16 项，每项最多 64 UTF-8 字节。元数据最多 16 个已验证键，值可以是标量字符串、布尔值、有符号 64 位整数或有限浮点数；字符串最多 256 UTF-8 字节。无效上下文在执行前失败。它不存入 `HarnessState`、不向模型公开，也不从 `RunBindings.metadata` 复制。
+再次运行程序，检查 `roots[0].attributes`。逻辑 Run span 接收 `a13n.observation.*` 字段及其 Langfuse 别名。名称和会话 ID 最多 256 UTF-8 字节。标签不重复，最多 16 项，每项最多 64 UTF-8 字节。元数据最多 16 个已验证键，值可以是标量字符串、布尔值、有符号 64 位整数或有限浮点数；字符串最多 256 UTF-8 字节。无效上下文在执行前失败。它不存入 `HarnessState`、不向模型公开，也不从 `RunBindings.metadata` 复制。
 
 厂商专属 Host 处理器可映射这些已有字段用于展示。Langfuse 无需映射：Harness 已写入 `langfuse.trace.name`、`langfuse.session.id`、`langfuse.trace.tags` 和 `langfuse.trace.metadata.*`，并将 `harness.run`、`invoke_agent` 标为 `agent`，`execute_tool` 标为 `tool`。Logfire 4.41 将根名称映射到 `logfire.msg`，标签映射到 `logfire.tags`。普通 span 不设置 `logfire.span_type`，不合成 `logfire.level_num`，也不写入 `logfire.metrics`；Logfire 已自行推断普通 span 类型和错误级别，并管理指标聚合。
 
 ## 将 Harness 执行嵌套到当前 OpenTelemetry 上下文下
 
-Harness 只使用当前 OpenTelemetry 上下文。应用确有外层工作单元，或需要 Host 管理的追踪输入/输出时，才创建 Host span。进入和消费流期间让该 span 成为当前 span：
+应用确有外层操作时，在进入和消费 Harness 期间将其 Host span 设为当前 span。在 `observe.py` 中替换 Run 调用：
 
 ```python
-host_tracer = tracer_provider.get_tracer("agent-host")
-
+host_tracer = instrumentation.get_tracer("agent-host")
 with host_tracer.start_as_current_span("host.work"):
-    result = await executable.run("Complete the task")
+    result = await executable.run("Check observation")
 ```
 
-`harness.run` 成为 `host.work` 的子 span。Harness 不接受 span、厂商观测对象或追踪 ID 参数。
+同时将 `assert roots[0].parent is None` 改为 `assert roots[0].parent is not None`。Harness Run 现在是 `host.work` 的子 span，无需传入 span 或 trace ID 参数。
 
-流式执行中，Harness 让逻辑执行 span 在清理和消费者背压期间保持打开，但在返回每个公开流条目前将其从当前上下文分离。因此，消费端 span 仍是 Host 上下文的子 span，不会成为 `harness.run` 的子 span。
+流式执行时，逻辑 Run span 在清理和消费者背压期间保持打开。Harness 在返回每个公开流条目前将它从当前上下文分离，因此消费者创建的 span 仍处于 Host 上下文下。
 
-线程用于关联，不等于追踪。后续恢复通常启动新追踪，除非 Host 激活有界分布式父上下文。持久或独立调度工作优先使用新追踪，并通过标准 span link 关联。
+用 Thread ID 关联对话轮次，不要将它当作 trace ID。后续恢复通常启动新追踪。独立调度或持久工作使用新追踪并通过标准 span link 关联；只有确实存在有界的外层操作时，才激活分布式父上下文。
 
 ## 自动分组与过滤
 
-所选 Harness 和 Pydantic span 自动接收有界关联和 Langfuse 别名。任何传入 provider 都支持，包括 Service worker provider；无需检测 exporter URL 或额外处理器。同一 span 上仍保留原生 GenAI/Logfire 属性。
+无论使用哪个 exporter，都可以按有界上下文和身份字段过滤 Harness 选择的 span。Harness 在同一 span 上写入不绑定厂商的 `a13n.*` 字段和 Langfuse 别名，并保留原生 GenAI/Logfire 属性。
 
-使用 `RunBindings.embedded(observation=HarnessObservationContext(...))` 选择稳定名称、会话、标签和最多 16 项标量元数据。未显式设置会话时，执行使用自身线程 ID。别名包括 `langfuse.trace.name`、`langfuse.session.id`、`langfuse.trace.tags` 和可过滤的 `langfuse.observation.metadata.*`。元数据别名是字符串；中立 `a13n.observation.metadata.*` 保留原始标量类型。常规可信用户声明仅在存在时提供 `langfuse.user.id`。不虚构公开追踪设置或提示管理身份。
+显式观测会话按应用提供的值分组 Run；否则使用 Run 的 Thread ID。名称、标签和元数据映射为 `langfuse.trace.name`、`langfuse.session.id`、`langfuse.trace.tags` 和可过滤的 `langfuse.observation.metadata.*`。Langfuse 元数据别名为字符串，`a13n.observation.metadata.*` 保留标量类型。存在可信的常规用户声明时，提供 `langfuse.user.id`。
 
-Host 外层操作使用 `instrumentation.get_tracer("agent-host")` 和 `start_as_current_span()`，携带相同中立属性。有界关联只在本地传播到所选后代，不通过网络 baggage 传播。子值优先。新执行绝不从父级继承缺失身份声明，分离追踪也不继承所关联父级的元数据。第三方 span 仍由各自埋点组件负责。
+对于 Host 自己的操作，`instrumentation.get_tracer("agent-host")` 在本地向选定后代传播有界的中立关联字段，子值优先。新 Run 不继承缺失的身份声明；通过 link 关联的独立追踪不继承父级元数据；本地传播不创建网络 baggage。第三方独立埋点的 span 需要各自接入。
 
 ## 身份、来源关系、用量与成本字段
+
+先用身份字段找到目标 Run，再检查请求级用量和定价来源。遥测查询与持久核算分别处理。
 
 `harness.run` 和其所选 Harness 后代携带有界可信身份投影：
 
@@ -400,7 +451,7 @@ Pydantic token 类别包含子类：输入包含缓存和输入音频 token，�
 
 ## Harness 指标目录
 
-提供 meter provider 后，在 `a13n-harness` 埋点 scope 下启用以下低基数指标：
+本地程序通过 `InMemoryMetricReader` 读取这些指标。部署 Host 时，为传入的 meter provider 配置 reader/exporter，再查询 `a13n-harness` scope：
 
 | 指标                              | 类型          | 单位        | 属性                  |
 | --------------------------------- | ------------- | ----------- | --------------------- |
@@ -415,14 +466,14 @@ Pydantic AI 单独负责原生 token 用量、成本和首块时间指标。Harn
 
 ## 埋点职责
 
-Harness 是所构建 agent 的唯一 Pydantic AI 埋点负责方。它拒绝定义、插件和执行范围内的 Pydantic `Instrumentation` Capability，以及直接 `InstrumentedModel` 值，也会对每个构建的 agent 禁用外部 `Agent.instrument_all()` 状态。
+每个 Harness 构建的 Agent 只保留一个埋点负责方：
 
-Harness 构建的 agent 不要调用 `logfire.instrument_pydantic_ai()`。应将 Logfire 或 Langfuse 配置为共享 OpenTelemetry provider 上的 Host 后端：
+1. 构建前配置 Host 的 OpenTelemetry provider。
+2. 由 Harness 为其 Agent 创建原生 Pydantic AI 埋点。
+3. 向这些 provider 添加后端处理器/exporter，导出过滤中包含 `a13n-harness` scope。
+4. 只有存在实际外层操作时，才创建一个 Host 根 span。
+5. 在 Host 生命周期结束时刷新并关闭。
 
-- 不需要实际 Host 外层工作单元时，让 `harness.run` 作为根；否则只创建一个 Host 根 span；
-- 向 `HarnessInstrumentation` 提供所选具体 provider 对象；
-- 导出到多个后端时，在共享 provider 上附加多个处理器或导出器；
-- 后端导出过滤中包含 `a13n-harness` 埋点 scope；
-- 同一工作单元绝不并行创建 Langfuse 和 Logfire 根。
+不要围绕同一个 Agent 额外调用 `logfire.instrument_pydantic_ai()`、加入 Pydantic `Instrumentation` Capability 或包装 `InstrumentedModel`。Harness 会拒绝定义、插件和 Run 范围内的重复埋点，并在所构建 Agent 上禁用外部 `Agent.instrument_all()` 状态。Logfire 和 Langfuse 都是 Host 的可选依赖。
 
-Harness 没有 Langfuse 或 Logfire 专属运行时依赖。
+观测缺失时，依次检查：信号选择、builder 构建前的 provider 初始化、处理器/reader 连接、exporter 端点与凭据、后端 scope 过滤、关闭与刷新。回到内存示例，可以区分 Harness 埋点问题和远程导出问题。

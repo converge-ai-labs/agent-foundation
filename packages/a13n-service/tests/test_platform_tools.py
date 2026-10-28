@@ -97,7 +97,7 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
             "PATCH",
             "/agents/{agent_id}",
             agent_id=agent["id"],
-            **{"If-Match": etag},
+            expected_version=etag,
             request_body={"description": "from a run"},
         )
         assert changed["status"] == 200, changed
@@ -107,7 +107,7 @@ async def test_run_mcp_discovery_http_scope_versions_and_audit(service, scripted
             "PATCH",
             "/agents/{agent_id}",
             agent_id=agent["id"],
-            **{"If-Match": etag},
+            expected_version=etag,
             request_body={"description": "stale"},
         )
         assert stale["status"] == 412
@@ -328,7 +328,7 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
             "PATCH",
             "/agents/{agent_id}",
             agent_id=agent["id"],
-            **{"If-Match": f'"{agent["id"]}:{agent["version"]}"'},
+            expected_version=f'"{agent["id"]}:{agent["version"]}"',
             request_body={"description": "not authorized"},
         )
         assert result["status"] == 403
@@ -357,7 +357,7 @@ async def test_native_platform_read_and_write_review_survive_resume(skill_servic
         write_name,
         {
             "agent_id": agent["id"],
-            "If-Match": f'"{agent["id"]}:{agent["version"]}"',
+            "expected_version": f'"{agent["id"]}:{agent["version"]}"',
             "request_body": {"description": "Reviewed change"},
         },
         call_id="write",

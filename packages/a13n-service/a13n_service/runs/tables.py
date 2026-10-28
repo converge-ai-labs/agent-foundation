@@ -199,6 +199,63 @@ class ThreadRow(Stamped, Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class CompactionRow(Base):
+    """One detached generation and its independent checkpoint settlement."""
+
+    __tablename__ = "compactions"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        ForeignKeyConstraint(["thread_id", "run_id"], ["runs.thread_id", "runs.id"]),
+        ForeignKeyConstraint(["run_id", "attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint("(status = 'running') = (completed_at IS NULL)", name="completed"),
+        CheckConstraint("(status = 'ready') = (result_ref IS NOT NULL)", name="result"),
+        CheckConstraint("(settled_at IS NULL) = (disposition IS NULL)", name="settlement"),
+        CheckConstraint("disposition IN ('applied', 'skipped', 'archived', 'expired')", name="disposition"),
+        Index("uq_compactions_unsettled", "thread_id", unique=True, postgresql_where=text("settled_at IS NULL")),
+        Index("ix_compactions_owner", "lease_expires_at", postgresql_where=text("status = 'running'")),
+        Index("ix_compactions_retention", "completed_at", postgresql_where=text("settled_at IS NULL")),
+        rules(
+            """
+            CREATE FUNCTION guard_compaction() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF ROW(NEW.thread_id, NEW.run_id, NEW.attempt_id, NEW.owner_token_hash, NEW.input_digest)
+                    IS DISTINCT FROM
+                    ROW(OLD.thread_id, OLD.run_id, OLD.attempt_id, OLD.owner_token_hash, OLD.input_digest)
+                THEN RAISE EXCEPTION 'compaction identity is immutable'; END IF;
+                IF OLD.status <> 'running' AND
+                    ROW(NEW.status, NEW.result_ref, NEW.completed_at, NEW.error_code)
+                    IS DISTINCT FROM ROW(OLD.status, OLD.result_ref, OLD.completed_at, OLD.error_code)
+                THEN RAISE EXCEPTION 'compaction generation is terminal'; END IF;
+                IF OLD.settled_at IS NOT NULL AND
+                    ROW(NEW.settled_at, NEW.disposition) IS DISTINCT FROM ROW(OLD.settled_at, OLD.disposition)
+                THEN RAISE EXCEPTION 'compaction settlement is terminal'; END IF;
+                RETURN NEW;
+            END $$
+            """,
+            trigger("compactions", "guard_compaction"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    thread_id: Mapped[str]
+    run_id: Mapped[str]
+    attempt_id: Mapped[str]
+    owner_token_hash: Mapped[str]
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    input_digest: Mapped[str]
+    input_ref: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    result_ref: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    status: Mapped[str]
+    error_code: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposition: Mapped[str | None]
+
+
 class ToolExecutionRow(Base):
     """One original invocation; its worker lease and result outlive the originating Run."""
 
@@ -391,6 +448,12 @@ class RunRow(Stamped, Base):
         Index("ix_runs_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_runs_thread_created", "thread_id", "created_at", "id"),
         Index("ix_runs_session_created", "workspace_id", "session_id", "created_at", "id"),
+        Index(
+            "ix_runs_workspace_started",
+            "workspace_id",
+            "started_at",
+            postgresql_where=text("started_at IS NOT NULL"),
+        ),
         UniqueConstraint("thread_id", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
@@ -706,6 +769,21 @@ BEGIN
     RETURN NEW;
 END $$
 """
+
+
+class ModelDispatchRow(Base):
+    """Durable request occupancy; a missing usage report never refunds a dispatch."""
+
+    __tablename__ = "model_dispatches"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "run_attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        Index("ix_model_dispatches_run", "run_id"),
+        rules(immutable("model_dispatches")),
+    )
+    call_id: Mapped[str] = mapped_column(primary_key=True)
+    run_id: Mapped[str]
+    run_attempt_id: Mapped[str]
+    admitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UsageRecordRow(Base):

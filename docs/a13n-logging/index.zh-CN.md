@@ -1,13 +1,15 @@
 ---
 title: 日志
-description: 在可执行程序入口统一配置，为 a13n 应用提供结构化终端和 JSON 日志。
+description: 为 Python 应用输出结构化日志、附加任务字段，并选择异常详情。
 ---
 
-`a13n-logging` 为应用命名空间配置标准 Python logging。它向 stdout 写入 Rich 终端输出或 JSON，可选轮转 JSON 文件，并为一个工作单元绑定字段。
+使用 `a13n-logging` 将 Python 日志发送到终端、JSON 收集器或轮转 JSON 文件。在可执行程序中配置输出，然后在应用各处使用带命名空间的 logger。
 
 ## 运行本地示例
 
-在 Python 3.13+ 应用中运行 `uv add a13n-logging` 安装。将以下代码保存为 `logging_example.py`，运行 `uv run python logging_example.py`：
+1. 在 Python 3.13+ 应用中运行 `uv add a13n-logging` 安装包。
+2. 将以下代码保存为 `logging_example.py`。
+3. 运行 `uv run python logging_example.py`。
 
 ```python
 from a13n_logging import LogFormat, configure_logging, get_logger, log_context
@@ -19,21 +21,23 @@ with log_context(job_id="job-example"):
     logger.info("job_started", extra={"attempt": 1})
 ```
 
-stdout 上的 JSON 记录包含 `timestamp`（UTC）、`level`、`logger`、`message`、`job_id` 和 `attempt`。设置 `log_format=LogFormat.pretty` 可使用 Rich 终端输出。
+stdout 会输出一条 JSON 记录。其 `message` 为 `job_started`，`job_id` 为 `job-example`，`attempt` 为 `1`。记录还包含 UTC `timestamp`、`level` 和 `logger`。改用 `LogFormat.pretty` 可获得易读的 Rich 终端输出。
 
 ## 在可执行程序入口配置
 
-在可执行程序中调用一次 `configure_logging()`，指定要配置的 Python logger 命名空间。库通过 `get_logger(__name__)` 创建带命名空间的 logger，不安装 handler。默认 `logger_names=()` 不配置任何命名空间。使用 `a13n_harness` 等 Python 模块名称，而不是 `a13n-harness` 等分发包名称。
+在可执行程序中调用一次 `configure_logging()`，列出要配置的 Python logger 命名空间，例如 `my_application` 或 `a13n_harness`。库模块使用 `get_logger(__name__)`，将 handler 配置交给可执行程序。
 
-| 关键字参数                    | 默认值             | 效果                                                    |
-| ----------------------------- | ------------------ | ------------------------------------------------------- |
-| `level: str`                  | `"INFO"`           | 不区分大小写的标准日志级别；级别无效会导致配置失败。    |
-| `log_format: LogFormat`       | `LogFormat.pretty` | stdout 使用 `pretty`（Rich）或 `json`。传入枚举成员。   |
-| `logger_names: Sequence[str]` | `()`               | 接收 handler、日志级别和 `propagate=False` 的命名空间。 |
-| `stdout: bool`                | `True`             | 启用 stdout 输出。                                      |
-| `file: LogFile \| None`       | `None`             | 添加轮转 JSON 文件，即使 stdout 使用 pretty。           |
+| 关键字参数                    | 默认值             | 用途                                                     |
+| ----------------------------- | ------------------ | -------------------------------------------------------- |
+| `level: str`                  | `"INFO"`           | 设置不区分大小写的标准日志级别。无效级别会导致配置失败。 |
+| `log_format: LogFormat`       | `LogFormat.pretty` | 为 stdout 选择 `pretty` 或 `json` 枚举成员。             |
+| `logger_names: Sequence[str]` | `()`               | 选择命名空间。空的默认值不配置任何命名空间。             |
+| `stdout: bool`                | `True`             | 将记录发送到 stdout。                                    |
+| `file: LogFile \| None`       | `None`             | 添加轮转 JSON 文件，不受 stdout 格式影响。               |
 
-配置通过 `logging.config.dictConfig()` 立即生效，不禁用无关 logger。两种终端格式均使用 stdout。如果 stdout 承载协议（例如 stdio MCP 服务器），配置仅文件输出：
+配置通过 `logging.config.dictConfig()` 立即生效。选定的命名空间会获得 handler 和 `propagate=False`；无关 logger 保持启用。
+
+如果要将 stdout 留给 stdio MCP 等协议，就只向文件写日志。配置前先创建文件的父目录：
 
 ```python
 from pathlib import Path
@@ -47,17 +51,19 @@ configure_logging(
 )
 ```
 
-下一条记录将超过 `max_bytes` 时，轮转把活跃文件移到 `.1`；`backups` 不含活跃文件。两个数字都必须为正数。每个路径只交给一个进程。`configure_logging()` 要求 stdout、文件或两者同时启用。需要其他输出目标时，改用自有标准库 handler 配置。
+下一条记录将超过 `max_bytes` 时，活跃文件轮转到 `.1`，旧备份依次后移。`backups` 统计备份文件，不含活跃文件；两个数值都必须为正。每个进程使用独立日志路径。启用 stdout、文件或两者。需要其他输出目标时，自行配置标准库 handler。
 
 ## 绑定字段与异常
 
-`log_context(**fields)` 为该上下文内配置的 handler 记录附加字段。嵌套上下文覆盖父级同名字段，而 `extra` 和标准记录属性优先于绑定字段。上下文变量隔离并发任务；块内启动的任务继承其值。自定义 handler 需要 `a13n_logging.context.ContextFilter` 才能包含这些字段。
+用 `log_context(**fields)` 包裹任务或请求，即可为配置的 handler 处理的每条记录附加标识符。第一个示例中，上下文块添加 `job_id`，单次日志调用添加 `attempt`。
 
-`JsonFormatter` 生成紧凑对象，包含时间戳、级别、logger、消息、非保留额外字段，以及存在 `exc_info` 时的 `exception`。`PrettyFormatter` 通过 Rich 输出 logger 名称和消息，加上排序的 `key=value` 字段。不支持的 JSON 值使用 `str(value)`。
+嵌套上下文覆盖父级同名字段。显式 `extra` 和标准记录属性优先于上下文字段。并发任务拥有各自的上下文，块内启动的任务继承该块的值。自定义 handler 需添加 `a13n_logging.context.ContextFilter`，才能包含上下文字段。
+
+`JsonFormatter` 输出紧凑 JSON，包含上文所示的标准字段及非保留额外字段。JSON 无法编码的值使用 `str(value)`。`PrettyFormatter` 通过 Rich 显示 logger、消息和排序后的 `key=value` 字段。
 
 ### 选择异常详情
 
-`logger.exception(...)` 包含异常消息和 traceback。常规诊断只需栈位置、不需执行载荷时，使用 `exception_details(error)`：
+需要异常消息和 traceback 时，使用 `logger.exception(...)`。需要通过异常类型和栈位置诊断失败、同时省略执行载荷时，使用 `exception_details(error)`：
 
 ```python
 from a13n_logging import LogFormat, configure_logging, exception_details, get_logger
@@ -70,16 +76,16 @@ except ValueError as error:
     logger.warning("job_failed", extra={"exceptions": exception_details(error)})
 ```
 
-该函数保留异常类型、父索引、栈位置和可用的整数状态码或 errno。它遍历 cause、context 和异常组，最多保留 32 个异常，每个异常 64 个栈帧。消息、局部变量、源码行和响应体会被省略，文件路径和函数名仍可见。其他日志字段不会脱敏，请据此选择应用字段。
+记录包含 `ValueError` 类型和栈位置，不含字符串 `private execution payload`。该函数遍历 cause、context 和异常组，保留父索引及可用的整数状态码或 errno，最多保留 32 个异常、每个异常 64 个栈帧。它省略消息、局部变量、源码行和响应体。文件路径和函数名仍可见；其他应用字段需自行选择，因为该函数不会对它们脱敏。
 
-公开导出为 `LogFormat`、`LogFile`、`get_logger`、`configure_logging`、`log_context`、`JsonFormatter`、`PrettyFormatter` 和 `exception_details`。Harness trace 和语义事件见[观测](../a13n-harness/observation.md)。
+除上文使用的配置和上下文函数外，包还导出 `JsonFormatter` 和 `PrettyFormatter`，供自定义 handler 使用。Harness trace 和语义事件的接入方式见[观测](../a13n-harness/observation.md)。
 
 ## 验证
 
-在仓库根目录运行：
+使用仓库检出时，在仓库根目录运行日志测试：
 
 ```console
 uv run --locked pytest packages/a13n-logging/tests
 ```
 
-Logging 有自己的发布渠道，不与 Harness 或 Service 共用版本。参见[包 README](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-logging/README.md)和[发布模型](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md)。
+Logging 独立于 Harness 和 Service 发布。参见[包 README](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-logging/README.md)和[发布模型](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md)。

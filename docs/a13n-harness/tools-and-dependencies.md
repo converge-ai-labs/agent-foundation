@@ -1,17 +1,17 @@
 ---
 title: Tools and dependencies
-description: Give models typed Python tools and supply each Run only the dependencies it should use.
+description: Register a Python function, call it offline, and supply current-Run context or an application service.
 ---
 
-Tools let a model request application actions. Use ordinary typed Python functions, group them with Pydantic AI Capabilities or Toolsets, and give each Run only the dependencies it should use.
+A tool lets the model request a Python function call. Start with a typed function, place it in a Capability, and pass that Capability to the builder. Then test the complete call: model request, Python execution, tool result, and final answer.
 
-Harness does not replace Pydantic AI's tool schema or dispatcher. It adds a mandatory result boundary and, for explicitly managed tools, invocation policy and resource handling.
+Use the synchronized checkout from the [quickstart](getting-started.md). Both executable examples below run offline.
 
 ## Run a function tool offline
 
-This complete example calls `double(4)` through the real Agent loop without network access. Save it as `tools_example.py` in the repository checkout from the [quickstart](getting-started.md) and run `uv run python tools_example.py`.
+Save this complete program as `tools_example.py`:
 
-```python
+```python title="tools_example.py"
 import asyncio
 from collections.abc import AsyncIterator
 
@@ -67,21 +67,25 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-1. The type annotation defines the argument schema; the docstring explains the action to the model.
-2. `Capability(tools=[double])` includes the function in native composition.
-3. The deterministic Model emits a tool call, receives the result, and returns text.
-4. `output_or_raise()` returns the final validated output, not the individual tool return.
+Run it and check for `Result: 8`:
 
-For larger groups, use `Capability(toolsets=[FunctionToolset([...], id="...")])` with `FunctionToolset` from `pydantic_ai.toolsets`. Tools remain inside their owning Capability; there is no parallel Harness tool registration API.
+```bash
+uv run python tools_example.py
+```
+
+The `int` annotation defines the model-visible argument type; the docstring explains the function. `Capability(id="math", tools=[double])` registers it at build time. The deterministic responder requests `double(4)`, then reads its `ToolReturnPart` and produces the final text. `output_or_raise()` returns that final answer, not the integer tool return.
+
+For a larger group, import `FunctionToolset` from `pydantic_ai.toolsets` and place it in `Capability(toolsets=[FunctionToolset([...], id="...")])`. Capabilities remain the top-level place to compose tools. Pydantic AI owns the function schema and dispatcher; Harness bounds results and applies its tool lifecycle.
 
 ## Access the current Run
 
-A context-aware function takes `RunContext[AgentContext]` as its first parameter. Pydantic AI injects that argument; the model cannot supply it.
+Use `RunContext[AgentContext]` as a tool's first parameter when it needs application-supplied context. The runtime injects this parameter; the model supplies only the remaining arguments.
+
+To exercise this in `tools_example.py`, keep its original imports and final `asyncio.run(main())`. Add the two imports below, and replace `double()`, `respond()`, and `main()` with:
 
 ```python
 from a13n_harness import AgentContext, RunBindings
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import Capability
 
 
 def request_label(ctx: RunContext[AgentContext]) -> str:
@@ -92,19 +96,52 @@ def request_label(ctx: RunContext[AgentContext]) -> str:
     return label
 
 
-capability = Capability(id="request-context", tools=[request_label])
-bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    del info
+    for message in reversed(messages):
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and part.tool_name == "request_label":
+                yield str(part.content)
+                return
+    yield {
+        0: DeltaToolCall(
+            name="request_label", json_args="{}", tool_call_id="call-label"
+        )
+    }
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(Capability(id="request-context", tools=[request_label]),),
+    )
+    result = await executable.run(
+        "Read the request label.",
+        bindings=RunBindings.embedded(metadata={"request_label": "support-triage"}),
+    )
+    assert result.output_or_raise() == "support-triage"
+    print(result.output_or_raise())
 ```
 
-Pass `capability` at build time and the fresh `bindings` to `run()` or `stream()`. `ctx` contains native messages, usage, and limits; `ctx.deps` contains the Agent identity and instance, Thread/Run correlation, Environment, plugins, state, and metadata.
+Run the same file again. It prints `support-triage`, confirming that the tool read the fresh binding. The model sent `{}`: the request label came from your application.
 
-Metadata is bounded application context, **not authorization**. Do not put keys, tokens, or a live database session in it. A trusted identity claim also needs current policy before it grants an operation.
+`ctx` exposes native messages, usage, and limits. `ctx.deps` exposes Agent identity, Thread/Run correlation, Environment, plugins, state, and metadata. Use metadata for bounded JSON context such as labels. Keep credentials and live clients in their typed integration or application-owned service; authorize operations using current policy rather than a metadata label.
 
 ## Supply a live application dependency
 
-Harness fixes the native dependency type to `AgentContext`; it does not accept a second application `deps_type` or a generic application-service argument on `run()`. For built-in features, use the existing typed `RunBindings` fields, such as `web` or `document_converter`.
+For an application service, first decide who owns the client and how long it remains authorized:
 
-For an application tool, a closure over an authorized service is enough when the application builds an executable for that request. This sketch assumes your application owns `inventory` and its lifetime, and supplies a native `model`:
+| Application pattern                  | Integration                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| Build an executable for one request  | Close over the authorized service in a function tool                        |
+| Reuse one executable across requests | Resolve a fresh service through a custom Capability or Harness plugin       |
+| Use a built-in integration           | Supply its typed `RunBindings` field, such as `web` or `document_converter` |
+
+The following integration sketch assumes your application has acquired `inventory` and supplies a native `model`. The application also closes the service when its scope ends:
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder
@@ -125,37 +162,48 @@ async def inspect_inventory(inventory, model):
     return await executable.run("Check stock for SKU-123")
 ```
 
-The Capability belongs to build-time composition, not `RunBindings.capabilities`. The latter accepts only the documented invocation-policy and upstream MCP types; it is not an arbitrary application-service or tool injection point.
+The closure selects the service; the model selects a SKU within that service. Enforce tenant and credential scope in the service itself. Keep database transactions around individual operations rather than the entire Agent loop.
 
-If the application reuses one executable across requests, install a custom `AbstractCapability[AgentContext]` at build time and resolve the service in its native `for_run(ctx)` from trusted current-Run identity and an application-owned factory. Native Run binding executes again for each internal model-recovery attempt. A [Harness plugin](plugins.md#plugin-lifecycle) can instead bind a fresh instance once per logical Run; its contributed tools or Capabilities retrieve that instance with `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Neither approach requires a second dependency container, and concurrent Runs must not mutate a shared prototype to select their service.
+For a reusable executable, choose one of these lifecycles:
 
-The service must enforce its own scope; do not let the model choose a tenant or credential. Keep database transactions around individual operations, not around the whole model/tool loop. The application or owning extension must manage resource acquisition and cleanup explicitly; `for_run()` alone does not close clients. Never put live services in `metadata`, serialize them into `HarnessState`, or reuse an authenticated Run-bound instance as continuation state.
+- **Native Capability:** install an `AbstractCapability[AgentContext]` at build time. Its `for_run(ctx)` resolves an authorized service from current identity and an application-owned factory. Binding runs again for each internal model-recovery attempt.
+- **Harness plugin:** bind a fresh plugin once per logical Run. Its tools or contributed Capabilities retrieve it through `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Follow the [plugin lifecycle](plugins.md#plugin-lifecycle) for cleanup.
+
+Keep shared prototypes reentrant; resolve request-specific services without mutating them. The application or extension owns acquisition and cleanup—`for_run()` alone does not close a client.
+
+Harness's dependency type is `AgentContext`. Arbitrary application services do not go in a second `deps_type`, `metadata`, or `HarnessState`. Likewise, ordinary tool Capabilities go to the builder: `RunBindings.capabilities` accepts only the supported upstream MCP and invocation-policy types.
 
 ## Tool execution paths
 
-| Tool path                | Example                                     | Boundary                                                                         |
-| ------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------- |
-| Trusted Python function  | `double`, your application service          | Native tool dispatch plus Harness result handling; Python code owns side effects |
-| Managed Environment tool | File edit or shell execution                | Typed resources, current policy, Provider enforcement, and bounded results       |
-| Local MCP tool           | Tool from a connected MCP server            | Native MCP transport and local function-tool result boundary                     |
-| Provider-native tool     | Model-provider search or image tool         | Executed by the model provider; not a local Python tool call                     |
-| Deferred tool            | Human approval or external/client execution | The root Run suspends; the Host supplies correlated input in a new Run           |
+Choose the integration that owns the action:
 
-A name such as `safe_shell` does not make a tool managed. Managed metadata selects the additional policy path. A Python callback can still access its process's ambient authority; tool visibility is not OS isolation.
+| Action                                             | Use                                                                          | Execution owner                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Call trusted application code                      | A Python function, as above                                                  | Your Python process; Harness handles the tool result        |
+| Edit files or run commands with Environment policy | [Managed tools](managed-tools.md) and [Environments](environments.md)        | Current policy plus the Environment Provider                |
+| Call a connected MCP server                        | [MCP](mcp.md)                                                                | Native MCP transport and local result handling              |
+| Use provider search or image tools                 | Provider-native tools                                                        | The model provider                                          |
+| Request approval or external execution             | [Human-in-the-loop](human-in-the-loop.md) or [client tools](client-tools.md) | The Host resumes a suspended root Run with correlated input |
 
-Use [managed tools and policy](managed-tools.md) for a complete `HarnessTool` example and invocation-policy reference. Use [client-side tools](client-tools.md) when a browser or another external client executes a declared tool. [Environment tools](environments.md), [MCP tools](mcp.md), and [deferred resume](state-and-resume.md) explain the corresponding integration and continuation paths.
+Managed tool metadata selects resource and invocation-policy handling. A function name does not select that path, and ordinary Python callbacks retain their process authority. Tool visibility is separate from OS isolation.
 
 ## Errors, retries, and output bounds
 
-- Native tool argument validation and model-visible retry behavior belong to Pydantic AI. Configure tool/output retries through `AgentSpec.retries`.
-- Transport retries belong to the provider client. Do not treat a model retry as permission to repeat an uncertain side effect.
-- Managed invocation policy can deny or require approval before dispatch. Optional shell review can only add restrictions.
-- Tool results are bounded before entering model history. Oversized local MCP text/JSON defaults to explicit truncation; this is not an incoming HTTP-body limit or a durable attachment store.
+Check failures at the layer that owns them:
 
-Test both the visible schema and the actual dependency call. For mutation tools, also test denial, cancellation, and uncertain outcomes at the application boundary.
+| Failure or limit                         | Configure or inspect                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| Invalid tool arguments or output         | Native validation and `AgentSpec.retries`                                  |
+| Provider transport failure               | Provider client retry policy                                               |
+| Denied or approval-required managed call | Invocation policy; optional shell review can add restrictions              |
+| Oversized tool result                    | Harness result bounds; local MCP text/JSON defaults to explicit truncation |
+
+A model retry does not establish whether an external mutation took effect. Inspect uncertain outcomes before repeating a side effect. Tool-result bounds apply before model history; they are neither HTTP request-body limits nor durable attachment storage.
+
+Test the visible schema and an actual call, as in the offline examples. Add denial, cancellation, and uncertain-outcome tests for tools that mutate application state.
 
 ## Next steps
 
-- [Capabilities](capabilities.md): compose feature behavior and custom declarative types.
-- [Inputs and outputs](inputs-and-outputs.md): distinguish tool results from the Agent's final output.
-- [Testing](testing.md): verify tools and continuation without live providers.
+- [Capabilities](capabilities.md): package reusable tool groups and context.
+- [Inputs and outputs](inputs-and-outputs.md): return typed Agent output alongside tool results.
+- [Testing](testing.md): turn the offline workflow into regression tests.

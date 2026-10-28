@@ -1,17 +1,17 @@
 ---
 title: 工具与依赖
-description: 为模型提供有类型的 Python 工具，并为每次 Run 提供所需的依赖。
+description: 注册 Python 函数，离线调用它，并提供当前 Run 上下文或应用服务。
 ---
 
-工具让模型能够请求应用执行操作。使用普通的类型化 Python 函数，通过 Pydantic AI Capabilities 或 Toolset 分组，并只向每次 Run 提供它应该使用的依赖。
+工具让模型能够请求调用 Python 函数。先编写有类型的函数，将它放入 Capability，再把 Capability 传给 builder。然后验证完整调用：模型发出请求、Python 执行、工具返回结果、模型给出最终回答。
 
-Harness 不替换 Pydantic AI 的工具 schema 或调度器。它增加必需的结果边界，并为明确纳入管理的工具提供调用策略和资源处理。
+使用[快速入门](getting-started.md)中已同步依赖的 checkout。下方两个可执行示例均可离线运行。
 
 ## 离线运行函数工具
 
-这个完整示例无需网络，通过真实 Agent 执行循环调用 `double(4)`。在[快速入门](getting-started.md)克隆的仓库目录中保存为 `tools_example.py`，运行 `uv run python tools_example.py`。
+将以下完整程序保存为 `tools_example.py`：
 
-```python
+```python title="tools_example.py"
 import asyncio
 from collections.abc import AsyncIterator
 
@@ -67,21 +67,25 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-1. 类型注解定义参数 schema，docstring 向模型说明操作。
-2. `Capability(tools=[double])` 将函数纳入原生组合。
-3. 确定性模型发出工具调用，收到结果，再返回文字。
-4. `output_or_raise()` 返回最终校验后的输出，不是某个工具的返回值。
+运行并检查输出是否为 `Result: 8`：
 
-工具较多时，可使用 `Capability(toolsets=[FunctionToolset([...], id="...")])`，其中 `FunctionToolset` 来自 `pydantic_ai.toolsets`。工具仍属于各自 Capability，没有另一套并行的 Harness 工具注册 API。
+```bash
+uv run python tools_example.py
+```
+
+`int` 注解定义模型可见的参数类型，docstring 说明函数用途。`Capability(id="math", tools=[double])` 在构建时注册函数。确定性 responder 请求调用 `double(4)`，随后读取 `ToolReturnPart` 并生成最终文本。`output_or_raise()` 返回最终回答，而不是工具返回的整数。
+
+工具组较大时，从 `pydantic_ai.toolsets` 导入 `FunctionToolset`，放入 `Capability(toolsets=[FunctionToolset([...], id="...")])`。Capabilities 仍是组合工具的顶层入口。Pydantic AI 负责函数 schema 和调度，Harness 负责结果限制及工具生命周期处理。
 
 ## 访问当前 Run
 
-需要上下文的函数，以 `RunContext[AgentContext]` 作为首个参数。Pydantic AI 会注入它，模型不能自行提供。
+工具需要应用提供的上下文时，将 `RunContext[AgentContext]` 作为首个参数。运行时注入这个参数；模型只提供其余参数。
+
+在 `tools_example.py` 中验证此功能：保留原导入和最后的 `asyncio.run(main())`，添加下方两个导入，并替换 `double()`、`respond()` 和 `main()`：
 
 ```python
 from a13n_harness import AgentContext, RunBindings
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import Capability
 
 
 def request_label(ctx: RunContext[AgentContext]) -> str:
@@ -92,19 +96,52 @@ def request_label(ctx: RunContext[AgentContext]) -> str:
     return label
 
 
-capability = Capability(id="request-context", tools=[request_label])
-bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    del info
+    for message in reversed(messages):
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and part.tool_name == "request_label":
+                yield str(part.content)
+                return
+    yield {
+        0: DeltaToolCall(
+            name="request_label", json_args="{}", tool_call_id="call-label"
+        )
+    }
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(Capability(id="request-context", tools=[request_label]),),
+    )
+    result = await executable.run(
+        "Read the request label.",
+        bindings=RunBindings.embedded(metadata={"request_label": "support-triage"}),
+    )
+    assert result.output_or_raise() == "support-triage"
+    print(result.output_or_raise())
 ```
 
-构建时传入 `capability`，调用 `run()` 或 `stream()` 时传入新的 `bindings`。`ctx` 包含原生消息、用量和限制；`ctx.deps` 包含 Agent 身份和实例、Thread/Run 关联、Environment、插件、状态和元数据。
+再次运行同一文件。输出 `support-triage`，确认工具读取了新的绑定。模型发送的是 `{}`，请求标签来自应用。
 
-元数据是大小受限的应用上下文，**不是授权依据**。不要放入密钥、token 或活跃数据库 session。可信身份 claim 也必须结合当前策略，才能授权某个操作。
+`ctx` 提供原生消息、用量和限制；`ctx.deps` 提供 Agent 身份、Thread/Run 关联、Environment、插件、状态和元数据。元数据适合放置标签等大小受限的 JSON 上下文。凭据和活跃客户端放入对应的类型化集成或应用管理的服务；授权操作依据当前策略，而不是元数据标签。
 
 ## 提供活跃的应用依赖
 
-Harness 将原生依赖类型固定为 `AgentContext`，不接受第二个应用 `deps_type`，也不接受 `run()` 上的通用应用服务参数。内置功能请使用已有类型化 `RunBindings` 字段，例如 `web` 或 `document_converter`。
+接入应用服务前，先明确谁管理客户端，以及授权保持有效的时间：
 
-对于应用工具，如果应用会为每次请求构建 executable，那么捕获已授权服务的闭包就足够。下面假定应用管理 `inventory` 及其生命周期，并提供原生 `model`：
+| 应用方式                 | 集成方法                                                                |
+| ------------------------ | ----------------------------------------------------------------------- |
+| 每个请求构建一个执行对象 | 在函数工具中通过闭包捕获已授权的服务                                    |
+| 跨请求复用一个执行对象   | 通过自定义 Capability 或 Harness 插件解析新服务                         |
+| 使用内置集成             | 提供对应的类型化 `RunBindings` 字段，例如 `web` 或 `document_converter` |
+
+以下集成片段假定应用已获取 `inventory`，并提供原生 `model`。服务作用域结束时，也由应用关闭服务：
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder
@@ -125,37 +162,48 @@ async def inspect_inventory(inventory, model):
     return await executable.run("Check stock for SKU-123")
 ```
 
-这个 Capability 属于构建时组合，不放在 `RunBindings.capabilities` 中。后者只接受文档列出的调用策略和上游 MCP 类型，不是任意应用服务或工具的注入入口。
+闭包确定服务，模型在这个服务内选择 SKU。服务自身约束租户和凭据范围。数据库事务应围绕单次操作，而不是整个 Agent 循环。
 
-如果应用跨请求复用同一个 executable，应在构建时安装自定义 `AbstractCapability[AgentContext]`，在原生 `for_run(ctx)` 中，根据可信的当前 Run 身份和应用管理的 factory 解析服务。每次内部模型恢复尝试都会重新执行原生 Run 绑定。也可以通过 [Harness 插件](plugins.md#plugin-lifecycle)，每个逻辑 Run 只绑定一次新实例；插件贡献的工具或 Capabilities 用 `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)` 获取实例。两种方式都不需要第二个依赖容器；并发 Run 不得通过修改共享原型来选择服务。
+复用执行对象时，选择以下一种生命周期：
 
-服务必须自行约束作用范围，不能让模型选择租户或凭据。数据库事务应围绕单次操作，不要覆盖整个模型和工具循环。应用或所属扩展必须明确管理资源获取和清理，`for_run()` 本身不会关闭客户端。绝不要把活跃服务放进 `metadata`、序列化进 `HarnessState`，或把已经认证的 Run 绑定实例当作续接状态复用。
+- **原生 Capability：** 在构建时安装 `AbstractCapability[AgentContext]`。其 `for_run(ctx)` 根据当前身份和应用管理的 factory 解析已授权服务。每次内部模型恢复尝试都会重新绑定。
+- **Harness 插件：** 每个逻辑 Run 绑定一次新插件。插件的工具或所贡献的 Capabilities 通过 `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)` 获取它。按[插件生命周期](plugins.md#plugin-lifecycle)完成清理。
+
+保持共享原型可重入，不通过修改原型来选择请求专属服务。应用或扩展负责获取和清理资源；`for_run()` 本身不会关闭客户端。
+
+Harness 的依赖类型是 `AgentContext`。普通应用服务不放入第二个 `deps_type`、`metadata` 或 `HarnessState`。普通工具 Capability 同样传给 builder；`RunBindings.capabilities` 只接受受支持的上游 MCP 和调用策略类型。
 
 ## 工具执行路径
 
-| 工具路径              | 示例                           | 边界                                                   |
-| --------------------- | ------------------------------ | ------------------------------------------------------ |
-| 可信 Python 函数      | `double`、应用服务             | 原生工具调度与 Harness 结果处理，Python 代码负责副作用 |
-| 托管 Environment 工具 | 文件编辑或 shell 执行          | 类型化资源、当前策略、Provider 强制约束和有界结果      |
-| 本地 MCP 工具         | 来自已连接 MCP server 的工具   | 原生 MCP 传输与本地函数工具结果边界                    |
-| Provider 原生工具     | 模型 provider 的搜索或图像工具 | 由模型 provider 执行，不是本地 Python 工具调用         |
-| 延后工具              | 人工审批或外部、客户端执行     | 根 Run 暂停，Host 在新 Run 中提供关联输入              |
+根据操作的执行方选择集成方式：
 
-名字叫 `safe_shell` 不意味着工具已纳入管理；托管元数据才会选择额外的策略路径。Python 回调仍可使用其进程的环境权限，工具可见性不等于 OS 隔离。
+| 操作                                  | 使用方式                                                        | 执行方                                |
+| ------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
+| 调用可信应用代码                      | 上文的 Python 函数                                              | Python 进程执行，Harness 处理工具结果 |
+| 按 Environment 策略编辑文件或运行命令 | [托管工具](managed-tools.md)与[环境](environments.md)           | 当前策略与 Environment Provider       |
+| 调用已连接的 MCP server               | [MCP](mcp.md)                                                   | 原生 MCP 传输与本地结果处理           |
+| 使用 provider 搜索或图像工具          | Provider 原生工具                                               | 模型 provider                         |
+| 请求审批或外部执行                    | [人机协作](human-in-the-loop.md)或[客户端工具](client-tools.md) | Host 用关联输入恢复已暂停的根 Run     |
 
-完整 `HarnessTool` 示例和调用策略参考，参阅[托管工具与策略](managed-tools.md)。浏览器或其他外部客户端执行声明的工具时，参阅[客户端工具](client-tools.md)。[Environment 工具](environments.md)、[MCP 工具](mcp.md)和[延后恢复](state-and-resume.md)说明了对应的集成与续接方式。
+托管工具元数据决定资源处理和调用策略路径。函数名不会启用该路径，普通 Python 回调保留进程权限。工具可见性与 OS 隔离是两回事。
 
 ## 错误、重试与输出限制
 
-- 原生工具参数校验和模型可见的重试行为由 Pydantic AI 管理，通过 `AgentSpec.retries` 配置工具和输出重试。
-- 传输重试由 provider 客户端管理。模型重试不能作为重复结果不确定的副作用操作的许可。
-- 托管调用策略可在发出调用前拒绝或要求审批。可选 shell 审查只能增加限制。
-- 工具结果在进入模型历史前受到大小限制。过大的本地 MCP 文本或 JSON 默认明确截断；这不是传入 HTTP 请求体限制，也不是持久附件存储。
+在负责该行为的层级排查问题：
 
-既要测试模型可见的 schema，也要测试实际依赖调用。会修改状态的工具，还应在应用边界测试拒绝、取消和结果不确定的情况。
+| 失败或限制               | 配置或检查位置                                      |
+| ------------------------ | --------------------------------------------------- |
+| 工具参数或输出无效       | 原生校验与 `AgentSpec.retries`                      |
+| Provider 传输失败        | Provider 客户端重试策略                             |
+| 托管调用被拒绝或要求审批 | 调用策略；可选 shell 审查可增加限制                 |
+| 工具结果过大             | Harness 结果限制；本地 MCP 文本或 JSON 默认明确截断 |
+
+模型重试不能证明外部修改是否已经发生。重复副作用操作前，先检查不确定结果。工具结果限制作用于进入模型历史之前，不是 HTTP 请求体限制，也不是持久附件存储。
+
+像离线示例一样，同时测试可见 schema 和实际调用。对会修改应用状态的工具，再添加拒绝、取消和结果不确定的测试。
 
 ## 下一步
 
-- [Capabilities](capabilities.md)：组合功能行为和自定义声明式类型。
-- [输入与输出](inputs-and-outputs.md)：区分工具结果与 Agent 最终输出。
-- [测试](testing.md)：无需在线 provider，验证工具和续接。
+- [Capabilities](capabilities.md)：封装可复用的工具组和上下文。
+- [输入与输出](inputs-and-outputs.md)：在工具结果之外返回指定类型的 Agent 输出。
+- [测试](testing.md)：将离线流程转为回归测试。

@@ -473,6 +473,7 @@ class AgentContext:
     _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
     # The restored state's fields this Harness does not know, which every export keeps.
     _state_extensions: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    _compacting: bool = field(default=False, repr=False, compare=False)
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,

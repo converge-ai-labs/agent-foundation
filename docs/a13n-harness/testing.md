@@ -1,134 +1,169 @@
 ---
 title: Testing Harness applications
 sidebarTitle: Testing
-description: Test Agents at their own boundaries with deterministic models, streams, state, and Environments.
+description: Build an offline test suite for output, saved history, streams, and application integrations.
 ---
 
-Test a Harness application at the boundaries Harness exposes to it: deterministic model behavior, terminal results, continuation state, public stream events, Environment lifecycle, and selected extensions. Keep provider-network tests separate from the fast application suite.
+Start with three offline tests: return an answer, restore a saved Thread, and consume a stream. Then add tests for the tools and resources your application actually uses. A deterministic Model keeps these tests fast and makes failures reproducible.
 
 ## Start with `FunctionModel`
 
-Pydantic AI's `FunctionModel` runs the real Agent and Harness paths without an API key:
+Use the checkout and Python environment from [Getting started](getting-started.md). From the checkout root, install the locked development dependencies, including pytest and AnyIO:
 
-```python
+```bash
+uv sync --locked --package a13n-harness --group dev
+```
+
+Create `test_agent.py` with this complete module. The explicit `anyio_backend` fixture selects asyncio, so the test works outside this repository's test configuration.
+
+```python title="test_agent.py"
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
-)
-from pydantic_ai.messages import ModelMessage
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 async def respond(
-    messages: list[ModelMessage],
-    info: AgentInfo,
+    messages: list[ModelMessage], info: AgentInfo
 ) -> AsyncIterator[str]:
-    del messages, info
-    yield "expected output"
+    del info
+    turns = 1 + sum(isinstance(message, ModelResponse) for message in messages)
+    yield f"turn-{turns}"
+
+
+def build_agent():
+    return HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
 
 
 async def test_agent_returns_expected_output() -> None:
-    model = FunctionModel(stream_function=respond)
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=model,
-    )
+    result = await build_agent().run("First turn")
 
-    result = await executable.run("Complete the task")
-
-    assert result.output_or_raise() == "expected output"
+    assert result.output_or_raise() == "turn-1"
     assert result.state is not None
 ```
 
-This tests Harness construction, the Pydantic AI loop, terminal normalization, and state export. Harness sends streamed model requests, so `FunctionModel` needs a `stream_function`; `FunctionModel(function=...)` alone fails the Run. Yield strings for text deltas, and yield `DeltaToolCalls` when the test needs tool calls, deferred interaction, or provider-history shapes.
+Keep `test_agent.py` in the checkout root and run:
+
+```bash
+uv run python -m pytest -q test_agent.py
+```
+
+Expect `1 passed`. The Model counts earlier responses in the history instead of calling a provider. Harness construction, execution, output validation, and state export still run normally.
+
+Harness makes streamed Model requests. Supply `FunctionModel(stream_function=...)`; a non-streaming `function` alone cannot serve this path. Yield strings for text, or `DeltaToolCalls` for deterministic tool calls. [Tools and dependencies](tools-and-dependencies.md) shows a complete tool-call example.
 
 ## Test continuation explicitly
 
-A continued Thread preserves `thread_id` and receives a fresh `run_id`:
+Append this test to the same file. It saves the complete state in a temporary file, rebuilds the executable, and checks that the next Model request sees both turns.
 
 ```python
-first = await executable.run("First turn")
-second = await executable.run(
-    "Second turn",
-    previous_state=first.state,
-)
+from pathlib import Path
 
-assert second.thread_id == first.thread_id
-assert second.run_id != first.run_id
+from a13n_harness import HarnessState
+
+
+async def test_saved_state_resumes_a_rebuilt_agent(tmp_path: Path) -> None:
+    first = await build_agent().run("First turn")
+    first.raise_for_status()
+    assert first.state is not None
+    checkpoint = tmp_path / "thread.json"
+    checkpoint.write_text(first.state.model_dump_json(), encoding="utf-8")
+
+    restored = HarnessState.model_validate_json(
+        checkpoint.read_text(encoding="utf-8")
+    )
+    second = await build_agent().run("Second turn", previous_state=restored)
+
+    assert second.output_or_raise() == "turn-2"
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
 ```
 
-For application persistence, round-trip the complete `HarnessState` through the same serializer and store used by the application. Also test that failed or abandoned work does not replace the last committed checkpoint.
-
-## Protect provider prompt prefixes
-
-When a Capability changes model-visible messages, drive at least two model requests inside one Run. Capture the messages received by the Model. Through the public message codec, compare each complete sequence with the equal-length prefix of the next request. Confirm that the final transformation remains in canonical result history. This detects request-local transformations that were not written back to active history. If the Capability intentionally replaces history, assert that exact transition instead of weakening or omitting the prefix check.
-
-When that Capability also contributes instructions, capture `AgentInfo.instructions` for every request and require them to remain identical. If the Capability contract intentionally changes instructions, assert the exact expected transition instead of weakening the stability check.
+Run the same pytest command; expect `2 passed`. In your application suite, use the application's real save/load functions as well. Test its commit policy: failed or abandoned turns must not replace a checkpoint that the application intends to retain.
 
 ## Test streams as scoped resources
 
-Consume streams inside their async context and require a terminal result:
+Append the third test to `test_agent.py`:
 
 ```python
 from a13n_harness import HarnessRunResultEvent
 
-items = []
-terminal = None
-async with executable.stream("Stream the answer") as stream:
-    async for item in stream:
-        items.append(item)
-        if isinstance(item, HarnessRunResultEvent):
-            terminal = item.result
 
-assert items
-assert terminal is not None
-terminal.raise_for_status()
+async def test_stream_delivers_a_terminal_result() -> None:
+    terminal = None
+    async with build_agent().stream("First turn") as stream:
+        async for item in stream:
+            if isinstance(item, HarnessRunResultEvent):
+                terminal = item.result
+
+    assert terminal is not None
+    assert terminal.output_or_raise() == "turn-1"
+    assert terminal.state is not None
 ```
 
-Add a test that exits the consumer early when the application exposes streaming to callers. The application must still close the stream scope so temporary Environment resources and Run-local collaborators are released.
+The same command now runs all three tests. Keep the `async with` around the entire consumer: it closes Run resources on completion, exceptions, and early exit. If your application forwards a stream to a caller, also test that the caller's early exit closes the application wrapper and its temporary resources.
+
+## Protect provider prompt prefixes
+
+For a Capability that transforms Model messages, test a complete multi-request Run:
+
+1. Make the Model request a tool, then return a final answer.
+2. Record the messages received on both requests using the public message codec.
+3. Compare the first complete sequence with the equal-length prefix of the second.
+4. Check that the final transformation also appears in the result history.
+
+This catches changes made only to an outgoing request and lost from canonical history. If history replacement is the feature's intended behavior, assert that exact replacement. For Capability instructions, capture `AgentInfo.instructions` on each request and assert either stability or the intended transition.
 
 ## Separate definition and Run authority
 
-Test definition-selected Capabilities with fixed fakes. Inject user-specific policy, model routing, media, document, Web, or interaction collaborators through fresh Run bindings. This keeps tests aligned with the production ownership boundary and prevents credentials or mutable authority from leaking into reusable definitions.
+Build stable behavior and tool definitions into the executable. Supply user-specific policy, model routing, and Web, document, media, or interaction collaborators through fresh Run bindings, as production code does.
 
-When a Capability exposes tools, test both sides:
-
-1. the model sees only the expected tool surface;
-2. the collaborator receives the expected typed request and policy context.
+For each tool integration, check both the Model's visible tool surface and the typed request delivered to the collaborator. Include a denied operation when the application owns an authorization rule. Use [Tools and dependencies](tools-and-dependencies.md#supply-a-live-application-dependency) to choose where each fake belongs.
 
 ## Test Environment integration at three levels
 
-| Level                 | Use                                              | Assert                                                                                               |
-| --------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Unit                  | Fake typed Environment ports or collaborators    | Tool arguments, result shaping, policy, and errors                                                   |
-| Local integration     | Direct Local Provider with a temporary directory | Real file/process behavior and cleanup                                                               |
-| Isolation integration | Local Envd with a built `a13n-envd` binary       | Environment Interaction Protocol (EIP) negotiation, isolation prerequisites, lifecycle, and recovery |
+Choose the least expensive level that proves the behavior:
 
-Direct Local is not an isolation substitute. A test that must prove the EIP or native-isolation boundary should use the real Local Envd path.
+| Level                 | Setup                                         | What to check                                   |
+| --------------------- | --------------------------------------------- | ----------------------------------------------- |
+| Unit                  | Fake typed Environment ports or collaborators | Arguments, returned values, policy, errors      |
+| Local integration     | Direct Local with a temporary directory       | Real file/process operations and cleanup        |
+| Isolation integration | Local Envd with a built daemon                | EIP negotiation, isolation, lifecycle, recovery |
 
-From this repository, the focused Local Envd integration gate is:
+Direct Local exercises Host file/process access. Use Local Envd when the assertion concerns native isolation or the Environment Interaction Protocol (EIP). From a repository checkout prepared for Envd development, run:
 
 ```bash
 make local-envd-test
 ```
 
+See [Environment examples](../environments/examples.md) for provider setup. Keep tests that launch a daemon separate from the three offline tests above.
+
 ## Test plugins as installed packages
 
-For entry-point discovery, build or install the extension distribution in an isolated Python virtual environment rather than patching the catalog. Verify explicit selection, configuration validation, fresh per-Run instances, cleanup, and failure isolation.
+Test entry-point discovery in an isolated virtual environment with the extension installed. Exercise explicit selection, invalid configuration, fresh per-Run instances, cleanup, and failure handling. Patching the in-memory catalog skips the packaging behavior this test is meant to verify.
 
-The repository's [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) includes entry-point and direct-code paths with offline tests.
+The [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) includes offline tests for both installed entry points and direct-code composition.
 
 ## Keep one real-provider smoke test
 
-A small opt-in smoke test can verify provider credentials, model naming, and network integration. Do not make the main suite depend on a live model. Keep model responses out of exact assertions unless the provider and seed make them deterministic; assert the application contract instead.
+Add a small opt-in test for credentials, the configured Model ID, and network access. Assert your application's output contract rather than exact generated wording. Keep it separate from the offline suite so normal development does not require a provider account.
 
 ## Repository examples
 
-- [Agent Application tests](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests) cover repeated turns, restart recovery, failure, early stream exit, and temporary Environment cleanup.
-- [Harness tests](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests) show focused public-boundary tests for events, state, Capabilities, Environments, observation, delegation, and plugins.
+Use these as patterns when the application grows beyond the three starter tests:
+
+- [Agent Application tests](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests): repeated turns, restart, failure, early stream exit, and temporary Environment cleanup.
+- [Harness tests](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests): public events, state, Capabilities, Environments, observation, delegation, and plugins.

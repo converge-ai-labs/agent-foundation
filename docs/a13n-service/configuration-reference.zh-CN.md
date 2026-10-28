@@ -4,12 +4,13 @@ sidebarTitle: 设置参考
 description: Service 设置的每个字段，及其环境变量、类型、范围和默认值。
 ---
 
-> [!NOTE]
-> 从 Service 加载器使用的 `Settings` 定义生成。修改定义后，请运行 `uv run --locked python scripts/docs/references.py`，不要直接编辑表格行。
+按配置节找到设置，再从对应行查阅 TOML 键或环境变量，以及接受的类型、范围和默认值。要准备完整的部署配置，请从[配置 Service](configuration.md)开始；该指南介绍优先级、角色与存储要求，以及跨字段校验。
 
-优先级、示例、角色和存储要求、跨字段校验请参阅[配置 Service](configuration.md)。下列类型和字段约束不能替代联合校验。Schema 会隐藏密钥默认值；本参考不会读取部署环境变量值。默认值适用于源码版本，并非所有历史版本。
+例如，`server.port` 对应 TOML `[server]` 节中的 `port`，也可通过环境变量 `A13N_SERVER__PORT` 设置。标有 **JSON 字段**的行共用一个环境变量：将邮件设置组成 JSON 对象，赋给 `A13N_AUTH__MAIL`。环境变量会替换文件中对应字段的值；嵌套设置会替换整个对象。
 
-完整的机器可读验证 schema，包括命名枚举和联合定义，见 [Service 设置 JSON](/reference/service-settings.json)。
+这些表格描述当前源码版本的内置设置，密钥默认值已隐藏。下载 [Service 设置 JSON](/reference/service-settings.json) 可获取完整 schema，包括命名枚举和联合定义。发行版专有的扩展设置由该发行版文档介绍。
+
+表格从 `Settings` 生成。贡献者修改定义后，应运行 `uv run --locked python scripts/docs/references.py` 重新生成英文参考，并同步翻译后的表格行。
 
 ## `server`
 

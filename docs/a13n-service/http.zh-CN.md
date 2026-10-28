@@ -1,45 +1,43 @@
 ---
 title: HTTP 约定
-description: 所有端点共用的认证、错误、并发、幂等、分页和流式规则。
+description: 认证请求、读取和更新资源，并处理重试与分页响应。
 ---
 
-所有 API 操作位于 Service 公共 URL 的 `/api/v1` 下。除非操作另有说明（上传、文件内容、图片和会话事件流），请求和响应均为 JSON。运行中的 Service 在 `/api/v1/openapi.json` 发布 OpenAPI 文档，在 `/api/v1/docs` 提供交互式页面；[HTTP 参考](api-reference/index.md)从同一文档生成。
+本页帮助你实现 Service 客户端共用的请求处理：先认证，保存读到的 ID 和版本，再携带相应请求头更新资源或提交工作。完整的 agent 对话流程见[连接应用](connect-application.md)；语言客户端见 [SDK 与 CLI](sdks.md)。
 
-请求体采用严格校验，未知字段会被拒绝。语言集成或 shell 脚本请参阅 [SDK 与 CLI](sdks.md)；详细用法由各客户端自己的 Markdown 文档维护。
+API 路径以 Service URL 下的 `/api/v1` 开头。除文件传输、图片和事件流外，请求和响应使用 JSON。请求体拒绝未知字段。实际部署在 `/api/v1/openapi.json` 发布准确 schema，在 `/api/v1/docs` 提供交互式浏览器；[HTTP 参考](api-reference/index.md)介绍各项操作。
 
 ## 认证
 
-应用使用 [API 密钥](identity.md#api-keys)作为 bearer token 认证：
+先准备一把所属主体具有 `read` 权限的工作空间 [API 密钥](identity.md#api-keys)。在 shell 中将 `A13N_URL` 设为不带末尾斜杠的 Service URL，将 `A13N_API_KEY` 设为该密钥。列出 agent：
 
 ```sh
-curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
+curl -i "$A13N_URL/api/v1/agents" \
+  -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-提供 `Authorization` 请求头时，cookie 会被忽略。API 密钥仅在自身工作空间生效，不能修改它所属的用户或服务账号的账号信息。
+成功响应包含 `items` 和 `next_cursor`。下方更新练习需要一份未归档的自定义 agent，请选取它返回的 `id`。如果还没有，先[创建 agent](agents-and-runs.md)。提供 `Authorization` 请求头会选用该凭据并忽略 cookie。缺失、无效或已禁用主体的凭据返回 `401 unauthenticated`。
 
-浏览器使用 `POST /api/v1/auth/login` 设置的登录会话 cookie。除 `GET`、`HEAD` 和 `OPTIONS` 外，使用 cookie 认证的请求必须：
+浏览器客户端使用 `POST /api/v1/auth/login` 返回的登录 cookie。使用 cookie 认证时，除 `GET`、`HEAD` 和 `OPTIONS` 外的方法都要发送 `X-CSRF-Token`，其值来自登录响应或 `GET /api/v1/auth/session`。若提供 `Origin`，必须匹配 `server.public_url` 的源；回环公共 URL 中的 `localhost` 与 `127.0.0.1` 可以互换。
 
-- 在 `X-CSRF-Token` 中发送登录会话的 CSRF token；登录响应返回它，已有登录会话也可通过 `GET /api/v1/auth/session` 再次获取；
-- 若发送 `Origin` 请求头，其值必须等于 `server.public_url` 的源；回环公共 URL 中，`localhost` 和 `127.0.0.1` 可以互换。
+账号修改、登录会话和个人审计读取、退出登录、创建 API 密钥、邀请以及个人 Connection 授权都使用登录会话。API 密钥调用这些操作（包括 `GET /auth/session`）会返回 `403 forbidden`。工作空间 Model Provider 授权接受具有所需权限的 API 密钥。权限模型见[身份与访问](identity.md)。
 
-账号操作（修改资料、密码、邮箱、禁用账号、列出登录会话和自己的审计记录）、`GET /api/v1/auth/session`、`POST /api/v1/auth/logout`，以及创建 API 密钥、发送或重发邀请、启动个人 Connection 授权（OAuth 或 connector 账号配置）均需要登录会话。API 密钥调用这些操作返回 `403 forbidden`。工作空间 Model Provider 授权接受具有所需工作空间权限的 API 密钥。没有有效凭据时返回 `401 unauthenticated`；已禁用主体的凭据视为无效。
-
-创建 [Schedule](schedules.md) 会委托持久执行权限。原 API 密钥被撤销或过期不会停止该 Schedule；暂停或归档它才能停止后续提交。
-
-每个认证后的响应，包括路由响应和认证后发生的错误，都包含 `Cache-Control: no-store`；登录会话续期时还包含更新的 cookie。
+认证后的响应包含 `Cache-Control: no-store`，包括认证后发生的错误。登录会话续期时，响应还会返回更新的 cookie。
 
 ### 工作空间
 
-工作空间中的 agent、线程、运行、provider、模型、skill 和记忆等资源，路径不包含工作空间，例如 `/api/v1/agents`。每个此类请求作用于凭据选定的一个工作空间：
+工作空间资源使用 `/api/v1/agents` 这样的路径；由凭据选择工作空间：
 
-- API 密钥作用于自身工作空间，无需请求头。`X-Workspace-ID` 指定其他工作空间时返回 `403 forbidden`。
-- 登录会话通过 `X-Workspace-ID: ws_…` 指定工作空间 ID。缺少该请求头时返回 `400 invalid_argument`，`details.field` 为 `X-Workspace-ID`。
+| 凭据     | 工作空间选择                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| API 密钥 | 使用自身工作空间，无需额外请求头。在 `X-Workspace-ID` 中指定其他工作空间会返回 `403 forbidden`。     |
+| 登录会话 | 发送 `X-Workspace-ID: ws_…`。省略时返回 `400 invalid_argument`，且 `details.field: X-Workspace-ID`。 |
 
-管理操作和部署级读取不接受该请求头。管理范围由路径指定：`/api/v1/auth/…`、`/api/v1/users/…`、`/api/v1/organizations/…`、`/api/v1/workspaces`，以及 `/api/v1/workspaces/{workspace_id}` 下的 `icon`、`archive`、`audit-events`、`grants`、`invitations`、`service-accounts` 和 `keys`。部署级读取为 `/api/v1/model-catalog`、`/api/v1/provider-types/{kind}`、`/api/v1/mcp-servers` 和 `/api/v1/connections/redirect-uri`。
+账号和管理路由通过路径确定范围，包括 `/auth/…`、`/users/…`、`/organizations/…` 和 `/workspaces/{workspace_id}/…`，不使用工作空间请求头。`/model-catalog`、`/provider-types/{kind}`、`/mcp-servers` 和 `/connections/redirect-uri` 等部署级读取也无需选择工作空间。本段路径均相对于 `/api/v1`。
 
 ## 错误
 
-所有错误采用同一结构，每个响应都包含 `X-Request-Id` 请求头：
+程序根据 `error.code` 和结构化 `details` 判断，使用 `message` 向用户展示。报告失败时保留响应的 `X-Request-Id`；错误正文也包含同一个 ID：
 
 ```json
 {
@@ -52,94 +50,139 @@ curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 }
 ```
 
-| 错误码                  | 状态 | 含义                                                                                                                                 |
-| ----------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `invalid_argument`      | 400  | 请求格式错误或引用不可用内容。`details.field` 指出错误字段；请求校验在 `details.fields` 中列出 `{field, reason}`。                   |
-| `invalid_cursor`        | 400  | 分页游标格式错误，或属于其他集合、范围或筛选条件。                                                                                   |
-| `unauthenticated`       | 401  | 没有有效凭据。                                                                                                                       |
-| `forbidden`             | 403  | 凭据缺少操作权限（`details.verb`），或 CSRF、源检查失败。                                                                            |
-| `not_found`             | 404  | 目标不存在或无权读取（`details.kind`、`details.id`）。                                                                               |
-| `request_timeout`       | 408  | 请求体未在 `server.request_timeout` 内到达。                                                                                         |
-| `already_exists`        | 409  | Key 或其他唯一值已被占用。                                                                                                           |
-| `conflict`              | 409  | 目标状态不允许该操作；`details.reason` 说明原因，例如 `archived`、`builtin`、`last_organization_admin` 或 `idempotency_key_reused`。 |
-| `precondition_failed`   | 412  | `If-Match` 已过期；`details.current_etag` 包含当前值。                                                                               |
-| `payload_too_large`     | 413  | 请求体或文件超过限制（`details.limit`）。                                                                                            |
-| `disabled`              | 422  | 请求用到的目标、其主体或工作空间已禁用或归档。修改已归档的 agent 或 skill 则返回 `409 conflict`。                                    |
-| `precondition_required` | 428  | 操作需要 `If-Match`。                                                                                                                |
-| `rate_limited`          | 429  | 请求过多；等待 `Retry-After` 秒后重试（`details.retry_after_seconds`）。                                                             |
-| `internal`              | 500  | 未预期错误；报告时请提供 `request_id`。                                                                                              |
-| `unavailable`           | 503  | 依赖（`details.dependency`：`database`、`redis`、`objects`、`mail`、provider 类型等）暂时无法服务，请稍后重试。                      |
+| 错误码                  | 状态 | 检查或处理方式                                                                                           |
+| ----------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| `invalid_argument`      | 400  | 修正 `details.field` 或 `details.fields` 中的 `{field, reason}` 条目。                                   |
+| `invalid_cursor`        | 400  | 使用预期范围和筛选条件，重新开始同一集合的查询。                                                         |
+| `unauthenticated`       | 401  | 提供有效凭据。                                                                                           |
+| `forbidden`             | 403  | 检查权限（`details.verb`）、CSRF 和源。                                                                  |
+| `not_found`             | 404  | 检查目标 ID 及你对目标的访问权限。                                                                       |
+| `request_timeout`       | 408  | 在 `server.request_timeout` 内发送请求体。                                                               |
+| `already_exists`        | 409  | 选择未占用的 key，或读取已有资源。                                                                       |
+| `conflict`              | 409  | 查看 `details.reason`，如 `archived`、`builtin`、`last_organization_admin` 或 `idempotency_key_reused`。 |
+| `precondition_failed`   | 412  | 重新读取已变化的资源，再决定如何应用修改。                                                               |
+| `payload_too_large`     | 413  | 检查 `details.limit`；缩小请求体，或使用支持的 section/content 读取。                                    |
+| `disabled`              | 422  | 检查目标、主体或工作空间是否被禁用或归档。                                                               |
+| `precondition_required` | 428  | 提供资源的 `If-Match`。                                                                                  |
+| `rate_limited`          | 429  | 等待 `Retry-After` 指定的秒数；`details.retry_after_seconds` 也包含该值。                                |
+| `internal`              | 500  | 报告 `request_id`。                                                                                      |
+| `unavailable`           | 503  | 检查 `details.dependency`，待该依赖恢复后重试。                                                          |
 
-不存在的路由或路径不接受的方法返回 `not_found`，详情为 `{"kind": "route", "id": "<METHOD> <path>"}`；无法解析为 JSON 的请求体返回 `invalid_argument`，详情为 `{"field": "body", "reason": "unparsable"}`。
-
-消息供人阅读，程序应根据 `code` 和 `details.reason` 判断。错误详情不会包含提交的值或密钥。
+未知路由或不支持的方法返回 `not_found`，详情包含 `kind: route`，`id` 为方法和路径。无法解析的请求体返回 `invalid_argument`，详情为 `field: body` 和 `reason: unparsable`。修改已归档的 agent 或 skill 返回 `409 conflict`，而非 `422 disabled`。错误详情不会回显提交值或密钥。
 
 ## 并发控制
 
-单资源响应包含强 `ETag`，例如 `"ap_…:4"`（模型为 `"{key}:{version}"`），视图包含相同 `version`。修改已有资源的操作必须在 `If-Match` 中提供上次读取的 ETag：
+ETag 标识你读取的版本。修改 agent 时，所属主体需要工作空间 `write` 权限：
+
+1. 读取 agent 并保留响应中的 `ETag`。
+2. 提交修改，在 `If-Match` 中携带该值，包括其中的双引号。
+3. 再次读取 agent，确认描述已保存。
+
+将 `AGENT_ID` 替换为上面选取的 ID：
 
 ```sh
-curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H 'If-Match: "ap_...:4"' -d '{"description": "Answers billing questions"}'
+AGENT_ID='ap_REPLACE_WITH_RETURNED_ID'
+curl -i "$A13N_URL/api/v1/agents/$AGENT_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-缺少 `If-Match` 时返回 `428 precondition_required`；值已过期时返回 `412 precondition_failed` 和当前 ETag。请重新读取资源、重新应用修改并重试。比较是精确匹配，弱验证器和 `*` 永不匹配。OpenAPI 将 `If-Match` 声明为可选请求头，但每个声明它的操作实际上都要求提供。
+将返回的 ETag 复制到 `ETAG`；下方值是占位符：
 
-收件箱操作（编辑、撤回、重排排队消息）、环境和记忆挂载修改以及线程更新使用**线程** 的 ETag。创建 agent 或 skill 修订版本使用其主记录的 ETag。其他创建操作和 interrupt 等运行命令不需要 ETag。
+```sh
+ETAG='"ap_REPLACE_WITH_RETURNED_ID:1"'
+curl -i -X PATCH "$A13N_URL/api/v1/agents/$AGENT_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" -H "If-Match: $ETAG" \
+  -d '{"description": "Answers billing questions"}'
+curl "$A13N_URL/api/v1/agents/$AGENT_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+如果修改返回 `412`，说明其他变更已使 ETag 过期。重新读取资源，判断原修改是否仍适用，再使用新读到的 ETag。不要盲目替换请求头。缺少 `If-Match` 返回 `428`；弱验证器和 `*` 不会匹配。每个声明 `If-Match` 的操作都要求它，即使 OpenAPI 将该请求头标为可选。
+
+强 ETag 的格式为 `"{id}:{version}"`，模型使用 `"{key}:{version}"`。也可以根据带版本视图的 ID/key 和 `version` 组成该值。收件箱编辑、撤回和重排、线程更新，以及环境/记忆挂载变更，都使用**线程**的 ETag。发布 agent 或 skill 修订版本使用其主记录的 ETag。普通创建操作和 interrupt 等运行命令无需 ETag；例外请查看对应操作。
 
 ## 幂等请求
 
-以下操作需要 `Idempotency-Key` 请求头，长度为 1–512 个可见 ASCII 字符：
+`If-Match` 防止并发变更覆盖你的编辑；`Idempotency-Key` 用于响应丢失后重试同一次逻辑提交。以下操作要求提供由 1–512 个可见 ASCII 字符组成的 key：
 
-- `POST …/threads`（携首条消息创建线程）和 `POST …/threads/{thread_id}/inbox`（提交消息）
+- `POST …/threads` 和 `POST …/threads/{thread_id}/inbox`
 - `POST …/runs/{run_id}/fork` 和 `POST …/runs/{run_id}/resume`
 - `POST …/schedules` 和 `POST …/schedules/{schedule_id}/dispatch`
 - `POST …/finding-analyses`
 - `POST …/uploads`
 
-每个逻辑请求生成唯一 key，响应丢失后重试时复用。首次提交返回 `201`；手动派发 Schedule 返回 `202`，上传返回 `200`。使用相同 key 和请求重试时，返回 `200` 和同一组已创建对象的当前状态，而非首次响应的副本。相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。
+提交前生成一个唯一 key。重试时保留相同 key、目标和请求内容；新的逻辑请求使用新 key。Key 属于调用者和工作空间，不会过期。同一 key 用于不同内容或目标时返回 `409 conflict`，原因为 `idempotency_key_reused`。
+
+首次提交通常返回 `201`；手动派发 Schedule 返回 `202`，上传返回 `200`。重放返回 `200` 和同一组已创建对象的**当前**状态。根据该状态继续处理；提交被接受不代表执行完成。[连接应用](connect-application.md#direct-http-integration)演示了先保存线程和收件箱记录，再跟踪分配到的运行。
+
+创建 [Schedule](schedules.md) 会委托持久执行权限。撤销创建时的 API 密钥或等待其过期不会停止后续提交；请暂停或归档 Schedule。
 
 ## 分页
 
-集合返回 `{"items": [...], "next_cursor": "..."}`。提供 `limit`（1–100，默认 50），下一页提供 `cursor=<next_cursor>`；最后一页的 `next_cursor` 为 `null`。游标是不透明值，绑定集合、范围和产生它的查询全部筛选条件；改用不同筛选条件时返回 `invalid_cursor`。有界目录、工具集、挂载和执行尝试可以一次返回所有项而不分页；请检查具体操作的 schema。
+读取 `items`，然后按 `next_cursor` 继续，直到它为 `null`。普通集合分页接受 1–100 的 `limit`，默认 50。各页保持相同的集合、工作空间和筛选条件：
+
+```sh
+curl -G "$A13N_URL/api/v1/agents" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode 'archived=false' --data-urlencode 'limit=10'
+```
+
+如果响应中的 `next_cursor` 非空，将它复制到 `CURSOR`：
+
+```sh
+CURSOR='REPLACE_WITH_NEXT_CURSOR'
+curl -G "$A13N_URL/api/v1/agents" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode 'archived=false' --data-urlencode 'limit=10' \
+  --data-urlencode "cursor=$CURSOR"
+```
+
+将游标作为不透明值处理。游标用于其他集合、范围或筛选条件时返回 `invalid_cursor`。有界目录、工具集、挂载和执行尝试可能一次返回全部条目而不分页；对应操作的 schema 会说明响应结构。
 
 ## 读取摘要和指定详情
 
-Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，输入预览最多包含 200 个 Unicode 码点。这些接口不接受 `view`；完整输入、输出、选项等详情通过 `/runs/{run_id}` 读取。线程内的 run 分页支持 `anchor=<run_id>`，可直接从指定运行开始读取，且不能与 `cursor` 同用。响应包含 `total`、`first_number`、指向较早运行的 `next_cursor` 和指向较新运行的 `previous_cursor`。`first_number` 是首条记录的时间顺序编号，从 1 开始，不是已加载的记录数。 `limit` 是条数上限：共享的 10,000 字符响应预算可能使返回条数更少，应始终使用返回的游标继续读取。Usage 汇总包含各 Run 的 `run_number`，无需额外查询 Run 列表。
-
-使用 `view=compact` 查找相关修订、模型、收件箱记录、显示条目或 span，也可读取指定 Run 的摘要，并结合接口支持的过滤条件。这些调用默认使用 `view=detailed`。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
-
-预览包含 `text` 和 `truncated`。`omitted_sections` 列出可以单独读取的字段。`source_truncated` 表示保存的内容已经被截短，继续读取也无法恢复被丢弃的数据。字段被省略或预览被截短，不代表原始数据没有相关信息。
-
-例如，查找失败的 run，再读取其中一次失败：
+读取较长历史时，先定位记录，再获取需要的字段。例如：
 
 ```http
 GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
-GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
+GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal={ordinal}&field=result&offset=0
 ```
 
-条目 ID 必须配合该条目的实际 `ordinal`。精简条目查询默认从最早的 ordinal 开始，也可以指定 `before` 或 `after`，然后按 `next_before` 或 `next_after` 继续。未加过滤的详细查询保留读取最新条目及完整尾部的原有行为。
+替换为返回的运行 ID、条目 ID 和该条目的实际 `ordinal`。精简条目读取默认从最早的 ordinal 开始，也可提供 `before` 或 `after`；按 `next_before` 或 `next_after` 继续，包括筛选后当前页为空的情况。未加筛选的详细读取会选择最新条目和完整尾部。
 
-部分内容和正文查询返回 `representation=fragment`、内容 `version`、`text`、`next_offset` 和 `has_more`。offset 按 Unicode 码点计数。继续读取时，同时传入返回的 offset **和 version**。内容变化会返回 `409 conflict`，原因是 `content_changed`，此时应重新开始读取。JSON 片段必须拼接完整后才能解析整个值。字面关键词 `query` 搜索返回下一处命中及其上下文；此时 next offset 用于继续搜索，而不是逐字提取全部内容。
+Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，预览最多包含 200 个 Unicode 码点，且不接受 `view`。完整详情通过 `/runs/{run_id}` 读取。线程内运行分页还支持用 `anchor=<run_id>` 代替 `cursor`，返回 `total`、时间顺序编号 `first_number`（从 1 开始），以及指向较早运行的 `next_cursor` 和较新运行的 `previous_cursor`。Usage 汇总已经包含各运行的 `run_number`。
 
-检查配置时，可通过修订的 `section=all` 或 `instructions` 等配置字段读取。run 的 `/agent` 接口使用 `section=original|effective|overrides`，original/effective 还可用 `part` 选择字段。修订的 `/compare` 接口接受 `base_revision_id` 和可选 section。编辑前应取得完整原配置及 agent 主记录的 ETag，并保留无关字段。不能把摘要、片段或差异当成完整配置提交。
+修订版本、模型、收件箱记录、显示条目、span 和单个运行详情支持 `view=compact`；省略时保留 `view=detailed`。精简列表默认十条记录。精简列表和运行发现分页都可能因共享的 10,000 字符响应预算提前结束。应跟随返回的继续读取值，而不是假设每页必有 `limit` 条记录。
 
-通过 `/toolsets/index`、`/connections/{connection_id}/tools/index` 或 `/connector-providers/{provider_id}/apps/{app}/actions/index` 搜索工具目录。使用对应的 `/definitions` 接口读取定义，每次最多重复传入五个准确的 `name`。检查 `missing` 和 `oversized`。超大的定义可在同一接口中指定一个名称，按版本分段读取；接口不会静默截短定义。模型目录支持精简搜索、能力过滤和分页；读取能力或价格部分时，应准确选择 provider/model。
+将预览当作完整内容前，先检查响应元数据：
 
-Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。Service 只向后端查询该 span；`items` 为空表示该 trace 中没有此 span。后续文本分段使用 `version` 和 `next_offset` 继续读取。Trace 后端响应超过 8 MiB 上限时返回 `413 payload_too_large`，而不是后端不可用；对此路由而言，这表示该 span 本身超过上限。Trace 数据仍受部署的保存期限和后端可用性限制。
+- `truncated` 表示预览被截短；`omitted_sections` 指出可以单独读取的字段。
+- `source_truncated` 表示内容保存前已被截短；继续读取无法恢复丢弃的部分。
+- `representation: fragment` 提供 `text`、内容 `version`、`next_offset` 和 `has_more`。继续时同时传入返回的 offset 和 version；offset 按 Unicode 码点计数。遇到原因是 `content_changed` 的 `409 conflict` 时，重新开始读取。先拼接 JSON 片段，再解析完整值。
+- 字面 `query` 搜索返回匹配项和上下文；其 next offset 用于继续搜索，而非提取全部内容。
+
+根据任务选择详情路由：
+
+| 任务            | 读取路径                                                                                                                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 编辑配置        | 读取修订版本的 `section=all` 或 `instructions` 等字段。运行的 `/agent` 接受 section `original`、`effective` 或 `overrides`；original/effective 可再选 `part`。修订版本的 `/compare` 接受 `base_revision_id` 和可选 section。编辑前取得完整原配置和主记录 ETag，并保留无关字段。 |
+| 检查工具定义    | 搜索 `/toolsets/index`、`/connections/{connection_id}/tools/index` 或 `/connector-providers/{provider_id}/apps/{app}/actions/index`。调用对应 `/definitions`，最多重复传入五个准确 `name`。检查 `missing` 和 `oversized`；超大定义通过单个名称和带版本片段读取。                |
+| 检查模型        | 使用模型目录的精简搜索、能力筛选和分页，再准确选择 provider/model 读取能力或价格。                                                                                                                                                                                              |
+| 检查 trace span | 按 `status`、`kind` 或 `tool_name` 筛选 trace 列表。读取 `/traces/{trace_id}/spans/{span_id}/content?section=input` 或 `section=output`，以 version 和 offset 继续读取片段。                                                                                                    |
+
+Trace span 内容查询只获取该 span；`items` 为空表示它不在该 trace 中。单个 span 超过后端 8 MiB 响应上限时返回 `413 payload_too_large`。可读取的 trace 数据取决于后端可用性和保存期限。写入时使用完整配置和定义，不要将摘要、片段或差异当作完整值提交。
 
 ## 限制
 
-- 请求体受 `server.request_bytes` 限制（`413`），且必须在 `server.request_timeout` 内到达（`408`）。上传和图片有更小的限制。
-- 密码登录和其他凭据检查、上传、授权回调会限流（`429`，包含 `Retry-After`）。收件箱已满的线程也返回 `429`。
+请求体不得超过 `server.request_bytes`，并须在 `server.request_timeout` 内到达，否则分别返回 `413` 和 `408`。上传和图片有更小的限制。凭据检查、上传和授权回调可能返回带 `Retry-After` 的 `429`；线程收件箱已满也返回 `429`。
 
 ## 标识符与时间
 
-ID 是带类型前缀的不透明字符串，例如 `ws_`、`ap_`（agent）、`sk_`（skill）、`sess_`、`thread_`、`run_`。模型不暴露 ID：路径和引用使用 [key](resources.md#common-conventions)。时间戳采用带偏移量的 RFC 3339 格式。
+原样保存返回的 ID。前缀表示类型，例如 `ws_`、`ap_`（agent）、`sk_`（skill）、`sess_`、`thread_` 和 `run_`。模型在路径和引用中使用 [key](resources.md#common-conventions)。时间戳使用带偏移量的 RFC 3339 格式。
 
 ## 事件流
 
-`GET …/sessions/{session_id}/stream` 是会话中线程状态及其活跃运行实时输出的 server-sent event 流。参阅[会话事件流](agents-and-runs.md#follow-a-session-stream)。
+通过 `GET /api/v1/sessions/{session_id}/stream` 观察对话。它使用 server-sent events 传递会话中线程的状态和活跃运行的实时输出。连接、回读和执行控制见[会话事件流流程](agents-and-runs.md#follow-a-session-stream)。

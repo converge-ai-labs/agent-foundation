@@ -1,87 +1,100 @@
 ---
 title: Agent Composer
-description: Create agents, configure workspace resources, and diagnose runs through a conversation.
+description: Describe an agent, review the proposed changes, and test the saved result in Console.
 ---
 
-Agent Composer helps you build and change agents in Console. Describe the result you want, review the proposed configuration, and approve the writes. It can also configure models, connections and providers, import skills, and investigate failed runs.
+Use Agent Composer to turn a task description into a saved agent. Composer reads the workspace's resources, proposes changes and asks you to approve writes. Start with a project-notes assistant, test its output, then return to the same conversation to refine it. Composer can also configure resources and diagnose failed runs.
 
 ## Start Agent Composer
 
-The workspace needs an [enabled model](models.md) you can use. Preparing Composer requires `write`; once prepared, callers with `run` can use it.
+You need an [enabled model](models.md) you can use and workspace `write` permission to prepare Composer. Once prepared, callers with `run` permission can use it.
 
-1. Open **Agents → Create with AI**, or open an agent and choose **Edit with AI**.
-2. Describe the task. For example: “Create an agent that turns project notes into next steps. Use an available model and show me the instructions before saving.” **Edit with AI** fills in the agent and selected version; add your requested changes.
-3. Select **Send**. Review each proposed write and approve or deny it. Complete every pending item, then select **Submit responses** to continue.
-4. Open the saved agent and choose **Try agent**. Test it with representative input, then return to Composer for further changes.
+1. Open **Agents → Create with AI**.
+2. Send: “Create an agent that turns project notes into next steps. For each action, include the owner if the notes name one. Use an available model and show me the instructions before saving.”
+3. Review the proposed agent configuration. Approve or deny each write, complete every pending item, then select **Submit responses** to continue.
+4. Open the saved agent and select **Try agent**. Send a few notes containing one named owner and one unassigned action. Check that the response preserves both correctly.
+5. To refine it, open the agent and choose **Edit with AI**. Console fills in the agent and selected version; describe the change you want. Composer reads that revision and preserves unrelated fields in the new configuration.
 
-To change an agent, Composer reads its selected revision and preserves unrelated fields in a complete new configuration. Writes use the resource version originally read. A concurrent change requires a fresh read and review.
+A write uses the resource version Composer originally read. If someone changes the resource first, ask Composer to read it again and review the new proposal.
 
-Before sending the first message of a new Console session with an existing Composer or Finding Agent, Console prepares its current definition when you have `write` permission. This includes sessions opened through **Try agent**. Without `write`, or if preparation reports insufficient permission, the session uses the existing default revision; starting the run still requires `run` permission. Explicitly pinned revisions skip preparation. Other preparation errors remain visible and stop submission. Deployment alone does not refresh saved presets; API clients call the preparation endpoint explicitly.
+For a new Console conversation with an existing Composer or Finding Agent, Console prepares the current definition before the first message when you have `write`. This also applies to **Try agent**. An explicitly pinned revision skips preparation. Without `write`, Console uses the existing default; a preparation permission error also falls back when a default exists. Other preparation errors stop submission and remain visible. Running still requires `run`. API clients prepare explicitly; deploying a new release alone does not refresh saved presets.
 
 ## Configure a provider
 
-1. Ask Composer to add or update a Model, Environment, Connector or Web Provider.
-2. Review the card's proposed name, type and configuration. Enter credentials in the private card and select **Save provider**. Saving requires workspace `write` permission.
-3. Answer any other pending actions, then select **Submit responses** to continue the conversation.
+Keep credentials in the private provider card:
 
-Credentials go directly to the Provider API. The agent receives only the save status and provider ID; credentials stay out of messages, tool arguments and results. Empty credential fields on updates keep saved credentials. Updates use the original resource version, so a conflict needs a fresh proposal.
+1. Ask Composer to add or update a Model, Environment, Connector or Web Provider. Describe the provider type and purpose without pasting credentials into the conversation.
+2. Check the card's proposed name, type and configuration. Enter credentials in the card and select **Save provider**. This requires workspace `write` permission.
+3. After the save is confirmed, complete the other pending items and select **Submit responses**. Composer receives the saved provider ID and can continue configuration.
 
-Saving and continuing are separate steps. After a confirmed save, retrying **Submit responses** does not save again. If the save outcome is unclear, or you reload before continuing, check **Providers** before retrying: saves are not automatically retried and another create can add a duplicate. **Cancel configuration** before a save attempt makes no write; stopping after an unconfirmed save reports an unknown outcome.
+The card sends credentials directly to the Provider API. Messages, tool arguments, tool results and resume payloads contain no credentials. Empty credential fields on an update preserve the saved credentials. A version conflict needs a fresh proposal using a new read.
 
-Use the existing Console pages for connection credentials, custom secret headers and browser OAuth authorization. API clients running Composer handle its native `configure_provider` client tool or report it unavailable, using the ordinary pending-call and batch-resume contract.
+Treat saving and continuing as separate steps. After a confirmed save, retrying **Submit responses** only retries continuation. If a save is unconfirmed, or the page reloads before continuation, inspect **Providers** before attempting another create: the first request may have succeeded. Cards do not automatically retry saves. **Cancel configuration** before any save attempt makes no write; stopping after an unconfirmed attempt reports an unknown outcome.
+
+Use the dedicated Console pages for connection credentials, custom secret headers and browser OAuth. An API client must handle the native `configure_provider` client tool or report it unavailable through the ordinary [pending-call and batch-resume flow](agents-and-runs.md#waits-approvals-and-questions).
 
 ## What it can do
 
-| Group                 | Available work                                                                                                                     |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.                                              |
-| Models                | Read, create and update configured models.                                                                                         |
-| Connections           | Read, create, update, discover tools and test connections.                                                                         |
-| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions.                                      |
-| Environment templates | Read, create and update templates for later instances.                                                                             |
-| Providers             | Read, create and update providers through private Console credential cards.                                                        |
-| Schedules             | Preview, create and update one-time or recurring schedules; enable, pause, archive, manually dispatch and inspect trigger history. |
-| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings, and submit a finding.                |
+| Group                 | Available work                                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Agents                | Create, read, rename, label, archive and manage revisions and defaults.                                         |
+| Models                | Read, create and update configured models.                                                                      |
+| Connections           | Read, create, update, discover tools and test connections.                                                      |
+| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions.                   |
+| Environment templates | Read, create and update templates for later instances.                                                          |
+| Providers             | Read providers; create and update them through private Console credential cards.                                |
+| Schedules             | Preview, create and update schedules; enable, pause, archive, dispatch and inspect trigger history.             |
+| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings; submit a finding. |
 
-Composer uses platform MCP tools with a short-lived credential supplied for the run. Reads run directly by default; writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions). Operations remain within your current permissions, the run's accepted authority and its workspace. Approval grants no additional platform permissions.
+Composer uses platform MCP tools with a short-lived run credential. Reads proceed by default; writes and connection tests require [approval](agents-and-runs.md#waits-approvals-and-questions). Each operation stays within your current permissions, the run's accepted authority and its workspace. Approval does not add platform permissions.
 
-For [Schedules](schedules.md), specify the time and timezone, target Agent and input. Composer previews the timing before proposing a write. Creation defaults to paused; explicitly request immediate enablement to start future scheduled execution. A Schedule retains your delegated execution authority after the Composer conversation ends. Pause or archive it to stop future work; approving its creation does not automatically approve tools used by its future Runs.
+For a [schedule](schedules.md), give Composer the time, timezone, target agent and input. Review the timing preview before approving creation. New schedules default to paused; explicitly request enablement to start future scheduled execution. The schedule retains your delegated execution authority after this conversation ends. Pause or archive it to stop future work. Future runs still apply their own tool approvals.
 
-For diagnosis, give Composer a run ID or describe the failure. It can find a past failed run without its session ID and distinguish a failed attempt from a run that later recovered. Its answer identifies missing trace evidence when relevant.
+For diagnosis, provide a run ID or describe the failure. Composer can find failed runs without a session ID, distinguish a failed attempt from a recovered run, and identify missing trace evidence. After an uncertain write, have it inspect the saved resource before retrying.
 
-Use the dedicated guides to [edit skill packages](skills.md), [manage memory](memory.md), [configure plugins](configuration-reference.md#plugins), [manage environment instances](environments.md) or [control runs](agents-and-runs.md). These operations are outside Composer's tool selection. For any uncertain write outcome, check the resource state before retrying.
+Use the dedicated guides to [edit skill packages](skills.md), [manage memory](memory.md), [configure plugins](configuration-reference.md#plugins), [manage environment instances](environments.md) or [control runs](agents-and-runs.md). These operations are outside Composer's selected tools.
 
 ## Prepare through the API
 
-Prepare Composer, then [start a session](agents-and-runs.md#start-a-conversation) with the returned agent:
+Use a terminal with `curl` and `jq`. Set `A13N_URL` to your Service origin, without `/api/v1`, and `A13N_API_KEY` to a [workspace API key](identity.md#api-keys) whose principal has `write` and `run` permissions. The workspace must already have a usable model.
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/agent-composer" \
-  -H "Authorization: Bearer $A13N_API_KEY"
+curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/agent-composer" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -o composer.json
+jq '{id, source, preset_kind, default_revision_id}' composer.json
 ```
 
-The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and offers protected configuration updates as candidate revisions. Your selected default and model remain unchanged.
+Expect an agent with `source: "builtin"`, `preset_kind: "composer"`, an `id` and a `default_revision_id`. Use that `id` as `agent_id` in [Start a conversation](agents-and-runs.md#start-a-conversation), then send the task from the Console example above. Preparation creates or refreshes the agent; it does not start a run.
+
+To find the preset later, request `GET /api/v1/agents?source=builtin&preset_kind=composer`. Repeating preparation updates deployment-owned name and description and offers changed protected configuration as candidate revisions. Your selected default and model stay unchanged.
 
 ## Choose its model
 
-Initial preparation selects an enabled model the caller can use, in this order:
+Initial preparation chooses an enabled model the caller can use:
 
-1. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
-2. The first usable workspace model, by key.
+1. Match the deployment's [`composer.models`](configuration.md#execution) list in preference order. Matching uses the upstream name after its final `/`.
+2. If none matches, choose the first usable workspace model by key.
 
-If no model is usable during initial setup, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
+If no model is usable, initial preparation returns `409 conflict` with reason `model_required`. Follow Console's model-setup link or [add a model](models.md), then prepare again. Later preparation preserves your selected model even if it becomes unavailable; choose its replacement on Composer's Agent page.
 
 ## Built-in agent rules
 
-Open Composer's Agent page to change its model, thinking effort, output token limit, `temperature`, `top_p` or supplemental instructions. The instruction editor contains your supplement; official instructions appear in a read-only disclosure. Saving creates a revision containing your supplement. Official instructions come from the current Worker on every execution attempt, including recovery and continuation after waiting; they are not frozen with the revision. The disclosure shows current deployment guidance. Inspect the model request trace for the official text used in a particular run.
+To tune Composer, open its Agent page, change the model or allowed model settings, and save a revision. Editable settings are thinking effort, output token limit, `temperature` and `top_p`. The instruction editor saves your supplemental instructions; official instructions appear in a read-only disclosure.
 
-Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Protected configuration updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
+Use **Versions → Set as default** to select or roll back a revision. Preparation preserves that selection and your supplement. Protected configuration updates appear as candidate versions for you to select. Other configuration, identity, avatar and archiving remain protected; duplicate Composer when you need unrestricted editing.
 
-API clients reuse validation and revision creation: read the selected default and original head ETag, keep the complete `config`, and change only the allowed model/settings and `config.instructions` supplement. Revision responses show current official text in read-only `builtin_instructions`. Composer always treats saved instructions as your supplement and receives official guidance from the Worker. Duplication and export combine current official text with your supplement into an independent custom Agent.
+Official instructions come from the current Worker on every attempt, including recovery and continuation after a wait. The saved revision fixes your supplement, not the official text. The disclosure previews current deployment guidance; the model request trace shows the text used in a particular execution.
+
+For API edits, read the selected default and the original head ETag. Preserve the complete `config`, change only the allowed model/settings and `config.instructions` supplement, then create a revision with that ETag. Revision responses expose current official text in read-only `builtin_instructions`. Duplication and export combine current official text and your supplement into an independent custom agent.
 
 ## Use the toolset in your own agents
 
-Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Features** in the agent's tools, and the local operating skill in advanced configuration JSON. In the configuration, this agent can manage agents, models and skills and read executions, but cannot archive agents:
+A custom agent needs a model and a primary environment to use the `platform-operations` skill. This includes copies of Composer. Set a default environment template or choose a session environment before running; the skill is copied there using the ordinary [synchronization policy](skills.md#runtime-synchronization).
+
+1. Open the agent's tools and select [platform tools](tools.md#platform-tools) under **Advanced / Platform Features**.
+2. Enable `view`, `ls`, `glob` and `grep` so the agent can read the skill.
+3. In advanced configuration JSON, select `platform-operations` and the required platform groups. Merge the following fields into the agent's complete configuration, keeping its model and environment settings:
 
 ```json
 {
@@ -100,14 +113,12 @@ Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Fea
 }
 ```
 
-Platform groups and the skill are not selected by default. Each tool keeps its own `permission`; `inherit` lets reads run and asks before writes. Select tools to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
+This partial configuration selects agent, model, skill and execution tools while disabling agent archiving. Preserve other selected toolsets, including the file tools, when merging it. Save a revision and try a read-only task such as “List the agents available in this workspace.” Check that the agent reads the skill and returns workspace results.
 
-For the built-in Agent Composer, the `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. Find the agent configuration schema under `/platform-skills/platform-operations/schemas` and the deployment catalog under `/platform-instance`.
+Platform groups and builtin skills are unselected by default. Tools grant operations; the skill supplies instructions. Each tool retains its `permission`; `inherit` allows reads and asks before writes. Configuration edits apply to later runs; active runs keep their accepted authority and tool selection.
 
-Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
+The built-in Composer reads the same packaged skill through read-only Worker mounts and needs no user environment or container. Its schema directory is `/platform-skills/platform-operations/schemas`, and its deployment catalog is `/platform-instance`. Composer enables only the four file tools listed above. Built-in document mounts remain read-only; explicitly mounted user environments use the same file-tool permissions.
 
 ### Computer coordinate mode
 
-Choose pixel or relative coordinates in the [environment Computer configuration](environments.md#computer-coordinate-mode).
-
-Custom agents, including copies of Composer, place selected built-in skills in their primary environment using the ordinary [skill synchronization policy](skills.md#runtime-synchronization). Configure a default environment template or select a session environment before running them.
+If your custom agent also uses Computer tools, choose pixel or relative coordinates in the [environment Computer configuration](environments.md#computer-coordinate-mode).

@@ -4,6 +4,7 @@ import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { Link, useLocation } from "react-router";
 import management from "./management.module.css";
+import { useState } from "react";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import { Button, FormField, Switch, Textarea } from "a13n-ui";
@@ -20,6 +21,7 @@ import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
+import { BrowserFields } from "./browser-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
 
 export function ResourceFields({
@@ -34,6 +36,7 @@ export function ResourceFields({
   onChange: (value: string) => void;
 }) {
   const location = useLocation();
+  const [browserOpen, setBrowserOpen] = useState(location.hash === "#browser");
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -467,6 +470,19 @@ export function ResourceFields({
                 </>
               )}
             </SettingsSection>
+            <details
+              id="browser"
+              className={layout.disclosure}
+              open={location.hash === "#browser" || undefined}
+              onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
+            >
+              <summary>Browser</summary>
+              <BrowserFields
+                source={source}
+                onChange={onChange}
+                active={browserOpen}
+              />
+            </details>
             <section id="live">
               <SettingsSection variant="grouped" title="Live voice">
                 <SettingsRow

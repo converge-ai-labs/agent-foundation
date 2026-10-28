@@ -1,23 +1,21 @@
 ---
 title: MCP tools
-description: Connect tools from MCP servers and send headers derived from the current identity or Run.
+description: Call an MCP tool, choose who owns the client, and add headers from the current identity and Run.
 ---
 
-Use MCP to connect tools from another process or service. Choose `MCP` for connection setup and `ContextualMCP` for headers that change with each Run.
+Connect an Agent to tools supplied by another process or service through an MCP Capability. Start with the in-process calculator below to learn the connection lifecycle without a remote server or model account. Then choose the connection form your application needs:
 
-| Need                                                                   | Choose                                                    |
-| ---------------------------------------------------------------------- | --------------------------------------------------------- |
-| A static server, stdio process, in-process server, or prebuilt Toolset | Native `MCP`                                              |
-| URL server headers derived from the current Harness identity or Run    | `ContextualMCP`                                           |
-| A command or JSON server setup in Harness UI                           | [Harness UI MCP configuration](../a13n-harness-ui/mcp.md) |
-
-In SDK code, add an MCP Capability. In Harness UI, configure an MCP resource.
+| Application need                                                      | Connection form                                      |
+| --------------------------------------------------------------------- | ---------------------------------------------------- |
+| Fixed URL, stdio process, in-process server, or existing Toolset      | Native `MCP`                                         |
+| HTTP(S) server with headers selected from the current identity or Run | `ContextualMCP`                                      |
+| Configure a server in the interactive playground                      | [Harness UI MCP resource](../a13n-harness-ui/mcp.md) |
 
 ## Run an MCP tool offline
 
-Save this as `mcp_demo.py` and run `uv run python mcp_demo.py` in the [source setup](getting-started.md#requirements). The example starts an in-process server, calls its `add` tool twice, and uses no provider credentials.
+Use the Python 3.13 source environment from [Getting started](getting-started.md#requirements). Its dependencies include FastMCP. Save this complete program as `mcp_demo.py`:
 
-```python title="mcp_demo.py"
+```python
 import asyncio
 from collections.abc import AsyncIterator
 
@@ -29,11 +27,13 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 
-server = FastMCP("counter")
+server = FastMCP("calculator")
+calls = []
 
 
 @server.tool
 def add(a: int, b: int) -> int:
+    calls.append((a, b))
     return a + b
 
 
@@ -53,20 +53,42 @@ async def main() -> None:
             projection = MCPToolset(client, id="calculator", cache_tools=False)
             bindings = RunBindings.embedded(capabilities=(MCP(id="calculator", local=projection),))
             result = await executable.run(prompt, bindings=bindings)
+            assert result.output_or_raise() == "Result: 8"
             print(result.output_or_raise())
+
+    assert calls == [(3, 5), (3, 5)]
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Both Runs print `Result: 8`. The Host keeps the entered client; each Run gets a fresh `MCPToolset` projection.
+Run it from the checkout root:
+
+```bash
+uv run --no-sync python mcp_demo.py
+```
+
+Expected output:
+
+```text
+Result: 8
+Result: 8
+```
+
+The `calls` assertion confirms that the server function actually ran twice. The deterministic model selects the discovered tool and reads its return.
+
+There are three separate lifetimes in the example:
+
+1. The Host enters `Client(server)` once and closes it when the `async with` block exits.
+2. Each Run receives a fresh `MCPToolset` projection through `RunBindings`.
+3. Each `executable.run()` owns that Run's tool use and cleanup.
+
+These are independent Runs sharing one entered client. To continue a conversation as well, pass the previous result's state as described in [State and Resume](state-and-resume.md). A server connection and a Harness Thread are separate resources.
 
 ## Native MCP
 
-Add native `MCP` to `AgentSpec.capabilities` or to the builder's `capabilities=` argument.
-
-A URL server with local execution (`local: True`) can be reconstructed directly from an AgentSpec document:
+For a fixed server, install `MCP` in `AgentSpec.capabilities` or the builder's `capabilities=` argument. The following construction fragment declares a URL server, runs its tools locally, and limits discovery to `search`:
 
 ```python
 from a13n_harness import AgentSpec
@@ -88,43 +110,28 @@ agent_spec = AgentSpec.from_dict(
 )
 ```
 
-The base installation includes the local URL and stdio MCP runtime. For in-process servers, transports, script paths, or prebuilt `MCPToolset` values, construct `MCP` in Python. Set `defer_loading=True` to discover the Capability through `load_capability`. Set `native=True, local=False` for a URL server executed by the selected model provider.
+Replace the example URL with a reachable MCP server that provides `search`. Build this `agent_spec` with your configured model, then call the executable as in the first example. Configure the server's authentication before running; the URL declaration itself supplies no credentials.
+
+The base installation includes local URL and stdio MCP support. Use Python construction for in-process servers, transport objects, script paths, or an existing `MCPToolset`. For on-demand Capability loading, set `defer_loading=True` and use `load_capability`. For a compatible provider to execute a URL server itself, select `native=True, local=False`; the execution choices are compared below.
 
 ## Host-owned clients
 
-When several Runs should use the same server state, trusted Host code can own an entered FastMCP client and create a new upstream projection for each Run:
+Keep one entered FastMCP client when several Runs should reuse its server connection or protocol state. The first program already follows this pattern. For a remote server, replace `Client(server, mode="auto")` with a client configured for your server URL and authentication, while keeping the fresh projection inside the Run loop.
 
-```python
-from fastmcp import Client
-from pydantic_ai.capabilities import MCP
-from pydantic_ai.mcp import MCPToolset
+Set up authentication and input handlers before entering the client. Scope the shared client to one identity and header configuration. FastMCP manages multi-round input and request state. `mode="auto"` chooses modern discovery or legacy negotiation; explicit `legacy` and `2026-07-28` modes are also available.
 
-from a13n_harness import RunBindings
-
-
-async def use_host_client(executable):
-    async with Client("https://mcp.example.com/mcp", mode="auto") as client:
-        results = []
-        for prompt in ("Create a workspace", "Inspect that workspace"):
-            projection = MCPToolset(client, id="workspace", cache_tools=False)
-            bindings = RunBindings.embedded(
-                capabilities=(MCP(id="workspace", local=projection),)
-            )
-            results.append(await executable.run(prompt, bindings=bindings))
-        return results
-```
-
-Configure authentication and input handlers before entering the client. `mode="auto"` selects modern discovery or legacy negotiation; explicit `legacy` and `2026-07-28` modes are also available. FastMCP handles multi-round input and request state. Keep clients scoped to the same identity and headers, and create a fresh projection for each Run. If a business call loses its response, check the server outcome before repeating it.
+Keep the client open until its Runs finish, then exit its context. A checkpoint stores conversation state, not that connection. If a mutating call loses its response, inspect the server outcome before repeating it.
 
 ## Run-scoped headers with `ContextualMCP`
 
-Use `ContextualMCP` when a URL server needs the current user, Thread, or Run in its headers. Harness resolves those headers once per Run before connecting the MCP tools.
+Use `ContextualMCP` when the server needs current user, Thread, or Run values in headers. Harness resolves the selected values once per logical Run, before preparing the MCP connection. A new Run gets a fresh snapshot; internal model-recovery attempts reuse the current snapshot.
 
-For common identity, lineage, Run, and metadata values, use the declarative resolver:
+The following integration helper accepts your configured model, a reachable MCP URL, and a Host-authenticated identity containing `user_id`. It uses local MCP execution and adds a fixed application header, current identifiers, and sample request metadata. Save it in your application module and call `await query_knowledge(model, url, identity)` from the application's async entrypoint. Configure any additional server-required authentication in the Capability before use.
 
 ```python
 from a13n_harness import (
     AgentIdentityRef,
+    AgentSpec,
     HarnessBuilder,
     RunBindings,
 )
@@ -135,54 +142,54 @@ from a13n_harness.mcp import (
     MCPContextHeadersConfig,
 )
 
-mcp = ContextualMCP(
-    "https://mcp.example.com/mcp",
-    id="knowledge",
-    native=True,
-    local=None,
-    headers={"X-Application": "support"},
-    headers_factory=MCPContextHeaders(
-        MCPContextHeadersConfig(
-            headers={
-                "X-Run-ID": MCPContextHeaderBinding("context.run_id"),
-                "X-Thread-ID": MCPContextHeaderBinding("context.thread_id"),
-                "X-User-ID": MCPContextHeaderBinding("identity.user_id"),
-                "X-Request-Context": MCPContextHeaderBinding(
-                    "context.metadata.request_context",
-                    required=False,
-                ),
+from pydantic_ai.models import Model
+
+
+async def query_knowledge(model: Model, url: str, identity: AgentIdentityRef) -> str:
+    mcp = ContextualMCP(
+        url,
+        id="knowledge",
+        native=False,
+        local=True,
+        headers={"X-Application": "support"},
+        headers_factory=MCPContextHeaders(
+            MCPContextHeadersConfig(
+                headers={
+                    "X-Run-ID": MCPContextHeaderBinding("context.run_id"),
+                    "X-Thread-ID": MCPContextHeaderBinding("context.thread_id"),
+                    "X-User-ID": MCPContextHeaderBinding("identity.user_id"),
+                    "X-Request-Context": MCPContextHeaderBinding(
+                        "context.metadata.request_context",
+                        required=False,
+                    ),
+                }
+            )
+        ),
+    )
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(mcp,),
+    )
+
+    bindings = RunBindings.embedded(
+        identity=identity,
+        metadata={
+            "request_context": {
+                "region": "us-east",
+                "labels": ["interactive", "priority"],
             }
-        )
-    ),
-)
-
-executable = HarnessBuilder().build(
-    agent_spec,
-    output_type=str,
-    model=model,
-    capabilities=(mcp,),
-)
-
-bindings = RunBindings.embedded(
-    identity=AgentIdentityRef(
-        issuer="my-host",
-        subject="support-agent",
-        user_id="user-123",
-        agent_id="agent-support",
-    ),
-    metadata={
-        "request_context": {
-            "region": "us-east",
-            "labels": ["interactive", "priority"],
-        }
-    },
-)
-result = await executable.run("Find the account record", bindings=bindings)
+        },
+    )
+    result = await executable.run("Find the account record", bindings=bindings)
+    return result.output_or_raise()
 ```
 
-Put extra JSON values in `RunBindings.metadata`; `context.metadata.<key>` selects one exact top-level key.
+The server receives `X-Application: support`, the current Run and Thread IDs, the supplied `user_id`, and a compact JSON `X-Request-Context`. Adjust the sample metadata to the values your application deliberately shares. `context.metadata.<key>` selects one exact top-level key; it does not traverse arbitrary context attributes.
 
-The declarative resolver supports these exact sources:
+Use these selectors for declarative bindings:
 
 | Source                              | Resolved value                                        |
 | ----------------------------------- | ----------------------------------------------------- |
@@ -203,7 +210,9 @@ Header names from `headers=` and the resolved factory result must not overlap ca
 
 ## Custom header factories
 
-Use a custom synchronous or asynchronous factory when the declarative resolver's sources are not enough. It receives the complete trusted `AgentContext` for the logical Run and returns an exact string-to-string mapping:
+Use a factory when headers require application logic, such as a tenant lookup or short-lived credential. The factory receives the trusted `AgentContext` and returns a string-to-string mapping, synchronously or asynchronously.
+
+This construction fragment requires the Host identity to contain a string `tenant_id` claim. Replace the server URL, and pass the resulting `mcp` Capability to your builder as in the integration helper:
 
 ```python
 from collections.abc import Mapping
@@ -224,12 +233,12 @@ mcp = ContextualMCP(
     "https://mcp.example.com/mcp",
     id="tenant-tools",
     headers_factory=resolve_mcp_headers,
-    native=True,
-    local=None,
+    native=False,
+    local=True,
 )
 ```
 
-An async factory has the same input and output contract:
+For an asynchronous route lookup, replace the factory with the following function. `route_store` is your application-owned service, and `resolve()` must return the header string:
 
 ```python
 async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
@@ -237,11 +246,11 @@ async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
     return {"X-Route": route}
 ```
 
-The factory runs once per Run; internal model recovery reuses that header snapshot. A new Run resolves new headers.
+The Host owns the route store's setup and cleanup. Both factory forms run once per logical Run, before MCP tool preparation; they are reconstructed by the Host rather than saved in portable state.
 
 ## Local and provider-native execution
 
-`ContextualMCP` accepts URL-based upstream execution only:
+Choose where MCP calls run before configuring credentials or grouping tools:
 
 | Selection     | Arguments                  | Behavior                                                    |
 | ------------- | -------------------------- | ----------------------------------------------------------- |
@@ -250,20 +259,22 @@ The factory runs once per Run; internal model recovery reuses that header snapsh
 | Local only    | `native=False, local=True` | Require local URL-based MCP execution                       |
 | Native only   | `native=True, local=False` | Require provider-native MCP execution                       |
 
-Prebuilt clients, transports, in-process servers, scripts, and prebuilt Toolsets already own their connection setup. Use native `MCP` directly for those values rather than combining them with `ContextualMCP`.
-
-`ContextualMCP` requires an HTTP(S) URL configured by the application.
+`ContextualMCP` takes an application-configured HTTP(S) URL. For a prebuilt client, transport, in-process server, script, or Toolset, use native `MCP`; those objects already have their own connection setup. Provider-native execution needs a model/provider that supports it. When your Run enforces allowed-host restrictions, use local execution so Harness can enforce them.
 
 ## Host-authored configuration
 
-A Host can expose the same URL-based path through its own trusted configuration model. Preserve the `ContextualMCP` fields and exact execution selection rather than inventing a second MCP runtime. Persist only credential-free desired configuration; resolve headers, short-lived credentials, and current routing through process-local factories when constructing the Capability.
+An application can expose server URLs, stable IDs, execution selection, and context-header bindings in its own configuration. Parse those values into the existing MCP APIs. Give each server a unique `id` when selecting several servers for one Agent.
 
-An Agent can select multiple MCP servers when each has a unique `id`. Use code-first `ContextualMCP` when configuration requires callable factories, current identity, static headers, or an out-of-band secret resolver.
+Persist credential-free desired configuration. Reconstruct current identity, route lookups, headers, and short-lived credentials in trusted Host code. Use code-first `ContextualMCP` for callable factories and current-context resolution. For Harness UI's ready-made resource format, follow its [MCP configuration guide](../a13n-harness-ui/mcp.md).
 
 ## Group tools from large local MCP servers
 
-Pass a local `MCP` or `ContextualMCP` Capability as a [ToolSearchGroup source](tool-search.md#group-a-run-bound-mcp-capability) inside `ToolSearchCapability(groups=...)` to expose grouped discovery instead of every tool schema. Select `native=False, local=True`; provider-native tools and deferred-loading sources are not proxy targets. Native composition preserves fresh Run binding and contextual headers, and calls still use the original MCP Toolset and transport. It reduces model context, not MCP initialization or tool-listing work.
+If a server exposes many tools, pass its local `MCP` or `ContextualMCP` Capability itself as a [ToolSearchGroup source](tool-search.md#group-a-run-bound-mcp-capability). Grouping the Capability preserves Run binding and header resolution before tool preparation.
+
+Select `native=False, local=True` and leave deferred loading off. The model then discovers schemas through ToolSearch, while calls use the original MCP Toolset and transport. This reduces schemas sent to the model; the client still initializes the source and lists its tools normally.
 
 ## Result boundary
 
-Locally executed MCP tools are ordinary dynamically discovered function tools. Their text and JSON returns cross the mandatory Harness result boundary and default to explicit truncation rather than spill when oversized. This bounds the value integrated into model history; it does not impose a transport-body or process-memory limit before the MCP client receives the result. Provider-native MCP execution remains on the provider path and does not cross the local function-tool boundary.
+Locally executed MCP tools pass text and JSON results through the Harness function-tool result boundary. Oversized values are explicitly truncated by default rather than spilled to a file. This bounds what enters model history, not the transport body or memory used before the client receives the result.
+
+Provider-native MCP follows the provider's execution path and does not cross this local boundary. Choose local execution when your integration depends on Harness's local tool-result handling.

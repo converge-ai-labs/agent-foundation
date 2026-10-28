@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 
 from a13n_harness.capabilities import ToolReviewConfig
+from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.tools.client import ClientToolDefinition
 from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
@@ -200,6 +201,7 @@ class AgentConfig(_Frozen):
     # Native settings layered over the model's own defaults.
     model_settings: ModelSettings = Field(default_factory=dict)
     model_characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
+    background_compaction: BackgroundCompactionPolicy = Field(default_factory=BackgroundCompactionPolicy)
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)

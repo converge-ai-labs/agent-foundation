@@ -4,35 +4,40 @@ sidebarTitle: 安装
 description: 构建或下载与 EIP 客户端匹配的 Envd 二进制文件，或运行沙箱镜像。
 ---
 
-选择与 EIP 客户端版本匹配的原生守护进程。如果只使用 Harness UI 的本地 Sandbox 模式，Harness UI 会自行获取匹配的二进制文件，无需在该计算机上另行安装。要将另一台计算机作为设备连接到 Harness UI，请在那台计算机上安装 Envd。
+在实际执行文件、命令或桌面操作的计算机上安装 Envd。Harness UI 会为本地 Sandbox 模式获取匹配的二进制文件。当你要把另一台计算机连接为 Device，或由应用直接管理 Envd 时，使用本指南。
 
 ## 构建匹配版本的二进制文件
 
-本文档跟随 `main`。从 Python 工作空间所在的同一份检出中构建 `a13n-envd`，使守护进程与客户端通过 Local Envd 的精确版本检查：
+在仓库中开发时，从同一份检出构建守护进程和 Python 客户端。本文档跟随 `main`；Local Envd 会检查两者的发布版本是否匹配。
+
+1. 安装 Rust，在仓库根目录构建 Envd。
+2. 在同一个 shell 中，将 `A13N_ENVD_EXECUTABLE` 设为构建出的二进制文件路径。
 
 ```bash
 cargo build --locked --package a13n-envd
 ```
 
-然后让 Local Envd 使用这个二进制文件：
+选择构建出的可执行文件：
 
 ```bash
 export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 ```
 
-Python 包 `a13n-envd-client` 不会发现、安装或启动二进制文件。进程生命周期和传输策略由 provider 或 Host 提供。
+构建产物是 `target/debug/a13n-envd`。Provider 或 Host 负责启动它并选择传输方式；`a13n-envd-client` 提供 Python 协议客户端。
 
-使用已发布的 Local Envd 时，原生 `a13n-envd` 应与已安装的 `a13n-envd-client` 版本匹配，而不是与独立发版的 Harness 或 Harness UI 匹配。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。Harness UI 为其 Sandbox 模式管理版本选择和获取；独立 Host 需要明确提供可执行文件。不要将任意已发布的二进制文件与从源码工作空间构建的客户端混用。
+使用已发布的 Local Envd 时，让原生版本与已安装的 `a13n-envd-client` 匹配；该客户端独立于 Harness 和 Harness UI 发版。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。
 
 ## 安装已发布的二进制文件
 
-独立安装脚本从 GitHub Releases 下载原生可执行文件。请另行安装 Python 客户端，并选择匹配的原生版本。
+独立脚本从 GitHub Releases 安装原生可执行文件。为 Python 应用选择版本时，先在将使用 Envd 的环境中安装 [Python 客户端](python-client.md#install)。下方命令读取该环境中已安装包的版本。
 
 ### Linux 和 macOS
 
-需要 POSIX shell、`curl`、`tar`，以及 `sha256sum` 或 `shasum`。自动选择稳定版本还需要 `jq`；显式指定 `--version` 时不需要。
+准备 POSIX shell、`curl`、`tar`，以及 `sha256sum` 或 `shasum`。自动选择稳定版本还需要 `jq`；下方显式指定版本的方式不需要。
 
-下载并检查脚本后再运行。如果当前 Python 环境已安装**发布版** 客户端，可获取其匹配的原生版本（包括适用的 RC 版本）：
+1. 选择已安装发布版客户端的 Python 环境。
+2. 下载并检查安装脚本，再执行安装。
+3. 读取客户端版本，安装匹配的可执行文件，并检查 `--version`。
 
 ```bash
 curl -fsSLo install-a13n-envd.sh \
@@ -45,7 +50,11 @@ sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bi
 
 ### Windows
 
-在 Windows 上使用 Windows PowerShell 5.1 或 PowerShell 7。如果所选 Python 环境已安装**发布版** 客户端：
+使用 Windows PowerShell 5.1 或 PowerShell 7。
+
+1. 选择已安装发布版客户端的 Python 环境。
+2. 下载并检查安装脚本。
+3. 安装匹配版本，并检查输出路径中的可执行文件。
 
 ```powershell
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.ps1' -OutFile install-a13n-envd.ps1
@@ -59,7 +68,7 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 ### 选项与行为
 
-两个脚本接受相同的选项：
+用下列选项选择精确版本和目标目录。两个安装脚本使用相同的选项名：
 
 | 选项                                 | 环境变量默认值                  | 行为                                                                                                                                                              |
 | ------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,7 +83,12 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 ## 更新已有安装
 
-替换前，先停止使用该安装的守护进程。Envd 从自身可执行文件路径启动 worker，在守护进程运行时替换该路径可能混用版本或导致 worker 无法启动。更新器不会自动停止或重启服务。
+使用安装所有者的账号，在安排好的停机重启窗口中更新。Envd 从自身可执行文件路径启动 worker，替换正在运行的守护进程的二进制文件可能混用版本或导致 worker 无法启动。
+
+1. 用 `update --check` 检查所选版本和目标路径。
+2. 停止所有使用该可执行文件的守护进程。
+3. 执行更新；需要时按下方示例指定精确版本。
+4. 验证 `a13n-envd --version`，再通过原命令或服务重启 Envd。
 
 ```console
 a13n-envd update --check
@@ -88,7 +102,7 @@ a13n-envd update --version 1.2.3
 a13n-envd update --version 1.2.3 --force
 ```
 
-`--check` 显示当前版本、所选版本和目标路径，不执行安装。`--force` 重新安装所选版本，不能与 `--check` 同时使用。命令更新实际调用的可执行文件，包括通过符号链接调用的情况。它不会修改 PATH 或配置，也不会提权。请使用安装所有者的账号执行。成功后，通过原命令或服务重启 Envd。
+`--force` 重新安装所选版本，不能与 `--check` 同时使用。更新器替换实际调用的可执行文件，包括通过符号链接访问的情况。它保留 PATH 和配置，使用当前账号权限，服务的停止和重启由你负责。
 
 Envd 下载匹配的发布归档，验证 `SHA256SUMS`，检查解压后程序的 `--version`，然后替换可执行文件。下载和验证失败会保留已有程序。如果在替换期间中断，请先用 `--version` 检查安装，再决定是否重试。强制终止独立更新器可能在可执行文件旁留下 `.a13n-envd-update-*` 暂存目录；确认更新器已退出后，才可删除本次操作对应的目录。
 
@@ -98,8 +112,8 @@ Host 可通过 `--version ... --install-dir ...` 将另一个精确版本安装�
 
 ## 运行沙箱镜像
 
-需要可直接使用的 agent 开发容器时，使用[沙箱镜像](sandbox.md)。镜像以 root 运行 Envd，而命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。shell 命令默认启用，受控出站网络需要主动开启。指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
+使用标准[沙箱镜像](sandbox.md)，获得已启用 shell 命令的 agent 开发容器。Envd 以 root 运行；命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。需要受控出站网络时显式开启。镜像指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
 
 ## 下一步
 
-使用 [Local Envd provider](index.md#try-local-envd)；如果由你管理传输和生命周期，则[配置独立守护进程](configuration.md)。运行不可信工作前，先阅读[执行边界](isolation.md)，并选定 Host 的外层边界。
+选好匹配的二进制文件后，试用 [Local Envd Provider](index.md#try-local-envd)，或[配置自己的守护进程](configuration.md)。运行不可信工作前，按[执行边界](isolation.md)选择 Host 的外层边界。

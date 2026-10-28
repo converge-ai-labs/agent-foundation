@@ -3,16 +3,15 @@ title: Provider configuration reference
 description: Every built-in Environment Provider configuration field, generated from the Provider models.
 ---
 
-> [!NOTE]
-> Generated from the built-in Provider Pydantic models by `scripts/docs/references.py`. Regenerate instead of editing rows.
+Find your Provider's configuration model, then use its table to check field names, accepted values, and defaults. A type such as `DirectLocalRootConfiguration` has its own table below. Start with [Configure Providers](configuration.md) to assemble a recipe, backend settings, and private credentials into a working configuration.
 
-Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed; this reference does not resolve values from your Host environment or credential store. The tables describe Provider configuration objects. For standalone daemon JSON settings, use [Envd configuration](../a13n-envd/configuration.md).
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe, account, and credential objects.
+The tables are generated from the built-in Provider models. Contributors changing those models regenerate the English page with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 ## Cloud Providers
 
-All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
+Use the links to find each cloud Provider's three configuration objects. The recipe describes the target to create, backend settings select the account or endpoint, and credentials supply private authentication. For supported operations and setup examples, see [Cloud Providers](providers.md#cloud-providers).
 
 | Provider       | Recipe                                                              | Backend                                                           | Credential                          |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |

@@ -137,6 +137,26 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "BackgroundCompactionPolicy": {
+      "additionalProperties": false,
+      "description": "Host-selected overlap policy, separate from the common compaction trigger.",
+      "properties": {
+        "blocking_threshold": {
+          "default": 0.95,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Blocking Threshold",
+          "type": "number"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "BackgroundCompactionPolicy",
+      "type": "object"
+    },
     "BuiltinSkillName": {
       "const": "platform-operations",
       "type": "string"
@@ -1232,6 +1252,9 @@
   },
   "additionalProperties": false,
   "properties": {
+    "background_compaction": {
+      "$ref": "#/$defs/BackgroundCompactionPolicy"
+    },
     "builtin_skills": {
       "default": [],
       "items": {

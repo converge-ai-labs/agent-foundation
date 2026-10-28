@@ -1,28 +1,27 @@
 ---
 title: Models
-description: Add model providers and models, configure media understanding, and track usage and prices.
+description: Connect a provider, give an agent a working model, and configure request defaults, media understanding, and prices.
 ---
 
-An agent calls a **model**: an upstream model of a **model provider** account, with the model API to call it through, its model input capabilities and optional pricing. Providers and models belong to one [workspace](resources.md#workspaces), and agents select a model by its key.
+Connect an upstream account once as a **model provider**, then save the **models** agents can use through it. The provider holds credentials and connection settings. Each model holds an upstream ID, calling API, input capabilities, request defaults, and optional prices. Both belong to one [workspace](resources.md#workspaces); an agent selects the model by its stable key.
 
-To use your first model:
-
-1. Open **Models → Add model → Connect a new provider** and enter the provider's account details.
-2. [Add a model](#add-a-model), choose the API your endpoint supports, and save it.
-3. Select that model on an agent and send one message. A successful response verifies inference access; catalog visibility alone does not.
+Start with one model and one successful text response. You need workspace `write` permission, access to the provider account, and an endpoint reachable from the Service Worker. A catalog entry helps fill the form; a response verifies inference access. After that, tune [request settings](#advanced-request-settings) or add [media understanding](#media-understanding).
 
 ## Model providers
 
-In Console, open **Models → Add model → Connect a new provider**, or manage providers under **Workspace settings → Providers**. Through the API, create a provider in `/api/v1/model-providers` as described in [Providers](resources.md#providers).
+1. Open **Models → Add model**. An empty workspace opens the connection form directly. If providers already exist, select one or choose **Connect a new provider**.
+2. Choose the provider type and enter its connection details. Put API keys in the credential fields, not in model settings or agent instructions.
+3. Save the provider, then continue to [Add a model](#add-a-model). To manage the account later, open **Workspace settings → Providers**.
 
 ![Console model provider catalog](../../.github/assets/console-model-providers.webp)
 
-| Type                                                               | Model APIs (default first)                                                        |
+The provider type determines which calling APIs a model may use. The first API in each row is the default:
+
+| Provider type                                                      | Model APIs                                                                        |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `openai`                                                           | `openai.responses`, `openai.chat_completions`                                     |
+| `openai`, `azure_openai`                                           | `openai.responses`, `openai.chat_completions`                                     |
 | `anthropic`                                                        | `anthropic.messages`                                                              |
 | `google_gemini`, `google_vertex`                                   | `google.generate_content`                                                         |
-| `azure_openai`                                                     | `openai.responses`, `openai.chat_completions`                                     |
 | `aws_bedrock`                                                      | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` |
 | `openrouter`                                                       | `openrouter.chat_completions`                                                     |
 | `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`  | `openai.chat_completions`                                                         |
@@ -30,41 +29,60 @@ In Console, open **Models → Add model → Connect a new provider**, or manage 
 | `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu` | `openai.chat_completions`                                                         |
 | `cloudflare_ai_gateway`                                            | `openai.chat_completions`                                                         |
 | `typesafe`                                                         | `typesafe.system_one`                                                             |
+| `openai_chatgpt`                                                   | `openai.responses`; authorize as described below                                  |
 
-Each type's configuration and credential fields come from the Harness; `GET /api/v1/provider-types/model` returns them as JSON Schema. Most types take an optional `base_url` and an `api_key` credential. See [Harness models](../a13n-harness/models.md) and [model authentication](../a13n-harness/model-authentication.md) for each type's options.
+API clients create accounts at `/api/v1/model-providers`. Read `GET /api/v1/provider-types/model` for the deployment's configuration, credential, and request-setting schemas. Most API-key types accept `credential: {"api_key": "..."}` and an optional `config.base_url`. [Provider operations](resources.md#providers) covers saving, testing, and rotating credentials.
 
-Fireworks AI and Together AI support API-key credentials and optional `base_url` overrides. Fireworks defaults to `https://api.fireworks.ai/inference/v1`; Together defaults to `https://api.together.xyz/v1`. Use the full upstream model ID, for example `accounts/fireworks/models/llama-v3p3-70b-instruct` or `meta-llama/Llama-3.3-70B-Instruct-Turbo`. Their catalog channels are `fireworks-ai` and `togetherai`; availability depends on your account. Both offer a connection test without running inference.
+For these Chat Completions providers, keep the full upstream model ID and use the default endpoint unless your account needs an override:
 
-A model provider may also carry up to 32 **extra request headers**, for gateways that route or bill by header. Header values are secrets: they are encrypted, never returned (views list only `header_names`), and edited per name in a `PATCH` (`"X-Team": "..."` sets a value, `null` removes it, omitted names are kept). Transport, authentication and protocol header names are refused.
+| Provider type | Default endpoint                        | Catalog channel |
+| ------------- | --------------------------------------- | --------------- |
+| `fireworks`   | `https://api.fireworks.ai/inference/v1` | `fireworks-ai`  |
+| `together`    | `https://api.together.xyz/v1`           | `togetherai`    |
+| `cerebras`    | `https://api.cerebras.ai/v1`            | `cerebras`      |
+| `sambanova`   | `https://api.sambanova.ai/v1`           | `sambanova`     |
+| `vercel`      | `https://ai-gateway.vercel.sh/v1`       | `vercel`        |
+| `xai`         | `https://api.x.ai/v1`                   | `xai`, `x-ai`   |
 
-Cerebras, SambaNova, Vercel AI Gateway, and xAI / Grok also accept API-key credentials and optional `base_url` overrides:
+For example, Fireworks uses IDs such as `accounts/fireworks/models/llama-v3p3-70b-instruct`, Together uses `meta-llama/Llama-3.3-70B-Instruct-Turbo`, and Vercel uses gateway IDs such as `anthropic/claude-sonnet-4.6`. Choose an ID available to your account. These integrations use HTTP Chat Completions, without Responses API or xAI native server-side search tools. All except Vercel offer a connection-only test; Vercel's public model list cannot validate credentials, so verify access with a model request.
 
-| Provider type | Default endpoint                  | Catalog channel |
-| ------------- | --------------------------------- | --------------- |
-| `cerebras`    | `https://api.cerebras.ai/v1`      | `cerebras`      |
-| `sambanova`   | `https://api.sambanova.ai/v1`     | `sambanova`     |
-| `vercel`      | `https://ai-gateway.vercel.sh/v1` | `vercel`        |
-| `xai`         | `https://api.x.ai/v1`             | `xai`, `x-ai`   |
+For **Google Vertex AI**, match the credential to your access method:
 
-For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved model: its public model list is not an authentication check. The other three offer a connection test without inference. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
+- **API key:** use this for an API-key gateway or Vertex Express Mode. Leave Project ID and Location empty. For a gateway, set Base URL to its origin without `/v1beta1` or a model path. The SDK sends `x-goog-api-key` to `/v1beta1/publishers/google/models/...`.
+- **Service account:** enter the flat service-account credential object and the required Project ID and Location. Switching credential types clears the previous form draft.
 
-For **Google Vertex AI**, choose **API key** to connect an API-key gateway or Vertex Express Mode. Leave Project ID and Location empty and set the gateway origin as **Base URL**, without `/v1beta1` or a model path. The SDK sends `x-goog-api-key` and uses `/v1beta1/publishers/google/models/...`. Choose **Service account** for existing Google Cloud IAM access, with the service-account fields and the required Project ID and Location. The API accepts either `credential: {"api_key": "..."}` or the existing flat service-account object; switching credentials clears the previous form draft.
+For **Cloudflare AI Gateway**, set `account_id` to the 32-character Cloudflare account ID and save its API token as `api_key`. The token needs **Account → Workers AI → Read** permission. Configure default-alias BYOK credentials or unified billing in Cloudflare. Set `gateway_id` to choose a gateway, or omit it for the default gateway's third-party models. Use full IDs such as `openai/gpt-5.4` or `anthropic/claude-sonnet-4.6`; both use `openai.chat_completions`. A custom `base_url` replaces the account-derived endpoint and must end in `/ai`, without `/v1`, a method path, query, or fragment. Test with a model request: this integration has no connection-only probe, native server tools, or separate Workers AI catalog. See [Cloudflare's unified REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
-Cloudflare AI Gateway uses provider type `cloudflare_ai_gateway` and the `cloudflare-ai-gateway` models.dev channel. Set `account_id` to your 32-character Cloudflare account ID and save the Cloudflare API token as the `api_key` credential. The token needs **Account → Workers AI → Read** permission. Configure default-alias BYOK credentials or unified billing in Cloudflare. Set `gateway_id` to select a gateway; omit it to use Cloudflare's default gateway for third-party models. All supported chat models use `openai.chat_completions`; changing the model ID does not change the protocol. Keep the full model ID, such as `openai/gpt-5.4` or `anthropic/claude-sonnet-4.6`. A custom `base_url` must name the root ending in `/ai`, without `/v1` or a method path. Test a saved model to verify access; this provider has no connection-only probe. Native server tools and the separate Workers AI catalog are not exposed. See [Cloudflare's unified REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
+For a gateway that routes or bills by header, add up to 32 **extra request headers** to the provider. Values are encrypted; reads expose only `header_names`. In a provider `PATCH`, a value sets that name, `null` removes it, and omission keeps it. Transport, authentication, and protocol header names are reserved. Use these encrypted headers for secrets; [request-level headers](#advanced-request-settings) are readable configuration.
 
 ## ChatGPT subscription provider
 
-Create an `openai_chatgpt` provider; the default flow registers an OAuth client dynamically and needs no static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the provider and is shared by the workspace; it is not a personal connection.
+Use `openai_chatgpt` to authorize ChatGPT plan usage for the workspace. Authorization belongs to the provider and is shared by the workspace, rather than stored as a personal connection.
 
-With the default flow, after authorizing, copy the entire callback URL from the browser address bar into **Complete callback URL**, even if the loopback page shows a connection error. The Service can run remotely: it validates and exchanges the pasted callback without fetching that URL or requiring the browser to reach the server's loopback listener.
+1. In **Workspace settings → Providers**, add a **ChatGPT** provider. The default flow dynamically registers a public OAuth client and needs no static credential.
+2. Choose **Continue with ChatGPT** and open the authorization link. Approve ChatGPT plan usage; website identity access alone does not grant model access.
+3. Copy the entire callback URL from the browser address bar into **Complete callback URL**, then choose **Complete sign-in**. Copy it even if the loopback page cannot be reached. Keep the URL private.
+4. Add a model using `openai.responses` and an account model slug. Select an account-visible choice or enter an ID manually, then send a test message through an agent.
 
-API clients use `POST /api/v1/model-providers/{id}/authorize` with `{}` and then `POST …/authorization/callback` with `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}`. Keep the full callback private. Invalid input is retryable; after the code exchange starts, a failed sign-in must be started again. `GET …/authorization` exposes credential-free status. `DELETE …/authorization` clears local tokens; manage remote access in ChatGPT settings. The retained registration supports returning login; `{"new_registration": true}` starts a fresh account selection (a new dynamic client registration, or the same configured client without retained account hints).
+The Service can run remotely: it validates and exchanges the pasted callback without fetching that URL or requiring the browser to reach the server's loopback listener. Invalid callback input can be corrected and retried. Once code exchange starts, a failed sign-in needs a new authorization attempt.
 
-Use `openai.responses` and an account model slug for this provider. `GET …/models` returns account-visible slugs and display names; manual IDs remain available in Console. A listed slug does not prove that the account may run inference with it. The endpoint is fixed, and tokens/pending authorization are encrypted in provider-owned state rather than model configuration or run snapshots. Every request sets `store: false` and streams its response; a non-streaming call collects the stream before it returns. Requests to this provider omit temperature, Top P and output-token limits; other settings and tool serialization follow the official ChatGPT profile. This does not translate the request into API-key behavior. Codex credentials are unrelated and cannot replace this authorization.
+For an API integration, use these operations in order:
+
+| Task                | Request under `/api/v1/model-providers/{id}`                                 | What to retain or inspect                                          |
+| ------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Start sign-in       | `POST /authorize` with `{}`                                                  | Open `authorization_url`; retain `attempt_id`                      |
+| Finish sign-in      | `POST /authorization/callback` with `attempt_id` and the full `callback_url` | Authorization state                                                |
+| Check status        | `GET /authorization`                                                         | Credential-free state and account metadata                         |
+| List account models | `GET /models`                                                                | `slug` and `display_name`; visibility is not inference entitlement |
+| Disconnect          | `DELETE /authorization`                                                      | Local tokens are cleared; manage remote access in ChatGPT settings |
+
+Returning login reuses registration metadata. **Use another ChatGPT account**, or `POST /authorize` with `{"new_registration": true}`, omits retained account hints. It creates a new dynamic registration when no client is configured and retains an explicitly configured client. Codex credentials cannot replace this authorization.
+
+This provider has a fixed endpoint and stores tokens and pending authorization in encrypted provider-owned state. Its requests always use `store: false` and streaming; a non-streaming caller receives the collected stream. Temperature, Top P, and output-token limits are omitted. Other settings and tools follow the official ChatGPT profile, so API-key model behavior does not carry over automatically.
 
 ### Self-hosted callback
 
-Both dynamic registration and an explicitly selected public client use `http://127.0.0.1:<port>/auth/callback`. In the provider editor, **OAuth client ID** and **Callback URL** override deployment defaults; blank fields inherit them. Save configuration before restarting sign-in.
+Use a public client with `http://127.0.0.1:<port>/auth/callback`. The provider editor's **OAuth client ID** and loopback callback configuration override deployment defaults; blank fields inherit them. Save changes before restarting sign-in.
 
 ```sh
 export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="http://127.0.0.1:1456/auth/callback"
@@ -72,28 +90,24 @@ export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="http://127.0.0.1:1456/auth/callback
 export A13N_PROVIDERS__CHATGPT_CLIENT_ID="issued-public-client"
 ```
 
-The official integration does not support confidential clients, client secrets, or hosted HTTPS callbacks. Existing deployments using those modes must clear the old credential and replace their configuration with a public loopback flow, then authorize again. The former hosted callback route is removed. Existing public-client token records remain readable; restart pending sign-ins after an upgrade.
+If upgrading from a confidential client or hosted HTTPS callback, clear the old credential, configure a public loopback flow, and authorize again. Client secrets and the former hosted callback route are unsupported. Existing public-client tokens remain readable; restart pending sign-ins after an upgrade. Changing client ID avoids another client's retained account hints.
 
-Expiry and 401 refresh are handled by the official provider. Service saves each complete replacement in encrypted storage and prevents stale saves after disconnect or replacement. Refresh-token spending is not serialized across Workers. For a shared subscription under concurrent load, monitor refresh failures and reauthorize if necessary. Local disconnect does not immediately stop an active provider with cached tokens. Code exchange uses the official fixed-endpoint HTTP client; Service's model transport limits apply to inference, refresh and discovery.
-
-Changing client ID omits another client's retained hints. **Use another ChatGPT account** retains an explicitly configured client. A website identity grant alone does not grant model access; approve ChatGPT plan usage during sign-in. See [model authentication](../a13n-harness/model-authentication.md).
+The official provider handles expiry and 401 refresh. Service saves complete replacement credentials and rejects stale saves after disconnect or replacement. Multiple Workers can still race to spend a refresh token: monitor refresh failures under concurrent subscription use and reauthorize when needed. An active provider can retain cached tokens after local disconnect. Inference, refresh, and discovery use Service's model transport limits; authorization-code exchange uses the official fixed-endpoint client. [Model authentication](../a13n-harness/model-authentication.md) explains the shared integration.
 
 ## Add a model
 
-In Console, open **Models → Add model**, choose the provider, then pick a model from the model catalog or enter its upstream model ID. The catalog lists recent text models from [models.dev](https://models.dev) that the provider's type serves, one row per model, with a choice of IDs when the provider serves a model under several (such as Bedrock regions). A provider of the generic `openai` type also offers **Other models (compatible)**, for an OpenAI-compatible endpoint serving another vendor's model. Picking a model fills in its upstream model ID, model input capabilities and prices, which you can change before saving. When models.dev has not been reachable since the Service started, Console says the catalog is unavailable; enter the upstream model ID instead.
+**In Console:**
 
-Through the API, `GET /api/v1/model-catalog` returns the catalog's `items` and its `status`: `ready`, `stale` (the last catalog, while models.dev cannot be reached) or `unavailable`. Each item's `ref`, `characteristics` and `pricing` are values to copy into a new model:
+1. Open **Models → Add model** and choose the connected provider.
+2. Select a catalog model or enter the upstream model ID. Choose the calling API your endpoint serves.
+3. Review the name, input capabilities, request defaults, and prices. Catalog selection fills these values; you can change them before saving.
+4. Save the enabled model, select it in an agent, and send a short text request. Continue with [agents and runs](agents-and-runs.md) once the agent returns a response.
 
-```sh
-curl --get "$A13N_URL/api/v1/model-catalog" \
-  -H "Authorization: Bearer $A13N_API_KEY" \
-  --data-urlencode "provider=openai" \
-  --data-urlencode "model=gpt-5.5"
-```
+The public catalog lists recent text models from models.dev, with one row per model and alternate IDs where needed, such as Bedrock regions. Generic `openai` providers also offer **Other models (compatible)** for another vendor's model behind an OpenAI-compatible endpoint. If the catalog is unavailable, enter the ID manually. For providers with account discovery, use the account choices rather than assuming the public catalog grants access.
 
-Use optional `provider` and `model` query parameters to return only the needed channel and model. Both are exact, case-sensitive matches; when supplied together, both must match. Omit `model` to list a channel, or omit both to return the full catalog. No match returns empty `items` with the catalog status. Filtering shares the full catalog cache; a refresh still downloads the complete models.dev document. Copy the selected prices into the model when saving; reading the catalog does not update saved models.
+**Through the API:** set `A13N_URL` to your Service origin and `A13N_API_KEY` to a [workspace API key](identity.md#api-keys) with `write` access. The following example assumes an enabled Ollama provider in that workspace, reachable from the Worker and serving `llama3.3`.
 
-Create the model in `/api/v1/models` with its `config`:
+Save this body as `model.json`, replacing `mprov_...` with the provider's ID:
 
 ```json
 {
@@ -110,36 +124,63 @@ Create the model in `/api/v1/models` with its `config`:
 }
 ```
 
-- `provider_id` names a model provider of the workspace, whose credential the model spends.
-- `key` identifies the model in its workspace: in paths such as `/api/v1/models/local-llama`, in agent configurations and in usage. It defaults to the provider's type and the upstream model name joined by `-`, lowercased, with any other character a [key](resources.md#common-conventions) cannot hold replaced by `-` (`ollama-llama3.3` for an `ollama` provider here); set it when that is already taken (`409 already_exists`). It never changes.
-- `config.model_name` is the upstream model name, and `config.model_api` must be one of the provider type's model APIs.
-- `config.characteristics` declares the context window, context-management thresholds and `capabilities`: `image_understanding`, `video_understanding`, `audio_understanding`, and `document_understanding` for PDF documents.
-- `config.settings` holds native request defaults, such as `thinking`, `max_tokens` or `openai_reasoning_summary`. An agent's `model_settings` can override them. `config` also accepts `max_tokens`, `temperature`, `top_p`, `extra_body` and `extra_headers` directly; when a key is also in `settings`, the `settings` entry replaces it whole, without a recursive merge.
-- `pricing` prices the model's own calls in usage records; catalog items carry one to copy. The provider and model it names only record where the prices came from, so a catalog price copied for another endpoint's upstream model ID still applies.
-- `catalog_ref`, such as `{"provider": "openai", "model": "gpt-5.5"}`, optionally records the catalog item's `ref` the model started from. Console uses it for the model's icon and name; the Service never checks it against the catalog.
-- `enabled: false` creates the model disabled.
+Create it and read it back:
 
-A model spends its provider's credential, so creating a model or changing its `config` needs `write` on the provider as well. The provider and model belong to the same workspace.
+```sh
+curl -fsS "$A13N_URL/api/v1/models" \
+  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
+  --data-binary @model.json
+curl -fsS "$A13N_URL/api/v1/models/local-llama" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+```
 
-Change a model with `PATCH /api/v1/models/{key}` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`, `"{key}:{version}"`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, can be model defaults (`config.settings`) or agent revision settings (`model_settings`). Both are validated against the provider type's `settings_schemas`. These schemas leave out operator timeouts, upstream model selection and provider-account state (such as `openai_previous_response_id`, `bedrock_inference_profile`, `openrouter_models` or auxiliary `openai_moderation` models), and server-side tools such as `openai_native_tools`, which `max_usage` cannot fully account for.
+Creation returns `201` and the saved model. Use `local-llama` in the agent's `config.model`, not `mprov_...` or `llama3.3`. Creating a model or changing its configuration also needs `write` on the provider, whose credentials it uses.
+
+Choose the fields by their role:
+
+| Field                                   | What you configure                                                                                                                                                                                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                                   | Immutable workspace address used in agents, usage, and `/models/{key}`. If omitted, Service derives it from provider type and upstream name, lowercases it, and replaces disallowed character runs with `-`. Choose another key on `409 already_exists`. |
+| `config.model_name`, `config.model_api` | Exact upstream ID and a calling API supported by this provider type                                                                                                                                                                                      |
+| `config.characteristics`                | Context window, context-management thresholds, and actual input capabilities: `image_understanding`, `video_understanding`, `audio_understanding`, or `document_understanding` for PDFs                                                                  |
+| `config.settings`                       | Request defaults for all uses of this model; agent settings may override them                                                                                                                                                                            |
+| `pricing`                               | Prices for this model's own calls; copy catalog prices or supply your own                                                                                                                                                                                |
+| `catalog_ref`                           | Optional `{provider, model}` provenance from the catalog, used by Console for identity display; checked for shape, not catalog membership                                                                                                                |
+| `enabled`                               | Defaults to `true`; set `false` to save a disabled model                                                                                                                                                                                                 |
+
+To seed a model from public metadata, query the catalog with exact, case-sensitive filters:
+
+```sh
+curl -fsS --get "$A13N_URL/api/v1/model-catalog" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode "provider=openai" \
+  --data-urlencode "model=gpt-5.5"
+```
+
+Copy the selected item's `characteristics`, `pricing`, and `ref` into the model's `config.characteristics`, `pricing`, and `catalog_ref`. The response status is `ready`, `stale` (the last catalog after a failed refresh), or `unavailable` (none fetched yet). Filters combine with AND; no match returns empty `items`. Omit `model` to list a channel, or both filters for the full catalog. Refreshes share the full catalog cache. Reading it never updates saved models or prices.
+
+To edit a saved model, `GET /api/v1/models/{key}`, preserve its configuration, and `PATCH` with the returned ETag in `If-Match`. You can change `name`, `description`, `config`, `pricing`, `catalog_ref`, and `enabled`. Submit `config` as a complete replacement, including fields you want to keep. Disable with `{"enabled": false}`; models have no delete operation. [Resource editing](resources.md#common-conventions) shows the read–edit–check sequence.
 
 ### Image input preparation
 
-In a model's **Advanced** section, **Image input** defaults to **Prepare images** on, **Support GIF** on, **Max images** 20 and **Max image size (MiB)** 5. Binary GIFs are removed from model requests when Support GIF is off; image URLs are not fetched or classified. Max images zero removes all images; size zero disables the byte limit. The size budget measures **base64-encoded bytes per image**; 1 MiB is 1,048,576 bytes, not a decimal MB or the original file size.
+Open the model's **Advanced → Image input** controls and choose how images enter requests:
 
-The API field is `config.characteristics.image_input`, not `config.settings`. Omission enables default preparation, an object customizes it, and explicit `null` disables automatic preparation. All seven fields are available through the API; see the [shared policy reference](../a13n-harness/models.md#image-input-policy). Console preserves unexposed dimension and splitting fields and exact byte budgets when you edit other controls.
+| Control              | Default | Effect of a special value                                         |
+| -------------------- | ------- | ----------------------------------------------------------------- |
+| Prepare images       | On      | Off disables automatic preparation                                |
+| Support GIF          | On      | Off removes binary GIFs; image URLs are not fetched or classified |
+| Max images           | 20      | `0` removes every image                                           |
+| Max image size (MiB) | 5       | `0` disables the byte limit                                       |
 
-The primary model, a child run's model and an image-understanding model each apply their own policy. An attempt uses its resolved model configuration; later attempts, including recovery, resolve the current model just like other live model defaults. Unlike Harness UI, the Service does not freeze a model's configuration across attempts.
+The size limit measures **base64-encoded bytes per image**, not source-file bytes; 1 MiB is 1,048,576 bytes. Through the API, use `config.characteristics.image_input`: omit it for defaults, supply an object to customize it, or set `null` to disable preparation. The [shared image policy](../a13n-harness/models.md#image-input-policy) lists all seven fields. Console preserves unexposed dimensions, splitting options, and exact byte budgets when you edit other controls.
+
+The primary model, each child model, and the image-understanding model apply their own policy. Each attempt uses its resolved model configuration. Later attempts, including recovery, resolve current model defaults; Service does not freeze the model across attempts as Harness UI does.
 
 ### Advanced request settings
 
-A model's **Advanced** section offers Thinking effort and Max output tokens, plus Reasoning summary and Store response for OpenAI Responses. These fields edit the same draft as **Settings JSON**, where other native parameters remain available. Leaving a field at its default does not force a reasoning effort or output budget; choose values supported by your upstream model. Model defaults apply to agents using that model, including reviewers and media understanding that use their own selected models.
+Tune a saved model in **Advanced**. Start with **Thinking effort** or **Max output tokens**; OpenAI Responses also exposes **Reasoning summary** and **Store response**. These controls and **Settings JSON** edit the same draft. Leave unsupported options unset, save, and test another message before relying on the change.
 
-Service explicitly enables prompt caching with `cache: true` for primary and auxiliary model calls. Model settings and Agent/run overrides can set `cache: false` to disable library-managed caching or select a retention period. For Anthropic Messages, the default also enables `anthropic_cache_instructions`, `anthropic_cache_tool_definitions` and `anthropic_cache_messages`, placing markers on content blocks instead of sending top-level `cache_control` for gateway compatibility. An explicit unified `cache` setting or any of these provider settings (including `anthropic_cache`) keeps the native authored policy. Pydantic AI owns provider-specific marker placement; this setting does not guarantee a cache hit and does not disable a provider’s implicit caching.
-
-For `openai.responses`, **Store response defaults to off**, even on existing models that never set `openai_store`. Set `openai_store: true` to opt in, or `null` to delegate to the provider. This controls upstream response storage, not the Service's own run history or the provider's other retention policies. Agent and run settings can override the default. Other calling APIs retain their existing storage behavior.
-
-The API equivalent of a model's Settings JSON is `config.settings`. On an agent, use **Provider-specific settings** for `model_settings`. Prefer typed settings, for example with OpenAI Responses:
+Use `config.settings` for model defaults and an agent's `model_settings` for that agent's overrides. For an OpenAI Responses model that supports medium reasoning, the settings object can be:
 
 ```json
 {
@@ -148,36 +189,72 @@ The API equivalent of a model's Settings JSON is `config.settings`. On an agent,
 }
 ```
 
-Choose values supported by your upstream model. For inference options the installed SDK does not yet know, `openai.responses` and `openai.chat_completions` accept `extra_body`. Its raw values override generated inference fields in a shallow merge; nested objects replace rather than merge. It cannot change the model, messages, tools, structured output or provider session state. Use `openai_text_verbosity`, not raw Responses `text`.
+Settings apply in this order:
 
-Omit either object to inherit its model default; set it to `{}` to clear that default for the agent or run. A run's settings replace the agent's entire settings object, so `model_settings: {}` still inherits model defaults. To clear both defaults, send `model_settings: {"extra_body": {}, "extra_headers": {}}`. `null` is not accepted for these objects. Model and provider changes apply to later attempts, including resumed work; settings are checked again before requests.
+1. Service supplies its baseline: prompt caching is enabled; OpenAI Responses storage is off.
+2. Model defaults replace matching baseline values. Native `config.settings` entries also replace same-named flat `config` defaults (`max_tokens`, `temperature`, `top_p`, `extra_body`, `extra_headers`).
+3. Agent or reviewer settings replace matching model defaults. A run override first replaces the agent's **entire** `model_settings` object, then the model defaults are applied beneath it.
 
-Header values here are **readable configuration**. Put secrets in the provider's credential or encrypted extra headers instead. Request settings cannot replace authentication, protocol, existing provider header names or its session-affinity header, regardless of case.
+For `extra_body` and `extra_headers`, omission inherits the model object, an explicit object replaces it whole, `{}` clears it, and `null` is invalid. Thus run `model_settings: {}` removes agent overrides but still inherits model defaults. Use `model_settings: {"extra_body": {}, "extra_headers": {}}` to clear both request objects. Nested objects are never recursively merged.
+
+Prefer typed parameters. For inference options the installed SDK does not yet recognize, `openai.responses` and `openai.chat_completions` accept `extra_body`; raw values override generated inference fields in a shallow merge. They cannot change the selected model, messages, tools, structured output, transport, or provider session state. Use `openai_text_verbosity`, not raw Responses `text`. The provider type's `settings_schemas` validates both model and agent settings and excludes operator timeouts, account state, alternate model selection, and server tools whose costs `max_usage` cannot fully track.
+
+**Caching:** use `cache: false` to disable library-managed caching or a supported retention value to select its lifetime. Anthropic Messages defaults also enable `anthropic_cache_instructions`, `anthropic_cache_tool_definitions`, and `anthropic_cache_messages`, placing markers on content blocks for gateway compatibility. An explicit unified `cache` value or provider cache setting, including `anthropic_cache`, preserves the authored policy. Pydantic AI places the provider-specific markers; cache hits and the provider's implicit caching remain upstream behavior.
+
+**Response storage:** `openai.responses` defaults to `openai_store: false`, including existing models without that setting. Set `true` to opt in or `null` to delegate to the provider. This affects upstream response storage, not Service run history or other retention policies. Agent/run settings can override it; other calling APIs keep their own behavior. The ChatGPT subscription profile still requires storage off.
+
+**Headers:** request-setting values are readable. Keep secrets in provider credentials or encrypted extra headers. Request settings cannot replace authentication, protocol, stored provider header names, or the affinity header, regardless of case. Model/provider changes take effect on later attempts, including resumed work, and settings are checked again before requests.
 
 ### Gateway session affinity
 
-Set **Session affinity** in the provider's advanced connection settings to a header your gateway recognizes. The Service sends a stable thread-derived UUID on every model path, including reviewers and media understanding. Continuing a thread keeps the value; children and forks receive their own. It does not use the session ID or run ID, and clearing request header defaults does not disable it. The gateway must implement routing for that header; selecting a preset does not configure the gateway.
+To keep a thread on a gateway's chosen backend:
+
+1. Configure the gateway to route using a supported header.
+2. Open the provider's advanced connection settings and set **Session affinity header** to that name (`config.session_affinity_header` through the API).
+3. Continue a thread and check gateway logs for the same thread-derived UUID. Use a child or fork to check that it receives its own value.
+
+Service supplies that UUID on every model path, including reviewers and media understanding. It derives the value from the thread, not the session or run. Clearing request header defaults does not remove it. Leave the affinity header empty to disable it; selecting a preset alone does not configure gateway routing.
 
 ### Model API availability
 
-A model's `config.model_api` must be one the deployment offers; checking its settings, such as when an agent revision is saved, answers `503 unavailable` with `{"dependency": "model_api:<api>"}` for one it no longer offers.
+If saving an agent or validating settings returns `503 unavailable` with `{"dependency": "model_api:<api>"}`, the deployment no longer offers that calling API. Check the model's `config.model_api` against `GET /api/v1/provider-types/model`. Select an API the provider and deployment support, or ask the operator to restore it, then validate the configuration again.
 
 ## Media understanding
 
-An agent whose model cannot read images, video or audio can delegate that to another model. Each workspace can set a default per media kind, and each agent can choose its own.
+Give an agent a separate model for images, video, or audio its primary model cannot read. Configure workspace defaults for shared use, or select models in the agent's own `media_understanding` settings.
 
-In Console use **Workspace settings → Media understanding**. Through the API, workspace administrators replace all three defaults at once. Set `IMAGE_MODEL_KEY` to a configured model with image understanding and `MEDIA_ETAG` to the ETag from `GET /api/v1/media-understanding-defaults`:
+1. Add an enabled model with the matching capability, such as `image_understanding`. Its provider must also be enabled and usable in the workspace.
+2. As a workspace administrator, open **Workspace settings → Media understanding** and select the model for that media kind.
+3. Send a representative media input to an agent that needs this fallback. Check the answer and the selected model's usage record.
+
+For the API, use `curl` and `jq`, the Service origin and workspace API key from above, and administrator permission. Set `IMAGE_MODEL_KEY` to your image model's key. Read the current defaults and their ETag before changing them:
 
 ```sh
-curl -X PUT "$A13N_URL/api/v1/media-understanding-defaults" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $MEDIA_ETAG" \
-  -d "{\"image\": \"$IMAGE_MODEL_KEY\", \"video\": null, \"audio\": null}"
+curl -fsS -D media.headers -o media.json \
+  "$A13N_URL/api/v1/media-understanding-defaults" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+MEDIA_ETAG=$(awk 'tolower($1) == "etag:" {sub(/\r$/, "", $2); print $2}' media.headers)
+jq --arg model "$IMAGE_MODEL_KEY" \
+  '{image: $model, video: .video, audio: .audio}' media.json > media-update.json
 ```
 
-An omitted or `null` kind has no default. Each model must be usable in the workspace and declare the matching model input capability (`image_understanding`, `video_understanding` or `audio_understanding`).
+Inspect `media-update.json`, then replace the defaults and read them back:
 
-At execution, an agent's own `media_understanding` choice wins and must be usable, or the run fails. A workspace default that is no longer usable is skipped with a warning, and that media kind is unavailable to the run.
+```sh
+curl -fsS -X PUT "$A13N_URL/api/v1/media-understanding-defaults" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" -H "If-Match: $MEDIA_ETAG" \
+  --data-binary @media-update.json
+curl -fsS "$A13N_URL/api/v1/media-understanding-defaults" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+The response should show your image model and the unchanged video/audio selections. `PUT` replaces all three kinds: omission or `null` clears a kind. On `412`, read the current defaults again before deciding what to replace. Each selected model must declare the matching input capability.
+
+At execution, an agent's own selection wins; if it is unusable, the run fails. An unusable workspace default is skipped with a warning, leaving that kind without a fallback model.
 
 ## Usage and prices
 
-Every model call of a run is recorded as a usage record attributed to the model that made it, and priced by that model's pricing, with a snapshot of the pricing at that time. This holds when two models used by one agent and its subagents name the same upstream model, even through providers of the same type, and when the provider answers under another model name, such as a dated snapshot of an alias. See [usage](agents-and-runs.md#usage).
+After a test run, inspect [usage](agents-and-runs.md#usage) to see which model made each call. Service attributes and prices the call using the selected workspace model and saves the price snapshot with the usage record. This also applies to compaction, reviewers, media understanding, and child agents.
+
+Two saved models can use the same upstream ID and still have separate prices. A provider's returned alias or dated model name does not change attribution. In a copied catalog price, `provider` and `model` record the price's source; the price still applies to the saved model that holds it. Update the saved `pricing` when your rates change rather than expecting a catalog refresh to do so.

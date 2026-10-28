@@ -1,7 +1,6 @@
 import {
   type Icon,
   BrainIcon,
-  GaugeIcon,
   LightbulbIcon,
   ChartBarIcon,
   PulseIcon,
@@ -26,7 +25,7 @@ export const navigationGroups: {
     ],
   },
   {
-    label: "Resources",
+    label: "Capabilities",
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
@@ -39,6 +38,7 @@ export const navigationGroups: {
           ["memories", "Standalone"],
         ],
       ],
+      ["connections", "Connections", PlugIcon],
       [
         "environments",
         "Environments",
@@ -46,25 +46,18 @@ export const navigationGroups: {
         [
           ["environments", "Templates"],
           ["environments/instances", "Instances"],
+          ["monitoring", "Metrics"],
         ],
       ],
     ],
   },
   {
-    label: "Integrations",
-    entries: [["connections", "Connections", PlugIcon]],
-  },
-  {
-    label: "Observe",
+    label: "Insights",
     entries: [
-      ["monitoring", "Metrics", GaugeIcon],
       ["usage", "Usage", ChartBarIcon],
       ["traces", "Traces", PulseIcon],
+      ["findings", "Findings", LightbulbIcon],
     ],
-  },
-  {
-    label: "Improve",
-    entries: [["findings", "Findings", LightbulbIcon]],
   },
 ];
 
@@ -77,6 +70,7 @@ export function routeSkeleton(
 ): { variant: "page" | "detail"; columns: number } | undefined {
   const tail = pathname.replace(/^\/[^/]+\/[^/]+/, "");
   const lists: Record<string, number> = {
+    "/api-keys": 4,
     "/agents": 4,
     "/sessions": 4,
     "/schedules": 4,

@@ -306,3 +306,36 @@ async def test_browser_tool_effects_cover_network_and_host_upload_reads():
     assert "read" in tools["browser_files"].metadata[HARNESS_TOOL_METADATA_KEY].effects
     for name in ("observe", "read", "wait", "screenshot"):
         assert tools[f"browser_{name}"].metadata[HARNESS_TOOL_METADATA_KEY].effects == {"read"}
+
+
+@pytest.mark.parametrize(
+    "name,args,method",
+    [
+        ("browser_observe", {}, "observe"),
+        ("browser_screenshot", {}, "screenshot"),
+        ("browser_act", {"action": Press(kind="press", key="Enter")}, "interact"),
+        ("browser_read", {}, "read"),
+        ("browser_navigate", {"url": "https://example.com"}, "navigate"),
+        ("browser_tabs", {}, "tabs"),
+        ("browser_dialog", {}, "dialog"),
+        ("browser_files", {}, "downloads"),
+    ],
+)
+async def test_host_can_return_takeover_guidance_without_waiting_or_replaying(name, args, method):
+    from unittest.mock import Mock
+
+    from a13n_harness.capabilities.browser import BrowserHumanControl
+
+    backend = AsyncMock(spec=BrowserBackend)
+    getattr(backend, method).side_effect = BrowserHumanControl("Human control")
+    notify = Mock(return_value="Registered. End this turn without polling.")
+    owner = BrowserUseCapability(backend, on_human_control=notify)
+    owner._references["e1"] = "old-element"
+    owner._tabs["t1"] = "old-tab"
+    owner._screenshot = ("s1", "old-image")
+    tools = owner.get_toolset().tools
+    result = await tools[name].function_schema.call(args, None)
+    assert result == notify.return_value
+    notify.assert_called_once_with()
+    backend.wait_for_handback.assert_not_awaited()
+    assert not owner._references and not owner._tabs and owner._screenshot is None

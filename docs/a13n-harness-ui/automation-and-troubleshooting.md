@@ -1,107 +1,165 @@
 ---
 title: Automation and troubleshooting
-description: Script Harness UI runs, trace execution, and diagnose connection, WebUI, and Environment problems.
+description: Run Harness UI from a script, inspect failures, update installations, and resume saved conversations.
 ---
+
+Use `run` for a single scripted task. When something fails, inspect its operation status and saved state before repeating it.
 
 ## Automation and diagnostics
 
+First complete [setup](setup.md) and verify a short interactive conversation. Then run commands from the directory whose Project you want to use.
+
+1. Submit one task and print its final answer:
+
+   ```console
+   a13n-harness-ui run "Review the current diff"
+   ```
+
+2. For scripts, request the structured operation object:
+
+   ```console
+   a13n-harness-ui run "Review the current diff" --format json
+   ```
+
+   Exit status `0` means the operation completed. Failed or suspended operations return nonzero. Inspect the operation's status and failure details rather than treating any output as success.
+
+3. To continue an existing conversation, replace `thread-id` with its saved root Thread ID:
+
+   ```console
+   a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
+   ```
+
+One-shot mode uses the same Project, continuation, and permission rules as interactive mode, but skips the Model preference remembered by `/model`. It does not open interactive approval prompts. If a Run suspends for a decision, resume interactively and answer it:
+
 ```console
-a13n-harness-ui run "Review the current diff"
-a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
-a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
-a13n-harness-ui plugin list
-a13n-harness-ui import subagents --product codex --scope project --project-root .
-a13n-harness-ui --help
-a13n-harness-ui login --help
+a13n-harness-ui --resume thread-id
 ```
 
-One-shot mode prints the final text or a structured operation object, then exits. It uses the same Project selection (from the current directory), Model resolution, continuation, and permission rules as interactive mode. It does not use the Model remembered by `/model`. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
+Put global options before the subcommand. For example, this selects Sandbox for the scripted task:
 
-Help and version do not start the App. The landing TUI opens first, then initializes local configuration and storage. Models, Environments and MCP connect on demand. Startup timings go to `<data-root>/logs/terminal.log`.
+```console
+a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
+```
 
-If startup or `--resume` fails, read the displayed error chain and diagnostic-report path. Review the private report for sensitive content before sharing it; nothing is uploaded automatically.
+Use `a13n-harness-ui --help` and subcommand `--help` for syntax without starting the App. Configuration inspection commands do open the local App: they can initialize storage, write accepted indexes, and start the pricing updater when enabled. `config validate` checks configuration, not provider or MCP connectivity; `--no-update-check` only disables the startup package-update check.
 
-## Execution tracing
+## Diagnose without losing your draft
 
-See [Tracing Harness UI](observation.md) for automatic OTLP export, Langfuse and Logfire profiles, embedding with an existing provider, and the separate `dev/harness-ui/.env` used by `make cli`. Traces complement diagnostics and saved conversation state; they do not replace them.
+| Symptom                                | Next step                                                                                                               |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| A configuration edit seems ignored     | Run `config validate`, then `config show`. An invalid edit leaves the previous accepted generation active.              |
+| An Agent cannot run                    | Check its Model reference, Capability keys, roster IDs, and exact tool names.                                           |
+| A local Markdown child rejects `model` | Remove that field. For independent settings, create an Agent and reference it with `- agent: agent-id`.                 |
+| Two children share a name              | Remove a selection or rename the custom Markdown child. Built-ins do not override custom roles.                         |
+| Sandbox readiness fails                | Run `a13n-harness-ui doctor` and fix its reported prerequisites. Selecting Full Control is a separate, explicit choice. |
+| Submission was rejected                | Use the restored draft or `/recover`, check the rejection, and submit again when ready.                                 |
+| A one-shot Run suspended               | Resume that Thread interactively and complete the pending decision.                                                     |
+| A reply appeared, but saving failed    | Read the error and saved continuation status. Inspect completed actions before submitting another task.                 |
+| Startup, resume, or the process failed | Read the diagnostic-report path, then use the saved-state recovery steps below.                                         |
 
-## Long-running work
-
-Root Agents and subagents have no fixed Harness request-count limit. You can cancel them, and provider or child limits still apply. Long Runs may use more tokens; a process crash does not resume active work automatically.
+Large active messages first appear as plain-text previews and reflow to Markdown when complete. Older rendered rows load as you scroll. If the bounded source cache evicts content, use `/history` as directed; it shows content the App retained and can expose.
 
 ## Model connection interruptions
 
-Eligible transient model interruptions retry from available history, up to five consecutive attempts including the first. A successful primary response resets the budget; permanent errors stop. The TUI shows `[System] Retrying model request…` while the same Run continues. Retries do **not** replay completed tool calls or recover a crashed process. Check whether a side-effecting action completed before repeating it manually.
+When the TUI shows `[System] Retrying model request…`, the same Run is retrying an eligible transient model interruption from available history. It allows up to five consecutive attempts, including the first. A successful primary response resets that budget; permanent errors stop execution.
 
-## WebUI
+Let the existing retry finish or cancel the Run. Completed tool calls are not replayed by model recovery. Before manually repeating a side-effecting action after a failure, inspect its actual result. Model retries do not restart a crashed process.
 
-See [WebUI](webui.md) for collaboration, listener/authentication options, API-key retention, container delivery, and foreground lifecycle.
+## Long-running work
 
-## Source checkout dependencies
-
-After switching branches, run `make sync` (or launch with `make a13n-harness-ui`) to install the dependencies locked for that branch. A virtual environment from another branch can contain incompatible dependencies and fail during import. Use the committed lockfile rather than patching private dependency imports or upgrading individual libraries independently. Installed users should upgrade `a13n-harness-ui` using the package manager that owns their installation.
+Root Agents and subagents have no fixed Harness request-count limit. Provider and child limits still apply, and longer Runs can consume more tokens. Use `/status` to inspect progress and `/cancel` to stop active work. After a process crash, start a new invocation from the saved continuation; active work does not restart automatically.
 
 ## Logs, Updates, and Exit
 
-Interactive diagnostics go to `<data-root>/logs/terminal.log` (5 MiB, three rotated backups), not the conversation or normal-screen scrollback. Skipped Content Plugins produce one actionable notice for each unchanged path and reason; use the log for details. Harness UI does not remove files in the legacy Content Plugin layout.
+### Find a diagnostic report
 
-Model execution failures and unexpected errors also produce a private `a13n-harness-ui-error-*.json` report in the system temporary directory (`/tmp` on typical Linux installations). The failure notice links its path and the GitHub Issue form. The report collects exception chains, stack locations, component versions, and Thread/Run IDs without frame locals, source lines, or a transcript. Exception messages may still contain sensitive information: review the report before attaching it, and include reproduction steps. Nothing is uploaded automatically. Correlate the same Run ID with `terminal.log` if more context is needed; report creation never substitutes for saving conversation state.
+1. Read the displayed error chain and report path. Model execution failures and unexpected errors can create `a13n-harness-ui-error-*.json` in the system temporary directory.
+2. Read `<data-root>/logs/terminal.log` for startup timings and interactive diagnostics. The log rotates at 5 MiB and keeps three backups. Correlate entries by Run ID.
+3. Review the report before sharing it. It contains exception chains, stack locations, component versions, and Thread/Run IDs; exception messages can contain sensitive data. It excludes frame locals, source lines, and transcripts.
+4. If reporting a bug, attach the reviewed report and reproduction steps through the Issue link in the failure notice. Nothing is uploaded automatically.
 
-If asyncio reports `Task was destroyed but it is pending!` without an accompanying exception, the TUI shows a warning and stays open, preserving your draft. The report includes the asyncio task identity, coroutine location, suspended stack locations, and creation stack locations when available. Keeping the TUI open does not recover the lost asyncio task or confirm that active work succeeded. Check `/status`, use `/cancel` if work stops progressing, and review the report before sharing it. No work is retried automatically. Other unhandled TUI event-loop failures still exit with recovery instructions.
+Skipped Content Plugins produce one actionable notice for each unchanged path and reason; the log contains details. Legacy Content Plugin files stay on disk.
 
-Startup order is **setup if needed → conversation**. Package update detection runs in the background without delaying either step. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache; offline failure is silent. Setup-only invocations exit without waiting for detection or showing an update question. Closing the terminal cancels any pending check.
+For the asyncio warning `Task was destroyed but it is pending!` without an accompanying exception, the TUI keeps your draft and stays open. The report includes bounded task identity and available coroutine, suspended-stack, and creation-stack locations. Check `/status`; use `/cancel` if work stops progressing. The lost task is not restored or retried. Other unhandled TUI event-loop failures exit with recovery instructions.
 
-Update detection is enabled by default. To disable it in `a13n-harness-ui.yaml`:
+### Update Harness UI
+
+For a recognized uv-tool installation:
+
+1. Exit Harness UI.
+
+2. Run:
+
+   ```console
+   a13n-harness-ui update
+   ```
+
+3. Restart Harness UI after the command succeeds.
+
+The command directly runs `uv tool upgrade a13n-harness-ui` for the running installation's tool directory. It does not ask for another confirmation, open setup, or use the startup metadata cache. uv must be on PATH. Other installation types should use their original package manager. You can also invoke `uv tool upgrade a13n-harness-ui` directly.
+
+A failed installer returns a nonzero status without automatic retry. An interrupted update exits with status `130`; inspect the installation before retrying. Updating the Python package and preparing its native Envd runtime are separate operations.
+
+### Control update notices
+
+Startup runs setup if needed, then opens the conversation. Package-update detection runs in the background and **never installs an update**. Installed release builds check public PyPI metadata with a three-second timeout and a daily cache. Offline failure is silent. A newer stable release produces one System notice with both versions and the appropriate update command; it does not interrupt typing or require a choice.
+
+To disable detection, merge this fragment into the [selected root YAML](configuration.md#locate-and-validate-your-files):
 
 ```yaml title="a13n-harness-ui.yaml"
 process:
   terminal_update_check: false
 ```
 
-Use `a13n-harness-ui --no-update-check` to skip detection for one invocation. `make a13n-harness-ui` always disables it for repository development. Development versions, help/version, and noninteractive commands also skip detection.
+Use `a13n-harness-ui --no-update-check` to skip it once. Development versions, help/version, noninteractive commands, and `make a13n-harness-ui` skip detection. Setup-only invocations do not wait for or show an update notice; closing the terminal cancels a pending check. The next enabled conversational launch can show a cached notice again. These controls leave the explicit `update` command available.
 
-**Startup never installs updates.** When a newer stable release is available, the conversation displays one System notice with both versions. For a recognized uv-tool installation it asks you to exit Harness UI and run `a13n-harness-ui update`; other installations receive manual package-manager guidance. The notice does not interrupt typing or require a choice. A newer cached version can produce another notice on the next enabled conversational launch. To update explicitly:
+### Prepare or update Envd
 
-```console
-a13n-harness-ui update
-```
-
-The command itself requests installation, so it does not ask for another confirmation or open the TUI or setup. It runs `uv tool upgrade a13n-harness-ui` against the running installation's tool directory, bypassing the startup metadata cache. Disabling startup detection does not disable this command. uv must be available on PATH; unsupported installations fail with instructions to use their original package manager. uv owns package resolution and network errors. Failures return the installer status without retry; an interrupted update exits with status 130 and asks you to check the installation before retrying. Restart Harness UI after success. You can also run `uv tool upgrade a13n-harness-ui` directly.
-
-This command updates Harness UI's Python installation. To prepare its selected native Envd version separately, stop other Harness UI instances using the same data root, then run:
+For the managed runtime, stop other Harness UI instances using the same data root, then run:
 
 ```console
 a13n-harness-ui envd update --check
 a13n-harness-ui envd update
 ```
 
-The command respects global `--config` and `--data-root` options and does not start the App or a daemon. Managed Envd stays at the installed client's version; updating Harness UI selects a newer managed version. `--check` reports file presence, not executable verification. `--force` reinstalls that version. Acquisition delegates to an existing native updater; a missing installation or legacy cached binary uses bootstrap acquisition. Native failures are reported without automatic fallback or retry.
+The first command reports whether the selected runtime file exists; it does not verify execution. The second acquires the version required by the installed client. Restart Harness UI afterward. To select a newer managed version, update Harness UI; use `--force` to reinstall the currently selected version.
 
-To update a standalone installation, stop its daemons first and use `a13n-harness-ui envd update --executable /absolute/path/to/a13n-envd`. A configured `envd.executable` is selected automatically. This delegates to [Envd's native update command](../a13n-envd/installation.md#update-an-existing-installation), which defaults to the newest stable Envd release; add `--version X.Y.Z` for a client-matched version or RC. It does not update remote Devices over EIP. Restart the affected application or service after success.
+These commands honor global `--config` and `--data-root`, and start neither the App nor a daemon. Acquisition uses an existing native updater where supported, or bootstrap acquisition for a missing installation or legacy cached binary. Native failures are reported without automatic fallback or retry.
 
-Successful package updates do not print permission reminders. If Envd reports missing macOS Screen Recording or Accessibility permission after replacement, follow its error guidance and [restore permissions](../a13n-envd/computer-use.md#restore-macos-permissions-after-an-upgrade).
+For a standalone installation, stop its daemons first and select the executable:
 
-After cleanup, your terminal shows a resume command for the saved conversation (its root Thread). The command keeps explicit configuration and data-root options and identifies the working directory to run it from. Failed and interrupted operations save an available valid Harness checkpoint, including safely retained partial text, before releasing the operation. The next turn and `--resume` use that selected checkpoint. Recorded tool results are not replayed, and an earlier approval does not authorize replay. Unanswered calls follow the Harness default [`tool_recovery="declared"` policy](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls): currently declared retryable tools may execute again under fresh permissions and approval requirements. Accepted deferred results saved alongside the checkpoint remain available until native history incorporates them; this is not a guarantee that every admitted input was saved. If state export or storage fails, or the process is killed before cleanup can run, resume uses the previous saved checkpoint.
+```console
+a13n-harness-ui envd update --executable /absolute/path/to/a13n-envd
+```
 
-Large active messages use a lightweight plain-text preview and reflow to Markdown when complete. Rendered rows are loaded in pages as you scroll, rather than dropping older rows at a fixed viewport limit. The source cache is still bounded; explicit eviction notices direct you to `/history`. That command can only recover content retained and exposed by the App, not data omitted upstream.
+A configured `envd.executable` is selected automatically. This path delegates to [Envd's native updater](../a13n-envd/installation.md#update-an-existing-installation), which defaults to its newest stable release. Add `--version X.Y.Z` to select a client-matched version or RC. Restart the affected application or service after success. Remote Devices are not updated over EIP.
+
+If Envd reports missing macOS Screen Recording or Accessibility permission after replacement, follow its error and [restore permissions](../a13n-envd/computer-use.md#restore-macos-permissions-after-an-upgrade).
+
+### Resume after exit or failure
+
+1. Use the resume command printed after terminal cleanup. It names the root Thread, retains explicit configuration/data-root options, and identifies the working directory.
+2. Inspect `/status` and `/history` before continuing. Check any action whose outcome was uncertain.
+3. Submit the next instruction or complete the pending decision.
+
+Failed or interrupted operations save an available valid Harness checkpoint, including safely retained partial text, before releasing the operation. The next turn uses that selected checkpoint. If export or storage failed, or the process was killed before cleanup, resume uses the previous saved checkpoint.
+
+Recorded tool results are not replayed. Unanswered calls follow [`tool_recovery="declared"`](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls): currently declared retryable tools may run again under fresh permissions and approval requirements. An earlier approval does not authorize replay. Accepted deferred results saved beside the checkpoint remain available until native history incorporates them.
+
+Saved state does not recover unsent input or establish the outcome of an in-flight side effect. A diagnostic report is separate from that saved state.
+
+## Source checkout dependencies
+
+After switching branches, run `make sync`, or launch with `make a13n-harness-ui`, to install the dependencies locked for that checkout. Reusing another branch's environment can cause import failures. Use the committed lockfile rather than patching private dependency imports or independently upgrading libraries. Installed users should update through their installation's package manager.
+
+## Execution tracing
+
+Follow [Tracing Harness UI](observation.md) to configure OTLP export, send a test Run, and inspect model/tool timing and continuation saving. The repository's `make cli` workflow uses a separate private `dev/harness-ui/.env`.
+
+## WebUI
+
+See [WebUI](webui.md) for listener and authentication setup, collaboration, API-key retention, containers, and foreground lifecycle.
 
 ## Command reference
 
-The [complete command reference](command-reference.md) lists every registered shell subcommand and option, slash-command grammar, aliases, and busy-state availability. Put global options before subcommands; use `-h` or `--help` at each level.
-
-Configuration commands open the local application and may write accepted configuration indexes or initialize data storage. They can start the pricing updater when enabled; `--no-update-check` only disables the startup package-update check. They are not a strictly offline, side-effect-free YAML parser. Validation does not make a model request or prove provider/MCP credentials work.
-
-## Diagnose without losing your draft
-
-| Symptom                                 | Next step                                                                                                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| A file edit seems ignored               | Run `config validate`, then `config show`; the previous accepted generation remains active if a new save is invalid             |
-| An Agent cannot run                     | Check its `model` reference, selected Capability keys, roster IDs, and exact tool names                                         |
-| A local Markdown child rejects `model`  | Remove the field; for independent settings create an Agent and use `- agent: agent-id`                                          |
-| Two children share a name               | Remove one selection or rename the custom Markdown child; built-ins do not override custom roles                                |
-| Sandbox readiness fails                 | Run `a13n-harness-ui doctor`; fix prerequisites or explicitly choose Full Control. Harness UI never falls back automatically.   |
-| A request was rejected                  | Use the restored draft or `/recover`; do not assume it was sent                                                                 |
-| An operation suspended in one-shot mode | Resume interactively and complete its pending decisions                                                                         |
-| A process crashed                       | Inspect the private diagnostic path, review it for sensitive exception messages, and use the printed saved-state resume command |
-
-Unsent input and in-flight side effects are not recoverable merely because a saved conversation exists. A diagnostic report contains no locals or transcript and is never uploaded automatically. Review it before sharing.
+The [command reference](command-reference.md) covers shell subcommands, options, slash-command grammar, aliases, and busy-state availability. Use `-h` or `--help` at each command level.

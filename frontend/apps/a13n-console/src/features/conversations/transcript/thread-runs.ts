@@ -4,9 +4,12 @@ import { useParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
-import { conversationQueries, runPath } from "../api";
+import { conversationQueries } from "../api";
 
-type Thread = Schema["ThreadView"];
+type Thread = Pick<
+  Schema["ThreadView"],
+  "id" | "session_id" | "origin" | "origin_run_id"
+>;
 
 export const chronological = <T extends { created_at: string; id: string }>(
   entries: readonly T[],
@@ -117,21 +120,18 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
  * The Threads that branched from this one. Delegation
  * links select their matching child with childThreadOf.
  */
-export function useChildThreads(sessionId: string, threadId: string) {
+export function useChildThreads(sessionId: string, runId: string) {
   const client = useClient(),
     { workspace } = useWorkspace();
-  const queries = conversationQueries(client, workspace.id);
   const threads = useQuery({
-    ...queries.threads(sessionId),
-    enabled: !!sessionId,
+    ...conversationQueries(client, workspace.id).threads(sessionId, {
+      origin: ["child"],
+      origin_run_id: runId,
+      limit: 1,
+    }),
+    enabled: !!sessionId && !!runId,
   });
-  const children = chronological(
-    (threads.data ?? []).filter(
-      (thread) =>
-        thread.origin !== "new" && thread.origin_thread_id === threadId,
-    ),
-  );
-  return children;
+  return threads.data?.items ?? [];
 }
 
 /**
@@ -151,13 +151,5 @@ export function childThreadOf(
 
 /** Where a child Thread opens: its latest Run, which is inspected in Debug. */
 export function childThreadPath(basePath: string, child: Thread) {
-  return runPath(
-    basePath,
-    {
-      session_id: child.session_id,
-      thread_id: child.id,
-      run_id: child.current_run_id ?? child.last_run_id ?? "",
-    },
-    "debug",
-  );
+  return `${basePath}/sessions/${child.session_id}/threads/${child.id}?view=debug`;
 }

@@ -1,73 +1,170 @@
 ---
 title: 原生工具与 Web 提供方
-description: 配置提供方原生搜索、代码执行和图像生成，以及 Host Web 提供方。
+description: 为 Agent 配置网页访问、选择提供方原生工具，并检查生成图像的保存结果。
 ---
 
-原生工具通过所选 Model 的提供方执行；Host 工具通过 Harness UI 和其 Environment 执行。两者相互独立：原生搜索不是本地爬虫，提供方代码执行不是你的 Environment shell，提供方文件搜索也不会索引 Thread 文件。
+需要通过 Harness UI 搜索、读取公开网页或下载文件时，使用 **Host Web**。需要所选 Model 的提供方执行搜索、图像生成等受支持操作时，使用**原生工具**。两者都配置在 Agent 上。
 
-在 Agent 上配置提供方原生工具。可用选项取决于提供方、Model 和账户。原生图像生成将完成的结果保存到当前 Thread 的 `tmp/`，并返回路径，不会切换模型或提供方。
+新建 Agent 可以从[设置向导](#guided-setup)开始；已有 Model 可以直接使用 [Host Web 配置流程](#host-web-capability-every-built-in-provider)。再根据该连接提供的选项添加原生工具。
 
-| 所选原生工具    | Host Web 行为                         |
-| --------------- | ------------------------------------- |
-| 原生 Web Search | 关闭 Host 搜索；仍提供 Host 获取/下载 |
-| 原生 Web Fetch  | 关闭 Host 抓取；仍提供 Host 获取/下载 |
-| 两者均未选      | Host 搜索和抓取使用配置的提供方       |
-
-这些是创建时的设置选择；[Host Web 配置](#host-web-capability-every-built-in-provider)可以单独编辑。
+| 任务                    | 选择                        | 执行位置                                         |
+| ----------------------- | --------------------------- | ------------------------------------------------ |
+| 搜索和读取公开网页      | Host `web`，或原生搜索/获取 | Harness UI，或 Model 提供方                      |
+| 将 URL 保存为文件       | Host `web` 下载             | 所选 Environment 的可写存储                      |
+| 生成并保存图像          | `native_image_generation`   | 提供方生成，再由 Harness UI 保存到 Thread `tmp/` |
+| 对 Project 文件运行代码 | Environment shell           | 所选 Environment                                 |
+| 运行提供方侧代码        | 原生 Code Execution         | 提供方环境                                       |
+| 搜索提供方已索引文件    | 原生 File Search            | 已有的提供方存储                                 |
 
 ## 设置向导
 
-1. 运行 `a13n-harness-ui setup`，或按照首次启动欢迎页操作。
-2. 选择订阅或 API 提供方。
-3. 完成身份验证，然后选择模型。
-4. 查看 **Choose native Agent tools**（连接没有原生候选时跳过）。上/下方向键移动，Space 勾选，Enter 确认。也可输入逗号分隔的编号或名称，或 `none`。推荐项默认勾选；全部取消表示不选原生工具。Host Web 仍开启，包括获取/下载、无密钥搜索和 HTML 转 Markdown 抓取。原生 Web Search 只关闭 Host 搜索；原生 Web Fetch 只关闭 Host 抓取。内置提供方无须额外 Web 凭据设置。
-5. 选择 File Search 时，需要输入已有的提供方存储 ID。Remote MCP 需要提供方可访问的 URL 和服务器标签。Advisor 需要其提供方模型 ID。设置不会创建这些远程资源或检查账户权限。
-6. 检查最终选择。Esc 返回；改变连接或 Model 会重置工具建议和资源输入。
-7. 设置会保存普通 Agent `capabilities`。之后可编辑 YAML，再运行 `a13n-harness-ui config validate`。验证检查配置，不检查提供方权限。
+1. 运行 `a13n-harness-ui setup`，或打开首次启动设置页面。
+2. 选择连接，完成身份验证，再选择 Model。连接尚未配置好时，先阅读 [Model 与身份验证](models-and-authentication.md)。
+3. 检查 **Choose native Agent tools**。终端中用上/下方向键移动，Space 切换勾选，Enter 确认。也可输入逗号分隔的编号或名称，或 `none`。没有原生候选的连接会跳过此步。
+4. 为选中的工具提供资源：File Search 需要已有存储 ID，Remote MCP 需要公开服务器 URL 和标签，Advisor 需要提供方模型 ID。
+5. 检查并保存 Agent。Esc 返回上一步；改变连接或 Model 会重置工具建议和资源输入。
+6. 在对话中选择已保存的 Agent，发送一个使用单项工具的小任务。查看工具结果，不要仅凭回答判断配置是否成功。
 
-**Add Agent** 使用同样的工具选择器，复用已有 Model 时也是如此。**Add Model** 只保存连接，再提供为该 Model 创建 Agent 并配置工具的选项。只保留 Model，或取消后续 Agent 设置，都不会删除已保存 Model。不会静默改变已有 Agent 和默认值。`model_characteristics.capabilities` 中的模型输入能力与 Agent 工具是独立配置。
+不选原生工具时，新 Agent 仍有 Host 搜索、抓取、获取和下载。选择原生 Web Search 只关闭 Host 搜索；选择原生 Web Fetch 只关闭 Host 抓取。两种情况下都保留获取和下载。
+
+**Add Agent** 使用同一选择器，复用已有 Model 时也是如此。**Add Model** 先保存连接，再提供创建 Agent 的选项。取消后一步仍会保留 Model。这些操作不会改变已有 Agent 及其工具选择。
 
 ### 推荐选项与连接差异
 
-下面每种连接都包含 Host Web 获取/下载，即使表中只列出原生工具。搜索和抓取仅在未选择对应原生工具时保持开启。
+选择器根据已安装的适配器和模型配置确定候选项。默认勾选项是入门建议，不是账户权限测试。
 
-| 连接                                                | 默认勾选的工具                                                     | 向导提供的其他原生选项                                       |
-| --------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Codex 订阅                                          | 实时原生 Web Search、Host Web Fetch、可保存的原生 Image Generation | 仅提供这些经审查的订阅工具                                   |
-| Grok 订阅                                           | 原生 Web Search、Host Web Fetch                                    | 不宣称此订阅传输支持 X Search 或图像生成                     |
-| OpenAI Responses、经审查的 GPT 模型                 | 原生 Web Search、可保存的原生 Image Generation、Host Web Fetch     | Code Execution、File Search、Remote MCP                      |
-| Anthropic、经审查的 Claude 模型                     | 原生 Web Search 和 Web Fetch                                       | Code Execution、Remote MCP，以及上游模型配置允许时的 Advisor |
-| Gemini 3 编程模型                                   | 原生 Web Search 和 Web Fetch                                       | Code Execution；已有存储且不使用其他原生工具时的 File Search |
-| OpenRouter                                          | 经审查模型 ID 的原生 Web Search、Host Web Fetch                    | Advisor                                                      |
-| xAI 原生 SDK（`xai:`）                              | 原生 Web Search、Host Web Fetch                                    | X Search、Code Execution、File Search、Remote MCP            |
-| Chat Completions、较旧 Gemini 组合、其他 API 提供方 | Host Web Search + Fetch                                            | 不会仅凭 OpenAI 兼容 API 标签推断不受支持的原生工具          |
-| 未知模型 ID                                         | Host Web Search + Fetch                                            | 可显式选择官方适配器候选；不推断模型权限                     |
-| 自定义 HTTP 端点                                    | Host Web Search + Fetch                                            | 适配器候选仍可选择；默认不勾选任何项。需验证端点支持         |
+| 连接                        | 选择器行为                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| Codex 订阅                  | 默认勾选 Web Search，并启用实时网页访问。Image Generation 是可选项，默认不勾选。   |
+| Grok 订阅                   | 默认勾选 Web Search。                                                              |
+| 标准端点上的经审查 API 模型 | 默认勾选支持的推荐工具；也可选择其他适配器候选项。                                 |
+| 未知模型 ID 或自定义端点    | 保留适配器候选项，但初始不勾选。                                                   |
+| Chat Completions            | 提供 Host Web；选择器不会据此推断支持 Responses 原生工具。                         |
+| Google 编程连接             | 候选项还取决于模型对函数工具与原生工具组合的支持。仅支持图像的模型需要专用 Agent。 |
 
-API 密钥连接与订阅使用同一选择器。选择 **OpenAI Responses** 时，即使是自定义模型 ID 或网关，也会提供原生 Web Search 和可保存 Image Generation；非默认 URL 不能证明这些工具不受支持。未经审查的模型 ID 和自定义端点默认不勾选原生工具，启用是显式选择，不代表保证网关兼容。OpenAI Chat Completions 不公开这些原生工具对象；仅当端点实现 Responses 时才选择该协议。
+Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；其选择器没有独立的原生 Web Fetch。需要 xAI 原生 SDK 工具时，选择 **xAI · Native SDK (gRPC)**，而非其 Chat Completions 或 Grok 订阅连接。
 
-选择器从已安装上游适配器和相关模型配置获取原生候选，不是独立的运行时兼容性引擎。模型不在简短建议菜单中，也可提供适配器候选：例如 OpenAI 除新模型外，还声明 `gpt-4.1` 和 `gpt-4o` 支持图像生成工具。实际要求见 [OpenAI 图像生成模型支持](https://developers.openai.com/api/docs/guides/tools-image-generation#supported-models)和 [Web 搜索支持](https://developers.openai.com/api/docs/guides/tools-web-search)。提供方限制、账户访问和计费仍适用。推荐项是创建时默认值，不是迁移规则，也不会在切换 Model 时自动重新计算。
+修改已有 Agent 的 Model 不会改写工具。切换协议或提供方时，应检查 Agent 的 Capability。`model_characteristics.capabilities` 描述 Model 接受的输入，不会启用 Agent 工具。
 
-Codex 和 Grok 订阅连接目前使用 Responses 适配器，**没有独立的 `WebFetchTool`**。始终开启的 **Host Web** 提供 HTTP 获取、HTML 抓取和下载。xAI 搜索本身可能浏览网页，但不等于实现独立 WebFetch 工具。
+## Host Web Capability：所有内置提供方
 
-需要 xAI 完整原生工具集时，选择 **xAI · Native SDK (gRPC)**，而不是 **xAI · Chat Completions** 或 Grok 订阅。它使用 `XAI_API_KEY` 或选中的已存密钥，以及上游 SDK 默认端点；向导不会询问 HTTP 基础 URL。Model 示例：
+本流程使用已配置的 Model 创建一个网页阅读 Agent。内置 Host 提供方无须单独的 Web API 密钥。
+
+1. 运行 `a13n-harness-ui config path`，找到 `configuration_path` 指向的根 YAML。
+
+2. 在该根目录的 `agents/` 下创建 `web-reader.yaml`。将 `model-primary` 替换为已保存的 Model ID。以下是完整 Agent 文件：
+
+   ```yaml title="agents/web-reader.yaml"
+   schema_version: "1"
+   kind: agent
+   id: agent-web-reader
+   name: Web reader
+   model: model-primary
+   instructions: Read the requested sources and cite the URLs used.
+   capabilities:
+     - capability: web
+       configuration:
+         search: {mode: host, backend: default}
+         scrape: {mode: host, backend: default}
+   ```
+
+3. 验证所选配置树：
+
+   ```bash
+   a13n-harness-ui config validate
+   ```
+
+   使用自定义根目录时，在两个 `config` 命令前都加上 `--config /absolute/path/a13n-harness-ui.yaml`，启动 Harness UI 时也使用同一个根配置。
+
+4. 在新对话中选择 **Web reader**。发送“读取 https://example.com 并告诉我页面标题”，查看获取或抓取结果，再单独测试搜索。
+
+5. 测试下载时，让 Agent 将一个公开文件下载到 Thread `tmp/` 并返回保存路径。打开文件检查结果。下载需要所选 Environment 提供可写文件权限。
+
+修改已有 Agent 时，将 `web` 条目合并到其 `capabilities` 列表，或编辑已有的 `web` 条目。保留其他 Capability。接受后的修改用于后续 Run。
+
+| 组件      | 内置提供方                                 | 结果                        |
+| --------- | ------------------------------------------ | --------------------------- |
+| 搜索      | `DuckDuckGoSearchProvider`，后端 `default` | 无密钥 HTML 搜索结果        |
+| 获取/下载 | `HttpxWebClient` 配合 `HttpWebPolicy`      | 有界 HTTP(S) 读取或保存文件 |
+| 抓取      | `HtmlScrapeProvider`，后端 `default`       | HTML/文本转换为 Markdown    |
+
+抓取直接读取 HTTP 响应，不渲染 JavaScript，也不使用 Browser 的登录状态。交互式站点使用 [Browser Use](webui.md#browse-on-the-host)。Host 请求遵循捕获的主机允许策略；未设置策略时允许私有目标。
+
+需要调整限制时，将以下字段合并到 `web` 条目的 `configuration`。这是设置片段，不是独立文件：
 
 ```yaml
-schema_version: "1"
-kind: model
-id: model-xai
-name: xAI native
-route: xai:grok-4.6
-authentication:
-  kind: api_key
-  env: XAI_API_KEY
+deadline_seconds: 60
+max_redirects: 8
+max_search_results: 10
+max_text_bytes: 262144
+max_scrape_bytes: 524288
+max_download_bytes: 268435456
+download_concurrency: 4
 ```
 
-仅支持图像的 Gemini 模型无法运行编程入门 Agent 的函数工具。应单独添加该 Model，并编写具有兼容 Capability 的专用 Agent，不要在编程入门模板上启用。较早的 Gemini 模型也不能将原生工具与入门模板函数工具组合。见 [Google 工具组合](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#google-tool-combinations)。
+### 搜索模式与后端选择
+
+手写 Agent 时，显式选择搜索模式：
+
+| `search.mode` | 效果                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| `host`        | 提供已绑定的 Host 搜索实现。标准 Harness UI 绑定 `default`。                               |
+| `off`         | 移除此 Capability 的搜索功能，适合搭配独立原生搜索条目。                                   |
+| `native`      | 注册上游原生 Web Search 工具。此快捷方式提供 `search_context_size`，而非完整原生工具选项。 |
+| `auto`        | 注册原生搜索，并提供已绑定的 Host 搜索。不会探测兼容性，也不会在原生工具被拒后重试。       |
+
+schema 默认值为 `auto`；设置向导会显式写入模式。抓取使用独立的 `host` 或 `off` 模式。向导写入以下组合：
+
+| 所选原生工具 | `search.mode` | `scrape.mode` | Host 获取/下载 |
+| ------------ | ------------- | ------------- | -------------- |
+| 两者均未选   | `host`        | `host`        | 开启           |
+| Web Search   | `off`         | `host`        | 开启           |
+| Web Fetch    | `host`        | `off`         | 开启           |
+| 两者均选择   | `off`         | `off`         | 开启           |
+
+移除整个 `web` Capability 会移除其 Host 工具集。修改搜索或抓取模式后，普通获取/下载仍按各自配置工作。
+
+`backend` 选择已绑定的实现。`backend_priority` 指定已绑定实现间的优先顺序，不能与 `backend` 同时使用。标准 Harness UI 只提供 `default`；在 YAML 中填写其他供应商名称不会安装提供方。自定义 Host 通过 `WebBinding` 提供实现，并负责其凭据和生命周期；见 [Harness Capability](../a13n-harness/capabilities.md)。不要在 Agent Capability 值中存放凭据。
+
+嵌入代码未传配置而直接构造 `WebCapability()` 时，可以读取 `A13N_HARNESS_WEB_SEARCH_MODE`、`..._SEARCH_BACKEND`、`..._SEARCH_BACKEND_PRIORITY`、`..._SEARCH_CONTEXT_SIZE`，以及对应的抓取模式/后端变量。Harness UI 传入显式配置，因此应编辑 Agent YAML 来改变行为。
+
+## 原生搜索与图像生成
+
+本流程要求 Model 连接支持两种工具。先使用已正常工作的 Agent，确认身份验证已通过。
+
+1. 打开所选配置树 `agents/` 下的 Agent 文件。
+
+2. 添加下面两个原生条目。用示例中的 `web` 条目替换已有同名条目，并保留 Agent 的其他 Capability。以下是 Agent 片段：
+
+   ```yaml
+   capabilities:
+     - capability: NativeTool
+       configuration:
+         kind: web_search
+         external_web_access: true
+     - capability: native_image_generation
+       configuration:
+         quality: auto
+         output_format: png
+     - capability: web
+       configuration:
+         search: {mode: "off"}
+         scrape: {mode: host}
+   ```
+
+3. 运行 `a13n-harness-ui config validate`；使用自定义根配置时带上同一个 `--config`。
+
+4. 选择该 Agent，发送新消息要求生成一张简单图像。生成完成后应返回当前 Thread `tmp/` 中的图像路径。
+
+5. 打开图像。将重要结果复制到 Project 的保留位置；Thread 临时文件可能被清理。
+
+6. 用另一条消息测试原生搜索。Host `web` 条目保留网页抓取和下载，不再提供第二个搜索功能。
+
+此流程显式开启图像生成；Codex 设置并不默认勾选它。配置验证检查声明，实际测试请求检查提供方和账户是否接受所选工具组合。
 
 ## 原生工具配置
 
-在 Agent 的 `capabilities` 下添加各项选择。重复的 `NativeTool` 条目可以组合不同原生工具。平铺 `configuration: {kind: web_search}` 和显式 `configuration: {tool: {kind: web_search}}` 都使用上游反序列化。使用 `native_image_generation` 时不要再添加原始 `ImageGenerationTool`。
+以下各节是已有 Agent `capabilities` 列表的参考片段。合并所需条目，不要替换整个 Agent 文件。重复使用 `NativeTool` 可添加不同工具。`configuration: {kind: web_search}` 和 `configuration: {tool: {kind: web_search}}` 都有效。
 
 ### Web Search
 
@@ -77,12 +174,9 @@ capabilities:
     configuration:
       kind: web_search
       search_context_size: medium
-  - capability: web
-    configuration:
-      search: {mode: off}
 ```
 
-第二个条目保留 Host 获取/抓取/下载，不会重复添加搜索。原生搜索使用 Model 身份验证，不使用独立搜索提供方 API 密钥。提供方专用选项包括 `allowed_domains`、`blocked_domains`、`max_uses`、`user_location` 和 `external_web_access`；并非每个提供方都实现全部选项。Codex 推荐设置为 `external_web_access: true`，使原生搜索默认读取实时网页内容。只有明确需要缓存搜索时才设为 `false`。OpenRouter 使用服务器侧 Web 搜索工具和提供方管理的搜索计费。添加过滤前查阅[上游参数支持表](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#web-search-tool)。
+原生搜索使用 Model 的身份验证。只需原生搜索时，将 Host `web.search.mode` 设为 `off`；需要同时提供两者时设为 `host`。Codex 设置添加 `external_web_access: true`；兼容提供方可接受 `false` 来请求缓存搜索。域名过滤等选项因适配器而异，添加前先查阅上游参数参考。
 
 ### Web Fetch
 
@@ -91,16 +185,9 @@ capabilities:
   - capability: NativeTool
     configuration:
       kind: web_fetch
-      max_uses: 5
-      enable_citations: true
-      max_content_tokens: 12000
-  - capability: web
-    configuration:
-      search: {mode: host}
-      scrape: {mode: off}
 ```
 
-此配置示例适用于 Anthropic。Google 将 `WebFetchTool` 映射为 URL context，不实现这些 Anthropic 参数；Google 仅使用 `kind: web_fetch`。Fetch 将 URL 内容带入模型上下文，不会递归爬取网站、运行浏览器、保存本地文件，也不提供 Host 的 HTML 转 Markdown API。参考：[Anthropic Web Fetch](https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-fetch-tool)、[Google URL context](https://ai.google.dev/gemini-api/docs/url-context)。
+原生获取将 URL 内容带入提供方上下文。将 Host `web.scrape.mode` 设为 `off` 可避免同时提供两种网页读取方式。保留 Host 下载来保存文件。仅在适配器实现对应功能时，才添加 `max_uses`、`enable_citations`、`max_content_tokens` 等 Anthropic 专用选项。
 
 ### 图像生成
 
@@ -112,11 +199,13 @@ capabilities:
       quality: auto
 ```
 
-Harness UI 注入图像保存器；YAML 中不填写保存路径或导入。此 Capability 指示模型用 `![brief description](<saved path or URL>)` 在回复中展示已保存图像，保留保存器给出的位置，不虚构 URL。完成的图像保存到**当前 Thread 的 `tmp/`**，子级 Run 也一样。回复、对话记录和恢复历史包含保存路径，不含原始图像字节。预览帧不保存为最终图像。保存失败会使 Run 失败，不会报告不可用图像。Agent 之后可 `view` 文件，但保存路径不会自动把像素重新发送给其他 Model。
+Harness UI 自动提供保存器。使用此 Capability，不要再添加第二个原始原生图像工具。它将完成的图像保存到当前 Thread 的 `tmp/`，包括子级 Run 生成的图像，并指示模型在回复中展示保存位置。
 
-Thread 临时文件会在普通 Run 完成和重启后保留，但可能被清理。重要图像应复制到 Project 中保留的位置。生成图像不是用户附件。自定义 Host 向 [Harness 原生图像 Capability](../a13n-harness/capabilities.md)提供自己的异步保存器。原生选项和支持的图像模型仍由[上游](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#image-generation-tool)定义。
+历史保留保存引用而非原始图像字节。预览帧不保存。保存失败会使 Run 失败。Agent 之后可通过 `view` 读取图像；仅保存路径不会将像素发送给其他 Model。生成文件会在普通 Run 完成和重启后保留，但仍属于临时存储。自定义 Host 通过 [Harness 图像 Capability](../a13n-harness/capabilities.md)提供自己的异步保存器。
 
 ### X Search 与 Code Execution
+
+以下片段适用于 xAI 原生 SDK 连接：
 
 ```yaml
 capabilities:
@@ -129,31 +218,31 @@ capabilities:
       kind: code_execution
 ```
 
-X Search 要求 xAI 原生 SDK 路由。原生工具还支持日期限制和图像/视频理解选项；见 [X Search](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#x-search-tool)。
-
-Code Execution 通过兼容 Responses、Anthropic、Google 和 xAI 适配器提供。它在提供方环境中执行，不在所选本地/沙箱 Environment 中，也不受 Host shell 审查控制。可选 `files` 在支持的适配器上引用提供方已上传文件。设置不会上传 Project 文件，也不会将提供方生成的代码产物复制到 Thread tmp。图像保存器不是通用的提供方产物下载器。见 [Code Execution](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#code-execution-tool)。
+X Search 搜索提供方侧的 X 内容。其他兼容适配器也提供 Code Execution。它使用提供方侧文件和计算资源，不在所选 Environment 内，也不受 Host shell 审查策略控制。设置不会上传 Project 文件或下载生成的代码产物。处理本地 Project 文件时使用 Environment 工具。
 
 ### File Search
 
-先创建提供方资源，上传/导入文件并等待索引完成。然后选择工具并输入存储标识：
+1. 在与 Model 相同的提供方账户/项目中创建搜索存储。
 
-```yaml
-capabilities:
-  - capability: NativeTool
-    configuration:
-      kind: file_search
-      file_store_ids: [vs_your_store_id]
-```
+2. 上传或导入文件，并等待索引完成。
 
-| 提供方            | `file_store_ids` 中的值                   | 资源设置                                                                        |
-| ----------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
-| OpenAI Responses  | `vs_...` 等向量存储 ID                    | [OpenAI File Search](https://platform.openai.com/docs/guides/tools-file-search) |
-| Google Gemini API | `fileSearchStores/...` 等文件搜索存储名称 | [Gemini File Search](https://ai.google.dev/gemini-api/docs/file-search)         |
-| xAI 原生 SDK      | Collection ID                             | [xAI Collections Search](https://docs.x.ai/developers/tools/collections-search) |
+3. 将提供方存储标识添加到 Agent：
 
-这些不是文件名或 Thread 路径。使用与 Model 连接相同的提供方账户/项目。此选择器中 Google File Search 不得与其他原生工具组合；Host Web 可以保留。Google 临时上传文件对象和导入搜索存储数据的生命周期不同：不要假定搜索存储随临时上传过期。xAI 还映射 `max_num_results`、`instructions` 和 `retrieval_mode`；不要假定这些字段在其他适配器中效果相同。资源访问、保留和费用由提供方负责。
+   ```yaml
+   capabilities:
+     - capability: NativeTool
+       configuration:
+         kind: file_search
+         file_store_ids: [vs_your_store_id]
+   ```
+
+4. 提出一个已索引文件中包含答案的问题，检查结果是否引用该来源。
+
+Responses 使用向量存储 ID，Google 使用文件搜索存储名称，xAI 使用 Collection ID。这些值指向提供方资源，而非本地路径。Google 选择器要求先取消其他原生工具，再选择 File Search；Host Web 可保持开启。索引、保留、访问和费用规则以提供方为准。
 
 ### Remote MCP
+
+使用 Model 提供方能够访问的公开服务器：
 
 ```yaml
 capabilities:
@@ -165,9 +254,9 @@ capabilities:
       allowed_tools: [search_docs]
 ```
 
-支持的适配器为 Responses、Anthropic 和 xAI。连接远程服务器的是**提供方**；它无法通过这种方式访问你的本地 stdio 服务器或 localhost URL。向导只配置公共服务器。检查服务器和工具权限：这些是提供方执行的工具，不是 Host 工具调用，Responses 适配器会发送 `require_approval: never`。
+将 URL 和工具名称替换为服务器实际值。连接服务器的是提供方；你的本地 stdio 服务器或 Host localhost URL 无法通过此声明访问。提供方执行的调用不使用 Host 工具审批；Responses 适配器会发送 `require_approval: never`。
 
-上游 `authorization_token` 和 `headers` 是普通字符串；原生工具声明中的 `${TOKEN}` 或 `{env: TOKEN}` **不会** 由 Harness UI 解析。不要把密钥放入 Agent Capability，因为 Capability 会被 Run 组合捕获。经身份验证的原生 MCP，需要可信 Host Capability 在运行时加载凭据并构造上游工具。也可使用 Harness UI 的 [Host MCP 集成](mcp.md)，它已负责 environment/header 凭据解析。该集成使用 Agent `mcp_servers`，不同于提供方托管的 `MCPServerTool`。
+需要 Harness UI 管理连接以及环境变量/header 凭据引用时，使用 [Host MCP](mcp.md)。原生工具的 `authorization_token` 和 `headers` 是普通值，这里不会解析 `${TOKEN}` 或 `{env: TOKEN}`。需要身份验证的原生 MCP 必须由可信 Host 集成在运行时加载凭据。不要在 Agent 文件和捕获的 Capability 配置中存放密钥。
 
 ### Advisor
 
@@ -180,103 +269,24 @@ capabilities:
       max_tokens: 4096
 ```
 
-使用 Anthropic advisor 模型 ID，或在 OpenRouter 路由上使用 `anthropic/claude-opus-4.6` 等模型 slug。这不是 Harness UI Model 资源 ID、子 Agent 或第二个 Host 连接。执行模型的提供方负责咨询和计费。Anthropic 执行模型/advisor 配对限制仍适用。OpenRouter 将 `max_tokens` 映射到 `max_completion_tokens`，固定 `forward_transcript` 为 false，忽略 Anthropic 专用 `max_uses` 和 `caching`。见 [Advisor](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#advisor-tool)。
+将 `model` 替换为执行提供方接受的 advisor ID。Anthropic 使用自身模型 ID，OpenRouter 使用带提供方前缀的 slug。这是提供方侧咨询，不是 Harness UI Model 资源或子 Agent。配对规则、选项和计费由提供方负责。
 
 ### 原生 memory 工具：需要 Host 集成
 
-`NativeTool` 可反序列化 `kind: memory`，但**仅这样配置并未实现功能**。Anthropic 要求一个名称恰好为 `memory`、实现其记忆命令的可执行函数工具。Harness UI 普通状态/任务/历史功能不是该处理器。因此介绍了原生 memory 工具，但标准向导不提供选择。可信 Host 集成必须提供存储和处理器，再将 `NativeTool(MemoryTool())` 与其组合。遵循[上游 Memory 示例与命令契约](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#memory-tool)；这里不引入另一套记忆子系统。
-
-## 原生搜索与图像生成
-
-使用兼容 Model 时，将以下条目添加到 Agent 的 `capabilities` 列表：
-
-```yaml
-capabilities:
-  - capability: NativeTool
-    configuration:
-      kind: web_search
-      external_web_access: true
-  - capability: native_image_generation
-    configuration:
-      quality: auto
-      output_format: png
-  - capability: web
-    configuration:
-      search:
-        mode: off
-```
-
-`NativeTool` 接受上游原生工具声明，包括显式 `tool: {kind: web_search}` 形式。多个条目可选择不同工具。示例开启实时搜索，与 Codex 设置默认值一致；在兼容提供方上显式请求缓存搜索时，设置 `external_web_access: false`。选项和可用性取决于实际 Model/提供方，不仅是品牌或 API 兼容标签。
-
-生成图像保存在 Thread 临时存储中。重要结果应复制到 Project；见[图像保存与保留](#image-generation)。
-
-上面的 `web` 条目保留获取、抓取和下载，不注册第二个搜索工具。设置 `search.mode: host` 可公开独立的无密钥 DuckDuckGo 搜索实现，支持与原生搜索并用。原生搜索使用所选 Model 提供方的账户和计费；Host 搜索使用 Harness UI 的 Web 传输。仅安装 Capability 不会自动启用任何一种搜索。
-
-设置会将经审查的入门选择写入**新 Agent 资源**：Codex 使用实时原生搜索和原生图像生成；Grok 订阅使用原生搜索。兼容 API 模板在经审查处使用原生工具，其他情况使用 Host 搜索。不会假定自定义端点和较旧的不兼容工具组合支持原生工具。已有资源和 Agent 不迁移，改变 Model 也不改写工具选择。要修改，请编辑 Agent YAML 并运行 `a13n-harness-ui config validate`。
-
-## Host Web Capability：所有内置提供方
-
-新 Agent 默认包含 `web`。每次 Run 获得下列 Host 提供方的新实例；原生搜索/获取选择控制暴露哪些 Host 功能。
-
-| 组件       | UI 实现                               | 凭据 / 配置                                                                                                                              |
-| ---------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 搜索       | `DuckDuckGoSearchProvider`            | 无密钥 DuckDuckGo HTML 搜索；选择 `search.mode: host`。后端 ID 为 `default`。受公共端点可用性和速率限制影响。                            |
-| 获取与下载 | `HttpxWebClient` 配合 `HttpWebPolicy` | 有界 HTTP(S) 请求，使用 Run 的允许主机策略。未设置策略时允许私有目标。不使用浏览器登录或独立 API 密钥。                                  |
-| 抓取       | `HtmlScrapeProvider`                  | 使用同一客户端获取 HTML/文本并转为 Markdown。选择 `scrape.mode: host`；后端 ID 为 `default`。不渲染 JavaScript、不绕过登录、不递归爬取。 |
-
-完整显式 Host 配置：
-
-```yaml
-capabilities:
-  - capability: web
-    configuration:
-      search:
-        mode: host
-        backend: default
-      scrape:
-        mode: host
-        backend: default
-      deadline_seconds: 60
-      max_redirects: 8
-      max_search_results: 10
-      max_text_bytes: 262144
-      max_scrape_bytes: 524288
-      max_download_bytes: 268435456
-      download_concurrency: 4
-```
-
-Fetch 支持有上限的内联读取，以及通过当前 Environment 文件权限写入下载。Model/提供方账户不会给这些 Host 工具增加文件系统或网络权限。
-
-### 搜索模式与后端选择
-
-- `off`：此 Capability 不提供搜索；保留获取、抓取和下载。与独立的原生搜索 Capability 配合可避免重复搜索。
-- `host`：使用已绑定 Host 搜索提供方。标准 UI 只绑定 `default`（DuckDuckGo）。
-- `native`：注册上游 `WebSearchTool`，不公开 Host 搜索。与显式 `NativeTool` 条目不同，此便捷方式仅提供 `search_context_size`（`low`、`medium`、`high`）。
-- `auto`：注册原生搜索，同时提供已绑定 Host 搜索。它不是提供方兼容性探测，也不会在原生工具被拒后自动重试。已知连接应使用显式选择。
-
-抓取模式为 `host` 或 `off`。关闭抓取不会关闭普通获取/下载。设置分别写入两种模式：
-
-| 所选原生工具 | `search.mode` | `scrape.mode` | Host 获取/下载 |
-| ------------ | ------------- | ------------- | -------------- |
-| 两者均未选   | `host`        | `host`        | 开启           |
-| Web Search   | `off`         | `host`        | 开启           |
-| Web Fetch    | `host`        | `off`         | 开启           |
-| 两者均选择   | `off`         | `off`         | 开启           |
-
-这是创建时配置，不是运行时回退。不会改写已有 YAML；显式移除整个 `web` Capability 会移除 Host Web 工具集。
-
-`backend` 选择一个确切的已绑定后端 ID。`backend_priority` 列出已绑定后端间的偏好，不能与 `backend` 同时使用。这些值选择已有实现，不是待安装的供应商名称。自定义嵌入 Host 可通过 `WebBinding(search_backends=..., scrape_backends=...)` 提供异步 `WebSearchProvider` / `WebScrapeProvider` 实现；该 Host 负责 API 凭据、客户端生命周期、策略和错误转换。提供方端口和执行契约见 [Harness Capability](../a13n-harness/capabilities.md)。标准 Harness UI 不支持只靠 YAML 安装第三方后端。内置提供方不需要密钥，因此 `WebConfiguration` 没有 `api_key` 字段。Model 凭据不配置 Host 搜索/抓取。需要密钥的提供方必须通过真实 Host 集成解析自己的凭据引用（如环境变量）并绑定；写 `backend: tavily` 或未使用的密钥字段不能启用服务。不要将字面密钥放入 Agent Capability 配置。
-
-嵌入代码构造 `WebCapability()` 而不显式配置时，`WebConfiguration.from_environment()` 识别 `A13N_HARNESS_WEB_SEARCH_MODE`、`A13N_HARNESS_WEB_SEARCH_BACKEND`、`A13N_HARNESS_WEB_SEARCH_BACKEND_PRIORITY`、`A13N_HARNESS_WEB_SEARCH_CONTEXT_SIZE`，及对应的 `A13N_HARNESS_WEB_SCRAPE_MODE`、`..._BACKEND`、`..._BACKEND_PRIORITY`。Harness UI 以显式 Agent YAML 为准；不要期待这些进程默认值覆盖已保存配置。
+原生 `kind: memory` 声明要求一个名称为 `memory` 的可执行函数工具，实现提供方的记忆命令。自定义 Host 集成必须提供该处理器和存储。标准选择器不提供此选项；Harness UI 的状态、任务和历史是独立功能。实现处理器时遵循上游原生 memory 集成契约。
 
 ## 验证与故障排查
 
-- 配置已接受，但提供方拒绝工具：检查实际适配器、模型 ID、账户和工具组合。“OpenAI 兼容”不代表支持 Responses 原生工具。
-- Codex/Grok 缺少原生 Fetch：这是预期行为；默认包含 Host Web。不要为订阅 Agent 添加不支持的原始 `web_fetch` 条目。
-- 搜索可用但没有下载文件：原生搜索/获取返回提供方上下文，不返回本地文件。使用内置 Host `web` 工具并指定下载目的地。
-- 原生 memory 因缺少 `memory` 工具失败：提供 Host 处理器；仅启用原生 schema 不够。
-- File Search 无结果：检查提供方存储 ID、索引状态和账户/项目访问，不要检查本地路径。
-- MCP 无法连接：排查 URL 或凭据前，先确定发起连接的是 Host 还是提供方。
-- 已保存图像后来消失：Thread `tmp/` 是临时存储。重要输出应保留在其他位置。
+按顺序检查三步：保存的配置已接受、对话选择了预期 Agent/Model、小型工具请求产生了预期结果。
 
-实现已针对锁定模型适配器和模拟提供方响应进行检查。设置本身不发出原生提供方请求。当前限制和账户权限应查阅链接的上游/提供方文档，不要把推荐项视为对提供方支持的实时检查。
+| 现象                           | 下一步检查                                         |
+| ------------------------------ | -------------------------------------------------- |
+| 配置验证通过，但提供方拒绝工具 | 实际适配器、模型 ID、账户权限和工具组合            |
+| Codex/Grok 没有原生 Fetch 选项 | 使用已有的 Host Web 获取/抓取工具                  |
+| 搜索成功但没有文件             | 请求 Host 下载，并指定可写目的地                   |
+| 生成图像之后消失               | 将重要结果移出 Thread `tmp/`                       |
+| File Search 无结果             | 提供方存储 ID、索引状态和账户/项目权限             |
+| Remote MCP 无法连接            | 先确定 Host 还是提供方发起连接，再检查可达性和凭据 |
+| 原生 memory 报告缺少处理器     | 提供必需的 Host `memory` 函数                      |
+
+[上游原生工具参考](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/)介绍适配器选项并链接提供方要求。设置只提供选项，不发送原生工具请求；使用上述小型测试检查实际连接。

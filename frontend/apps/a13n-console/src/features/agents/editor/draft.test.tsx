@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it } from "vitest";
+import type { Schema } from "../../../shared/api";
 import { initialConfig } from "../configuration";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 
@@ -7,47 +8,102 @@ const asIs = (value: string) => value;
 const vision = "model-00000000000000000001",
   motion = "model-00000000000000000002";
 
-function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
+const catalog: Schema["ToolsetDefinition"][] = ["schedules", "agents"].map(
+  (key) => ({
+    key: key as "schedules" | "agents",
+    display_name: key,
+    description: "",
+    platform: true,
+    default_enabled: false,
+    config_schema: {},
+    tools: [
+      {
+        key: "read",
+        display_name: "Read",
+        description: "",
+        execution_id: "read",
+        model_name: "read",
+        default_enabled: true,
+        default_permission: "allow",
+        supported_permissions: ["allow"],
+        config_schema: {},
+        resource_selector: null,
+        deployment_supported: true,
+      },
+    ],
+  }),
+);
+
+function draftFor(
+  config: Partial<ReturnType<typeof initialConfig>> = {},
+  definitions?: Schema["ToolsetDefinition"][],
+) {
   const initial = {
     ...initialConfig(),
     model: "model-0123456789abcdef0123",
     ...config,
   };
-  return renderHook(() => useAgentDraft(initial)).result;
+  return renderHook(() => useAgentDraft(initial, definitions)).result;
 }
 
-it("edits builtin skill selections without losing workspace pins or changing tools", () => {
+it("binds platform instructions to enabled tools without losing workspace pins", () => {
   const skill = {
     skill_id: "sk_0123456789abcdef0123",
     revision_id: "skr_0123456789abcdef0123",
   };
-  const toolsets = { files: { enabled: false } };
-  const draft = draftFor({
-    skills: [skill],
-    builtin_skills: ["platform-operations"],
-    toolsets,
-  });
-  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
-  expect(draft.current.advanced).not.toContain("builtin_skills");
+  const draft = draftFor(
+    { skills: [skill], builtin_skills: [], toolsets: {} },
+    catalog,
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
   expect(draft.current.dirty).toBe(false);
-  act(() => draft.current.setBuiltinSkills([]));
+  act(() => draft.current.setToolsets({ schedules: { enabled: true } }));
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
   expect(draft.current.dirty).toBe(true);
   expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
     ok: true,
-    config: { builtin_skills: [], skills: [skill], toolsets },
+    config: { skills: [skill], builtin_skills: ["platform-operations"] },
   });
-  act(() => draft.current.setBuiltinSkills(["platform-operations"]));
-  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setToolsets({
+      schedules: { enabled: false },
+      agents: { enabled: true },
+    }),
+  );
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  act(() =>
+    draft.current.setToolsets({
+      schedules: { enabled: false },
+      agents: { enabled: true, tools: { read: { enabled: false } } },
+    }),
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
   expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
     ok: true,
-    config: {
-      builtin_skills: ["platform-operations"],
-      skills: [skill],
-      toolsets,
-    },
+    config: { skills: [skill], builtin_skills: [] },
   });
+  act(() => draft.current.setToolsets({ files: { enabled: true } }));
+  expect(draft.current.builtinSkills).toEqual([]);
   act(() => draft.current.setAdvanced('{"builtin_skills": []}'));
   expect(buildDraftConfig(draft.current, undefined, asIs).ok).toBe(false);
+});
+
+it("retains saved builtin skills without a catalog for snapshots and failed discovery", () => {
+  const draft = draftFor({
+    builtin_skills: ["platform-operations"],
+    toolsets: {},
+  });
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  expect(draft.current.dirty).toBe(false);
+});
+
+it("offers a draft correction for saved selections that no longer match tools", () => {
+  const draft = draftFor(
+    { builtin_skills: ["platform-operations"], toolsets: {} },
+    catalog,
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
+  expect(draft.current.dirty).toBe(true);
 });
 
 it("seeds media understanding from the saved configuration and publishes edits", () => {

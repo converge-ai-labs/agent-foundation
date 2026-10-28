@@ -1,23 +1,44 @@
 ---
 title: Use WebUI
-description: Run WebUI for shared conversations, files, Git changes, terminals, and configuration.
+description: Start a browser conversation, choose its working environment, review files, and collaborate.
 ---
 
-Use WebUI to work with Agents, files and terminals from your browser. It shares the TUI's App and saved conversations. Each conversation is a root Thread. Use temporary sharing links to invite people into a conversation or Project. The instance login key grants full workbench and Host access; keep it separate from guest links. Use [Service](../a13n-service/index.md) for managed identities and permissions.
+WebUI is the browser workbench for Harness UI. It uses the same App and saved conversations as the TUI. Start with one conversation; add Projects, file review, browser control, and collaboration as your work needs them.
 
-Start the server, open its printed login link, connect a model, and send a first prompt. Keep the server process running while you work. Review [authentication](#authentication-and-key-retention) before sharing the instance.
+| I want to…                                      | Start here                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Get a first answer                              | [Start the server](#start-the-server)                                                                                                                   |
+| Change the Agent, Model, or working directories | [Agent and Model settings](#agent-and-model-settings)                                                                                                   |
+| Give more guidance or answer a question         | [Steering](#tool-executions-and-immediate-steering) and [pending decisions](#pending-questions-approvals-and-external-results)                          |
+| Review a file or diff with the Agent            | [Files and Changes](#read-edit-and-capture-host-files-and-git-changes)                                                                                  |
+| Let the Agent browse, or annotate what I see    | [Host browser](#browse-on-the-host)                                                                                                                     |
+| Invite a person or coordinate other Agents      | [Sharing](#share-a-thread-or-project) and [Coordinator](#work-with-a-coordinator)                                                                       |
+| Keep the workbench available remotely           | [Authentication](#authentication-and-key-retention), [proxy setup](#reverse-proxies-and-public-addresses), and [restart](#restart-or-update-the-server) |
 
 ## Start the server
 
-Chat is the main view; **Files** and **Changes** open beside it, and **Terminal** below. Git viewing requires Git; native terminals require a POSIX Host.
+Install Harness UI using the [installation guide](installation.md), then run this on the computer that will own your work:
 
 ```bash
-a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
-a13n-harness-ui webui --host 127.0.0.1 --port 9000
-a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
+a13n-harness-ui webui
 ```
 
-Native [Files](http-api.md#native-host-files), [Changes](http-api.md#native-git-changes), and [Terminal](http-api.md#native-terminal) access is enabled by default. These panels use the server account or container mounts, **not** the Agent's selected Environment. Use `--no-share-computer` to disable them without changing shared chat, [drafts](http-api.md#shared-composer), or [page presence](http-api.md#page-presence). Git changes in the workbench are read-only; use a deliberate shell action for Git mutations. Presence and shared drafts are live state, not saved continuation.
+1. Wait for **WebUI ready**. The default address is `http://127.0.0.1:8765`.
+2. Open the printed login link. With a supplied instance key, open the ordinary address and enter that key instead.
+3. On a fresh installation, connect a Model in the setup wizard. Choose Full Control or prepare Sandbox, then select **Save and start chatting**. The [setup guide](setup.md) explains both choices.
+4. In the opened conversation, send `Reply with one short sentence confirming that you received this message.`
+5. Wait for the answer and the saved result. Reopen the conversation from the sidebar to continue it.
+
+Keep the server process running. A printed login link precedes listener startup; **WebUI ready** confirms it can accept connections. Saving setup creates an empty conversation, so the first prompt is also your first model-request check.
+
+For a different port, or a chat-only workbench:
+
+```bash
+a13n-harness-ui webui --host 127.0.0.1 --port 9000
+a13n-harness-ui webui --no-share-computer
+```
+
+Computer sharing is enabled by default. **Files**, **Changes**, **Terminal**, and **Browser** use the server account and its container mounts. They are separate from the Agent's selected Environment. `--no-share-computer` disables these native surfaces while keeping chat, shared drafts, and presence available.
 
 ```mermaid
 flowchart TB
@@ -30,360 +51,548 @@ flowchart TB
     class App,Agent a13n
 ```
 
-Markdown opens in **Preview**; **Text** switches to the editor. Preview includes unsaved edits. **Add to chat** attaches selected source lines, or the complete file when nothing is selected, without sending. Agent links in the form `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` open the Files drawer. Bare paths and Files API URLs do not; external links open separately.
-
-## Tool executions and immediate steering
-
-While a Run is active, **Steer** interrupts primary model generation or releases supported tool waits by default. Tool review and validation finish first; the current batch returns results or retained-execution receipts, or suspends for approval, before the Agent continues with your guidance. Supported tool calls keep running once under their original ownership. Acceptance confirms that guidance was queued, not that the Agent has already incorporated it. Root and child steering use the same global `input.steering_mode`; select `queued` in configuration to wait for the next safe boundary instead. The composer needs no additional mode control.
-
-Harness UI always enables best-effort delivery for immediate steering, with no separate setting. If an unsupported tool is active, the message is accepted into the ordinary queue immediately and reaches the model at a normal execution boundary. When native steering is not ready during startup or recovery, Harness waits up to five seconds before acceptance. A readiness timeout or a Run that stops first rejects the request. Acceptance confirms receipt, not that the model has already read the message.
-
-Open **Work → Tools** to inspect retained tool executions, view their originating Run and call, page through records, or cancel active work. The panel reads status without consuming results. The Agent retrieves results through `tool_execution_result` or `tool_execution_wait`; completion hints and subsequent input include current execution status. [Automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in for generic tools; process-backed Shell automatically yields after the configured foreground wait in either mode. Immediate steering can release foreground waits earlier. Shell processes remain in their separate process view.
-
-**Stop** cancels the conversation and suppresses automatic completion wake until new user input. It does not cancel every retained tool; use the execution's **Cancel** action for that. Cancellation acceptance is not proof of remote rollback. Records and results are process-local and expire under bounded retention; restarting the App makes old references unavailable.
+The instance login key grants full workbench and Host access. Give guests a [sharing link](#share-a-thread-or-project), not that key. Use [Service](../a13n-service/index.md) when you need managed identities and permissions.
 
 ## Organize Projects and work in a conversation
 
-1. Open **Home** or a Project’s **+** to start a draft. Select a Project when the Agent needs its server directories.
-2. Select the Agent and Model in **Agent & Model settings**.
-3. Write a task and press Enter. Attach files or select a [Skill](skills-and-content-plugins.md) when needed.
-4. While the Agent works, use **Steer** to add guidance and **Stop** to cancel. Answer pending questions and approvals in their cards.
+1. Use **Add project** beside **Projects** to name a Project and select an existing server directory. Add more roots when needed. Creating the Project does not create a conversation.
+2. Open **Home** or the Project's **+** to prepare a new conversation. A Project supplies working directories and creation defaults; a projectless conversation is also supported.
+3. Open **Agent & Model settings**, check your selections, write the task, and press **Send**.
+4. Follow the live answer, respond to any decision cards, and inspect the saved result before starting dependent work.
 
 ### Projects and saved conversations
 
-Use **Add project** beside the **Projects** heading to save a name and server directory; additional roots are optional. It creates only the Project, not an empty conversation. Expand a Project to see its five most recently updated root conversations. **Show more** loads the next page for that Project only; collapsing a group retains its loaded pages. **Without a project** and **Unavailable projects** keep unassigned conversations and those with removed Project references accessible.
+Expand a Project for its five most recently updated root conversations. **Show more** loads another page for that Project; collapsing it preserves loaded pages. Search covers all saved roots, including unloaded pages. **Without a project**, **Unavailable projects**, and **Archived** keep unassigned, removed-Project, and archived conversations reachable.
 
-Drag a Project’s handle to reorder it, or use its menu’s Move and Reset actions. Keyboard: focus the handle, Space, Up/Down, then Enter to save or Escape to cancel. Order and expansion are browser-local. **Rename project** changes only its display name. Active work appears first; completed work updates its navigation time. Search covers all saved roots, including unloaded pages. Open **Archived** to restore archived conversations; conversations cannot be dragged between Projects.
+Use a conversation's **…** menu to rename, star, share, inspect, or archive it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.
 
-**Home** and each Project’s **+** share one browser-local New conversation draft. Switching Project preserves input and explicit selections. Text and settings survive reload; local file bytes do not, so reattach unavailable files. **Send** creates the Thread. Accepted submission clears the saved draft; uncertain submission retains it and locks Project selection until reviewed, without automatic resubmission. A direct Thread link opens the saved conversation. Use its **…** menu to star, rename, share, inspect or archive it; **Project settings** edits the Project instead.
+Drag a Project's handle to reorder it, or use the menu's Move and Reset actions. With the keyboard, focus the handle, press Space, use Up/Down, and press Enter to save or Escape to cancel. Project order and expansion are browser-local; renaming changes only the display name. Active work appears first, and completion updates navigation time.
+
+**Home** and Project **+** buttons share one browser-local new-conversation draft. Changing Project preserves its text and explicit selections. Reload preserves text and settings, but local file bytes must be reattached. **Send** creates the Thread and clears the draft after acceptance. An uncertain submission retains recovery information and locks Project selection until reviewed.
 
 ### Send, steer and inspect
 
-Enter sends; Shift+Enter adds a line. Ctrl/Cmd+Enter also sends; input-method composition does not. **Send** waits for your edits to synchronize. Attach, paste or drop files at the desired text position. Click an attachment to inspect it; pending or failed uploads block Send, so retry in the originating tab or remove them. Editing and undo preserve attachment identity; plain filename text does not attach a file. Submitted input preserves text/attachment order. A positive receipt clears only the submitted snapshot; concurrent edits remain. An uncertain acknowledgement keeps input for outcome review, never automatic retry. Remote media URLs do not load automatically.
+| Action                        | Result                                             |
+| ----------------------------- | -------------------------------------------------- |
+| Enter or Ctrl/Cmd+Enter       | Send; input-method composition stays in the editor |
+| Shift+Enter                   | Insert a line break                                |
+| Attach, paste, or drop a file | Insert an attachment at the chosen text position   |
+| **Steer** during a Run        | Send guidance to the current operation             |
+| **Stop**                      | Cancel the displayed operation                     |
+| Close the page                | Stop viewing; the server continues working         |
 
-While a Run is active, **Next message** remains editable without becoming a queue. **Steer** (the Send button while a Run is active) targets the current operation, rather than creating a new turn. Steering preserves the same ordered text and attachments as ordinary Send. **Stop** addresses the exact displayed receipt. Closing a page stops observation, not execution. Questions, approvals (including allowed argument overrides) and external-result requests have complete-set response controls; stale or competing decisions are refreshed rather than represented as a second success. After a question is answered, its short title and recorded answer remain visible, including multiple selections and custom text. Expand **Questions & details** to revisit the full questions and options.
+Wait for attachment uploads before sending. Click an attachment to inspect it; retry failed uploads in the originating tab or remove them. The submitted message preserves text/attachment order. Typing a filename is not an attachment, and remote media URLs do not load automatically.
 
-Saved history stays visible while replacement history loads. Live output is provisional until saved history arrives; stream completion alone does not prove a saved continuation. Failed work shows a short reason with expandable details. **Retry** sends `Continue completing the previous task.` as a new turn, preserving your draft. It does not restore the failed Run or replay history, and is unavailable while submission is pending or uncertain.
+**Send** waits for synchronized edits. Acceptance consumes only the submitted snapshot; concurrent edits remain. If acknowledgement is lost, inspect the reported operation before sending again. While a Run is active, **Next message** is an editable draft, not a queued turn.
 
-Expand **Explored**, Shell, browsing or **File changes** to inspect grouped activity, arguments, results and observed edit diffs. Failures and missing results remain visible when collapsed; **Awaiting result** is not success. Older omitted content remains unavailable, and **Requested replacement** is not an applied diff. **Open on host** opens an absolute server/container path, not an Agent Environment path. It preserves dirty buffers; current disk content may differ from the recorded content.
+Live output is provisional until saved history arrives. Existing saved history stays visible during replacement loading. A failure shows a short reason and expandable details. **Retry** starts a new turn with `Continue completing the previous task.` followed by the current draft text and attachments. Inspect that draft before retrying. Acceptance removes the submitted snapshot and retains concurrent edits; it does not restore the failed Run. It is unavailable during pending or uncertain submission.
 
-Open **Details** for the root operation, child executions, tasks, notes, usage and configuration. Execution, continuation saving and Environment cleanup report separate outcomes. Child controls target the exact parent execution; saved results are paged, while activity previews are bounded. Applying Project defaults requires a reviewed before/after preview. Competing changes retain your edits and require fresh review.
+Expand **Execution details**, **Explored**, Shell, browsing, or **File changes** to inspect arguments, results, and observed edits. **Awaiting result** identifies a missing result; **Requested replacement** identifies a requested edit rather than an applied diff. Omitted historical content remains unavailable. **Open on host** opens an absolute server/container path and preserves dirty buffers; current disk content can differ from the recorded result.
 
-### Review token usage and estimated cost
-
-Open **Usage** from the chart icon in the sidebar header, just left of the collapse button. Use a Project's **View usage** menu action or **Details → Usage → Open analytics** to start with that scope selected.
-
-Choose the last 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model. The summary and daily chart cover all matching records. Switch the breakdown between Projects, Threads, and models, sort by tokens or cost, and select a row to narrow the view. Filters stay in the URL. Use **Refresh** to read newly saved usage; the page does not update continuously.
-
-Totals include retained archived conversations, Memory, Live, child agents, auxiliary model calls, and Coordinator workers. Project attribution follows each root Thread's current Project. Costs are recorded model USD estimates: **—** means unknown, **$0** means a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not additional tokens. Provider receipts remain in Thread details. Coverage begins with persisted observations; older unrecorded consumption is unavailable. Guest sharing links do not grant access to analytics.
+Open **Details** for operation status, child executions, tasks, notes, usage, and configuration. Execution, continuation saving, and Environment cleanup have separate outcomes. Child controls address the exact parent execution. Applying Project defaults requires a before/after review; competing changes retain your edits for renewed review.
 
 ### Shared drafts
 
-Draft collaboration lives only in this App instance. In-app navigation retains the browser's editor state, and reconnecting to the same instance resynchronizes it. After server restart, explicitly rejoin the replacement draft and choose whether to restore this browser's text. Edits that this browser has not yet synchronized are lost on reload or browser crash; synchronized text stays in the shared draft while the server runs. Display names are not authenticated identities; undo is local to the editor, and accepted Send establishes a new undo boundary.
+People viewing the same saved conversation edit one shared draft in the running App. Reconnect to the same instance to synchronize again. Server restart creates a replacement draft: explicitly rejoin it and choose whether to restore this browser's text.
+
+Unsynchronized edits can be lost on reload or browser crash. Synchronized text remains while the server runs. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.
 
 ### Skills and work inspection
 
-Type `$` followed by a Skill name to see available Skills and their descriptions. Use Up/Down to choose and Enter or Tab to insert the name; Escape dismisses the list. Accepting a completion does not send the prompt. The reference stays editable as ordinary `$name` text and works in new conversations, saved conversations, and steering. Recognized references are validated against the current or active Run's catalog; unknown names remain ordinary text. No slash-command interface is added.
+Type `$` and a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape dismisses. Insertion does not send. `$name` remains editable text and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
 
-**Tasks**, **Notes**, **Subagents**, and **Processes** above the composer open floating inspectors without changing your draft or conversation. Processes shows the last observed background command and status, with expandable process handle, Run identity, and exit code. Its count reflects observed running handles, not all processes on the server. Foreground shell calls do not count. Run completion or loss of observation marks unfinished handles unavailable rather than exited; gaps and bounded omissions are explicit. At most 16 entries are shown from 128 retained observations. Reloading or changing conversations does not reconstruct processes from saved messages. Output stays in tool details; the inspector cannot stop or control processes.
+Use **Tasks**, **Notes**, **Subagents**, and **Processes** above the composer to inspect work without replacing your draft. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
 
-## Share a Thread or Project
+Process counts cover observed running handles, excluding foreground calls. The panel shows up to 16 entries from 128 retained observations. Run completion or lost observation marks unfinished handles unavailable, not exited. Reload does not reconstruct them from saved messages.
 
-1. Click **Share** in the chat header, or **Share Project** in a Project's menu.
-2. Under **Include**, choose **This chat** or **All chats in [project]**. A Project link includes its current and future Threads; moving a Thread out removes that link's access.
-3. Choose **View only** to read history, attachments and live output, or **Send messages** to coedit the shared draft, upload, send and steer. Prompt guests can also create Threads in a shared Project using its defaults.
-4. Choose an expiry of one hour, one day or seven days, then click **Create link**. Opening the panel alone creates nothing.
-5. **Copy link** or **Open shared view**. Copy before closing: the secret is displayed only once. Under **Manage links**, change permission and click **Save**, or **Revoke** access immediately.
+### Review token usage and estimated cost
 
-Share prompt links only with people you trust. Prompts use the existing Agent's tools and Environment authority, including any cross-conversation tools. Sharing limits browser/API access, not Agent execution. Guests cannot change configuration, answer approvals, use native Files or Terminal, or manage links. The owner responds to approvals.
+1. Open **Usage** using the chart icon beside the sidebar collapse button. **Project → View usage** or **Details → Usage → Open analytics** opens a preselected scope.
+2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model.
+3. Compare daily totals and the Project, Thread, or model breakdown. Sort by tokens or cost and select a row to narrow the scope.
+4. Use **Refresh** for newly saved usage. Filters remain in the URL; the page does not update continuously.
 
-A Thread link opens directly into that Thread. A Project link adds a compact Thread list and search. View guests see a read-only footer; prompt guests use the shared composer. Tasks, notes and subagent output remain inspectable. Guest access stays separate from an owner login in the same browser. Expired or revoked links show an unavailable page; revocation does not cancel work already started.
+Totals include retained archived conversations, Memory, Live, child agents, auxiliary calls, and Coordinator workers. Project attribution follows the root Thread's current Project. Provider receipts remain in Thread details.
 
-## Fork a conversation
-
-Use a fork to try another approach while keeping the original conversation.
-
-1. Open an independent conversation's **…** menu and choose **Fork conversation**.
-2. Review the newly opened copy, then send your next instruction there. Creating the copy makes no Model request.
-
-The fork copies saved history, notes, tasks, settings and Thread-owned files. An active source contributes its last saved checkpoint, not unsaved live output. Project directories, remote targets and sandboxes remain the same external resources; the fork does not isolate them. Coordinators, their Workers, Subagent Threads and internal Memory/Live Threads cannot be forked. If creation has an uncertain outcome, inspect the conversation list before trying again.
-
-## Observe Memory
-
-The **Memory** button in the bottom-left navigation opens an observation-only Memory page when Memory is enabled. Global memory is separate from Project scopes. The center reuses conversation history, live tool activity and **Inspect & usage**, but has no input area or manual execution controls. Each automatic organization Run starts with fresh model context while previous rounds and recorded usage remain visible, including after server restart.
-
-The right panel shows **current** scope files, not historical snapshots. You can inspect files even before the first organization Run; opening a scope never starts one. The viewer is read-only and works without Host computer sharing. To edit memory, change the files under `memory/` beside the selected root configuration through Host access to the server, for example in a shell or an editor.
-
-Memory controls stay in **Settings → General**. Turning off automatic organization keeps the Memory button and viewer available; turning off Memory hides the button. Neither switch deletes files or saved history.
-
-## Work with a Coordinator
-
-Select a Project, open **Chat options** in the composer, enable **Coordinate agents**, and send an objective. This creates a Coordinator, or converts an existing ordinary conversation before sending. Enabled options appear above the editor on every screen size. Each Project can have several Coordinators; **Keep working** is an independent Goal option; see [Work toward a Goal](everyday-use.md#work-toward-a-goal).
-
-The role is permanent after creation or conversion. If sending fails afterward, the conversation remains a Coordinator and your input stays available for retry. A Coordinator requires a Project.
-
-Alternatively, open an existing conversation's actions or **Conversation details**, choose **Make Coordinator**, and confirm. It must be idle, unarchived, project-bound and have no pending decisions. Promotion keeps its URL, history, title and settings; the role is permanent. Workers cannot be promoted, and existing conversations, including conversations created earlier through [Sidekick](#agent-collaboration-and-sidekick), are not adopted.
-
-The Coordinator creates workers, answers their questions, and integrates verified results. Expand its sidebar row to see its workers. Each worker is a root conversation with its own history and human controls, not a Subagent. Workers appear under their owner rather than again in Running or Recent; search labels them **Coordinator worker** and keeps the owner reachable.
-
-To assign work yourself, choose **New worker** in the Coordinator's actions. Write and send the assignment directly in the new conversation; the Coordinator does not relay it. **Managed by · name** replaces the Coordinator toggle and fixes the Project. Before creation, its remove button changes the draft to an independent conversation without losing your message, attachments or selections. After creation the label is fixed, even if sending fails. Uncertain creation keeps the assignment locked until you inspect the retained conversation. The same owner label remains in existing worker composers.
-
-Choose **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. The shared setting controls lifecycle notifications, not manual work or worker execution. New Coordinators enable follow-up; migrated ones retain their setting. Sidekick supplies defaults for Agent-created workers, while manually created workers use the composer choices. Disabling Sidekick does not disable Coordinators or follow-up.
-
-Automatic follow-up attempts to notify the Coordinator when you first submit work directly to a worker, or when an owned worker finishes, fails, is cancelled or waits for input. The Coordinator inspects saved results before treating work as complete. Delivery is best effort, with no retry or restart replay. Closing the browser leaves this running; stopping the Coordinator neither stops its workers nor pauses later notifications. Question and approval deadlines still apply.
-
-## Star important conversations
-
-Hover or focus a conversation row, open its **…** menu, and choose **Star conversation**. On touch screens the **…** button is visible without hovering. A filled star then stays visible beside the menu; choose **Unstar conversation** to remove it. Stars are shared with everyone using the instance, not personal bookmarks, and survive browser changes and server restarts.
-
-Starred conversations stay above the five ordinary **Recent** rows. Running and unread **New results** take priority without duplicates. Stars do not change visit time. Archive hides the conversation but retains its star. Workers remain nested under their Coordinator.
-
-## Find unfinished input
-
-**Drafts**, below conversation search, opens a list of saved conversations with unfinished shared input, even when their Projects are collapsed or they are outside the recent list. Each entry includes its Project name. A **Draft** marker also appears beside the conversation in ordinary lists, without replacing running or unread-result indicators. **Drafts** stays visible while you search or filter the lists below it.
-
-Opening a conversation does not dismiss the reminder. Send successfully and clear the captured input, or remove the text and selected attachments yourself; edits added concurrently remain marked. Pending and failed attachment uploads count, but whitespace and changes to composer settings do not. Archiving removes the conversation from **Drafts** without discarding the draft.
-
-These are shared conversation drafts, not a personal queue. Synchronized drafts can be rediscovered after refreshing the browser while the same server is running; server restart discards them. The separate, not-yet-created New conversation draft still opens through Home.
+Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
 
 ## Agent and Model settings
 
-The composer footer shows the current Model. Open its **Agent & Model settings** control to change the Agent, Model, or supported Thinking, Speed, and Reasoning mode choices. Each choice opens inside the same panel. Each has a **Use default** action to restore inherited settings instead of guessing an explicit equivalent.
+Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.
 
-On phones, the Agent and Model panel opens as a bottom sheet. **Chat options**, beside the message editor, contains **Keep working**, **Coordinate agents**, **Environment**, and **Clear context**. **Clear context** starts the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded; chat history, files, conversation settings and unsent input are kept.
+For a persistent Model choice, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
 
-## Fast mode
-
-Open **Agent & Model settings** and choose **Fast**, or **Ultrafast** on a supported Codex connection. The buttons are mutually exclusive; clicking the selected button requests Off. **Use default** inherits the Model setting; **Provider default** is not Off.
-
-The choice affects subsequent Sends in this tab, not steering, thinking, or saved Model configuration. Changing Agent or Model clears it. The Context / Cost / Cache / Time row shows the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**, not the next Send. A dash means unavailable.
-
-OpenAI/Codex, supported direct Anthropic, and supported Gemini connections use their native speed controls. Ultrafast is supported for `openai-codex:gpt-6-astra`. Unsupported choices are disabled with a reason. Requested speed is not guaranteed; the provider controls eligibility and charges, and higher usage rates may apply.
-
-## Navigate conversation inputs
-
-Use the left input rail, or **Input history** on narrow screens, to preview and revisit ordinary inputs. Steering stays in its original turn. Selecting an older input loads its saved history window; **Load later messages** and **Back to latest** return toward current work without resubmitting input.
-
-Inputs, applied steering and Agent text stay in chronological order. **Execution details** groups the activity between them and starts collapsed. Expand a section to inspect it; mobile opens a full-screen reader. Counts cover only that section’s loaded tool calls.
-
-Missing turn content loads automatically, with **Retry loading turn** on failure. Pending decisions stay actionable outside the disclosures. Navigation and expansion affect only your view, not execution or Agent context.
-
-## Pending questions, approvals, and external results
-
-The pending-decision form handles structured questions, generic tool approvals, and externally supplied tool results. Shell approvals show the risk assessment and reason before the command, working directory, and selected mount. Environment variable values are hidden in argument previews. Other approvals show the tool, arguments, and available review context without requiring a tool-specific form.
-
-For a single approval, choose **Approve once** or **Deny**, optionally entering a denial reason first. **Edit arguments** appears only when the request permits replacements; bound shell approvals must keep their original arguments. To change such a command, deny it with an explanation and let the Agent propose another. Arguments omitted by the server cannot be approved from the form; missing risk assessments alone do not prevent a decision. Approval is not confirmation that execution succeeded.
-
-Multiple or mixed requests must be answered together using **Submit responses**. **Provide a result** accepts the actual external tool result as JSON; it does not execute that tool in your browser. Enter `null` explicitly if that is the intended result—an empty editor is not a result. No approval is selected automatically. If submission acknowledgement is lost, inspect the current request instead of assuming failure; the browser never resends the decision automatically.
-
-### Questions and approval timeouts
-
-New pending root questions, approvals, and external-result requests share one server-owned response window per batch, controlled by `tools.interaction_timeout_seconds` (default **120 seconds**). The workbench displays the remaining time. Submit the complete form before it expires; partial selections and typed but unsubmitted answers are not sent to the Agent.
-
-On timeout, the server continues with explicit failed results: unanswered questions tell the Agent to proceed with reasonable assumptions where possible, and approvals are **denied**, never automatically granted. Switching conversations, refreshing, opening another browser, or closing the page does not reset or stop the timer. Another participant can answer first.
-
-Stopping the server or archiving the conversation cancels its pending timer. Restart does not replay elapsed deadlines: questions retained from an earlier process remain available for a manual answer without a countdown. If a timeout response fails to start or save, inspect the reported operation before manually retrying; the App does not repeatedly submit it. TUI questions retain their separate per-question countdown.
-
-## Interactive MCP tool results
-
-Opted-in [MCP Apps](mcp-apps.md) appear inline beside the real tool result and can remain interactive after the Run ends. Saved history executes no App HTML until **Open App**. Use **Activate interactions** for current-policy-checked server operations; tool approvals, selected context, message confirmation and external-link confirmation stay in the trusted WebUI card outside the iframe. Opening does not repeat a tool call, and closing a View does not discard its server connection. The [Apps guide](mcp-apps.md) covers setup, lifetime, limitations and the required separate sandbox origin for remote deployments.
-
-## Install as an app
-
-Open **Settings → General → Install Harness UI** to install the workbench in its own window. If the browser offers an install prompt, choose **Install app**. Otherwise use its **Install app** or **Add to Home Screen** option when available. On iPhone or iPad, open the page in Safari and choose **Share → Add to Home Screen**. On Mac, Safari offers **File → Add to Dock**. Browser support and menu wording vary; ordinary browser access remains available.
-
-Installation requires HTTPS or a local loopback address such as `localhost` or `127.0.0.1`. A phone accessing a server by its LAN IP over plain HTTP does not receive the same installation guarantees. Keep the server address stable: changing its scheme, hostname, or port changes the browser origin and may require a new installation and login.
-
-The installed app requires a reachable Harness UI server. Enter the instance key (**Instance API key**) if requested, and enable [background notifications](#task-notifications) separately for alerts while it is closed. Save private editor changes before reloading; installation adds no offline execution or editor recovery.
-
-## Restart or update the server
-
-Stop WebUI normally with **SIGTERM** (or Ctrl+C), **wait for the process to exit**, then start it again with the **same data directory**. No preparation request or settings action is required. For an update, install the new package after the old process exits and before starting the replacement.
-
-Graceful shutdown saves root and child checkpoints and finalizes their Environments before recording a restart handoff. The next start consumes it once and continues compatible interrupted work in fresh Runs, without resending prompts or replaying the saved tool batch.
-
-`shutdown_timeout_seconds` (60 seconds by default) bounds the safe-boundary wait, **not total process exit**. If a model/tool batch cannot finish within that interval, or checkpoint/Environment finalization fails, the batch is not armed for automatic recovery. Cancellation and cleanup still need to finish. Give the supervisor enough time for those steps; do not start the replacement while the old process is still executing.
-
-Automatic continuation requires a successful graceful shutdown and compatible reconstruction. After a forced kill or failed recovery, inspect logs and saved history before retrying uncertain work. Pending decisions remain unanswered. Native terminals, old shell handles, unsent drafts and unsaved editors are not restored.
-
-## Server logs and shutdown
-
-The server reports startup, API responses, and cleanup using `process.log_level` and `process.log_format`. `INFO` shows ordinary API activity; `DEBUG` adds assets, health probes, and cleanup stages. API logs record route templates, status, elapsed time, error codes, and generated identifiers, not bodies, keys, query values, or native paths.
-
-Refresh the conversation after `thread_history_continuation_changed` or `thread_continuation_conflict`. For `object_payload_incompatible`, inspect the storage warning's object, version, and validation details. Do not clear the data directory to repair compatibility. Legacy `context_window` inputs remain readable as `context_window_tokens`.
-
-A printed login URL precedes startup; **WebUI ready** confirms the listener started successfully.
-
-Press **Ctrl+C** once or send **SIGTERM**. **Stopping WebUI** marks cleanup; **WebUI stopped** confirms it finished. Browser disconnection does not stop Runs or terminals. Slow cleanup reports waiting time; `DEBUG` shows cleanup stages. Connection-drain timeout is not a hard deadline for App cleanup, and `WARNING` hides ordinary progress.
-
-If WebUI loses its server connection, one compact **Connection interrupted** notice replaces repeated connection errors across panels. It reconnects automatically; **Retry now** skips the current retry delay. If the server was stopped, restart it first. Other actionable errors remain visible. This is not an offline mode: reconnecting refreshes observations and never replays a failed save or prompt submission.
-
-## Configure the workbench
-
-On a fresh installation, WebUI opens a two-step setup wizard automatically:
-
-1. **Model**: connect a supported subscription account or save a provider API key, then choose a suggested Model or enter an API model ID and endpoint. Device login gives a link and code; advanced callback login requires access to the server’s loopback listener. Credentials are shared by the server, not the browser instance key. API keys save immediately. Suggested settings do not test model entitlement.
-2. **Workspace**: Full Control runs as the Host account without isolation; Sandbox requires a successful explicit readiness check. Optionally enter an existing server Project directory, or leave it blank for a projectless conversation. Review the configuration, then choose **Save and start chatting**.
-
-Setup opens one empty first conversation and focuses its composer. It never sends a prompt or makes a model-request test. **Set up later** retains your nonsecret draft without reopening the wizard on every navigation. Refresh and authorization in another tab preserve your choices; secret inputs are not browser-persisted. If a save response is lost, use **Check saved setup and open conversation** before retrying. Partial or changed files remain explicit and are not treated as a completed save.
-
-Existing installations keep their conversations and configuration. **General → Setup & diagnostics** offers focused repair. **Settings** groups General, Agents, Models, Environments, Accounts & API keys, and Connections, with **Configuration files** as a secondary entry. General includes expandable Live voice, Memory, Sidekick, and Notifications settings. Provider accounts and saved keys stay in **Accounts & API keys**.
-
-Open an **Agent** to configure its instructions, Model, Capabilities, and subagents. Browse installed capabilities below the Agent list. **Connections** manages MCP servers, reusable agent plugins, and conversation-wide connection defaults. **Environments** separates local execution defaults, Devices, Profiles & extensions, and Local runtime. Use **Local runtime** to prepare envd and check capabilities. **Configure** creates a profile draft from an installed provider.
-
-Use **Configuration files** to create, inspect, save, or delete configuration. Forms and YAML share one draft; **Save changes** also validates. Unsaved edits survive navigation in the tab, not reload. Saves replace the whole file, with the last write winning; detected external changes leave your dirty draft intact. Active Runs retain their captured configuration. MCP source text is hidden, so replacing an MCP file also replaces unseen fields and all resources in that file.
-
-Open **Project settings** from the sidebar Project menu to edit server directories and creation defaults. **Browse → Use this directory** updates the draft; save to apply it. With `--no-share-computer`, enter paths manually. New conversations use saved defaults; existing ones retain their roots unless explicitly changed. Default, None and Custom remain distinct. The preview shows saved values and their sources, not unsaved edits or a model test.
-
-The top-right header automatically shows a generated collaboration name on first entry. Click it to change the name; **Save name** remembers it in this browser and updates live presence and composer labels. The online indicator opens the per-tab participant directory. This display name is not a provider login or an authenticated identity.
-
-### Add or forget a working Environment
-
-In **Settings → Environments**, add a Device connection with its identity, HTTP endpoint or reverse WebSocket transport, and credential reference. **Check connection** reads the live Device descriptor; saving a connection does not require the Device to be online. This resource can be reused with different working directories and aliases.
-
-In **Project settings → Environments** or **Conversation details → Configuration → Change next Run selections**, use **Add environment**, select the Device, and enter a known absolute working directory or browse the online Device. **Use this directory** updates only the draft. Use **Add directory** to add paths within an existing environment. Choose **Default working directory** across the selected environments; removing its directory requires a replacement before saving. A Project can combine local folders and remote Environments, or use only remote Environments; it must retain at least one working directory. Device directory browsing remains available independently of native computer sharing.
-
-Use **Forget** on an unused Device or custom profile to remove its local configuration, including when the Device is offline or the provider is no longer installed. The dialog lists current configuration references and links to their editors. Repair those defaults first, then return and forget the resource. This does not delete remote data, uninstall a provider, or remove conversation history. Built-in Environments cannot be forgotten.
-
-Existing conversations keep their saved choices. A removed resource appears as **Not configured**, not as a silently substituted Environment. Open **Conversation details → Configuration → Change next Run selections**, remove or replace the missing Environment, select a replacement default if necessary, and save. These changes apply to future Runs; the captured configuration and continuation of earlier Runs remain unchanged.
-
-Files, Changes, and Terminal panels still address the listener Host. Selecting a Device does not turn them into remote panels, and a Device working directory is not a filesystem sandbox. See [Device configuration and removal](environments-and-projects.md#add-device-bindings) for file-based setup.
-
-### Environments for subsequent Runs
-
-Open **Environments** in the composer to edit local mode, directories, remote bindings and the default working location together. **Local · Harness server → Local mode** offers **Sandbox**, **Full Control** and configured profiles, including in an existing conversation. **Follow conversation local mode** inherits the saved local profile. Closing without applying discards the draft; **Use conversation defaults** clears all temporary overrides. Full Control runs as the server's Host account; it is not a sandbox. Sandbox requires the Host's supported isolation launcher and native runtime and fails explicitly if unavailable, without switching to Full Control. The Host establishes that boundary; the Device daemon does not enforce Project roots as an access policy.
-
-An explicit choice is sent with each Run you start from that tab until you change it or choose Default. It does not rewrite the conversation's defaults, affect another participant's selection, or change an active Run. While work is running, the picker prepares the next Send; **Steer** does not change the active Run's Environment. Answering a deferred question or its automatic timeout retains the suspended Run's selected Environment. New subagents inherit the captured Environment; resumed subagents keep their own conversation configuration. Switching modes does not copy or isolate your Project files or conversation history.
-
-Open **Configuration** to distinguish saved conversation defaults from the Environment captured by a Run. An unavailable custom profile remains visible and must be explicitly replaced. An unsent new-conversation draft retains its choice across reloads; an existing conversation's override is private to the current tab.
+Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
 ### Thinking for the next Run
 
-Open **Agent & Model settings → Thinking** in the composer. **Default** shows the selected Model's configured thinking and inherits its settings unchanged. The menu comes from the server's model-aware controls: effort levels and token-budget presets depend on the model and installed adapter. Off appears only where supported; minimal effort does not necessarily mean Off. Unknown models keep Default and explain why overrides are unavailable.
+1. Open **Agent & Model settings → Thinking**.
+2. Keep **Default** to inherit the Model's configured settings, or choose a supported effort level or token-budget preset.
+3. Send the next message, then inspect **Configuration** for the captured request.
 
-Your explicit choice stays private to the current tab and is sent with the next Run, not with steering. Selecting another Agent or Model clears it. It does not edit Model settings or persist a conversation preference. Running work keeps its captured selection; inspect **Configuration** for the requested thinking captured for that Run. Thinking controls do not change the output-token limit. A disabled budget or custom-settings conflict must be resolved in Model configuration rather than silently reduced or ignored.
+Choices depend on the Model and installed adapter. Off appears only where supported; minimal effort need not mean Off. Unknown models retain Default with an explanation. Resolve disabled budgets or custom-setting conflicts in Model configuration. Thinking does not change the output-token limit.
 
-## New results in this browser
+The override is private to this tab, applies to subsequent Runs until changed, and clears when you change Agent or Model. It does not edit the Model resource or affect steering and already-running work.
 
-Opening or starting a conversation follows it in this browser. An unread saved success adds a **New result** dot. Project groups keep unread results reachable beyond the five recent rows. Later running or failed work does not erase an unread success.
+### Environments for subsequent Runs
 
-The dot clears when the saved conversation is visible in a focused browser tab and you reach the bottom of its history. Merely selecting the conversation or receiving live text is not enough. Reading an older saved snapshot cannot clear a newer result. Archived conversations show their dots on **Archived**, not in ordinary Project counts.
+1. Open **Environments** in the composer.
+2. Under **Local · Harness server → Local mode**, choose **Sandbox**, **Full Control**, a configured profile, or **Follow conversation local mode**.
+3. Review local directories, Device bindings, and the default working location together. Apply the draft, then send.
+4. Use **Use conversation defaults** to clear temporary overrides. Closing without applying discards the draft.
 
-Reminders belong to this browser and site address, and synchronize across its tabs. Reopening refreshes followed conversations, including results saved while closed. First visits treat existing results as historical. Clearing site data removes follow/read state; storage or refresh failures show a warning and retry.
+Full Control uses the server account. Sandbox requires a supported Host isolation launcher and native runtime; a failed preparation stays an error rather than switching to Full Control. Device working directories route operations but do not confine the daemon's filesystem authority.
 
-This does not require desktop-notification permission and does not add closed-page push delivery. **Task notifications** below remain separate; reopening restores dots rather than replaying old notification banners.
+A tab's explicit Environment selection accompanies later Sends until reset. It leaves saved Thread defaults, other participants, and the active Run unchanged. **Steer** and deferred answers retain the active or suspended Run's Environment. New subagents inherit the captured Environment; resumed subagents retain their own conversation configuration.
 
-## Task notifications
+Use **Configuration** to compare saved defaults with a Run's captured Environment. Replace unavailable profiles explicitly. New-conversation drafts retain choices across reload; existing-conversation overrides are tab-local. Changing modes does not copy or isolate existing Project files or history.
 
-**Background notifications can reach Android Chrome after you close WebUI or lock your phone.** Use a stable HTTPS address, including the same port you normally use to log in. The Harness UI server must stay running and have outbound access to your browser's push service. No separate push account or manually configured VAPID key is required.
+## Fast mode
 
-1. Open **Settings → General → Notifications** on the device that should receive alerts.
-2. Choose **Allow notifications** or **Enable background notifications**, then accept the browser prompt if shown. The initial **Enable task notifications** prompt can also set this up. Existing browser permission alone does not enable background delivery after an upgrade.
-3. Check that **Background delivery** says **Enabled on this device**, then choose **Send test notification**.
-4. Keep a WebUI page visible to mark this device active.
-5. Send a prompt.
-6. Close WebUI and wait for the system notification. Clicking it opens the matching conversation; ordinary login may still be required.
+Choose **Fast** in **Agent & Model settings**, or **Ultrafast** where the selected Codex connection supports it. Click the selected button again to request Off. **Use model setting** inherits Model settings; **Provider default** is distinct from Off.
 
-Enable this independently on each device. On Android, allow both this site's notifications and Chrome's system notifications. Force-stopping Chrome, battery restrictions, Do Not Disturb, network loss, or vendor push-service reachability can prevent or delay alerts. On iPhone or iPad, notifications require **iOS/iPadOS 16.4 or later and a Home Screen web app**, not a regular Chrome or Safari tab. In Chrome, choose **Share → Add to Home Screen → Add**, then open Harness UI from that icon and enable notifications inside the app. If Chrome does not offer this action, open the same address in Safari to add it. Manage permission for the Home Screen app in the device's notification settings; changing Chrome's app-level permission alone does not enable website push. Browser support varies; remote plain HTTP is not supported. Loopback addresses can be used for local browser development.
+The choice applies to later Sends in this tab and clears on Agent/Model change. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
 
-Notices cover completion, failure, and requests for input across **all root conversations**, including ones never opened on this device. They contain actual reply/question/failure previews without an additional model call. **Previews may appear on your lock screen.** Archived conversations do not generate push alerts. System notifications are sent only to opted-in devices active within the last **six hours**. Keeping any WebUI page visible renews this window roughly every minute; it does not need keyboard/mouse activity or focus. After six hours without a visible page, open WebUI again to resume eligibility.
+The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Provider eligibility and charges determine the outcome; requesting a speed mode does not guarantee faster execution.
 
-Every open page also shows in-app notices, including for the conversation you are viewing. These have no six-hour or visit-history restriction. System push and in-app notices may appear together. **Web Push is the only system-notification path:** if it is unsupported or its provider cannot be reached, only in-app notices remain. There is no local system-notification fallback.
+## Tool executions and immediate steering
 
-After upgrading, reload WebUI and keep the updated page visible to renew this device's delivery window. Existing subscriptions and signing keys are retained.
+Use **Steer** to correct direction while the Agent is working. By default, immediate steering interrupts primary model generation or releases supported tool waits. Tool review and validation finish first; the batch returns results or retained-execution receipts, or suspends for approval, before the Agent continues. Supported tools keep running once under their original ownership.
 
-If enabling notifications reports **Browser push registration failed**, the browser failed to obtain a subscription before it could be saved to Harness UI. The error keeps the original browser detail and distinguishes this stage from server delivery. For Android Chrome push-service errors, check Google Play services and the device's push-service connectivity, including VPN or firewall restrictions; opening the WebUI successfully is not a push connectivity test. Compare Wi-Fi and mobile data, then explicitly retry registration. Avoid clearing browser storage as a first step because it also removes private drafts and preferences.
+Acceptance means the guidance was queued. Unsupported tools use best-effort delivery at a normal execution boundary. Startup or recovery can wait up to five seconds for native steering readiness; a timeout or completed Run rejects the request. Root and child steering share `input.steering_mode`; choose `queued` in [configuration](configuration.md#built-in-tools-and-subagents) to wait for the next safe boundary.
 
-The test reports whether the push service accepted the message, **not whether your device displayed it**. If no alert appears, check site permission, system notification settings, and network access. On macOS, check **System Settings → Notifications** and **Focus**. **Enabled on this device** means the subscription was synchronized, not that delivery was confirmed. A stored subscription starts as **Checking subscription…**; a failed refresh or test shows **Subscription needs attention**, rather than continuing to claim enabled delivery. Foreground return and network reconnection retry synchronization. **Reconnect background notifications** replaces a rejected/expired endpoint and repairs a changed server signing key. Subscription registrations survive server restart, but unmaintained registrations expire after 90 days without registration refresh or activity. This retention period is separate from the six-hour delivery window.
+Open **Work → Tools** to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
 
-Turn off **Enable browser notifications** to remove this browser's subscription and stop permission reminders without disabling in-app notices or affecting other devices. Logging out also attempts cleanup. If both browser and server cleanup fail, use the site's browser notification permissions to block delivery. Clearing browser storage is not a server-side unsubscribe; turn notifications off first when possible.
+Generic [automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in. Process-backed Shell yields after its configured foreground wait in either mode; immediate steering can release that wait sooner. Shell handles also have their own process view.
 
-Push is best effort: shutdown or provider failure can lose reminders, and reopening WebUI does not replay them. Check the conversation for results. Back up the server data root securely to retain its signing identity and subscriptions.
+**Stop** cancels the conversation and suppresses automatic completion wake until new user input. Cancel retained tools separately with their **Cancel** action. Cancellation does not promise remote rollback. Retained records/results expire and are process-local; App restart makes old references unavailable.
 
-## Agent collaboration and Sidekick
+## Pending questions, approvals, and external results
 
-WebUI Agents receive their Thread ID and captured Project/roots in their instructions. Collaboration tools inspect and start other root conversations through the same App. Click their inline conversation links to inspect the work.
+Respond in the pending-decision card:
 
-| Root role     | Agent's collaboration scope                                                              |
-| ------------- | ---------------------------------------------------------------------------------------- |
-| Ordinary root | Other roots, excluding managed Workers                                                   |
-| Coordinator   | Its own Workers; creation stays in the Coordinator's Project                             |
-| Worker        | Inspect itself and its owner; message its owner; use Subagents for task-local delegation |
+| Request                   | What to do                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| Structured question       | Select answers or enter the permitted custom text                                            |
+| Single approval           | Review the action, then choose **Approve once** or **Deny**; add a denial reason when useful |
+| Editable approval         | Use **Edit arguments** only when offered                                                     |
+| External result           | Enter the real result as JSON under **Provide a result**                                     |
+| Several or mixed requests | Complete every item and choose **Submit responses**                                          |
 
-Workers are independent root conversations, not Subagents. A Worker cannot create roots, control its owner, or access siblings. These model-tool limits do not restrict human WebUI access.
+Shell approvals show the risk assessment, reason, command, cwd, and mount; environment-variable values are hidden. Bound Shell arguments cannot be replaced. Deny an unsuitable command with an explanation so the Agent can propose a new one. Server-omitted arguments cannot be approved; a missing risk assessment alone does not block a decision.
 
-For an ordinary root, `create_thread` can keep the current Project, select another Project ID, or use null for no Project. Select `agent_id` to use a configured Agent. Without Sidekick or explicit Agent/Project changes, the new conversation inherits the source selections. Supply the task's context: the new root does not inherit the complete conversation history. It receives the requesting Thread ID and uses `send_thread_message` for questions and results. Optional `model_id` overrides its first Run; `run_thread` accepts the same override for a later turn.
+External-result entry does not execute a tool in your browser. Enter `null` explicitly when that is the result; an empty editor is unanswered. Approval authorizes execution, not its success. On lost acknowledgement, inspect the current request before retrying. Stale or competing responses refresh the card.
 
-`send_thread_message` steers an active target or starts a turn on an idle target. The result confirms acceptance, not processing or saved delivery. If a send fails or its result is uncertain, inspect the target before retrying. Archived Threads, Subagent Threads, and unresolved pending decisions cannot receive a new turn.
+After an answer, the question's short title and recorded choices remain visible. Expand **Questions & details** to revisit options and custom text.
 
-Sidekick supplies default Agent, Model, and reporting instructions for roots created with `create_thread`. It is enabled by default. In **Settings → General → Sidekick**, choose an Agent, a Model, or **Disabled**. **Inherit current agent** keeps the source Agent; **Use agent model** follows the selected Agent's Model. The chosen Model becomes the new Thread's default for later turns. Saving affects future Run captures and newly created roots, not current Runs or existing Threads. The preference starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+### Questions and approval timeouts
 
-In conversation configuration, **Default model** sets a persistent Model independently of the composer Run picker. Choose **Follow Agent model** to clear it. The picker displays **Thread default** when following a saved default; choosing another Model affects only that Run draft. Configuration inspection distinguishes the next Model from the captured Model used by the current or saved Run.
+New root requests share one server-owned response window per batch, controlled by `tools.interaction_timeout_seconds` (default 120 seconds). Submit the complete form before the countdown expires; unsubmitted selections are not answers.
+
+Timeout continues with explicit failed results. Unanswered questions ask the Agent to proceed with reasonable assumptions where possible; approvals are denied. Switching pages, refreshing, or closing the browser does not stop the timer. Another participant can answer first.
+
+Server shutdown or archiving cancels the timer. After restart, retained requests remain manually answerable without a replayed countdown. If timeout handling fails to start or save, inspect the operation before retrying. TUI uses its separate per-question countdown.
+
+## Navigate conversation inputs
+
+Use the left input rail, or **Input history** on narrow screens, to revisit ordinary inputs. Selecting an old input loads its saved history window. **Load later messages** and **Back to latest** return toward current work without resubmitting anything; steering stays in its original turn.
+
+Inputs, applied steering, and Agent text remain chronological. **Execution details** groups the intervening activity and starts collapsed; mobile opens a full-screen reader. Counts cover the section's loaded calls. Missing content loads automatically, with **Retry loading turn** on failure. Pending decisions remain actionable outside collapsed details.
 
 ## Saved output
 
-Child results remain available in the inspection panel. Historical feedback captures remain readable as ordinary retained attachments.
+Reopen a conversation to read saved history and retained attachments. Child results are available through the inspection panel; historical feedback captures remain ordinary attachments. Viewing and expanding history changes only your view, not Agent context or execution.
+
+## Interactive MCP tool results
+
+Opted-in [MCP Apps](mcp-apps.md) appear beside actual tool results. In saved history, choose **Open App** before any App HTML runs, then **Activate interactions** for server operations checked against current policy.
+
+Approvals, selected context, message confirmation, and external-link confirmation stay in the trusted card outside the iframe. Opening does not repeat the original tool call; closing the View retains its server connection. Follow the [MCP Apps guide](mcp-apps.md) for setup and the separate sandbox origin required by remote deployments.
 
 ## Read, edit and capture Host files and Git changes
 
-Open **Files** or **Changes** at the top right. They use the conversation’s Project roots on the server/container, not the browser or an Agent’s remote Environment. Choose a root, browse folders, and select a file; **Back to files** or **Back to changes** returns to the list. Tabs and dirty buffers survive drawer closure and file switches. Resize the drawer or use **Expand drawer** for more space. A projectless conversation asks you to open a Project rather than selecting one silently.
+Use a Project with a server directory and leave computer sharing enabled. Git viewing also requires Git. These panels operate on the listener Host, even when the Agent works on a remote Device.
 
-Files supports editing, upload/download, create, rename/move and confirmed deletion. Ctrl/Cmd+G goes to a line; Ctrl/Cmd+S saves. Filters cover loaded paths, not recursive search. Editing requires complete NUL-free UTF-8 up to 512 KiB; uploads, whole-file captures and image previews allow 10 MiB. Larger downloads and audio/video stream; playback is not automatic. Access links expire after 30 minutes; refresh renews them. Unsaved buffers survive tab navigation, not reload or closure. On a disk conflict, inspect the latest version and choose **Use disk version** or **Keep local text** before saving. Refresh preserves dirty text, and uncertain writes are not retried automatically. CRLF/LF are preserved; mixed endings normalize to the first style with a notice.
+1. Open **Files**, select a root, browse folders, and choose a file. Resize or **Expand drawer** for more space.
+2. Markdown opens in **Preview**; choose **Text** to edit. Preview includes your unsaved edits. Ctrl/Cmd+G goes to a line; Ctrl/Cmd+S saves.
+3. Select source lines and choose **Add to chat**, or select nothing to capture the complete file.
+4. Review the attachment in the shared draft, add a question, and send or steer. The captured bytes stay fixed after later Host edits.
 
-Changes separates staged HEAD/index, unstaged index/worktree and untracked new-file comparisons. Filter loaded paths, fold groups, and move between loaded comparisons or hunks. Selecting a new-file line in an unstaged or untracked diff can jump to that line in the current working file; a staged or deleted-side line is not assumed to match it. Its unified diff uses separate old/new file-line gutters, monospace code and light/dark-aware addition, deletion and hunk colors. Headers and no-newline notices remain part of the reviewed patch. Text selection reports its original patch lines for capture; displayed file numbers do not replace those coordinates. Repository, HEAD, index and diff identities remain inspectable, including rename/conflict/binary and unborn states. Git errors are not shown as clean results, and Files works outside repositories. Refresh after your native actions or return to the pane to inspect new observations; there is no recursive watcher or claim of Run-specific change attribution. There are no stage, commit, discard or worktree buttons.
+Files also supports uploads, downloads, creation, rename/move, and confirmed deletion. Filters cover loaded paths, not recursive search. **Back to files** returns to the list. Tabs and dirty text survive file switches and drawer closure; save before reloading or closing the browser tab.
 
-Use **Add to chat** for a file or **Add to message** for a diff to capture its reviewed revision into the shared draft. Select lines first to capture only that range. Review the attachment card before sending; later file edits do not change the captured bytes. You can also steer an active Run with the same attachments.
+| Content                                   | Limit or behavior                          |
+| ----------------------------------------- | ------------------------------------------ |
+| Editable text                             | Complete NUL-free UTF-8, up to 512 KiB     |
+| Upload, whole-file capture, image preview | Up to 10 MiB                               |
+| Larger download or audio/video            | Streamed; playback starts only on request  |
+| Byte-access link                          | Expires after 30 minutes; refresh to renew |
+
+On disk conflict, compare the latest file and choose **Use disk version** or **Keep local text** before saving. Refresh preserves dirty text. Uncertain writes require inspection rather than automatic retry. CRLF/LF are retained; mixed endings normalize to the first style with a notice.
+
+To review a change:
+
+1. Open **Changes** and select staged, unstaged, or untracked content.
+2. Read the unified diff, including headers and no-newline notices. Old/new file gutters help navigation; selected patch lines define the capture range.
+3. Choose **Add to message** to capture the reviewed diff, then inspect the draft before sending.
+
+Staged compares HEAD/index, unstaged compares index/worktree, and untracked compares a new file. New-side unstaged/untracked lines can open the current working file; staged and deleted-side lines are not assumed to match it. Rename, conflict, binary, unborn-HEAD, and repository identities remain inspectable. Git errors stay errors; Files also works outside repositories.
+
+Changes is read-only: perform stage, commit, discard, or worktree operations deliberately in a shell. Return to the panel or refresh afterward. Observations are not a recursive watcher or a record of which Run caused each change.
+
+Agent links shaped as `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` open Files. Bare paths and API URLs do not. **Share explorer view** copies an instance-key-free same-instance link. The participant directory's **Open page** opens a peer's selected view once; it does not follow them continuously. These links still require instance access.
 
 ## Share a native terminal
 
-Open **Terminal**, then **New terminal** to start in the currently browsed directory. Files also offers **Open terminal here** for folders; this creates a new terminal session rather than injecting `cd` into an existing one. Only that Project's terminal sessions appear in the panel. Switching Projects hides and detaches the old view without ending its terminal sessions or changing their working directories. Opening the panel alone does not start a shell, and creating one requires a Project with a configured root. Existing unassociated terminal sessions remain available through the native API. The displayed initial directory does not follow later shell `cd` commands; terminal execution remains independent of the Agent's Environment.
+Native terminals require a POSIX Host and computer sharing. Windows reports PTY unavailable; Files and Git remain independently usable.
 
-The creator requests terminal control once; input waits for server confirmation. Other viewers use **Take control** or **Take over input**. **Release control** leaves the session running. Only the controller resizes the shared terminal. Input is UTF-8, with a 16 KiB browser paste limit; legacy binary mouse reports are unsupported.
+1. Open a Project with a configured root. In **Terminal**, choose **New terminal**, or use **Files → Open terminal here** for a folder.
+2. Wait for the creator's control request to be confirmed before typing. Other viewers use **Take control** or **Take over input**.
+3. Use **Release control** to let others type while keeping the shell running. Only the controller resizes it.
+4. Choose **End session** and confirm when you intend to stop the shared shell and its jobs for everyone.
 
-**Disconnect**, Settings and panel collapse detach without ending the process. Reopening reconnects read-only; after explicit Disconnect, choose **Reconnect**. Reconnection repeats no keystrokes and does not take control. Retained output is bounded (1 MiB server bytes, 2,000 local lines), not a durable log; gaps are disclosed. Slow rendering pauses the connection rather than growing an unbounded queue.
+Opening the panel alone starts no shell. New terminal creates a session rather than inserting `cd` into another one. The displayed initial directory does not track later shell `cd`. Project switching hides/detaches old views without stopping sessions; unassociated sessions remain available through the native API.
 
-**End session** requires confirmation because it closes the shared terminal session and its jobs for everyone. Exited terminal sessions remain inspectable until closed. An uncertain create/close result is not automatically replayed: refresh the terminal session list before deciding on another action. App restart does not restore or recreate terminal sessions. POSIX Hosts support native PTY; Windows explicitly reports it unavailable while Files and Git remain independently usable.
+**Disconnect**, panel collapse, Settings, and page closure detach without ending the process. Reopen read-only; after explicit Disconnect, use **Reconnect**. Reconnection repeats no keystrokes. Input is UTF-8 with a 16 KiB paste limit; legacy binary mouse reports are unsupported.
 
-Use **Find in output** (Ctrl/Cmd+F), previous/next matches, and **Copy selection** to inspect retained output. HTTP links open separately; unambiguous absolute `path:line` references open Host files. **Add selection to message** appends an attributed excerpt to the current shared draft without sending it, and **Return to conversation** focuses that draft. Relative or ambiguous terminal paths are not guessed.
+Output retains up to 1 MiB of server bytes and 2,000 local lines, with gaps disclosed. Slow rendering pauses the connection. Use Ctrl/Cmd+F for **Find in output**, **Copy selection**, or **Add selection to message** for an attributed excerpt. The latter only adds to the draft; **Return to conversation** focuses it. HTTP links open separately, and unambiguous absolute `path:line` links open Host files.
 
-After shell file or Git mutations, return to Files/Changes or refresh native observations. Native actions, focus returns, and Run completion also refresh observations without replacing dirty buffers. Refreshing observations retains selected paths and private dirty text. The browser tab title follows the current conversation; other pages use `a13n harness ui`. The drawer's **Share explorer view** link icon creates an instance-key-free same-instance explorer link. The participant directory can also open an exact focused file or diff. The participant directory reports the focused conversation, native file/diff, terminal or configuration page, and **Open page** deliberately opens an available peer view; it never enables continuous following or moves another participant. Background tabs remain distinguishable from foreground attention.
+Exited sessions remain inspectable until closed. After uncertain creation or closure, refresh the session list before acting again. App restart does not restore terminals. File/Changes refreshes preserve selected paths and dirty text after native actions, focus return, or Run completion.
+
+## Browse on the Host
+
+**Browser** lets the Agent browse with Chromium on the server while you watch its native window. Linux shows a shared private desktop; macOS shows only the conversation's owned browser window. Browsing requires a Linux or macOS Host, computer sharing, and a Full Control Run. Windows browsers can view a supported Host; Windows cannot host this desktop.
+
+### First-time setup
+
+1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI. Leave computer sharing enabled when starting WebUI.
+2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. If startup fails, open **Browser**, resolve the displayed required components, and choose **Try again**.
+3. Start a **Full Control** conversation and ask the Agent to browse. Tools are available automatically; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
+4. First live browser use reveals the viewer without moving keyboard focus. If Files/Changes is open or the screen is narrow, choose **View browser**. Closing the viewer keeps the browser running and prevents another automatic reveal in that Run.
+5. For login or manual correction on Linux, choose **Take control**, finish the action, then **Hand back to Agent**. On macOS, choose **Pause automation**, operate the browser locally on the Mac, then **Resume automation**.
+
+Browsing needs no per-conversation switch or manual Capability entry. Use **Advanced browser settings** for the global Auto/Disabled mode and executable overrides; save and restart after changing them. Ordinary chat, Files and Shell do not allocate conversation browser pages.
+
+### Install Host components
+
+**Linux:** install Chrome, Chromium, or Edge using your distribution or vendor instructions. On Debian/Ubuntu, prepare TigerVNC with:
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends tigervnc-standalone-server
+```
+
+Optional window controls and TigerVNC resizing:
+
+```bash
+sudo apt-get install --no-install-recommends openbox x11-xserver-utils
+```
+
+These commands install desktop components, not Chromium. Harness includes cdp-use and generates VNC passwords/X11 authentication; no separate Node.js, `vncpasswd`, `xauth`, or websockify setup is required. In Docker, install components inside the server image/container. **Manual installation commands** are instructions for you to run, not UI-executed installation.
+
+Run as non-root with Chromium's sandbox enabled. Root requires an explicit `--browser-no-sandbox` or `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`; this removes Chromium's sandbox protection. `--browser-sandbox` overrides that environment opt-out. WayVNC/Sway independently requires a non-root account.
+
+**macOS:**
+
+1. Install Chrome, Chromium, or Edge and run Harness UI as the logged-in desktop user.
+2. Choose **Browser → Open browser** to open a window; Chromium is the only required browser component.
+3. For optional preview on macOS 14 or later, grant Screen Recording permission to the application running Harness UI. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there.
+4. Keep the Mac unlocked and the browser window visible. After granting permission or unlocking, choose **Reconnect**. Restart the Host application if macOS asks you to.
+
+Preview captures only the exact conversation window created by Harness UI, including the real address bar. Missing permission or capture failure leaves automation available. The viewer stays read-only: it forwards no keyboard, mouse, or clipboard input. Screen Sharing and VNC passwords are unnecessary; old saved VNC credentials and the former password environment variable are unused.
+
+Capture never falls back to the desktop, a personal browser, or another conversation's window. Separate popup windows and native dialogs are outside the preview. A closed or unidentified bound window needs **Reset browser** to establish a new preview. Use local zoom; Viewport presets are disabled and the physical display resolution stays unchanged.
+
+### Detect and select executables
+
+Automatic selection uses installed browsers, preferring Chrome, Chromium, then Edge. Linux searches the server's `PATH`; macOS checks `/Applications` and `~/Applications`. Install missing programs before **Scan** or **Try again**. Restart the server after changing its `PATH`.
+
+| Linux display choice | Required components                                | Resizing                      |
+| -------------------- | -------------------------------------------------- | ----------------------------- |
+| TigerVNC, preferred  | `Xtigervnc` or `Xvnc`                              | Optional RandR/xrandr support |
+| x11vnc               | x11vnc and Xvfb                                    | Fixed desktop                 |
+| WayVNC               | Compatible WayVNC, headless Sway, non-root account | Fixed desktop                 |
+
+Automatic discovery prefers a complete adapter in that order. WayVNC needs private Unix sockets and input-disabled viewing support. Linux desktops use private display/runtime resources, not the user's existing desktop. An X11 window manager such as Openbox, Fluxbox, IceWM, or twm supplies window dragging and close controls; basic browsing works without it.
+
+To override a path, open **Settings → General → Host browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail instead of falling back. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
+
+On macOS, settings show optional **Window preview** instead of a VNC executable selector or password.
+
+The shared profile lives at `<data_root>/browsers/profile`, normally `~/.a13n-harness-ui/data/browsers/profile`. It has no separate location setting. Conversations and Projects share one Chromium instance and profile, with separate windows/Agent tabs. Personal profiles are not imported, and existing profile directories are not moved or merged.
+
+On Linux, the managed browser uses basic password storage to avoid waiting for a locked desktop keyring. Saved passwords and cookies are **not protected by the OS keyring**; protect the profile and its backups as credentials. The system keyring and macOS credential storage are unchanged. Restart Harness UI after upgrading to apply this behavior. The profile is retained, but sites whose login data used keyring encryption may require another sign-in.
+
+### Start and control the browser
+
+Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation. You can hand back from another conversation, including one with no open tabs. Taking control from another conversation transfers input and focuses its window while all Agent browser tools stay paused.
+
+An Agent that attempts a browser tool during takeover receives an immediate blocked result and a registered handback notice. It can finish independent work or end its turn instead of polling. Handback notifies only these conversations, including those whose turn has ended, so the Agent can observe afresh and continue relevant work. Pending approvals still require your decision. Stop, archive, and clearing context cancel pending notices. Notices are kept only while this server and browser runtime remain running; a previous Goal is not resumed.
+
+To change devices, open the same Thread in another browser and choose **Take control here**. The previous controller loses input while the Agent stays paused; opening the Thread alone remains read-only. After a disconnection, choose **Reconnect control** to reconnect while keeping the Agent paused, or **Hand back to Agent** to resume automation.
+
+The toolbar shows **Taking control…** while current operations finish, then **Connecting control…** and **Waiting for the first frame…**. Wait for **You have control** before typing or clicking. Connection can retain the previous picture with a pending message; a timeout offers retry, and you can hand back while connection is pending or failed.
+
+On macOS, choose **Pause automation** before interacting with the real browser locally on the Mac. This also pauses browser tools and page collection across conversations. Choose **Resume automation** when done; the Agent must observe the updated page before continuing. Closing the viewer leaves automation paused. The WebUI preview remains read-only throughout.
+
+On Linux, click the remote desktop before typing. Local input methods compose on your device and paste committed text into the remote field. The field must accept paste and the Host needs suitable fonts. Linux Unicode transfer requires an extended-clipboard server such as TigerVNC or WayVNC; the tested x11vnc server lacks it.
+
+During Linux human control, focused desktop text clipboards synchronize up to 65,536 characters. HTTPS or localhost and browser clipboard permission are required. Client Command shortcuts map to Linux Ctrl shortcuts. Handback, disconnection, and closing the viewer stop synchronization. The remote bridge transfers text, not images/files; file dialogs use Host files.
+
+On Linux with supported resizing, take control and choose a Viewport preset for responsive layout checks. The dimensions describe the page's CSS viewport; other viewers see the same size. Resizing preserves login and avoids reload. It does not emulate a mobile OS, user agent, or touch device. Close conversation tabs and Reset retain the selection until server restart.
+
+| Action                                           | What remains                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Close drawer, switch conversation, finish Run    | Browser continues running                                                    |
+| **Browser options → Close conversation tabs**    | Close current windows; keep the Run binding so the same Run can reopen pages |
+| **Reset browser**                                | Recreate this conversation's window at a visible position                    |
+| **Reconnect**                                    | Reconnect the viewer without restarting Chromium                             |
+| Close last conversation tab                      | Binding stays enabled; Agent navigation or Open browser can create another   |
+| Exit Chromium or lose a required display process | Shared runtime and all windows stop                                          |
+
+Reset or recovery after failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing individual tabs during human control leaves automation paused until handback. **Close conversation tabs** also releases human control when that conversation is the controller.
+
+Linux human controllers can see and operate other windows on the shared private desktop. macOS preview is limited to one window, while website logins, saved passwords, and preferences still share the Chromium profile across conversations. Browser authority and networking belong to the Host, outside Sandbox isolation. Linux uses noVNC; its source/license notice is served at `/assets/LICENSE.noVNC`, with other bundled notices at `/third-party-licenses.txt`.
+
+### Capture and annotate a screenshot
+
+1. In a connected Browser drawer, click the camera, **Capture and annotate screenshot**. It freezes the currently rendered Linux desktop or macOS window preview locally, including browser controls, while the live browser continues.
+2. Crop or add arrows, shapes, freehand marks, text, or mosaic with a mouse, pen, or touch pointer. Use **Opaque redaction** for private details; mosaic is only a visual effect.
+3. Use **Select** or the **Annotations** picker to choose a mark. Move/resize it, Delete it, or nudge with arrows (Shift for larger steps). Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z redoes. Shift constrains shapes/arrow angles.
+4. Finish text with Ctrl/Cmd+Enter or cancel it with Escape. Outside text input, **Copy PNG** or Ctrl/Cmd+Enter copies the result and returns focus to chat.
+5. Paste explicitly into the composer, inspect the attachment, add your instruction, and send.
+
+Capture needs no takeover and does not pause the Agent. The editor suspends only this viewer's remote input and text synchronization. Copy waits for previously issued text clipboard writes. Capture/copy never upload, attach, or send automatically.
+
+PNG dimensions follow the source-pixel crop, independent of preview zoom or screen density. Keyboard controls support editing existing marks; creating marks/crops requires a pointer. Copy/export failure preserves edits. Retry or use **Download PNG**, which leaves the editor open. Closing asks for confirmation when text or undo/redo history would be discarded. Pasting into chat follows ordinary attachment limits.
+
+## Share a Thread or Project
+
+1. Choose **Share** beside the Thread microphone, or **Share** from the Project menu.
+2. Select **Thread** or **Project**. Project access covers current/future Threads and ends for a Thread moved out.
+3. Choose **View only** for history, attachments, and live output, or **Send messages** for shared editing, uploads, sending, and steering. Prompt guests can create Threads in a shared Project using its defaults.
+4. Select one hour, one day, or seven days, then **Create link**.
+5. **Copy link** before closing; its secret appears once. Use **Open shared view** to inspect the guest view.
+6. Under **Manage links**, edit permission and **Save**, or **Revoke** access.
+
+Only give prompt links to trusted people. Their prompts use the Agent's existing tools and Environment authority, including cross-conversation tools. Link scope limits browser/API access, not Agent execution.
+
+Guests cannot configure the instance, answer approvals, manage links, or use native Files/Terminal. The instance owner handles approvals. Tasks, notes, and subagent output remain inspectable. Guest access is separate from owner login in the same browser. Revocation/expiry prevents further access but does not cancel work already started.
+
+## Work with a Coordinator
+
+1. Select a Project and enable **Coordinate agents** in **Chat options**.
+2. Send the objective. The conversation becomes a Coordinator; **Goal** remains a separate [option](everyday-use.md#work-toward-a-goal).
+3. Expand the Coordinator's sidebar row to inspect its workers and their independent histories.
+4. To assign work directly, choose **New worker** in its actions and send the assignment in that worker conversation.
+
+The Coordinator delegates substantive investigation, implementation, and testing to workers by default. It focuses on communication with you, planning, coordination, and review of results. Simple questions, lightweight checks, and review stay in the Coordinator conversation. Tightly coupled work can stay with one worker; delegation does not require parallel execution. If you ask the Coordinator to do the work itself, it follows your choice without delegating or asking you to confirm that choice again. This is an Agent instruction, not a restriction on its tools.
+
+Each Project can have several Coordinators. The role is permanent, including if sending subsequently fails. An existing conversation can use **Make Coordinator** when idle, unarchived, Project-bound, and free of pending decisions. Conversion keeps its URL/history/settings. Workers cannot be promoted; old conversations and Sidekicks are not adopted.
+
+A worker is a root conversation with human controls, not a Subagent. **Managed by · name** fixes its owner and Project. Before creation, remove that label to make an independent draft without losing text, attachments, or choices. After creation it stays fixed; uncertain creation must be inspected before retrying. Workers appear under their owner, and search labels them **Coordinator worker**.
+
+Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Disabling Sidekick does not disable Coordinators.
+
+Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
+
+## Agent collaboration and Sidekick
+
+Use inline conversation links from collaboration tools to inspect other root work. Agents receive their Thread ID and captured Project/roots; a newly created root receives the task and return address, not the requester's full conversation history.
+
+| Root role     | Agent's collaboration scope                                                  |
+| ------------- | ---------------------------------------------------------------------------- |
+| Ordinary root | Other roots, excluding managed workers                                       |
+| Coordinator   | Its owned workers; new roots stay in its Project                             |
+| Worker        | Inspect itself/owner, message owner, use Subagents for task-local delegation |
+
+These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
+
+An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` overrides the first Run only; `run_thread` can override a later Run. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+
+Configure **Settings → General → Sidekick** for default Agent, Model, and reporting instructions. It is enabled by default. **Inherit current agent**, **Use agent model**, and **Disabled** express distinct choices. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+
+## Fork a conversation
+
+1. Open an independent conversation's **…** menu and choose **Fork conversation**.
+2. Inspect the newly opened copy, then send your next instruction there.
+
+Forking makes no Model request. It copies saved history, notes, tasks, settings, and Thread-owned files. An active source contributes its last saved checkpoint. External Project directories, remote targets, and sandboxes remain shared resources.
+
+Coordinators, workers, Subagent Threads, and internal Memory/Live Threads cannot be forked. After uncertain creation, inspect the conversation list before retrying.
+
+## Star important conversations
+
+Choose **… → Star conversation** on a hovered/focused row; touch screens expose the menu directly. A filled star stays visible. **Unstar conversation** removes it. Stars are shared instance state and survive browser changes/restarts.
+
+Starred roots precede the five ordinary **Recent** rows; running and unread **New results** take priority without duplicates. Stars do not change visit time. Archive hides a conversation while retaining its star, and workers stay nested under their Coordinator.
+
+## Find unfinished input
+
+Open **Drafts** below conversation search for saved conversations with unfinished shared input, including collapsed Projects and older roots. Each row identifies its Project; ordinary navigation also shows a **Draft** marker alongside running/unread state.
+
+Opening a conversation does not clear the marker. Send successfully or remove its text/attachments; concurrent additions keep it marked. Pending/failed uploads count, whitespace and settings changes do not. Archive removes the entry without discarding the draft.
+
+Synchronized shared drafts can be rediscovered while the same server runs; restart drops them. For a not-yet-created conversation, return to the separate browser-local draft through **Home**.
+
+## Observe Memory
+
+Open **Memory** in the bottom-left navigation to inspect enabled Global or Project memory. The center shows organization history, live tool activity, and **Inspect & usage**. Each automatic organization Run starts fresh model context; prior history and usage remain available after restart.
+
+The right panel displays current scope files, including before any organization Run. Opening it starts no work. The viewer is read-only and independent of computer sharing. To edit, use server Host access to `memory/` beside the selected root configuration.
+
+In **Settings → General**, disabling automatic organization retains the viewer; disabling Memory hides it. Neither deletes files or history.
+
+## Configure the workbench
+
+Use the two-step wizard for first use and **General → Setup & diagnostics** for repair. Model connection saves server credentials; Workspace selects Full Control or a checked Sandbox and an optional server Project. **Set up later** retains nonsecret choices. Secrets are not browser-persisted. After a lost save response, use **Check saved setup and open conversation** before retrying.
+
+For later changes:
+
+| Settings area           | Configure                                                                   |
+| ----------------------- | --------------------------------------------------------------------------- |
+| **Agents**              | Instructions, Model, Capabilities, subagents; browse installed capabilities |
+| **Models**              | Provider/model settings                                                     |
+| **Accounts & API keys** | Server credentials                                                          |
+| **Connections**         | MCP, reusable agent plugins, conversation connection defaults               |
+| **Environments**        | Local defaults, Devices, profiles/extensions, runtime preparation           |
+| **General**             | Live, Memory, Sidekick, notifications, setup/diagnostics                    |
+| **Configuration files** | Inspect or edit the underlying files                                        |
+
+Forms/YAML share one draft. **Save changes** validates and replaces the complete file. Tab navigation preserves unsaved edits; reload does not. Detected external changes retain your dirty draft, while file saves remain last-write-wins. Hidden MCP source text means a replacement also replaces unseen fields and all resources in that file. Active Runs keep captured configuration. Follow [configuration recipes](configuration-recipes.md) for complete file-based setups.
+
+Open **Project settings** to edit server directories and creation defaults. **Browse → Use this directory** changes only the draft; save to apply. With computer sharing off, enter Host paths manually. New Threads use saved defaults; existing Threads retain selections unless explicitly changed. Default, None, and Custom differ; previews show saved values/sources rather than testing a Model.
+
+Click the generated collaboration name in the top-right header and **Save name** to change this browser's label. The online indicator opens the per-tab participant directory. Names and presence are live collaboration metadata, not provider identities. Background tabs are distinguishable from foreground attention.
+
+### Add or forget a working Environment
+
+1. In **Settings → Environments**, add a Device identity, HTTP or reverse WebSocket transport, and credential reference. **Check connection** reads its live descriptor; saving can work offline.
+2. In **Project settings → Environments** or **Conversation details → Configuration → Change next Run selections**, choose **Add environment** and the Device.
+3. Enter a known absolute directory or browse the online Device, then **Use this directory**. **Add directory** adds more paths to that environment.
+4. Select **Default working directory** and save. Replace the default before removing its directory.
+
+Projects can combine local and remote directories or use only remote ones; at least one working directory remains required. Device browsing works independently of computer sharing. Selecting a Device does not redirect the Host Files/Changes/Terminal panels.
+
+To remove an unused Device/custom profile, choose **Forget**. Follow the dialog's reference links and repair current defaults first. Forget removes local configuration even when the Device is offline/provider unavailable; remote files and saved history remain. Built-ins cannot be forgotten.
+
+Existing Threads retain old choices. A removed selection appears **Not configured**. Repair it explicitly in **Change next Run selections**, including a replacement default when needed. Earlier Run captures/continuations remain unchanged. See [Device configuration](environments-and-projects.md#add-device-bindings) for YAML.
+
+## New results in this browser
+
+Opening or starting a conversation follows it in this browser. An unread saved success gains a **New result** dot, including outside the five recent Project rows. Later running/failed work does not erase it.
+
+Read the saved result at the bottom of history in a focused, visible tab to clear the dot. Selecting the conversation or seeing live text alone is insufficient. An old snapshot cannot clear a newer result. Archived dots stay in **Archived**.
+
+Follow/read state belongs to this browser/site address and synchronizes across tabs. Reopening refreshes followed results saved while closed; first visits treat existing results as historical. Clearing site data removes that state. These dots require no notification permission and are separate from system push.
+
+## Task notifications
+
+1. On the receiving device, open **Settings → General → Notifications** at a stable HTTPS address.
+2. Choose **Allow notifications** or **Enable background notifications** and accept the browser prompt.
+3. Check **Enabled on this device**, then choose **Send test notification**.
+4. Keep a WebUI page visible to renew device activity, send a task, and check the system alert after leaving WebUI.
+
+The server must stay running and reach the browser's push service. No separate push account or manual VAPID setup is required. Enable each device separately; existing browser permission alone does not enable background delivery after an upgrade. A test confirms push-service acceptance, not screen display.
+
+System notices cover completion, failure, and requests for input across all root conversations, including unvisited ones; archived roots are excluded. Actual answer/question/error previews can appear on the lock screen. Opted-in devices are eligible for six hours after activity; any visible WebUI page renews this about every minute without requiring focus or typing.
+
+Open pages also show in-app notices without that six-hour or visit-history limit. Web Push is the sole system-notification path; unsupported or unreachable push leaves in-app notices. Push delivery is best effort and missed banners are not replayed. Reopen the conversation for authoritative results.
+
+For Android Chrome, check both site and system permissions, battery/Do Not Disturb restrictions, and push-service connectivity. On iPhone/iPad, use a supported Home Screen web app and enable notifications inside it; an ordinary browser tab is insufficient. Remote plain HTTP is unsupported; local loopback works for development. Browser installation/menu details depend on the device.
+
+| Symptom                                          | Next check                                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| **Browser push registration failed**             | Browser could not obtain a subscription; inspect its error, push connectivity, VPN/firewall, and Wi-Fi/mobile differences |
+| Test accepted but no alert                       | Site/system permission, Focus/Do Not Disturb, device network and power policy                                             |
+| **Checking subscription…**                       | Wait for stored subscription synchronization                                                                              |
+| **Subscription needs attention**                 | Refresh/test failed; return to foreground or reconnect, then inspect the result                                           |
+| Rejected/expired endpoint or changed signing key | Use **Reconnect background notifications**                                                                                |
+
+After upgrade, reload and leave the updated page visible. Subscriptions/signing keys survive server restart; registrations expire after 90 days without refresh/activity, independently of six-hour eligibility. Back up the data root securely to retain that identity.
+
+Turn off **Enable browser notifications** before clearing site data when possible. It removes this browser's subscription without affecting other devices or in-app notices. Logout also attempts cleanup. If cleanup fails on both sides, block the site's notification permission; clearing storage alone is not a server unsubscribe.
+
+## Install as an app
+
+Open **Settings → General → Install Harness UI**, then use the offered **Install app** prompt or your browser's installation/Add to Home Screen action. Safari also provides **Share → Add to Home Screen** on iPhone/iPad and **File → Add to Dock** on Mac where supported.
+
+Use HTTPS or loopback and keep scheme, hostname, and port stable. A phone's plain-HTTP LAN connection does not have the same installation support. Changing origin can require installation and login again. The installed window still needs the server; it adds no offline execution or unsaved-editor recovery. Enable background notifications separately.
 
 ## Authentication and key retention
 
-Startup stdout prints the ordinary URL and, only for a generated instance key, the key and a convenience fragment URL. The browser consumes and removes the key fragment, sends `Authorization: Bearer <key>` on API requests, and retains successfully used keys in same-origin localStorage. Use **Log out** to remove the retained key and close protected views. Static assets contain no key and need no authentication.
+Startup prints the ordinary address. With a generated key, it also prints the key and fragment login link. The browser removes the fragment and retains a successfully used key in same-origin localStorage for authenticated API requests. **Log out** removes it and closes protected views. Static assets contain no key.
 
-Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a fresh process key. Supplied keys are not echoed; command arguments may still be visible to the shell and operating system. Explicitly empty keys and conflicting repeated key values are rejected. `--dangerous-skip-permissions` disables Web authentication only, not Agent permissions or computer-sharing gates; combining it with a CLI or environment key is an error. `--api-key` and `--dangerously-bypass-permission` remain compatibility aliases.
+Key precedence is `--apikey`, `A13N_HARNESS_UI_API_KEY`, then a fresh process key. Supplied keys are not echoed, though command-line arguments can be visible to the OS. Empty keys and conflicting repeated values are rejected.
+
+`--dangerous-skip-permissions` disables Web authentication only; Agent permissions and sharing gates still apply. It cannot be combined with a supplied key. `--api-key` and `--dangerously-bypass-permission` remain compatibility aliases. Review [CLI options](command-reference.md#webui) before exposing the listener.
 
 ## Reverse proxies and public addresses
 
-For a public domain or a TLS-terminating reverse proxy, add the external address to the selected `a13n-harness-ui.yaml` and restart WebUI:
+1. Add your external address to the selected root YAML. Replace the example with your actual scheme, host, and port:
 
-```yaml
-webui:
-  allowed_origins:
-    - "https://anui.wh1isper.top:8090/"
-```
+   ```yaml
+   webui:
+     allowed_origins:
+       - "https://workbench.example.com:8090"
+   ```
 
-The scheme, domain and port must match. This permits that address without permitting HTTP, port 443, or other domains as alternatives. To explicitly allow any address, use `allowed_origins: ["*"]`; the default `[]` retains the existing listener-address restrictions. Neither setting relaxes API authentication or permits cross-origin API access. See [allowed origins](configuration.md#webui-allowed-origins) for validation and restart behavior.
+2. Configure TLS termination and WebSocket upgrades. Preserve the external `Host` (including port) and browser `Origin`; forward the HTTPS scheme as `X-Forwarded-Proto: https`.
 
-The reverse proxy must preserve the external `Host` (including `:8090`) and the browser's `Origin`, forward the original HTTPS scheme with `X-Forwarded-Proto: https`, and support WebSocket upgrades. Do not rewrite these headers to an internal loopback address to bypass admission. Harness UI uses Uvicorn's proxy-header handling; set `FORWARDED_ALLOW_IPS` in the WebUI process environment to the trusted proxy peer IPs or networks when the proxy does not connect from the default trusted `127.0.0.1`. Trust only actual proxies, and have the proxy overwrite forwarded headers from clients. Do not use `FORWARDED_ALLOW_IPS=*` unless every possible connecting peer is trusted. In containers, the relevant peer is the proxy's address as seen by the WebUI container, not the browser address.
+3. If the proxy peer is not trusted loopback `127.0.0.1`, set `FORWARDED_ALLOW_IPS` in the WebUI process environment to the proxy IPs/networks as seen by that process/container. Have the proxy overwrite client-supplied forwarding headers.
 
-Device pairing returns root-relative approval and connection paths. The daemon resolves them against its paired Host URL, preserving the external HTTPS scheme and port rather than using the proxy's internal address. Pairing approval still does not prove that the Device has connected or obtained desktop permissions.
+4. Restart WebUI, open the external address, log in, and check a conversation and interactive connection.
+
+Origin admission matches scheme, domain, and port. The example does not also allow HTTP or port 443. Default `[]` keeps listener-address restrictions; `allowed_origins: ["*"]` permits any address. Neither disables authentication or enables cross-origin API access. Trust only actual proxy peers; do not rewrite headers to loopback or use unrestricted forwarded-header trust to evade admission. See [allowed origins](configuration.md#webui-allowed-origins).
+
+Device pairing returns root-relative paths resolved against the paired Host URL, retaining public HTTPS and port. Approval alone does not establish Device connection or desktop permission.
+
+## Restart or update the server
+
+1. Save private editor changes.
+2. Press Ctrl+C once or send SIGTERM. Wait for **WebUI stopped** and process exit.
+3. For an update, install the new package after exit using the [installation workflow](installation.md).
+4. Start the replacement with the same data directory. Inspect interrupted conversations and any recovery errors.
+
+Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff. The next start consumes it once and continues compatible interrupted work in new Runs, without resending prompts or replaying the saved tool batch.
+
+`shutdown_timeout_seconds` (default 60 seconds) bounds waiting for a safe boundary, not total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time. Let the old process finish before starting its replacement.
+
+After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Native terminals, old Shell handles, shared drafts, and unsaved editors are not restored.
+
+## Server logs and shutdown
+
+Use `process.log_level` and `process.log_format` to control logs. INFO reports normal API activity; DEBUG adds assets, health probes, and cleanup stages. API entries record route templates, status, elapsed time, codes, and generated IDs, excluding bodies, keys, query values, and native paths.
+
+| Observation                                                            | Action                                                                                   |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Stopping WebUI**                                                     | Wait for cleanup; **WebUI stopped** confirms completion                                  |
+| Slow shutdown                                                          | Inspect DEBUG stages; connection-drain timeout is not an App cleanup deadline            |
+| **Connection interrupted**                                             | Let reconnect run or choose **Retry now**; restart the server first if stopped           |
+| `thread_history_continuation_changed` / `thread_continuation_conflict` | Refresh the conversation                                                                 |
+| `object_payload_incompatible`                                          | Inspect object/version/validation details in storage warnings; retain the data directory |
+
+Reconnect refreshes observations, not failed saves or submissions. Browser disconnection does not stop Runs or terminals. WARNING log level hides normal progress.
 
 ## Listener and application lifetime
 
-Non-loopback listening grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even without browsers; Ctrl+C or SIGTERM closes it. Unauthenticated `/healthz` and `/readyz` report bounded liveness and App readiness. A fresh instance can be ready for setup before any Model is configured.
+The running server owns the App even without browser clients. Non-loopback listening shares instance authority with a trusted network; use TLS and suitable access controls. It does not provide tenant isolation. Unauthenticated `/healthz` and `/readyz` expose bounded liveness/readiness; readiness can mean ready for setup before a Model exists.
 
-TUI and WebUI processes can share one local database across compatible package upgrades. A newer migration revision alone does not reject an older compatible reader or gate an active Run's save. An older App leaves unknown newer migration history unchanged and checks that its required tables and columns remain available. Missing storage and real continuation/version conflicts still fail explicitly; schema compatibility does not share live execution ownership. Already released binaries keep their own startup checks, and incompatible payload formats cannot be made readable merely by relaxing revision validation.
+Compatible TUI/WebUI processes can use one local database across package upgrades. An older compatible reader preserves unknown migration history and checks its required tables/columns; a newer migration number alone does not reject it or block an active save. Real storage, continuation/version, and payload incompatibilities still fail. Database compatibility does not share live execution ownership, and released binaries retain their own checks.
 
 ## Container and installed assets
 
-Harness UI ships as a Python wheel and sdist; no official Harness UI container image is published. Install the Python distribution on the computer that owns the workbench. If you need a containerized server, build your own image from a pinned Python distribution and configure authentication, listeners and persistent mounts explicitly. `a13n-sandbox` is an Agent execution image, not a replacement WebUI server.
+Install the Python distribution on the workbench Host. Its wheel/sdist includes WebUI assets, so end users need no Node.js or frontend checkout. Harness UI publishes no official container image; a custom deployment must pin the distribution and configure listener, authentication, and persistent mounts. `a13n-sandbox` is an Agent execution image, not the WebUI server.
 
-WebUI assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, use `make webui`: it builds and installs the bundled assets, then starts the foreground server with isolated configuration/data in `var/harness-ui/`. No manual instance key is required: without a supplied CLI or environment key, stdout contains a directly usable login link. Authentication is still required. Use `make webui WEBUI_ARGS='--port 9000 --no-share-computer'` to forward server options; `CLI_ARGS` forwards global options before the subcommand. See the [development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md) for configuration seeding and environment overrides.
+For repository development, `make webui` builds/installs assets and starts a foreground server with isolated config/data in `var/harness-ui/`. It prints a generated-key login link when no key was supplied. Use `WEBUI_ARGS` for server options and `CLI_ARGS` for global options:
+
+```bash
+make webui WEBUI_ARGS='--port 9000 --no-share-computer'
+```
+
+See the [development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md) for seeding and environment overrides.
 
 ## Options and ownership
 
-See [the registered webui options](command-reference.md#webui) for listener, authentication, and compatibility aliases. Bind address, port, authentication and native-sharing options are process arguments; additional allowed request origins are configured through `webui.allowed_origins` in root YAML. An open server owns active App work; closing a tab does not stop the server, and this is not a detached worker service.
+Listener address, port, authentication, and native sharing are process options. Additional admitted origins live in root YAML. Use the [command reference](command-reference.md#webui) for the complete option list.
 
-For API clients, follow [the HTTP workflow and route reference](http-api.md). For an in-process interface, use [the Python App](embedding.md). For automation without a WebUI server, use [one-shot execution](automation-and-troubleshooting.md#automation-and-diagnostics).
+For your own client, continue with the [HTTP workflow](http-api.md). For in-process integration, use the [Python App](embedding.md). For scripts that need no listener, use [one-shot execution](automation-and-troubleshooting.md#automation-and-diagnostics).

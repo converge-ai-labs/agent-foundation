@@ -328,15 +328,19 @@ def download_headers(filename: str | None) -> dict[str, str]:
     return {**STORED_CONTENT_HEADERS, "Content-Disposition": disposition}
 
 
+# Names the MCP argument that carries an entity tag without its HTTP quoting; the generated tool quotes it.
+MCP_ENTITY_TAG = "x-a13n-mcp-entity-tag"
+
 # The ETag a client read, presented to change that resource; `require_match` decides whether it is current. The
 # tag is the view's `"{id}:{version}"`, or `"{key}:{version}"` for a kind identified by key, so a list row gives
-# it without another read.
+# it without another read. MCP tools take it as `expected_version`.
 IfMatch = Annotated[
     str | None,
     Header(
         alias="If-Match",
         max_length=512,
         description='The resource\'s ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model',
+        json_schema_extra={MCP_ENTITY_TAG: "expected_version"},
     ),
 ]
 

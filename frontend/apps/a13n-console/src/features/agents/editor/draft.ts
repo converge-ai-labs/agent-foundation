@@ -47,7 +47,10 @@ export type AgentDraft = ReturnType<typeof useAgentDraft>;
  * Editable state for one agent configuration. Edits accumulate here until the
  * save bar publishes them; nothing is written while the draft changes.
  */
-export function useAgentDraft(initial: AgentConfig) {
+export function useAgentDraft(
+  initial: AgentConfig,
+  catalog?: readonly Schema["ToolsetDefinition"][],
+) {
   const initialSettings = initial.model_settings ?? {};
   const {
     thinking: initialThinking,
@@ -72,7 +75,6 @@ export function useAgentDraft(initial: AgentConfig) {
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
-    [builtinSkills, setBuiltinSkills] = useState(initial.builtin_skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
     [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
@@ -80,8 +82,17 @@ export function useAgentDraft(initial: AgentConfig) {
     ),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
     [memory, setMemory] = useState(initial.memory ?? {}),
+    [backgroundCompaction, setBackgroundCompaction] = useState(
+      initial.background_compaction ?? {},
+    ),
     [execution, setExecution] = useState(initial.execution ?? {});
+  // Read-only snapshots and unavailable catalogs retain the saved selection.
+  const builtinSkills = catalog
+    ? linkedBuiltinSkills(initial.builtin_skills ?? [], toolsets, catalog)
+    : (initial.builtin_skills ?? []);
   const dirty =
+    JSON.stringify(backgroundCompaction) !==
+      JSON.stringify(initial.background_compaction ?? {}) ||
     JSON.stringify(plugins) !== JSON.stringify(initial.plugins ?? []) ||
     JSON.stringify(execution) !== JSON.stringify(initial.execution ?? {}) ||
     JSON.stringify(toolSearch) !==
@@ -111,6 +122,8 @@ export function useAgentDraft(initial: AgentConfig) {
       JSON.stringify(initial.memory_mounts ?? []);
   return {
     initial,
+    backgroundCompaction,
+    setBackgroundCompaction,
     execution,
     setExecution,
     initialExtraSettings,
@@ -137,7 +150,6 @@ export function useAgentDraft(initial: AgentConfig) {
     skills,
     setSkills,
     builtinSkills,
-    setBuiltinSkills,
     connections,
     setConnections,
     plugins,
@@ -170,11 +182,31 @@ export function useAgentDraft(initial: AgentConfig) {
   };
 }
 
+/** Platform instructions follow enabled tools; unrelated saved skill names survive. */
+function linkedBuiltinSkills(
+  saved: NonNullable<AgentConfig["builtin_skills"]>,
+  selections: NonNullable<AgentConfig["toolsets"]>,
+  catalog: readonly Schema["ToolsetDefinition"][],
+): NonNullable<AgentConfig["builtin_skills"]> {
+  const enabled = catalog.some(
+    (group) =>
+      group.platform &&
+      (selections[group.key]?.enabled ?? group.default_enabled) &&
+      group.tools.some(
+        (tool) =>
+          selections[group.key]?.tools?.[tool.key]?.enabled ??
+          tool.default_enabled,
+      ),
+  );
+  const others = saved.filter((name) => name !== "platform-operations");
+  return enabled ? [...others, "platform-operations"] : others;
+}
+
 export type DraftBuild =
   | { ok: true; config: AgentConfig }
   | {
       ok: false;
-      stage: "model" | "reviewer" | "toolSearch" | "advanced";
+      stage: "model" | "reviewer" | "toolSearch" | "compaction" | "advanced";
       error: Error;
     };
 
@@ -245,6 +277,13 @@ export function buildDraftConfig(
           : new Error(t("Invalid configuration")),
     };
   }
+  const threshold = draft.backgroundCompaction.blocking_threshold;
+  if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
+    return {
+      ok: false,
+      stage: "compaction",
+      error: new Error(t("Enter a percentage greater than 0 and at most 100.")),
+    };
   try {
     if (!validSpaceSelection(draft.memory))
       throw new Error(
@@ -258,6 +297,7 @@ export function buildDraftConfig(
         initial,
         {
           execution: executionOverride(draft.execution),
+          background_compaction: draft.backgroundCompaction,
           instructions: draft.instructions,
           toolsets: draft.toolsets,
           reviewer: draft.reviewer,

@@ -8,17 +8,13 @@ import {
   readLanguagePreference,
   resolveLanguage,
   saveLanguage,
-  type LanguagePreference,
 } from "../../i18n/preferences";
 import { useAppearance } from "../../layout/appearance";
 import styles from "./settings.module.css";
 
 export function Preferences() {
-  const { t, i18n } = useTranslation(),
+  const { t } = useTranslation(),
     { theme, setTheme } = useAppearance();
-  const [languagePreference, setLanguagePreference] = useState(
-    readLanguagePreference,
-  );
   return (
     <div className={styles.sections}>
       <SettingsSection variant="outlined" title={t("Appearance")}>
@@ -41,23 +37,31 @@ export function Preferences() {
           </div>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="outlined" title={t("Language and region")}>
-        <SettingsRow
-          label={t("Display language")}
-          description={t("Used for navigation, dates, and controls.")}
-        >
+      <p className={styles.note}>
+        {t("Preferences are saved automatically in this browser.")}
+      </p>
+    </div>
+  );
+}
+
+export function LanguageSettings() {
+  const { t, i18n } = useTranslation();
+  const [language, setLanguage] = useState(readLanguagePreference);
+  const changeLanguage = (value: string) => {
+    if (value !== "system" && value !== "en" && value !== "zh-CN") return;
+    setLanguage(value);
+    saveLanguage(value);
+    void i18n.changeLanguage(resolveLanguage(value));
+  };
+  return (
+    <div className={styles.sections}>
+      <SettingsSection variant="outlined">
+        <SettingsRow label={t("Display language")}>
           <div className={styles.control}>
             <ChoiceField
               placeholder={t("Language")}
-              value={languagePreference}
-              onValueChange={(value) => {
-                if (value !== "system" && value !== "en" && value !== "zh-CN")
-                  return;
-                const preference: LanguagePreference = value;
-                setLanguagePreference(preference);
-                saveLanguage(preference);
-                void i18n.changeLanguage(resolveLanguage(preference));
-              }}
+              value={language}
+              onValueChange={changeLanguage}
               label={t("Display language")}
               hideLabel
               options={[

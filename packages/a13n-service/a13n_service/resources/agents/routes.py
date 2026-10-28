@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra import images, reads
-from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.agents import composer, read_views, service
@@ -27,6 +27,9 @@ from a13n_service.resources.agents.toolsets import ToolsetCatalog
 from a13n_service.resources.builtin_skills import BuiltinSkillCatalog
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
+from a13n_service.resources.skills import builtin
+from a13n_service.resources.skills.schemas import BuiltinSkillDetail
+from a13n_service.resources.uploads.schemas import Digest
 from a13n_service.tenancy.requests import Actor, ImageBody, WorkspaceId
 
 router = APIRouter(prefix="/api/v1", tags=["agents"])
@@ -342,6 +345,43 @@ async def list_plugins(workspace_id: WorkspaceId, actor: Actor, runtime: Current
 async def list_builtin_skills(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> BuiltinSkillCatalog:
     """The skills bundled with this Service release, separately from workspace skill resources."""
     return await service.builtin_skill_catalog(runtime.storage, actor, workspace_id, skills=runtime.builtin_skills)
+
+
+@router.get("/builtin-skills/{name}", response_model=BuiltinSkillDetail, openapi_extra={"x-a13n-mcp": True})
+async def get_builtin_skill(
+    workspace_id: WorkspaceId, name: str, actor: Actor, runtime: CurrentRuntime
+) -> BuiltinSkillDetail:
+    """The current deployment's bundled skill and its package file manifest."""
+    return await builtin.get_skill(runtime.storage, actor, workspace_id, name, skills=runtime.builtin_skills)
+
+
+@router.get(
+    "/builtin-skills/{name}/content",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The current builtin skill package as a zip archive",
+            "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
+async def read_builtin_skill_archive(
+    workspace_id: WorkspaceId,
+    name: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    package_digest: Digest | None = None,
+) -> Response:
+    """Optionally require the manifest's digest; a changed package returns conflict."""
+    content = await builtin.read_archive(
+        runtime.storage,
+        actor,
+        workspace_id,
+        name,
+        skills=runtime.builtin_skills,
+        package_digest=package_digest,
+    )
+    return Response(content, media_type="application/zip", headers=download_headers(f"{name}.zip"))
 
 
 @router.get(

@@ -398,13 +398,22 @@ def test_cli_key_input_is_hidden_and_login_defaults_to_device(monkeypatch: pytes
     assert requests[-1].device_code is False
 
 
-def test_webui_dispatches_to_one_web_host_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("browser_args", "browser_env", "no_sandbox"),
+    [([], None, False), (["--browser-no-sandbox"], None, True), ([], "1", True), (["--browser-sandbox"], "1", False)],
+)
+def test_webui_dispatches_to_one_web_host_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_args, browser_env, no_sandbox
+) -> None:
     from contextlib import asynccontextmanager
 
     import a13n_harness_ui.webui as webui_module
 
     factory_calls = []
     listeners = []
+    monkeypatch.delenv("A13N_HARNESS_UI_BROWSER_NO_SANDBOX", raising=False)
+    if browser_env is not None:
+        monkeypatch.setenv("A13N_HARNESS_UI_BROWSER_NO_SANDBOX", browser_env)
 
     @asynccontextmanager
     async def open_app(settings, **kwargs):
@@ -430,6 +439,7 @@ def test_webui_dispatches_to_one_web_host_app(tmp_path: Path, monkeypatch: pytes
             "9001",
             "--api-key",
             "listener-secret",
+            *browser_args,
         ],
     )
     assert result.exit_code == 0, result.output
@@ -437,6 +447,7 @@ def test_webui_dispatches_to_one_web_host_app(tmp_path: Path, monkeypatch: pytes
         {"host": "127.0.0.1", "port": 9001, "api_key": "listener-secret", "dangerously_bypass_permission": False}
     ]
     assert factory_calls[0]["host_mode"] == "webui"
+    assert factory_calls[0]["browser_no_sandbox"] is no_sandbox
     assert factory_calls[0]["codex_login"] is None
     assert factory_calls[0]["grok_login"] is None
     assert "listener-secret" not in repr(CliRequest(web_api_key="listener-secret"))

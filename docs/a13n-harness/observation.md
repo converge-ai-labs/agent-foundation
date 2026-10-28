@@ -1,79 +1,116 @@
 ---
 title: Observation
-description: Opt-in OpenTelemetry traces and metrics for Runs, models, and tools, with Logfire and Langfuse profiles.
+description: Capture a Run locally, inspect its spans and metrics, then export through your Host's OpenTelemetry pipeline.
 ---
 
-Enable OpenTelemetry to inspect Runs, models and tools. Configure providers and export in your Host, then pass them to Harness.
+Start with one offline Run and an in-memory exporter. Once you can see its trace and duration metric, connect the same instrumentation to your collector, Logfire, or Langfuse. The Host owns provider setup and export; Harness instruments the Agent it builds.
 
-`HarnessBuilder()` reads the bounded `A13N_HARNESS_*` policy variables directly from `os.environ` at construction time. It never opens `.env` or any other configuration file. A Host process, launcher, container runtime, or development command may load a file and export its values before the Harness starts. The defaults keep observation disabled. Pass `instrumentation=None` to disable observation explicitly regardless of the environment, or pass a `HarnessInstrumentation` value to override the environment with exact providers.
+Observation answers what happened during execution. Use the [Run result and saved state](hosting.md#events-and-streaming) to decide whether work completed and became durable.
 
 ## Configure OpenTelemetry in the Host
 
-Install and configure the OpenTelemetry SDK in the executable Host, then pass the exact providers to the Harness:
+Use the Python environment from [Getting started](getting-started.md), then add the OpenTelemetry SDK:
 
-```python
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-
-from a13n_harness import (
-    HarnessBuilder,
-    HarnessInstrumentation,
-    HarnessTraceContent,
-)
-
-resource = Resource.create({"service.name": "agent-worker"})
-tracer_provider = TracerProvider(resource=resource)
-meter_provider = MeterProvider(resource=resource)
-
-# Add Host-selected span processors, metric readers, and exporters here.
-
-builder = HarnessBuilder(
-    instrumentation=HarnessInstrumentation(
-        tracer_provider=tracer_provider,
-        meter_provider=meter_provider,
-        trace_content=HarnessTraceContent.STANDARD,
-    )
-)
+```bash
+uv pip install opentelemetry-sdk
 ```
 
-At least one provider is required when `HarnessInstrumentation` is present:
+Save this complete program as `observe.py`. It uses no network exporter or provider credentials:
 
-- tracer only enables trace-only observation;
-- meter only enables metrics-only observation;
-- both providers enable both signals;
-- `instrumentation=None` disables both signals.
+```python title="observe.py"
+import asyncio
+from collections.abc import AsyncIterator
 
-The Host must flush and shut down its providers at the process boundary. The Harness does not flush after each Run.
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    del messages, info
+    yield "Observed locally."
+
+
+async def main() -> None:
+    resource = Resource.create({"service.name": "observation-demo"})
+    spans = InMemorySpanExporter()
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
+    reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+    try:
+        instrumentation = HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+        )
+        executable = HarnessBuilder(instrumentation=instrumentation).build(
+            AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+        )
+        result = await executable.run("Check observation")
+        print(result.output_or_raise())
+        tracer_provider.force_flush()
+        roots = [span for span in spans.get_finished_spans() if span.name == "harness.run"]
+        assert len(roots) == 1
+        assert roots[0].parent is None
+        print("Logical Run spans:", len(roots))
+        data = reader.get_metrics_data()
+        assert data is not None
+        names = {
+            metric.name
+            for resource_metrics in data.resource_metrics
+            for scope_metrics in resource_metrics.scope_metrics
+            for metric in scope_metrics.metrics
+        }
+        assert "a13n.harness.run.duration" in names
+        print("Run duration metric recorded.")
+    finally:
+        meter_provider.shutdown()
+        tracer_provider.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Run `uv run python observe.py`. Expect:
+
+```text
+Observed locally.
+Logical Run spans: 1
+Run duration metric recorded.
+```
+
+The program builds a Model, completes a Run, inspects an exported span and a metric, and shuts down both providers.
+
+Choose signals by the provider objects passed to `HarnessInstrumentation`: tracer only for traces, meter only for metrics, or both for both. At least one is required. Pass `instrumentation=None` to `HarnessBuilder` to disable both explicitly. Flush and shut down providers at the Host process boundary; Harness does not flush them after every Run.
 
 ## Select trace structure and content independently
 
-Trace structure is intentionally binary:
+Choose the trace structure and payload policy separately. A tracer provider enables the complete structure: `harness.run`, preparation/finalization and Skill resolution, native Agent/Model/tool spans, and operations for recovery, delegation, handoff, compaction, and tool review. Without a tracer provider, Harness-selected tracing is off. Environment configuration calls these states `verbose` and `off`.
 
-| State   | Selected structure                                                                                                                                                                           |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| off     | No Harness-selected spans.                                                                                                                                                                   |
-| enabled | `harness.run`, preparation/finalization and skill-resolution phases, native Pydantic AI spans, and `harness.operation` spans for recovery, delegation, handoff, compaction, and tool review. |
+| Content policy | Normal text and tool content | Binary content | Serialized Model request parameters |
+| -------------- | ---------------------------- | -------------- | ----------------------------------- |
+| `none`         | Omitted                      | Omitted        | Omitted                             |
+| `standard`     | Included                     | Omitted        | Omitted                             |
+| `full`         | Included                     | Included       | Included                            |
 
-In the explicit Python API, a tracer provider enables the complete structure. The environment convention uses `off` and `verbose` for these two states. There is no summary or intermediate structural mode.
+`standard` is the default. To change the local example, import `HarnessTraceContent` from `a13n_harness` and add `trace_content=HarnessTraceContent.NONE` to its `HarnessInstrumentation(...)`. The Run span and metric remain; ordinary input/output bodies are omitted. The content setting is dormant when tracing is off.
 
-Content policy controls native Pydantic AI capture and bounded logical-Run input/output. The native settings are:
+Review telemetry-visible data before exporting it. `none` does not redact upstream Agent descriptions, metadata, tool definitions, schema defaults, or exception text. `standard` cannot redact binary values nested in arbitrary custom models or dataclasses.
 
-| Policy     | Normal text and tool content | Binary content | Serialized model request parameters |
-| ---------- | ---------------------------- | -------------- | ----------------------------------- |
-| `none`     | Omitted                      | Omitted        | Omitted                             |
-| `standard` | Included                     | Omitted        | Omitted                             |
-| `full`     | Included                     | Included       | Included                            |
-
-The content default is `standard`. While tracing is off, that value is a dormant policy and does not emit data or make metrics-only instrumentation invalid. Supplying a tracer provider enables complete structure with the selected content policy.
-
-`none` means the Host does not opt into ordinary execution payloads. It is not a universal redaction boundary for fields emitted by upstream Pydantic AI instrumentation. Before enabling tracing, treat Agent descriptions, metadata, tool definitions and schema defaults, and upstream exception text as telemetry-visible. `standard` also cannot redact binary values nested inside arbitrary custom models or dataclasses.
-
-A Host that reads spans back from its collector and shows them to users can pass their content through `a13n_harness.observation.redact_json`. It returns a detached copy in which authority-bearing members such as `authorization`, `api_key`, `password`, `secret` and `token` are replaced, usage counts such as `input_tokens` remain, and `Bearer` credentials inside strings are replaced. The Harness applies the same rule to extension event payloads.
+When displaying collector content to users, `a13n_harness.observation.redact_json` returns a detached copy with authority-bearing fields such as `authorization`, `api_key`, `password`, `secret`, and `token` replaced. It also replaces Bearer credentials in strings while retaining usage counters such as `input_tokens`. Harness applies the same rule to extension event payloads.
 
 ## Enable observation and select a collector through environment variables
 
-The default builder mode is `instrumentation="environment"`. It reads these Harness policy variables once and obtains the OpenTelemetry global providers already configured by the executable Host:
+Use environment configuration when your launcher owns the telemetry backend. `HarnessBuilder()` defaults to `instrumentation="environment"`: it reads the following policy once from `os.environ` and selects the Host-configured global providers. It does not load `.env` files.
 
 | Variable                     | Values                     | Default    |
 | ---------------------------- | -------------------------- | ---------- |
@@ -81,81 +118,106 @@ The default builder mode is `instrumentation="environment"`. It reads these Harn
 | `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full` | `standard` |
 | `A13N_HARNESS_METRICS`       | `off`, `standard`          | `off`      |
 
-Invalid values fail during `HarnessBuilder()` construction. The defaults are identical for development and production: trace off, standard content policy, metrics off.
+Invalid values fail at builder construction. Development and production use the same defaults. An explicit `HarnessInstrumentation` overrides these variables; explicit `None` disables observation.
 
-Use the official OpenTelemetry Python distro and OTLP exporter to configure the SDK and collector target. The Harness does not reimplement their environment handling:
+To export the offline Model through OTLP:
+
+1. Install `opentelemetry-distro[otlp]` in the same Python environment.
+2. Save `collector_demo.py` beside `observe.py`:
+
+```python title="collector_demo.py"
+import asyncio
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.models.function import FunctionModel
+
+from observe import respond
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+    )
+    result = await executable.run("Check collector export")
+    print(result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+3. In that environment's activated shell, export the following settings. Replace `http://otel-collector:4318` with your reachable collector. These commands use POSIX shell syntax.
 
 ```bash
-python -m pip install 'opentelemetry-distro[otlp]'
-
 export A13N_HARNESS_TRACE_LEVEL=verbose
 export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
-
 export OTEL_SERVICE_NAME=agent-worker
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` selects a common collector endpoint; the official OTLP/HTTP exporters append `/v1/traces` and `/v1/metrics`. Signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` take precedence when set. Standard `OTEL_*` variables also own resources, sampling, batching, headers, TLS, compression, timeout, and temporality.
+4. Find service `agent-worker` in the collector's backend and inspect a completed `harness.run`. The console answer proves Model execution; the backend span proves export. Check exporter errors separately if the answer appears but the trace does not.
 
-The `opentelemetry-instrument` launcher configures global SDK providers before application code constructs `HarnessBuilder()`. `make harness-dev` performs the same wrapping after explicitly loading `dev/harness/.env`. An executable that configures providers in code can instead call `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`, or pass a fully explicit `HarnessInstrumentation` value. Explicit builder configuration wins over `A13N_HARNESS_*`; `instrumentation=None` is an explicit opt-out.
+The launcher initializes global SDK providers before application code and owns their process lifecycle. OTLP/HTTP appends `/v1/traces` and `/v1/metrics` to the common endpoint. Signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` take precedence. Standard `OTEL_*` variables configure resources, sampling, batching, headers, TLS, compression, timeout, and temporality.
 
-Use these safe process-environment defaults when no backend is selected:
+For code-owned providers with environment-selected signals, use `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`. `make harness-dev` loads `dev/harness/.env` explicitly before its OTel launcher. Other Hosts must arrange their own file loading.
 
-```bash
-export A13N_HARNESS_TRACE_LEVEL=off
-export A13N_HARNESS_TRACE_CONTENT=standard
-export A13N_HARNESS_METRICS=off
-export OTEL_TRACES_EXPORTER=none
-export OTEL_METRICS_EXPORTER=none
-```
-
-The later backend sections contain complete Logfire and Langfuse profiles. Put the selected values directly in the process environment, or let Host-owned deployment tooling export them. Load configuration files in the Host launcher, not in the code that constructs `HarnessBuilder()`.
+To switch off a launcher profile, set both Harness signals to `off` and `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, and `OTEL_LOGS_EXPORTER` to `none`. Choose one of the backend profiles below instead of stacking independent provider bootstraps.
 
 ## Preparation, skill-resolution, and cleanup spans
 
-Under `harness.run`, `harness.prepare` measures Environment entry, input preparation and plugin binding. Native Agent/model/tool spans explain execution; `harness.finalize` measures resource cleanup and state export. The last `a13n.phase.step` and error classification locate preparation/cleanup failures without per-function spans. These spans add no new metrics. Host continuation saving remains outside the Harness.
+Read a trace from the outer Run inward:
 
-`harness.skills.resolve` measures actual Skill catalog resolution. The Run's `a13n.skills.available` and `a13n.skills.accessed` lists distinguish what was offered from what was successfully read through supported file tools. Lists retain at most 16 names with count/truncation diagnostics. `access_count` includes repeated reads, not just distinct names. The native file-tool span identifies the Skill and source. A partial read is still an access; shell reads, complete loading, compliance and use from previous history are not inferred. Child Runs retain their own summaries.
+| Span                          | What to inspect                                            |
+| ----------------------------- | ---------------------------------------------------------- |
+| `harness.run`                 | Logical Run lifetime and outcome.                          |
+| `harness.prepare`             | Environment entry, input preparation, and plugin binding.  |
+| `harness.skills.resolve`      | Actual Skill catalog selection.                            |
+| Native Agent/Model/tool spans | Model attempts, requests, and tool execution.              |
+| `harness.operation`           | Recovery, delegation, handoff, compaction, or tool review. |
+| `harness.finalize`            | Resource cleanup and state export.                         |
 
-Phase metadata answers what was selected or processed; phase output describes the local result, not another copy of the answer. For example, `harness.skills.resolve` reports all/explicit selection and discovered/selected/excluded counts, with up to 16 selected Skill name/source pairs in output. Unknown selections are reported as rejection, not an empty successful catalog. Preparation reports its input mode and Capability/plugin counts; finalization reports state availability and cleanup failures. Recovery distinguishes backoff from retry-input preparation, and compaction shows before/after message counts. These structural facts have filterable metadata aliases. Phase output follows the same content policy and bounds as Run output, so `none` retains metadata but no output bodies. A completed operation does not imply that its child or enclosing Run succeeded.
+For preparation or cleanup failures, inspect the last `a13n.phase.step` and error classification. Phase output reports the local result: selection counts, state availability, cleanup failures, recovery backoff versus retry-input preparation, or before/after compaction message counts. Unknown Skill selections are rejections, not successful empty catalogs. These fields have filterable metadata aliases. Output bodies follow the Run content policy and bounds; `none` retains structural metadata. Phase spans add no new metrics, and Host checkpoint saving remains outside Harness.
+
+The Run's `a13n.skills.available` and `a13n.skills.accessed` lists show offered Skills and successful reads through supported file tools. Each list holds at most 16 names, with counts and truncation diagnostics. Skill resolution output similarly includes up to 16 selected name/source pairs. `access_count` includes repeat reads; a partial read counts as access. Use the native file-tool span for the exact Skill and source. These observations do not infer shell reads, full loading, compliance, or use from earlier history. Child Runs keep their own summaries. Judge the enclosing Run separately from a completed operation.
 
 ## Deployment environment
 
-For local development, `dev/harness/.env.example` declares:
+Add `deployment.environment.name` to the Host's OpenTelemetry resource to distinguish local, staging, and production traces. In `observe.py`, replace the resource construction with:
 
-```bash
-OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local
+```python
+resource = Resource.create({
+    "service.name": "observation-demo",
+    "deployment.environment.name": "local",
+})
 ```
 
-Merge this into an existing private `.env` without overwriting its credentials or other resource attributes, then restart `make harness-dev`. This is the deployment label shown by trace backends, not the Harness execution Environment. Existing observations retain their old labels. An explicit Host-owned provider must carry the resource itself, for example `Resource.create({"service.name": "agent-worker", "deployment.environment.name": "local"})`; the Harness never modifies that provider.
+For the environment launcher, set `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`, preserving any other attributes already configured. `dev/harness/.env.example` uses that setting; merge it into your private file without overwriting credentials, then restart `make harness-dev`. This label describes deployment, not a Harness execution Environment. Existing observations keep their old labels, and Harness does not modify a supplied provider's resource.
 
 ## Use one OpenTelemetry pipeline
 
-Use OpenTelemetry APIs for Host-owned roots and custom lifecycle spans regardless of the selected backend. Backend SDKs configure providers, processors, exporters, and vendor-specific features; they do not own a second logical trace.
+Use one provider hierarchy for a work unit. Create generic Host spans through `HarnessInstrumentation.get_tracer()` or the OpenTelemetry API; select destinations through processors and exporters.
 
-This gives the following behavior:
+- **Logfire:** `logfire.configure()` installs global trace and metric providers.
+- **Langfuse:** export through a generic OTLP provider or attach `LangfuseSpanProcessor` to an existing provider.
+- **Both:** attach both exporters/processors to the same provider. Host and Harness spans share one trace.
 
-- with Logfire only, `logfire.configure()` installs the global OpenTelemetry trace and metric providers, so every Harness and Host OTel span is exported to Logfire;
-- with Langfuse only, a generic OTLP provider or `LangfuseSpanProcessor` exports the same OTel trace to Langfuse;
-- with both, one shared provider has both Logfire's processors and `LangfuseSpanProcessor`; do not create one Logfire root and another Langfuse root;
-- Langfuse-specific APIs for scores, prompt management, or trace updates remain vendor-specific and are not reproduced automatically in Logfire.
-
-A span created by the OpenTelemetry-native Langfuse Python SDK is still an OpenTelemetry span. It reaches Logfire when both SDKs share Logfire's global provider, even if no Langfuse exporter is configured. However, create generic Host spans through the OpenTelemetry API (`HarnessInstrumentation.get_tracer()` or `opentelemetry.trace`), not a vendor SDK, so backend selection remains portable.
+An OpenTelemetry-native Langfuse SDK span also reaches Logfire when it uses Logfire's shared provider. Langfuse-specific scores, prompt management, and trace updates remain separate vendor APIs. Keep generic lifecycle code on OpenTelemetry so changing the backend does not change your application's trace structure.
 
 ## Recommended Logfire profile
 
-Logfire is the recommended profile when one backend should receive both Harness traces and metrics. The Logfire SDK is built on OpenTelemetry and installs its trace and metric providers globally. It is not necessary to point a generic OTLP exporter at Logfire Cloud.
+Use this profile to send traces and metrics through the Logfire SDK. It installs the global OpenTelemetry providers; Harness selects them when the enabled environment policy is read.
 
-Install Logfire in the executable Host and set its write token:
+Install Logfire in the same Python environment as `collector_demo.py`. Supply your project write token through the process environment:
 
 ```bash
-python -m pip install logfire
+uv pip install logfire
 
 export LOGFIRE_TOKEN=your-logfire-write-token
 export LOGFIRE_SERVICE_NAME=agent-worker
@@ -165,36 +227,21 @@ export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
 ```
 
-Call a small backend bootstrap before constructing the builder. The conditional makes setting `LOGFIRE_TOKEN` the only deployment change needed to activate Logfire:
+Save `logfire_demo.py` beside `collector_demo.py` and `observe.py`, then run `python logfire_demo.py` in the activated environment. This reuses the offline Model so you can test telemetry without a Model API key:
 
-```python
-import os
+```python title="logfire_demo.py"
+import asyncio
+import logfire
 
-from opentelemetry import trace
+from collector_demo import main
 
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
-)
-
-if os.environ.get("LOGFIRE_TOKEN"):
-    import logfire
-
-    logfire.configure()
-
-executable = HarnessBuilder().build(
-    AgentSpec(model="openai-responses:gpt-5"),
-    output_type=str,
-)
-host_tracer = trace.get_tracer("agent-host")
-
-with host_tracer.start_as_current_span("host.work"):
-    result = await executable.run("Complete the task")
+logfire.configure()
+asyncio.run(main())
 ```
 
-Logfire still requires one `logfire.configure()` call; environment variables configure the call rather than replacing it. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` keeps the same bootstrap safe in processes without a token.
+Find the Run under service `agent-worker` in your selected Logfire project. `logfire.configure()` initializes the backend before `main()` constructs its builder; environment variables configure that call. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` allows the bootstrap to run without exporting to Logfire when the token is absent. The SDK owns exporter shutdown at process exit; long-lived Hosts should flush and shut down their providers at the application lifecycle boundary.
 
-`logfire.configure()` creates the global OpenTelemetry providers and Logfire exporters. The default `HarnessBuilder()` selects those providers. Call this bootstrap in the executable Host and leave Pydantic AI instrumentation to Harness; see [Instrumentation ownership](#instrumentation-ownership).
+Call this bootstrap in the executable Host and leave Pydantic AI instrumentation to Harness; see [Instrumentation ownership](#instrumentation-ownership).
 
 For an alternative OTLP backend instead of Logfire Cloud, configure Logfire with `send_to_logfire=False` and use the standard `OTEL_EXPORTER_OTLP_*` variables. See the [Logfire alternative-backend guide](https://pydantic.dev/docs/logfire/guides/alternative-backends/) and [Logfire configuration reference](https://pydantic.dev/docs/logfire/manage/configuration/).
 
@@ -202,7 +249,7 @@ For an alternative OTLP backend instead of Logfire Cloud, configure Logfire with
 
 Langfuse is the recommended backend for LLM traces when Harness metrics are not needed in the same backend. Its OTLP endpoint ingests traces, but it is not a Harness metrics backend. Keep `A13N_HARNESS_METRICS=off` and `OTEL_METRICS_EXPORTER=none` unless a separate metric-capable provider or collector is configured.
 
-Configure Langfuse Cloud or a self-hosted instance through standard OTLP variables:
+Use `collector_demo.py` and the `opentelemetry-distro[otlp]` installation from the collector exercise. Supply your Langfuse project keys, choose the project region or self-hosted base URL, and run this trace-only profile in the activated POSIX shell:
 
 ```bash
 export LANGFUSE_PUBLIC_KEY=lf_pk_...
@@ -214,11 +261,12 @@ export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=off
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT="$LANGFUSE_BASE_URL/api/public/otel"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf '%s' "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 | tr -d '\n'),x-langfuse-ingestion-version=4"
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
 Use `https://us.cloud.langfuse.com`, `https://jp.cloud.langfuse.com`, or the selected regional URL when the project is not in the default EU region. The endpoint for the repository's local stack is `http://127.0.0.1:3000/api/public/otel`.
@@ -244,7 +292,7 @@ The Harness copies the trusted conventional `user_id` identity claim to `langfus
 
 Langfuse v4 derives trace input and output from the root observation. At `standard` or `full`, `harness.run` records the prepared input and final middleware-owned result in `langfuse.observation.input` and `langfuse.observation.output`, with neutral `a13n.input` / `a13n.output` equivalents. Each is capped at 8 KiB; native media is descriptive only. `none` omits bodies. Inspect the corresponding `a13n.input.capture` / `a13n.output.capture` and truncation fields when content is absent or partial. Do not use deprecated trace input/output aliases or dump all arguments, state, events, or usage records. A Host with its own meaningful root can use `HarnessInstrumentation.record_input()` and `record_output()` under the same policy.
 
-For example, one Logfire-owned provider can export the same trace to both backends:
+To export to both backends, install the Langfuse SDK alongside Logfire. In `logfire_demo.py`, replace `logfire.configure()` with the following bootstrap, leaving `asyncio.run(main())` after it. Keep the Model and all Runs on this one provider:
 
 ```python
 import os
@@ -275,7 +323,7 @@ See the [Langfuse native OpenTelemetry guide](https://langfuse.com/integrations/
 
 ### Run Langfuse locally
 
-The repository includes an isolated Langfuse v4 development stack based on the official deployment composition:
+For a local backend, install Docker with Compose and run the following from the repository root. This starts the machine-shared Langfuse v4 development stack:
 
 ```bash
 make langfuse-up
@@ -306,27 +354,29 @@ export A13N_HARNESS_METRICS=off
 export OTEL_SERVICE_NAME=agent-worker
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=none
+export OTEL_LOGS_EXPORTER=none
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:3000/api/public/otel
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic bGZfcGtfYWdlbnRfZm91bmRhdGlvbl9sb2NhbDpsZl9za19hZ2VudF9mb3VuZGF0aW9uX2xvY2Fs,x-langfuse-ingestion-version=4'
 
-opentelemetry-instrument python -m my_agent_host
+opentelemetry-instrument python collector_demo.py
 ```
 
-The trace appears in the local project after the Harness Run completes. Langfuse does not receive metrics from this profile.
+After export, inspect a completed `harness.run` in the local project. If only the console answer appears, check the exporter endpoint, headers, and backend readiness. This profile sends no metrics to Langfuse.
 
-Stop the stack while preserving data, or remove it completely:
+Stop the stack while preserving its data:
 
 ```bash
 make langfuse-down
-make langfuse-reset
 ```
+
+Run `make langfuse-reset` only when you intend to delete the shared development stack and its data. This affects other checkouts on the same machine.
 
 The composition binds the Langfuse UI and media endpoint to loopback (ports 3000 and 3001 by default) and does not reuse Service's PostgreSQL or Redis. All checkouts on the machine share one Compose project and its volumes; Service resets preserve Langfuse data. Its credentials are for local development only. For production and high-availability deployments, follow the official [Langfuse self-hosting documentation](https://langfuse.com/self-hosting) rather than adapting this development composition.
 
 ## Add bounded context to the Harness root
 
-Use a fresh `HarnessObservationContext` when `harness.run` should be the root and needs stable grouping fields without an otherwise redundant outer span:
+To group Runs by an application conversation, add the following imports to `observe.py` and replace its `result = await executable.run(...)` line with this binding and call inside `main()`:
 
 ```python
 from a13n_harness import (
@@ -345,36 +395,37 @@ bindings = RunBindings.embedded(
 result = await executable.run("Complete the task", bindings=bindings)
 ```
 
-The logical-Run span receives the `a13n.observation.*` fields and their Langfuse aliases. Name and session ID are limited to 256 UTF-8 bytes. Labels are unique, limited to 16 entries and 64 UTF-8 bytes each. Metadata is limited to 16 validated keys and scalar string, boolean, signed 64-bit integer, or finite float values; strings are limited to 256 UTF-8 bytes. Invalid context fails before execution. It is not persisted in `HarnessState`, exposed to the model, or copied from `RunBindings.metadata`.
+Run the program again and inspect `roots[0].attributes`. The logical-Run span receives the `a13n.observation.*` fields and their Langfuse aliases. Name and session ID are limited to 256 UTF-8 bytes. Labels are unique, limited to 16 entries and 64 UTF-8 bytes each. Metadata is limited to 16 validated keys and scalar string, boolean, signed 64-bit integer, or finite float values; strings are limited to 256 UTF-8 bytes. Invalid context fails before execution. It is not persisted in `HarnessState`, exposed to the model, or copied from `RunBindings.metadata`.
 
 A vendor-specific Host processor may map these existing fields for presentation. For Langfuse, no mapping is needed: the Harness already writes `langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags`, and `langfuse.trace.metadata.*`, and marks `harness.run` and `invoke_agent` as `agent` and `execute_tool` as `tool`. For Logfire 4.41, map the root name to `logfire.msg` and labels to `logfire.tags`. Do not set `logfire.span_type` for normal spans, synthesize `logfire.level_num`, or write `logfire.metrics`; Logfire already infers normal-span type and error level and owns metric aggregation.
 
 ## Nest Harness Runs under the current OpenTelemetry context
 
-The Harness uses only the current OpenTelemetry context. Create a Host span only when the application has a real enclosing work unit or needs Host-owned trace input/output. Make it current while entering and consuming the stream:
+When the application has a real enclosing operation, make its Host span current while entering and consuming Harness. In `observe.py`, replace the Run call with:
 
 ```python
-host_tracer = tracer_provider.get_tracer("agent-host")
-
+host_tracer = instrumentation.get_tracer("agent-host")
 with host_tracer.start_as_current_span("host.work"):
-    result = await executable.run("Complete the task")
+    result = await executable.run("Check observation")
 ```
 
-`harness.run` becomes a child of `host.work`. The Harness does not accept a span, vendor observation, or trace ID argument.
+Also replace `assert roots[0].parent is None` with `assert roots[0].parent is not None`. The Harness Run is now a child of `host.work`; no span or trace ID argument is needed.
 
-For streaming, the Harness keeps its logical-Run span open through cleanup and consumer backpressure, but detaches it before every public stream item is returned. Consumer-side spans therefore remain children of the Host context rather than becoming children of `harness.run`.
+During streaming, the logical Run span stays open through cleanup and consumer backpressure. Harness detaches it before returning each public stream item, so spans created by the consumer remain under the Host context.
 
-A Thread is correlation, not a trace. A later resume normally starts a new trace unless the Host activates a bounded distributed parent. For durable or independently scheduled work, prefer a new trace with a standard span link.
+Use Thread IDs to correlate conversation turns, not as trace IDs. A later resume normally starts a new trace. For independently scheduled or durable work, start a new trace with a standard span link; activate a distributed parent only for a bounded enclosing operation.
 
 ## Automatic grouping and filtering
 
-Selected Harness and Pydantic spans automatically receive bounded correlation and Langfuse aliases. This works with any supplied provider, including a Service worker's provider; no exporter URL detection or additional processor is needed. Native GenAI/Logfire attributes remain available on those same spans.
+Filter Harness-selected spans by the bounded context and identity fields, regardless of exporter. Harness writes vendor-neutral `a13n.*` fields and Langfuse aliases on the same spans, preserving native GenAI/Logfire attributes.
 
-Use `RunBindings.embedded(observation=HarnessObservationContext(...))` to select a stable name, session, labels and up to 16 scalar metadata entries. Without an explicit session, a Run uses its own Thread ID. The aliases include `langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags` and filterable `langfuse.observation.metadata.*`. Metadata aliases are strings; the neutral `a13n.observation.metadata.*` fields retain their original scalar types. A conventional trusted user claim supplies `langfuse.user.id` only when present. No public-trace setting or prompt-management identity is invented.
+An explicit observation session groups Runs by your application value; otherwise a Run uses its Thread ID. Name, labels, and metadata map to `langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags`, and filterable `langfuse.observation.metadata.*`. Langfuse metadata aliases are strings; `a13n.observation.metadata.*` retains scalar types. A trusted conventional user claim supplies `langfuse.user.id` when present.
 
-For an enclosing Host operation, use `instrumentation.get_tracer("agent-host")` and `start_as_current_span()` with the same neutral attributes. Its bounded correlation propagates locally to selected descendants, not through network baggage. Child values take precedence. A new Run never inherits absent identity claims from its parent, and a detached trace does not inherit the linked parent's metadata. Third-party spans remain their instrumentor's responsibility.
+For Host-owned operations, `instrumentation.get_tracer("agent-host")` propagates bounded neutral correlation locally to selected descendants. Child values win. Missing identity claims are not inherited by a new Run, linked detached traces do not inherit parent metadata, and this local propagation does not create network baggage. Independently instrumented third-party spans need their own integration.
 
 ## Identity, lineage, usage, and cost fields
+
+Use identity fields to find the right Run, then inspect request-level usage and pricing provenance. Keep telemetry queries separate from durable accounting.
 
 `harness.run` and its Harness-selected descendants carry a bounded trusted identity projection:
 
@@ -400,7 +451,7 @@ Pydantic token categories are inclusive: input contains cache and input-audio to
 
 ## Harness metric registry
 
-A supplied meter provider enables these low-cardinality Harness instruments under the `a13n-harness` instrumentation scope:
+The local program reads these instruments through `InMemoryMetricReader`. In a deployed Host, attach a metric reader/exporter to the supplied meter provider and query the `a13n-harness` scope:
 
 | Instrument                        | Type          | Unit        | Attributes            |
 | --------------------------------- | ------------- | ----------- | --------------------- |
@@ -415,14 +466,14 @@ Pydantic AI separately owns native token usage, cost, and time-to-first-chunk me
 
 ## Instrumentation ownership
 
-The Harness is the only Pydantic AI instrumentation owner for Agents it builds. It rejects authored, plugin, and Run-scoped Pydantic `Instrumentation` Capabilities and direct `InstrumentedModel` values. It also disables ambient `Agent.instrument_all()` state on every built Agent.
+Keep one instrumentation owner per Harness-built Agent:
 
-Do not call `logfire.instrument_pydantic_ai()` for a Harness-built Agent. Instead, configure Logfire or Langfuse as a Host profile over the same OpenTelemetry providers:
+1. Configure the Host's OpenTelemetry providers before building.
+2. Let Harness create native Pydantic AI instrumentation for its Agents.
+3. Add backend processors/exporters to those providers and include the `a13n-harness` scope in export filters.
+4. Create one Host root only when there is a meaningful enclosing operation.
+5. Flush and shut down at the Host lifecycle boundary.
 
-- let `harness.run` be the root when no real enclosing Host work unit is needed, otherwise create exactly one Host root span;
-- supply the exact selected provider objects to `HarnessInstrumentation`;
-- attach multiple processors or exporters to that shared provider when exporting to multiple backends;
-- include the `a13n-harness` instrumentation scope in backend export filters;
-- never create parallel Langfuse and Logfire roots for the same work unit.
+Do not add `logfire.instrument_pydantic_ai()`, a Pydantic `Instrumentation` Capability, or an `InstrumentedModel` around the same Agent. Harness rejects authored, plugin, and Run-scoped duplicate instrumentation and disables ambient `Agent.instrument_all()` state on built Agents. Logfire and Langfuse remain optional Host dependencies.
 
-The Harness has no Langfuse- or Logfire-specific runtime dependency.
+If observation is missing, check in order: selected signal, provider initialization before builder construction, processor/reader attachment, exporter endpoint and credentials, backend scope filters, and shutdown/flush. Return to the in-memory example to distinguish Harness instrumentation from remote export problems.

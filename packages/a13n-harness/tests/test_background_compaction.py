@@ -9,6 +9,7 @@ from a13n_harness import AgentSpec, HarnessBuilder, HarnessModelCharacteristics,
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.compaction import (
+    BackgroundCompactionPolicy,
     CompactionInput,
     CompactionOperation,
     CompactionOperator,
@@ -25,7 +26,7 @@ from a13n_harness.model_calls import ModelCallCheckError
 from a13n_harness.state import encode_messages
 from PIL import Image
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelConnectionError, ModelHTTPError
 from pydantic_ai.messages import (
     BinaryContent,
     ModelRequest,
@@ -37,7 +38,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
-from pydantic_ai.usage import RequestUsage
+from pydantic_ai.usage import RequestUsage, UsageLimits
 
 pytestmark = pytest.mark.anyio
 
@@ -1413,6 +1414,178 @@ async def test_foreground_fallback_respects_remaining_request_budget(counting):
     assert operator.submissions == 0
 
 
+@pytest.mark.parametrize("background", [False, True])
+async def test_synchronous_compaction_retries_detached_history_with_backoff(monkeypatch, background):
+    previous = _previous()
+    before = encode_messages(previous.message_history)
+    requests = []
+    delays = []
+    summaries = []
+    operator = _Operator()
+    if background:
+        operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+
+    def delay(attempt):
+        delays.append(attempt)
+        return 0
+
+    monkeypatch.setattr("a13n_harness.capabilities.context._compaction_retry_delay", delay)
+
+    async def stream(messages, info):
+        if _COMPACTION_PROMPT in _user_values(messages):
+            summaries.append(deepcopy(messages))
+            if len(summaries) < 3:
+                # A partial response must never enter the next retry's input.
+                yield "discard this partial summary"
+                raise ModelConnectionError("test", "private provider detail", in_stream=True)
+            yield "replacement summary"
+        else:
+            requests.append(deepcopy(messages))
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=8000),
+                background=background,
+                operator=operator if background else None,
+            ),
+        ),
+    )
+    result = await executable.run("current input", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert len(summaries) == 3 and len(requests) == 1
+    assert delays == [0, 1]
+    for history in summaries:
+        assert "old history" in _user_values(history)
+        assert _user_values(history).count("current input") == 1
+        assert "discard this partial summary" not in str(history)
+    assert "old history" not in _user_values(requests[0])
+    assert "replacement summary" in str(result.state.message_history)
+    assert encode_messages(previous.message_history) == before
+    assert result.usage.requests == 4
+    if background:
+        assert await compaction_disposition(result.state, basis=operator.operation.input.basis) == "skipped"
+        assert operator.submissions == 0
+
+
+@pytest.mark.parametrize("request_limit, attempts", [(1, 0), (2, 1), (3, 2), (10, 3)])
+@pytest.mark.parametrize("counting", [False, True])
+async def test_compaction_retry_exhaustion_preserves_budget_and_reports_cause(
+    monkeypatch, request_limit, attempts, counting
+):
+    previous = _previous()
+    operator = _Operator()
+    operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+    calls = 0
+    ordinary = 0
+    delays = []
+    failure = ModelConnectionError("test", "private provider detail")
+
+    def delay(attempt):
+        delays.append(attempt)
+        return 0
+
+    monkeypatch.setattr("a13n_harness.capabilities.context._compaction_retry_delay", delay)
+
+    async def stream(messages, info):
+        nonlocal calls, ordinary
+        if _COMPACTION_PROMPT in _user_values(messages):
+            calls += 1
+            raise failure
+        ordinary += 1
+        yield "done"
+
+    executable = _build(operator, stream, counting=counting)
+    if counting:
+        result = await executable.run(
+            "continue", previous_state=previous, usage_limits=UsageLimits(request_limit=request_limit)
+        )
+        assert result.output_or_raise() == "done"
+        assert result.usage.requests == attempts + 1
+        assert "old history" in _user_values(result.state.message_history)
+    else:
+        with pytest.raises(DefinitionError) as caught:
+            await executable.run(
+                "continue", previous_state=previous, usage_limits=UsageLimits(request_limit=request_limit)
+            )
+        error = caught.value
+        assert error.code == "compaction_capacity_unavailable"
+        assert error.details == {"summary_attempts": attempts}
+        assert "unverified capacity" in str(error)
+        assert "private provider detail" not in str(error)
+        if attempts:
+            assert f"after {attempts} attempt(s) (ModelConnectionError)" in str(error)
+            assert error.__cause__ is failure
+            assert error.retry_hint == "new_run"
+        else:
+            assert "remaining request budget" in str(error)
+            assert error.__cause__ is None
+    assert calls == attempts and ordinary == int(counting)
+    assert delays == list(range(max(0, attempts - 1)))
+    assert operator.submissions == 0
+    assert await compaction_disposition(previous, basis=operator.operation.input.basis) is None
+
+
+@pytest.mark.parametrize("failure", [ModelHTTPError(401, "test", body="private detail"), ModelCallCheckError()])
+async def test_synchronous_compaction_does_not_retry_permanent_failure_or_refusal(monkeypatch, failure):
+    calls = 0
+
+    def unexpected_delay(attempt):
+        pytest.fail("terminal failure must not back off")
+
+    monkeypatch.setattr("a13n_harness.capabilities.context._compaction_retry_delay", unexpected_delay)
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        raise failure
+        yield "unreachable"
+
+    executable = _build(_Operator(), stream, counting=False)
+    expected = ModelCallCheckError if isinstance(failure, ModelCallCheckError) else DefinitionError
+    with pytest.raises(expected) as caught:
+        await executable.run("continue", previous_state=_previous())
+    assert calls == 1
+    if isinstance(failure, ModelHTTPError):
+        assert "HTTP 401" in str(caught.value)
+        assert "private detail" not in str(caught.value)
+        assert caught.value.__cause__ is failure
+    else:
+        assert caught.value is failure
+
+
+async def test_cancel_during_compaction_backoff_preserves_history(monkeypatch):
+    calls = 0
+    backing_off = asyncio.Event()
+    previous = _previous()
+    before = encode_messages(previous.message_history)
+
+    def delay(attempt):
+        backing_off.set()
+        return 60
+
+    monkeypatch.setattr("a13n_harness.capabilities.context._compaction_retry_delay", delay)
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        raise ModelConnectionError("test", "interrupted")
+        yield "unreachable"
+
+    executable = _build(_Operator(), stream, counting=False)
+    task = asyncio.create_task(executable.run("continue", previous_state=previous))
+    await asyncio.wait_for(backing_off.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls == 1
+    assert encode_messages(previous.message_history) == before
+
+
 async def test_cancelled_foreground_fallback_preserves_failed_operation():
     from pydantic_ai.capabilities import AbstractCapability
 
@@ -1463,3 +1636,103 @@ async def test_failed_operation_below_trigger_continues_without_fallback():
     assert result.output_or_raise() == "done"
     assert len(calls) == 1 and operator.submissions == 0
     assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
+
+
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize(
+    "tokens,reserve,threshold,blocked",
+    [
+        (9499, 100, 0.95, False),
+        (9500, 100, 0.95, True),
+        (9501, 100, 0.95, True),
+        (9200, 100, 0.92, True),
+        (9500, 100, 0.99, False),
+        (9400, 1000, 0.95, True),
+    ],
+)
+async def test_background_blocking_threshold_is_distinct_from_physical_capacity(
+    running, tokens, reserve, threshold, blocked
+):
+    previous = _previous()
+
+    class Operator(_Operator):
+        async def wait(self, thread_id, operation_id):
+            self.waiting.set()
+            return CompactionOperation(
+                input=self.operation.input,
+                status="ready",
+                result=CompactionResult.from_summary(self.operation.input.basis, "background summary"),
+            )
+
+    operator = Operator()
+    if running:
+        operator.operation = CompactionOperation(input=_input(previous), status="running")
+    requests = []
+
+    class Model(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            compacted = any(isinstance(m, ModelResponse) and m.metadata == {"keep": "compact"} for m in messages)
+            # Applied summaries need physical fit, not headroom below the policy line.
+            return RequestUsage(input_tokens=min(tokens, 10000 - reserve) if compacted else tokens)
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": reserve},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=Model(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=8000),
+                background=BackgroundCompactionPolicy(enabled=True, blocking_threshold=threshold),
+                operator=operator,
+            ),
+        ),
+    )
+    result = await executable.run("current input", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert operator.waiting.is_set() is (running and blocked)
+    assert operator.submissions == int(not running and not blocked)
+    assert len(requests) == (2 if blocked and not running else 1)
+    if operator.task is not None:
+        operator.release.set()
+        await operator.task
+
+
+async def test_disabled_background_policy_uses_common_trigger():
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": 100},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=_CountingModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=8000),
+                background=BackgroundCompactionPolicy(enabled=False, blocking_threshold=1),
+            ),
+        ),
+    )
+    result = await executable.run("current input", previous_state=_previous())
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("threshold", [0, -0.1, 1.01, float("nan"), float("inf")])
+async def test_background_policy_rejects_invalid_threshold(threshold):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        BackgroundCompactionPolicy(blocking_threshold=threshold)

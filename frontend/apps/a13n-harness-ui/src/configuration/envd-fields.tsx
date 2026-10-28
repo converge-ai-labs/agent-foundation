@@ -1,3 +1,4 @@
+import styles from "../shell/workbench.module.css";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
@@ -58,6 +59,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Runtime"
             hideLabel
+            className={styles.settingControl}
             value={custom ? selected : direct ? "direct" : "envd"}
             options={[
               { value: "direct", label: "Direct" },
@@ -97,6 +99,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
               <ChoiceField
                 label="Permissions"
                 hideLabel
+                className={styles.settingControl}
                 value={sandbox ? "sandbox" : "full-control"}
                 options={[
                   { value: "full-control", label: "Full Control" },
@@ -202,6 +205,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Runtime source"
             hideLabel
+            className={styles.settingControl}
             disabled={!runtime.data}
             value={custom ? "custom" : "managed"}
             options={[
@@ -231,6 +235,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           <ChoiceField
             label="Metrics collection interval"
             hideLabel
+            className={styles.settingControl}
             disabled={!runtime.data}
             value={String(interval)}
             options={[

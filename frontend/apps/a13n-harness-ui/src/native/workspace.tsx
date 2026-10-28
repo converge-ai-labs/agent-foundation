@@ -14,6 +14,7 @@ import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
 import {
   DotsThree,
   Folder,
+  Globe,
   GitDiff,
   X,
   ArrowClockwise,
@@ -46,6 +47,8 @@ import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
+import { BrowserPanel } from "../browser/panel";
+import { BrowserActivity } from "../browser/activity";
 import { usePanelSize } from "./panel-size";
 import { ReturnToChat } from "./capture";
 import { useThread } from "../conversations/queries";
@@ -148,7 +151,9 @@ export function NativeWorkspace({
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
-  const [pane, setPane] = useState<"files" | "changes" | null>(null);
+  const [pane, setPane] = useState<"files" | "changes" | "browser" | null>(
+    null,
+  );
   const [directory, setDirectory] = useState("");
   const [root, setRoot] = useState("");
   const [path, setPath] = useState("");
@@ -500,9 +505,10 @@ export function NativeWorkspace({
   const hasViews = Boolean(
     status.data?.features?.host_files ||
     status.data?.features?.host_git ||
-    status.data?.features?.host_terminal,
+    status.data?.features?.host_terminal ||
+    status.data?.features?.browser,
   );
-  const show = (next: "files" | "changes") => {
+  const show = (next: "files" | "changes" | "browser") => {
     cancelOpening();
     if (pane === next) {
       closePane();
@@ -557,13 +563,23 @@ export function NativeWorkspace({
               <DebugOnly>
                 <EnvironmentMonitor />
               </DebugOnly>
+              {threadId && status.data?.features?.browser && (
+                <BrowserActivity
+                  key={threadId}
+                  threadId={threadId}
+                  occupied={pane !== null || view !== "page"}
+                  visible={pane === "browser"}
+                  reveal={() => setPane("browser")}
+                  open={() => show("browser")}
+                />
+              )}
               {hasViews && (
                 <Menu>
                   <MenuTrigger
                     render={<Button variant="ghost" size="sm" />}
                     className={styles.viewsMenu}
                     aria-label="Workspace tools"
-                    title="Files, changes and terminal"
+                    title="Files, changes, browser and terminal"
                   >
                     <SidebarSimple />
                     <span>Workspace</span>
@@ -577,6 +593,11 @@ export function NativeWorkspace({
                     {status.data?.features?.host_git && (
                       <MenuItem onClick={() => show("changes")}>
                         <GitDiff /> Changes
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.browser && (
+                      <MenuItem onClick={() => show("browser")}>
+                        <Globe /> Browser
                       </MenuItem>
                     )}
                     {status.data?.features?.host_terminal && (
@@ -708,7 +729,49 @@ export function NativeWorkspace({
               }}
             />
           )}
-          {isWorkspace && pane && (
+          {isWorkspace && pane === "browser" && (
+            <aside
+              style={{ "--panel-width": `${width}%` } as CSSProperties}
+              ref={paneElement}
+              tabIndex={-1}
+              className={`${styles.pane} ${expanded ? styles.expandedPane : ""}`}
+              aria-label="Browser panel"
+            >
+              <header className={styles.paneHeader}>
+                <strong>Browser</strong>
+                <div className={styles.panelTools}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      expanded ? "Restore drawer width" : "Expand drawer"
+                    }
+                    onClick={() => setExpanded(!expanded)}
+                  >
+                    {expanded ? <ArrowsInSimple /> : <ArrowsOutSimple />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Close browser viewer"
+                    title="Close viewer (browser keeps running)"
+                    onClick={closePane}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              </header>
+              <BrowserPanel
+                key={threadId ?? "new"}
+                threadId={threadId}
+                fullControl={
+                  thread.data?.thread.configuration?.environment_profile_id ===
+                  "environment-native"
+                }
+              />
+            </aside>
+          )}
+          {isWorkspace && pane && pane !== "browser" && (
             <aside
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}

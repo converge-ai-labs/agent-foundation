@@ -39,6 +39,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
+from a13n_harness.compaction import CompactionResult
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
@@ -56,7 +57,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
 from a13n_service.resources.agents.toolsets import enabled_tools
-from a13n_service.runs import agent, checkpoints, claim, deferred, inbox, inputs
+from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.agent import ResolvedAgent
@@ -73,6 +74,7 @@ from a13n_service.runs.boundaries import Boundaries, Staged
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
+from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.desktop_assistance import execution as desktop_execution
 from a13n_service.runs.desktop_assistance.execution import ExecutionFence
@@ -117,6 +119,8 @@ class _Plan:
 
     session_id: str
     retain_tools: bool
+    background_compaction: bool
+    compaction_result: CompactionResult | None
     configuration: RunConfiguration
     request_context: RequestContext
     source_entry_id: str | None
@@ -289,6 +293,8 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         memory_cursors = dict(run.memory_cursors)
         # Space organization keeps its memory-only surface and completes calls within the round.
         retain_tools = thread.purpose == "conversation"
+        root_compaction = thread.origin != "child" and retain_tools
+        background_compaction = root_compaction and resolved.config.background_compaction.enabled
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
@@ -315,8 +321,11 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state = await restore_executions(runtime, state, thread_id=lease.thread_id, origin_run_id=origin_run_id)
     if resume is not None:
         resume = resume.remaining(state.message_history)
+    compaction = await runtime.compactions.inspect(lease.thread_id) if root_compaction else None
     return _Plan(
         session_id=session_id,
+        background_compaction=background_compaction,
+        compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
         configuration=options.configuration or RunConfiguration(),
         request_context=RequestContext(options.context.headers if options.context else {}),
@@ -432,8 +441,26 @@ class _Attempt:
         self.boundaries = Boundaries(self.cursors.snapshot)
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
+        self.compaction = (
+            CompactionRun(
+                runtime.compactions,
+                lease,
+                Selection(
+                    plan.agent.model,
+                    self._call_context(),
+                    plan.principal.id,
+                    plan.request_context,
+                    plan.configuration,
+                    plan.limit,
+                ),
+            )
+            if plan.background_compaction
+            else None
+        )
         self.usage = UsageBuffer(self.check.calls)
-        self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
+        self.usage_reporter = DeltaReporter(
+            runtime.storage, lease.run_id, lease.attempt_id, self.usage, check=self.check.reconcile
+        )
         self.yielding = False
         self.desktop_paused = False
         self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))
@@ -536,6 +563,7 @@ class _Attempt:
                 operators=self._operator,
                 plugins=runtime.plugins,
                 instrumentation=runtime.instrumentation,
+                compaction=self.compaction,
             )
             live = await stack.enter_async_context(
                 ThreadStream(
@@ -573,6 +601,7 @@ class _Attempt:
                 if self.plan.assigned or self.plan.resume_input or self.plan.reminder
                 else None,
                 previous_state=self.plan.state,
+                compaction_result=self.plan.compaction_result,
                 # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
@@ -688,6 +717,11 @@ class _Attempt:
         if near_deadline(self.runtime, self.control):
             raise LeaseLost()
         started = time.monotonic()
+        acknowledgement = (
+            await compactions.acknowledgement(self.runtime, state, RunObjects(self.runtime, self.lease, self.control))
+            if self.plan.background_compaction or self.plan.compaction_result is not None
+            else None
+        )
         consumed = self.offers.incorporated(state)
         usage = self.usage.pending()
         search, snapshot = await self._search(snapshot, consumed)
@@ -731,6 +765,7 @@ class _Attempt:
                 at=current,
             )
             checkpoints.retire(session, run, self.committed, committed)
+            await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)
             if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
                 pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
                 if pending is not None and pending.desktop_control_id:

@@ -8,6 +8,7 @@
   margin-top: 4px;
 }
 .section {
+  composes: form from "../controls.module.css";
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
@@ -66,10 +67,6 @@
   padding-block: 0;
 }
 
-.section :global([data-slot="button"]) {
-  font-size: var(--a13n-text-sm);
-}
-
 /* Compact single-value fields share a label column. Long-form text keeps the
    full writing width, and hidden labels never reserve an empty column. */
 .fieldRows
@@ -112,6 +109,11 @@
   grid-column: 1;
   grid-row: 1;
   padding-top: 7px;
+}
+.fieldRows
+  :global([data-slot="read-only-field"] > [data-slot="read-only-label"]) {
+  padding-top: 0;
+  line-height: 1.5rem;
 }
 .fieldRows :global([data-slot="field-label-row"]) {
   flex-direction: column;

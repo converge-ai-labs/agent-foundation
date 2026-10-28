@@ -1,22 +1,24 @@
 ---
 title: 守护进程配置与传输
 sidebarTitle: 配置与传输
-description: 配置独立 Envd 守护进程及其连接 Host 的方式。
+description: 将 Envd 连接到 Host，选择执行设置，并采集资源指标。
 ---
 
-这是独立 Envd 配置，不是 Harness UI YAML 或 `EnvironmentProviderSpec`。Host 负责部署、账号选择、外层沙箱、凭据和守护进程生命周期。适配器配置选择工作目录、必需方法，以及可选的会话出站网络策略；该策略中的秘密是引用，不是秘密值。设备启动配置则单独固定执行、Sandbox 和网络模式。[沙箱镜像](sandbox.md)提供可直接使用的账号、shell 和 sudo 默认值，不改变独立守护进程默认值。
+在启动时配置 Envd，选择连接方式、执行账号、文件系统隔离和网络模式。Host 负责部署、凭据和守护进程生命周期。随后，每个 EIP 会话在这些设置内选择工作目录并执行操作。
+
+本页的 JSON 和环境变量用于守护进程。Harness UI YAML 和 `EnvironmentProviderSpec` 配置 Host 侧适配器，包括必需方法及带秘密引用的可选会话出站策略。需要预置账号、shell 和 sudo 的容器时，使用[沙箱镜像](sandbox.md)。
 
 ## 配置层级
 
-启动优先级从低到高如下：
+Envd 按五层配置启动，后面的层优先：
 
 1. 内置默认值。
-2. 由 `--config` 选择的守护进程 JSON。
-3. `A13N_ENVD_CONFIG_JSON`，使用与文件相同的严格 schema。
+2. `--config` 选择的守护进程 JSON 文件。
+3. `A13N_ENVD_CONFIG_JSON`，使用相同 schema 校验。
 4. 标量 `A13N_ENVD_*` 环境变量。
-5. 显式命令行参数。
+5. 显式 CLI 参数。
 
-对象递归合并；数组和标量替换之前的值。即使被后续层覆盖，每个 JSON 层本身也必须有效。沙箱启动者因此可以完全通过环境变量配置 Envd，包括嵌套限制和 shell 配置，无需写配置文件：
+对象递归合并，数组和标量替换已有值。每个 JSON 层必须先通过校验，再参与合并。启动者可完全通过环境变量提供嵌套设置：
 
 ```bash
 export A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state
@@ -26,44 +28,48 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-标量快捷变量包括 `A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_DISCONNECT_GRACE_MS`。布尔值接受 `true`、`false`、`1` 或 `0`。
-
-设备初始化协商协议并验证设备身份。EIP 会话选择固定 cwd，管理操作、进程、输出和传输；不能更改可信启动身份或 sudo 策略。
+标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_DISCONNECT_GRACE_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
 
 ## 连接 Harness UI
 
-连接 Harness UI 时，启动一个出站连接：
+在实际执行工作的计算机上发起出站连接：
 
 ```console
 a13n-envd connect https://host.example.com --host work
 ```
 
-1. 打开 Envd 打印的批准地址。
-2. 登录 Host。
-3. 批准匹配的验证码。
+1. 打开打印的批准地址，并登录 Host。
+2. 批准匹配的验证码。
+3. 保持 Envd 运行。后续启动用 `a13n-envd connect work` 复用注册。
 
-保持 Envd 运行。后续启动时，`a13n-envd connect work` 会复用已保存的身份、凭据和已批准连接。凭据在设备上生成，始终无需复制到浏览器。重连无需再次批准。Service 则连接你注册的 HTTP 守护进程；参见[连接 Service](../environments/remote-envd.md#connect-to-the-service)。
+Envd 在设备上生成凭据，因此浏览器配对只需验证码。带已保存状态的重连会复用批准。接入 Service 时，改为[注册 HTTP 守护进程](../environments/remote-envd.md#connect-to-the-service)。
 
-本机必须能够访问 Host URL。除 `http://127.0.0.1:8765` 等回环 HTTP 外，必须使用 HTTPS。私有 CA 可添加 `--ca-file /path/to/ca.pem`；始终不能禁用 TLS 验证。`--name` 设置批准页面的显示名，`--default-working-directory` 选择已存在的原生目录。`--config` 提供普通守护进程 JSON，包括资源限制和命令设置。
+使用本机可访问的 Host URL。除 `http://127.0.0.1:8765` 等回环 HTTP 外，必须使用 HTTPS。私有 CA 通过 `--ca-file /path/to/ca.pem` 添加，证书验证保持开启。用 `--name` 设置批准页面的显示名，`--default-working-directory` 选择已有原生目录，`--config` 提供守护进程 JSON 设置。
 
 ### 保存的实例与 Host
 
-状态在 Unix 上默认存入 `~/.a13n-envd`，Windows 上存入 `%LOCALAPPDATA%/a13n-envd`（不可用时回退到用户配置目录）。通过 `--state-dir` 或 `A13N_ENVD_STATE_DIR` 覆盖。每个实例在 `instances/<instance>/device-id` 保存身份；命名 Host 的配置、凭据和私有运行时位于 `instances/<instance>/hosts/<host>/`。默认实例名为 `default`。未指定 `--host` 时，从 URL 派生稳定名称。请跨重启保留状态，并像账号凭据一样保护它。
+跨重启保留状态目录，并像账号凭据一样保护它。Unix 默认位置为 `~/.a13n-envd`；Windows 为 `%LOCALAPPDATA%/.a13n-envd`，不可用时回退到 `%USERPROFILE%/.a13n-envd`。用 `--state-dir` 或 `A13N_ENVD_STATE_DIR` 覆盖。
 
-每个运行中的 Envd 进程连接**一个 Host**。同一台物理计算机需要使用两个 Host 时，运行两个独立进程：
+实例将设备 ID 保存在 `instances/<instance>/device-id`。各 Host 的配置、凭据和私有运行时位于 `instances/<instance>/hosts/<host>/`。默认实例为 `default`；省略 `--host` 时会从 URL 派生稳定别名。
+
+为每个 Host 运行独立进程。同一台计算机连接两个 Host 时：
 
 ```console
 a13n-envd connect https://personal.example.com --instance personal --host personal
 a13n-envd connect https://team.example.com --instance team --host team
 ```
 
-每个进程有自己的注册和会话。重启时使用同一个 `--instance` 和 Host 别名。`connect` 保持前台运行，不安装系统服务，也不修改操作系统启动设置。使用服务管理器时，保留启动账号、状态目录和预期命令环境。
+重启各进程时，使用原来的实例和 Host 别名。每个进程都有独立注册和会话。`connect` 在前台运行；需要自动启动时，在服务管理器中配置相同的账号、状态目录和命令环境。
 
-身份验证被拒绝时，守护进程停止，不会替换凭据或请求新的信任关系。检查注册是否被撤销或遗忘、是否连接正确的 Host，以及是否挂载正确的状态目录。不要反复删除凭据来掩盖授权失败。全新安装需要新实例和显式批准。
+认证被拒绝时，Envd 停止并保留凭据。检查 Host 地址、注册状态和挂载的状态目录。真正的新安装应使用新实例并显式批准。
 
 ## 独立运行的最小配置
 
-默认传输通道为 stdio。提供绝对路径的私有运行时目录：
+启动由 Host 管理的 stdio 守护进程：
+
+1. 创建并保护绝对路径的运行时父目录。
+2. 将下方 JSON 保存为 `/absolute/path/to/a13n-envd.json`，把工作目录路径替换为已有目录。
+3. 由 Host 通过 stdin/stdout 管道启动 Envd：
 
 ```bash
 export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
@@ -71,7 +77,7 @@ export A13N_ENVD_DEVICE_ID=device-my-machine
 a13n-envd --config /absolute/path/to/a13n-envd.json
 ```
 
-Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有子目录，并取得独占运行时锁。stdin 和 stdout 专用于 EIP 消息帧；诊断信息使用 stderr。
+Envd 为当前代次创建不可预测的私有子目录，并持有独占运行时锁。管道承载 EIP 消息帧，诊断信息写入 stderr。
 
 ```json
 {
@@ -83,17 +89,21 @@ Host 创建并保护运行时父目录。Envd 创建不可预测的代次私有�
 }
 ```
 
-会话只能在已存在的目录中打开；默认目录不存在时，会话打开失败，守护进程启动不受影响。省略 `default_working_directory` 时，守护进程记录启动时的 cwd。工作目录**不是访问根目录**：文件路径可以指向执行账号、Sandbox 授权和外层沙箱允许的整个文件系统。目录发现是有界的单层读取，在任何会话创建前即可使用。
+默认工作目录作为各会话的初始 cwd。省略时，Envd 记录启动 cwd。目录不存在会导致会话打开失败，而非守护进程启动失败。文件访问遵循执行账号、Sandbox 授权及外层沙箱的边界，不以 cwd 为边界。目录发现可在会话创建前读取有界的一层目录。
 
-显式设备 ID 可通过 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 提供。没有显式 ID 时，安装状态目录跨重启保留生成的身份。`--default-working-directory`、`--name` 和 `--description` 覆盖 JSON 元数据。通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置目录发现。Windows EIP 路径使用 `/C:/...` 和 `/UNC/server/share/...`；守护进程启动路径使用操作系统原生格式。
+用 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 指定稳定设备 ID，或让安装状态目录保留生成的 ID。CLI 元数据选项覆盖 JSON。目录发现通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置。Windows 启动路径使用原生格式，EIP 路径使用 `/C:/...` 或 `/UNC/server/share/...`。
 
 ## 系统信息与资源监控
 
-Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回的 Device descriptor 暴露基础系统信息：操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。Envd 自身版本位于 `initialize.server.version`。
+通过 EIP `initialize` 或 `device.describe` 读取系统身份：Linux、macOS 和 Windows 上的操作系统及版本、内核版本、原生架构，以及可取得的 CPU 型号。守护进程版本为 `initialize.server.version`。
 
-`a13n-envd connect` 默认每 10 秒采集一次系统、网络、磁盘、套接字、本地文件系统和守护进程用量，使用已保存的 Host 重新连接时也适用。已有安装需要更新 Envd 二进制并重启守护进程才能使用此默认值；只更新 Harness UI 不会改变正在运行的远程守护进程。
+按启动方式选择采样：
 
-在 `--config` 文件或 `A13N_ENVD_CONFIG_JSON` 中设置 `"monitoring": null` 可关闭采样。其他守护进程启动方式仍需显式开启；选择原生 OTLP 导出时，省略 `monitoring` 也会启用默认采样。在守护进程配置中通过 `monitoring` 启用或自定义采样：
+- `connect` 默认每 10 秒采集系统、网络、磁盘、套接字、本地文件系统和守护进程用量，使用已保存 Host 重连时也如此。
+- 其他启动方式通过 `monitoring` 启用采样；选择原生 OTLP 导出且省略此字段时，也会启用默认采样。
+- 在守护进程 JSON 中设置 `"monitoring": null` 可关闭采样，系统身份仍可读取。
+
+修改配置或二进制后，重启 Envd 生效。只更新 Harness UI 不会改变运行中的远程守护进程。配置一个命名文件系统和 10 秒间隔：
 
 ```json
 {
@@ -104,9 +114,9 @@ Linux、macOS 和 Windows 都通过 EIP `initialize`、`device.describe` 返回�
 }
 ```
 
-使用原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。`monitoring: {}` 使用默认值采集资源概览，包括自动发现的本地文件系统。自定义设置遵循通常的配置优先级，`connect` 会保留这些设置。关闭采样后，系统信息仍可读取。采样间隔接受 1000–60000 毫秒。最多配置 16 个文件系统目标，名称为 1–64 个 ASCII 字母、数字、`_` 或 `-`。路径不能包含 `..`。
+`monitoring: {}` 使用默认设置，包括自动发现本地文件系统。`connect` 保留显式设置和通常的优先级。采样间隔可选 1000–60000 毫秒，最多配置 16 个命名文件系统目标。名称由 1–64 个 ASCII 字母、数字、`_` 或 `-` 构成；路径必须是没有 `..` 的原生绝对路径，例如 Windows JSON 中的 `C:\\workspace`。
 
-通过已初始化的 Python Device connection 读取，无需创建 Session：
+在已初始化的 Python Device connection 上读取最新样本，无需打开会话：
 
 ```python
 info = (await device.describe()).system_info
@@ -117,7 +127,9 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-调用使用现有认证 HTTP、反向 WebSocket 或 stdio 连接上的 EIP `device.metrics`，不需要额外端口、令牌或 TLS 配置。只有启用采样才会声明该方法。Envd 与 `a13n-envd-client` 使用 EIP 0.3；从 0.1 或 0.2 部署迁移时一起升级。`eip.v1` 命名空间和传输帧保持不变。
+`device.metrics` 复用现有认证传输，并在采样开启时声明。Envd 和 `a13n-envd-client` 使用 EIP 0.3；迁移 0.1 或 0.2 部署时一起升级。传输帧和 `eip.v1` 命名空间保持不变。
+
+资源字段的含义如下：
 
 | 观测                                                         | 含义                                                                                                                                                                      |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +141,7 @@ if report.sample is not None:
 | `sample.system.pressure`                                     | 可选的 Linux CPU、内存、I/O PSI。                                                                                                                                         |
 | `sample.cgroup_v2`                                           | 可选的显式指定 Linux cgroup v2 观测。                                                                                                                                     |
 
-资源概览还包括：
+概览还包含平台和设备清单：
 
 | 观测                        | 含义                                                                                                                                                         |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -140,35 +152,35 @@ if report.sample is not None:
 | `sample.local_filesystems`  | 最多 16 个自动发现的本地文件系统，与命名目标分开报告。使用不透明的原生身份，不暴露路径。                                                                     |
 | `sample.daemon`             | Envd Session、活动命令组、传输、公共传输连接数及实际保留输出字节数。采集不完整时，依赖 worker 的总量缺失。                                                   |
 
-清单会明确报告截断。原生数据源不可用时保留缺失值。接口和磁盘身份区分计数器生命周期；不能将堆叠设备相加作为整机总量。文件系统发现会过滤伪文件系统和远程文件系统，可能包含已挂载的可移动本地卷，不扫描目录内容。可用字段取决于平台和原生 API 权限。
+聚合前先检查清单截断和数据源可用性。接口及磁盘身份标记计数器生命周期；对堆叠设备求和会重复计算工作量。文件系统发现读取挂载而非目录内容，过滤伪文件系统和远程文件系统，可包含已挂载的可移动本地卷。原生 API 权限影响可用字段。
 
-Linux 可在 `monitoring` 内添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`，观察该组及其后代；其他平台拒绝该 Linux 专用配置。数据包含 CPU 用户态/系统态/总微秒数、带宽周期和限流、内存用量及事件、本地 CPU/内存限制、任务数及限制、逐设备 I/O 字节和操作计数，以及 PSI。限制使用 `unlimited` 或 `limited` 标签，不代表考虑祖先限制和亲和性后的有效容量。
+读取 Linux 容器用量时，在 `monitoring` 添加 `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"`。它选择该组及其后代，其他平台拒绝此选项。字段涵盖 CPU 时间和限流、内存用量与事件、本地 CPU/内存限制、任务数与限制、设备 I/O 及 PSI。`unlimited`/`limited` 标签描述所选组的本地限制；祖先限制和亲和性可能进一步缩小容量。
 
-PSI 提供可选 `some`、`full` 记录，包含 `avg10_percent`、`avg60_percent`、`avg300_percent` 与累计 `total_usec`。平均值采用内核窗口，与采样间隔无关。系统级 CPU `full` 未定义，因此缺失。不可用值在线上省略，在 Python 中为 `None`，不填充为零。
+PSI 返回可选的 `some`/`full` 记录，包括 `avg10_percent`、`avg60_percent`、`avg300_percent` 和累计 `total_usec`。这些内核窗口独立于采样间隔。系统级 CPU 没有定义 `full` 记录。缺失字段在线上省略，在 Python 中为 `None`。
 
-**容器中的系统指标仍可能描述宿主机。** 显式选择目标 cgroup；缺失的组观测不会被宿主机数据替代。APFS 空间描述其共享卷视图。Windows 文件系统观测依赖 Windows 10 version 1809 / Server 2019 起提供的卷信息 API，旧系统仍能提供其他能力。仅在 inode 总数为正时计算使用率。
+容器中的系统指标可能描述宿主机；组用量应使用显式 cgroup 观测。缺失的组数据保持缺失。APFS 返回共享卷视图。Windows 文件系统观测需要 Windows 10 version 1809 / Server 2019 起的卷信息 API；旧系统仍可使用其他能力。仅在 inode 总量为正时计算使用率。
 
-每个 daemon 只有一个 sampler，零 Session 时仍运行。读取返回最新缓存，不触发采样。首次采样完成前 `report.sample` 为 `None`；源阻塞时仍可读取旧样本，其 `sample_age_ms` 持续增加。Managed Linux 将 runtime 目标映射到真实 runtime 挂载，其余目标映射到原始系统目录，并拒绝被遮蔽的启动保护路径。
+每个守护进程运行一个 sampler，零会话时也继续运行。读取返回缓存。首次采集完成前，`report.sample` 为 `None`；源较慢时保留前一个样本，样本年龄持续增加。托管 Linux 将运行时目标解析到实际挂载，其余目标解析到原始系统树，并拒绝被屏蔽的启动路径。
 
-消费报告时：
+构建图表或 exporter 时：
 
-- 按 `(device_id, generation, sample.sequence)` 去重。
-- 展示或导出当前值前检查 `sample.sample_age_ms`，保留缺失值。
-- 只用不同样本计算计数器速率；generation 改变、计数器下降或数据缺失后重建基线。cgroup 可以独立于 daemon generation 重置。
-- 根据 exporter 需要，将累计时间换算为秒、事件数映射为 counter、字节和 inode 映射为 gauge、百分比换算为比例。
-- 图表峰值标记为采样值的最大值。CPU 百分比已是区间平均，瞬时尖峰可能落在采样间隔内。
+1. 按 `(device_id, generation, sample.sequence)` 去重。
+2. 比较 `sample.sample_age_ms` 与新鲜度阈值，将缺失观测保留为空档。
+3. 用不同样本计算速率。代次变化、计数器下降或数据缺失后重建基线；cgroup 可以在同一代次内重置。
+4. 累计时间映射为秒，事件映射为 counter，字节和 inode 映射为 gauge。按需要将百分比换算为比例。
+5. 将峰值标为采样最大值：CPU 值是区间平均，点观测可能漏掉尖峰。
 
-Envd 只保留一个样本，通过 EIP、标准 HTTP 抓取和可选的原生 OTLP 导出提供观测。历史、告警和产品图表由消费方及其可观测性基础设施负责。Session 清理不停止采样，daemon 关闭会停止采样。
+由消费方存储历史、管理告警。Envd 保留一个样本，供 EIP、HTTP 抓取和可选 OTLP 导出使用。采样持续到守护进程关闭，不受会话清理影响。
 
 ## Prometheus 与 OpenTelemetry
 
-使用 [HTTP 传输](#carrier-profiles) 时，启用 `"monitoring": {}`，即可在同一地址抓取 `GET /metrics`。响应采用 Prometheus text format 0.0.4，与 `device.metrics` 读取同一缓存，无需 EIP 初始化或 Session。无需新增监听端口、令牌或 TLS 配置。stdio 和反向 WebSocket 部署（包括 `connect`）不提供 HTTP 抓取端点，消费方仍可通过 EIP 读取观测。
+采集器能访问 Envd 时可选择 HTTP 抓取；只有出站连接的部署可选择原生 OTLP 推送。[HTTP 传输](#carrier-profiles) 启用 `"monitoring": {}` 后，`GET /metrics` 从与 EIP 相同的缓存提供 Prometheus text format 0.0.4。它复用监听器和认证，无需会话或 EIP 初始化。stdio 和反向 WebSocket（包括 `connect`）支持 EIP 观测和 OTLP 推送，不提供 HTTP 抓取端点。
 
-使用 HTTP listener 的 Bearer 凭据和经过验证的 HTTPS。**该凭据同时拥有 listener 的 EIP 操作权限，不是只读监控令牌。** 在采集器端通过 secret 文件保存，限制访问者并使用可信网络。公网连接要求 TLS；现有显式 loopback/provider-private 明文配置仍可使用。
+将监听器凭据放在采集器侧 secret 文件中，并限制读取者：**该凭据同时授权 EIP 操作和指标访问**。公网连接使用经过验证的 HTTPS。显式 loopback/provider-private 明文设置仍可用于其可信范围。
 
 ### 原生 OTLP 推送
 
-任何 EIP 传输都可以直接向 OTLP receiver 推送指标，包括只有出站连接的 `connect` 部署：
+配置 OTLP receiver，然后重启 Envd。任何 EIP 传输均可使用：
 
 ```bash
 export OTEL_METRICS_EXPORTER=otlp
@@ -178,7 +190,7 @@ export OTEL_METRIC_EXPORT_INTERVAL=10000
 a13n-envd connect https://host.example.com
 ```
 
-配置通用 OTLP endpoint 或 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 也会选择导出，无需设置 `OTEL_METRICS_EXPORTER`。此时省略 `monitoring` 会启用默认 CPU/内存采样；显式 `"monitoring": null` 同时关闭采样和导出。`OTEL_METRICS_EXPORTER=none` 或 `OTEL_SDK_DISABLED=true` 关闭导出，但保留显式配置的采样。修改后重启 Envd 生效。
+通用或指标专用 OTLP endpoint 也会选择导出，无需 `OTEL_METRICS_EXPORTER`。省略 `monitoring` 时启用默认采样；显式 `"monitoring": null` 关闭采样和导出。只停止导出、保留显式配置的采样时，设置 `OTEL_METRICS_EXPORTER=none` 或 `OTEL_SDK_DISABLED=true`。
 
 | 设置                                                            | 行为                                                                                                                   |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -192,13 +204,15 @@ a13n-envd connect https://host.example.com
 | `OTEL_METRIC_EXPORT_INTERVAL`                                   | 导出间隔，单位为毫秒，默认 60000。采样使用独立的配置间隔。                                                             |
 | `OTEL_SERVICE_NAME`、`OTEL_RESOURCE_ATTRIBUTES`                 | 服务名称和资源属性，例如 `workspace.id=example`。                                                                      |
 
-`[_METRICS]` 表示通用和指标专用两种形式，指标专用设置优先。可信本地网络之外使用经过验证的 TLS。导出凭据与 Envd HTTP listener 令牌相互独立。托管 Linux 将 TLS 文件复制到私有 broker 镜像，并在 Session 中屏蔽原始路径。Full Control 命令不会继承 daemon 的 exporter 设置；payload 可以显式提供自己的 OTEL 设置。
+`[_METRICS]` 表示通用和指标专用两种形式，指标专用值优先。可信本地网络之外使用经过验证的 TLS。导出凭据独立于 HTTP 监听器凭据。托管 Linux 将 TLS 文件复制到私有 broker 镜像，并在会话中屏蔽原始路径。命令不会继承守护进程的 exporter 设置，可显式提供自己的 OTEL 设置。
 
-导出资源的 `service.instance.id` 始终为实际 Device ID。数据点携带 `device_id`、`generation`，使用下文列出的指标名。计数器保留原生累计绝对值，包括重置后的值。缺失或过期的资源值保持省略。OTLP 使用 double，极大的整数计数可能损失精度。导出错误不影响 EIP 和采样；关闭时只在有界时间内等待 exporter 刷出数据。每个 Device 选择一条采集路径，避免同时推送和抓取造成重复摄取。
+资源的 `service.instance.id` 是实际设备 ID。数据点携带 `device_id` 和 `generation`，使用下文的指标名。Counter 导出原生累计值，包括重置后的值；缺失或过期的资源值省略。Double 精度可能对极大的整数计数产生舍入。导出失败不影响采样和 EIP，关闭时允许有界时间刷出数据。每个设备选择一条采集路径，避免推送和抓取重复摄取。
 
 ### Prometheus 抓取配置
 
-在 Prometheus 所在机器上，将 Envd 凭据挂载到 `/run/secrets/envd-token`。配置实际可达的 Envd 地址、端口和 CA 证书：
+1. 在 Prometheus 机器上，将监听器凭据挂载到 `/run/secrets/envd-token`。
+2. 将下方目标和 CA 路径替换为可达的 Envd 端点及其信任证书。
+3. 抓取间隔应不短于守护进程采样间隔：
 
 ```yaml
 scrape_configs:
@@ -216,11 +230,11 @@ scrape_configs:
       - targets: [envd.example.com:8443]
 ```
 
-如果证书已受抓取端的系统根证书信任，可省略 `ca_file`。凭据文件只包含令牌。对于显式配置的同机 loopback HTTP，使用 `scheme: http`、loopback 地址，并省略 `tls_config`。抓取间隔应不短于 daemon 的采样间隔；更频繁的抓取只会重复读取缓存。
+Secret 文件只包含 token。系统根证书已信任服务端时，省略 `ca_file`。显式配置的同机回环 HTTP 使用回环目标及 `scheme: http`，并省略 `tls_config`。更频繁地抓取只会重复读取缓存。
 
 ### OpenTelemetry Collector
 
-包含 [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) 的 Collector 发行版可以使用相同抓取配置，再通过普通 pipeline 导出：
+对于包含 [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) 的 Collector，将抓取配置放入 metrics pipeline：
 
 ```yaml
 receivers:
@@ -252,11 +266,11 @@ service:
       exporters: [otlphttp/metrics]
 ```
 
-替换 exporter 地址，并按后端要求配置认证。使用原生推送时，以 OTLP receiver 替代 Prometheus receiver。每个目标应分配给一个活跃采集器，或明确配置后端的 HA 去重；相同配置的 Collector 副本会重复抓取。采集器必须能访问现有 Envd HTTP listener，仅有出站反向 WebSocket 连接并不提供这条网络路径。
+设置 exporter 端点和后端认证。每个目标分配给一个活跃采集器，或为副本配置后端 HA 去重。Collector 需要访问 Envd HTTP 监听器的网络路径，仅有反向 WebSocket 连接不能提供该路径。使用原生推送时，改为配置 OTLP receiver。
 
 ### 指标与新鲜度
 
-所有序列携带 `device_id` 和 `generation` 标签。系统指标描述 daemon 可见的系统，容器内也可能是宿主机。`envd_cgroup_*` 仅描述配置的 cgroup。文件系统序列使用配置的 `filesystem` 名称，不暴露原生路径，测量范围是整个所在文件系统。
+用 `device_id` 和 `generation` 区分序列。系统序列描述守护进程可见的系统，可能是容器宿主机；`envd_cgroup_*` 描述所选组。文件系统序列使用配置的名称而非路径，测量范围为所在文件系统。
 
 | 序列                                                                                        | 含义                                                                            |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -273,21 +287,25 @@ service:
 | `envd_system_pressure_stall_seconds_total`、`envd_cgroup_pressure_stall_seconds_total`      | 累计 stall 秒数，标签为 `resource`、`level`。                                   |
 | `envd_filesystem_available`、`envd_filesystem_available_bytes`                              | 目标可读性与当前账户可用字节数；同时提供总量、空闲字节和原生 inode gauge。      |
 
-缺失值保持省略，不填零。首次采集完成前，`/metrics` 返回 200，携带 `sample_available=0`、`sample_fresh=0`，不包含资源值。缓存年龄超过两倍采样间隔时，仍返回 200，携带 `sample_fresh=0` 和保留的样本元数据，并省略资源序列，直到恢复新鲜观测。关闭监控时，认证后返回 404；凭据缺失或无效返回 401。序列使用抓取时间戳，观测时间另行提供。
+分别判断抓取健康和资源新鲜度：
 
-例如，分别对 `up{job="envd"} == 0` 和 `envd_sample_fresh{job="envd"} == 0` 告警。使用 `100 * envd_system_cpu_busy_ratio` 显示百分比，用 `rate(envd_cgroup_cpu_usage_seconds_total[5m])` 计算每秒消耗的 CPU 秒数。计数器下降表示重置；新的 daemon generation 会创建独立序列。cgroup 可在同一 generation 内重置。缺失或过期观测保持为空档，不要填零，也不要从抓取成功推断所有字段采集完整。
+- 首次采集前，HTTP 200 携带 `sample_available=0` 和 `sample_fresh=0`，不含资源值。
+- 样本年龄超过两倍采样间隔后，HTTP 200 携带 `sample_fresh=0` 和保留的样本元数据。资源序列省略，直到新样本到达。
+- 关闭监控时，认证后返回 404。凭据缺失或无效时返回 401。
+
+序列使用抓取时间戳，并单独携带观测时间。同时对 `up{job="envd"} == 0` 和 `envd_sample_fresh{job="envd"} == 0` 告警。用 `100 * envd_system_cpu_busy_ratio` 显示 CPU 百分比，用 `rate(envd_cgroup_cpu_usage_seconds_total[5m])` 表示每秒消耗的 CPU 秒数。计数器下降标记重置；新代次创建新序列，cgroup 重建则可能在同一代次内重置计数器。缺失和过期数据保留为空档。
 
 ## 启用命令
 
-需要以配置的执行账号权限运行原生 shell 时，使用：
+启用 Full Control，以执行账号的权限运行原生 shell：
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-也可在守护进程 JSON 中设置 `"full_control": true`。`A13N_ENVD_FULL_CONTROL` 覆盖 JSON 值；`false` 或 `0` 将其禁用。Full Control 自动创建默认原生 shell 配置：Unix 上为 `/bin/sh`，Windows 上为 PowerShell。命令继承启动进程的环境和原始 `PATH` 顺序，排除守护进程启动变量（`A13N_ENVD_*` 和 `EIP_*`）及 daemon 的 OTLP 指标设置。命令级环境修改不会影响守护进程或后续命令。shell 别名和未导出的变量不会被继承。
+JSON `"full_control": true` 选择相同模式，标量环境设置优先。Full Control 在 Unix 提供 `/bin/sh`，在 Windows 提供 PowerShell，并继承启动者环境和 `PATH` 顺序。它排除守护进程启动变量（`A13N_ENVD_*`、`EIP_*`）及 OTLP 指标设置。Shell 别名和未导出变量留在启动 shell 中。逐命令覆盖只影响该命令。
 
-Envd Full Control（`full_control`）不是沙箱。它独立于 Harness UI 本地的 Full Control 或 Sandbox 模式。不要与手动可执行文件根目录或 shell 配置组合使用。需要显式配置命令访问时，提供可信可执行文件搜索根目录，并按需提供固定 shell 配置：
+Envd `full_control` 启用执行能力，不提供隔离，并且独立于 Harness UI 的本地模式。Full Control 与手动可执行文件根目录/shell 配置二选一，不能组合。显式命令配置示例：
 
 ```json
 {
@@ -308,16 +326,16 @@ Envd Full Control（`full_control`）不是沙箱。它独立于 Harness UI 本�
 }
 ```
 
-Full Control 禁用，且可执行文件根目录和 shell 配置都为空时，不声明任何命令方法。可执行文件根目录和配置是可信启动配置，不是会话沙箱。Host 提供外层安全边界；可选的[受控会话出站网络](egress.md)提供逐会话目标限制和凭据注入。参见[执行边界与故障排查](isolation.md)。
+关闭 Full Control，且根目录和配置都为空时，Envd 不声明命令方法。根目录和配置选择可信可执行文件；Host 外层边界及[执行隔离](isolation.md)决定访问范围。[受控会话出站网络](egress.md)添加目标限制和凭据注入。
 
-子进程环境由守护进程支持继承的值和显式命令输入构成。守护进程控制变量不是命令配置。请检查声明的执行功能，不要假定平台支持信号、限制或可执行位。
+检查设备声明的执行功能，确认信号、限制和可执行位支持。子进程环境由可继承值和显式命令输入组合而成；守护进程控制变量仍属于启动配置。
 
 ## 原生身份与 sudo
 
 > [!IMPORTANT]
-> **默认允许原生 sudo。** 禁用 Sandbox 时，Envd 保持外层沙箱的原始系统树可写。通过授权 sudo 安装软件包或修改系统文件会改动该树，并跨会话保留；不会为工作负载根文件系统引入临时副本。
+> 默认允许原生 sudo。禁用 Sandbox 时，经过授权的软件包安装和系统文件修改会作用于外层沙箱的原始文件系统，并跨会话保留。
 
-Linux 上，**省略执行 UID/GID 会保留启动进程身份，包括 root**。Envd 不会假定 `1000:1000`、搜索可能的用户、创建账号，也不会仅因启动者为 root 就强制要求身份配置。要选择其他预置账号，成对设置 `execution.uid`/`execution.gid`、`A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`，或 `--execution-uid`/`--execution-gid`。Root（`0:0`）也是有效的显式身份。provider 或部署负责账号预置、home 和工作目录权限。例如，root 启动者可以选择其预置的 sandbox 账号：
+Linux 上省略执行 UID/GID 会保留启动者身份，包括 root。Root 启动者切换账号前，先预置账号及 home/工作目录权限，再同时设置 `execution.uid`/`execution.gid`、两个环境变量或两个 CLI 选项。显式 `0:0` 选择 root。对于预置的 `sandbox` 账号：
 
 ```bash
 # Replace sandbox with the account provisioned by your image or deployment.
@@ -326,13 +344,13 @@ export A13N_ENVD_EXECUTION_GID="$(id -g sandbox)"
 a13n-envd
 ```
 
-命令、会话文件 RPC（包括读取、写入和传输）、工作目录访问和设备目录发现都使用该执行身份及其原生权限。文件 RPC 绝不会隐式 sudo；访问不足会返回权限错误。显式 sudo 仅影响调用它的命令及其后代，不影响后续文件 RPC。守护进程凭据加载和 broker 管理独立于执行身份。
+命令、文件 RPC、工作目录访问和目录发现使用所选账号的原生权限。文件 RPC 在权限不足时报告错误，不调用 sudo。命令中的 sudo 影响该命令及其后代，不影响后续文件 RPC。凭据加载和 broker 管理仍由守护进程负责。
 
-切换账号会初始化原生附加组和账号环境默认值。保留启动者身份时，root 与非 root 用户都保留原生 capability 继承；Envd 不会无条件清空命令 capabilities。只有从 root 切换用户时，Envd 为 supervisor 保留的信号 capability 会在执行命令前移除。外层平台及显式启用的受控出站网络边界仍然适用。非特权启动者不能选择其他身份。
+切换账号会初始化附加组和账号环境默认值。保留启动者身份会保留原生 capability 继承。从 root 切换用户时，执行命令前移除 Envd 为 supervisor 保留的信号 capability。外层平台和受控出站限制仍然适用；非特权启动者不能选择其他账号。
 
-`allow_sudo` 允许原生提权，并不授予授权。通过镜像或启动者安装 sudo 并配置 sudoers。Envd 不添加免密码 sudo 规则，不绕过身份验证，也不覆盖外层 `no_new_privs` 设置或 `nosuid` 挂载。
+在镜像或部署中安装 sudo 并配置 sudoers。`allow_sudo` 允许原生提权，但仍受该授权及外层 `no_new_privs`/`nosuid` 限制。Envd 不提供免密码规则。
 
-可用以下任一方式禁用提权：
+用以下任一启动设置禁用额外提权：
 
 ```bash
 # Environment variable
@@ -346,7 +364,7 @@ a13n-envd connect work --allow-sudo false
 A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
 ```
 
-或使用 JSON 文件：
+等价的 JSON 设置为：
 
 ```json
 {
@@ -354,9 +372,11 @@ A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
 }
 ```
 
-遵循普通优先级：例如 `--allow-sudo true` 会覆盖值为 `false` 的环境变量。禁用时，在 Linux worker 及其后代上设置 `no_new_privs`，因此直接 sudo、setuid 二进制文件和文件 capabilities 都不能取得额外权限。这不会降低已经是 root 的执行身份，也不会撤销其已有权限。命令自身环境不能重新开启提权。不支持此实现的平台会拒绝 `false`，而非忽略它。UID/GID 配置仅限 Linux；其他平台保留原生启动身份。
+Linux 会对 worker 及其后代应用 `no_new_privs`，阻止通过 sudo、setuid 二进制和文件 capabilities 提权。包括 root 在内的已有权限保留。启动优先级仍然适用（`--allow-sudo true` 覆盖环境变量 `false`）；命令不能通过自身环境改变此策略。不支持该实现的平台拒绝 `false`。UID/GID 选择仅限 Linux，其他平台保留原生启动身份。
 
 ## 传输通道配置
+
+按 Host 所需的连接方向选择：
 
 | 配置                | 启动设置                                         | 用途                                   |
 | ------------------- | ------------------------------------------------ | -------------------------------------- |
@@ -364,9 +384,11 @@ A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
 | `http`              | 绑定地址、受保护凭据文件、TLS 或显式可信明文范围 | Host 主动连接设备                      |
 | `reverse_websocket` | 出站 URL 和受保护凭据文件                        | 设备主动连接经过身份验证的 Host 监听器 |
 
-通过 `A13N_ENVD_TRANSPORT` 选择配置。
+将 `A13N_ENVD_TRANSPORT` 设为所选通道。使用本地 HTTP 客户端时：
 
-服务本地 HTTP 客户端前，先创建私有运行时父目录和受保护凭据文件。使用已有原生工作目录和数字绑定地址：
+1. 准备受保护的 token 文件和已有工作目录。
+2. 替换下方命令中的对应路径。命令会创建私有运行时父目录并绑定回环 HTTP。
+3. 启动 Envd：
 
 ```bash
 mkdir -p "$HOME/.a13n-envd-runtime"
@@ -380,33 +402,38 @@ export A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback
 a13n-envd --default-working-directory /absolute/path/to/workspace
 ```
 
-替换凭据文件和工作目录路径。Python 客户端使用相同凭据和预期设备 ID，连接 `http://127.0.0.1:8787`。服务器提供经身份验证的 `/eip/control` 和 `/eip/transfer` 路由，客户端接受基础 origin。
+Python 客户端使用相同凭据和预期设备 ID，连接基础 origin `http://127.0.0.1:8787`。客户端会选择经过认证的 `/eip/control` 和 `/eip/transfer` 路由。
 
-使用 HTTPS 时，先运行 `unset A13N_ENVD_HTTP_PLAINTEXT_SCOPE`，设置 `A13N_ENVD_HTTP_TLS_CERT_FILE` 和 `A13N_ENVD_HTTP_TLS_KEY_FILE`，再启动 Envd。配置客户端以信任该证书。provider 私有明文部署使用 `provider_private_link` 并要求客户端显式启用，不允许公共 HTTP 端点。[Python 传输选项](python-client.md#http-options)介绍代理路由和 TLS 验证。
+使用 HTTPS 时，取消设置 `A13N_ENVD_HTTP_PLAINTEXT_SCOPE`，设置 `A13N_ENVD_HTTP_TLS_CERT_FILE` 和 `A13N_ENVD_HTTP_TLS_KEY_FILE`，连接前配置客户端信任。Provider 私网路径使用 `provider_private_link`，并要求客户端显式启用。公共端点要求 HTTPS。代理路由和 TLS 见 [Python 传输选项](python-client.md#http-options)。
 
-反向 WebSocket 需要 `A13N_ENVD_REVERSE_WS_URL` 和 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`。`A13N_ENVD_REVERSE_WS_CA_FILE` 为 `wss` 添加部署信任。守护进程不提供入站 WebSocket 监听器。
+出站反向 WebSocket 设置 `A13N_ENVD_REVERSE_WS_URL` 和 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`；用 `A13N_ENVD_REVERSE_WS_CA_FILE` 添加私有信任。WebSocket 监听器由 Host 管理。
 
-凭据应存入受保护文件，不能放入 argv、端点 URL、描述符、日志或可移植环境状态。凭据授权设备访问，不会将会话彼此隔离。
+将凭据保存在受保护文件中，不放入 argv、URL、描述符、日志或可移植环境状态。凭据授予设备访问权，会话隔离由执行边界提供。
 
 ## 生命周期与归属
 
-一个守护进程代次服务于一个设备和多个独立会话。初始化传输通道不会打开会话。`session.open` 记录工作目录并启动一个资源范围；`session.close` 只关闭该范围。会话内保活只续期自己的所有者。设备发现不会让已放弃会话持续存活。
+先初始化设备连接，再为每个资源范围打开会话。一个守护进程代次服务多个会话，各会话记录 cwd 并管理自己的操作。`session.close` 关闭该范围。保活只续期调用者自己的所有权，因此发现流量不会保留已放弃的会话。
 
-消息帧传输通道丢失后，会话分离并进入有限的断线宽限期。已有所有者可以在同一代次显式重新附加到同一会话。附加绝不会重放命令或恢复传输。过期会话需要新资源范围，旧资源引用仍然无效。
+消息帧传输断开后，所有者可在宽限期内、同一代次中显式重新附加。附加恢复对已有资源的访问，不重放命令或恢复传输。过期后应打开新会话并丢弃旧引用。
 
-Host 关闭时会关闭自己的设备连接，且只有拥有守护进程生命周期时才会终止该进程。会话关闭不会删除工作目录中的文件。原生进程和私有输出/暂存存储在有界清理中回收；失败会被报告，不会被视为已成功回收。
+关闭时，Host 关闭自己的连接，只终止由它管理生命周期的守护进程。会话清理回收进程及私有输出/暂存存储，同时保留工作目录文件。报告清理失败时，应视为回收未完成。
 
 ## 接纳工作前检查
+
+检查守护进程版本：
 
 ```bash
 a13n-envd --version
 ```
 
-匹配守护进程和 Python 客户端的精确版本。`A13N_ENVD_EXECUTABLE` 用于 Python Host 选择可执行文件，应从守护进程子环境中移除。未知的 `A13N_ENVD_*` 变量和 JSON 字段会被拒绝。
-
-设备初始化验证身份和协议。会话就绪检查验证所选范围。不存在 `isolation probe` 或逐命令隔离模式：通过部署自身的启动者和检查来测试 Host 外层边界。
+1. 匹配 Python 客户端的精确版本。
+2. 从守护进程子环境中移除仅供 Host 使用的 `A13N_ENVD_EXECUTABLE`。未知的 `A13N_ENVD_*` 变量和 JSON 字段会使配置失败。
+3. 初始化设备，验证协议和身份，再检查所选会话范围的就绪状态。
+4. 通过部署自己的启动者和检查测试外层执行边界。Envd 没有 `isolation probe` 或逐命令隔离模式。
 
 ## 独立字段参考
+
+在守护进程 JSON 中使用以下字段：
 
 | 根字段                                       | 默认值或含义                                                                                                         |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -427,12 +454,12 @@ a13n-envd --version
 | `trusted_executable_roots`, `shell_profiles` | 空；除非启用 Full Control，否则命令方法禁用                                                                          |
 | `limits`                                     | 设备总限制和逐会话限制                                                                                               |
 
-主要默认限制包括 128 个会话、设备 256 个并发操作、每个会话 128 个并发操作、设备 4 GiB spool 容量、会话 1 GiB spool 容量、每条流 256 MiB 输出和 2 MiB 预览。配置的会话容量不能超过设备总额。输出预览不能超过流容量；spool 必须为两条流预留空间。
+默认容量为 128 个会话、设备 256 个并发操作、每个会话 128 个并发操作、设备 4 GiB spool、会话 1 GiB spool、每条输出流 256 MiB 及 2 MiB 预览。会话容量应不超过设备总额，预览不超过流容量，spool 为两条流保留足够容量。
 
 ### Shell 配置字段
 
-必填字段为 `profile_id`、`display_name`、`native_executable`、`executable_search_roots` 和正数 `max_script_bytes`。可执行文件和搜索根目录必须是已有的原生绝对路径。`fixed_arguments` 默认为 `[]`，`safe_base_environment` 为 `{}`，`allow_login_mode` 为 `false`。
+提供 `profile_id`、`display_name`、`native_executable`、`executable_search_roots` 和正数 `max_script_bytes`。可执行文件和根目录使用已存在的原生绝对路径。可选默认值为 `fixed_arguments: []`、`safe_base_environment: {}` 和 `allow_login_mode: false`。
 
 ## 受控会话出站网络
 
-在守护进程 JSON 中设置 `"egress": {"mode": "controlled"}`，或使用 `A13N_ENVD_EGRESS_MODE=controlled`、`--egress-mode controlled`，即可要求 Linux 受控会话。每个会话必须提供带显式类型的目标策略；inherit 和 deny 会拒绝会话出站网络策略。秘密值通过 EIP 提交，绝不能存入该文件。前置条件、创建、实时更新和容量行为见[会话出站网络](egress.md)。
+在 Linux 上为各会话限制目标并注入 HTTPS 凭据，请按[会话出站网络](egress.md)操作。启动守护进程时配置受控模式，再通过 EIP 提交策略和秘密值。

@@ -81,11 +81,8 @@
   overflow-wrap: anywhere;
 }
 .toolbar {
-  display: flex;
-  align-items: center;
+  composes: toolbar from "../../../shared/collection/collection.module.css";
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 .facts {
   display: grid;

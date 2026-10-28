@@ -1,12 +1,14 @@
 ---
 title: 环境快速开始
 sidebarTitle: 快速开始
-description: 不使用 Harness、模型、Docker 或云账号，直接读写文件。
+description: 打开本地工作区、写入文件、读回内容，并关闭执行。
 ---
+
+本例通过 Direct Local 操作临时目录，需要 Python 3.13 和 `uv`，无需模型、守护进程、Docker 或云账号。
 
 ## 从源码安装
 
-示例跟随 `main`，使用 Python 3.13 和仓库锁文件：
+克隆仓库，使用锁文件安装 Harness。已有检出时，在仓库根目录运行最后一条命令即可：
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -14,11 +16,13 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-环境执行属于 `a13n-harness`，可以不创建 Agent、不调用模型而直接使用。Docker、E2B 和 Modal 的 SDK 分别位于该包的可选依赖中。
+执行 API 属于 `a13n-harness`。可选厂商 SDK 位于它的 `docker`、`e2b` 和 `modal` extras 中，本地示例不需要这些依赖。
 
 ## 运行完整文件示例
 
-将以下代码保存为 `environment_example.py`，运行 `uv run python environment_example.py`：
+1. 将以下程序保存为仓库根目录中的 `environment_example.py`。
+2. 运行 `uv run python environment_example.py`。
+3. 确认程序输出 `Hello from Environment` 并成功退出。
 
 ```python
 import asyncio
@@ -48,20 +52,24 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-连接配置的构造和验证不进行 I/O。`open()` 打开一个已就绪的独立执行对象；退出上下文会释放该执行对象拥有的资源。Direct Local 使用 Host 已有目录，关闭执行不会删除目录。这里的临时目录由应用负责删除。
+按三个阶段理解程序：
 
-`/hello.txt` 是该环境中的逻辑路径。Direct Local 使用 Host 账号权限，目录映射不提供操作系统隔离。
+1. `TemporaryDirectory` 创建 Host 目录。connector 描述该目录，不进行 I/O。
+2. `await connector.open()` 打开已就绪的执行。它的文件操作接口将逻辑路径 `/hello.txt` 映射到 `workspace / "hello.txt"`。
+3. 离开异步上下文后，execution 关闭。随后的断言证明文件仍存在；外层 `TemporaryDirectory` 块退出后才删除目录。
+
+Direct Local 使用 Host 账号。目录映射是路径接口，不提供 OS 隔离。需要沙箱目标时，继续阅读[后端选择](index.md#choose-a-backend)。
 
 ## 与 Harness 一起使用
 
-通过 Host 来源提供 connector。每次 Run 仅在首次使用时打开独立 execution；已打开的 execution 不能作为 Run 输入：
+要让 Agent 使用工作区，参照[完整 Harness 来源示例](../a13n-harness/environments.md#supply-a-source)。它提供 Host 自有的 `PreparedSource`，并启用 `DynamicEnvironmentCapability` 以提供文件工具。
 
-此处 `PreparedSource` 使用 [Harness 环境指南](../a13n-harness/environments.md#supply-a-source)中的 Host 来源实现。它在首次使用时返回已准备好的 connector。
+在已经定义这些对象的异步应用中，将来源传给 Run：
 
 ```python
 result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-这段代码要求工作目录仍然存在，且 `executable` 启用了 `DynamicEnvironmentCapability`。Harness 在首次使用时打开 execution，并在 Run 结束时关闭它。仅传入环境不会自动向模型添加工具。
+保持目标目录存活，直到 Run 结束。在上面的程序中，这意味着应在 `TemporaryDirectory` 块内运行 Agent。Harness 在首次使用时打开新的 execution，在 Run 退出时关闭它；capability 提供模型可调用的工具。
 
-接下来阅读[生命周期与状态](lifecycle.md)、[操作接口](operations.md)和[Harness 环境接入](../a13n-harness/environments.md)。
+接下来通过[操作](operations.md)了解文件 API，通过[生命周期与状态](lifecycle.md)了解目标复用，或按 [Harness 集成](../a13n-harness/environments.md)完成 Agent 工作流。

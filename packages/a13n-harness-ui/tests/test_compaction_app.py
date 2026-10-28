@@ -17,7 +17,8 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("enabled", [None, False, True])
-async def test_background_compaction_configuration_is_captured(tmp_path: Path, enabled: bool | None):
+@pytest.mark.parametrize("threshold", [0.95, 0.92])
+async def test_background_compaction_configuration_is_captured(tmp_path: Path, enabled: bool | None, threshold):
     from a13n_harness.capabilities import CompactionCapability
     from a13n_harness_ui.compaction import BackgroundCompaction
     from a13n_harness_ui.composition import AgentCompositionResolver, AgentReconstructor, ResolvedRunComposition
@@ -28,19 +29,33 @@ async def test_background_compaction_configuration_is_captured(tmp_path: Path, e
 
     root = _write_source(tmp_path)
     if enabled is not None:
-        root.write_text(root.read_text() + f"background_compaction: {str(enabled).lower()}\n")
+        root.write_text(
+            root.read_text()
+            + f"background_compaction:\n  enabled: {str(enabled).lower()}\n  blocking_threshold: {threshold}\n"
+        )
     source = await load_harness_ui_configuration(root)
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
-    assert composition.background_compaction is (enabled is not False)
+    assert composition.background_compaction.enabled is (enabled is not False)
+    assert composition.background_compaction.blocking_threshold == (threshold if enabled is not None else 0.95)
     payload = composition.model_dump(mode="json")
     payload.pop("background_compaction", None)
-    assert ResolvedRunComposition.model_validate(payload).background_compaction is False
+    assert ResolvedRunComposition.model_validate(payload).background_compaction.enabled is False
+    payload["background_compaction"] = True
+    assert ResolvedRunComposition.model_validate(payload).background_compaction.enabled is True
     async with open_local_store(_settings(tmp_path / "state").storage) as store:
         owner = BackgroundCompaction(store.compactions, tmp_path / "state")
         reconstructed = AgentReconstructor(_catalog()).reconstruct(
             composition, subagent_operator=_UnusedOperator(), background_compaction=owner
         )
         assert (reconstructed.compaction is not None) is (enabled is not False)
+        leaves = []
+        reconstructed.executable._agent.root_capability.apply(leaves.append)
+        if enabled is not False:
+            assert all(
+                item.background_policy == composition.background_compaction
+                for item in leaves
+                if isinstance(item, CompactionCapability)
+            )
         for child in reconstructed.executable.subagents.values():
             leaves = []
             child.executable._agent.root_capability.apply(leaves.append)

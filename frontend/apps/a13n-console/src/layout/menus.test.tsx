@@ -33,6 +33,7 @@ vi.mock("./workspace", () => {
     image_url: "/api/v1/workspaces/ws_design/icon?v=2",
   };
   return {
+    useAccess: () => ({ workspace: design }),
     useWorkspace: () => ({
       workspace: design,
       workspaces: [design],

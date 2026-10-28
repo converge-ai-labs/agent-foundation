@@ -20,8 +20,9 @@ import {
   type EditorSection,
 } from "../configuration";
 import { AgentEnvironment } from "../environment";
-import { AgentToolsets } from "../toolsets";
+import { AgentToolsets, useToolsetCatalog } from "../toolsets";
 import { AdvancedSection } from "./advanced";
+import { CompactionSection } from "./compaction";
 import {
   ConnectionsSection,
   SkillsSection,
@@ -107,8 +108,12 @@ export function AgentEditor({
     preset: incomingPreset,
   });
   const creating = version === undefined;
-  const draft = useAgentDraft(initial);
   const configurationReadonly = readonly || !!preset;
+  const toolsets = useToolsetCatalog();
+  const draft = useAgentDraft(
+    initial,
+    configurationReadonly ? undefined : toolsets.data?.items,
+  );
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
     [attempted, setAttempted] = useState(false),
@@ -166,10 +171,10 @@ export function AgentEditor({
   function save(event: FormEvent<HTMLFormElement>) {
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
+    setAttempted(true);
     // Creation's button stays enabled: a refused save points at what is
     // missing instead of explaining a disabled button.
     if (incomplete) {
-      setAttempted(true);
       if (unnamed) onUnnamed?.();
       else
         document
@@ -185,6 +190,8 @@ export function AgentEditor({
       } else if (built.stage === "toolSearch") {
         setAdvancedExpanded(true);
         setToolSearchValidation(built.error);
+      } else if (built.stage === "compaction") {
+        setAdvancedExpanded(true);
       } else if (built.stage === "reviewer") {
         setReviewPanel({ validation: built.error });
       } else {
@@ -289,7 +296,6 @@ export function AgentEditor({
               <SkillsSection
                 draft={draft}
                 choices={choices}
-                hostSkills={!!preset}
                 readOnly={configurationReadonly}
                 mark={mark("skills")}
               />
@@ -302,13 +308,6 @@ export function AgentEditor({
                 onRequireReviewer={() => {
                   if (!draft.reviewer?.model) setReviewPanel({});
                 }}
-              />
-              <PluginsSection
-                draft={draft}
-                readOnly={configurationReadonly}
-                pending={pending}
-                mark={mark("plugins")}
-                error={error}
               />
               <MediaUnderstandingSection
                 draft={draft}
@@ -360,6 +359,22 @@ export function AgentEditor({
                 />
               </Section>
               <Section
+                title={t("Background compaction")}
+                description={t(
+                  "Summarize older messages while the agent continues.",
+                )}
+              >
+                <CompactionSection
+                  draft={draft}
+                  readOnly={configurationReadonly}
+                  error={
+                    attempted && !built.ok && built.stage === "compaction"
+                      ? built.error.message
+                      : undefined
+                  }
+                />
+              </Section>
+              <Section
                 title={t("Execution")}
                 description={t("Control tool runs and incoming messages.")}
                 className={styles.parameterSection}
@@ -371,6 +386,13 @@ export function AgentEditor({
                   readOnly={configurationReadonly}
                 />
               </Section>
+              <PluginsSection
+                draft={draft}
+                readOnly={configurationReadonly}
+                pending={pending}
+                mark={mark("plugins")}
+                error={error}
+              />
               <Section
                 title={t("JSON")}
                 description={t("Edit options not shown above.")}

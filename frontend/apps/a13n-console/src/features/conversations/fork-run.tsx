@@ -86,14 +86,6 @@ export function ForkRun({
     onSuccess: (receipt) => {
       const keys = conversationKeys(workspace.id);
       cache.setQueryData(keys.thread(receipt.thread.id), receipt.thread);
-      cache.setQueryData<Schema["ThreadView"][]>(
-        keys.threads(receipt.thread.session_id),
-        (threads) =>
-          threads && [
-            ...threads.filter((thread) => thread.id !== receipt.thread.id),
-            receipt.thread,
-          ],
-      );
       if (receipt.run)
         cache.setQueryData(keys.run(receipt.run.id), receipt.run);
       void invalidateConversation(cache, workspace.id, {

@@ -51,6 +51,11 @@ const CreateAgent = lazy(() =>
     default: module.CreateAgent,
   })),
 );
+const ApiKeysPage = lazy(() =>
+  import("./features/settings/keys").then((module) => ({
+    default: module.ApiKeysPage,
+  })),
+);
 const PersonalSettings = lazy(() =>
   import("./features/settings/personal").then((module) => ({
     default: module.PersonalSettings,
@@ -74,6 +79,11 @@ const SkillsPage = lazy(() =>
 const SkillDetail = lazy(() =>
   import("./features/skills/page").then((module) => ({
     default: module.SkillDetail,
+  })),
+);
+const BuiltinSkillDetail = lazy(() =>
+  import("./features/skills/builtin-detail").then((module) => ({
+    default: module.BuiltinSkillDetail,
   })),
 );
 const MemorySpacesPage = lazy(() =>
@@ -333,6 +343,10 @@ function AppContent() {
                       <Route path="skills" element={<SkillsPage />} />
                       <Route path="skills/:skillId" element={<SkillDetail />} />
                       <Route
+                        path="skills/builtin/:name"
+                        element={<BuiltinSkillDetail />}
+                      />
+                      <Route
                         path="memory-spaces"
                         element={<MemorySpacesPage />}
                       />
@@ -346,6 +360,7 @@ function AppContent() {
                         element={<MemoryDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
+                      <Route path="api-keys" element={<ApiKeysPage />} />
                       <Route
                         path="settings/service-accounts/:accountId"
                         element={<WorkspaceSettings />}

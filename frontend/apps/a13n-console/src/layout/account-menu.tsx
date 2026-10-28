@@ -11,14 +11,16 @@ import {
 import {
   CaretUpDownIcon,
   SignOutIcon,
-  SlidersHorizontalIcon,
-  UserIcon,
+  GearSixIcon,
+  TranslateIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
 import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
+import { useAccess } from "./workspace";
+import { workspacePath } from "../shared/paths";
 import styles from "./layout.module.css";
 
 export function AccountMenu({
@@ -31,6 +33,7 @@ export function AccountMenu({
   const { t } = useTranslation(),
     auth = useAuth(),
     navigate = useNavigate();
+  const { workspace } = useAccess();
   const user = auth.data!.user.value;
   const logout = useMutation({
     mutationFn: auth.logout,
@@ -86,13 +89,21 @@ export function AccountMenu({
             </span>
           </div>
           <MenuGroup>
-            <MenuItem onClick={() => open("/settings/profile")}>
-              <UserIcon aria-hidden="true" />
-              {t("Profile")}
+            <MenuItem
+              onClick={() =>
+                open(
+                  workspace
+                    ? `${workspacePath(workspace)}/settings`
+                    : "/settings",
+                )
+              }
+            >
+              <GearSixIcon aria-hidden="true" />
+              {t("Settings")}
             </MenuItem>
-            <MenuItem onClick={() => open("/settings/preferences")}>
-              <SlidersHorizontalIcon aria-hidden="true" />
-              {t("Preferences")}
+            <MenuItem onClick={() => open("/settings/language")}>
+              <TranslateIcon aria-hidden="true" />
+              {t("Language")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem

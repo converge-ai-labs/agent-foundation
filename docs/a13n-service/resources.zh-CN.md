@@ -1,67 +1,94 @@
 ---
 title: 资源基础
-description: 工作空间资源的共同规则：生命周期、修订版本、标识符和 provider。
+description: 选择合适的资源，携带版本更新，并了解运行会固定哪些内容。
 ---
 
-资源是工作空间为其工作配置的内容，包括 provider 和模型、agent 和 skill、连接、环境模板、记忆、订阅和资产。本页介绍它们的共同规则。各类资源的细节请参阅[模型](models.md)、[工具与连接](tools.md)、[skill](skills.md)、[环境](environments.md)、[记忆](memory.md)以及[文件与 webhook](files-and-webhooks.md)。
+创建项目笔记 agent 时，先连接 provider 账号，保存该 provider 下的模型，再在 agent 中选择模型。需要业务系统工具时添加连接，需要处理文件时添加环境模板。这些保存的对象就是**工作空间资源**。本页介绍如何识别、修改和停用它们。
+
+具体创建步骤见[模型](models.md)、[工具与连接](tools.md)、[Skill](skills.md)、[环境](environments.md)、[记忆](memory.md)或[文件与 webhook](files-and-webhooks.md)。
 
 ## 工作空间
 
-每个资源只属于一个工作空间，且不能迁移。集合位于 `/api/v1` 下，例如 `/api/v1/model-providers` 或 `/api/v1/agents`，作用于请求凭据选定的工作空间（参阅 [HTTP 约定](http.md#workspace)）。资源只能引用同一工作空间中的其他资源，例如模型引用本工作空间中的 provider；工作空间外的资源返回 `404`，如同不存在。创建和修改资源需要工作空间中的 `write` 权限；webhook 订阅需要 `admin` 权限。Console 中的 provider 位于 **工作区设置 → 供应商**。
+配置资源前先选定工作空间。每个资源只属于一个工作空间，且不能迁移；它只能引用同一工作空间的资源。例如，模型选择该工作空间中的模型 provider。请求其他工作空间中的资源会返回 `404`。
+
+API 集合位于 `/api/v1` 下，例如 `/api/v1/agents`。凭据如何选择工作空间，见 [HTTP 约定](http.md#workspace)。创建和修改资源需要 `write` 权限；webhook 订阅需要 `admin` 权限。在 Console 中，通过**工作区设置 → 供应商**管理 provider 账号。
 
 ## 生命周期
 
-资源遵循两种生命周期之一。
+根据修改对象选择操作：
 
-**实时** 资源（provider、模型、连接、环境模板、订阅、记忆）直接修改。每次修改增加该记录的 `version`；运行在需要资源时使用当前状态：禁用 provider 或连接会立即阻止新的使用。
+| 修改                                            | 结果                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| 修改 provider、模型、连接、环境模板、订阅或记忆 | 直接修改实时资源。带版本字段发生变化时，`version` 增加；后续使用读取当前资源。 |
+| 修改 agent 或 skill 配置                        | Service 发布不可变的编号修订版本。主记录标识资源，并选择默认修订版本。         |
+| 修改 agent 或 skill 的名称、描述或标签          | 只修改主记录；配置修订版本保持不变。                                           |
 
-**带修订版本的** 资源（agent 和 skill）有主记录和不可变的编号修订版本。每次配置修改新增一个修订版本；修改名称、描述或标签只改变主记录。主记录的 `default_revision_id` 决定未固定修订版本的新运行使用哪个修订版本，运行则固定使用启动时的精确修订版本。主记录通过归档停用，不直接删除。发布内容与当前默认修订版本相同时，返回该修订版本（`201`），不修改主记录，即使设置了 `make_default: false`。
+运行固定使用接受时的修订版本。修改 agent 默认版本会影响后续未固定版本的运行，不改变已接受的运行。实时资源仍按当前状态使用：禁用 provider 或连接会阻止新的使用。发布与当前默认版本相同的配置时，即使设置了 `make_default: false`，也会以 `201` 返回原版本，不修改主记录。
 
-带修订版本的配置和已停用资产保留供运行历史使用。其他资源有各自的移除规则：
+不再需要资源时，使用对应的停用操作：
 
-| 类型           | 停用方式                                                                   |
-| -------------- | -------------------------------------------------------------------------- |
-| Provider、模型 | 使用 `PATCH` 并传入 `{"enabled": false}`。                                 |
-| 连接、环境模板 | 使用 `PATCH {"enabled": false}`。连接凭据通过 `POST …/revoke` 移除。       |
-| Agent、skill   | 使用 `POST …/archive`；`POST …/unarchive` 可取消归档。                     |
-| 资产           | `DELETE` 停用资产；历史仍可读取内容。                                      |
-| 订阅、环境     | `DELETE`。                                                                 |
-| 独立记忆       | `DELETE` 移除挂载、文件和历史，或清空记录命名空间。参阅[记忆](memory.md)。 |
+| 资源           | 操作与结果                                                                      |
+| -------------- | ------------------------------------------------------------------------------- |
+| Provider、模型 | `PATCH {"enabled": false}` 阻止新的使用。未使用的 provider 还可以删除，见下文。 |
+| 连接、环境模板 | `PATCH {"enabled": false}` 阻止新的使用。`POST …/revoke` 移除连接凭据。         |
+| Agent、skill   | `POST …/archive` 保留主记录和版本历史；`POST …/unarchive` 恢复可用状态。        |
+| 资产           | `DELETE` 停用资产，但保留供历史读取的内容。                                     |
+| 订阅、环境     | 使用该类型的 `DELETE` 操作。                                                    |
+| 独立记忆       | `DELETE` 移除挂载、文件和历史，或清空记录命名空间。参阅[记忆](memory.md)。      |
 
 ## 通用约定
 
-- **Key 与 ID。** 只有模型使用 `key` 标识：长度 1–128，由小写字母、数字、`-` 和 `.` 组成，并以字母或数字开头（`^[a-z0-9][a-z0-9.-]{0,127}$`）。Key 在工作空间中唯一且永不改变；路径、agent 配置和 ETag（`"{key}:{version}"`）都用它引用模型，模型视图没有 `id`。其他资源，包括 agent、skill、记忆、环境模板和修订版本，都使用带类型前缀的 ID，例如 agent 的 `ap_…` 和 skill 的 `sk_…`。
-- **并发控制。** 读取返回 `ETag`；修改需通过 `If-Match` 提供它。参阅 [HTTP 约定](http.md#concurrency-control)。
-- **标签。** Agent、skill 和环境模板最多包含 32 个 `labels`。使用 `?label=key:value` 筛选（最多八个选择器，必须全部匹配）。Agent 和 skill 列表还支持 `q`（名称或描述中不区分大小写的子串）和 `archived=true|false`。
-- **作者。** 视图包含 `created_by_id`、`updated_by_id`、`created_at` 和 `updated_at`。
-- **审计。** 资源修改会写入[审计记录](identity.md#audit)。没有实际变化的更新不增加版本，也不记录事件。
+在模型路径和 agent 配置中使用**模型 key**。Key 不可修改，且在工作空间内唯一：长度 1–128，由小写字母、数字、`-` 和 `.` 组成，以字母或数字开头（`^[a-z0-9][a-z0-9.-]{0,127}$`）。模型视图没有 `id`。其他资源使用带类型前缀的 ID，例如 agent 的 `ap_…` 和 skill 的 `sk_…`；修订版本也有各自的 ID。
+
+通过 API 更新时，先读取资源，再将返回的 `ETag` 放入 `If-Match`。以下用已有模型 provider 的重命名练习这个流程：
+
+1. 在装有 `curl` 的终端中，将 `A13N_URL` 设为 Service 源地址，`A13N_API_KEY` 设为所属主体具有 `write` 权限的工作空间密钥。将 `PROVIDER_ID` 设为你准备重命名的模型 provider ID。
+
+2. 读取 provider 及其响应头：
+
+   ```sh
+   curl --fail-with-body -sS -i "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
+     -H "Authorization: Bearer $A13N_API_KEY"
+   ```
+
+3. 将 shell 变量 `ETAG` 设为返回的 ETag 值，保留其中的双引号。发送新名称：
+
+   ```sh
+   curl --fail-with-body -sS -i -X PATCH "$A13N_URL/api/v1/model-providers/$PROVIDER_ID" \
+     -H "Authorization: Bearer $A13N_API_KEY" \
+     -H "If-Match: $ETAG" -H "Content-Type: application/json" \
+     -d '{"name": "Project models"}'
+   ```
+
+4. 响应应为 `200` 并包含新名称。再次读取，确认保存结果；下次编辑使用新的 ETag。旧 ETag 会返回 `412`，应先读取并检查当前资源再重试。省略 `If-Match` 会返回 `428`。
+
+重命名不会改变凭据和配置。没有实际变化的更新不增加版本，也不产生审计事件。参阅[并发控制](http.md#concurrency-control)。
+
+Agent、skill 和环境模板可使用最多 32 个 `labels` 来组织资源。通过 `?label=key:value` 筛选，最多八个条件需全部匹配。Agent 和 skill 列表还接受 `q`，用于不区分大小写的名称或描述搜索，以及 `archived=true|false`。视图包含创建者、修改者 ID 和时间戳；[审计记录](identity.md#audit)记录资源变更。
 
 ## Provider
 
-Provider 是外部服务的一个已配置账号，分为五类：
+Provider 保存一个配置好的后端账号。按工作需要选择类型：
 
-| 类别          | 指南                                            |
-| ------------- | ----------------------------------------------- |
-| `model`       | [模型](models.md)                               |
-| `web`         | [Web 工具集](tools.md#web-search-and-scrape)    |
-| `environment` | [环境](environments.md)                         |
-| `connector`   | [Connector 连接](tools.md#composio-connections) |
-| `memory`      | [记录型记忆](memory.md#record-memories)         |
+| 类别          | 用途                                             |
+| ------------- | ------------------------------------------------ |
+| `model`       | [模型推理](models.md)                            |
+| `web`         | [Web 搜索和抓取](tools.md#web-search-and-scrape) |
+| `environment` | [执行环境](environments.md)                      |
+| `connector`   | [Connector 连接](tools.md#composio-connections)  |
+| `memory`      | [记录型记忆](memory.md#record-memories)          |
 
-`GET /api/v1/provider-types/{kind}` 描述各已安装类型：`configuration_schema` 和 `credential_schema`（JSON Schema）、是否需要凭据，以及获取凭据的 `setup_url`。模型类型还提供模型 API 和各 API 的设置 schema；web 类型列出支持的操作；环境类型描述环境 schema，以及是否支持托管实例、停止和销毁。Console 使用该端点构建 provider 表单。
+1. 打开**工作区设置 → 供应商**，选择类别，添加所需类型的 provider。
+2. 填写配置和凭据。Console 根据 `GET /api/v1/provider-types/{kind}` 构建表单：响应包含配置和凭据的 JSON Schema、凭据要求和设置链接。模型类型还描述 API 和参数；web 类型列出操作；环境类型描述配方和生命周期支持。
+3. 保存 provider，在创建依赖它的模型、连接、模板或记忆时使用其 ID。API 客户端向 `/{kind}-providers` 提交 `type`、`name`、`config` 和该类型要求的凭据。
+4. 支持时先运行 provider 测试，再验证实际流程。`POST …/{provider_id}/test` 需要 `run` 权限，返回 `succeeded`、`failed` 或 `unsupported`。非计费探测不能证明 agent 任务一定成功。
 
-在所属类别的集合中创建 provider，例如 `/api/v1/model-providers`，提供类型、名称、配置和凭据：
+`unsupported` 表示该类型没有探测功能，应通过运行验证。Web 类型没有探测；环境类型中仅 Docker 支持测试，只 ping 引擎，不创建资源。模型类型使用其声明的连接探测；记忆 provider 会列出一个未被任何记忆使用的命名空间中的一页数据。
 
-```sh
-curl -X POST "$A13N_URL/api/v1/model-providers" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"type": "openai", "name": "OpenAI", "config": {}, "credential": {"api_key": "sk-..."}}'
-```
+轮换凭据或更换端点时，注意以下更新规则：
 
-- **凭据只写不读。** 凭据使用部署的密钥环加密，永不返回；视图只显示 `credential_configured`。`PATCH` 中提供 `credential` 值会替换凭据，`null` 会移除，不提供则保留。
-- **修改配置保留已保存的密钥。** 修改 `config`（包括 Base URL）时，未提交的凭据和额外请求头保留原值。`extra_headers` 为空对象也会保留已保存的值；将某个请求头设为 `null` 才会移除它。更新后的配置仍须允许已保存的凭据和请求头名称。
-- **端点遵循部署的出站策略。** Base URL 和其他端点必须通过[端点策略](configuration.md#outbound-requests)；明文 HTTP 端点需要运维人员显式允许其 origin。此策略不阻止私有 IP 地址；请在部署边界实施网络限制。
-- **禁用：** 使用 `PATCH {"enabled": false}`。已禁用的 provider 以 `disabled` 拒绝新使用；环境 provider 被禁用后，其已有环境仍会得到维护。
-- **测试：** 使用 `POST …/{provider_id}/test`（需要 `run` 权限）。它使用保存的配置发送一次低成本探测，返回 `succeeded`、`failed`（附带消息）或 `unsupported`。Web provider、`openai_chatgpt`、`google_vertex`、`aws_bedrock`、`vercel` 和 `typesafe` 模型类型，以及除 `docker` 外的所有环境类型都没有测试，返回 `unsupported`。`docker` 测试只 ping Docker Engine，不创建资源。记忆 provider 的测试列出一个未被任何记忆使用的命名空间中的一页数据。
+- 凭据加密保存，只写不读。视图显示 `credential_configured`，不返回秘密值。`PATCH` 中提交 `credential` 会替换凭据，`null` 会移除，省略则保留。
+- 修改 `config`（包括 Base URL）会保留未提交的凭据和模型 provider 额外请求头。空 `extra_headers` 也保留已存值；将指定请求头设为 `null` 才会移除。新配置必须允许保留的凭据和请求头名称。
+- 端点必须通过部署的[出站策略](configuration.md#outbound-requests)。明文 HTTP 需要显式允许源地址。该策略允许私有 IP 地址；网络限制应在部署边界实施。
 
-未使用的[环境连接](environments.md#providers)可在检查引用后删除。删除只移除已保存的账号，不删除其原生资源。其他类别的 provider 通过禁用来停止新的使用。
+使用 `PATCH {"enabled": false}` 禁用 provider，阻止新的使用；已有环境仍会继续维护。要移除未使用的 provider，打开编辑对话框，选择**删除**并确认。这会永久移除本地配置和凭据，不会删除上游账号或原生资源。资源、保留配置或待完成清理中的引用会以 `provider_in_use` 阻止删除；此时可改为禁用。[环境 provider](environments.md#providers)会在删除前显示模板和环境引用。

@@ -15,7 +15,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import ModelRetry, ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.exceptions import ModelHTTPError, ToolFailed
 from pydantic_ai.messages import (
     BaseToolReturnPart,
     CapabilityEvent,
@@ -55,11 +55,14 @@ from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
+    _COMPACTION_MAX_ATTEMPTS,
     COMPACTION_CAPABILITY_ID,
+    BackgroundCompactionPolicy,
     CompactionInput,
     CompactionOperation,
     CompactionOperator,
     CompactionResult,
+    _compaction_retry_delay,
     _CompactionState,
     _prefix_matches,
     _prepare_compaction,
@@ -92,6 +95,7 @@ from a13n_harness.model_context import (
     _requires_exact_history,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
+from a13n_harness.recovery import is_recoverable_model_failure
 from a13n_harness.tools.invocation import disabled_tool_execution
 from a13n_harness.toolsets.context import HandoffToolset
 
@@ -688,6 +692,8 @@ class HandoffCapability(AbstractModelContextCapability):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         prepared = await self._restore_history(ctx, request_context)
         if prepared is not request_context:
             from a13n_harness.tools.discovery import finish_discovery_replacement
@@ -839,26 +845,31 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self,
         policy: CompactionPolicy | None = None,
         *,
-        background: bool = False,
+        background: bool | BackgroundCompactionPolicy = False,
         operator: CompactionOperator | None = None,
     ) -> None:
         if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
-        if not isinstance(background, bool):
-            raise TypeError("background must be a boolean")
-        if background and not isinstance(operator, CompactionOperator):
+        if isinstance(background, bool):
+            background = BackgroundCompactionPolicy(enabled=background)
+        if not isinstance(background, BackgroundCompactionPolicy):
+            raise TypeError("background must be a boolean or BackgroundCompactionPolicy")
+        if background.enabled and not isinstance(operator, CompactionOperator):
             raise DefinitionError(
                 "Background compaction requires a Host operator.", code="compaction_operator_required"
             )
-        if not background and operator is not None:
+        if not background.enabled and operator is not None:
             raise DefinitionError(
                 "A compaction operator requires background mode.", code="compaction_operator_unexpected"
             )
         self.policy = policy.model_copy(deep=True) if policy is not None else None
-        self.background = background
+        self.background_policy = background
+        self.background = background.enabled
         self.operator = operator
         self._depth = 0
         self._failed_fallback_id: str | None = None
+        self._summary_failure: Exception | None = None
+        self._summary_attempts = 0
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.usage import UsageCapability
@@ -884,7 +895,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return existing
         replacement = CompactionCapability(
             self.policy,
-            background=self.background,
+            background=self.background_policy,
             operator=self.operator,
         )
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
@@ -894,7 +905,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if self._depth > 0 or (state is not None and state.restoration_pending):
+        if ctx.deps._compacting or self._depth > 0 or (state is not None and state.restoration_pending):
             return request_context
         if self.background:
             prepared = await self._background_history(ctx, request_context)
@@ -945,7 +956,12 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
             if snapshot is None or not snapshot[2]:
                 return request
-            if await _compaction_request_fits(ctx, request) is not True:
+            if (
+                await _compaction_request_fits(
+                    ctx, request, blocking_threshold=self.background_policy.blocking_threshold
+                )
+                is not True
+            ):
                 return await self._foreground_fallback(ctx, request)
             limits = ctx.usage_limits
             if (
@@ -1014,7 +1030,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return request
         if operation.status == "failed":
             return await self._foreground_fallback(ctx, request, failed=operation)
-        if await _compaction_request_fits(ctx, request) is True:
+        if (
+            await _compaction_request_fits(ctx, request, blocking_threshold=self.background_policy.blocking_threshold)
+            is True
+        ):
             return request
         completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
         if completed.input != operation.input:
@@ -1045,9 +1064,29 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             prepared = await self._compact_history(ctx, request, force=fits is not True, failed=failed)
         if prepared is request:
             if fits is not True:
+                cause = self._summary_failure
+                if cause is not None:
+                    detail = type(cause).__name__
+                    if isinstance(cause, ModelHTTPError):
+                        detail += f", HTTP {cause.status_code}"
+                    reason = f"summary generation failed after {self._summary_attempts} attempt(s) ({detail})"
+                    guidance = "Retry the run or check the model provider."
+                elif not _compaction_has_request_budget(ctx):
+                    reason = "the remaining request budget cannot cover a summary and the pending ordinary request"
+                    guidance = "Increase the request limit or retry in a new run."
+                else:
+                    reason = "no replacement summary was produced"
+                    guidance = "Retry compaction in a new run."
+                capacity = "exceeds the model window" if fits is False else "has unverified capacity"
                 raise DefinitionError(
-                    "Compaction could not free context capacity.", code="compaction_capacity_unavailable"
-                )
+                    f"Compaction could not free context capacity: {reason}. "
+                    f"Original history was preserved but {capacity}; the ordinary request was not sent. {guidance}",
+                    code="compaction_capacity_unavailable",
+                    details={"summary_attempts": self._summary_attempts},
+                    retry_hint="new_run"
+                    if cause is not None and is_recoverable_model_failure(cause)
+                    else "dependency_change",
+                ) from cause
         else:
             # Background mode runs inside the ordinary projection coordinator.
             # Full synchronous replacement needs fresh overlays before counting.
@@ -1090,8 +1129,9 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             )
         if not force and (snapshot is None or not snapshot[2]):
             return request_context
-        limits = ctx.usage_limits
-        if limits is not None and limits.request_limit is not None and limits.request_limit - ctx.usage.requests < 2:
+        self._summary_failure = None
+        self._summary_attempts = 0
+        if not _compaction_has_request_budget(ctx):
             # Optional compaction needs a summary request and the pending ordinary request.
             return request_context
 
@@ -1114,7 +1154,24 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 record_span_metadata(span, {"compaction.message_count_before": len(request_context.messages)})
                 from a13n_harness.tools.discovery import retain_discovery
 
-                summary = await _compact_with_same_agent(ctx, request_context)
+                for attempt in range(_COMPACTION_MAX_ATTEMPTS):
+                    self._summary_attempts = attempt + 1
+                    try:
+                        summary = await _compact_with_same_agent(ctx, request_context)
+                        break
+                    except Exception as exc:
+                        if (
+                            attempt + 1 == _COMPACTION_MAX_ATTEMPTS
+                            or not is_recoverable_model_failure(exc)
+                            or not _compaction_has_request_budget(ctx)
+                        ):
+                            raise
+                        await asyncio.sleep(_compaction_retry_delay(attempt))
+                        # Shared usage can advance while waiting; keep one ordinary request.
+                        if not _compaction_has_request_budget(ctx):
+                            raise
+                else:
+                    raise AssertionError("unreachable")
                 discovery, names = await retain_discovery(ctx, request_context)
                 messages = _build_compacted_history(
                     ctx.messages if self.background else request_context.messages,
@@ -1143,6 +1200,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         except ModelCallCheckError:
             raise
         except Exception as exc:
+            self._summary_failure = exc
             await emit_harness_event(
                 ctx.deps.events,
                 kind="context",
@@ -1234,12 +1292,13 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
     # Keep pending provenance until every listener succeeds. A failed/cancelled
     # restoration can retry without inserting discovery twice or losing resets.
     await ctx.emit(ContextRestoredEvent(source="compact", operation_id=state.operation_id))
-    await ctx.emit(CompactionSummaryEvent(operation_id=state.operation_id, summary=summary))
-    await emit_harness_event(
-        ctx.deps.events,
-        kind="context",
-        payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.operation_id),
-    )
+    if not state.completion_emitted:
+        await ctx.emit(CompactionSummaryEvent(operation_id=state.operation_id, summary=summary))
+        await emit_harness_event(
+            ctx.deps.events,
+            kind="context",
+            payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.operation_id),
+        )
     await finish_discovery_replacement(ctx)
     # AgentContextState.write suspends only before mutation while acquiring its
     # lock. No suspension separates clearing pending from publishing history.
@@ -1264,6 +1323,8 @@ async def _project_compaction_media(ctx: RunContext[AgentContext], request: Mode
 async def _compaction_request_fits(
     ctx: RunContext[AgentContext],
     request: ModelRequestContext,
+    *,
+    blocking_threshold: float | None = None,
 ) -> bool | None:
     """Use native counting on the actual outgoing request, never lagging usage.
 
@@ -1285,7 +1346,9 @@ async def _compaction_request_fits(
             )
     except (NotImplementedError, TimeoutError):
         return None
-    return usage.input_tokens + reserve <= window
+    return usage.input_tokens + reserve <= window and (
+        blocking_threshold is None or usage.input_tokens < window * blocking_threshold
+    )
 
 
 def _replace_context_history(
@@ -1299,6 +1362,14 @@ def _replace_context_history(
     replacement = _replace_messages(request, messages)
     refresh_codeact_descriptions(ctx, replacement, retained_names=retained_names)
     return replacement
+
+
+def _compaction_has_request_budget(ctx: RunContext[AgentContext]) -> bool:
+    limits = ctx.usage_limits
+    # Native usage can omit failures before the first response chunk. The Run
+    # ledger charges those dispatches as well as outstanding reservations.
+    used = max(ctx.usage.requests, ctx.deps.usage_attribution.requests.used)
+    return limits is None or limits.request_limit is None or limits.request_limit - used >= 2
 
 
 async def _compact_with_same_agent(

@@ -23,7 +23,7 @@ from mcp.types import ToolAnnotations
 from starlette.routing import Match
 from starlette.types import ASGIApp, Scope
 
-from a13n_service.infra.http import ErrorEnvelope
+from a13n_service.infra.http import MCP_ENTITY_TAG, ErrorEnvelope
 from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
 from a13n_service.infra.reads import tool_response
 
@@ -75,11 +75,41 @@ def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Seque
     return tools
 
 
-def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
-    """Keep transport parameters flat and the original JSON body nested."""
+def argument_name(header: str) -> str:
+    """The model-facing name of a header parameter: lowercase snake_case, such as `If-Match` -> `if_match`."""
+    return re.sub(r"[^a-z0-9]+", "_", header.lower()).strip("_")
+
+
+EXPECTED_VERSION = (
+    'The version this write expects: the `headers.etag` of your read, such as `"sch_x:3"`, or the same tag without '
+    "quotes, `{id}:{version}` (`{key}:{version}` for a model), such as `sch_x:3`. Quotes are added when missing. "
+    "A stale version fails with 412 and the current one; an omitted version fails with 428."
+)
+
+
+def entity_tag(value: str) -> str:
+    """The quoted HTTP entity tag for a version given with or without its quotes."""
+    return value if len(value) >= 2 and value.startswith('"') and value.endswith('"') else f'"{value}"'
+
+
+def _empty_object(schema: dict[str, Any], definitions: dict[str, Any]) -> bool:
+    """Whether a JSON body schema admits only `{}`, such as a command that accepts no configuration."""
+    if (reference := schema.get("$ref")) is not None:
+        schema = definitions.get(reference.rsplit("/", 1)[-1], {})
+    return (
+        schema.get("type") == "object" and not schema.get("properties") and schema.get("additionalProperties") is False
+    )
+
+
+def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str, str]], frozenset[str], bool]:
+    """Keep transport parameters flat and the original JSON body nested; header arguments are snake_case.
+
+    A header whose schema declares `MCP_ENTITY_TAG` takes that argument name and unquoted versions. A body that
+    admits only `{}` is optional, and omission sends `{}`.
+    """
     parameters = deepcopy(route.flat_param_schema)
     properties = parameters.setdefault("properties", {})
-    mappings = {}
+    transport = {}
     for key, mapping in route.parameter_map.items():
         if mapping["location"] == "body" or (
             mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS
@@ -89,17 +119,43 @@ def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str,
         else:
             if mapping["location"] == "cookie":
                 raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
-            mappings[key] = mapping
+            transport[key] = mapping
+    # Rename only after body fields are gone, so a body field never shadows or swallows a renamed header.
+    mappings: dict[str, dict[str, str]] = {}
+    entity_tags = set()
+    for key, mapping in transport.items():
+        name = key
+        if mapping["location"] == "header":
+            if declared := properties[key].pop(MCP_ENTITY_TAG, None):
+                if not re.fullmatch(r"[a-z][a-z0-9_]*", declared):
+                    raise ValueError(f"MCP entity-tag argument must be snake_case: {route.operation_id}")
+                name = declared
+                entity_tags.add(name)
+                properties[key]["description"] = EXPECTED_VERSION
+            else:
+                name = argument_name(mapping["openapi_name"])
+            if not name:
+                raise ValueError(f"MCP header parameter has no argument name: {route.operation_id}")
+            if name != key:
+                if name in properties:
+                    raise ValueError(f"MCP argument {name} collides after normalization: {route.operation_id}")
+                properties[name] = properties.pop(key)
+                parameters["required"] = [name if item == key else item for item in parameters.get("required", [])]
+        mappings[name] = mapping
     if "request_body" in properties:
         raise ValueError(f"MCP parameter collides with request_body: {route.operation_id}")
     if route.request_body:
         if set(route.request_body.content_schema) != {"application/json"}:
             raise ValueError(f"MCP operations must have JSON bodies: {route.operation_id}")
-        properties["request_body"] = deepcopy(route.request_body.content_schema["application/json"])
-        if route.request_body.required:
+        body = deepcopy(route.request_body.content_schema["application/json"])
+        properties["request_body"] = body
+        empty_body = _empty_object(body, parameters.get("$defs", {}))
+        if route.request_body.required and not empty_body:
             parameters.setdefault("required", []).append("request_body")
+    else:
+        empty_body = False
     parameters["additionalProperties"] = False
-    return parameters, mappings
+    return parameters, mappings, frozenset(entity_tags), empty_body
 
 
 def _output_schema(route: HTTPRoute, error_schema: dict[str, Any]) -> dict[str, Any]:
@@ -138,13 +194,13 @@ class ApiTool(Tool):
         target: APIRoute,
         error_schema: dict[str, Any],
     ):
-        parameters, mappings = _input_schema(route)
+        parameters, mappings, entity_tags, empty_body = _input_schema(route)
         metadata = (target.openapi_extra or {}).get(PLATFORM_METADATA)
         operation = PlatformOperation.model_validate(metadata) if metadata is not None else None
         super().__init__(
             name=name,
             description=f"{route.method} {route.path}\n{route.description or route.summary or ''}\n"
-            "Returns {status, headers, body}. Use headers.etag as If-Match for subsequent writes. "
+            "Returns {status, headers, body}. Use headers.etag as expected_version for subsequent writes. "
             "Writes are not retried; check resource state after an unknown outcome.",
             parameters=parameters,
             output_schema=_output_schema(route, error_schema),
@@ -163,18 +219,28 @@ class ApiTool(Tool):
         # Do not let body-field mappings consume same-named path/query/header arguments.
         self._route = route.model_copy(update={"parameter_map": mappings, "request_body": None})
         self._base_url = base_url
+        self._entity_tags = entity_tags
+        self._empty_body = empty_body
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        if arguments.keys() - self.parameters["properties"].keys():
-            raise ToolError("Unknown operation arguments; use the names in the tool schema")
+        accepted = self.parameters["properties"].keys()
+        if unknown := arguments.keys() - accepted:
+            # Names only, never values; a caller on an outdated spelling sees the replacement.
+            raise ToolError(
+                f"Unknown operation arguments: {', '.join(sorted(key[:64] for key in unknown))}. "
+                f"Use the names in the tool schema: {', '.join(sorted(accepted)) or '(none)'}"
+            )
         for name, mapping in self._route.parameter_map.items():
             if mapping["location"] == "path":
                 converter = self._target.param_convertors[mapping["openapi_name"]]
                 if name not in arguments or not re.fullmatch(converter.regex, str(arguments[name])):
                     raise ToolError("Invalid path parameter for this HTTP operation")
-        directed = self._director.build(
-            self._route, {key: value for key, value in arguments.items() if key != "request_body"}, self._base_url
-        )
+        transport = {
+            key: entity_tag(value) if key in self._entity_tags and isinstance(value, str) else value
+            for key, value in arguments.items()
+            if key != "request_body"
+        }
+        directed = self._director.build(self._route, transport, self._base_url)
         # ASGI decodes %2F. An ID containing a slash must not turn a resource read into an excluded
         # download (or another operation). Use the same ordered, declared routes and public matcher.
         scope: Scope = {"type": "http", "path": directed.url.path, "root_path": "", "method": directed.method}
@@ -188,8 +254,8 @@ class ApiTool(Tool):
             if name in incoming.headers:
                 headers[name] = incoming.headers[name]
         content = None
-        if "request_body" in arguments:
-            content = json.dumps(arguments["request_body"], allow_nan=False).encode()
+        if "request_body" in arguments or self._empty_body:
+            content = json.dumps(arguments.get("request_body", {}), allow_nan=False).encode()
             headers["content-type"] = "application/json"
         request = httpx2.Request(directed.method, directed.url, headers=headers, content=content)
         # No sockets or pool, no shared headers or cookie jar, no second application lifespan.

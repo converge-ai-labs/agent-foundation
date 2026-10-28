@@ -1,39 +1,39 @@
 ---
 title: Service
 sidebarTitle: Overview
-description: Build, share, and operate agents through Console and an HTTP API.
+description: Build an agent in Console, share it with your team, and run it from your application.
 ---
 
-Service gives your team a shared place to build agents and run them from a browser or application. It manages access, saves conversations, and continues work after clients disconnect.
+Service runs agents for your team and applications. Build an agent in Console, try it in a conversation, then call the same agent through the HTTP API. Service manages access, saves conversation history, and keeps accepted work running when a client disconnects.
 
 ## Start here
 
-| Your goal                                    | First step                                         |
-| -------------------------------------------- | -------------------------------------------------- |
-| Set up a deployment and get a first response | [Deploy Service locally](get-started.md)           |
-| Work with agents on your team's deployment   | [Use Console](use-platform.md)                     |
-| Add agents to an application                 | [Connect your application](connect-application.md) |
+Choose the path that matches what you already have:
+
+| Starting point                         | Follow this guide                                  | Finish with                                                      |
+| -------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
+| Docker and a model provider account    | [Deploy Service locally](get-started.md)           | A running Console and your first agent response                  |
+| Access to your team's Service          | [Use Console](use-platform.md)                     | A conversation you can return to and continue                    |
+| A working agent to use in your product | [Connect your application](connect-application.md) | An authenticated application that submits work and reads results |
 
 ## Build an agent for your work
 
-Start with a model and instructions. Add resources as the task calls for them:
+Start with one model and instructions. For example, create an agent that turns project notes into concrete next steps. Test its response before adding more resources.
 
-| Task                                                           | Guide                                    |
-| -------------------------------------------------------------- | ---------------------------------------- |
-| Describe an agent and build its configuration conversationally | [Agent Composer](agent-composer.md)      |
-| Connect a model account and choose models                      | [Models](models.md)                      |
-| Connect business systems or MCP tools                          | [Tools and connections](tools.md)        |
-| Give the agent reusable instructions and supporting files      | [Skills](skills.md)                      |
-| Work with files, commands, or a desktop                        | [Environments](environments.md)          |
-| Share project knowledge across sessions                        | [Memory Spaces](memory.md#memory-spaces) |
+| Add this when the task needs it                   | Guide                                    |
+| ------------------------------------------------- | ---------------------------------------- |
+| Help creating or changing the agent configuration | [Agent Composer](agent-composer.md)      |
+| A different model or provider account             | [Models](models.md)                      |
+| Business-system actions or MCP tools              | [Tools and connections](tools.md)        |
+| Reusable procedures and supporting files          | [Skills](skills.md)                      |
+| Files, commands, or a desktop                     | [Environments](environments.md)          |
+| Knowledge shared across conversations             | [Memory Spaces](memory.md#memory-spaces) |
 
-Composer can create and update resources with your approval. Provider credentials go into private Console cards; [configure a provider](agent-composer.md#configure-a-provider) from the same conversation.
+Composer proposes resource changes for your approval. Enter provider credentials in its [private configuration cards](agent-composer.md#configure-a-provider).
 
 ## Work in conversations
 
-Choose an agent, send a message, and follow its replies and tool activity. Add guidance while it works, answer questions and approvals, or create a branch to explore another direction. Open the saved conversation to continue later.
-
-A **session** groups related **threads**. Each thread has its own history, and each **run** advances that history using a saved agent revision. Console's Chat view focuses on the conversation; Debug shows execution details, configuration, usage, and cost.
+Send a request, inspect the reply, and follow up in the same thread. A **session** groups related threads; a **thread** holds a conversation's history; each **run** advances that history with a saved agent revision.
 
 ```mermaid
 flowchart TB
@@ -49,21 +49,23 @@ flowchart TB
     class Result success
 ```
 
-For a waiting run, collect every pending answer or approval and select **Submit responses**. API clients submit the complete batch through `/resume`. See [Use Console](use-platform.md) for the workflow and [Agents, threads and runs](agents-and-runs.md) for the execution contract.
+Use Chat for the conversation and Debug for execution details, configuration, usage, and cost. Return to saved threads to continue, or create a branch to try a different direction.
+
+When a run waits for your input, complete every pending question and approval, then select **Submit responses**. API clients send the complete batch through `/resume`. [Use Console](use-platform.md) walks through these actions; [Agents, threads and runs](agents-and-runs.md) explains how they affect execution.
 
 ## Connect your application
 
-Use the [SDKs or CLI](sdks.md) to submit work and read results, or call the [HTTP API](http.md) directly. The [application guide](connect-application.md) follows authentication, a first message, live output, and continuation.
+Open an agent's **Connect to app** action to get its ID and your Service URL. Follow [Connect your application](connect-application.md) to create credentials, send a first message, read live output, and continue the thread. Use an [SDK or remote CLI](sdks.md), or call the [HTTP API](http.md) directly.
 
-Connect an MCP client to the [Service MCP endpoint](mcp.md) to inspect and configure workspace resources. Use [webhooks](files-and-webhooks.md) to deliver execution events to your application.
+For other integrations, connect an MCP client to the [Service MCP endpoint](mcp.md) to inspect and configure workspace resources. Use [webhooks](files-and-webhooks.md) to deliver execution events to your application.
 
 ## Operate a shared deployment
 
-An **organization** manages members. A **workspace** contains agents, resources, and conversations, with roles controlling who can use or change them. Start with [Identity and access](identity.md), then use these guides:
+An **organization** manages members. A **workspace** holds agents, resources, and conversations. Assign [roles](identity.md#roles) to control who can run agents, build resources, or administer access.
 
-- [Configuration](configuration.md): connect storage, model providers, and deployment services.
+- [Configuration](configuration.md): connect storage, providers, and deployment services.
 - [Operations](operations.md): deploy, upgrade, back up, and recover Service.
-- [Monitoring](monitoring.md): inspect usage, traces, and failed requests or runs.
+- [Monitoring](monitoring.md): investigate usage, traces, and failed requests or runs.
 - [Settings reference](configuration-reference.md) and [API reference](api-reference/index.md): look up exact fields and operations.
 
-Console and the API share one origin. The `a13n-service` executable runs control and worker roles together or separately. [Operations](operations.md) explains how to size and run them.
+Console and the API share one origin. The `a13n-service` executable can run control and worker roles together or separately; use the [operations guide](operations.md) when sizing a deployment.

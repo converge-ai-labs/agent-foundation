@@ -3,16 +3,15 @@ title: Provider 配置参考
 description: 从 provider 模型生成的全部内置环境 provider 配置字段。
 ---
 
-> [!NOTE]
-> 由 `scripts/docs/references.py` 从内置 provider Pydantic 模型生成。英文原页应重新生成，不要手动编辑数据行。
+找到所用 Provider 的配置模型，再查表确认字段名、可选值和默认值。`DirectLocalRootConfiguration` 等类型在下方有单独的表格。要把目标配置、后端设置和私有凭据组合成可用配置，先读[配置 Provider](configuration.md)。
 
-编写配置、理解配置/运行时/状态边界和跨字段限制时，参见[配置 provider](configuration.md)。这些是 provider 设置，不是独立守护进程 JSON 默认值。
+标为**必填**的字段必须提供。**默认值由模型工厂计算**表示模型在构造时计算该值；本参考页不会解析你的 Host 环境或凭据存储中的值。表格描述 Provider 配置对象。独立守护进程的 JSON 设置见 [Envd 配置](../a13n-envd/configuration.md)。
 
-“必填”表示没有默认值。由工厂提供的字段具有模型计算的默认值；生成本页时不会读取 Host 环境或凭据存储。下面的命名 schema 部分包含嵌套根目录、挂载和 shell 配置。运行时客户端和权威目标状态不应放入这些目标配置、账号配置和凭据对象。
+表格由内置 Provider 模型生成。贡献者修改模型后，用 `uv run --locked python scripts/docs/references.py` 重新生成英文页面，并同步翻译后的表格行。
 
 ## 云 provider
 
-六个云 provider 使用相同的目标配置、后端和私有凭据边界。下方平行列出各自 schema；能力差异见[云 provider 指南](providers.md#cloud-providers)。
+通过下表链接查找各云 Provider 的三类配置对象。目标配置描述要创建的目标，后端设置选择账号或端点，凭据提供私有认证信息。支持的操作和配置示例见[云 Provider](providers.md#cloud-providers)。
 
 | Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |

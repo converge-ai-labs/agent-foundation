@@ -20,6 +20,9 @@ import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
 
+vi.mock("../conversations/live-threads", () => ({
+  useLiveThread: () => ({ display: {} }),
+}));
 vi.mock("./files", () => ({
   Files: ({
     path,
@@ -166,6 +169,7 @@ function setup(
                       host_files: sharing,
                       host_git: sharing,
                       host_terminal: sharing,
+                      browser: sharing,
                     },
                   }
                 : url === "/api/projects"
@@ -270,7 +274,9 @@ function setup(
   );
   return { focus, get };
 }
-async function workspaceTool(name: "Files" | "Changes" | "Terminal") {
+async function workspaceTool(
+  name: "Files" | "Changes" | "Terminal" | "Browser",
+) {
   const user = userEvent.setup();
   await user.click(
     await screen.findByRole("button", { name: "Workspace tools" }),
@@ -928,3 +934,24 @@ it.each([false, true])(
     }
   },
 );
+
+it("shows one resizable Browser drawer and restores Files without mounting both", async () => {
+  setup("/threads/current");
+  await workspaceTool("Browser");
+  expect(
+    await screen.findByRole("complementary", { name: "Browser panel" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: "File explorer" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeTruthy();
+  await workspaceTool("Files");
+  expect(
+    await screen.findByRole("complementary", { name: "File explorer" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: "Browser panel" }),
+  ).toBeNull();
+});

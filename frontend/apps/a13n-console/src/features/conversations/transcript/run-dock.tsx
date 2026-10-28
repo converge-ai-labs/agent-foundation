@@ -45,13 +45,15 @@ export interface PendingMessage {
 export function ThreadDock({
   thread,
   children,
+  hidden,
 }: {
   thread: Schema["ThreadView"];
   children?: ReactNode;
+  hidden?: boolean;
 }) {
   const latest = useRun(thread.current_run_id ?? thread.last_run_id);
   return (
-    <div className={styles.dock} data-thread-dock>
+    <div className={styles.dock} data-thread-dock hidden={hidden}>
       <div className={styles.queue}>
         <ThreadInbox
           thread={thread}

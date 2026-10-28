@@ -24,7 +24,6 @@ export type FileView = "preview" | "source";
 /** A tree of files at the left and the chosen file at the right. */
 export function FileBrowser({
   label,
-  embedded = false,
   count,
   actions,
   nodes,
@@ -36,8 +35,6 @@ export function FileBrowser({
 }: {
   /** Names the tree for assistive technology, such as "Package files". */
   label: string;
-  /** Join the surrounding page when its tabs already name and count the files. */
-  embedded?: boolean;
   count: number;
   /** Controls beside the tree heading, such as New file. */
   actions?: ReactNode;
@@ -52,15 +49,11 @@ export function FileBrowser({
 }) {
   const { t } = useTranslation();
   return (
-    <div className={styles.browser} data-embedded={embedded || undefined}>
+    <div className={styles.browser}>
       <nav className={`${styles.tree} a13n-scrollbar`} aria-label={label}>
         <div className={styles.treeHeading}>
-          {!embedded && (
-            <>
-              <span>{t("Files")}</span>
-              <span className={styles.treeCount}>{count}</span>
-            </>
-          )}
+          <span>{t("Files")}</span>
+          <span className={styles.treeCount}>{count}</span>
           {actions}
         </div>
         <div className={`${styles.treeBody} a13n-scrollbar`}>
@@ -234,14 +227,31 @@ export function FileBody({ children }: { children: ReactNode }) {
 export function FileText({
   text,
   preview,
+  onOpenLink,
 }: {
   text: string;
   preview: boolean;
+  /** Return true when the owning file browser handles a document link. */
+  onOpenLink?: (href: string) => boolean;
 }) {
   const { t } = useTranslation();
   if (!text) return <FileNotice>{t("This file is empty.")}</FileNotice>;
   return preview ? (
-    <div className={styles.markdown}>
+    <div
+      className={styles.markdown}
+      onClick={
+        onOpenLink
+          ? (event) => {
+              const link =
+                event.target instanceof Element
+                  ? event.target.closest("a")
+                  : null;
+              const href = link?.getAttribute("href");
+              if (href && onOpenLink(href)) event.preventDefault();
+            }
+          : undefined
+      }
+    >
       <MarkdownContent text={markdownBody(text)} />
     </div>
   ) : (

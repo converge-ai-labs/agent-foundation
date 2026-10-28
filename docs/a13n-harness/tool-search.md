@@ -1,27 +1,34 @@
 ---
 title: Grouped ToolSearch
-description: Expose large tool collections through search and call tools so the model sees a compact list of tool groups.
+description: Group a tool collection, discover its definitions on demand, and call the selected tool through a compact model interface.
 ---
 
-ToolSearch places selected local and MCP tools behind a fixed proxy. Ordinary tools remain directly visible by default. Grouping exposes `discover_tools`, `describe_tool`, `call_tool`, `list_tools`, and `list_tool_groups` to discover, browse, and invoke members. Discovery never adds member schemas to subsequent model requests.
-
-Tools execute through the current `ToolManager`, their original Toolset, and the Harness execution boundary, preserving validation, policy, credentials, hooks, results, and usage.
+When an Agent has many tools, group related tools by domain so the model can find the operation it needs without receiving every schema on every request. ToolSearch provides five fixed control tools for discovery and invocation. Selected members stay behind those controls; unrelated tools remain directly available.
 
 ## Use the fixed proxy
 
-`ToolSearchCapability` and `ToolSearchPlan` default to `ProxyToolSearchConfig()`, also available as `ToolSearchConfig()`. Host configuration may omit `config.mode` or set it to `proxy`. Control schemas, descriptions, and generated guidance contain no dynamic inventory, supporting model prompt caching. Configure MCP sources with `native=False, local=True`.
+The model follows a short path:
 
-To migrate an older configuration, replace `NativeToolSearchConfig` with `ProxyToolSearchConfig`, remove `strategy`, and change `mode: native` to `mode: proxy`. Discovered tools always use `call_tool`. Grouped tools support approval and external/client continuation through the Harness deferred request protocol.
+1. Use `discover_tools` to search for candidates, or `list_tool_groups` and `list_tools` to browse.
+2. Use `describe_tool` to read a candidate's full definition when the current schema is not already known.
+3. Use `call_tool` with the returned group, local tool name, and arguments.
 
-The proxy supports [CodeAct orchestration](#use-with-codeact), including discovery and invocation in one runner call; each target still requires its typed CodeAct policy.
+Discovery does not promote member schemas into later model requests. The call still reaches the original Toolset through the current ToolManager and Harness execution boundary, preserving validation, policy, hooks, credentials, and result handling.
+
+`ToolSearchCapability` and `ToolSearchPlan` use `ProxyToolSearchConfig()` by default; `ToolSearchConfig()` is an alias. The fixed control schemas and guidance contain no changing inventory, which helps keep the model's prompt prefix stable. Grouped tools also support approval and [client-tool feedback](client-tools.md).
 
 ## Group a Toolset
 
-Install one `ToolSearchCapability` with an explicit mapping of domain names to sources. Each `ToolSearchGroup` is a passive configuration value, not a separately installed Capability:
+Use the environment from [Getting started](getting-started.md). Save this complete program as `search_demo.py`. The deterministic model performs discovery, reads the selected schema, and calls the local function. No provider credentials are needed.
 
 ```python
+import asyncio
+import json
+
 from a13n_harness import AgentSpec, HarnessBuilder
 from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
 
@@ -30,53 +37,86 @@ def customer_name(customer_id: int) -> str:
     return {42: "Ada"}.get(customer_id, "Unknown")
 
 
-source = FunctionToolset(
-    [customer_name],
-    instructions="Use numeric customer IDs, not display names.",
-)
-proxy = ToolSearchCapability(
-    groups={
-        "crm": ToolSearchGroup(
-            source=source,
-            description="Customer records and account operations",
-        )
-    },
-)
-agent = HarnessBuilder().build(
-    AgentSpec(),
-    output_type=str,
-    model=model,  # Supply your configured Pydantic AI Model.
-    capabilities=(proxy,),
-)
+async def respond(messages, info):
+    names = {tool.name for tool in info.function_tools}
+    assert "customer_name" not in names and "crm__customer_name" not in names
+    returns = [
+        part
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        name, args = "discover_tools", {"query": "customer name", "group": "crm"}
+    elif returns[-1].tool_name == "discover_tools":
+        assert returns[-1].content["detail"] == "summary"
+        match = returns[-1].content["tools"][0]
+        name, args = "describe_tool", {"group": match["group"], "tool": match["tool"]}
+    elif returns[-1].tool_name == "describe_tool":
+        definition = returns[-1].content["tool"]
+        assert "customer_id" in definition["parameters_json_schema"]["properties"]
+        name, args = "call_tool", {
+            "group": "crm", "tool": "customer_name", "arguments": {"customer_id": 42}
+        }
+    else:
+        assert returns[-1].content == "Ada"
+        yield "Customer Ada"
+        return
+    yield {0: DeltaToolCall(name=name, json_args=json.dumps(args))}
+
+
+async def main():
+    source = FunctionToolset(
+        [customer_name], instructions="Use numeric customer IDs, not display names."
+    )
+    proxy = ToolSearchCapability(
+        groups={
+            "crm": ToolSearchGroup(source=source, description="Customer records")
+        }
+    )
+    agent = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(proxy,),
+    )
+    result = await agent.run("Find customer 42")
+    assert result.output_or_raise() == "Customer Ada"
+    print(result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-The model's discovery call is:
+Run it from the checkout root:
 
-```json
-{"query": "customer name", "group": "crm"}
+```bash
+uv run --no-sync python search_demo.py
 ```
 
-The result includes the actual `detail` (`summary` or `full`), `tools`, `total`, and `next_offset`. This keyword query returns summaries with `group`, local `tool` name, a short description, and `codeact_eligible`. The model obtains the selected definition with `describe_tool`:
+Expected output:
 
-```json
-{"group": "crm", "tool": "customer_name"}
+```text
+Customer Ada
 ```
 
-Description returns `{"detail": "full", "tool": ...}` with the complete description, `parameters_json_schema`, `return_schema`, source `instructions`, and `codeact_eligible`. After reading that contract, the model calls `call_tool` with:
+`source` owns the Python function and its instructions. `ToolSearchGroup` assigns that source to the `crm` domain. One `ToolSearchCapability` installs the grouped interface. The assertions show that the model never receives `customer_name` as a directly callable schema, yet its proxy call executes the function and returns `Ada`.
 
-```json
-{
-  "group": "crm",
-  "tool": "customer_name",
-  "arguments": {"customer_id": 42}
-}
-```
+The three tool inputs in `respond()` illustrate the protocol:
 
-Function targets retain their original prepared argument validator. External targets retain their native external-tool semantics; the client validates arguments before execution. The tool remains registered under its grouped canonical name, `crm__customer_name`, but that member schema is not directly advertised to the model. Ungrouped tools stay directly visible. Managed tool IDs do not change.
+| Tool             | Input                                          | Result used by the next step                  |
+| ---------------- | ---------------------------------------------- | --------------------------------------------- |
+| `discover_tools` | Query `customer name`, group `crm`             | Candidate's group and local name              |
+| `describe_tool`  | Group `crm`, tool `customer_name`              | Full parameter schema and source instructions |
+| `call_tool`      | Same identity, arguments `{"customer_id": 42}` | Original function result, `Ada`               |
 
-In proxy mode, each `_` in the group is escaped as `_u` before adding `__` and the unchanged local tool name. For example, group `my_tools` and tool `select` register as `my_utools__select`. Group `a_` with tool `b` and group `a` with tool `_b` therefore remain distinct. Client tools follow this same rule; their original execution names come from retained metadata, never by splitting the generated name.
+Function targets use their original argument validator. External targets keep their external-tool semantics, so the client validates arguments before execution. Internally, the example target is registered as `crm__customer_name`; managed tool IDs remain unchanged.
 
-Use groups for domains such as `crm`, `knowledge`, and `billing`, not one group per tool. A group identifier starts with a letter, contains up to 32 letters, digits, hyphens, or underscores, and cannot contain `__`. Its description is non-blank and at most 512 characters. Different groups can contain the same local tool name. To combine several sources in one group, pass a native `CombinedToolset`, `Capability(toolsets=[...])`, or `CombinedCapability` as that group's source. Member local names must be distinct; duplicate members fail preparation. Prefix sources before grouping when their names would otherwise collide.
+Choose domains such as `crm`, `knowledge`, and `billing`, with several related tools in each. A group name starts with a letter, contains up to 32 letters, digits, hyphens, or underscores, and cannot contain `__`. Descriptions must be non-blank and at most 512 characters. Different groups may reuse a local tool name. Within a group, combine sources with `CombinedToolset`, `Capability(toolsets=[...])`, or `CombinedCapability`, keeping member names distinct. Rename colliding ordinary sources before grouping; client declarations use their supported grouping path.
+
+Registered names escape each group underscore as `_u` before joining `__` and the unchanged local name. Thus `my_tools/select` becomes `my_utools__select`, and `a_/b` differs from `a/_b`. For client delivery, use [retained routing metadata](client-tools.md#proxy-discovery), not string splitting.
 
 ## Instructions and dynamic parameters
 
@@ -118,6 +158,8 @@ Call `list_tool_groups` for available groups and member counts, then `list_tools
 
 ## Configure names and discovery limits
 
+In `search_demo.py`, replace the `proxy` construction inside `main()` with the following block and add its import. Keep `source` from the same function. The deterministic model also needs the new control names in its calls and comparisons.
+
 ```python
 from a13n_harness.capabilities import ToolSearchCapability, ProxyToolSearchConfig, ToolSearchGroup
 
@@ -139,13 +181,15 @@ Generated descriptions and instructions use the configured names. Names must dif
 
 `max_results` accepts 1-100. An omitted or null `limit` defaults to `min(10, max_results)` for summaries and `min(5, max_results)` for full definitions. The UTF-8 JSON response budget accepts 1,024-32,768 bytes and bounds the entire discovery or description response. Entries that do not fit move to the next page; schemas and instructions are never truncated. If one entry cannot fit by itself, full discovery or description fails explicitly. That tool can still appear as a summary. Expose it directly or simplify its definition to read the complete contract.
 
-The old default names `search_proxy_tools` and `call_proxy_tool` are not registered as aliases. Update model instructions and saved programs to the new names; programs that require schemas directly from search should request `detail="full"`.
+When migrating `NativeToolSearchConfig`, use `ProxyToolSearchConfig`, remove `strategy`, and replace `mode: native` with `mode: proxy`. The old default names `search_proxy_tools` and `call_proxy_tool` are not registered as aliases. Update model instructions and saved programs to the new names; programs that require schemas directly from search should request `detail="full"`.
 
 When no grouped tools survive preparation, neither proxy control tool nor generated proxy instructions are exposed. Grouping reduces model context; sources still initialize and prepare their tools normally. It does not eliminate MCP tool-listing traffic or make a thousand Toolsets free to construct.
 
 ## Group a Run-bound MCP Capability
 
-Pass the Capability instance as the group's `source`, especially when it replaces itself during Run binding. Do not extract a `ContextualMCP` Toolset at definition time:
+Use this construction fragment when your Host connects to an HTTP MCP server and supplies a tenant identity. Replace the example URL with your server, provide its required authentication through Host-owned headers, and pass the resulting `capabilities` tuple to the builder with your model. The offline `respond()` above only understands the CRM tool and must be replaced for this integration.
+
+Group the `ContextualMCP` Capability itself. It resolves the Run's headers before creating the MCP toolset:
 
 ```python
 from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
@@ -182,7 +226,7 @@ Select `native=False, local=True`. Provider-native execution, including automati
 
 ## Use with CodeAct
 
-In proxy mode, publish the source's typed CodeAct policy before grouping it:
+To let restricted Python orchestrate the same CRM tool, replace the `source` and `proxy` setup in `main()` with this block. Add the imports and pass the resulting `capabilities` tuple to the builder. Use a model that calls `run_code` with the payload below; the original deterministic model exercises ordinary proxy calls.
 
 ```python
 from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
@@ -230,117 +274,92 @@ Grouping does not grant CodeAct eligibility. The bridge resolves the target and 
 
 ## Host integration
 
-The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolSearchCapability`. To group ordinary Harness plugin contributions alongside selected Capabilities, pass a typed `ToolSearchPlan` to `AgentDefinition.tool_search` or `HarnessBuilder.build(tool_search=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
+Choose the API that matches how your Host already constructs sources:
+
+- Use `ToolSearchCapability` when you have Toolset or Capability instances ready to group, as in the first example.
+- Use `ToolSearchPlan` when sources are already selected in the Agent definition, including plugin contributions. The plan selects those same instances or exact plugin IDs without reconstructing them.
+
+To try the second form, keep `customer_name()`, `respond()`, and the final Run in `search_demo.py`. Add these imports and replace the source/proxy/builder setup in `main()`:
 
 ```python
-from a13n_harness import AgentDefinition, AgentSpec
 from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
-from pydantic_ai.capabilities import MCP
+from pydantic_ai.capabilities import Capability
 
-source = MCP("https://mcp.example.com/mcp", native=False, local=True)
-definition = AgentDefinition(
-    agent=AgentSpec(model="openai:gpt-5"),
+# Inside main(), replace the source/proxy/builder setup:
+customer_tools = Capability(id="customer-tools", tools=[customer_name])
+agent = HarnessBuilder().build(
+    AgentSpec(),
     output_type=str,
-    capabilities=(source,),
+    model=FunctionModel(stream_function=respond),
+    capabilities=(customer_tools,),
     tool_search=ToolSearchPlan(
         groups={
-            "knowledge": ToolSearchSelection(
-                description="Find project documentation",
-                capabilities=(source,),
+            "crm": ToolSearchSelection(
+                "Customer records", capabilities=(customer_tools,)
             )
         }
     ),
 )
 ```
 
-To include plugin contributions, add `plugins=("plugin-docs",)` to the selection and supply that exact plugin instance through the definition's `plugins`. Multiple instances of the same plugin class are selected by their distinct IDs. Every selected Capability must already be in the definition, and every selected plugin must be available to its builder. Unlisted sources stay direct. Do not install the same source both through a concrete-source proxy and through a build plan.
+The program still prints `Customer Ada`. Every selected Capability must also be present in the definition; unlisted sources stay direct. Supply each source once, through either a concrete-source proxy or a build plan. `AgentDefinition.tool_search` accepts the same plan.
 
-Grouping retains native sibling ordering, explicit IDs, state, hooks, and custom container instructions; a group does not turn its independent sources into one atomic ordering node. The plan is immutable and consumed during construction.
+For Host configuration, store stable source IDs, group names, descriptions, and validated discovery options. Resolve those IDs through trusted source factories, construct sources once, then choose their presentation. A group is a presentation choice; it grants neither authorization nor CodeAct eligibility. Harness UI provides its own [Agent tool proxy groups](../a13n-harness-ui/agents-and-subagents.md#tool-search-groups) configuration.
 
-A Host that exposes JSON, YAML, an API, or a configuration UI should provide:
-
-| Host input                            | Host responsibility                                                                                                                         |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source ID and source-specific options | Resolve the ID through trusted source factories; construct each selected source once per executable.                                        |
-| Direct or grouped presentation        | Install each source either directly or inside a group, not both. Keep unrelated sources direct.                                             |
-| Group name and description            | Collect selected sources into one `ToolSearchCapability(groups=...)` per Agent. Use native composition when several sources share a domain. |
-| Optional discovery settings           | Validate and construct `ProxyToolSearchConfig`; use defaults when no customization is needed.                                               |
-
-For example, a Host-owned document could contain:
-
-```yaml
-tool_sources:
-  - source_id: customer-tools
-    presentation: proxy
-    group: crm
-    description: Customer records and account operations
-  - source_id: host-status
-    presentation: direct
-```
-
-This is an **illustrative Host schema**, not a built-in Harness or Harness UI resource. Store stable IDs and validated options, not serialized Python objects, import targets, or literal credentials. Source factories and credential resolution remain trusted Host/plugin code. Group descriptions guide discovery; they do not grant authorization or CodeAct eligibility.
-
-Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolSearchGroup(source=capability, description=...)` without a ToolSearch-specific implementation. Native composition preserves its Agent/Run binding, hooks, and Capability-level instructions. Supply the Capability itself for Run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
-
-The groups mapping is consumed at construction. To change presentation, build a replacement executable; changing the original mapping does not reconfigure an existing Agent. An empty mapping exposes no proxy control tools and leaves direct tools unchanged.
+Grouping preserves native source ordering, explicit IDs, state, hooks, and container instructions. Pass Run-bound Capabilities such as `ContextualMCP` themselves, so their normal binding occurs before tool preparation. The plan and groups are consumed at construction. Build a replacement executable to change presentation; mutating the original mapping does not reconfigure an existing Agent. An empty group mapping leaves direct tools unchanged and exposes no proxy controls.
 
 ### Plugin-contributed sources
 
-`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolSearchPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved Capabilities.
-
-A plugin can alternatively own its presentation using `ToolSearchCapability`, as below. Aggregate groups at one composition point rather than installing competing proxy surfaces.
-
-The following Host-owned plugin illustrates that boundary. Its `source_factory` callable constructs the source Capabilities once per executable in `for_agent()`; `get_capabilities()` selects direct versus grouped presentation. Source Run binding remains native:
+Select a plugin by the exact ID returned from `plugin_id`. The following replacement demonstrates that path with the same customer function. Add the imports and class at module level, then replace the setup inside `main()` as indicated:
 
 ```python
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-
-from a13n_harness import AbstractHarnessPlugin, AgentContext
-from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
-from pydantic_ai.capabilities import AbstractCapability
+from a13n_harness import AbstractHarnessPlugin
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
+from pydantic_ai.capabilities import Capability
 
 
-@dataclass
-class HostToolsPlugin(AbstractHarnessPlugin):
-    source_factory: Callable[[], Mapping[str, AbstractCapability[AgentContext]]]
-    group_descriptions: Mapping[str, str]
-    sources: Mapping[str, AbstractCapability[AgentContext]] = field(default_factory=dict)
-
+class CustomerPlugin(AbstractHarnessPlugin):
     @property
-    def plugin_id(self) -> str:
-        return "host-tools"
+    def plugin_id(self):
+        return "customer-plugin"
 
-    def for_agent(self):
-        return replace(self, sources=dict(self.source_factory()))
+    def get_capabilities(self):
+        return (Capability(id="customer-tools", tools=[customer_name]),)
 
-    def get_capabilities(self) -> Sequence[AbstractCapability[AgentContext]]:
-        direct = []
-        groups = {}
-        for name, source in self.sources.items():
-            if name in self.group_descriptions:
-                groups[name] = ToolSearchGroup(
-                    source=source, description=self.group_descriptions[name]
-                )
-            else:
-                direct.append(source)
-        if groups:
-            direct.append(ToolSearchCapability(groups=groups))
-        return tuple(direct)
+
+# Inside main(), replace the source/proxy/builder setup:
+agent = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=FunctionModel(stream_function=respond),
+    plugins=(CustomerPlugin(),),
+    tool_search=ToolSearchPlan(
+        groups={
+            "crm": ToolSearchSelection(
+                "Customer records", plugins=("customer-plugin",)
+            )
+        }
+    ),
+)
 ```
 
-Here source names also serve as group names; a Host with separate source IDs and domain names can combine sources before constructing each descriptor. Validate configured names against available sources in the Host's configuration layer.
+Run the file again; it still prints `Customer Ada`. Harness owns the plugin's normal `for_agent()` and `get_capabilities()` calls, each once. A plugin that also contributes middleware keeps that middleware installed. Multiple instances of one plugin class need distinct IDs so the plan can select each instance.
 
-Pass `HostToolsPlugin(source_factory=build_sources, group_descriptions={"crm": "Customer records"})` through `HarnessBuilder.build(plugins=(plugin,))`, where `build_sources` is your trusted factory returning the named Capabilities. Passing an empty `group_descriptions` keeps every source direct. Do not also pass those sources through `capabilities=`.
-
-For an existing third-party middleware plugin, a `ToolSearchPlan` selects its ordinary contributions by exact plugin ID. Do not call its `get_capabilities()` manually, instantiate its sources a second time, or remove the plugin when its middleware is still needed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions). Harness UI exposes this build plan through [Agent tool proxy groups](../a13n-harness-ui/agents-and-subagents.md#tool-search-groups).
+A plugin may instead own its grouping by returning a `ToolSearchCapability` from `get_capabilities()`. Aggregate that presentation at one composition point. For an existing plugin, the plan avoids changing the plugin or manually calling its contribution methods. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [Host reconstruction](hosting.md#reconstruct-trusted-definitions).
 
 ## Execution, usage, and limitations
 
-- **One execution path:** target validation, Capability hooks, managed authorization, credentials, timeouts, result bounds, and Toolset dispatch remain native. Search is discovery, not authorization.
-- **Native accounting:** a successful ordinary proxy invocation counts the `call_tool` call and the target, for two successful tool calls. CodeAct resolves the `call_tool` call without executing an extra proxy layer: a runner plus one target also counts two; each additional discovery or description adds one. Usage limits are checked before target dispatch.
-- **Retries:** ordinary target validation and `ModelRetry` retain the target's native retry state. ToolSearch does not replay effects or maintain a retry engine. CodeAct retains its bounded runner-failure semantics.
-- **Approval and external results:** inline native handlers receive the actual target once. Unresolved approval, a function raising `CallDeferred`, or a client tool suspends an ordinary proxy call; resume it with the complete Harness requests and target-keyed results. The Host displays the target while history retains the original proxy call. See [Structured suspension](state-and-resume.md#structured-suspension). CodeAct still cannot resume an interpreter across Runs.
-- **Supported targets:** local function tools (including locally executed MCP and approval-gated tools) and external/client tools use the same grouped naming rule. Provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools are not supported as grouped targets.
-- **Uncertain effects:** cancellation and unexpected failures do not roll back work. Check provider state before retrying a mutation.
-- **Composition scope:** these APIs compose through `HarnessBuilder` or `AgentDefinition`, not a built-in `AgentSpec` serialization name. Harness UI owns its separate per-Agent YAML selection schema; no standalone proxy-group resource is created.
+Grouping changes how a tool is found, while the target keeps its execution contract:
+
+| Concern               | Behavior                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Validation and policy | Calls retain native validation, hooks, managed authorization, credentials, timeouts, and result bounds. Discovery does not authorize an action.                                                                                 |
+| Usage                 | A successful ordinary proxy call counts `call_tool` and its target: two tool calls. CodeAct counts the runner and target, also two, with one more for each discovery or description. Limits are checked before target dispatch. |
+| Retries               | Target validation and `ModelRetry` retain native retry state. ToolSearch does not replay effects. CodeAct retains its bounded runner-failure behavior.                                                                          |
+| Deferred feedback     | An unresolved approval, runtime `CallDeferred`, or client call suspends an ordinary proxy invocation. Retain the complete Harness requests and resume with target-keyed results.                                                |
+
+For deferred work, the Host displays the actual target while history retains the original proxy call. Native inline handlers receive that target once. Follow [Structured suspension](state-and-resume.md#structured-suspension); CodeAct cannot resume its interpreter across Runs. After an uncertain mutation, inspect provider state before retrying. Cancellation does not roll back the action.
+
+Supported grouped targets are local function tools, locally executed MCP, approval-gated tools, and external/client tools. Keep provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools outside groups. Configure grouped MCP with `native=False, local=True` and without `defer_loading=True`.
+
+These APIs compose through `HarnessBuilder` or `AgentDefinition`. They are not built-in `AgentSpec` serialization names, and they do not create a separate proxy-group resource.

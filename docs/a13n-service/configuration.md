@@ -1,19 +1,20 @@
 ---
 title: Configure Service
-description: 'Configure Service from TOML and environment variables: infrastructure, identity, execution, and telemetry.'
+description: Load deployment settings, connect shared infrastructure, and tune execution and monitoring.
 ---
 
-The Service reads its settings once, at startup, from an optional TOML file and from environment variables. Restart every process after a change. The [settings reference](configuration-reference.md) lists every field with its type, bounds and default.
+Configure Service in three steps: connect its shared stores, supply persistent encryption keys, then start the required process roles. Settings load once at startup. Restart every affected process after a change. Use this guide for setup decisions and the [settings reference](configuration-reference.md) for individual fields, bounds and defaults.
 
 ## Sources and precedence
 
-Select the file with `a13n-service --config service.toml ...` or the `A13N_SETTINGS_FILE` environment variable. Any `A13N_<SECTION>__<FIELD>` variable overrides that field of the file, for example `A13N_DATABASE__URL` for `database.url`. Nothing else is read: there is no automatic `.env` file and no configuration search path.
+1. Save deployment settings in a TOML file, such as `service.toml` below.
+2. Supply credentials through the process environment or your platform's secret store.
+3. Pass `--config service.toml` **before** the command, or set `A13N_SETTINGS_FILE`.
+4. Restart the process and check readiness before testing an application request.
 
-Unknown settings stop startup rather than falling back to defaults. Validation errors avoid printing secret values.
+`A13N_<SECTION>__<FIELD>` replaces the matching TOML field. For example, `A13N_WORKER__SLOTS=6` overrides `[worker] slots = 2`. Lists, maps and nested sections use a complete JSON value: `A13N_AUTH__MAIL` replaces the mail section rather than merging individual fields. Service reads only the selected file and environment; it does not discover `.env` files or search configuration directories.
 
-The shared process variable `A13N_OUTBOUND_TLS_VERIFY` is also recognized outside the `A13N_<SECTION>__<FIELD>` scheme. Unset or `true` verifies destination certificates; `false` explicitly disables verification for owned HTTP clients. Other values stop startup. It has no TOML field. Set it on every Service process, whatever its role, and restart after changes; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for exact coverage, exclusions and interception risks.
-
-Use JSON for list, map and nested-section environment values, for example `A13N_PLUGINS__KEYS='["notes"]'`.
+This example assumes PostgreSQL, Redis, an S3-compatible bucket and an HTTPS reverse proxy already exist. Replace their addresses and public origin:
 
 ```toml
 [server]
@@ -40,62 +41,95 @@ return_urls = ["https://agents.example.com/connections/callback"]
 log_format = "json"
 ```
 
-Supply credentials such as the database password, the encryption key ring and object-store keys as environment variables or through your platform's secret store rather than in the file.
+Set `trusted_proxies` to your actual proxy addresses or CIDRs. Supply the database credential, object-store credentials and [encryption keys](#encryption-keys) before starting. For a single process:
+
+```sh
+a13n-service --config service.toml run --role all
+```
+
+From another terminal, check the public endpoint, then sign in and send a model-only prompt:
+
+```sh
+curl --fail --silent --show-error https://agents.example.com/readyz
+```
+
+A ready response confirms process and schema readiness. The prompt checks the configured provider and model path. Unknown settings stop startup. The CLI reports the configuration error type without printing potentially secret input values.
 
 ## Required infrastructure
 
-| Setting             | What to provide                                                                                                                                                                                                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server.public_url` | The origin browsers and API clients use to reach the Service, which serves Console and the API there. The Service accepts browser state changes only from this origin, and uses it in mailed links and authorization callbacks. Its scheme decides whether cookies are `Secure`. |
-| `database.url`      | A PostgreSQL URL using the `postgresql+psycopg://` driver. Use a database dedicated to this Service.                                                                                                                                                                             |
-| `redis.url`         | A Redis endpoint shared by every process.                                                                                                                                                                                                                                        |
-| `objects.*`         | Shared object storage for run checkpoints and displays, uploads, assets, skill packages and images.                                                                                                                                                                              |
-| `encryption.*`      | The key ring that encrypts stored credentials, or on a single host a key file.                                                                                                                                                                                                   |
+Every role must use the same durable state and decryption keys:
+
+| Configure           | Purpose                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `server.public_url` | The Console/API origin, browser-origin checks, mailed links and authorization callbacks. |
+| `database.url`      | PostgreSQL durable state using `postgresql+psycopg://`.                                  |
+| `redis.url`         | Shared wakeups, live output, rate limits and monitoring coordination.                    |
+| `objects.*`         | Checkpoints, displays, uploads, assets, skill packages and images.                       |
+| `encryption.*`      | Keys for stored credentials and other protected values.                                  |
 
 ### PostgreSQL
 
-PostgreSQL stores the Service's durable state. Set connection and statement timeouts for your deployment; see [schema migrations](operations.md#schema-migrations) for migration ownership.
+Use a database dedicated to Service. Set `database.url` through `A13N_DATABASE__URL` when it contains credentials. Tune connection and statement timeouts for that deployment. For migration ownership and upgrade order, see [schema migrations](operations.md#schema-migrations).
 
 ### Redis
 
-Redis holds rate-limit counters, worker wakeups and provisional run output for session streams; PostgreSQL retains the durable state. If Redis is unavailable, stored results remain readable and workers scan for work, but session streams carry no live output and rate limits are skipped. Readiness reports `"degraded": ["redis"]`.
+Point every process at the same Redis endpoint. Redis accelerates work and transports live session output; PostgreSQL retains durable state. During a Redis outage, stored results remain readable and workers scan for work, while live output and rate limiting are unavailable. Readiness reports `"degraded": ["redis"]`. Temporary environment monitoring also depends on Redis ownership and routing.
 
 ### Objects
 
-`objects.backend = "local"` stores objects under `objects.root`; a relative path resolves from the working directory. Every Service process must see the same directory, so use it for a single host or a shared volume. `objects.backend = "s3"` uses an S3-compatible bucket: set `bucket`, and as needed `prefix`, `region`, `endpoint_url` and `path_style` (for stores that address buckets by path, such as MinIO). Without `access_key_id` and `secret_access_key`, the default AWS credential chain applies. The Service writes every object once under a new key, so the store needs only plain reads, writes, listing and deletes.
+Choose the backend by how your processes share storage:
 
-`objects.max_bytes` bounds one stored object. `objects.upload_bytes` bounds one upload, and `upload_limit` per `upload_window_seconds` bounds uploads per principal.
+- **One host or shared volume:** use `objects.backend = "local"` and `objects.root`. Every process must see the same directory. Relative roots resolve from the process working directory.
+- **Multiple hosts:** use `objects.backend = "s3"` and `objects.bucket`, then set `region`, `endpoint_url` and `prefix` as needed. Supply `access_key_id` and `secret_access_key` together, or use the default AWS credential chain.
 
-Use `objects.addressing_style` to select `auto` (SDK selection), `path` (`endpoint/bucket/key`) or `virtual` (`bucket.endpoint/key`). Virtual addressing requires compatible bucket names, DNS and TLS certificates; use it for providers such as Alibaba Cloud OSS that require bucket subdomains. When omitted, the existing `path_style` behavior remains: `true` forces `path`, and `false` uses `auto`. An explicit addressing style takes precedence over `path_style=false`; `path_style=true` together with `auto` or `virtual` fails configuration validation. For Helm, set `objects.addressingStyle`; the environment variable is `A13N_OBJECTS__ADDRESSING_STYLE`.
+The store needs ordinary reads, writes, listing and deletes. Service writes each object under a new key. `objects.max_bytes` limits one stored object; `upload_bytes`, `upload_limit` and `upload_window_seconds` control upload size and per-principal rate.
 
-For S3-compatible providers that reject optional streaming checksum trailers, including Alibaba Cloud OSS, set the standard AWS SDK environment variable `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This works for local, Docker and Kubernetes deployments; with Helm, include it in the environment file used to create `existingSecret`. It leaves checksums required by an operation enabled and does not change Service digest verification. When unset, SDK defaults apply. OSS needs no native write header or bucket-versioning check: the same plain `PutObject` path serves every provider.
+For S3-compatible storage, choose `objects.addressing_style` to match the endpoint:
+
+| Value     | Address form          | Use                                                      |
+| --------- | --------------------- | -------------------------------------------------------- |
+| `auto`    | Selected by the SDK   | Default behavior.                                        |
+| `path`    | `endpoint/bucket/key` | Endpoints that require path-style buckets.               |
+| `virtual` | `bucket.endpoint/key` | Bucket-subdomain endpoints, including Alibaba Cloud OSS. |
+
+Virtual addressing requires compatible bucket names, DNS and TLS certificates. When `addressing_style` is omitted, `path_style = true` selects `path` and `false` selects `auto`. Do not combine `path_style = true` with an explicit `auto` or `virtual`. The environment override is `A13N_OBJECTS__ADDRESSING_STYLE`; Helm uses `objects.addressingStyle`.
+
+If an S3-compatible provider rejects optional streaming checksum trailers, set `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This includes Alibaba Cloud OSS deployments. With Helm, put it in the environment file used for `existingSecret`. Required checksums and Service digest verification remain enabled. Service uses the same plain `PutObject` path across providers.
 
 ### Encryption keys
 
-Provider and connection credentials, model provider extra headers, external target tokens, OAuth tokens, client secrets and pending authorizations, webhook signing secrets and delivery targets, and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:
+Configure encryption before saving provider credentials, connection tokens, webhook secrets or queued identity mail. Service uses AES-GCM with a named active key. Choose one key source:
+
+- **Single-host key file:** set `encryption.key_file` to persistent storage shared by the processes. On first start, Service creates a missing file with mode `600`; later starts read that same key.
+- **Managed key ring:** set `encryption.active_key_id` and `encryption.keys`. Each value is a base64-encoded 32-byte random key. Supply the ring through your secret store, using the same value on every role.
+
+For a new key ring, generate a key once:
 
 ```sh
 export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary
 export A13N_ENCRYPTION__KEYS="{\"primary\": \"$(openssl rand -base64 32)\"}"
 ```
 
-On a single host, `encryption.key_file` can replace `active_key_id` and `keys`: the Service reads one key from that file and, when the file is missing, generates it there on first start with mode `600`. Put the file on persistent storage every Service process shares, such as the [single-host stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)'s data volume. The key's ID is `key_file`; to move to a key ring later, for example to rotate, add the file's content to `encryption.keys` under that ID.
+Persist those values in the deployment secret store. Do not regenerate `primary` on each restart. The key file and explicit ring are mutually exclusive. To migrate a key file into a ring, preserve its content under the ID `key_file`.
 
-Without any key the Service starts, but storing any credential fails with `unavailable`. To rotate, add a new key to `encryption.keys` and make it active; keep the old keys in the ring, because values written under them are still read with their original key. Losing a key makes the values encrypted under it unreadable, so back up the key ring with the database.
+To rotate, add a new key under a new ID and make it active. Keep older keys for values already encrypted with them. Back up keys with the database: losing a key makes its encrypted values unreadable. Starting without keys is allowed, but credential writes fail with `unavailable`.
 
 ## HTTP server
 
-The Service serves HTTP on `server.host` and `server.port`. Serve HTTPS directly with `server.tls_certificate` and `server.tls_key`, or terminate TLS at a trusted proxy. When `server.public_url` is HTTPS, browser login sessions use a `__Host-` cookie marked `Secure`; over plain HTTP the cookie is neither, so serve anything reachable beyond a trusted network over HTTPS.
+`server.host` and `server.port` select the listener. `server.public_url` is the origin users reach, which can differ behind a proxy. Use HTTPS for remote access. Either configure `tls_certificate` and `tls_key` on Service or terminate TLS at a trusted reverse proxy.
 
-Behind a proxy, list the proxy addresses or CIDRs in `server.trusted_proxies`. The Service then takes the client address and scheme from the `X-Forwarded-For` and `X-Forwarded-Proto` headers of those proxies only; rate limits key on that client address.
+List only the proxy addresses or CIDRs in `server.trusted_proxies`. Service accepts forwarded client addresses and schemes from those proxies; rate limits use the resulting client address. An HTTPS public URL gives login sessions a `Secure`, `__Host-` cookie. Plain HTTP does not.
 
-`server.request_bytes` bounds a request body (`413 payload_too_large`), and `server.request_timeout` bounds how long the body may take to arrive (`408 request_timeout`). `readiness_timeout` bounds each readiness check, and `shutdown_timeout` bounds graceful shutdown.
+Keep request limits separate from execution timeouts. `server.request_bytes` bounds the incoming body (`413 payload_too_large`), and `request_timeout` bounds body arrival (`408 request_timeout`). `readiness_timeout` bounds readiness checks; `shutdown_timeout` bounds HTTP graceful shutdown.
 
 ## Identity and mail
 
-`auth.session_seconds` is the lifetime of a browser login session. `auth.login_limit` per `auth.login_window_seconds` limits password logins per client address; the public connection-authorization callback has the same limit in its own budget. `auth.invitation_seconds` is how long an invitation stays acceptable, and `auth.link_seconds` how long a password-reset or email-change link stays valid.
+Enable SMTP when users need password resets or email changes. Without SMTP, an invitation link is returned once to its creator for manual delivery.
 
-Identity mail is sent through SMTP when `auth.mail.smtp_host` is set. Without it, invitation links are returned once to the inviter, and password reset and email change are unavailable. Mail links are queued encrypted, so SMTP requires an encryption key: `encryption.active_key_id` with `encryption.keys`, or `encryption.key_file`. Links are never written to logs.
+1. Configure an encryption key source so queued links can be encrypted.
+2. Set the SMTP host, port, security mode and sender.
+3. If the server requires authentication, supply both `smtp_username` and `smtp_password`.
+4. Restart the API-serving processes and send an invitation to verify delivery.
 
 ```toml
 [auth.mail]
@@ -103,22 +137,28 @@ smtp_host = "smtp.example.com"
 smtp_port = 587
 smtp_security = "starttls"
 sender = "agents@example.com"
-
-[encryption]
-active_key_id = "primary"  # the key itself comes from A13N_ENCRYPTION__KEYS
 ```
 
-Supply `smtp_username` and `smtp_password` together. As an environment variable, pass the whole section as JSON in `A13N_AUTH__MAIL`.
+For an environment override, provide the **whole** mail object as JSON in `A13N_AUTH__MAIL`, including any credentials. Mail links are never logged. `auth.session_seconds` controls login lifetime, `invitation_seconds` invitation validity, and `link_seconds` password-reset/email-change validity. `login_limit` per `login_window_seconds` applies per client address; public authorization callbacks have a separate budget with those limits.
 
 ## Outbound requests
 
-Service-owned HTTP clients apply one endpoint policy to provider, remote MCP, OAuth and webhook requests:
+Configure a provider's endpoint and credentials in its workspace resource. Deployment settings determine where Service-owned clients may connect:
 
-- URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
-- With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
-- Host provider clients do not follow redirects, refuse compressed responses and bound response bodies with `providers.response_bytes`. TLS verification, credential rules and deadlines remain enabled.
+- HTTPS is required by default. Permit a specific plaintext origin through `providers.http_origins` when needed.
+- URLs carry no user information, fragment or credential-like query parameter. Put credentials in their designated fields.
+- Host provider clients refuse redirects and compressed responses, and bound bodies through `providers.response_bytes`.
 
-A message submitted to a thread accepts `options.configuration`, separately from the agent revision override:
+For example, allow a model server on the Docker host without opening every HTTP destination:
+
+```toml
+[providers]
+http_origins = ["http://host.docker.internal:11434"]
+```
+
+Keep certificate verification enabled. The shared process variable `A13N_OUTBOUND_TLS_VERIFY` accepts `true` (also the unset default) or `false`; other values fail startup. It has no TOML equivalent. A deliberate `false` disables verification for covered owned HTTP clients; read [coverage and interception risks](../a13n-harness/models.md#outbound-tls-verification) before using it.
+
+An application can further restrict one run through `options.configuration`. This is the `options` object in an input request:
 
 ```json
 {
@@ -129,21 +169,15 @@ A message submitted to a thread accepts `options.configuration`, separately from
 }
 ```
 
-Set `allowed_hosts` to every provider, connection and remote environment hostname the run needs:
+Include every provider, connection and remote environment hostname that run needs. `null` permits any host; `[]` denies all. Ordinary entries match exact normalized hostnames or IPs; `regex:` patterns match the full hostname. Globs, ports and CIDRs are not host rules. See [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions) for escaping and normalization.
 
-- `null` leaves hosts unrestricted; `[]` denies all.
-- Ordinary entries match exact normalized hostnames or IPs. `regex:<pattern>` uses Python full-string matching; the example allows only `api.example.com` or `docs.example.com`.
-- Invalid or empty patterns fail acceptance. Globs, ports and CIDRs are not host rules. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization and escaping.
+Acceptance freezes this configuration for input URL reads, execution, recovery, resume and children. Steering may omit it or repeat the same value. To change it, submit `delivery: "next_run"`; a different value on an active run produces `run_configuration_immutable`. Console has no controls for this field. Namespaced `extensions` affect only consumers that support them.
 
-Acceptance freezes the configuration for input URL reads, execution, recovery, resume and children. Steering can omit it or repeat the same value. To change it, submit `delivery: "next_run"`; an active run rejects a different value with `run_configuration_immutable`.
-
-Set this configuration through the API; Console has no controls for it. Namespaced `extensions` are read only by consumers that explicitly support them.
-
-The `allowed_hosts` check compares declared URL hostnames only: it does no DNS precheck, address classification or IP pinning. Management operations outside a run retain process URL/HTTPS policy, not a run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or environment boundary.
+Host rules check declared URL names, without DNS prechecks or IP pinning. Management requests outside a run use deployment policy. Enforce restrictions on arbitrary shell, plugin and opaque SDK traffic at the environment or deployment network boundary.
 
 ### Outbound proxies
 
-Set standard proxy environment variables on each Service process or container that needs outbound access; no `A13N_` prefix or TOML proxy setting is needed:
+Set standard proxy variables on each process or container that needs them:
 
 ```bash
 export http_proxy=http://proxy.example.com:8080
@@ -151,76 +185,51 @@ export https_proxy=http://proxy.example.com:8080
 export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 ```
 
-Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
+Uppercase forms and `ALL_PROXY` also work; selection and bypass matching follow `httpx2`. An HTTP proxy can carry HTTPS through CONNECT. Host HTTP clients use these routes for models, Remote MCP/OAuth, connectors, memory, web requests, catalogs and webhooks. Host rules and TLS verification still apply, and failed proxy requests do not retry directly.
 
-Host rules and TLS verification still apply through the operator's proxy. The proxy or deployment network controls destination access. A failed proxy request does not fall back to direct.
+HTTPS Envd connections use these variables; plaintext local or provider-private Envd HTTP stays direct. Other environment and storage SDKs own their proxy behavior. Allow access to `https://models.dev/catalog.json` for Console's model catalog, or use the last catalog/manual upstream IDs if it is unreachable.
 
-HTTPS connections to `a13n-envd` use these proxy variables; plain-HTTP local or provider-private Envd connections stay direct. Other environment and storage SDKs keep their own proxy behavior.
-
-Console's model picker uses `https://models.dev/catalog.json`. If it is unreachable, Service uses its last catalog or lets you add models by upstream ID.
-
-For example, to allow plain HTTP to a model server on the Docker host with `providers.http_origins`:
-
-```toml
-[providers]
-http_origins = ["http://host.docker.internal:11434"]
-```
-
-Other `providers` settings bound provider work: `model_timeout` (each read of one model exchange), `tool_call_seconds` (one connection tool call), `operation_seconds` (authorization steps and resource tests), `discovery_ttl` (cached tool discovery) and `flow_seconds` (how long a browser authorization may take). `providers.return_urls` lists the exact Console URLs a browser authorization may return to, and `providers.mcp_servers` adds [MCP server suggestions](tools.md#mcp-server-suggestions).
+For slow upstreams, tune the matching budget: `providers.model_timeout` covers each read of a model exchange, `tool_call_seconds` a connection tool call, `operation_seconds` authorization steps and resource tests, and `flow_seconds` browser authorization. `discovery_ttl` controls tool-discovery caching. `return_urls` lists exact callback destinations; `mcp_servers` supplies [MCP suggestions](tools.md#mcp-server-suggestions).
 
 ## Execution
 
-`tool_executions` configures retained calls: `max_active` (64 per worker), `foreground_wait_seconds` (5), `delivered_retention_seconds` (3600), and `max_retention_seconds` (86400). Foreground wait supplies the deployment fallback for the [execution policy](agents-and-runs.md#execution-policy); agent, thread and single-run choices can override it. It controls handoff, not an execution deadline. Retention starts after completion; the first delivery acknowledgement starts the shorter reread window without extending the maximum age.
+Begin with `worker.slots`, the concurrent attempts per worker process. Increase it only when provider quotas, target capacity and database connections can support the extra work. Use these groups for other changes:
 
-On worker shutdown, attempts drain first. Retained calls then receive `shutdown_grace_seconds` (300) to finish naturally, followed by cancellation and `finalization_seconds` (10) for cleanup and publication. If work still owns resources after that budget, the worker exits; lease reconciliation marks unfinished records lost. Set the deployment's termination grace to cover these phases. Drain old workers before deploying this schema: older workers cannot read the new `tool_result` inbox and run-trigger values.
+| Goal                                    | Settings                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Adjust recovery and authority checks    | `worker.max_attempts`, `lease_seconds`, `authority_seconds`.                                         |
+| Bound child runs and queued input       | `worker.child_depth`, `child_count`; `control.inbox_count`, `inbox_bytes`.                           |
+| Tune live streaming and display storage | `worker.stream_*`, `page_items`, `page_bytes`, `content_bytes`, `output_bytes`, `compression_level`. |
+| Tune target preparation and maintenance | `environments.*`.                                                                                    |
+| Limit retained tools                    | `tool_executions.max_active`, retention and shutdown settings.                                       |
 
-| Setting                                            | Effect                                                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `worker.slots`                                     | Attempts one worker process runs concurrently.                                                                                  |
-| `worker.max_attempts`                              | Attempts a run may be charged before it fails.                                                                                  |
-| `worker.lease_seconds`, `worker.authority_seconds` | How long an attempt's lease lasts, and how often the worker renews it and rechecks cancellation and the principal's access.     |
-| `worker.drain_seconds`                             | How long a stopping worker waits for its attempts to hand off.                                                                  |
-| `worker.child_depth`, `worker.child_count`         | Depth and count bounds for subagent runs.                                                                                       |
-| `worker.stream_coalesce_seconds`                   | How long consecutive text, reasoning or tool-argument deltas are merged into one live stream event.                             |
-| `worker.stream_trim_seconds`                       | How long live stream entries a checkpoint covers stay in Redis, so a briefly disconnected client resumes without a gap.         |
-| `worker.stream_length`, `worker.stream_ttl`        | Backstop length cap and idle lifetime of one thread's live stream in Redis.                                                     |
-| `worker.output_bytes`                              | Bound of a run's result.                                                                                                        |
-| `worker.page_items`, `worker.page_bytes`           | Size of one page of a run's display history: up to `page_items` items, or fewer that reach `page_bytes`.                        |
-| `worker.content_bytes`                             | Images, documents and other binary content larger than this are saved once as their own objects instead of in every checkpoint. |
-| `worker.compression_level`                         | zstd level of the run objects a worker writes.                                                                                  |
-| `control.inbox_count`, `control.inbox_bytes`       | Capacity of one thread's inbox (`inbox_bytes` defaults to 2 MiB).                                                               |
-| `control.subscriptions`                            | Webhook subscriptions per workspace.                                                                                            |
-| `environments.*`                                   | Environment maintenance cadence, provider-call bounds and how long an attempt waits for its environments.                       |
+Retained calls default to 64 active executions per worker and a five-second foreground wait. That wait is the deployment fallback for [execution policy](agents-and-runs.md#execution-policy), not a deadline; agent, thread or single-run choices can override it. Results remain for at most 24 hours after completion. First delivery acknowledgement starts a shorter one-hour reread window without extending the maximum age.
 
-`provisioning.local.enabled = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
+Plan shutdown time for all phases: worker attempts drain, retained calls get `shutdown_grace_seconds` (300 by default), then cancellation gets `finalization_seconds` (10) for cleanup and publication. Unfinished records become lost through lease reconciliation after the process exits. Set the platform's termination grace accordingly; see [operations](operations.md).
 
-Set `server.control_url` (or `A13N_SERVER__CONTROL_URL`) to a control API address reachable from Workers when they cannot use `server.public_url`. Internal platform MCP calls use that address and retain the configured public HTTP host. The address is deployment configuration, never an agent-selected URL.
-
-`plugins.keys` lists installed Harness plugin factories, by entry-point key, that agents may select. `composer.models` lists preferred upstream model names for the [Agent Composer](agent-composer.md).
+In split deployments, set `server.control_url` to a control API address reachable from workers when the public URL is unsuitable. Internal platform MCP uses that address while retaining the public HTTP Host. `plugins.keys` admits installed Harness plugin factories by entry-point key; `composer.models` sets preferred upstream names for [Agent Composer](agent-composer.md).
 
 ## Logs, metrics and traces
 
-`telemetry.log_level` and `telemetry.log_format` (`json`, the default, or `pretty`) apply to every command. `a13n-service run` can also write a rotating JSON file (`log_file`, `log_file_max_mb`, `log_file_backups`), and with `log_stdout = false` only the file. `telemetry.metrics_port` serves Prometheus metrics on a port of its own. [Monitor and troubleshoot](monitoring.md) describes what each signal records.
+Start with JSON logs and enable a private metrics listener when needed. `telemetry.log_level` and `log_format` apply to every command. The server can write a rotating JSON file through `log_file`, `log_file_max_mb` and `log_file_backups`; `log_stdout = false` requires a file. `metrics_port` must differ from the HTTP port. Follow [monitoring setup](monitoring.md#metrics) to verify scraping.
 
-The Service exports the Harness spans of every attempt to one trace backend and reads the same backend for [trace queries](agents-and-runs.md#traces). Choose it with `telemetry.trace_backend`:
+Choose one trace backend for export and [trace queries](agents-and-runs.md#traces):
 
-| Backend          | Settings                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `none` (default) | Nothing is exported, and trace queries report no backend.                                             |
-| `langfuse`       | `trace_url` (such as `https://cloud.langfuse.com`), `langfuse_public_key`, `langfuse_secret_key`.     |
-| `logfire`        | `trace_url` (such as `https://logfire-us.pydantic.dev`), `logfire_write_token`, `logfire_read_token`. |
+| `telemetry.trace_backend` | Required settings                                          |
+| ------------------------- | ---------------------------------------------------------- |
+| `none`                    | Default; tracing is off.                                   |
+| `langfuse`                | `trace_url`, `langfuse_public_key`, `langfuse_secret_key`. |
+| `logfire`                 | `trace_url`, `logfire_write_token`, `logfire_read_token`.  |
 
-`telemetry.trace_content` (`none`, `standard` or `full`) chooses how much prompt, output and tool content leaves the deployment with the spans; see [Harness observation](../a13n-harness/observation.md). `trace_query_timeout` bounds one backend query.
+Set `trace_content` to `none`, `standard` or `full` based on which prompt, output and tool content may leave the deployment. `trace_query_timeout` limits reads from the backend. See [Harness observation](../a13n-harness/observation.md) for content levels.
 
 ## Environment monitoring
 
-`monitoring.enabled` defaults to `true`; each environment still needs an explicit metrics data source. For temporary history without a separate collector, select **Local Cache**. For pull collection, configure `monitoring.collectors.vmagent` or `monitoring.collectors.alloy`, then create and select a pull data source in Console. The collector map is empty by default.
+`monitoring.enabled` defaults to `true`, but collection starts only after a target selects a data source. For a first chart, bind **Local Cache** using the [environment monitoring guide](environment-monitoring.md#bind-and-verify-an-environment).
 
-Each collector entry requires an absolute shared `directory` and an HTTP(S) reload `endpoint`. Set `writer = true` on exactly one `all` or `control` process per collector; the default is `false`. Optional `headers` authenticate reload requests. For a trusted plaintext reload endpoint, `allow_http_reload = true` permits only that collector's origin without changing target/query endpoint policy; managed Helm mode sets it for Pod loopback. Alloy also requires `receiver`, naming an existing receiver expression. Protect settings containing credentials. The environment-variable equivalent is the JSON map `A13N_MONITORING__COLLECTORS`.
+For pull collection, configure `monitoring.collectors.vmagent` or `.alloy` before creating a pull source. The map is empty by default. Each entry needs an absolute shared directory and a reload endpoint. Set exactly one `all` or `control` process as `writer = true`; others use the default `false`. Alloy also needs an existing `receiver`. Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) for mounts, credentials, reload policy and verification. Environment overrides use the complete JSON map `A13N_MONITORING__COLLECTORS`.
 
-Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) for directory mounts, permissions, collector configuration and verification. The Helm chart can supply a managed vmagent and singleton writer through `monitoring.vmagent.enabled`; external vmagent and Alloy remain operator-installed. Storage and retention stay external. Configure a data source's Prometheus HTTP query endpoint separately for historical dashboards.
-
-To offer an explicit administrator-confirmed preset, configure:
+Once the collector exists, offer an optional preset to named workspaces:
 
 ```toml
 [monitoring.deployment_preset]
@@ -230,39 +239,37 @@ query_endpoint = "https://metrics.example.com"
 workspace_ids = ["ws_example"]
 ```
 
-The selected collector must already be configured. An empty workspace list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts this whole object as JSON. Supply an optional read token separately through the protected `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` setting. The token must be nonempty printable ASCII without whitespace. Restart control processes to load settings changes. Confirmation creates a workspace data source and optionally snapshots the credential; later configuration changes never rewrite existing sources or environment bindings. See [preset confirmation](environment-monitoring.md#confirm-a-deployment-preset) for destination checks and rotation.
+An empty list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts the whole object as JSON. Supply the optional read token separately through `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN`, then restart control processes. Administrators [confirm the preset](environment-monitoring.md#confirm-a-deployment-preset) to create a source and optionally snapshot its credential. Deployment changes do not update existing sources or bindings.
 
 ## Nested bounds
 
-Startup also validates related limits together: leases must cover authority and object-store calls; shutdown must cover worker drain; request and inbox budgets must fit uploads and child output; environment scans must renew hosted sandboxes in time. If you change these limits, check the startup validation error before widening individual timeouts.
+When tuning limits, change the related budgets together. Upload size must fit below request size; child output plus its envelope must fit the inbox; authority checks and object operations must fit the lease; worker drain must fit shutdown. Environment scan and renewal budgets must leave time to renew hosted targets.
+
+Startup rejects inconsistent combinations. If a change produces `Invalid Service configuration`, check the changed fields and their containing budgets in the [settings reference](configuration-reference.md).
 
 ## Container deployments
 
-The `a13n-service` image runs every role through the same `a13n-service` entry point. Mount the configuration file (the provided deployments use `/app/service.toml`) and supply credentials as environment variables. The `all` and `control` roles also serve Console, so browsers and API clients share one origin; set `server.public_url` to it.
+The image uses the same executable and settings for all roles. Mount your TOML at the path passed to `--config` (the supplied image uses `/app/service.toml`) and inject credentials into the container environment. Editing a host file affects the container only when it is mounted there. Recreate or restart affected containers after changes; changed environment variables require recreation.
 
-- The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) runs `run --role all` with PostgreSQL, Redis, the Console and Docker environments through the host Engine.
-- The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) runs control and worker Deployments after a migration Job per release revision, with values for a local kind cluster.
+Use the [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) for `all` with PostgreSQL, Redis and host-Engine Docker environments. Use the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) for split control/worker Deployments and a migration Job. `all` and `control` serve Console and the API at `server.public_url`.
 
 ## Workspace provisioning
 
-Automatic setup of the Local and Docker environment providers and their templates runs only in the single-host `all` role. Both default off. For example:
+Automatic Local/Docker provider and template creation runs only in the `all` role. Both are disabled in generic settings; the supplied socket-enabled Compose stack enables Docker and leaves Local off. Split control/worker deployments configure execution resources explicitly.
+
+For Docker initialization, grant the Service process access to the intended Engine, through `environments.docker_host` or its Docker environment. A CLI installation alone gives no Engine access. Then enable:
 
 ```toml
-[provisioning.local]
-enabled = true
-root = "/srv/a13n/environments"
-
 [provisioning.docker]
 enabled = true
 ```
 
-Local requires an explicit absolute root on the machine running the Service; there is no generic default. It also enables the Local provider type. `make dev` supplies its own checkout path. Disabling Local keeps its directories, provider and templates, but runs cannot use Local environments until you enable Local again.
+The default template uses Service's reviewed sandbox image and `pull_policy = "if_missing"`. Provisioning creates resources once; initialization neither pulls an image nor creates a container. The image is pulled when an instance needs it. Later setting changes do not overwrite existing templates: edit those in Console or through the API. Existing instances keep their image.
 
-Docker uses the existing operator Engine setting, `environments.docker_host`, or the process Docker environment. Running inside Compose requires access to the Engine, normally the socket mount in the supplied single-host stack. Installing a Docker CLI alone is insufficient. Docker provisioning does not affect manual Docker providers.
+For a locally built image in a repository checkout:
 
-Environment variables take a JSON object for each nested section, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the independently versioned GHCR sandbox image reviewed by Service and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off. It passes a fixed JSON value; omitting `image` keeps the Service default.
-
-For a custom image, edit the complete `A13N_PROVISIONING__DOCKER` value in the Compose file's `service.environment`, or save this override as `compose.local.yaml` in the repository root:
+1. Run `make image-sandbox` from the repository root.
+2. Save this override as `compose.local.yaml` in that root:
 
 ```yaml
 services:
@@ -271,12 +278,20 @@ services:
       A13N_PROVISIONING__DOCKER: '{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'
 ```
 
-After building the local image with `make image-sandbox`, start the stack with both files:
+3. Start the stack with both files:
 
 ```sh
 docker compose -f deploy/docker/compose/a13n-service.yaml -f compose.local.yaml up -d --wait
 ```
 
-Set `pull_policy` to `if_missing` for registry images. Keep the value as complete JSON rather than assembling it with Compose interpolation. The former `A13N_DOCKER_ENVIRONMENT_IMAGE` shortcut is no longer read; migrate to this explicit configuration.
+For direct TOML deployment, put the same `image` and `pull_policy` fields in `[provisioning.docker]`. Use `if_missing` for registry images. Environment overrides replace the complete JSON object; the old `A13N_DOCKER_ENVIRONMENT_IMAGE` shortcut is no longer read.
 
-To use a locally built image, run `make image-sandbox`. Then set `image = "a13n-sandbox:local"` and `pull_policy = "never"` in `[provisioning.docker]`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [workspace provisioning](environments.md#workspace-provisioning) for retry and ownership behavior.
+For Local execution in a development deployment only, enable it with an explicit absolute root:
+
+```toml
+[provisioning.local]
+enabled = true
+root = "/srv/a13n/environments"
+```
+
+Local executes directly on the worker host without isolation. Disabling it preserves directories and resources but makes Local unavailable for subsequent execution. Docker provisioning disablement leaves manually configured Docker providers usable. See [workspace provisioning](environments.md#workspace-provisioning) for retry and ownership behavior.

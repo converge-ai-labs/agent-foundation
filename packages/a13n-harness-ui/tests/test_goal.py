@@ -9,7 +9,12 @@ from a13n_harness.capabilities import CompactionCapability, CompactionPolicy, Ha
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
-from a13n_harness_ui.goal_prompts import goal_check_prompt, has_completion_marker, post_restore_audit_prompt
+from a13n_harness_ui.goal_prompts import (
+    goal_check_prompt,
+    has_blocked_marker,
+    has_completion_marker,
+    post_restore_audit_prompt,
+)
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -44,6 +49,7 @@ def _text(messages: list[ModelMessage]) -> str:
 )
 def test_completion_marker_preserves_reference_line_semantics(output, expected):
     assert has_completion_marker(output) is expected
+    assert has_blocked_marker(output.replace("COMPLETE", "BLOCKED")) is expected
 
 
 def test_audit_prompts_escape_objective_and_preserve_verification_scope():
@@ -56,21 +62,28 @@ def test_audit_prompts_escape_objective_and_preserve_verification_scope():
     assert "&lt;task&gt;" in audit
     assert "&lt;source&gt;" in audit
     assert "not proof" in audit
+    assert "[GOAL_BLOCKED]" in prompt
+    assert "[GOAL_BLOCKED]" in audit
 
 
 @pytest.mark.parametrize(
-    ("limit", "outputs", "status", "iteration"),
+    ("limit", "outputs", "status", "iteration", "restore_audit"),
     [
-        (10, ["[GOAL_COMPLETE]"], "verified", 0),
-        (10, ["part one", "part two", "[GOAL_COMPLETE]"], "verified", 2),
-        (1, ["part one", "not yet"], "max_iterations", 1),
-        (1, ["part one", "[GOAL_COMPLETE]"], "verified", 1),
-        (0, ["not yet"], "max_iterations", 0),
-        (-1, ["not yet"], "max_iterations", 0),
-        (0, ["[GOAL_COMPLETE]"], "verified", 0),
+        (10, ["[GOAL_COMPLETE]"], "verified", 0, False),
+        (10, ["Waiting for browser handback\n[GOAL_BLOCKED]"], "blocked", 0, False),
+        (0, ["[GOAL_BLOCKED]"], "blocked", 0, False),
+        (10, ["[GOAL_COMPLETE]\n[GOAL_BLOCKED]"], "blocked", 0, False),
+        (0, ["[GOAL_BLOCKED]"], "blocked", 0, True),
+        (10, ["[GOAL_COMPLETE]\n[GOAL_BLOCKED]"], "blocked", 0, True),
+        (10, ["part one", "part two", "[GOAL_COMPLETE]"], "verified", 2, False),
+        (1, ["part one", "not yet"], "max_iterations", 1, False),
+        (1, ["part one", "[GOAL_COMPLETE]"], "verified", 1, False),
+        (0, ["not yet"], "max_iterations", 0, False),
+        (-1, ["not yet"], "max_iterations", 0, False),
+        (0, ["[GOAL_COMPLETE]"], "verified", 0, False),
     ],
 )
-async def test_native_goal_continuations_stay_inside_one_run(limit, outputs, status, iteration):
+async def test_native_goal_continuations_stay_inside_one_run(limit, outputs, status, iteration, restore_audit):
     calls = []
     saved = []
     changes = []
@@ -87,7 +100,10 @@ async def test_native_goal_continuations_stay_inside_one_run(limit, outputs, sta
         assert len(saved) == len(calls)
         yield outputs[len(calls) - 1]
 
-    capability = GoalCapability(GoalView(objective="Implement all requirements", max_iterations=limit), changed=changed)
+    capability = GoalCapability(
+        GoalView(objective="Implement all requirements", max_iterations=limit, needs_restore_audit=restore_audit),
+        changed=changed,
+    )
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,

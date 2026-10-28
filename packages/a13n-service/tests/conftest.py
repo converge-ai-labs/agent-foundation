@@ -41,7 +41,7 @@ from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
 from argon2 import PasswordHasher
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.utilities.openapi import HTTPRoute
@@ -360,7 +360,7 @@ class ScriptedModel:
         self.requests: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.url = ""
         app = FastAPI()
-        app.post("/v1/chat/completions")(self._complete)
+        app.post("/v1/chat/completions", response_model=None)(self._complete)
         self.app = app
 
     def say(
@@ -403,7 +403,7 @@ class ScriptedModel:
                 self.scripted.clear()
                 await self.scripted.wait()
 
-    async def _complete(self, request: Request) -> StreamingResponse:
+    async def _complete(self, request: Request) -> StreamingResponse | JSONResponse:
         body = await request.json()
         self.requests.put_nowait(body)
         turn = await self._next(json.dumps(body))
@@ -411,6 +411,24 @@ class ScriptedModel:
             await turn["gate"].wait()
         base = {"id": "chatcmpl-scripted", "object": "chat.completion.chunk", "created": 0, "model": "scripted"}
         deltas = [{"role": "assistant", **turn["deltas"][0]}, *turn["deltas"][1:]]
+        if not body.get("stream", False):
+            message: dict[str, Any] = {
+                "role": "assistant",
+                "content": "".join(delta.get("content", "") for delta in deltas),
+            }
+            calls = [call for delta in deltas for call in delta.get("tool_calls", [])]
+            if calls:
+                message["tool_calls"] = [
+                    {"id": call["id"], "type": "function", "function": call["function"]} for call in calls
+                ]
+            return JSONResponse(
+                {
+                    **base,
+                    "object": "chat.completion",
+                    "choices": [{"index": 0, "message": message, "finish_reason": turn["finish"]}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17},
+                }
+            )
 
         async def stream() -> AsyncIterator[str]:
             for index, delta in enumerate(deltas):

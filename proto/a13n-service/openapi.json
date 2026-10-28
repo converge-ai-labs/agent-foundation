@@ -196,6 +196,9 @@
       "AgentConfig-Input": {
         "additionalProperties": false,
         "properties": {
+          "background_compaction": {
+            "$ref": "#/components/schemas/BackgroundCompactionPolicy"
+          },
           "builtin_skills": {
             "default": [],
             "items": {
@@ -407,6 +410,9 @@
       "AgentConfig-Output": {
         "additionalProperties": false,
         "properties": {
+          "background_compaction": {
+            "$ref": "#/components/schemas/BackgroundCompactionPolicy"
+          },
           "builtin_skills": {
             "default": [],
             "items": {
@@ -2862,6 +2868,26 @@
         "title": "AuthorizationStatus",
         "type": "object"
       },
+      "BackgroundCompactionPolicy": {
+        "additionalProperties": false,
+        "description": "Host-selected overlap policy, separate from the common compaction trigger.",
+        "properties": {
+          "blocking_threshold": {
+            "default": 0.95,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Blocking Threshold",
+            "type": "number"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "BackgroundCompactionPolicy",
+        "type": "object"
+      },
       "BearerCredential": {
         "additionalProperties": false,
         "properties": {
@@ -2934,6 +2960,48 @@
           "items"
         ],
         "title": "BuiltinSkillCatalog",
+        "type": "object"
+      },
+      "BuiltinSkillDetail": {
+        "description": "The current process's bundled package, without a workspace resource or revision.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BuiltinSkillName"
+          },
+          "package_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Package Digest",
+            "type": "string"
+          },
+          "package_size": {
+            "title": "Package Size",
+            "type": "integer"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "root",
+          "files",
+          "package_digest",
+          "package_size"
+        ],
+        "title": "BuiltinSkillDetail",
         "type": "object"
       },
       "BuiltinSkillName": {
@@ -9918,6 +9986,78 @@
           "next_cursor"
         ],
         "title": "MemberPage",
+        "type": "object"
+      },
+      "MemberUsage": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "service_account"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/RunMetrics"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ModelMetrics"
+          }
+        },
+        "required": [
+          "principal_id",
+          "name",
+          "kind",
+          "status",
+          "usage",
+          "runs"
+        ],
+        "title": "MemberUsage",
+        "type": "object"
+      },
+      "MemberUsagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemberUsage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "MemberUsagePage",
         "type": "object"
       },
       "Memory": {
@@ -17519,6 +17659,34 @@
         "title": "RunUsage",
         "type": "object"
       },
+      "RunUsagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunUsage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "RunUsagePage",
+        "type": "object"
+      },
       "RunView": {
         "properties": {
           "agent_id": {
@@ -21743,6 +21911,102 @@
         "title": "TextRead",
         "type": "object"
       },
+      "ThreadNavigation": {
+        "description": "Bounded navigation metadata; positions count the complete Session before filtering.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "new",
+              "fork",
+              "child"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "origin_count": {
+            "title": "Origin Count",
+            "type": "integer"
+          },
+          "origin_number": {
+            "title": "Origin Number",
+            "type": "integer"
+          },
+          "origin_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "subagent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subagent"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "subagent",
+          "origin_number",
+          "origin_count",
+          "session_id",
+          "origin_thread",
+          "created_at"
+        ],
+        "title": "ThreadNavigation",
+        "type": "object"
+      },
+      "ThreadNavigationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadNavigation"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "ThreadNavigationPage",
+        "type": "object"
+      },
       "ThreadPage": {
         "properties": {
           "items": {
@@ -21769,6 +22033,51 @@
           "next_cursor"
         ],
         "title": "ThreadPage",
+        "type": "object"
+      },
+      "ThreadReference": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "new",
+              "fork",
+              "child"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "origin_count": {
+            "title": "Origin Count",
+            "type": "integer"
+          },
+          "origin_number": {
+            "title": "Origin Number",
+            "type": "integer"
+          },
+          "subagent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subagent"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "subagent",
+          "origin_number",
+          "origin_count"
+        ],
+        "title": "ThreadReference",
         "type": "object"
       },
       "ThreadRunPage": {
@@ -23202,18 +23511,10 @@
             },
             "title": "Models",
             "type": "array"
-          },
-          "runs": {
-            "items": {
-              "$ref": "#/components/schemas/RunUsage"
-            },
-            "title": "Runs",
-            "type": "array"
           }
         },
         "required": [
-          "models",
-          "runs"
+          "models"
         ],
         "title": "UsageSummary",
         "type": "object"
@@ -24270,7 +24571,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24371,7 +24673,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24462,7 +24765,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24624,7 +24928,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24938,7 +25243,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25424,7 +25730,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25515,7 +25822,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25769,7 +26077,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -26266,6 +26575,159 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/builtin-skills/{name}": {
+      "get": {
+        "description": "The current deployment's bundled skill and its package file manifest.",
+        "operationId": "get_builtin_skill",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinSkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Builtin Skill",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/builtin-skills/{name}/content": {
+      "get": {
+        "description": "Optionally require the manifest's digest; a changed package returns conflict.",
+        "operationId": "read_builtin_skill_archive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "package_digest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Package Digest"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The current builtin skill package as a zip archive"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Read Builtin Skill Archive",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/connections": {
       "get": {
         "operationId": "list_connections",
@@ -26670,7 +27132,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -26772,7 +27235,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -26868,7 +27332,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27545,7 +28010,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27693,7 +28159,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29000,7 +29467,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29143,7 +29611,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29326,7 +29795,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29640,7 +30110,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29788,7 +30259,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30273,7 +30745,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30553,7 +31026,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30703,7 +31177,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31008,7 +31483,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31258,7 +31734,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31345,7 +31822,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31969,7 +32447,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32254,7 +32733,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32556,7 +33036,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32699,7 +33180,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32981,7 +33463,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33087,7 +33570,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33248,7 +33732,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34049,7 +34534,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34289,7 +34775,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34433,7 +34920,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34786,7 +35274,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34929,7 +35418,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -35559,7 +36049,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -35702,7 +36193,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36076,7 +36568,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36219,7 +36712,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36808,7 +37302,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36956,7 +37451,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -37717,7 +38213,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -37927,7 +38424,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38320,7 +38818,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38441,7 +38940,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38668,7 +39168,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38743,7 +39244,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -39570,7 +40072,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42104,7 +42607,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42255,7 +42759,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42368,7 +42873,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42469,7 +42975,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42865,7 +43372,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -43411,7 +43919,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -43627,6 +44136,151 @@
         "tags": [
           "runs"
         ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/threads": {
+      "get": {
+        "description": "Lightweight Session navigation, oldest first, with stable per-origin positions and parent references.",
+        "operationId": "list_session_threads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "new",
+                      "fork",
+                      "child"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadNavigationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Session Threads",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/skills": {
@@ -44037,7 +44691,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44139,7 +44794,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44328,7 +44984,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44681,7 +45338,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44772,7 +45430,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45017,7 +45676,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45160,7 +45820,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45434,6 +46095,47 @@
                 }
               ],
               "title": "Occurrence Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "new",
+                      "fork",
+                      "child"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin Run Id"
             }
           },
           {
@@ -45745,7 +46447,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45841,7 +46544,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45992,7 +46696,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46098,7 +46803,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46185,7 +46891,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46544,7 +47251,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46650,7 +47358,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46931,7 +47640,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47091,7 +47801,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47196,7 +47907,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47282,7 +47994,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -49906,6 +50619,26 @@
             }
           },
           {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -49984,7 +50717,8 @@
         "summary": "Usage Agents",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/context": {
@@ -50107,6 +50841,133 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/usage/members": {
+      "get": {
+        "operationId": "list_usage_members",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "End",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberUsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Usage Members",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/usage/models": {
       "get": {
         "operationId": "usage_models",
@@ -50129,6 +50990,26 @@
               "format": "date-time",
               "title": "End",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
             }
           },
           {
@@ -50210,7 +51091,8 @@
         "summary": "Usage Models",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/overview": {
@@ -50235,6 +51117,26 @@
               "format": "date-time",
               "title": "End",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
             }
           },
           {
@@ -50298,7 +51200,8 @@
         "summary": "Usage Overview",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/records/{record_id}/metrics": {
@@ -50368,6 +51271,182 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/usage/runs": {
+      "get": {
+        "description": "One page of Run usage; Run numbers include all Runs in each Thread, including those without usage.",
+        "operationId": "list_run_usage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ingested_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ingested After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ingested_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ingested Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunUsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Run Usage",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/users/me": {
       "get": {
         "operationId": "get_profile",
@@ -50419,7 +51498,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -50554,7 +51634,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -50610,7 +51691,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -50869,7 +51951,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -51300,7 +52383,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -51448,7 +52532,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -51726,7 +52811,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -51802,7 +52888,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52185,7 +53272,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52306,7 +53394,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52533,7 +53622,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52608,7 +53698,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52773,7 +53864,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52977,7 +54069,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53103,7 +54196,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],

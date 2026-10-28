@@ -115,17 +115,11 @@ beforeEach(() => {
       if (url.pathname.endsWith("/environments"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/usage")) {
-        expect(url.searchParams.get("session_id")).toBe("ses_1");
+        expect(url.searchParams.get("run_id")).toBe("run_2");
+        expect(url.searchParams.has("session_id")).toBe(false);
         if (usageStatus !== 200)
           return Response.json({}, { status: usageStatus });
-        return Response.json({
-          // Another Run in this Session must never inflate this Run's totals.
-          models: [...recorded, ...recorded],
-          runs: [
-            { run_id: "run_2", thread_id: "thr_1", models: recorded },
-            { run_id: "run_other", thread_id: "thr_1", models: recorded },
-          ],
-        });
+        return Response.json({ models: recorded });
       }
       if (url.pathname.includes("/runs/")) return Response.json(fixtureRun());
       throw new Error(`Unexpected request: ${url.pathname}`);
@@ -529,4 +523,37 @@ it("shows request metric failures with retry and leaves unavailable speed absent
   await user.click(screen.getByRole("button", { name: "Reload" }));
   await screen.findByText("11s to first token");
   expect(screen.queryByText(/tok\/s/)).toBeNull();
+});
+
+it("reveals other observations in batches and resets when collapsed", async () => {
+  const timeline = fixtureTimeline();
+  timeline.entries.push({
+    id: "other-observations",
+    kind: "other",
+    count: 45,
+    startedAt: null,
+    endedAt: null,
+    durationMs: null,
+    state: "completed",
+    observations: Array.from({ length: 45 }, (_, index) => ({
+      id: `observation-${index}`,
+      name: `observation.${index}`,
+      occurredAt: null,
+      detail: { index },
+    })),
+  });
+  show({ timeline });
+  const user = userEvent.setup();
+  const toggle = screen.getByRole("button", { name: /45 other observations/ });
+  await user.click(toggle);
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(20);
+  expect(screen.queryByText("observation.20")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(40);
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(45);
+  expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  await user.click(toggle);
+  await user.click(toggle);
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(20);
 });

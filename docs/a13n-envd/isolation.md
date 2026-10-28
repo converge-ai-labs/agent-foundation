@@ -4,17 +4,26 @@ sidebarTitle: Execution boundaries
 description: How Envd applies identity, filesystem, process, and egress policy to a Session, and how to diagnose failures.
 ---
 
-Envd applies a trusted Device policy to the complete Session worker: native execution identity, filesystem/process Sandbox, and egress mode. Commands, file RPCs and transfers use the same boundary; directory discovery uses the same grants and identity. The Host selects the policy and owns any outer container or VM. Envd owns worker preparation, readiness and cleanup.
+Choose the execution account, filesystem grants, and network mode before launching Envd. These Device settings apply to every Session's commands, file operations, and transfers. Directory discovery uses the same identity and grants. The Host manages the outer account, container, or VM; Envd prepares and cleans up the Session workers.
 
 ## Isolation behavior
 
-By default, Sandbox is disabled and networking is inherited, preserving the launcher's native identity and authority, including root. Restricted Sandbox exposes fixed directory grants plus a minimal read-only system view and private writable HOME/TMP/state. Windows can additionally enable broad disk reads with `sandbox.full_disk_read: true`. It composes with inherited, denied or [controlled egress](egress.md). Selecting cwd does not widen grants or change network mode. Sessions share granted files; Envd does not isolate Sessions from each other.
+Start by choosing the filesystem view:
 
-There are no per-command boundary overrides or fallback to weaker execution. Device and Session descriptors expose the effective `boundary`, backend and nonsecret policy digest. Session publication follows required worker preparation; this is not attestation of the outer deployment.
+- **Disabled Sandbox** uses the execution account's native authority. By default, the account is the launcher's, including root, and networking is inherited.
+- **Restricted Sandbox** exposes fixed directory grants, a minimal read-only system view, and private writable HOME/TMP/state. Windows also offers broad disk reads through `sandbox.full_disk_read: true`.
+
+Choose inherited, denied, or [controlled egress](egress.md) separately, using a combination supported by the platform below. The working directory supplies defaults within that view; it does not widen grants or change networking. Sessions share granted files, so mutually untrusted workloads need separate outer deployments.
+
+Inspect the Device and Session descriptors for the effective `boundary`, backend, and nonsecret policy digest. A published Session has completed required worker preparation. The Host must validate its own outer deployment. Boundary changes require a new runtime; commands cannot override the boundary, and unsupported combinations fail preparation without a weaker fallback.
 
 ### Restricted Sandbox example
 
-Provision the directories first, then launch with:
+This example gives commands read-write access to `/workspace`, read-only access to `/reference`, and no external network route.
+
+1. Create `/workspace` and `/reference` on the Device.
+2. Save the following as the daemon's JSON configuration.
+3. Launch Envd with that file using [the configuration procedure](configuration.md#minimal-standalone-configuration), then open a Session in `/workspace`.
 
 ```json
 {
@@ -31,26 +40,28 @@ Provision the directories first, then launch with:
 }
 ```
 
-Grants must be existing absolute directories without overlaps. Changing grants requires a new daemon launch with the new grants, not a Session update. An empty grant list is valid, but cwd must still be accessible inside the resulting view.
+Use existing absolute directories for grants and keep them nonoverlapping. Relaunch the daemon to change grants. An empty grant list is valid when the selected cwd is accessible in the resulting view.
 
 | Platform | Restricted Sandbox                                                                           | Networking                                                                                                                                                                    |
 | -------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Linux    | bubblewrap, private process/filesystem view, capability dropping and privilege-gain blocking | With restricted Sandbox, inherit/deny work rootlessly with usable user namespaces; deny with disabled Sandbox, and controlled, require the privileged backend (root launcher) |
 | macOS    | Seatbelt via `sandbox-exec`, canonical path rules and inherited process restrictions         | inherit or deny; controlled is unsupported                                                                                                                                    |
 
-macOS does not provide Linux mount/PID namespaces or advertise `no_new_privs`: `privilege_gain_blocked` is false. Parent metadata may remain visible for path resolution, and the root directory itself is readable for native process startup; neither permits reading ungranted file contents. Keep grant paths stable while workers run. Linux binds checked directory handles. Unsupported combinations fail preparation.
+On macOS, keep grant paths stable while workers run. Seatbelt permits parent metadata needed for path resolution and root-directory reads needed for native startup; ungranted file contents remain denied. It provides neither Linux mount/PID namespaces nor `no_new_privs`, so `privilege_gain_blocked` is false. Linux binds checked directory handles.
 
 ### Native Windows MXC
 
-Windows restricted Sandbox uses the experimental Microsoft eXecution Container (MXC) Process Security Environment backend (`windows_mxc`) with inherit or deny networking. Envd probes real native creation, startup-info preparation and closure with the selected network capabilities and peer policy. A matching Windows version string alone is insufficient: the OS must expose the PSEC capabilities required by the selected network mode. Unsupported hosts fail without fallback. WSL uses the Linux backend.
+Windows restricted Sandbox uses the experimental Microsoft eXecution Container (MXC) Process Security Environment backend, reported as `windows_mxc`. It supports inherit and deny networking. Envd probes native creation, startup-info preparation, and closure with the chosen network capabilities and peer policy. Use a host that passes this probe; a Windows version number alone does not establish PSEC support. WSL uses the Linux backend.
 
-The default runtime view includes read-only Windows and Program Files directories, the Envd executable, and private writable HOME/USERPROFILE/TEMP/state. `sandbox.full_disk_read: true` adds Codex-style broad reads of available volumes while preserving writes only to read-write grants and private worker state. This permits reading account-accessible Host configuration and credentials on disk; it is a write-confinement policy, not a confidentiality boundary for Host files. Envd explicitly denies its bootstrap configuration, transport credentials and broker runtime directory. The option defaults to false in Envd and is rejected on Linux/macOS; Harness UI enables it by default on Windows. Keep grant ancestor paths stable. Envd retains checked grant directory handles without delete sharing while workers run. It uses a private desktop for PowerShell startup, read-only registry access, and no ACL mutation or elevation. `privilege_gain_blocked` is false; this is not the Linux `no_new_privs` guarantee.
+The default view includes read-only Windows and Program Files directories, the Envd executable, and private writable HOME/USERPROFILE/TEMP/state. To allow broader reads, set `sandbox.full_disk_read: true`. Writes remain confined to read-write grants and private worker state, but commands can read account-accessible Host configuration and credentials on disk. Choose this option only when that read access is intended. Envd continues to deny its own bootstrap configuration, transport credentials, and broker runtime directory.
 
-Broad reads exclude mapped network drives. Each worker fixes its volume-root read view at startup; open a new Session to include newly attached local volumes or newly created top-level entries. Existing granted directories retain their normal access rules.
+Broad reads default to false in Envd and true in Harness UI on Windows. Linux and macOS reject this option. Mapped network drives are excluded. The volume-root read view is fixed when the worker starts; open a new Session to include newly attached local volumes or new top-level entries. Existing granted directories keep their normal access rules.
 
-Native runtime compatibility depends on PSEC support in the application. PowerShell, Git and Python have been exercised with broad reads; Node.js 24.21 `fs.realpathSync.native` can fail with `EPERM` under MXC. Validate your build tools on the target host.
+Keep grant ancestor paths stable. Envd retains checked grant directory handles without delete sharing for the worker lifetime. PowerShell startup uses a private desktop and read-only registry access, without ACL mutation or elevation. The descriptor reports `privilege_gain_blocked: false`; MXC does not provide Linux's `no_new_privs` guarantee.
 
-For source-checkout acceptance on a native Windows machine with Rust, Python, uv and PowerShell, run from the repository root:
+Validate the build tools you will use on the target host. The native acceptance suite exercises PowerShell, Git, and Python with broad reads. Node.js 24.21 `fs.realpathSync.native` can fail with `EPERM` under MXC.
+
+For source-checkout acceptance, install Rust, Python, uv, Git, and PowerShell on a native Windows host. Run these commands from the repository root:
 
 ```powershell
 cargo build -p a13n-envd --locked
@@ -60,7 +71,9 @@ $env:A13N_ENVD_TEST_BINARY = (Resolve-Path target/debug/a13n-envd.exe).Path
 uv run --no-sync pytest packages/a13n-harness-ui/tests/test_windows_sandbox.py -v
 ```
 
-The native probe tests exercise IPv4 loopback and IPv6 loopback when available, verify inherit/deny behavior, and reject ungranted file reads. The UI opt-in suite checks production readiness, broad reads with outside writes denied, broker-file denial, read-only Projects and attachments, writable Thread tmp, file listing/search/copy/move/transfers, junction write confinement and no-follow deletion, private environment, Session cleanup, broker termination during an active command and replaced grant rejection. Once the binary is selected, missing MXC support fails the test. Also exercise Session-open cancellation on the target Windows build; cross-compilation does not verify these kernel lifecycles. If cleanup is unconfirmed, worker state and active process charges remain retained until Device restart.
+The native probes check inherit/deny networking, IPv4 loopback, IPv6 loopback when available, and ungranted file-read denial. The UI suite checks readiness, broad reads with confined writes, protected broker files, Project and Thread-file permissions, file operations, and Session/process cleanup. It also covers junction confinement, no-follow deletion, private environment, broker loss during a command, and replaced grants. Selecting the binary makes missing MXC support a test failure.
+
+Exercise Session-open cancellation on the target Windows build as well. Cross-compilation cannot validate kernel cleanup. When cleanup is unconfirmed, worker state and active process charges remain retained until Device restart.
 
 ### Native process ownership
 
@@ -69,11 +82,15 @@ The native probe tests exercise IPv4 loopback and IPv6 loopback when available, 
 | POSIX    | Owned process groups, bounded termination and independent stdout/stderr retention                 |
 | Windows  | Suspended process admission into an owned Job, descendant cleanup on exit/kill/timeout/owner loss |
 
-Windows Job ownership is not filesystem or network confinement. Supported execution features report what is available; force kill is separate from graceful signal support. Use exact executable names, including `.exe` on Windows. Shell profiles are trusted startup configuration and must match the selected shell. PTY/ConPTY is not part of the command plane.
+Use the advertised execution features to choose process controls: force kill and graceful signals are separate capabilities. A Windows Job owns process cleanup; filesystem and network confinement come from the selected Sandbox and egress policy. Pass exact executable names, including `.exe` on Windows, and configure shell profiles for the selected shell. The command plane has no PTY/ConPTY support.
 
-File paths address the Device namespace: POSIX `/work/file`, Windows `/C:/work/file` or `/UNC/server/share/file`. Windows `/` is a virtual directory-discovery root for volumes, not a command cwd. With disabled Sandbox, filesystem permissions, symlinks, links and platform access rules remain those of the execution account; native sudo is authorized by existing sudoers. Restricted workers enforce their platform's grant boundary for every path; controlled Linux workers additionally use private namespaces.
+Address files in the Device namespace: `/work/file` on POSIX, or `/C:/work/file` and `/UNC/server/share/file` on Windows. Windows `/` lists volumes for directory discovery; choose an actual directory for command cwd.
+
+With Sandbox disabled, filesystem permissions, links, and native sudo follow the execution account and existing sudoers. Restricted workers enforce platform grants for every path. Controlled Linux workers also use private namespaces.
 
 ## Validate from this repository
+
+From a source checkout with the repository's development dependencies installed, run:
 
 ```bash
 make local-envd-test
@@ -83,21 +100,23 @@ make eip-test
 cargo test -p a13n-envd --test sandbox_macos -- --nocapture
 ```
 
-The checks cover real daemon operation, Device/Session framing, native resource lifecycle, scoped cleanup, file transfers and Provider adaptation. Platform-specific tests require their actual native OS. No test in this repository validates a deployment's external sandbox policy.
+These checks cover daemon operation, Device/Session framing, resource lifecycle, cleanup, transfers, and Provider adaptation. Run platform-specific tests on their native OS. Validate the deployment's outer sandbox policy separately.
 
 ## Troubleshooting
 
-- **Executable not found**: pass an absolute path to `resolve_a13n_envd_executable()`, set the Host's `A13N_ENVD_EXECUTABLE`, or install `a13n-envd` on `PATH`.
-- **Release mismatch**: use the exact matching native daemon and Python client release. Do not confuse the release version with EIP's wire version.
-- **Unknown bootstrap variable**: strip Host-only `A13N_ENVD_*` settings before launching the child. Use only variables documented in [configuration](configuration.md).
-- **No command methods**: enable Full Control, or configure trusted executable roots or shell profiles. Then inspect `available_methods`.
-- **Sudo fails**: Linux restricted Sandbox blocks privilege gain by design. With disabled Sandbox, `allow_sudo` defaults to true, but the image must provide sudo, a provisioned execution account and appropriate sudoers. Check outer `no_new_privs` and `nosuid` restrictions; Envd cannot override them. Without UID/GID settings, Linux execution retains the launcher's identity, including root. Use [trusted startup settings](configuration.md#native-identity-and-sudo) to select another provisioned account or disable additional privilege gains; disabling does not demote existing root execution.
-- **Root HTTPS fails in a controlled Session**: native sudo may discard the Session CA environment. Preserve the relevant CA variables according to sudoers or configure the client trust store; see [Session egress](egress.md).
-- **Invalid working directory**: choose an existing Device path, not a path on the requesting Host. Discovery requires no Session and can help select a directory.
-- **A Session fails while others work**: inspect that Session's typed error and native evidence. Do not restart a healthy shared Device to repair one adapter.
-- **Carrier loss**: pending effects can have unknown outcomes. Explicit same-Session attachment is limited by generation and disconnect grace; never replay mutations automatically.
-- **Files disappeared**: normal adapter close deletes neither the cwd nor any other files. Inspect the Host's lifecycle policy.
-- **Runtime lock conflict**: one daemon owns one private runtime directory. Allocate a separate directory for a different launch.
+Start with the failing Session's typed error, then check the relevant setting:
+
+- **Executable not found**: select an absolute path with `resolve_a13n_envd_executable()`, set the Host's `A13N_ENVD_EXECUTABLE`, or install `a13n-envd` on `PATH`.
+- **Release mismatch**: match the native daemon and Python client release exactly. EIP's wire version is a separate identifier.
+- **Unknown bootstrap variable**: remove Host-only `A13N_ENVD_*` settings from the child's environment. Pass the variables listed in [configuration](configuration.md).
+- **No command methods**: enable Full Control or configure trusted executable roots or shell profiles, then inspect `available_methods`.
+- **Sudo fails**: check the selected Sandbox first. Linux restricted Sandbox blocks privilege gain. With Sandbox disabled, `allow_sudo` defaults to true and still requires installed sudo, a provisioned account, and suitable sudoers. Outer `no_new_privs` or `nosuid` restrictions continue to apply. Use [native identity settings](configuration.md#native-identity-and-sudo) to select an account; without UID/GID settings, the launcher identity is retained, including root. Disabling further privilege gain does not demote root.
+- **Root HTTPS fails in a controlled Session**: check whether sudo removed the Session CA variables. Preserve them according to sudoers or configure the client's trust store; see [Session egress](egress.md).
+- **Invalid working directory**: use directory discovery to select an existing Device path. Discovery works before opening a Session.
+- **One Session fails while others work**: investigate that Session's error and native evidence while leaving the shared Device running.
+- **Carrier loss**: reconcile pending effects using the original operation evidence. Same-Session attachment requires the original generation and an unexpired grace period; it does not authorize mutation replay.
+- **Files disappeared**: inspect the Host's lifecycle policy. Normal adapter close preserves cwd and workspace files.
+- **Runtime lock conflict**: allocate a different private runtime directory for each daemon launch.
 
 ## References
 

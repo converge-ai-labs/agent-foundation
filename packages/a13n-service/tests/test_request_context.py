@@ -159,9 +159,7 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
         body = configuration(agent["id"])
         body["invocation"]["options"] = {"context": context}
         body["invocation"]["payload"] = {"content": [{"type": "json", "value": {"context": "business-data"}}]}
-        created = await call(
-            http, service, "POST", "/schedules", request_body=body, **{"Idempotency-Key": "context-schedule"}
-        )
+        created = await call(http, service, "POST", "/schedules", request_body=body, idempotency_key="context-schedule")
         assert created["status"] == 201, created
         assert "private-context-value" not in json.dumps(created)
         assert "business-data" in json.dumps(created)
@@ -173,7 +171,7 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
             "/schedules/{schedule_id}",
             schedule_id=schedule["id"],
             request_body={"name": "Renamed"},
-            **{"If-Match": created["headers"]["etag"]},
+            expected_version=created["headers"]["etag"],
         )
         assert changed["status"] == 200, changed
         for path, args in [("/schedules", {}), ("/schedules/{schedule_id}", {"schedule_id": schedule["id"]})]:
@@ -188,7 +186,8 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
             "/schedules/{schedule_id}/dispatch",
             schedule_id=schedule["id"],
             request_body={},
-            **{"Idempotency-Key": "context-dispatch", "If-Match": changed["headers"]["etag"]},
+            idempotency_key="context-dispatch",
+            expected_version=changed["headers"]["etag"],
         )
         assert dispatched["status"] == 202, dispatched
         assert "private-context-value" not in json.dumps(dispatched)

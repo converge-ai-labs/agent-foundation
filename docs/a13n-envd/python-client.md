@@ -1,25 +1,27 @@
 ---
 title: Python EIP client
-description: The low-level Python client for implementing Environment Providers and other trusted EIP clients.
+description: Connect to a prepared Envd Device, open independent Sessions, and transfer files and process output from Python.
 ---
 
-The client ships as `a13n-envd-client`. Most agent applications should use [Environment Providers](../environments/index.md) instead; they already handle target lifecycle and adaptation.
+Use `a13n-envd-client` when implementing an Environment Provider or another trusted EIP integration. It handles the Device connection, Session scopes and protocol operations. For agent applications, start with [Environment Providers](../environments/index.md), which adapt those operations for Harness.
 
-The package does not discover, install, download, or launch Envd. It does not create a reverse-WebSocket listener, issue credentials, retain target state, or run an Agent.
+Your Host prepares the target: install and launch Envd, supply credentials, and retain target state. For reverse WebSocket, the Host also accepts and authenticates the connection. The low-level client takes over once a transport is available.
 
 ## Install
+
+Use Python 3.13 or later:
 
 ```console
 uv add a13n-envd-client
 ```
 
-Python 3.13 or later is required. The Python client and native daemon publish at the same Envd release version; EIP's negotiated wire version is a separate identity. Source examples should use the repository lockfile, not a published client against a source-version daemon.
+The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-The expanded resource overview uses EIP `0.3`, planned for the co-versioned Envd/client `0.5.0` line. Upgrade the daemon and client together; EIP `0.1` and `0.2` peers fail version negotiation. Harness and Harness UI require client `>=0.5.0,<0.6.0` on this line. Custom images and remote endpoints must carry the matching daemon. Recreate environments that retain an older image before connecting an upgraded client. Earlier Envd `0.3.x` and `0.4.x` releases use EIP `0.2`; Envd `0.2.0` uses EIP `0.1`. The generated `eip.v1` namespace and binary data-frame profile `1` remain unchanged.
+Protocol negotiation uses a separate wire identity. This source uses EIP `0.3`; peers offering only `0.1` or `0.2` fail negotiation. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Repository release-dependency settings require client `>=0.5.0,<0.6.0` for Harness and `>=0.5.1,<0.6.0` for Harness UI.
 
 ## Connect to an existing HTTP daemon
 
-This complete example requires a running daemon, its expected Device identity, and a Host-issued credential. It does not provision infrastructure or test account access offline.
+Prepare a running HTTP daemon and set `ENVD_ENDPOINT` to its base URL, `ENVD_CREDENTIAL` to the Host-issued credential, and `ENVD_DEVICE_ID` to its expected identity. Use the base URL rather than `/eip/control`. Then run:
 
 ```python
 import asyncio
@@ -51,9 +53,13 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-The endpoint is the daemon base URL, not `/eip/control`. Device initialization negotiates the protocol and verifies identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness. Session context exit closes only that Session. Device context exit closes its Sessions and physical transport, not the external daemon or the files on the Device.
+The example initializes the Device, describes its default directory, and opens a Session there. Initialization negotiates the protocol and checks identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness before returning.
+
+Exiting the inner context closes that Session. Exiting the Device context closes its owned Sessions and transport. The external daemon and Device files remain available to their Host owner.
 
 ## Choose a transport
+
+Choose the carrier your Host has prepared:
 
 | Transport                                     | Supply                                                         | Ownership and constraints                                                                      |
 | --------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -62,7 +68,7 @@ The endpoint is the daemon base URL, not `/eip/control`. Device initialization n
 | `HttpTransport(endpoint, credential, ...)`    | Daemon base URL and attachment credential                      | Authenticated requests and raw transfer streams; client owns its internal HTTP connection pool |
 | `AcceptedWebSocketTransport(connection, ...)` | Already accepted and authenticated `WebSocketConnection`       | Requires negotiated `eip.v1`; does not listen, dial, or authenticate the upgrade               |
 
-All transports default to 1 MiB each for `max_request_bytes`, `max_response_bytes`, and `max_transfer_frame_bytes`; limits are positive and narrow to the negotiated descriptor. Increasing a client limit cannot grant unsupported server methods.
+Request, response and transfer-frame limits default to 1 MiB each through `max_request_bytes`, `max_response_bytes` and `max_transfer_frame_bytes`. Set positive values; negotiation can narrow them to the descriptor's limits. Method availability is checked separately.
 
 ### HTTP options
 
@@ -73,32 +79,36 @@ All transports default to 1 MiB each for `max_request_bytes`, `max_response_byte
 | `allow_plaintext_private_link`      | `False`              | Explicit permission for the supported private-link HTTP case; not unrestricted plaintext                 |
 | Request, response, and frame limits | `1048576` bytes each | Carrier-side bounds                                                                                      |
 
-The transport does not follow redirects. HTTPS attachments honor `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms through `httpx2`; the deployment operator's proxy is trusted to route the connection. Plaintext loopback and provider-private-link attachments stay direct so their credential does not leave the intended link. TLS verification still uses `verify`, not `SSL_CERT_FILE` or `SSL_CERT_DIR`. `normalize_http_endpoint()` applies the same endpoint policy without opening a connection. See [Remote Envd](../environments/remote-envd.md) for allowed URL forms, TLS, and credential ownership.
+HTTPS connections honor `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase equivalents through `httpx2`. Treat the deployment operator's proxy as trusted routing infrastructure. Plaintext loopback and supported provider-private links connect directly to keep credentials on the intended link. Redirects are disabled.
 
-A custom `WebSocketConnection` supplies `subprotocol`, async `send`, `recv`, `close`, and `wait_closed`. The Host validates the credential before handing over the connection. Framework adapters translate disconnects to `EOFError` or `OSError`; `wait_closed` must not compete with the transport's `recv` loop.
+Configure TLS with `verify`; `SSL_CERT_FILE` and `SSL_CERT_DIR` do not select this transport's trust roots. `normalize_http_endpoint()` checks the same URL policy without connecting. [Remote Envd](../environments/remote-envd.md) explains allowed origins, TLS and credential ownership.
+
+For a custom accepted WebSocket adapter, provide `subprotocol` and async `send`, `recv`, `close`, `wait_closed`. Authenticate before handing it to the transport. Translate framework disconnects to `EOFError` or `OSError`, and implement `wait_closed` without consuming messages needed by the transport's `recv` loop.
 
 ## Device and Session ownership
 
-`EIPDeviceConnection.initialize()` accepts the transport, `expected_device_id`, optional client name/version, `initialization_timeout=10.0`, `request_timeout=None`, and `max_in_flight=32` per Session. Use `expected_device_id=None` only during explicit first-contact registration, then retain and verify the returned identity.
+Keep one `EIPDeviceConnection` alive for every adapter borrowing its Sessions. Initialize it with the transport and `expected_device_id`. Only explicit first-contact registration should use `expected_device_id=None`; retain the returned identity and verify it on later connections.
 
-A Device provides:
+Initialization also accepts a client name/version, `initialization_timeout=10.0`, `request_timeout=None` and per-Session `max_in_flight=32`. Device methods separate discovery from execution:
 
-- `descriptor` and `describe()`: cached or freshly observed Device information, including `system_info`, path style, default working directory and directory-discovery availability.
-- `metrics()`: the latest cached resource sample when the Device advertises `device.metrics`. It opens no Session and triggers no collection. `sample` is `None` until the first collection completes. See [monitoring configuration and sample semantics](configuration.md#system-information-and-resource-monitoring).
-- `list_directories(DirectoryListParams(...))`: bounded one-level directory listing with exact expected Device ID and generation, absolute path, offset and limit. It opens no Session.
-- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. A controlled-egress Device requires `egress`; other Devices reject it. Required methods assert compatibility, not permissions.
-- `attach_session(descriptor)`: explicit attachment to the exact existing Session in the same Device generation during disconnect grace. It never replays operations or resumes transfers.
-- `close()`: close locally owned Sessions and then the physical connection.
+- `descriptor` reads cached Device information; `describe()` fetches a fresh view. Both expose system information, path style, default directory and directory-discovery availability.
+- `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](configuration.md#system-information-and-resource-monitoring).
+- `list_directories(DirectoryListParams(...))` lists one directory level with an absolute path, offset, limit, expected Device ID and generation. It opens no Session.
+- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. Omitted cwd selects the Device default. Supply `egress` for controlled Devices; other modes reject it. `required_methods` checks compatibility rather than granting permissions.
+- `attach_session(descriptor)` explicitly attaches to the exact existing Session in the same Device generation during disconnect grace. Operations and transfers are not replayed or resumed.
+- `close()` closes locally owned Sessions, then the physical connection.
 
-Each Session has a fixed `session_id`, generation and working directory. It owns its generated `client`, file transfers, commands, output and receipt namespace. Independent Sessions may run concurrently on any carrier. Operation IDs may be reused across different Sessions without sharing evidence.
+A Session owns its generated `client`, transfers, commands, output and receipt namespace. Its identity, generation and working directory stay fixed. Sessions can run concurrently on every carrier; the same operation ID in different Sessions refers to separate evidence.
 
-`EIPSession` provides `describe()`, `readiness(timeout=10.0)`, `open_reader()`, `open_writer()`, `open_output()`, `observe_computer()`, `close()` and `abort()`. The client maintains Session-local keepalive while open. Session close or abort never closes a sibling Session or borrowed carrier. `abort()` makes a bounded best-effort Session close without claiming the outcome of ambiguous work.
+Use `EIPSession.describe()` and `readiness(timeout=10.0)` to inspect the Session, and `open_reader()`, `open_writer()`, `open_output()` or `observe_computer()` for resource helpers. The client maintains keepalive while the Session is open. `close()` and `abort()` leave sibling Sessions and the borrowed carrier intact. `abort()` attempts a bounded close; uncertain operations still need reconciliation.
 
-Session descriptor refresh may narrow methods and limits; identity, generation and fixed cwd cannot change. A not-ready response or Session-local protocol failure fences that Session. Carrier corruption or loss terminates all local scopes on that connection. Keep the Device owner alive for every borrowing adapter's complete lifetime.
+Descriptor refresh can narrow methods and limits. A not-ready response or Session-local protocol failure fences that Session; carrier corruption or loss terminates every local scope on the connection.
 
 ## Read and write binary files
 
-EIP paths are absolute paths in the **Device filesystem namespace**, not mount-relative or Harness aggregate paths. A working directory is a default, not an access boundary. POSIX paths use `/work/report.txt`; Windows paths use `/C:/work/report.txt` or `/UNC/server/share/report.txt`:
+Pass absolute paths in the **Device filesystem namespace**. POSIX uses paths such as `/work/report.txt`; Windows uses `/C:/work/report.txt` or `/UNC/server/share/report.txt`. These are neither mount-relative nor Harness aggregate paths. The working directory supplies a default, while the execution account and configured boundary determine access.
+
+Given a ready Session with the required methods and filesystem access, write and read a file:
 
 ```python
 from a13n_envd_client.eip.v1 import EIPPath
@@ -115,24 +125,24 @@ async with session.open_reader(path) as reader:
     completion = reader.completion
 ```
 
-These fragments require the appropriate advertised methods and operating-system write access. Use an incremental decoder for arbitrary text streams: chunk boundaries need not coincide with UTF-8 character boundaries. For large transfers, forward bytes to a bounded application sink instead of accumulating all data in memory.
+This example writes ASCII bytes. For arbitrary UTF-8 streams, use an incremental decoder because a chunk can end within a character. Forward large transfers to a bounded sink rather than collecting the entire file in memory.
 
 ### Reader
 
-`open_reader(path, byte_range=None, transfer_timeout_ms=None)` returns a single-entry `EIPFileReader`. It owns attachment, offset/digest validation, completion evidence, and typed reader close. `opened` exposes the negotiated open result; `open_context` exposes the generated operation context. `completion` is unavailable until terminal evidence exists.
+`open_reader(path, byte_range=None, transfer_timeout_ms=None)` returns an `EIPFileReader` context that can be entered once. It attaches the transfer, validates offsets and digests, and closes the reader with typed completion evidence. Inspect `opened` for the open result and `open_context` for its operation context. `completion` becomes available after terminal evidence is established.
 
 ### Writer
 
-`open_writer(path, mode=..., executable=None, transfer_timeout_ms=None)` returns a single-entry staged `EIPFileWriter`. `mode` accepts the generated `FileWriteMode` or its string value. `write()` accepts bytes, bytearray, or memoryview, enforces transfer limits, and splits chunks to the negotiated frame size.
+`open_writer(path, mode=..., executable=None, transfer_timeout_ms=None)` returns a staged `EIPFileWriter` context that can be entered once. Pass a generated `FileWriteMode` or its string value. `write()` accepts bytes, bytearray or memoryview, enforces transfer limits and splits chunks to the negotiated frame size.
 
 > [!IMPORTANT]
-> **Context exit does not commit.** Call `await writer.commit()` explicitly; otherwise exit aborts the staged writer. Commit seals the stream, verifies its SHA-256/byte-count evidence, and publishes through the daemon's commit operation. `opened`, `transferred_bytes`, `open_context`, `commit_context`, and the post-commit `result` expose its evidence.
+> Call `await writer.commit()` to publish the file. Context exit without a successful commit aborts staged data. Commit seals the stream, verifies SHA-256 and byte counts, then invokes the daemon's commit operation.
 
-Keep the commit operation ID when recovery may be needed. A timeout after dispatch is not proof of rollback; even abort can report that commit is in progress or already completed.
+Inspect `opened`, `transferred_bytes`, `open_context`, `commit_context` and the post-commit `result` for evidence. Retain the commit operation ID if recovery may be needed. A dispatched commit can still complete after a local timeout; abort may report it as in progress or already completed.
 
 ## Read retained process output
 
-`open_output(reference, start_offset=0, observed=None)` returns an `EIPOutputReader`, not a live process handle. `reference` accepts the generated type or its string value; `observed` can carry a matching prior `OutputInfo`.
+Use `open_output(reference, start_offset=0, observed=None)` to read retained output independently of a live process handle. The reference accepts the generated type or a string; `observed` can supply a matching earlier `OutputInfo`.
 
 ```python
 reader = session.open_output(output_reference)
@@ -142,21 +152,23 @@ while not reader.eof:
     # Persist offsets only under the Host's own output-retention policy.
 ```
 
-`output_reference` and `consume_bytes` are application-owned in this fragment. `EIPOutputPage` contains `start_offset`, `next_offset`, `data`, `output`, and `eof`. Reader properties expose `reference`, `offset`, latest `output`, and `eof`. Async iteration yields non-empty byte chunks, waiting in one-second pages until EOF.
+Supply the application's `output_reference` and `consume_bytes` in this fragment. Each `EIPOutputPage` contains `start_offset`, `next_offset`, `data`, `output` and `eof`. The reader exposes its reference, offset, latest output information and EOF state. Async iteration yields nonempty chunks and waits in one-second pages.
 
-The reader validates contiguous offsets, exact reference, monotonic counters and completion, immutable preview prefixes, and terminal byte counts. Invalid evidence fences its owning Session for a protocol error. EOF means the producer completed and the retained end was reached; it does not mean every produced byte was retained. Inspect `OutputInfo.content_complete` and the produced/retained counters before claiming complete output.
+The reader checks reference identity, contiguous offsets, monotonic counters/completion, immutable preview prefixes and terminal byte counts. Invalid evidence fences the Session with a protocol error. EOF establishes producer completion and arrival at the retained end. To determine whether all produced bytes were retained, inspect `OutputInfo.content_complete` and the produced/retained counters.
 
 ## Timeouts, cancellation, and receipts
 
-`RequestCoordinator` owns the single Device reader and bounded correlation/admission. `SessionRequester` scopes operation calls and binary transfers. Sent abandoned requests retain correlation and capacity until a response or terminal carrier event; a cancelled caller does not cancel a shared stdio write. Both are advanced transport-integration primitives; normal callers use an `EIPSession` and its generated client.
+Give each logical operation an `EIPCallContext`. Its operation ID is 1–128 characters, separate from the JSON-RPC request ID; optional `timeout_ms` is a positive uint64. Retain the same operation identity when reconciling an operation under the method's receipt/replay rules.
 
-`EIPCallContext` requires an operation ID of 1–128 characters and optionally a positive uint64 `timeout_ms`. The operation ID is distinct from the JSON-RPC request ID. Supply a stable operation ID when the method's receipt/replay semantics require reconciliation.
+An explicit `timeout_ms` sets the operation budget. Local admission has its own deadline, and response waiting allows that budget plus the coordinator's allowance: 30 seconds when no request timeout is configured. A 60-second operation with that allowance can wait 90 seconds for its response. Without an operation budget, the configured request timeout applies. Initialization and readiness retain their enclosing deadlines.
 
-With `timeout_ms`, local admission is bounded separately; response waiting permits the operation budget plus the coordinator allowance (30 seconds if no request timeout is configured). Without an operation budget, the configured request timeout applies. A 60-second operation with a 30-second allowance therefore permits a 90-second response wait. Initialization and readiness still have their enclosing deadlines.
+After cancellation, connection loss or a local timeout, inspect a sent mutation before deciding what to do next. Use `receipt.get`, a replay permitted by the method and retained evidence window, or native-state inspection. The client does not automatically retry ambiguous operations, and `operation.cancel` does not establish rollback.
 
-Cancellation, a disconnected carrier, or a local timeout does not prove an already sent mutation failed or was absent. The client does not automatically retry ambiguous operations. Reconcile through `receipt.get`, a replay permitted for the method and evidence window, or native-state inspection before issuing a different operation. `operation.cancel` itself does not turn uncertainty into rollback.
+Custom transport integrations use `RequestCoordinator` for the Device's single reader, correlation and bounded admission, and `SessionRequester` for scoped operations and transfers. Sent requests abandoned by a caller retain correlation and capacity until a response or terminal carrier event. Caller cancellation leaves a shared stdio write running. Ordinary integrations use `EIPSession` and its generated client above these primitives.
 
 ## Error reference
+
+Use the exception and its evidence to distinguish local state, transport failure and a correlated daemon error:
 
 | Exception                 | Meaning / evidence                                                   |
 | ------------------------- | -------------------------------------------------------------------- |
@@ -170,13 +182,13 @@ Cancellation, a disconnected carrier, or a local timeout does not prove an alrea
 | `EIPSessionStateError`    | Invalid local Session/helper state or unavailable method             |
 | `EIPTransferError`        | Transfer reset/failure; optional `status` and `offset` evidence      |
 
-Custom carrier integrations implement `EIPTransport` and exchange `ControlFrame` or generated binary `DataFrame` values through `EIPTransportFrame`. They must preserve framing, size limits, serialization, and lifecycle; these exports are not another provisioner API.
+Custom carriers implement `EIPTransport`, exchanging `ControlFrame` or generated binary `DataFrame` values through `EIPTransportFrame`. Preserve framing, size limits, serialization and lifecycle semantics. The Host continues to own provisioning.
 
 ## Generated method reference
 
-The current generated surface below comes from `a13n_envd_client.eip.v1.METHODS`. Import parameter/result types, enums, codecs, `EIP_PROTOCOL_VERSION`, and the low-level `EIPClient` from that module. The IDL and generator own the wire schema; do not hand-edit generated files.
+Import parameter/result models, enums, codecs, `EIP_PROTOCOL_VERSION` and low-level `EIPClient` from `a13n_envd_client.eip.v1`. The table follows that module's `METHODS` metadata. The IDL and generator own wire definitions; change their source rather than editing generated files.
 
-Availability remains the initialized descriptor's decision. A generated method existing in Python does not mean every configured daemon exposes it.
+Check the initialized descriptor before calling a method. Generated Python availability and a configured daemon's advertised methods are separate checks.
 
 | EIP method                   | Python method                | Parameters                     | Result                         | Replay class        |
 | ---------------------------- | ---------------------------- | ------------------------------ | ------------------------------ | ------------------- |
@@ -235,7 +247,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `session.open`               | `session_open`               | `SessionOpenParams`            | `SessionOpenResult`            | `ledger_external`   |
 | `shell.exec`                 | `shell_exec`                 | `ShellExecParams`              | `ShellExecResult`              | `terminal_evidence` |
 
-Inspect the exact versioned fields and validation constraints when building requests:
+Inspect a request model's schema for exact fields and validation constraints:
 
 ```python
 from a13n_envd_client.eip.v1 import FileReadTextParams, METHODS
@@ -245,12 +257,14 @@ assert "context" in schema["properties"]
 assert "file.read_text" in METHODS
 ```
 
-The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd) defines operation outcomes, receipt windows, transfer integrity, and compatibility. The generated method metadata records the replay class; it is not permission to repeat an uncertain mutation with a new operation ID.
+The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd) explains outcomes, receipt windows, transfer integrity and compatibility. Use its replay rules when recovering an uncertain mutation; a new operation ID represents new work.
 
 ## Validate and choose a higher-level API
+
+Run the protocol-fixture client suite from a repository checkout:
 
 ```console
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-The client suite covers framing, Sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not Envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#try-local-envd); for application tools, use [Environment operations](../environments/operations.md).
+These tests cover framing, Sessions, errors, transfers and output. Use Envd integration checks for native cleanup and daemon availability. The Host establishes the outer sandbox. Choose [Local Envd](index.md#try-local-envd) for Host-owned process launch and runtime setup, or [Environment operations](../environments/operations.md) for application tools.

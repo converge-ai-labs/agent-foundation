@@ -11,6 +11,7 @@ const PRODUCT = "a13n";
 
 /** Destination names, keyed by the first segment of the in-workspace path. */
 const destinations: Record<string, string> = {
+  "api-keys": "API keys",
   agents: "Agents",
   findings: "Findings",
   connections: "Connections",

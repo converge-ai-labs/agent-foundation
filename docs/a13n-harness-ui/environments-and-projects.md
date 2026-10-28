@@ -1,90 +1,99 @@
 ---
 title: Environments and Projects
-description: Choose execution permissions, work in Projects, connect Devices, and define custom Environment profiles.
+description: Choose where tools run, give a conversation working directories, and connect a remote Device.
 ---
 
-Harness UI uses the [shared execution model](../environments/index.md#choose-a-backend). Direct is Native Local Files & Shell for quick setup. Envd is the general path for OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Custom Docker and E2B Native profiles retain the same Files & Shell scope; vendor resource management stays with the Host.
+An Environment determines where the Agent reads files and runs commands. A Project groups conversations and supplies initial working directories and defaults. Each conversation saves its own selections, so editing a Project does not move an existing conversation's work.
 
-## Execution permissions
-
-**Full Control** runs as your host account with ambient filesystem and network authority. Its default **Direct** runtime does not download or launch `a13n-envd`. Direct uses the Direct Local Provider, which executes natively on Linux, macOS, and Windows without WSL. Windows uses PowerShell (`pwsh`, then Windows PowerShell), UTF-8 text streams, and a Job Object that owns the command's descendants. Cancellation, timeout, and exit clean up that owned tree. Portable interrupt signals are unavailable on Windows; cancellation uses tree termination instead. Full Control remains host-account execution, not a sandbox.
-
-**Sandbox** asks Envd to prepare restricted Session workers with explicit directory grants and inherited Host networking, including Host localhost services. Commands can access the network allowed by the Host's routing and firewall policy while filesystem and process isolation remain enforced. Envd owns the complete worker boundary, including file RPCs and commands; Harness UI does not wrap the whole daemon. Project roots are writable, while the Thread file worker exposes attachments read-only and tmp read-write. On Windows, the built-in profile additionally permits broad disk reads, including account-accessible Host configuration and credentials; writes remain confined to granted directories and private worker state. Envd bootstrap/control files remain denied. Linux and macOS retain grant-scoped file reads. Setup checks filesystem and process isolation and Host localhost connectivity before saving, without requiring an external Internet service. Outside setup, readiness is checked when execution needs it rather than on the initial landing view. A failure is explicit and does not fall back to Full Control. Fix the prerequisite and retry, or intentionally select `/environment full-control` before sending a new prompt. Harness UI never runs `sudo`, changes sysctls, or disables required isolation for you. Windows Sandbox uses the experimental native Microsoft eXecution Container (MXC) backend; the host must pass its actual create/close and production isolation probes. See the [outer security guide](../a13n-envd/isolation.md).
-
-### Manage local envd
-
-In WebUI, **Settings → Environments** selects defaults for new conversations: Direct or envd, Full Control or Sandbox, and optional Computer Use. Saving uses the ordinary configuration draft and does not start envd. Existing conversations and Project overrides retain their selections.
-
-Open **Settings → Environments → Local runtime** to install or start envd, check Sandbox support, inspect instances, or stop them. You can open Runtime from the first setup step before configuring a Model and return to your saved setup choices.
-
-**Check** checks Full Control and Sandbox together. **Restart** closes local envd Sessions, starts a fresh Full Control instance, then checks Sandbox automatically. Desktop instances start again on demand. **Reinstall** downloads and verifies the exact release compatible with the installed client, then restarts envd; failed download or verification keeps the old executable and leaves runtimes stopped. Both actions require confirmation. Custom executables must be updated on the Host before restarting here.
-
-After upgrading and restarting Harness UI, open Runtime and choose **Update & start** to download its required envd version. If that version is already cached, use **Start**. **Reinstall** downloads the same version again. The default binary location is `~/.a13n-harness-ui/data/runtimes/managed/<version>/<target>/a13n-envd` (`a13n-envd.exe` on Windows); a custom data root changes the prefix. Older cached releases are kept. Root configuration changes require restarting Harness UI, not just envd.
-
-Compatible Full Control executions share an App-owned subprocess with separate Session working directories. Sandbox grants and desktop policies remain separate. Stop requires confirmation because it interrupts active Sessions, including other conversations; files and defaults remain unchanged. After an unexpected exit, explicitly start again to replace the disconnected instance.
-
-Computer Use requires enabling **Desktop capability**, saving, and restarting Harness UI. Then use **Check permissions** on the Host and explicitly select Computer Use for the desired execution default. The permission check does not capture the screen or inject input. Configure a managed release or a custom executable through [root envd settings](configuration.md#local-envd-runtime).
-
-The built-in profiles are `environment-native` (Direct), `environment-envd` (Full Control through envd), `environment-desktop` (Full Control with Computer Use), and `environment-sandbox`. CLI `environment status` inspects runtime state; `environment check --profile environment-envd` prepares without changing defaults; `environment configure --profile environment-envd` saves the default only after a successful check.
-
-### Native command environment
-
-Full Control commands inherit the complete environment of the Harness UI process, including `PATH`, proxy settings, tool-specific variables, and exported credentials. A command's explicit environment overrides or removals apply only to that command and its descendants; they do not change Harness UI or later commands. This applies to both Project and Thread-file native shell execution. Environment values are not copied into saved configuration or Run snapshots.
-
-Launch Harness UI from a terminal where your tools and variables are already available. Changes made in another terminal after launch are not automatically reflected in the running process. Environment inheritance does not include aliases, unexported shell variables, or automatic sourcing of `.zshrc`/`.bashrc`. The TUI's `!command` also inherits the Host process environment. Sandbox keeps its separate isolation and environment policy.
-
-## Windows local execution
-
-Windows offers **Full Control** and **Sandbox**. Sandbox uses PowerShell and native MXC for filesystem and network isolation, with Job Objects for process ownership. If native MXC is unavailable, update Windows and retry or explicitly choose Full Control. There is no automatic fallback, account provisioning, ACL mutation, or elevation. WSL is a Linux environment and uses the Linux backend. Custom and remote Providers retain their own contracts.
-
-The default Windows Sandbox command search path includes the selected PowerShell directory, Windows System32, and existing absolute Host PATH directories in their original order. Explicit `launch.trusted_executable_roots` overrides these defaults. This selects installed tools without inheriting Host credential environment variables. Broad reads exclude mapped network drives; newly attached local volumes and newly created volume-root entries require a new Session. See the [Windows boundary details](../a13n-envd/isolation.md#native-windows-mxc).
-
-## Files, Projects, and recovery
-
-```mermaid
-flowchart TB
-    P[Project file: ordered roots and defaults] --> T[New Thread: saved root paths]
-    T --> R[Run: Environment mounts]
-    P -. Later edits affect new Threads only .-> N[New Thread]
-
-    class P store
-    class T,R,N a13n
-```
-
-Model, Agent, Device, extension, MCP, and Project resources live in sibling YAML directories. A Project selects local directories, Device bindings, or both. Without an explicit default environment, the first local directory is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing conversations. A conversation is a root Thread as the TUI and WebUI show it.
-
-The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific conversation or editing their roots. To keep a conversation's Project and local directories, launch the CLI in its Project's first directory. An explicit resume from another directory selects the launch directory's Project and local path references, and makes `workspace` the default. History, Device bindings, and the local execution mode are preserved. Resuming within the same Project keeps the Thread's saved Environment selections even if that Project's roots have since changed. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
-
-Configuration publication failures belong to [setup recovery](setup.md#cancel-or-recover-setup), not Project selection. Review the completed paths before retrying setup.
-
-If the Harness UI process stops, active operations, unsaved input, and incomplete output are lost. Resume continues the last saved checkpoint, which can contain safely retained partial progress. Recorded tool results are not replayed; unanswered calls follow Harness's [declared-retryable recovery policy](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls) under fresh permissions and approval checks. Best-effort live output can be incomplete; if events are lost, the TUI labels recovery and prints the authoritative final answer.
+Start with a local directory and a built-in execution mode. Add a Project file when you need several directories or reusable defaults. For another computer, follow [Add Device bindings](#add-device-bindings).
 
 ## Select an Environment
 
+First complete [setup](setup.md) and select an Agent with `dynamic_environment` file tools. Commands also require its shell tools.
+
+1. Open a terminal in the directory you want the Agent to use.
+
+2. Choose one execution mode. **Full Control** runs as your Host account. **Sandbox** uses Envd's restricted worker and requires supported isolation on your computer. Read the platform differences below before choosing.
+
+3. Start a new conversation with one of these commands:
+
+   ```console tab="Full Control"
+   a13n-harness-ui --environment-mode full-control
+   ```
+
+   ```console tab="Sandbox"
+   a13n-harness-ui --environment-mode sandbox
+   ```
+
+4. Send a read-only test: `List the files in the working directory. Do not change anything.` Check that the tool result names the intended directory and its files.
+
+For an existing TUI conversation, resume it first and use `/environment` to select the mode for later Runs. Launch Environment overrides cannot be combined with `--resume`. In WebUI, use **Conversation details → Configuration** for saved next-Run selections, or the composer's **Environments** editor for a temporary override.
+
+List available profiles with `a13n-harness-ui environment list --format json`. Use `--environment-profile environment-team` for a configured custom profile; it is mutually exclusive with `--environment-mode`.
+
+## Execution permissions
+
+| Built-in profile      | Runtime and authority                                                    |
+| --------------------- | ------------------------------------------------------------------------ |
+| `environment-native`  | Direct execution as the Host account; no Envd download or daemon         |
+| `environment-envd`    | Full Control through Envd; Computer Use off                              |
+| `environment-desktop` | Full Control through Envd with Computer Use                              |
+| `environment-sandbox` | Envd restricted filesystem/process worker with inherited Host networking |
+
+Full Control can access the Host account's files, exported credentials, and network services. Project roots choose working directories; they do not sandbox a shell command.
+
+Sandbox grants writes to Project roots and Thread scratch space. Its Thread-file worker exposes attachments read-only and `tmp/` read-write. Linux and macOS restrict reads to granted and runtime paths. **Windows permits broad disk reads, including account-accessible Host configuration and credentials**, while confining writes; Envd bootstrap/control files remain denied. Built-in Sandbox networking inherits Host routing and firewall policy, including access to Host localhost services.
+
+Sandbox readiness checks verify the worker boundary. Failure is explicit: fix the prerequisite and retry, or deliberately select Full Control. Harness UI does not fall back, run `sudo`, change sysctls, or disable isolation on your behalf. See [Envd isolation](../a13n-envd/isolation.md) for the platform boundaries and [custom profiles](#custom-environment-profiles) for network restrictions.
+
+### Manage local envd
+
+Use **Settings → Environments → Local runtime** when you need Sandbox, Envd-backed Full Control, or local Computer Use. This screen is also reachable from the first setup step, before Model configuration.
+
+1. Choose **Install & start** on first use, **Start** for an installed runtime, or **Update & start** when only an older release is cached. Harness UI installs the exact release matching its installed Envd client, not an arbitrary latest release.
+2. Choose **Check** to check Full Control and Sandbox support. Setup checks filesystem/process isolation and Host localhost connectivity without depending on an external Internet service.
+3. Select the execution default under **Settings → Environments** and save. Saving defaults alone does not start Envd and does not change existing conversations or Project overrides.
+4. Start a new conversation with that selection and repeat the read-only file test above. Outside setup, runtime readiness is checked when execution needs it, not when the landing page opens.
+
+The runtime actions have different effects:
+
+- **Restart** closes local Envd Sessions, starts a fresh Full Control instance, and checks Sandbox. Desktop instances start again on demand.
+- **Reinstall** downloads and verifies the same required release, then restarts. Failed acquisition keeps the old executable and leaves runtimes stopped. Update custom executables on the Host before restarting here.
+- **Stop** interrupts active Sessions, including other conversations. It preserves files and saved defaults. After an unexpected exit, explicitly start again.
+
+Restart, reinstall, and stop require confirmation. Compatible Full Control executions share an App-owned daemon but have separate Session working directories; Sandbox grants and desktop policies remain separate. Root configuration changes require restarting Harness UI, not only Envd.
+
+Managed binaries live at `<data-root>/runtimes/managed/<version>/<target>/a13n-envd` (`a13n-envd.exe` on Windows). The default data root is `~/.a13n-harness-ui/data`; older cached releases remain available on disk. After upgrading Harness UI, restart it before using **Update & start**.
+
+For local Computer Use, enable **Desktop capability**, save, and restart Harness UI. Run **Check permissions** on the Host, then explicitly select Computer Use for the desired execution default. The permission check neither captures the screen nor injects input. Managed/custom executable settings are in [root envd configuration](configuration.md#local-envd-runtime).
+
+The CLI separates inspection, preparation, and default changes:
+
 ```console
-a13n-harness-ui environment list --format json
-a13n-harness-ui --environment-mode full-control
-a13n-harness-ui --environment-mode sandbox
-a13n-harness-ui --environment-profile environment-team
+a13n-harness-ui environment status
+a13n-harness-ui environment check --profile environment-envd
+a13n-harness-ui environment configure --profile environment-envd
 ```
 
-`--environment-mode` selects a built-in mode; `--environment-profile` selects a configured profile. They are mutually exclusive. In the TUI, `/environment` shows choices and saves the selection for this conversation's later Runs. Resume first before changing a saved conversation's Environment; launch overrides cannot be combined with `--resume`.
+`check` prepares without changing defaults. `configure` saves the default only after a successful check.
 
-## Monitor Environment resources
+### Native command environment
 
-Open **Environment monitor** from the WebUI conversation toolbar. Select a Device to see its operating system, CPU model, CPU and platform memory observations, network and disk I/O, aggregate sockets, filesystem capacity, Envd usage, and minute-average and peak charts with up to one hour of history. The panel covers the whole App; changing conversations or editing next-Run directories does not change the observed Device. System metrics describe the system visible to Envd. Cgroup metrics describe the operator-selected Linux cgroup. They are not per-Run usage.
+Launch Harness UI from a terminal where the required tools and exported variables already work. Direct Full Control commands inherit the application's `PATH`, proxy settings, tool variables, and exported credentials. This applies to Project and Thread-file commands; TUI `!command` also inherits the Host process environment.
 
-Use the visible **Overview**, **Network**, **Storage** and **Envd** buttons. Receive/transmit charts and disk read/write byte/operation charts are displayed together; static Device information and diagnostic counters can be expanded separately. Network and Storage let you select an interface or disk for byte/operation rates; counters remain available separately. Missing counters and reset identities break the rate baseline instead of drawing a false zero.
+Per-command variable overrides and removals affect only that command and its descendants. They do not change Harness UI or later commands, and inherited values are not copied into configuration or Run snapshots. Changes in another terminal after launch do not update the running application. Aliases, unexported variables, and automatic sourcing of `.zshrc`/`.bashrc` are not part of process-environment inheritance. Sandbox has its own environment policy.
 
-The panel starts with the last 15 minutes and refreshes every 60 seconds. Choose another time range, turn auto-refresh off, or refresh manually. Drag across either chart to zoom both charts to the same historical window; zoom buttons also work with keyboard and touch. **Back to live** restores the rolling window. Hover or use the chart's left/right arrow keys to inspect the same minute across charts. Curves preserve recorded values and gaps; zooming does not add detail beyond the one-minute aggregates.
+## Windows local execution
 
-Remote Devices use their existing authenticated connections. Enable `monitoring` in the Envd startup configuration to collect samples; static system information remains available when sampling is disabled. Built-in local Sandbox, Envd and Desktop enable sampling when their daemon starts. Set **Settings → Environments → Local runtime → Metrics collection** to 10, 30 or 60 seconds (default 60), then restart the App. The root YAML field `envd.monitoring_interval_seconds` accepts any integer from 10 through 60 and controls App collection plus built-in local sampling. Custom launch recipes and external daemons retain their own sampling settings; browser refresh stays at one minute. Opening the monitor does not download or start Envd. Direct and other non-Envd providers do not supply these metrics. Local runtime acquisition uses the exact installed `a13n-envd-client` release; this expanded overview requires EIP 0.3, planned for Envd/client 0.5.0. Upgrade remote daemons and clients together.
+Direct uses native PowerShell (`pwsh`, then Windows PowerShell), UTF-8 streams, and a Job Object for the command's descendants. Cancellation, timeout, and exit clean up the owned process tree. Windows cancellation terminates that tree; portable interrupt signals are unavailable. WSL uses the Linux backend.
 
-The panel distinguishes waiting, disabled, stale and offline observations. Missing values display as **—**, and missing minutes remain gaps. Latest observation details include pressure and cumulative counters in their native units. History lives only in App memory and clears on restart. Changing or revoking a Device also clears its history. Collection limits are reported in the panel. Unavailable or stalled samples leave gaps or show the previous sample with its age; they do not become zero usage.
+Windows Sandbox uses PowerShell and the experimental native Microsoft eXecution Container (MXC) backend with Job Object process ownership. The Host must pass actual create/close and production isolation probes. If unavailable, update Windows and retry or explicitly choose Full Control. Harness UI does not provision accounts, mutate ACLs, or elevate privileges.
+
+The Sandbox command search path includes the selected PowerShell directory, System32, and existing absolute Host PATH directories in order. Explicit `launch.trusted_executable_roots` replaces those defaults without inheriting Host credential variables. Broad reads exclude mapped network drives. New local volumes or volume-root entries require a new Session. See [Windows boundary details](../a13n-envd/isolation.md#native-windows-mxc).
 
 ## Project file reference
 
-For a stable multi-directory Project, create `projects/work.yaml` beside root YAML. Replace both paths with existing directories:
+For a two-directory Project, create this complete file as `projects/work.yaml` beside the selected root YAML. Replace both paths with existing absolute directories on the Harness UI Host:
 
 ```yaml title="projects/work.yaml"
 schema_version: "1"
@@ -97,21 +106,23 @@ roots:
   - path: /absolute/path/to/notes
 ```
 
-| Field            | Default            | Meaning                                                                                                        |
-| ---------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `schema_version` | Required `"1"`     | Resource schema                                                                                                |
-| `kind`           | Required `project` | Resource type                                                                                                  |
-| `id`             | Required           | Unique stable `project-` identity                                                                              |
-| `name`           | Required           | Human-facing name                                                                                              |
-| `position`       | `0`                | Catalog ordering                                                                                               |
-| `roots`          | `[]`               | Up to 64 ordered unique local `{path: ...}` directories; at least one local root or Device binding is required |
-| `defaults`       | `{}`               | Optional creation combination; see below                                                                       |
+Run `a13n-harness-ui config validate` against that configuration tree. Then launch the TUI from the **first** directory, or choose **Work** when creating a WebUI conversation. Ask the Agent to list both directories and verify both tool results. Creating the Project does not copy files, create directories, or create a Git worktree.
 
-Local paths must be absolute after `~` expansion. You can save a Project whose directory is temporarily unavailable, but execution that selects it fails until the directory is available. The first local root is the TUI entry point and default working directory unless another default is selected. A remote-only Project has no local TUI entry point. New Threads capture root path references, not copies of files or worktrees; later Project edits do not change existing Threads. Roots organize Environment mounts but do not confine Full Control.
+The first root is the TUI entry point and default working directory unless another default is selected. Later roots are additional mounts, not extra TUI entry points. Local paths must be absolute after `~` expansion. An unavailable path can be saved, but execution that selects it fails until it is accessible. A remote-only Project has no local TUI entry point.
+
+| Field            | Default            | Meaning                                                                                                  |
+| ---------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `schema_version` | Required `"1"`     | Resource schema                                                                                          |
+| `kind`           | Required `project` | Resource type                                                                                            |
+| `id`             | Required           | Unique stable `project-` ID                                                                              |
+| `name`           | Required           | Display name                                                                                             |
+| `position`       | `0`                | Catalog ordering                                                                                         |
+| `roots`          | `[]`               | Up to 64 ordered unique `{path: ...}` entries; a Project needs at least one local root or Device binding |
+| `defaults`       | `{}`               | Initial selections for new conversations                                                                 |
 
 ### Defaults for new conversations
 
-A Project can select one default combination using existing resource IDs:
+Merge this mapping beside `roots` in the Project file. Replace `agent-reviewer` with an existing Agent ID:
 
 ```yaml
 defaults:
@@ -122,66 +133,124 @@ defaults:
   mcp_servers: []
 ```
 
-Place this `defaults` mapping alongside `roots` in the Project file, and replace `agent-reviewer` with a configured Agent ID. These fields, plus `environment_bindings` and `default_environment` described below, are optional. Omission or null continues fallback; an empty list selects none. A supplied list replaces the lower-priority list rather than merging with it. Model and Capability settings still belong to the chosen Agent.
+Validate, then create a **new** conversation in that Project and inspect its configuration. In WebUI, these fields are also editable under **Project menu → Project settings**.
 
-New conversations resolve explicit selections first, then Project defaults, then the selected Agent's Plugin/MCP defaults, then root YAML defaults. An omitted Environment ultimately selects `environment-native`. An explicit projectless conversation skips Project defaults. Creation previews and the TUI's pre-conversation Skill catalog use these same choices.
+Explicit creation choices win over Project defaults. The selected Agent's Plugin/MCP defaults then precede root YAML defaults. An omitted Environment ultimately uses `environment-native`; a projectless conversation skips Project defaults. Model and Capability configuration belong to the Agent.
 
-Changing these defaults does not update existing conversations. Use the [HTTP configuration workflow](http-api.md#configure-projects-and-threads) to preview and explicitly apply only the Project's configured axes to a saved Thread. Other Thread choices remain unchanged; stale previews fail instead of silently applying changed defaults. In WebUI, edit these values under **Project menu → Project settings**. A conversation's **Conversation details → Configuration** separates its captured Run configuration from editable next-Run selections.
+Omitted or null default fields continue fallback. Empty lists select none; supplied lists replace lower-priority lists rather than merging. Device selections use the optional `environment_bindings` and `default_environment` fields shown below.
+
+Existing conversations keep their saved selections. **Apply Project defaults** previews and applies only fields configured by the Project, preserving unspecified fields. Review the preview before applying; a changed Thread or relevant defaults requires a fresh preview. The [HTTP configuration workflow](http-api.md#configure-projects-and-threads) exposes the same operation.
 
 ### Thread Environments and composer overrides
 
-Each Thread stores its own local directories, local execution mode, Device bindings, and default Environment. In WebUI, changing its Project only changes grouping, not those selections; an explicit `/resume` or `--resume` from another directory also replaces its local directories (see above). A Thread can keep local directories without a Project.
+Choose the editing surface according to how long the change should last:
 
-- In **Conversation details → Configuration**, edit next-Run selections to save a new Environment combination for that Thread.
-- Choose **Apply Project environments**, review the replacement, then apply it to replace just the four Environment axes. A local-only Project clears old Device bindings. Agent, Model, MCP, Plugins, and Run Extensions stay unchanged.
-- In the composer, open **Environments**. **Local · Harness server** contains Full Control, Sandbox or a custom local mode and local directories. Each environment contains its working directories: two local directories are one local environment. Remote directories with the same Device and execution policy appear together. **Default working directory**, below the environment groups, selects one directory or Thread files. Apply commits the whole draft; closing without applying discards edits. An active override applies to subsequent Runs in this tab until reset, not just one send. The local mode does not change remote shell permissions. **Use conversation defaults** clears temporary overrides.
+- **Conversation details → Configuration:** save this Thread's local directories, local profile, Device bindings, and default Environment for later Runs. Captured Run configuration is shown separately from editable next-Run choices.
+- **Apply Project environments:** review and replace exactly those four Environment selections from the Project. A local-only Project clears old Device bindings. Agent, Model, MCP, Plugins, and Run Extensions stay unchanged.
+- **Composer → Environments:** apply a tab-local override. It continues across subsequent Runs until **Use conversation defaults** resets it; it is not a one-send setting and does not change the saved Thread.
 
-Composer overrides do not change the saved Thread. Steering keeps the active Run's captured Environment. Deferred replies keep the suspended Run's Environment unless explicitly changed; a new child starts with the parent's captured selections and then owns them independently.
+The editor groups local directories under **Local · Harness server**. Remote directories sharing a Device and execution policy form one group. Choose **Default working directory** below the groups, then apply the whole draft. Closing without applying discards edits. Local mode never changes remote shell permissions.
+
+Changing a Thread's Project in WebUI changes grouping, not its Environment selections. A projectless Thread can retain local directories. Steering uses the active Run's captured Environment; deferred replies keep the suspended Run's Environment unless explicitly changed. New children begin with the parent's captured choices and subsequently own their selections independently.
+
+## Files, Projects, and recovery
+
+```mermaid
+flowchart TB
+    P[Project roots and defaults] --> T[New Thread saves selections]
+    T --> R[Run uses captured mounts]
+    P -. Explicit apply .-> T
+    class P store
+    class T,R a13n
+```
+
+For ordinary TUI use, launch from the Project's first directory. On the first prompt, Harness UI reuses an exact first-root match or creates a single-root Project if none matches. It does not adopt a parent directory's Project or rewrite an existing Project. Multiple matches require a specific saved conversation or corrected Project roots.
+
+When explicitly resuming from **another** directory, the TUI selects that launch directory's Project and local roots and sets `workspace` as default. History, Device bindings, and local execution mode remain. Resuming within the same Project preserves the Thread's saved roots, even after the Project file changes. Resume first, then change Agent, Environment, or title; those launch overrides cannot accompany `--resume`.
+
+If the process stops, resume uses the last saved checkpoint, potentially including retained partial progress. Active operations and unsaved input do not survive. Recorded tool results are not replayed; unanswered calls follow the [declared-retryable recovery policy](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls) with fresh permission and approval checks. Live output can be incomplete; the TUI marks stream recovery and prints the authoritative final answer. Configuration publication failures use [setup recovery](setup.md#cancel-or-recover-setup).
 
 ## Add Device bindings
 
-A Device is one configured connection to an Envd daemon. A Device binding selects that Device, an existing absolute working directory, and a unique alias. Adding a binding does not start a Run or create a directory. Each execution gets its own Session. Multiple aliases can use the same Device without sharing process handles or retained output.
+Use a Device to work on another computer. Connecting registers its Envd daemon; adding a binding selects an existing directory and allowed actions for a Project or Thread. Neither action creates that directory or starts an Agent Run.
 
 ### Connect and approve Envd
 
-In any **Add environment** dialog, choose **Connect new Device**, or use **Settings → Environments → Connect Device**. Install `a13n-envd` on the remote computer first and ensure it is on your PATH. Select POSIX shell or PowerShell. If the Agent must run commands, enable shell execution. Desktop access is a separate advanced option. Copy the command and run it on the computer whose files you want to use:
+You need Envd installed on the other computer and a WebUI address reachable from it. Use HTTPS for a remote connection. `http://127.0.0.1:8765` is suitable only when the daemon and WebUI are on the same computer.
 
-```console
-a13n-envd connect https://your-harness-ui.example.com
-```
+1. Open WebUI at that reachable address. Choose **Settings → Environments → Connect Device**, or **Add environment → Connect new Device**.
 
-WebUI generates the command from the current page origin; no separate server URL setting is needed. Open WebUI at an address reachable from the remote computer before copying the command. `http://127.0.0.1:8765` works for a same-computer setup; on another computer, localhost refers to that computer itself, and a remote connection requires HTTPS. The daemon initiates the connection, so its computer does not need an inbound port.
+2. Select POSIX shell or PowerShell in the wizard. Enable shell execution only if the Agent needs commands; desktop access is a separate advanced option.
 
-1. Keep the terminal open and note the verification code.
-2. In the same dialog, check the Device name and matching code, then choose **Approve Device**.
-3. Wait for **Device online**. Then choose a directory. If you started from **Settings**, the dialog ends at **Done** and adds no binding.
+3. Copy the generated command and run it on the computer whose files you want. A file-only connection has this form; replace the example origin:
 
-The command runs in the foreground, not as an installed service. Approval creates the Device configuration automatically. Closing before approval does not reject the request; closing afterward leaves the registered Device intact but discards unsaved binding edits. An expired or disappearing request is not proof of approval. You do not need to copy an API key, choose a transport, or create a Provider. Your browser login key is not the Device credential. Pending requests expire after ten minutes; reject requests you do not recognize.
+   ```console
+   a13n-envd connect https://your-harness-ui.example.com
+   ```
 
-After stopping Envd, rerun the same command and environment to reconnect with its saved identity and credential. Saved Host connections do not retain all launch flags: preserve the original shell and desktop settings, including when reconnecting by saved name. For a friendly saved Host name, add `--host personal` on the first connection and later run `a13n-envd connect personal`. Keep the state directory: deleting it loses that identity and credential. See [daemon configuration](../a13n-envd/configuration.md) for state-directory and TLS options.
+4. Keep the terminal open. Match its verification code and Device name in the browser, then choose **Approve Device**. Reject requests you do not recognize; pending requests expire after ten minutes.
 
-Shell execution is opt-in on the **remote computer**, independently of the Host's local Full Control/Sandbox selection:
+5. Wait for **Device online**, then [choose working directories](#choose-working-directories). A wizard opened from Settings finishes at **Done** without adding a binding.
+
+The daemon connects outward, so its computer needs no inbound port. The command is a foreground process, not an installed service. Approval saves the Device configuration and credentials without copying a browser login key. Closing before approval does not reject the request; closing afterward keeps the registration but discards unsaved binding edits. A disappearing request is not proof of approval.
+
+To allow commands with the daemon account's authority, use the wizard's shell-enabled command. Its POSIX form is:
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-harness-ui.example.com
 ```
 
-On PowerShell:
+The PowerShell equivalent is:
 
 ```powershell
 $env:A13N_ENVD_FULL_CONTROL = "1"
 a13n-envd connect https://your-harness-ui.example.com
 ```
 
-This runs commands with Envd's launching account and inherited command environment; it is not a sandbox. Without it, file operations remain available, but shell execution needs explicit `trusted_executable_roots` or `shell_profiles` in the Envd daemon configuration.
+This is remote host-account execution, independently of the Harness UI server's local mode. Without full-control opt-in, shell requires explicit daemon `trusted_executable_roots` or `shell_profiles`; file operations remain available.
 
-One Envd process connects to one Host. To connect the same physical computer to another Host, run another process with a different `--instance` name and repeat its approval. A named Host is a saved connection, not a multi-Host scheduler.
+Reconnect by rerunning the same command and environment. Preserve the original shell/desktop flags: saved Host connections do not retain every launch setting. Optionally add `--host personal` on first connection and later use `a13n-envd connect personal`. Keep the state directory containing identity and credentials. One Envd process connects to one Host; use another process with a different `--instance` for another Host. See [daemon configuration](../a13n-envd/configuration.md).
+
+### Choose working directories
+
+Open **Project menu → Project settings → Environments** or **Conversation details → Configuration → Change next Run selections**:
+
+1. Choose **Add environment**, select the Device, and choose its allowed actions.
+2. Enter an existing absolute path, choose **Use Device default**, or browse and explicitly select a directory. Add more paths with **Add another directory**.
+3. Apply the environment draft, choose **Default working directory**, and save the enclosing settings.
+4. Start a new Run. Ask the Agent to list the selected remote directory without changing files. Check the Device/path in the tool result, not only the Device's online status.
+
+Browsing opens no Session and works before a Run exists. If the Device is unavailable or discovery is disabled, enter a known path; execution still needs the Device and directory to be accessible. Windows Device paths use `/C:/work` or `/UNC/server/share/work`, not the Harness UI server's paths.
+
+**Add directory** extends an existing group's Device and access policy. Different access, network, or boundary policies remain separate groups. **Advanced routing** exposes generated aliases. Each execution gets its own Session; two aliases for the same Device do not share process handles or retained output.
+
+For a remote-only Project, choose **Add project**, add Device directories without local roots, and select a default. The equivalent complete `projects/build.yaml` follows. Replace `device-build` with a configured Device ID and `/work/project` with its existing directory:
+
+```yaml title="projects/build.yaml"
+schema_version: "1"
+kind: project
+id: project-build
+name: Remote build
+roots: []
+defaults:
+  environment_bindings:
+    - device_id: device-build
+      working_directory: /work/project
+      alias: build
+  default_environment: build
+```
+
+Validate this file in the selected tree and create a new conversation in **Remote build**. A mixed Project keeps local `roots` alongside these defaults. Device bindings require an explicit default from the resulting mounts. Local aliases `workspace`, `workspace-2`, and Host auxiliary names such as `thread-files` are reserved.
+
+A Device directory is a working-directory default, not a filesystem boundary. Local mode controls local mounts and Thread files; it does not sandbox the Device. Use separate Host-managed security boundaries for mutually untrusted workloads. For controlled egress, add destination and secret-source references plus `expected_boundary` using the [remote Provider recipe](../environments/remote-envd.md#session-egress-and-credential-references). Values resolve during preparation; keep token values out of Project YAML.
+
+When applying Project defaults, an omitted binding collection preserves the Thread's collection; an explicit empty list removes it. Editing only the default does not create an empty override. Active and historical Runs retain captured choices.
 
 ### Manual connections
 
-For an existing HTTP daemon or a credential you manage yourself, open **Connect Device → Manual HTTP or WebSocket connection → Configure manually**. For HTTP, a `devices/build.yaml` resource looks like:
+For an existing HTTP daemon or operator-managed credential, choose **Connect Device → Manual HTTP or WebSocket connection → Configure manually**. Alternatively save this complete file beside the root YAML:
 
-```yaml
+```yaml title="devices/build.yaml"
 schema_version: "1"
 kind: device
 id: device-build
@@ -196,84 +265,62 @@ authentication:
   env: BUILD_DEVICE_TOKEN
 ```
 
-`id` is the Harness UI resource ID; `device_id` is the daemon's stable identity. Configure the actual endpoint and export the referenced credential before starting Harness UI. Do not store the credential itself in YAML. For a Device that connects outward to Harness UI, use `transport: {kind: websocket, configuration: {}}` and point Envd at `/api/devices/device-build/connect` on the WebUI listener with the Device credential, not the WebUI instance key. See [daemon transports](../a13n-envd/configuration.md#carrier-profiles).
+Replace the endpoint and daemon identity. `id` is the Harness UI resource ID; `device_id` is the daemon's stable identity. Export `BUILD_DEVICE_TOKEN` before launching Harness UI, validate the tree, and check the Device connection before adding directories. YAML stores the environment-variable name, not the credential.
 
-### Choose working directories
-
-Under **Project menu → Project settings → Environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
-
-1. Select an existing Device or connect a new one inline. Choose the allowed actions for this environment.
-2. Enter a known absolute directory, choose **Use Device default**, or browse and explicitly select a directory. Use **Add another directory** for additional paths on the same environment.
-3. Apply the environment draft, choose **Default working directory**, then save the enclosing settings.
-
-Use **Add directory** on an existing environment to extend its directory list. Its Device and access policy apply to all those directories. Different access, network or boundary policies remain separate groups. Routing aliases are generated automatically; **Advanced routing** lets you inspect or edit them.
-
-Directory browsing works before a Run exists and opens no Session. An unavailable Device still permits a known path or removal. Disabled directory discovery permits manual paths and the advertised default. Windows Device paths use `/C:/work` or `/UNC/server/share/work`; these are not paths on the Harness UI server.
-
-**Add project** also supports Device-only directories: add a Device binding without adding a local directory, choose its default working directory, and save. The local mode stays visible because it still controls Thread files. Equivalent YAML:
-
-```yaml
-schema_version: "1"
-kind: project
-id: project-build
-name: Remote build
-roots: []
-defaults:
-  environment_bindings:
-    - device_id: device-build
-      working_directory: /work/project
-      alias: build
-  default_environment: build
-```
-
-For a controlled-egress Device, authored bindings can additionally include `egress.destinations`, secret source references and `expected_boundary`. These use the same [Provider recipe](../environments/remote-envd.md#session-egress-and-credential-references). Harness UI captures the references with the Run and resolves values only during preparation; never place token values in Project YAML. The Device's launch policy is configured on its own computer, not by the local Full Control/Sandbox selector.
-
-A mixed Project keeps its local `roots` alongside these defaults. Local mounts use `workspace`, `workspace-2`, and so on; `thread-files` is available without a Project. These and other Host-owned mount names cannot be reused as Device aliases. Device bindings require an explicit default selected from the resulting mounts. The local execution profile controls local mounts only; it does not sandbox an external Device. A Device directory is a working-directory default, not a filesystem access boundary. Run mutually untrusted workloads behind separate Host-managed security boundaries.
-
-For Project defaults, an unspecified binding collection leaves an existing Thread's collection unchanged when defaults are applied; an explicitly empty collection removes its Device bindings. The editor offers separate actions for these cases. Editing only the default does not silently turn an unspecified collection into an empty override. Saved Threads retain their selections until explicitly edited or updated through **Apply Project defaults**. Active and historical Runs retain their captured selections.
+A manually configured reverse connection instead uses `transport: {kind: websocket, configuration: {}}`. Point Envd at the WebUI listener's `/api/devices/device-build/connect` with the Device credential, not the WebUI instance key. See [daemon transports](../a13n-envd/configuration.md#carrier-profiles).
 
 ### Revoke a Device
 
-Use **Settings → Environments → Revoke** to disconnect a paired Device and block its saved credential. This also interrupts access for Runs using that connection, but preserves remote files and captured history. A revoked registration remains visible after restart. The daemon stops on authentication rejection rather than silently creating a new credential.
-
-Use revocation when you want to withdraw access. Use removal when you only want to stop selecting a directory, or forgetting when you only want to remove local configuration. These are different operations.
+Choose **Settings → Environments → Revoke** to withdraw access. Revocation disconnects the Device and blocks its saved credential across restarts, including access from Runs using the connection. Remote files and captured history remain. A revoked registration stays visible; authentication rejection stops the daemon rather than silently replacing credentials.
 
 ### Remove an unavailable environment
 
-To remove one Project or Thread selection, choose **Remove** beside its directory path. If it is the default, select a replacement in the same dialog. Save the enclosing settings. A Project must retain at least one local root or Device binding; a Thread may remove all Device bindings and use Thread files.
+To stop using one directory, choose **Remove** beside its path. Select a replacement if it was the default, then save. A Project must keep at least one local root or Device binding; a Thread can use Thread files after removing all Device bindings.
 
-To forget the shared connection or a custom local profile, use **Settings → Environments → Forget**. This works without connecting to the target. Repair any General or Project defaults that reference the resource first; the dialog links to known Project references. Forget removes local configuration only: it neither deletes remote files nor stops the Device, cancels active Runs, or rewrites history. Built-in local profiles cannot be deleted.
+To delete local connection configuration or a custom profile, use **Settings → Environments → Forget**. Repair referencing General/Project defaults first; the dialog links known Project references. Forget works offline and preserves remote files, the Device process, active Runs, and history. Built-in profiles cannot be deleted. Use **Revoke**, not Forget, to withdraw paired trust.
 
-Existing Threads are not silently rewritten. A missing Device appears as **Not configured** in next-Run selections. Remove it or replace it and choose a valid default before running again. Inspecting a previous Run still shows the configuration that produced it.
+Existing Threads keep their choices. A missing Device appears as **Not configured** in next-Run selections; replace or remove it and choose a valid default before continuing. Earlier Runs still show their original configuration.
 
-WebUI's native Files, Git Changes, and Terminal panels address the Harness UI server, not a selected Device. Remote-only Projects do not turn those panels into remote file or terminal clients.
+WebUI's native Files, Git Changes, and Terminal panels access the Harness UI server. Selecting a remote Device does not make those panels remote clients.
+
+## Monitor Environment resources
+
+Start an Envd runtime or connect a Device, then open **Environment monitor** from the WebUI conversation toolbar. Select the Device and use **Overview**, **Network**, **Storage**, or **Envd**. Direct and other non-Envd Providers supply no Envd metrics; opening this panel does not install or start a daemon.
+
+Charts show Device-visible system usage and the operator-selected Linux cgroup, not per-Run usage. Choose an interface or disk for rates, expand static information/counters as needed, and inspect missing values as **—**, not zero. The App-wide panel keeps the same observed Device when you change conversations.
+
+The initial view covers 15 minutes and refreshes every 60 seconds. Change the range, pause refresh, or refresh manually. Drag a chart or use zoom controls to select a shared historical window; **Back to live** restores the rolling window. Hover or left/right arrows inspect the same minute across charts. History retains up to one hour of minute averages/peaks, including gaps; zoom does not add finer samples.
+
+Built-in local Sandbox, Envd, and Desktop enable sampling when started. For remote daemons, enable `monitoring` in their startup configuration. Static system information remains available with sampling off. Set **Settings → Environments → Local runtime → Metrics collection** to 10, 30, or 60 seconds (default 60), then restart the App. Root `envd.monitoring_interval_seconds` accepts integers 10–60 for App collection and built-in local sampling. Custom launch recipes and external daemons retain their own sampler settings; browser refresh remains one minute. This overview requires EIP 0.3; keep remote daemon/client versions compatible.
+
+History lives in App memory and clears on restart, Device changes, or revocation. Waiting, disabled, stale, offline, and collection-limit states are explicit. Counter resets break rate baselines; missing/stalled samples leave gaps or show the previous value with its age.
 
 ## Custom Environment profiles
 
-Most users should select a built-in mode rather than copy its configuration. Reserved IDs `environment-native` and `environment-sandbox` cannot be redefined.
+Create a custom profile only when the built-in modes do not fit. Built-in IDs are reserved. A profile selects an installed Provider and a compatible Project adapter; it does not create a vendor resource or prove isolation.
 
-Custom profiles live under `extensions/` and select an installed provider plus a compatible Project adapter. For example, this native profile still runs with host authority:
+1. Save this complete native profile as `extensions/team.yaml` beside the root YAML:
 
-```yaml
-schema_version: "1"
-kind: environment_profile
-id: environment-team
-name: Team native environment
-provider_key: direct_local
-provider_configuration: {}
-adapter_key: a13n.native-project-root
-adapter_configuration: {}
-```
+   ```yaml title="extensions/team.yaml"
+   schema_version: "1"
+   kind: environment_profile
+   id: environment-team
+   name: Team native environment
+   provider_key: direct_local
+   provider_configuration: {}
+   adapter_key: a13n.native-project-root
+   adapter_configuration: {}
+   ```
 
-Beyond the common resource envelope, all fields are shown above. The provider owns `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are defaults, not a universal configuration for every provider. A provider package alone does not imply that every Project adapter is installed or compatible.
+2. Run `config validate` and `doctor` against the selected tree.
 
-A custom `EnvironmentProjectAdapter.bind()` returns a Harness execution connector. If target preparation fails after observing new state, raise `EnvironmentBindingError(message, state)` or `EnvironmentBindingCancelled(state)` from `a13n_harness_ui.extensions`; Harness UI publishes that observation before propagating the failure. The adapter owns any target management and does not obtain lifecycle methods from the Harness execution definition.
+3. Launch a new conversation with `a13n-harness-ui --environment-profile environment-team` and repeat the read-only file test. This native example still uses Host authority.
 
-Use `defaults.environment_profile: environment-team` or the explicit launch option, then run `config validate` and `doctor`. Never treat a profile label as proof of isolation. Provider readiness and the actual execution contract determine that behavior.
+To make it a creation default, set `defaults.environment_profile: environment-team` in the root YAML or Project. The Provider owns `provider_configuration`; the adapter owns `adapter_configuration` and Project-to-Environment mapping. Empty mappings are not universal settings for every Provider.
 
-Local Envd profiles separate immutable Device `launch` configuration from reference-only `session` configuration. For example, filesystem-restricted execution with inherited networking:
+For restricted files with inherited networking, use this complete alternative profile:
 
-```yaml
+```yaml title="extensions/restricted-network.yaml"
 schema_version: "1"
 kind: environment_profile
 id: environment-restricted-network
@@ -289,10 +336,16 @@ adapter_configuration:
   project_access: read_write
 ```
 
-The adapter adds each captured Project root to the grant set with `project_access`. Additional grants belong to `launch.sandbox.grants`. On Windows, set `launch.sandbox.full_disk_read: true` for the built-in profile's broad-read policy. An explicit launch that omits this field keeps the Envd default of false; a profile that omits `launch` uses the Windows UI default of true. Linux and macOS reject true. Inherited networking matches the built-in Sandbox default. To block networking, set `launch.egress.mode: deny` in a custom profile while keeping `launch.sandbox.mode: restricted`. Explicit `deny` and `controlled` policies remain unchanged; profiles that omit `launch` use the new inherited-networking default. For controlled egress, select `launch.egress.mode: controlled` and provide `session.egress` with the destination/reference recipe above; this requires the privileged Linux backend and is not a rootless desktop default. Changing Session policy does not rebuild a compatible daemon; changing the launch boundary does.
+Select `environment-restricted-network` using the same validate/select/test steps. The adapter grants each captured Project root according to `project_access`; extra grants belong in `launch.sandbox.grants`.
+
+An explicit `launch` that omits `sandbox.full_disk_read` uses Envd's false default. On Windows, set it to true for the built-in broad-read policy; a profile omitting `launch` uses that Windows UI default. Linux and macOS reject true. To block networking, set `launch.egress.mode: deny` while keeping `sandbox.mode: restricted`. Controlled egress requires the privileged Linux backend plus `session.egress` destination/credential references. Compatible Session-policy changes reuse the daemon; launch-boundary changes prepare a different one.
+
+For adapter authors, `EnvironmentProjectAdapter.bind()` returns a Harness execution connector. If preparation observes new state before failing, raise `EnvironmentBindingError(message, state)` or `EnvironmentBindingCancelled(state)` from `a13n_harness_ui.extensions`; the Host publishes that state before propagating failure. Target management belongs to the adapter, not to lifecycle methods on the Harness execution definition.
 
 ## Use a Mac desktop from WebUI
 
-Envd can connect outward from a Mac and expose screenshots and bounded mouse/keyboard actions. Run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, then add a binding with **Full control** under **Allowed actions** (the default for new bindings). The **Full control** allowed action (a binding permission, not the local Full Control mode) includes files, command execution and computer use where enabled on the Device. **Read only** appears first and permits only file reading and browsing. Older bindings keep their existing permissions until you explicitly select a replacement. Device approval and the local Full Control profile do not themselves enable desktop tools; daemon computer-use enablement and operating-system permissions still apply. Use a Model with image input and an Agent with Dynamic Environment tools.
+Use an image-capable Model and an Agent with Dynamic Environment tools. On the Mac, run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, and grant the required OS permissions.
 
-See [desktop computer use](../a13n-envd/computer-use.md) for native permissions, setup, observation-only configuration, screenshot preview and shared-desktop limitations.
+Add its binding with **Full control** under **Allowed actions**, then start a new Run and request a screenshot before asking for input actions. That binding permission includes enabled file, command, and computer operations; **Read only** allows file reading/browsing only. It is separate from the Harness UI server's local Full Control mode. New bindings default to Full control; older bindings keep their permissions until explicitly changed.
+
+Approval alone does not enable desktop tools: daemon computer-use and OS permissions are both required. Follow [desktop computer use](../a13n-envd/computer-use.md) for native setup, observation-only access, screenshot preview, and shared-desktop limits.

@@ -128,6 +128,10 @@ const ModalSurface = memo(
     return (
       <DialogPopup
         data-a13n-modal
+        // Keep typing out of the hidden menu, but let Escape reach dialog dismissal.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") event.stopPropagation();
+        }}
         data-size={size}
         className={cn(
           keepVisibleWhenNested && "opacity-100",

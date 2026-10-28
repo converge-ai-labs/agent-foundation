@@ -14,7 +14,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setup() {
+function setup(initialLevel?: string) {
+  let level = initialLevel;
+  let identity = "first";
   let resize!: () => void;
   let scroll!: ReturnType<typeof useTranscriptScroll>;
   let height = 2000;
@@ -30,9 +32,15 @@ function setup() {
       disconnect() {}
     },
   );
-  function Transcript({ level }: { level?: string }) {
+  function Transcript({
+    level,
+    identity,
+  }: {
+    level?: string;
+    identity: string;
+  }) {
     const ref = useRef<HTMLDivElement>(null);
-    scroll = useTranscriptScroll(ref, level);
+    scroll = useTranscriptScroll(ref, level, identity);
     return (
       <div
         data-session-stage
@@ -74,15 +82,20 @@ function setup() {
       </div>
     );
   }
-  const view = render(<Transcript />);
+  const view = render(<Transcript level={level} identity={identity} />);
   const stage = view.container.querySelector<HTMLElement>(
     "[data-session-stage]",
   )!;
   return {
     stage,
     writes,
-    switchLevel(level: string) {
-      view.rerender(<Transcript level={level} />);
+    switchLevel(next: string) {
+      level = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
+    },
+    switchRun(next: string) {
+      identity = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
     },
     scroll: () => scroll,
     resize: () => act(resize),
@@ -295,4 +308,29 @@ it("keeps upward intent when keyup precedes the first animated scroll frame", ()
   fireEvent(view.stage, new Event("scrollend"));
   view.resize();
   expect(view.stage.scrollTop).toBe(1460);
+});
+
+it("opens Debug at the beginning and does not follow content that finishes loading", () => {
+  const view = setup("debug");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(-1600);
+  view.resize();
+  fireEvent(view.stage, new Event("scrollend"));
+  view.grow(2000);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  expect(screen.getByText("Jump to latest")).toBeTruthy();
+});
+
+it("resets another Run and cached back navigation to the top without stealing the sidebar scroll", () => {
+  const view = setup();
+  expect(view.stage.scrollTop).toBe(1500);
+  view.switchRun("second");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(400);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  view.readAt(600);
+  view.switchRun("first");
+  expect(view.stage.scrollTop).toBe(0);
 });

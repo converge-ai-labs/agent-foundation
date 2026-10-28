@@ -546,3 +546,37 @@ async def test_best_effort_does_not_hide_readiness_or_input_failures(ending, mon
     finally:
         release.set()
         await runtime.close()
+
+
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_host_acceptance_guard_rechecks_after_native_lock_wait(immediate):
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def model(messages, info):
+        entered.set()
+        await finish.wait()
+        yield "done"
+
+    allowed = True
+
+    def before_accept():
+        if not allowed:
+            raise ValueError("Host notice is stale")
+
+    executable = build(model, [])
+    async with asyncio.timeout(5), executable.stream("start") as stream:
+        consumer = asyncio.create_task(consume(stream))
+        await entered.wait()
+        bridge = stream.context._steering
+        async with bridge._lock:
+            pending = asyncio.create_task(
+                stream.steer("stale", immediate=immediate, best_effort=True, before_accept=before_accept)
+            )
+            # Let the caller reach the held queue lock before revoking authority.
+            await asyncio.sleep(0)
+            allowed = False
+        with pytest.raises(ValueError, match="Host notice is stale"):
+            await pending
+        assert not bridge._pending_requests
+        finish.set()
+        await consumer

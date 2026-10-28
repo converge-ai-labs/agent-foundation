@@ -1,5 +1,6 @@
 """Unused providers can be removed; retained references, permissions and versions protect them."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -166,6 +167,8 @@ async def test_pending_memory_purge_retains_provider(service: SimpleNamespace) -
                 workspace_id=service.tenant.workspace_id,
                 kind="memory_purge",
                 dedupe_key="cleanup-test",
+                # Keep the purge pending while the live control loop runs.
+                available_at=datetime.now(UTC) + timedelta(days=1),
                 target={"provider_id": row.id, "namespace": "old"},
                 payload={},
             )
