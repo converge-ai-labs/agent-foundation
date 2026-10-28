@@ -102,7 +102,7 @@ export function MonitorContent() {
                 disabled={!environments.length}
               >
                 {!environments.length && (
-                  <option value="">No monitored Devices</option>
+                  <option value="">No monitored devices</option>
                 )}
                 {environments.map((item) => (
                   <option key={item.id} value={item.id}>

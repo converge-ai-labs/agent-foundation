@@ -1,6 +1,7 @@
 import { CheckCircle, Circle, CircleHalf } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import { MessageText } from "./message-text";
+import { DebugOnly, DebugId } from "../shell/debug";
 import styles from "./work-inspector.module.css";
 import layout from "../shell/workbench.module.css";
 
@@ -24,6 +25,19 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
   if (!page) return null;
   if (page.available === false)
     return <p>Task projection is unavailable for this provider.</p>;
+  const names = new Map(
+    page.tasks?.map((task) => [task.task_id, task.subject]),
+  );
+  const dependencies = (ids: string[]) => (
+    <div className={styles.dependencies}>
+      {ids.map((id) => (
+        <span key={id}>
+          {names.get(id) ?? "Task outside this list"}
+          <DebugId label="Task" value={id} />
+        </span>
+      ))}
+    </div>
+  );
   return (
     <>
       <ul className={styles.tasks}>
@@ -36,15 +50,27 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
                   ? task.active_form || task.subject
                   : task.subject}
               </summary>
-              <p>{task.subject}</p>
+              {task.status === "in_progress" &&
+                task.active_form &&
+                task.active_form !== task.subject && <p>{task.subject}</p>}
               <dl>
-                <div>
-                  <dt>Task</dt>
-                  <dd>{task.task_id}</dd>
-                </div>
+                <DebugOnly>
+                  <div>
+                    <dt>Task</dt>
+                    <dd>{task.task_id}</dd>
+                  </div>
+                </DebugOnly>
                 <div>
                   <dt>Status</dt>
-                  <dd>{task.status.replaceAll("_", " ")}</dd>
+                  <dd>
+                    {
+                      {
+                        in_progress: "In progress",
+                        pending: "Pending",
+                        completed: "Completed",
+                      }[task.status]
+                    }
+                  </dd>
                 </div>
                 <div>
                   <dt>Owner</dt>
@@ -53,13 +79,13 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
                 {!!task.blocked_by?.length && (
                   <div>
                     <dt>Blocked by</dt>
-                    <dd>{task.blocked_by.join(", ")}</dd>
+                    <dd>{dependencies(task.blocked_by)}</dd>
                   </div>
                 )}
                 {!!task.blocks?.length && (
                   <div>
                     <dt>Blocks</dt>
-                    <dd>{task.blocks.join(", ")}</dd>
+                    <dd>{dependencies(task.blocks)}</dd>
                   </div>
                 )}
               </dl>

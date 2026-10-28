@@ -174,7 +174,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 4px 0 12px;
   color: var(--muted-foreground);
   font-size: 14px;
@@ -233,9 +233,9 @@
   display: flex;
   gap: 4px;
 }
-/* Compact at every width; the shared Button grows on phones. */
+/* Match other compact controls; touch targets grow below. */
 .format > button {
-  height: 28px;
+  height: 32px;
   padding-inline: 12px;
   font-size: 14px;
 }
@@ -246,15 +246,17 @@
   .phase {
     white-space: normal;
   }
-  .title {
-    gap: 0.35rem;
-  }
   .tool {
     grid-template-columns: minmax(0, 1fr);
   }
   .actions {
     justify-content: flex-start;
-    padding-left: 1.75rem;
+    padding-left: var(--tool-inset);
+  }
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .format > button {
+    height: 44px;
   }
 }
 
@@ -297,7 +299,7 @@
 .threadLink {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 4px;
   font-size: 14px;
   max-width: 15rem;
   overflow-wrap: anywhere;
@@ -352,8 +354,8 @@
 }
 .dataToggle {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   color: var(--muted-foreground);
 }
 .dataToggle svg {
@@ -387,13 +389,13 @@
 }
 .resources li {
   display: grid;
-  gap: 0.15rem;
+  gap: 4px;
   overflow-wrap: anywhere;
 }
 .resources a {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 4px;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -473,7 +475,7 @@
   background: transparent;
 }
 .questionReceipt [data-slot="disclosure-surface"] > button {
-  min-height: 28px;
+  min-height: 32px;
   width: calc(100% - 8px);
   margin-inline: 4px;
   padding: 4px 8px;
@@ -491,7 +493,7 @@
 .originalQuestion ul {
   display: grid;
   gap: 0.5rem;
-  padding-left: 1.25rem;
+  padding-left: 24px;
   margin-bottom: 0;
 }
 .originalQuestion li strong {

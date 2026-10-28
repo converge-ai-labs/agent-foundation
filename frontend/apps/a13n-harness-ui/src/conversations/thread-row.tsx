@@ -191,8 +191,9 @@ export function ThreadRow({
             <small
               className={styles.coordinatorActivity}
               title={workerActivity}
+              aria-label={workerActivity}
             >
-              {workerActivity}
+              {activeWorkerCount} active
             </small>
           )}
           {unsent && (

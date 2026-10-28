@@ -120,6 +120,19 @@ function ApprovalInput({
     const next = response(value);
     if (next) onSubmit?.(next);
   }
+  const reasonField = (
+    <FormField label="Reason (optional)">
+      <Textarea
+        rows={2}
+        value={reason}
+        onChange={(event) => {
+          setReason(event.target.value);
+          if (onSubmit) onChange(undefined);
+          else update(choice, argumentsText, event.target.value);
+        }}
+      />
+    </FormField>
+  );
   return (
     <section
       className={styles.request}
@@ -143,19 +156,14 @@ function ApprovalInput({
           ]}
         />
       )}
-      {(onSubmit || choice === "deny") && (
-        <FormField label="Reason (optional)">
-          <Textarea
-            rows={2}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (onSubmit) onChange(undefined);
-              else update(choice, argumentsText, event.target.value);
-            }}
-          />
-        </FormField>
-      )}
+      {onSubmit ? (
+        <details className={styles.denialReason}>
+          <summary>Add a reason for denying</summary>
+          {reasonField}
+        </details>
+      ) : choice === "deny" ? (
+        reasonField
+      ) : null}
       {choice === "override" && (
         <JsonEditor
           label="Replacement arguments (JSON object)"

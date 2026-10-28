@@ -98,7 +98,7 @@
   padding: 8px 0;
 }
 .tasks li + li {
-  border-top: 1px solid var(--a13n-border);
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .tasks li > svg {
   margin-top: 12px;
@@ -133,8 +133,53 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.dependencies {
+  display: grid;
+  gap: 4px;
+}
+.processSummary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding-block: 4px;
+}
+.processSummary::before {
+  align-self: flex-start;
+  width: 8px;
+  height: 8px;
+  margin: 8px 4px 0;
+}
+.processSummary > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.processSummary > :last-child {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 .processSummary code {
-  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.executionBody {
+  margin: 8px 0 8px 24px;
+  display: grid;
+  gap: 12px;
+}
+.executionBody p {
+  margin: 0;
+}
+.executionBody button {
+  justify-self: start;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
 }
 .tasks summary:focus-visible,
 .notes summary:focus-visible {
@@ -152,7 +197,7 @@
   padding: 0;
 }
 .notes > details + details {
-  border-top: 1px solid var(--a13n-border);
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .notes summary {
   cursor: pointer;
@@ -173,6 +218,10 @@
   padding: 16px 0;
 }
 @media (max-width: 700px) {
+  .processSummary {
+    min-height: 44px;
+    padding-block: 8px;
+  }
   .active {
     display: none;
   }

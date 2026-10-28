@@ -5,6 +5,7 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { DebugId } from "../shell/debug";
 import { DraftLinks } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 import { ConnectDevice, PendingDevice } from "./connect-device";
@@ -65,7 +66,8 @@ export function DevicesSection() {
               <div>
                 <strong>{device.name}</strong>
                 <small>
-                  {device.id} · {device.transport}
+                  {device.transport}
+                  <DebugId label="Device" value={device.id} />
                 </small>
                 {device.registration === "revoked" ? (
                   <p className="text-sm text-muted-foreground">

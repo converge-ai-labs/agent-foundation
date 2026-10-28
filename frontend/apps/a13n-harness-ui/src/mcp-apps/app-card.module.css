@@ -15,6 +15,9 @@
 .header > div {
   min-width: 0;
 }
+.header > button {
+  flex-shrink: 0;
+}
 .header strong {
   font-size: 14px;
   font-weight: 500;
@@ -25,6 +28,7 @@
   margin-top: 4px;
   font-size: 14px;
   color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
 }
 .card p {
   margin: 0;
@@ -84,5 +88,6 @@
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }

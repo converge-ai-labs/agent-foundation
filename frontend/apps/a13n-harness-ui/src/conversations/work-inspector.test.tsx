@@ -19,6 +19,7 @@ import { Child } from "./details";
 import { ToolExecutions } from "./tool-executions";
 import { refreshThread } from "./refresh";
 import { ChildControlsProvider } from "./child-controls";
+import { DebugProvider } from "../shell/debug";
 
 afterEach(cleanup);
 const task = {
@@ -36,7 +37,9 @@ function harness(GET: ReturnType<typeof vi.fn>, POST = vi.fn()) {
       <TransportContext
         value={{ client: { GET, POST } } as unknown as Transport}
       >
-        <ChildControlsProvider>{children}</ChildControlsProvider>
+        <DebugProvider>
+          <ChildControlsProvider>{children}</ChildControlsProvider>
+        </DebugProvider>
       </TransportContext>
     </QueryClientProvider>
   );
@@ -108,12 +111,26 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   ).toBe(true);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Chat activity" }));
-  await screen.findByText("task-before");
+  await screen.findAllByText("Task outside this list");
+  expect(screen.queryByText("task-before")).toBeNull();
   const summary = screen
     .getAllByText("Checking output")
     .find((element) => element.tagName === "SUMMARY")!;
   fireEvent.click(summary);
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
+  expect(screen.getByText("task-before")).toBeTruthy();
   expect(screen.getByText("task-after")).toBeTruthy();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Chat activity" }));
   expect(
@@ -396,8 +413,22 @@ it("inspects observed processes in place, updates status and discloses missing o
     screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).toContain("1");
   fireEvent.click(screen.getByText("pnpm dev"));
+  expect(screen.queryByText("process-one")).toBeNull();
+  expect(screen.queryByText("run-one")).toBeNull();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
   expect(screen.getByText("process-one")).toBeTruthy();
   expect(screen.getByText("run-one")).toBeTruthy();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
   display.processes.status("run-one", "process-one", "exited", 3);
   view.rerender(
     <WorkInspector

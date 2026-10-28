@@ -11,6 +11,7 @@ import { Button } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { DebugId } from "../shell/debug";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 
@@ -135,14 +136,14 @@ export function DecisionForm({
     <section className={styles.decision} aria-label="Pending decisions">
       <h2>Your response is needed</h2>
       <p>
-        Respond here or send a message to continue. Unanswered requests are
-        denied. Another participant may respond first.
+        Answer below or send a message to continue. Unanswered requests are
+        denied.
       </p>
       {remaining !== null && (
         <p role="status" aria-live="off">
           {expired
             ? "Response window ended. Waiting for the server to confirm the outcome."
-            : `Submit within ${remaining}s. On timeout, the server continues without answers or approvals, even if you leave this page. Unsubmitted answers are discarded.`}
+            : `${remaining}s left. Work continues without unsubmitted answers or approvals when time expires, even if you leave.`}
         </p>
       )}
       <form
@@ -188,8 +189,8 @@ export function DecisionForm({
         <ErrorNotice error={send.error} />
         {send.isSuccess && (
           <p role="status">
-            Response accepted; execution has not been confirmed. Operation:{" "}
-            {send.data.receipt_id}
+            Response accepted; execution has not been confirmed.{" "}
+            <DebugId label="Operation" value={send.data.receipt_id} />
           </p>
         )}
         {unknown && (
@@ -198,7 +199,7 @@ export function DecisionForm({
             response will not be retried automatically.
           </p>
         )}
-        <div>
+        <div className={styles.decisionActions}>
           {!singleApproval && (
             <Button
               type="submit"
@@ -212,6 +213,9 @@ export function DecisionForm({
             Refresh request
           </Button>
         </div>
+        <p className={styles.settingsHint}>
+          Another participant may respond first.
+        </p>
       </form>
     </section>
   );

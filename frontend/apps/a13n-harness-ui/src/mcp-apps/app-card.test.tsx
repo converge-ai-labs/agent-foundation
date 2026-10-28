@@ -137,6 +137,25 @@ it("opens history only on request and closing a view sends no server close or to
   expect(POST).toHaveBeenCalledTimes(1);
 });
 
+it("retries a failed presentation without activating server interactions", async () => {
+  const { POST, wrapper } = setup();
+  POST.mockRejectedValueOnce(new Error("Presentation unavailable"));
+  render(<AppCard reference={reference} />, { wrapper });
+  fireEvent.click(screen.getByRole("button", { name: "Open App" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Presentation unavailable",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByTitle("counter");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(POST).toHaveBeenCalledTimes(2);
+  expect(
+    POST.mock.calls.every(
+      ([path]) => path === "/api/threads/{thread_id}/apps/open",
+    ),
+  ).toBe(true);
+});
+
 it("keeps one live App frame outside execution details when the original becomes saved", async () => {
   const { POST, wrapper } = setup();
   const input: Schema<"TranscriptEntry"> = {

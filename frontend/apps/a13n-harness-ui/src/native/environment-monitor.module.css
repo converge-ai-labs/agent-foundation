@@ -281,8 +281,15 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .toolbar > label:first-child {
+    flex-basis: 100%;
+  }
   .toolbar .refreshControl {
-    flex: 0 0 100px;
+    flex: 1;
+  }
+  .toolbar select,
+  .chartToolbar select {
+    min-height: 44px;
   }
   .chartHint {
     flex-direction: column;

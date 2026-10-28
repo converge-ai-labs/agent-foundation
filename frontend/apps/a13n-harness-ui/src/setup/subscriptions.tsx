@@ -1199,6 +1199,11 @@ function GroupEditor({
     onSuccess: saved,
   });
   const members = draft.accounts ?? [];
+  const availableMembers = accounts.filter(
+    ({ account }) =>
+      account.provider === draft.provider &&
+      !members.some((item) => item.account === account.id),
+  );
   const setMembers = (value: typeof members) =>
     setDraft({ ...draft, accounts: value });
   function move(index: number, offset: number) {
@@ -1363,26 +1368,27 @@ function GroupEditor({
                 </div>
               ))}
               {!members.length && (
-                <p>Add an account before using this group.</p>
+                <p>
+                  {availableMembers.length
+                    ? "Choose the accounts this group can use."
+                    : "Connect an account in Subscription accounts before using this group."}
+                </p>
               )}
-              <ChoiceField
-                label="Add member"
-                placeholder="Choose an account"
-                value=""
-                onValueChange={(account) => {
-                  if (account) setMembers([...members, { account, weight: 1 }]);
-                }}
-                options={accounts
-                  .filter(
-                    ({ account }) =>
-                      account.provider === draft.provider &&
-                      !members.some((item) => item.account === account.id),
-                  )
-                  .map(({ account }) => ({
+              {availableMembers.length > 0 && (
+                <ChoiceField
+                  label="Add member"
+                  placeholder="Choose an account"
+                  value=""
+                  onValueChange={(account) => {
+                    if (account)
+                      setMembers([...members, { account, weight: 1 }]);
+                  }}
+                  options={availableMembers.map(({ account }) => ({
                     value: account.id,
                     label: account.name,
                   }))}
-              />
+                />
+              )}
             </div>
           </FormField>
           {!writable && (

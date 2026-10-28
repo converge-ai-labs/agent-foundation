@@ -135,10 +135,10 @@
   color: var(--a13n-secondary);
   font-size: 14px;
 }
-/* Header controls stay 28px with 13px labels at every width; coarse pointers
+/* Header controls share the compact 32px height; coarse pointers
    keep the shared 44px hit area. */
 .codeHeader button {
-  height: 28px;
+  height: 32px;
   color: var(--a13n-secondary);
   font-size: 14px;
   font-weight: 400;

@@ -216,7 +216,17 @@ function OwnerAppCard({
       )}
       {opened && presentation.isPending && <p role="status">Loading App…</p>}
       {opened && presentation.error && (
-        <p role="alert">{presentation.error.message}</p>
+        <div className={styles.status}>
+          <p role="alert">{presentation.error.message}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={presentation.isFetching}
+            onClick={() => void presentation.refetch()}
+          >
+            {presentation.isFetching ? "Retrying…" : "Try again"}
+          </Button>
+        </div>
       )}
       {opened && data && (!data.resource || !parsed || !data.sandbox_url) && (
         <p role="alert">The original App presentation cannot be displayed.</p>

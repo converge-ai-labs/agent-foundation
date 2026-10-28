@@ -1318,7 +1318,9 @@ it("groups only owners of active unarchived workers under Running and returns th
   const owner = within(project).getByRole("link", { name: /busy-owner/ });
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(within(owner).queryByText("Running")).toBeNull();
-  const summary = within(owner).getByText("2 workers active").closest("small")!;
+  const summary = within(owner)
+    .getByLabelText("2 workers active")
+    .closest("small")!;
   expect(
     screen.queryByRole("link", { name: /worker-one|worker-two/ }),
   ).toBeNull();
@@ -1334,7 +1336,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   ).toBeTruthy();
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(
-    (await within(owner).findByText("1 worker active")).closest("small"),
+    (await within(owner).findByLabelText("1 worker active")).closest("small"),
   ).toBe(summary);
 
   activeThreads = [];
@@ -1780,14 +1782,16 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const owner = await screen.findByRole("link", { name: /owner.*Running/ });
-  const summary = within(owner).getByText("2 workers active").closest("small")!;
+  const summary = within(owner)
+    .getByLabelText("2 workers active")
+    .closest("small")!;
   const spinner = within(owner).getByTitle("Running").querySelector("svg");
   await within(owner).findByRole("img", { name: "Draft · Unsent input" });
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for owner" }),
   );
   await screen.findByRole("link", { name: /worker-one/ });
-  expect(summary.textContent).toBe("2 workers active");
+  expect(summary.textContent).toBe("2 active");
 
   let release!: () => void;
   pauseActivity = new Promise<void>((resolve) => {
@@ -1804,7 +1808,7 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
       .getByRole("button", { name: "Collapse workers for owner" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
-  expect(summary.textContent).toBe("2 workers active");
+  expect(summary.textContent).toBe("2 active");
   expect(within(owner).getByTitle("Running").querySelector("svg")).toBe(
     spinner,
   );
@@ -1817,13 +1821,13 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
     release();
     await refresh;
   });
-  await waitFor(() => expect(summary.textContent).toBe("1 worker active"));
+  await waitFor(() => expect(summary.textContent).toBe("1 active"));
   expect(summary.querySelector("svg")).toBeNull();
   expect(owner.contains(summary)).toBe(true);
   fireEvent.click(
     screen.getByRole("button", { name: "Collapse workers for owner" }),
   );
-  expect(summary.textContent).toBe("1 worker active");
+  expect(summary.textContent).toBe("1 active");
   expect(screen.getByRole("link", { name: /owner.*1 worker active/ })).toBe(
     owner,
   );

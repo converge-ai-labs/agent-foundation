@@ -274,8 +274,11 @@ function GuestShell({
             {project ? <Folder size={18} /> : <ChatCircle size={18} />}
           </span>
           <div>
-            <h1>{access.title}</h1>
-            <p>Shared {project ? "project" : "chat"}</p>
+            <h1 title={access.title}>{access.title}</h1>
+            <p>
+              Shared {project ? "project" : "chat"} ·{" "}
+              <span>{canPrompt ? "Can send messages" : "View only"}</span>
+            </p>
           </div>
         </div>
         <div className={styles.access}>
@@ -288,9 +291,6 @@ function GuestShell({
               month: "short",
               day: "numeric",
             })}
-          </span>
-          <span className={styles.badge}>
-            {canPrompt ? "Can send messages" : "View only"}
           </span>
           <ParticipantAvatars
             participants={(live.presence?.participants ?? []).filter(

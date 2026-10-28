@@ -4,6 +4,7 @@ import { Badge, Button } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
+import { DebugOnly } from "../shell/debug";
 import styles from "./work-inspector.module.css";
 
 function Execution({
@@ -35,7 +36,7 @@ function Execution({
     <li>
       <details>
         <summary className={styles.processSummary}>
-          <span>{item.tool_name}</span>{" "}
+          <span>{item.tool_name}</span>
           <Badge
             variant={
               item.status === "running" || item.status === "queued"
@@ -45,46 +46,50 @@ function Execution({
                   : "secondary"
             }
           >
-            {item.status}
+            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
           </Badge>
         </summary>
-        <dl>
-          <div>
-            <dt>Execution</dt>
-            <dd>{item.execution_id}</dd>
-          </div>
-          <div>
-            <dt>Run</dt>
-            <dd>{item.run_id}</dd>
-          </div>
-          <div>
-            <dt>Result</dt>
-            <dd>
-              {item.delivery_acknowledged
-                ? "Received by agent"
-                : item.result_available
-                  ? "Available to agent"
-                  : "Not available"}
-            </dd>
-          </div>
-        </dl>
-        <ErrorNotice error={cancel.error} />
-        {cancel.isSuccess && (
-          <p role="status">
-            Cancellation requested. The status shows when execution finishes.
-          </p>
-        )}
-        {item.available_actions?.includes("cancel") && (
-          <Button
-            variant="outline"
-            size="sm"
-            loading={cancel.isPending}
-            disabled={cancel.isSuccess}
-            onClick={() => cancel.mutate()}
-          >
-            Cancel execution
-          </Button>
-        )}
+        <div className={styles.executionBody}>
+          <dl>
+            <DebugOnly>
+              <div>
+                <dt>Execution</dt>
+                <dd>{item.execution_id}</dd>
+              </div>
+              <div>
+                <dt>Run</dt>
+                <dd>{item.run_id}</dd>
+              </div>
+            </DebugOnly>
+            <div>
+              <dt>Result</dt>
+              <dd>
+                {item.delivery_acknowledged
+                  ? "Received by agent"
+                  : item.result_available
+                    ? "Available to agent"
+                    : "Not available"}
+              </dd>
+            </div>
+          </dl>
+          <ErrorNotice error={cancel.error} />
+          {cancel.isSuccess && (
+            <p role="status">
+              Cancellation requested. The status shows when execution finishes.
+            </p>
+          )}
+          {item.available_actions?.includes("cancel") && (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={cancel.isPending}
+              disabled={cancel.isSuccess}
+              onClick={() => cancel.mutate()}
+            >
+              Cancel execution
+            </Button>
+          )}
+        </div>
       </details>
     </li>
   );
@@ -120,8 +125,8 @@ export function ToolExecutions({
   return (
     <section aria-label="Tool calls">
       <p className={styles.caption}>
-        Retained tool calls in this app session. Results are retrieved by the
-        agent; inspecting status does not consume them.
+        Tool calls from this app session. Viewing a result does not remove it
+        from the agent.
       </p>
       <ErrorNotice error={page.error} retry={refresh} />
       {page.isPending && <p role="status">Loading tool executions…</p>}
@@ -131,30 +136,32 @@ export function ToolExecutions({
           <Execution key={item.execution_id} item={item} refresh={refresh} />
         ))}
       </ul>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={offset === 0 || page.isFetching}
-        onClick={() => setOffset(offset - 20)}
-      >
-        Previous
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={page.data?.length !== 20 || page.isFetching}
-        onClick={() => setOffset(offset + 20)}
-      >
-        Next
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        loading={page.isFetching}
-        onClick={refresh}
-      >
-        Refresh
-      </Button>
+      <div className={styles.actions}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={offset === 0 || page.isFetching}
+          onClick={() => setOffset(offset - 20)}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={page.data?.length !== 20 || page.isFetching}
+          onClick={() => setOffset(offset + 20)}
+        >
+          Next
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={page.isFetching}
+          onClick={refresh}
+        >
+          Refresh
+        </Button>
+      </div>
     </section>
   );
 }

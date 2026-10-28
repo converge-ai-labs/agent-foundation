@@ -384,32 +384,40 @@ export function Child({
           )}
           {child.failure && <p role="alert">{child.failure.message}</p>}
           <ErrorNotice error={controlState.error} />
-          {!shareId && child.available_actions?.includes("steer") && (
-            <div className={styles.form}>
-              <TextField
-                label={`Instruction for ${child.subagent_name}`}
-                value={instruction}
-                onChange={setInstruction}
-                disabled={pending || unknown}
-              />
-              <Button
-                variant="outline"
-                disabled={!instruction.trim() || pending || unknown}
-                onClick={() => control.mutate("steer")}
-              >
-                Guide subagent
-              </Button>
-            </div>
-          )}
-          {!shareId && child.available_actions?.includes("cancel") && (
-            <Button
-              variant="outline"
-              disabled={pending || unknown}
-              onClick={() => control.mutate("cancel")}
-            >
-              Stop subagent
-            </Button>
-          )}
+          {!shareId &&
+            (child.available_actions?.includes("steer") ||
+              child.available_actions?.includes("cancel")) && (
+              <div className={styles.childControls}>
+                {child.available_actions?.includes("steer") && (
+                  <TextField
+                    label={`Instruction for ${child.subagent_name}`}
+                    value={instruction}
+                    onChange={setInstruction}
+                    disabled={pending || unknown}
+                  />
+                )}
+                <div className={styles.childControlActions}>
+                  {child.available_actions?.includes("steer") && (
+                    <Button
+                      variant="outline"
+                      disabled={!instruction.trim() || pending || unknown}
+                      onClick={() => control.mutate("steer")}
+                    >
+                      Guide subagent
+                    </Button>
+                  )}
+                  {child.available_actions?.includes("cancel") && (
+                    <Button
+                      variant="ghost"
+                      disabled={pending || unknown}
+                      onClick={() => control.mutate("cancel")}
+                    >
+                      Stop subagent
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           {!shareId && unknown && (
             <div className={styles.warning}>
               <p>
@@ -417,27 +425,29 @@ export function Child({
                 received this control. Your instruction is retained; no retry
                 was sent.
               </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  reconcile();
-                }}
-              >
-                Refresh child state
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  updateControl({
-                    unknown: false,
-                    error: undefined,
-                    outcome: undefined,
-                  });
-                  control.reset();
-                }}
-              >
-                I checked the execution; allow a new control
-              </Button>
+              <div className={styles.childControlActions}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    reconcile();
+                  }}
+                >
+                  Refresh child state
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    updateControl({
+                      unknown: false,
+                      error: undefined,
+                      outcome: undefined,
+                    });
+                    control.reset();
+                  }}
+                >
+                  I checked the execution; allow a new control
+                </Button>
+              </div>
             </div>
           )}
           {controlState.outcome && !unknown && (

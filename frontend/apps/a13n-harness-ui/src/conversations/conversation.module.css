@@ -631,7 +631,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
+  min-height: 32px;
   margin-top: 4px;
   margin-inline-start: -6px;
   color: var(--a13n-secondary);
@@ -815,7 +815,7 @@
   align-items: center;
   gap: 8px;
   width: fit-content;
-  min-height: 28px;
+  min-height: 32px;
   margin: 0 0 8px -8px;
   padding: 0 8px;
   border-radius: 8px;
@@ -859,7 +859,7 @@
   display: flex;
   align-items: center;
   width: fit-content;
-  min-height: 30px;
+  min-height: 32px;
   margin-inline-start: -8px;
   padding: 0 8px;
   border-radius: 8px;
@@ -882,6 +882,23 @@
 }
 .children {
   margin-top: 12px;
+}
+.childControls {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.childControlActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.childControlActions button {
+  white-space: normal;
+  height: auto;
+  min-height: 32px;
+  text-align: start;
 }
 .children > details {
   background: var(--a13n-surface);
@@ -1350,8 +1367,8 @@ dl.detailGrid > .detailLongRow dd {
 .decision {
   margin: 16px 0;
   padding: 16px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
 }
 .decision h2 {
   font-size: 16px;
@@ -1369,7 +1386,13 @@ dl.detailGrid > .detailLongRow dd {
   line-height: 20px;
 }
 .decision > form {
-  margin-top: 16px;
+  margin-top: 24px;
+}
+.decisionActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .question {
   border: 0;
@@ -1384,7 +1407,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .question > p {
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
 }
 .answerOption {
@@ -1941,6 +1964,9 @@ dl.detailGrid > .detailLongRow dd {
   outline-offset: -2px;
 }
 @media (max-width: 600px), (pointer: coarse) {
+  .childControlActions button {
+    min-height: 44px;
+  }
   .conversationFooter button {
     height: 44px;
     min-height: 44px;

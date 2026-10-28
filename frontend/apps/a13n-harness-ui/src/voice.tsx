@@ -139,25 +139,14 @@ export function VoicePage() {
         data-running={running}
         aria-label="Voice chat"
       >
-        <p className={styles.eyebrow}>Harness UI · Live</p>
-        <h1>
-          {running ? (
-            "Live chat"
-          ) : (
-            <>
-              A little less typing.
-              <br />A little more chat.
-            </>
-          )}
-        </h1>
+        <h1>{running ? "Live chat" : "Voice chat"}</h1>
         <p className={styles.intro}>
           {running
             ? "Stay here, or keep working while we talk."
-            : "Talk things through. Put your agents to work."}
+            : "Talk through a task with your agent."}
         </p>
-        <div className={styles.controlArea} data-active={connected}>
-          <div className={styles.halo} aria-hidden="true" />
-          <button
+        <div className={styles.controlArea}>
+          <Button
             className={styles.control}
             disabled={
               !running && (!settings.data?.enabled || settings.isPending)
@@ -166,11 +155,16 @@ export function VoicePage() {
             onClick={() => (running ? voice.stop() : void voice.start())}
           >
             {running ? (
-              <Stop size={34} weight="fill" />
+              <Stop size={20} weight="fill" />
             ) : (
-              <Microphone size={40} weight="light" />
+              <Microphone size={20} />
             )}
-          </button>
+            {running
+              ? "Stop voice"
+              : voice.status === "failed"
+                ? "Try again"
+                : "Start voice"}
+          </Button>
         </div>
         <p className={styles.status} role="status">
           <span data-active={connected} />
@@ -194,20 +188,22 @@ export function VoicePage() {
             <Link to="/settings#live">Live in Settings</Link>.
           </p>
         )}
-        <div
-          className={styles.caption}
-          aria-live="polite"
-          aria-label="Recent captions"
-        >
-          {captions.map((caption, index) => (
-            <div className={styles.captionTurn} key={index}>
-              <span className={styles.speaker}>
-                {caption.role === "user" ? "You" : "Assistant"}
-              </span>
-              <p>{caption.text}</p>
-            </div>
-          ))}
-        </div>
+        {captions.length > 0 && (
+          <div
+            className={styles.caption}
+            aria-live="polite"
+            aria-label="Recent captions"
+          >
+            {captions.map((caption, index) => (
+              <div className={styles.captionTurn} key={index}>
+                <span className={styles.speaker}>
+                  {caption.role === "user" ? "You" : "Assistant"}
+                </span>
+                <p>{caption.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
         {threadId && (
           <Link className={styles.thread} to={`/threads/${threadId}`}>
             Open tasks & decisions
