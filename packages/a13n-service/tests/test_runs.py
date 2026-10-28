@@ -26,6 +26,7 @@ pytestmark = pytest.mark.anyio
 def checkpoint_history_decodes(monkeypatch):
     counts = []
     decoded = []
+    commits = []
     original_decode = state_module.decode_messages
     original_commit = _Attempt._commit
 
@@ -34,14 +35,26 @@ def checkpoint_history_decodes(monkeypatch):
         return original_decode(value)
 
     async def commit(self, state, **kwargs):
+        finished = asyncio.Event()
+        commits.append(finished)
         start = len(decoded)
-        result = await original_commit(self, state, **kwargs)
-        counts.append(sum(value is state.message_history_json for value in decoded[start:]))
-        return result
+        try:
+            result = await original_commit(self, state, **kwargs)
+            counts.append(sum(value is state.message_history_json for value in decoded[start:]))
+            return result
+        finally:
+            finished.set()
+
+    async def completed_counts():
+        # A sealed database row is visible before _commit finishes advancing the thread.
+        async with asyncio.timeout(10):
+            for finished in commits:
+                await finished.wait()
+        return counts
 
     monkeypatch.setattr(state_module, "decode_messages", decode)
     monkeypatch.setattr(_Attempt, "_commit", commit)
-    return counts
+    return completed_counts
 
 
 async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit, checkpoint_history_decodes) -> None:  # type: ignore[no-untyped-def]
@@ -62,7 +75,7 @@ async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit,
         assert datetime.fromisoformat(item["started_at"]) <= datetime.fromisoformat(item["ended_at"]), item
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
-    assert checkpoint_history_decodes == [1, 1]  # Model boundary, then final state.
+    assert await checkpoint_history_decodes() == [1, 1]  # Model boundary, then final state.
 
 
 async def test_a_client_tool_waits_and_resume_answers_it(
@@ -98,7 +111,7 @@ async def test_a_client_tool_waits_and_resume_answers_it(
     second = await scripted_model.request()
     tool_results = [message for message in second["messages"] if message["role"] == "tool"]
     assert tool_results and "42" in tool_results[0]["content"]
-    assert checkpoint_history_decodes == [1, 1, 1, 1]  # Model + waiting, resumed model + completed.
+    assert await checkpoint_history_decodes() == [1, 1, 1, 1]  # Model + waiting, resumed model + completed.
 
 
 async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

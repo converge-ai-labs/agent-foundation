@@ -617,11 +617,12 @@ async def streamed_text(runtime: Runtime, thread_id: str, text: str) -> None:
     key, after = stream_key(thread_id), "0-0"
     async with asyncio.timeout(10):
         while True:
-            for _, entries in await runtime.redis.xread({key: after}, block=1000):
+            for _, entries in await runtime.redis.xread({key: after}, count=128):
                 for entry_id, fields in entries:
                     after = entry_id
                     if "event" in fields and json.loads(fields["event"]).get("delta") == text:
                         return
+            await asyncio.sleep(0.05)
 
 
 async def checkpointed(service: SimpleNamespace, run_id: str) -> None:
