@@ -136,7 +136,7 @@ export function AgentFields({
         />
         <SettingsToggle
           label="Notes"
-          description="Keep working notes during a conversation."
+          description="Keep working notes during a chat."
           checked={working.notes_enabled ?? true}
           onCheckedChange={(checked) => setWorking("notes_enabled", checked)}
         />

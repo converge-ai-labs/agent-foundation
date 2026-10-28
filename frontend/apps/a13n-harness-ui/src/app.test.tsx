@@ -1236,9 +1236,7 @@ it("shows built-in environments as read-only and does not offer configuration fo
   expect(
     within(profiles).getByRole("button", { name: "Add local profile" }),
   ).toBeTruthy();
-  const providers = screen.getByText("Environment providers", {
-    selector: "summary",
-  });
+  const providers = screen.getByText("Environment providers");
   expect(providers.closest("details")?.open).toBe(false);
   fireEvent.click(providers);
   await screen.findByText("Unavailable to configure");
@@ -1798,9 +1796,7 @@ it("shares the root draft across General, execution, runtime and connection sett
     await screen.findByRole("switch", { name: "Desktop capability" }),
   );
   await user.click(screen.getByRole("link", { name: "Connections" }));
-  await user.click(
-    await screen.findByText("Chat defaults", { selector: "summary" }),
-  );
+  await user.click(await screen.findByText("Chat defaults", { exact: true }));
   expect(writes).toEqual([]);
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(writes).toHaveLength(1));

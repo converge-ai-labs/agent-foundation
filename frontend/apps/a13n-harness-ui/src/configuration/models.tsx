@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import {
   Button,
+  Skeleton,
   ModalFrame,
   Menu,
   MenuTrigger,
@@ -139,6 +140,11 @@ export function ModelsPage() {
           }
         />
         <DraftLinks kinds={["model"]} search={search} />
+        {selectors.isPending && (
+          <div role="status" aria-label="Loading models">
+            <Skeleton className="h-20 w-full" />
+          </div>
+        )}
         <div className={management.modelList}>
           {filteredModels.map((model) => {
             const source = sources.data?.sources.find(

@@ -613,7 +613,7 @@ function LoadedModelEditor({
                 onChange={setAuth}
               />
             ) : nativeProvider && selected.account ? (
-              <>
+              <div className={layout.accountConnection}>
                 <ErrorNotice error={subscriptions.error} />
                 <ChoiceField
                   label="Account group"
@@ -673,7 +673,7 @@ function LoadedModelEditor({
                 >
                   Manage accounts and groups
                 </Link>
-              </>
+              </div>
             ) : selected.account ? (
               <ProviderAccount
                 key={connection}
@@ -736,7 +736,9 @@ function LoadedModelEditor({
               .join(" · ")}
           >
             {!api && !authReady && (
-              <small>Connect an account before running this model.</small>
+              <p className={layout.groupHint}>
+                Connect an account before running this model.
+              </p>
             )}
             <ChoiceField
               label="Settings preset"
