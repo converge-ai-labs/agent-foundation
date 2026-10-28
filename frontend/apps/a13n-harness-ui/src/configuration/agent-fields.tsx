@@ -77,12 +77,7 @@ export function AgentFields({
       ),
   });
   if (!document)
-    return (
-      <p>
-        Fix the YAML syntax in the configuration file before editing
-        capabilities.
-      </p>
-    );
+    return <p>Fix the YAML in Advanced configuration before editing tools.</p>;
   if (
     (raw.capabilities !== undefined &&
       (!Array.isArray(raw.capabilities) ||
@@ -103,8 +98,8 @@ export function AgentFields({
   )
     return (
       <p>
-        Repair the capability, subagent or tool list in advanced YAML before
-        using these fields.
+        Fix the tool and subagent lists in Advanced configuration to use these
+        fields.
       </p>
     );
   const workingIndex = capabilities.findIndex(
@@ -143,7 +138,7 @@ export function AgentFields({
         />
         <details className={layout.groupDisclosure}>
           <summary>
-            <span>Model-native tools</span>
+            <span>Model tools</span>
             <small>Tools provided by the selected model</small>
           </summary>
           <div>
@@ -332,7 +327,7 @@ export function AgentFields({
             {Array.isArray(raw.tools) && (
               <FormField
                 label="Allowed tool names"
-                description="One exact name per line. An empty list removes optional tools; required infrastructure remains available."
+                description="One tool name per line. Leave empty to disable optional tools. Required tools stay available."
               >
                 <Textarea
                   variant="soft"
@@ -366,10 +361,7 @@ export function AgentFields({
         <details className={layout.groupDisclosure}>
           <summary>Saved tool groups</summary>
           <div className={styles.stack}>
-            <p>
-              Saved configuration, not unsaved edits. Edit groups in Advanced
-              configuration.
-            </p>
+            <p>Shows saved groups. Edit them in Advanced configuration.</p>
             {!accepted ? (
               <p>Save this agent to inspect its tool groups.</p>
             ) : proxy.isPending ? (
@@ -414,7 +406,7 @@ function CapabilityOptions({
     return (
       <FormField
         label="Additional skill directories"
-        description="One directory per line, in addition to discovered skills."
+        description="One folder per line. Adds to automatically found skills."
       >
         <Textarea
           variant="soft"

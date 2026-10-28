@@ -383,10 +383,10 @@ it.each(["empty history", "partial batch"])(
     ).toBe(field);
     expect((field as HTMLInputElement).value).toBe("Retain this answer");
     fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-    await screen.findByText(/Acknowledgement unavailable/);
+    await screen.findByText(/Couldn't confirm delivery/);
     view.rerender(body(false));
     view.rerender(body(true));
-    expect(screen.getByText(/Acknowledgement unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Couldn't confirm delivery/)).toBeTruthy();
     expect(
       (
         screen.getByRole("button", {

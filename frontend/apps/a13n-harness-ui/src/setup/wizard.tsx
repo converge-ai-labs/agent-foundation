@@ -181,7 +181,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       );
       if (saved.content !== expected)
         throw new Error(
-          "Some files are missing or changed. Review the remaining changes before explicitly saving again; existing resources will be preserved.",
+          "Some files are missing or changed. Review the changes before saving again. Existing resources are kept.",
         );
     }
     const saved = await result(
@@ -193,7 +193,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       saved.default_agent !== pending.selection.default_agent
     )
       throw new Error(
-        "Configuration needs attention. Inspect the saved files before trying again.",
+        "Check the saved configuration files before trying again.",
       );
   };
   const openConversation = async (
@@ -244,7 +244,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       (configured.project_id ?? null) !== (pending.selection.project ?? null)
     )
       throw new Error(
-        "The first chat already exists with different choices. Inspect its agent, project, and execution environment before continuing; this setup has not changed that chat.",
+        "The first chat already uses different settings. Check its agent, project and environment before continuing. Setup hasn't changed it.",
       );
     finishWizard(scope);
     navigate(`/threads/${encodeURIComponent(draft.threadId)}?compose=1`, {
@@ -266,7 +266,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       // Persist the exact publication intent before sending. Reload never resubmits it.
       if (!saveWizardDraft(scope, next))
         throw new Error(
-          "Browser storage is unavailable. Allow local storage before saving so an interrupted publication can be recovered safely.",
+          "Enable browser storage before saving. It lets setup recover if the connection is interrupted.",
         );
       setDraft(next);
       setPhase("Saving configuration…");
@@ -337,8 +337,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             <ErrorNotice error={error} />
             {!storageAvailable && (
               <p role="alert">
-                Browser storage is unavailable. Your choices will not survive a
-                refresh; enable storage before saving setup.
+                Browser storage is off. Your choices will be lost on refresh.
+                Enable storage before saving.
               </p>
             )}
             {phase && <p role="status">{phase}</p>}
@@ -346,9 +346,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               <div className={styles.stack}>
                 <h3>Resume your saved setup</h3>
                 <p>
-                  Settings may have been saved even if the response was lost.
-                  Check the exact files and first chat before retrying. No
-                  prompt will be sent.
+                  Your settings may already be saved. Resume to check the saved
+                  files and first chat. No message will be sent.
                 </p>
                 <Button
                   loading={busy}
@@ -359,7 +358,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     })
                   }
                 >
-                  Check saved setup and open chat
+                  Resume setup
                 </Button>
                 <Button
                   variant="outline"
@@ -369,7 +368,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     void preview.refetch();
                   }}
                 >
-                  Review remaining changes
+                  Review changes
                 </Button>
               </div>
             ) : (
@@ -404,7 +403,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Enable recommended native tools on the new agent
+                          Enable recommended model tools
                         </label>
                         <label className={styles.check}>
                           <input
@@ -468,7 +467,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             "environment-sandbox",
                             "Sandbox",
                             ShieldCheck,
-                            "Isolated execution. Downloads envd if needed and checks isolation automatically.",
+                            "Runs in a sandbox. Downloads envd if needed and checks isolation.",
                           ],
                         ] as const
                       ).map(([value, label, Icon, description]) => (
@@ -548,7 +547,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                                 else void sandboxCheck.refetch();
                               }}
                             >
-                              Retry Sandbox preparation
+                              Retry sandbox
                             </Button>
                           )}
                         </>
@@ -560,7 +559,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           size="sm"
                           onClick={() => void preview.refetch()}
                         >
-                          Retry configuration check
+                          Check again
                         </Button>
                       )}
                     </div>
@@ -573,7 +572,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           project_path: path || null,
                         })
                       }
-                      description="Existing server directory. Leave blank for a new chat workspace."
+                      description="An existing folder on the server. Leave blank for a new workspace."
                     />
                     <LiveOptIn
                       model={selection.model}
@@ -617,8 +616,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     {currentPreview && (
                       <>
                         <p>
-                          Automatic memory organization uses your model and may
-                          consume quota. Configure it in Settings → Memory.
+                          Automatic memory updates use model quota. Manage them
+                          in Settings → Memory.
                         </p>
                         <details className={styles.advanced}>
                           <summary>
@@ -682,7 +681,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                   }
                   onClick={() => void save()}
                 >
-                  Save and start chatting <ArrowRight />
+                  Save and start <ArrowRight />
                 </Button>
               ) : (
                 <Button

@@ -562,7 +562,7 @@ export class FocusDisplay {
           string(payload.message) ||
           (outcome === "interrupt"
             ? "A response is needed before execution can continue."
-            : "Execution finished. Inspect the operation receipt for continuation and Environment outcomes."),
+            : "Run finished. Open its details to check follow-ups and environment results."),
       });
     } else if (
       type === "SUBAGENT_STARTED" ||

@@ -70,7 +70,7 @@ export function CoordinatorPromotion({
       }}
       title="Make this chat a coordinator?"
       closeLabel="Close"
-      description="Manage new workers in this Project. Existing chats stay separate; history and settings are kept. This role cannot be reversed."
+      description="Coordinate new workers in this project. Existing chats stay separate. History and settings are kept. This change is permanent."
       footer={
         <>
           <Button
@@ -111,9 +111,7 @@ export function CoordinatorSettings({
           loading={mutation.isPending}
           onClick={() => mutation.mutate(!thread.auto_followup)}
         >
-          {thread.auto_followup
-            ? "Pause automatic follow-up"
-            : "Enable automatic follow-up"}
+          {thread.auto_followup ? "Pause follow-ups" : "Enable follow-ups"}
         </Button>
       ) : thread.role === "ordinary" && thread.configuration.project_id ? (
         <Button

@@ -109,7 +109,7 @@ export function Files({
     <div className={styles.stack}>
       {!!dirty.length && (
         <div className={styles.buffers} aria-label="Local unsaved files">
-          <small>Private buffers · retained in this tab</small>
+          <small>Private drafts · saved in this tab</small>
           {dirty.map(([name]) => (
             <Button
               key={name}
@@ -195,8 +195,8 @@ export function Files({
           </div>
           {listing.hasNextPage && (
             <small>
-              Filtering loaded entries only. Load more files to include the rest
-              of this directory.
+              Searching loaded files only. Load more to include the rest of this
+              folder.
             </small>
           )}
           {copyError && (
@@ -217,14 +217,14 @@ export function Files({
           )}
           {git.feature && (git.discovery.error || git.status.error) && (
             <small>
-              Git status unavailable. Files are still shown without status
-              filtering.
+              Git status couldn't be loaded. Showing files without status
+              filters.
             </small>
           )}
           {git.status.hasNextPage && (
             <small>
-              Git badges cover loaded status entries only. Open Changes to
-              inspect further pages.
+              Git status is shown for loaded files only. Open Changes to see
+              more.
             </small>
           )}
           {listing.data?.pages[0]?.resolved_path !== directory &&
@@ -330,7 +330,7 @@ export function Files({
                                 setOperation({ kind: "replace", entry })
                               }
                             >
-                              Replace from upload
+                              Upload replacement
                             </MenuItem>
                           )}
                           <MenuSeparator />
@@ -389,7 +389,7 @@ export function Files({
                     ? "Create folder"
                     : "Create file"
         }
-        description="This works on the server's filesystem, not the agent's environment."
+        description="These are files on the server, outside the agent's environment."
         closeLabel="Close"
       >
         {operation && (
@@ -537,8 +537,8 @@ export function FileOperation({
         </>
       ) : operation.kind === "replace" ? (
         <p>
-          Replace the shared file with this upload? Unsaved editor text is kept.
-          If the file has changed, replacement is blocked.
+          Replace this shared file with your upload? Your unsaved edits are
+          kept. Replacement is blocked if the file has changed.
         </p>
       ) : (
         <>
@@ -573,21 +573,21 @@ export function FileOperation({
       )}
       {operation.kind !== "delete" && operation.kind !== "replace" && (
         <p>
-          Existing files are never overwritten. Use Replace from the file menu
-          instead.
+          A file with this name already exists. Choose Upload replacement from
+          its menu to replace it.
         </p>
       )}
       {operation.kind === "delete" && recursive && (
         <p>
-          A failure can leave a partially removed tree. Refresh before any
-          further action.
+          Some files may already be deleted. Refresh before trying another
+          action.
         </p>
       )}
       <ErrorNotice error={error} />
       {error != null && (
         <p>
-          Close this dialog and inspect refreshed paths before choosing another
-          action. An interrupted response does not undo a native operation.
+          The change may already be done. Close this dialog and refresh the
+          files before trying another action.
         </p>
       )}
       <div className={`${styles.actions} justify-end`} data-a13n-form-actions>
@@ -618,9 +618,9 @@ export function FileOperation({
           {operation.kind === "delete"
             ? "Confirm delete"
             : operation.kind === "move"
-              ? "Save changes"
+              ? "Save"
               : operation.kind === "replace"
-                ? "Confirm replacement"
+                ? "Replace file"
                 : operation.kind === "upload"
                   ? "Upload file"
                   : "Create"}

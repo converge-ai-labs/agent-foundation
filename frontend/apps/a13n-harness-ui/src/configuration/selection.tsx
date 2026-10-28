@@ -91,7 +91,7 @@ export function SelectionField({
           )}
           <div className={`${styles.selectionList} a13n-scrollbar`}>
             {!choices.length && (
-              <p>No configured choices. Create a resource first.</p>
+              <p>No options yet. Add a configuration first.</p>
             )}
             {!!choices.length && !visible.length && (
               <p>No matching resources.</p>

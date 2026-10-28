@@ -42,20 +42,20 @@ export function ModelsPage() {
       kind: (typeof mediaKinds)[number];
       modelId: string;
     }) => {
-      if (!root?.writable) throw new Error("Root configuration is read only.");
+      if (!root?.writable) throw new Error("Global settings are read-only.");
       const path = root.relative_path;
       const draft = drafts.get(path);
       if (draft && draft.content !== draft.base)
-        throw new Error("Save or discard the root configuration draft first.");
+        throw new Error("Save or discard your global settings changes first.");
       const saved = await result(
         client.GET("/api/configuration/sources/{relative_path}", {
           params: { path: { relative_path: path } },
         }),
       );
-      if (!saved.content) throw new Error("Root configuration is unavailable.");
+      if (!saved.content) throw new Error("Couldn't load global settings.");
       const current = drafts.get(path);
       if (current && current.content !== current.base)
-        throw new Error("Save or discard the root configuration draft first.");
+        throw new Error("Save or discard your global settings changes first.");
       const value =
         selectors.data?.media_understanding?.[kind] === modelId
           ? null
@@ -273,8 +273,8 @@ export function ModelsPage() {
       {root && (
         <details className={layout.disclosure}>
           <summary>
-            <span>Media understanding defaults</span>
-            <small>Fallback models when native input is unavailable</small>
+            <span>Media models</span>
+            <small>Used when your main model can't read media.</small>
           </summary>
           <SourceDocument
             key={root.relative_path}
@@ -386,7 +386,7 @@ function AddModelDialog({
       );
       if (!publication.completed)
         throw new Error(
-          publication.error_message || "Model publication did not complete.",
+          publication.error_message || "Couldn't finish saving the model.",
         );
     },
     onSuccess: async () => {
@@ -414,7 +414,7 @@ function AddModelDialog({
             loading={save.isPending}
             onClick={() => save.mutate()}
           >
-            Save model
+            Save
           </Button>
         </>
       }

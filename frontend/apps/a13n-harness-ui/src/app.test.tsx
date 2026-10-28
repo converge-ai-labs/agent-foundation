@@ -446,7 +446,7 @@ it("supports explicit server bypass without inventing a frontend version", async
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
   await screen.findByText("Harness UI · 0.0.0");
-  expect(screen.getByText(/Instance authentication is disabled/)).toBeTruthy();
+  expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
 
 it("rejects incompatible status without caching access", async () => {
@@ -519,7 +519,7 @@ it("keeps logout cleanup authenticated and warns when background delivery cannot
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",
     expect.stringContaining(
-      "Block notifications in this site's browser settings",
+      "Block this site's notifications in your browser settings",
     ),
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
@@ -575,10 +575,8 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
   await screen.findByRole("heading", {
     name: "Saved configuration is hidden",
   });
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
-  expect(
-    screen.getByRole("button", { name: "Replace configuration file" }),
-  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Replace file" })).toBeTruthy();
   expect(screen.getByText(/mcp-one, mcp-two/)).toBeTruthy();
 });
 
@@ -602,7 +600,7 @@ it("reopens an unpublished resource draft without treating it as a missing serve
       "Unpublished model",
     ),
   );
-  expect(screen.getByRole("button", { name: "Create model" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create" })).toBeTruthy();
   expect(window.location.search).toContain("new=1");
 });
 
@@ -610,9 +608,7 @@ it("keeps incomplete existing configuration in focused repair without initializa
   window.history.replaceState(null, "", "/setup");
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Setup & readiness" });
-  expect(
-    screen.getByRole("link", { name: "Repair agent connection" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Fix connection" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Save and start/ })).toBeNull();
   expect(
     vi
@@ -644,7 +640,7 @@ it("attempts offline publication immediately and does not queue it for reconnect
   });
   try {
     onlineManager.setOnline(false);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText(
       "Unable to reach the server. Check your connection and try again.",
     );
@@ -698,7 +694,7 @@ it("keeps a dirty draft when summary invalidation discovers an external publicat
     resume_cursor: "epoch:2",
     event: { kind: "configuration" },
   });
-  await screen.findByText(/This configuration changed elsewhere/);
+  await screen.findByText(/This file changed elsewhere/);
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Retained local name",
   );
@@ -725,11 +721,11 @@ it("retains source edits across rejected access and reauthentication", async () 
   fireEvent.click(
     screen.getByText("Advanced configuration", { selector: "summary" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Check configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check settings" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
-  expect(screen.getByText(/unsaved/i)).toBeTruthy();
+  expect(screen.getByText(/Your edits are still here/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "incorrect-replacement" },
   });
@@ -737,7 +733,7 @@ it("retains source edits across rejected access and reauthentication", async () 
   await screen.findByText(
     "This instance key wasn't accepted. Check it and try again.",
   );
-  expect(screen.getByText(/unsaved/i)).toBeTruthy();
+  expect(screen.getByText(/Your edits are still here/)).toBeTruthy();
   expire = false;
   fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "replacement" },
@@ -888,11 +884,8 @@ it("restores the native account login across navigation and respects completed c
 });
 
 it.each([
-  ["kind: project\nroots: [null]\n", /Repair the host root list/],
-  [
-    "kind: agent\ncapabilities: null\n",
-    /Repair the capability, subagent or tool list/,
-  ],
+  ["kind: project\nroots: [null]\n", /Fix the folder list/],
+  ["kind: agent\ncapabilities: null\n", /Fix the tool and subagent lists/],
 ])(
   "keeps incomplete advanced YAML repairable: %s",
   async (content, message) => {
@@ -918,9 +911,7 @@ it.each([
       screen.getByText("Advanced configuration", { selector: "summary" }),
     );
     expect(screen.getByText("Configuration file")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Check configuration" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check settings" })).toBeTruthy();
   },
 );
 
@@ -976,8 +967,8 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
   expect(within(catalog).getByText("example-capabilities")).toBeTruthy();
-  expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(within(catalog).getByText("No setup form")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   await user.click(
     await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
@@ -1010,7 +1001,7 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   expect(
     screen.getByRole("button", { name: "Remove capability Available" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(saved).toContain("capability: available"));
   expect(saved).toContain("keep: true");
   expect(saved).toContain("retain: 42");
@@ -1040,14 +1031,12 @@ it("opens the owning agent editor to repair malformed capability YAML", async ()
   fireEvent.click(
     await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
-  await screen.findByText(/Structured fields are unavailable/);
+  await screen.findByText(/Edit this document in the source editor/);
   fireEvent.click(
     screen.getByText("Advanced configuration", { selector: "summary" }),
   );
   expect(screen.getByText("Configuration file")).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Check configuration" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Check settings" })).toBeTruthy();
 });
 
 it.each(["read-only", "missing"])(
@@ -1098,7 +1087,7 @@ it.each(["read-only", "missing"])(
       ).toBe("false");
     }
 
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(
       vi
         .mocked(fetch)
@@ -1140,7 +1129,7 @@ it.each([false, true])(
         await screen.findByRole("button", { name: "Add agent" }),
       ).toBeTruthy();
     }
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   },
 );
 
@@ -1231,7 +1220,7 @@ it("shows built-in environments as read-only and does not offer configuration fo
   render(<BrowserApp />);
   await screen.findByText("Built in");
   const profiles = screen.getByRole("region", {
-    name: "Local execution profiles",
+    name: "Local profiles",
   });
   expect(
     within(profiles).getByRole("button", { name: "Add local profile" }),
@@ -1239,7 +1228,7 @@ it("shows built-in environments as read-only and does not offer configuration fo
   const providers = screen.getByText("Environment providers");
   expect(providers.closest("details")?.open).toBe(false);
   fireEvent.click(providers);
-  await screen.findByText("Unavailable to configure");
+  await screen.findByText("No setup form");
   expect(screen.queryByRole("link", { name: /Full Control/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Configure" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
@@ -1294,7 +1283,7 @@ it("edits project defaults directly while preserving unknown project fields", as
     await screen.findByRole("combobox", { name: "Default agent" }),
   );
   await user.click(await screen.findByRole("option", { name: "Assistant" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(saved).toContain("agent: agent-assistant"));
   expect(saved).toContain("retain: true");
   expect(saved).toContain("/test");
@@ -1316,7 +1305,7 @@ it("persists generated and edited collaboration names across visits and rejects 
     }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "People & display name" }),
+    await screen.findByRole("menuitem", { name: "People & profile" }),
   );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
@@ -1374,7 +1363,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   expectHidden();
   await user.click(live);
   expectHidden();
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   expect(
     await screen.findByRole("button", { name: "Start voice" }),
   ).toBeTruthy();
@@ -1383,7 +1372,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   await user.click(screen.getByRole("button", { name: "Workspace menu" }));
   await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
   await user.click(await screen.findByRole("switch", { name: "Live" }));
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await user.click(screen.getByRole("link", { name: "Back to chats" }));
   await waitFor(expectHidden);
   expect(writes).toBe(2);
@@ -1477,17 +1466,17 @@ it("configures Sidekick in General without changing defaults or starting chats",
       "aria-checked",
     ),
   ).toBe("true");
-  await user.click(screen.getByText("Delegation defaults"));
+  await user.click(screen.getByText("Subagent defaults"));
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
-  ).toContain("Inherit current agent");
+  ).toContain("Use current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
   await user.click(await screen.findByRole("option", { name: "Worker model" }));
   expect(parse(content).webui.sidekick).toBeUndefined();
   await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
   await user.click(await screen.findByRole("option", { name: "Worker" }));
   expect(writes).toBe(0);
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(1));
   expect(parse(content).webui.sidekick).toEqual({
     agent: "agent-worker",
@@ -1503,7 +1492,7 @@ it("configures Sidekick in General without changing defaults or starting chats",
     ).toContain("Worker"),
   );
   await user.click(screen.getByRole("switch", { name: "Sidekick" }));
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(2));
   expect(parse(content).webui.sidekick).toBeNull();
   expect(content).toContain("custom: keep");
@@ -1523,7 +1512,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
       }),
     );
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & display name" }),
+      await screen.findByRole("menuitem", { name: "People & profile" }),
     );
     const color = await screen.findByRole("combobox", { name: "Your color" });
     expect(color.textContent).toBe("Purple");
@@ -1538,7 +1527,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
       }),
     );
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & display name" }),
+      await screen.findByRole("menuitem", { name: "People & profile" }),
     );
     const remembered = await screen.findByRole("combobox", {
       name: "Your color",
@@ -1559,7 +1548,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
       }),
     );
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & display name" }),
+      await screen.findByRole("menuitem", { name: "People & profile" }),
     );
     expect(
       (await screen.findByRole("combobox", { name: "Your color" })).textContent,
@@ -1580,9 +1569,7 @@ it("keeps destructive configuration actions secondary and requires named confirm
   await user.click(
     await screen.findByRole("button", { name: "More configuration actions" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Delete configuration" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
   const dialog = await screen.findByRole("dialog", {
     name: "Delete this configuration?",
   });
@@ -1729,11 +1716,11 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
   await waitFor(() =>
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/changed" },
   });
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toHaveLength(2));
   expect(parse(writes[1])).toMatchObject({
     id: "project-test",
@@ -1798,7 +1785,7 @@ it("shares the root draft across General, execution, runtime and connection sett
   await user.click(screen.getByRole("link", { name: "Connections" }));
   await user.click(await screen.findByText("Chat defaults", { exact: true }));
   expect(writes).toEqual([]);
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(parse(content)).toMatchObject({
     live: { enabled: true },
@@ -1812,7 +1799,7 @@ it("shares the root draft across General, execution, runtime and connection sett
       "aria-checked",
     ),
   ).toBe("true");
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
 });
 
 it.each([

@@ -87,8 +87,8 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
             label="Permissions"
             description={
               direct
-                ? "Commands run as the host account with filesystem and network access."
-                : "Sandbox restricts files and processes to the selected workspace grants."
+                ? "Commands use the server's account, with file and network access."
+                : "Sandbox limits file and process access to the allowed workspace."
             }
           >
             {direct ? (
@@ -116,7 +116,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
         {!custom && !direct && !sandbox && (
           <SettingsRow
             label="Computer Use"
-            description="Allow agents using this default to observe and control the host desktop."
+            description="Let agents using this default see and control this computer's desktop."
           >
             <Switch
               aria-label="Computer Use"
@@ -197,7 +197,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
       <SettingsSection variant="grouped">
         <SettingsRow
           label="Runtime source"
-          description="Managed downloads the exact release selected by the installed client."
+          description="Automatically downloads the envd version required by Harness."
         >
           <ChoiceField
             label="Runtime source"
@@ -221,12 +221,12 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
             label="Executable path"
             value={executable}
             onChange={(value) => update({ executable: value })}
-            description="Absolute path to a13n-envd on the Harness host. Custom executables are never downloaded automatically."
+            description="Full path to a13n-envd on this server. You must install and update it yourself."
           />
         )}
         <SettingsRow
           label="Metrics collection"
-          description="App collection and built-in local Envd sampling. External daemons and custom launch recipes keep their own sampling interval. Restart Harness UI after saving."
+          description="How often Harness collects metrics. This also sets sampling for its local envd runtime. Other runtimes keep their own interval. Restart Harness UI to apply."
         >
           <ChoiceField
             label="Metrics collection interval"
@@ -253,7 +253,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
         </SettingsRow>
         <SettingsRow
           label="Desktop capability"
-          description="Permit Computer Use runtimes on this host. Agents still need a profile that explicitly allows desktop access."
+          description="Allow desktop controls on this server. Each agent still needs a profile with desktop access."
         >
           <Switch
             aria-label="Desktop capability"

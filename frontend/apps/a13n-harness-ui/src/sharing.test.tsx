@@ -144,7 +144,7 @@ it("creates only on request, copies the issued link, saves permission and revoke
     await screen.findByRole("option", { name: "Send messages" }),
   );
   expect(writes).toHaveLength(1);
-  await screen.findByText(/Save only for people you trust/);
+  await screen.findByText(/Share only with people you trust/);
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(
@@ -209,7 +209,7 @@ it("sets Project access and expiry, preserves the link on copy failure and reset
   await user.click(screen.getByRole("button", { name: "Copy link" }));
   await screen.findByRole("button", { name: "Copied" });
   expect(writes).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Create another link" }));
+  await user.click(screen.getByRole("button", { name: "New link" }));
   expect(screen.queryByRole("textbox", { name: "Sharing link" })).toBeNull();
   expect(screen.queryByText(/copy it manually/)).toBeNull();
   expect(screen.getByRole("combobox", { name: "Include" })).toBeTruthy();
@@ -220,7 +220,7 @@ it("keeps grant management available after an unknown creation outcome without r
   const { writes, user } = renderSharing({ failCreate: true });
   await screen.findByText("Manage links · 0");
   await user.click(screen.getByRole("button", { name: "Create link" }));
-  await screen.findByText(/the link may have been created/);
+  await screen.findByText(/The link may already exist/);
   expect(screen.getByText("Manage links · 0")).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Sharing link" })).toBeNull();
   expect(writes).toHaveLength(1);

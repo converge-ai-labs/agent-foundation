@@ -142,7 +142,7 @@ export function DecisionForm({
       {remaining !== null && (
         <p role="status" aria-live="off">
           {expired
-            ? "Response window ended. Waiting for the server to confirm the outcome."
+            ? "Time to respond has ended. Waiting for the result."
             : `${remaining}s left. Work continues without unsubmitted answers or approvals when time expires, even if you leave.`}
         </p>
       )}
@@ -195,8 +195,8 @@ export function DecisionForm({
         )}
         {unknown && (
           <p role="status">
-            Acknowledgement unavailable. Refresh the pending request; this
-            response will not be retried automatically.
+            Couldn't confirm delivery. Refresh the request to check. Your
+            response won't be resent automatically.
           </p>
         )}
         <div className={styles.decisionActions}>

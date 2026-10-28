@@ -3,6 +3,7 @@ import { Button } from "a13n-ui";
 import { ArrowRight } from "@phosphor-icons/react";
 import { modelCost, tokenCounts, type ThreadUsage } from "./usage";
 import styles from "./composer-status.module.css";
+import { DebugOnly } from "../shell/debug";
 
 export function ContextDetails({
   used,
@@ -120,7 +121,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
   if (!usage?.first_observed_at)
     return (
       <p className={styles.scope}>
-        No recorded usage yet. Historical coverage is unavailable, not zero.
+        No usage recorded yet. Earlier usage may be missing.
       </p>
     );
   const totals = usage[scope];
@@ -212,7 +213,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
             </summary>
             {!models.length && (
               <p className={styles.scope}>
-                Model attribution is unavailable for this scope in older data.
+                Older records don't show which models were used here.
               </p>
             )}
             <ul className={styles.models}>
@@ -257,9 +258,11 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                                     ? "Media understanding · view"
                                     : group.source || "Unattributed"}
                               </div>
-                              <small className={styles.scope}>
-                                {group.agent_instance_id || "Unknown agent"}
-                              </small>
+                              <DebugOnly>
+                                <small className={styles.scope}>
+                                  {group.agent_instance_id || "Unknown agent"}
+                                </small>
+                              </DebugOnly>
                               <div>
                                 {group.totals.model_requests.toLocaleString()}{" "}
                                 requests · <CostValue totals={group.totals} />
@@ -276,16 +279,14 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
             </ul>
             {!!usage.other_groups?.model_requests && (
               <p className={styles.scope}>
-                Some agent/source details are omitted. All contributions remain
-                included in the model and scope totals.
+                Some breakdown details are hidden. Their usage is still included
+                in the totals.
               </p>
             )}
           </details>
         </>
       ) : (
-        <p className={styles.emptyScope}>
-          No recorded model responses in this scope.
-        </p>
+        <p className={styles.emptyScope}>No model responses recorded here.</p>
       )}
       {totals.provider_receipts > 0 && (
         <details className={styles.attribution}>
@@ -322,12 +323,12 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           Includes auxiliary models and recorded usage in this chat.
         </p>
         <p className={styles.scope}>
-          Cache/audio counters are included in input/output, not additional
-          tokens. Agent and source details are breakdowns, not extra usage.
+          Cache and audio tokens are already included in input and output. Agent
+          and source totals are breakdowns of the same usage.
         </p>
         <p className={styles.scope}>
-          Model estimates, not a provider invoice. + marks a partial known
-          subtotal. Missing historical prices are not backfilled.
+          Estimated cost, not a bill. + means some prices are missing. Older
+          missing prices stay unknown.
         </p>
       </details>
       <a

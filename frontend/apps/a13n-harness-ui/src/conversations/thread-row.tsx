@@ -326,8 +326,8 @@ export function ThreadRow({
               >
                 <CoordinatorIcon size={16} />
                 {row.thread.auto_followup
-                  ? "Pause automatic follow-up"
-                  : "Enable automatic follow-up"}
+                  ? "Pause follow-ups"
+                  : "Enable follow-ups"}
               </MenuItem>
             )}
             {row.thread.configuration.agent_source.kind !== "live" && (

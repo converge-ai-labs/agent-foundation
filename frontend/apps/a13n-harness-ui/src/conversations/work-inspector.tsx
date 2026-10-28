@@ -182,8 +182,8 @@ export function WorkInspector({
           <div className={styles.inspectorBody}>
             {key === "processes" && (
               <PopoverDescription className={styles.caption}>
-                Last observed processes from this chat and its subagents, not
-                all server processes.
+                Recent processes from this chat and its subagents. Other server
+                processes aren't shown.
               </PopoverDescription>
             )}
             {(key === "tasks" || key === "notes") && (

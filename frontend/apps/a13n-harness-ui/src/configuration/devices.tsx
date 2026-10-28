@@ -130,7 +130,7 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
         }
       }}
       title={`Revoke ${device.name}?`}
-      description="Disconnect this Device and block its saved credential. Runs using it lose their connection. Remote files and captured history are preserved."
+      description="Disconnect this device and revoke its credential? Active runs will lose access. Remote files and chat history are kept."
       closeLabel="Close"
       trigger={
         <Button size="sm" variant="ghost">
@@ -157,8 +157,8 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
       }
     >
       <p>
-        This revokes trust, rather than only forgetting local configuration. The
-        daemon will not automatically request a new credential.
+        The device's credential will stop working. Reconnect it manually to
+        request a new one.
       </p>
       <ErrorNotice error={revoke.error} />
     </ModalFrame>

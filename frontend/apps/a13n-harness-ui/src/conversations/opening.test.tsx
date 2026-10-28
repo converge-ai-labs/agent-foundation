@@ -51,7 +51,7 @@ it("offers an explicit way to inspect a stalled initial connection without resub
   render(<Page observed={false} />);
   expect(screen.queryByRole("button")).toBeNull();
   act(() => vi.advanceTimersByTime(6000));
-  fireEvent.click(screen.getByRole("button", { name: "Show available chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
   expect(screen.queryByRole("status")).toBeNull();
   expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
     "Retained input",

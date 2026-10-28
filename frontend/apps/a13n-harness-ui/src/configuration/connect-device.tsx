@@ -20,7 +20,7 @@ import styles from "./connect-device.module.css";
 
 export function ConnectDevice({
   onConnected,
-  label = "Connect Device",
+  label = "Connect device",
 }: {
   onConnected?: (device: Schema<"DeviceSummary">) => void;
   label?: string;
@@ -31,7 +31,7 @@ export function ConnectDevice({
       open={open}
       onOpenChange={setOpen}
       title="Connect a Device"
-      description="Connect another computer by running envd, then verify its code."
+      description="Run envd on the other computer, then verify its code here."
       closeLabel="Close dialog"
       size="lg"
       trigger={
@@ -96,8 +96,8 @@ function ConnectDeviceSteps({
           <section className={styles.step}>
             <h3>1. Run on the device</h3>
             <p>
-              Install a13n-envd on your PATH, then run this command. Keep the
-              terminal open; it does not install a background service.
+              Install a13n-envd, add it to PATH, and run this command. Keep this
+              terminal open while connected.
             </p>
             <SettingsSection>
               <ChoiceField
@@ -111,7 +111,7 @@ function ConnectDeviceSteps({
               />
               <SettingsToggle
                 label="Enable shell execution"
-                description="Full Control as the device user, without a sandbox. Off by default; independent of server permissions."
+                description="Run commands as the device user, without a sandbox. Off by default. Server permissions don't apply."
                 checked={execution}
                 onCheckedChange={setExecution}
               />
@@ -120,7 +120,7 @@ function ConnectDeviceSteps({
                 <div>
                   <SettingsToggle
                     label="Enable desktop observation and control"
-                    description="Independent of shell access. Requires platform desktop permissions. Screenshots can be sent to the model and retained in history."
+                    description="Requires desktop permission on the device, separately from shell access. Screenshots may be sent to the model and saved in chat history."
                     checked={desktop}
                     onCheckedChange={setDesktop}
                   />
@@ -142,15 +142,15 @@ function ConnectDeviceSteps({
             </div>
             <ErrorNotice error={copy.error} />
             <p>
-              Use a server address the device can reach. Remote connections
-              require HTTPS; localhost points to the device itself.
+              Enter an address this device can reach. Use HTTPS for remote
+              connections. Localhost means the device itself.
             </p>
             <details className={layout.details}>
               <summary>Reconnecting and multiple hosts</summary>
               <p>
-                After restarting, rerun the same command and environment.
-                Identity and credentials are reused; supply launch flags and
-                access settings again. Replace revoked credentials.
+                After a restart, run the same command with the same environment
+                variables and access options. Saved credentials are reused
+                unless revoked.
               </p>
               <p>
                 For another Host, run a separate envd process with a different{" "}
@@ -162,14 +162,14 @@ function ConnectDeviceSteps({
           <section className={styles.step}>
             <h3>2. Verify and approve</h3>
             <p>
-              Approve only the code shown in your Device terminal. Closing this
-              dialog does not reject a pending request.
+              Match the code in the device's terminal before approving. Closing
+              this dialog leaves the request pending.
             </p>
             <ErrorNotice error={pairings.error} />
             {!pairings.data?.length && (
               <p role="status">
-                Waiting for a verification request. If a request disappears, it
-                may have expired or been handled elsewhere; that is not proof of
+                Waiting for a code. A request may disappear if it expires or is
+                handled elsewhere. Check the device's status to confirm
                 approval.
               </p>
             )}
@@ -184,8 +184,8 @@ function ConnectDeviceSteps({
           <details className={layout.details}>
             <summary>Connect manually</summary>
             <p>
-              For an existing daemon or credentials you manage yourself. Return
-              to the Device picker after saving.
+              Use an existing envd connection or your own credentials. Return to
+              the device picker after saving.
             </p>
             <NewResourceButton kind="device" label="Configure manually" />
           </details>
@@ -201,13 +201,12 @@ function ConnectDeviceSteps({
           <ErrorNotice error={info.error} />
           {info.data && !info.data.available && (
             <p>
-              Keep envd running and check its terminal. Approval registers the
-              Device; it does not prove the connection is ready.
+              Keep envd running and check its terminal. Approval saves the
+              device; it still needs to connect.
             </p>
           )}
           <p>
-            This Device is now registered globally. Closing this dialog keeps
-            the registration
+            This device is saved for this server. Closing this dialog keeps it
             {inline ? " but does not save an environment binding" : ""}.
           </p>
           <Button

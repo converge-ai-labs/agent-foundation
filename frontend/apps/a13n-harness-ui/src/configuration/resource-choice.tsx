@@ -43,7 +43,7 @@ export function ResourceChoice({
       placeholder={
         placeholder ??
         choices.find((item) => item.value === "")?.label ??
-        "Choose a resource"
+        "Choose an option"
       }
       emptyMessage={loading ? "Loading resources…" : "No matching resources."}
       value={value}

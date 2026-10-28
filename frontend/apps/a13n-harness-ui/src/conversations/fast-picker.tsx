@@ -84,12 +84,12 @@ export function FastPicker({
         {control?.reason ??
           (!control?.supported
             ? "Speed controls are unavailable."
-            : "May increase cost or credit usage. Requested setting, not guaranteed speed.")}
+            : "May use more credits or cost more. Speed isn't guaranteed.")}
       </p>
       {showUltrafast && (
         <p className={styles.hint}>
           {control?.ultrafast_reason ??
-            "Ultrafast requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply; account access is checked by OpenAI."}
+            "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply. OpenAI checks account access."}
         </p>
       )}
       {value != null && unavailable && (

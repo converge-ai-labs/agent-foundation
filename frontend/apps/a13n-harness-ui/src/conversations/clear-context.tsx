@@ -75,7 +75,7 @@ export function ClearContext({
           if (!open && !clear.isPending) setTarget(null);
         }}
         title="Clear chat context?"
-        description="Reset the Agent’s working state, including messages, notes, tasks, pending questions and approvals. Keep chat history, files, settings and your draft."
+        description="Reset the agent's context, notes, tasks and pending requests. Chat history, files, settings and your draft are kept."
         closeLabel="Close confirmation"
         footer={
           <>
@@ -100,8 +100,8 @@ export function ClearContext({
         <ErrorNotice error={clear.error} />
         {clear.error && !(clear.error instanceof ApiError) && (
           <p role="alert">
-            The result could not be confirmed. Refresh the chat before trying
-            again; the context may already have been cleared.
+            Couldn't confirm the reset. The context may already be cleared.
+            Refresh the chat before trying again.
           </p>
         )}
         {stale && (

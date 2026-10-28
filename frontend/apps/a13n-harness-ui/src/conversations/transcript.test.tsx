@@ -13,7 +13,7 @@ it("keeps live prose visible when a stream gap needs a warning", () => {
   expect(screen.queryByRole("status")).toBeNull();
   view.rerender(<LiveOutput blocks={blocks} gap />);
   expect(screen.getByRole("status").textContent).toContain(
-    "Some live content is unavailable",
+    "Some live updates are missing",
   );
 });
 const metadata = {

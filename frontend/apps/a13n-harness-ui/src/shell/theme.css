@@ -276,6 +276,10 @@
   [data-slot="combobox-item"] {
     min-height: 44px;
   }
+  [data-slot="select-item"] .truncate {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (pointer: coarse) {

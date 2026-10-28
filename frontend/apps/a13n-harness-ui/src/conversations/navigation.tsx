@@ -510,11 +510,12 @@ function ProjectGroup({
                 </MenuItem>
                 {unreadCount > 0 && (
                   <MenuItem
+                    aria-label={`Mark all results read in ${group.name}`}
                     disabled={markingRead}
                     onClick={() => void markAllRead()}
                   >
                     <Check />
-                    Mark all results read in {group.name}
+                    Mark all read
                   </MenuItem>
                 )}
                 {group.projectId && (
@@ -552,9 +553,7 @@ function ProjectGroup({
                       <ArrowDown />
                       Move project down
                     </MenuItem>
-                    <MenuItem onClick={order.reset}>
-                      Reset project order in this browser
-                    </MenuItem>
+                    <MenuItem onClick={order.reset}>Reset order</MenuItem>
                   </>
                 )}
               </MenuPopup>

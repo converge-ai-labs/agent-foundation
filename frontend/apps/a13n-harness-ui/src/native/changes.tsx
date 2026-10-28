@@ -160,7 +160,8 @@ export function Changes({
       <div className={styles.empty}>
         <h3>Git unavailable</h3>
         <p>
-          Install Git on the server and enable native sharing to view changes.
+          Install Git on the server and turn on computer sharing to view
+          changes.
         </p>
       </div>
     );
@@ -191,8 +192,8 @@ export function Changes({
               : "No Git worktree here"}
           </h3>
           <p>
-            Choose a worktree directory. Ordinary native files remain
-            accessible.
+            Choose a Git worktree folder. Other files are still available in
+            Files.
           </p>
         </div>
       )}
@@ -327,7 +328,7 @@ export function Changes({
                   onClick={() => openFile(gitPath(repository.root, entry.path))}
                 >
                   <span>{entry.path}</span>
-                  <small>Ignored · open in Files</small>
+                  <small>Open in Files</small>
                 </button>
               ))}
           {!matches.length && status.isSuccess && !status.error && (
@@ -456,7 +457,7 @@ export function DiffView({
           ) : (
             <p>
               {value.presentation === "binary"
-                ? "Binary or non-UTF-8 comparison. Open in Files to deliberately capture file bytes instead."
+                ? "This isn't UTF-8 text. Open it in Files to attach the file instead."
                 : "No changes on this comparison axis."}
             </p>
           )}

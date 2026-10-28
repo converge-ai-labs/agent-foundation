@@ -33,12 +33,12 @@ export function ProjectFolders({
   return (
     <div className={styles.folders}>
       {compact && roots.length > 0 && (
-        <p className={styles.label}>Working directories</p>
+        <p className={styles.label}>Working folders</p>
       )}
       {!compact && (
         <p className={styles.hint}>
-          Use existing server or container directories. The first is your
-          workspace. Files stay in place.
+          Choose existing folders on the server or in its container. The first
+          is your workspace. Files stay in place.
         </p>
       )}
       {roots.map((root, index) => (
@@ -119,13 +119,12 @@ export function ProjectFolders({
           onClick={() => onChange([...roots, { path: "" }])}
         >
           <PlusIcon />
-          {roots.length ? "Add another directory" : "Add local directory"}
+          {roots.length ? "Add folder" : "Add local folder"}
         </Button>
       </div>
       {roots.length > 0 && status.data && !status.data.features?.host_files && (
         <small className={styles.hint}>
-          Folder browsing is unavailable while native computer sharing is
-          disabled. You can still enter paths manually.
+          Turn on computer sharing to browse folders, or enter a path manually.
         </small>
       )}
     </div>

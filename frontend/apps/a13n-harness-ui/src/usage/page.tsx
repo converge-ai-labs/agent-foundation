@@ -318,7 +318,12 @@ export function UsagePage() {
                 </Button>
               </div>
             </div>
-            <div className={styles.tableScroll}>
+            <div
+              className={styles.tableScroll}
+              role="region"
+              aria-label="Usage breakdown table"
+              tabIndex={0}
+            >
               <table className={styles.table}>
                 <thead>
                   <tr>
@@ -446,15 +451,17 @@ export function UsagePage() {
           <details className={styles.note}>
             <summary>About these estimates</summary>
             <p>
-              Model estimates are not invoices or subscription spend. Unknown
-              prices are excluded from known subtotals (+).
+              Estimated model cost, not a bill or subscription charge. + means
+              some prices are missing from the subtotal.
             </p>
             <p>
-              Includes retained archived, Memory and Live chats, subagents and
-              auxiliary model calls. Projects use each root chat’s current
-              assignment. Cache counters are subsets. Days use each record’s
-              latest response time, not streaming increments. Missing records do
-              not establish zero lifetime usage.
+              Includes saved chats, archived chats, Memory, Live voice,
+              subagents and supporting model calls. Older usage may be missing.
+            </p>
+            <p>
+              Usage follows each main chat's current project. Each record is
+              counted on the day of its latest response, not as tokens stream
+              in. Cache tokens are already included in the totals.
             </p>
           </details>
         </div>

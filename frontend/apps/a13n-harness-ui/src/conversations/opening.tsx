@@ -49,7 +49,7 @@ export function ConversationOpening({
             <div className={styles.recovery}>
               <p>Taking longer than usual. Your input is still here.</p>
               <Button variant="ghost" size="sm" onClick={onContinue}>
-                Show available chat
+                Open chat
               </Button>
             </div>
           )}

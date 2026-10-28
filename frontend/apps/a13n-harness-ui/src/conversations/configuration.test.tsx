@@ -71,10 +71,10 @@ it("previews Project environments without applying until the reviewed action is 
     await screen.findByText("Apply Project defaults", { selector: "summary" }),
   );
   await user.click(
-    await screen.findByRole("button", { name: "Preview Project environments" }),
+    await screen.findByRole("button", { name: "Environments only" }),
   );
   const apply = await screen.findByRole("button", {
-    name: "Apply reviewed environments",
+    name: "Apply environments",
   });
   expect(post).not.toHaveBeenCalled();
   expect(get).toHaveBeenCalledWith(

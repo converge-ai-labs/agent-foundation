@@ -210,7 +210,12 @@ export function SourcesPage({
   );
   return (
     <section
-      className={headingLevel === 2 ? layout.collection : layout.collectionPage}
+      className={[
+        headingLevel === 2 ? layout.collection : layout.collectionPage,
+        !kinds && layout.configurationFiles,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <PageHeader
         title={title}
@@ -303,10 +308,7 @@ export function SourcesPage({
         )}
         {sources.data && !kinds && !sources.data.sources.length && (
           <Panel title="No saved configuration">
-            <p>
-              Complete guided setup to create the root configuration before
-              adding resources.
-            </p>
+            <p>Finish setup before adding configurations.</p>
             <Link to="/setup">Open setup</Link>
           </Panel>
         )}
@@ -363,7 +365,7 @@ export function SourcesPage({
       >
         <SettingsSection>
           <ChoiceField
-            label="Resource type"
+            label="Type"
             value={kind}
             options={resourceKinds}
             onValueChange={(value) => {
@@ -375,7 +377,7 @@ export function SourcesPage({
             }}
           />
           <TextField
-            label="Resource ID"
+            label="ID"
             value={id}
             onChange={setId}
             description="Use the resource prefix and a lowercase hyphenated name."
@@ -553,11 +555,11 @@ export function SourceDocument({
             level={mediaOnly || section ? 2 : 1}
             description={
               mediaOnly
-                ? "Used when native input is unavailable."
+                ? "Used when your main model can't read this media."
                 : section === "envd"
-                  ? "Settings for this whole server. Save, then restart Harness UI to apply them."
+                  ? "Server-wide settings. Save and restart Harness UI to apply."
                   : section === "execution"
-                    ? "Default for new chats. Projects can override this selection."
+                    ? "Used by new chats unless the project sets its own defaults."
                     : undefined
             }
             title={
@@ -586,7 +588,7 @@ export function SourceDocument({
                       onClick={() => setDeleting(true)}
                     >
                       <Trash />
-                      Delete configuration
+                      Delete
                     </MenuItem>
                   </MenuPopup>
                 </Menu>
@@ -599,11 +601,11 @@ export function SourceDocument({
       {external && (
         <div className={styles.notice}>
           <p>
-            This configuration changed elsewhere. Your edits are preserved.
-            Saving will replace the current file.
+            This file changed elsewhere. Your edits are kept. Saving will
+            replace the newer file.
           </p>
           <Button variant="outline" onClick={() => setReplacing(true)}>
-            Reload saved version
+            Reload saved
           </Button>
         </div>
       )}
@@ -626,7 +628,7 @@ export function SourceDocument({
                 })
               }
             >
-              Replace configuration file
+              Replace file
             </Button>
           )}
         </Panel>
@@ -673,7 +675,7 @@ export function SourceDocument({
                 <div className={styles.sourceAdvanced}>
                   {readDocument(draft!.content)?.has("kind") && (
                     <TextField
-                      label="Resource ID"
+                      label="ID"
                       value={String(
                         readDocument(draft!.content)?.get("id") ?? "",
                       )}
@@ -702,7 +704,7 @@ export function SourceDocument({
                     disabled={save.isPending}
                     onClick={() => validate.mutate(draft!.content)}
                   >
-                    Check configuration
+                    Check settings
                   </Button>
                 </div>
               </details>
@@ -735,8 +737,8 @@ export function SourceDocument({
                     Cancel
                   </Button>
                 }
-                title="Discard this unsaved configuration?"
-                description={`Your unsaved configuration for ${path} will be lost.`}
+                title="Discard draft?"
+                description={`Changes to ${path} will be lost.`}
                 confirmLabel="Discard draft"
                 destructive
                 onConfirm={() => {
@@ -758,11 +760,7 @@ export function SourceDocument({
               disabled={!dirty || (kind === "model" && !modelReady)}
               onClick={() => save.mutate(draft!.content)}
             >
-              {isNew
-                ? `Create ${resourceLabel}`
-                : mediaOnly
-                  ? "Save"
-                  : "Save changes"}
+              {isNew ? "Create" : "Save"}
             </Button>
           </div>
         </footer>
@@ -788,7 +786,7 @@ export function SourceDocument({
               loading={remove.isPending}
               onClick={() => remove.mutate()}
             >
-              Delete configuration
+              Delete
             </Button>
           </>
         }
@@ -799,7 +797,7 @@ export function SourceDocument({
         open={replacing}
         onOpenChange={setReplacing}
         title="Discard this local draft?"
-        description="Reload the saved configuration. Your unsaved edits will be lost."
+        description="Reload the saved file? Your unsaved edits will be lost."
         closeLabel="Close confirmation"
         footer={
           <>
@@ -818,7 +816,7 @@ export function SourceDocument({
                 setReplacing(false);
               }}
             >
-              Reload saved version
+              Reload saved
             </Button>
           </>
         }

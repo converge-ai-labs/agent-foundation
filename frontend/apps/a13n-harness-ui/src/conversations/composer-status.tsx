@@ -181,7 +181,7 @@ export function ComposerStatus({
         {debug && (
           <span
             className={styles.metric}
-            title="Requested speed for this run. Speed changes apply to the next run; actual speed depends on the provider."
+            title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
           >
             Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
           </span>
@@ -191,7 +191,7 @@ export function ComposerStatus({
           capturedAgent.reasoning_mode !== "default" && (
             <span
               className={styles.metric}
-              title="Captured reasoning mode request, not the next-run draft or a guarantee of provider access."
+              title="Reasoning mode requested for this run. Provider access may vary. Changes apply next time."
             >
               Mode{" "}
               <strong>

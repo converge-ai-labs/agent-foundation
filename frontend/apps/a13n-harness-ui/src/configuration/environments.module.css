@@ -95,6 +95,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+@media (max-width: 600px) {
+  .defaultDirectory [data-slot="select-trigger"] {
+    height: auto;
+    padding-block: 8px;
+  }
+  .defaultDirectory [data-slot="select-value"] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 .directoryOptions [data-slot="select-item"] {
   height: auto;
 }

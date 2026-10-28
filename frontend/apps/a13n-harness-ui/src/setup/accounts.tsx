@@ -346,8 +346,8 @@ export function ProviderAccount({
             <details className={accountStyles.advanced}>
               <summary>Account source</summary>
               <p>
-                A selection replaces this server's binding. Missing credentials
-                never fall back to another account.
+                Choosing an account replaces this server's selection. If its
+                credentials are missing, no other account is used.
               </p>
               <div className={styles.actions}>
                 {sources.data?.map((candidate) => (
@@ -369,14 +369,11 @@ export function ProviderAccount({
                   variant="outline"
                   onClick={() => void sources.refetch()}
                 >
-                  Find saved accounts
+                  Find accounts
                 </Button>
               </div>
               {!sources.isPending && !sources.data?.length && (
-                <p>
-                  No supported saved accounts found. Connect an account to use
-                  native device login.
-                </p>
+                <p>No saved accounts found. Connect an account to sign in.</p>
               )}
             </details>
           )}
@@ -389,7 +386,7 @@ export function ProviderAccount({
                     label="Login method"
                     description={
                       method === "browser"
-                        ? "Needs a callback to this server. For remote servers, use device login or paste the full ChatGPT callback URL."
+                        ? "The browser must reach this server. For remote servers, use a device code or paste the full ChatGPT callback URL."
                         : undefined
                     }
                     value={method}
@@ -466,8 +463,7 @@ export function ProviderAccount({
                   </div>
                   {copyFailed && (
                     <p role="status">
-                      Could not copy automatically. Select and copy the code
-                      above.
+                      Couldn't copy. Select the code above and copy it manually.
                     </p>
                   )}
                 </li>
@@ -491,7 +487,7 @@ export function ProviderAccount({
                 <div className={styles.stack}>
                   <p>
                     {login.data.message ??
-                      "After authorizing, copy the complete URL from the browser address bar, even if the browser shows a connection error. It contains a one-time code; do not share it."}
+                      "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code."}
                   </p>
                   <FormField label="Complete callback URL">
                     <Input
@@ -552,7 +548,7 @@ export function ProviderAccount({
         open={switchOpen}
         onOpenChange={setSwitchOpen}
         title="Allow account switching?"
-        description="The next login may replace this provider's saved account on the server for everyone using it."
+        description="Signing in may replace this provider's account for everyone on this server."
         closeLabel="Close"
         footer={
           <>
@@ -567,7 +563,7 @@ export function ProviderAccount({
               loading={start.isPending}
               onClick={() => start.mutate(true)}
             >
-              Allow switch and log in
+              Switch and log in
             </Button>
           </>
         }
@@ -580,12 +576,12 @@ export function ProviderAccount({
         title={`Log out of ${provider}?`}
         description={
           provider === "chatgpt"
-            ? "Clear this host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
+            ? "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in."
             : nativeAccountId
-              ? "Clear this managed account’s credentials. The original CLI login and other managed accounts remain unchanged."
+              ? "Sign out of this saved account? The original CLI login and other accounts are kept."
               : account.data?.source_id?.startsWith("native:")
-                ? "Remove this host's credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
-                : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+                ? "Sign everyone out of this account on this server. Other accounts, models and agents are kept. GitHub authorization stays active."
+                : "Sign out of this local account, including the official CLI and other servers sharing it. Other accounts, models, agents and this browser login are kept. Provider authorization stays active."
         }
         closeLabel="Close"
         footer={

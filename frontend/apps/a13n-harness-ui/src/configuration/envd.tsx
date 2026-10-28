@@ -223,7 +223,7 @@ export function EnvdRuntime() {
           <p role="status" className={layout.hint}>
             {progress}
             {action.variables === "desktop" &&
-              " Approve the permission prompt on the host; this can take up to two minutes."}
+              "Approve the permission prompt on this computer. This may take two minutes."}
           </p>
         )}
         {notice && (
@@ -252,13 +252,13 @@ export function EnvdRuntime() {
       >
         <SettingsRow
           label="Full Control"
-          description="File and command execution. Checked when you start the runtime."
+          description="File and command access. Checked when the runtime starts."
         >
           {readiness("environment-envd")}
         </SettingsRow>
         <SettingsRow
           label="Sandbox"
-          description="Checked automatically. Each Project also checks its own workspace."
+          description="Checked automatically, including each project's workspace."
         >
           {readiness("environment-sandbox")}
         </SettingsRow>
@@ -267,7 +267,7 @@ export function EnvdRuntime() {
           description={
             state?.computer_use
               ? "Screen observation and input require permission on this host."
-              : "Enable Desktop capability in Configuration, save, then restart Harness UI."
+              : "Turn on Desktop capability below, save, and restart Harness UI."
           }
         >
           {state?.computer_use ? (
@@ -296,7 +296,7 @@ export function EnvdRuntime() {
           label="Required version"
           description={
             state?.source === "custom"
-              ? "Custom executables are updated on the host. Restart the runtime after replacing the file."
+              ? "Update the executable on this server, then restart the runtime."
               : state?.installed
                 ? "Reinstall this version and restart envd."
                 : "Downloaded when you install or update envd."
@@ -340,7 +340,7 @@ export function EnvdRuntime() {
         description={
           confirmation === "stop"
             ? "Interrupts local envd commands in all chats. Workspace files are kept."
-            : "Closes local envd Sessions in all chats, then checks Full Control and Sandbox. Workspace files are kept."
+            : "Closes local envd sessions in all chats, then checks Full Control and Sandbox. Files are kept."
         }
         closeLabel="Close confirmation"
         footer={

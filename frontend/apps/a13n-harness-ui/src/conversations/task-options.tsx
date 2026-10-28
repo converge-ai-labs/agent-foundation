@@ -59,7 +59,7 @@ export function TaskOptions({
         <label
           className={styles.optionRow}
           aria-label="Keep working"
-          title="Continue until your goal is complete or the continuation limit is reached."
+          title="Keep working until the goal is done or the follow-up limit is reached."
         >
           <Target aria-hidden />
           <span>Keep working</span>
@@ -69,7 +69,7 @@ export function TaskOptions({
           <label
             className={styles.optionRow}
             aria-label="Coordinate agents"
-            title="Plan and delegate work across agents. This cannot be turned off after sending."
+            title="Plan and delegate work to agents. Can't be turned off after sending."
           >
             <TreeStructure aria-hidden />
             <span>Coordinate agents</span>

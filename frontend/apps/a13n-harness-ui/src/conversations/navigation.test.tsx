@@ -504,7 +504,7 @@ it("uses the existing validated source publication to add a project without crea
     { target: { value: "Example: workspace" } },
   );
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Add local directory" }),
+    within(dialog).getByRole("button", { name: "Add local folder" }),
   );
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: "Server directory" }),
@@ -888,7 +888,7 @@ it("puts the current server directory first by default and on reset, while respe
   await user.click(screen.getByRole("button", { name: "Actions for One" }));
   await user.click(
     await screen.findByRole("menuitem", {
-      name: "Reset project order in this browser",
+      name: "Reset order",
     }),
   );
   expect(groupNames()).toEqual(["Two", "One"]);
@@ -1490,7 +1490,7 @@ it("renders multiple Coordinators with disjoint workers and independent follow-u
     screen.getByRole("button", { name: "Actions for alpha" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+    await screen.findByRole("menuitem", { name: "Pause follow-ups" }),
   );
   await waitFor(() => expect(coordinators[0].auto_followup).toBe(false));
   expect(coordinators[1].auto_followup).toBe(true);
@@ -1563,7 +1563,7 @@ it("reports failed follow-up changes without hiding or changing the Coordinator"
     await screen.findByRole("button", { name: "Actions for owner" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+    await screen.findByRole("menuitem", { name: "Pause follow-ups" }),
   );
   await screen.findByText("Coordinator update failed");
   expect(coordinators[0].auto_followup).toBe(true);

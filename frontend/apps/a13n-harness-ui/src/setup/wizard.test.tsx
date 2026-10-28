@@ -253,7 +253,7 @@ async function reviewConfiguration() {
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
@@ -275,16 +275,14 @@ it("uses server model choices, saves, reconciles and creates exactly one chat wi
   mount();
   await reviewConfiguration();
   expect(
-    screen.getByText(/Automatic memory organization uses your model/),
+    screen.getByText(/Automatic memory updates use model quota/),
   ).toBeTruthy();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
   expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
   expect(
     screen.queryByRole("button", { name: "Review configuration" }),
   ).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("First chat");
   expect(creationId).toBe(identity);
   expect(
@@ -311,9 +309,7 @@ it.each(["_", "-"])(
     expect(readWizardDraft(status.draft_scope!)?.threadId).toBe(identity);
     mount();
     await reviewConfiguration();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save and start chatting" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
     await screen.findByText("First chat");
     expect(creationId).toBe(identity);
   },
@@ -335,9 +331,7 @@ it("recovers lost publication and creation acknowledgements through exact reads,
   };
   mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("First chat");
   expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
   expect(calls.filter((c) => c.path === "/api/threads")).toHaveLength(1);
@@ -354,9 +348,7 @@ it("keeps partial publication pending across reload and never automatically retr
   };
   const view = mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("Not saved");
   expect(readWizardDraft(status.draft_scope!)?.pending?.files).toEqual(files);
   view.unmount();
@@ -383,7 +375,7 @@ it("automatically checks Sandbox after selection, reports failure and never down
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -469,10 +461,10 @@ it("does not complete recovery into an existing chat with different execution au
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Check saved setup and open chat",
+      name: "Resume setup",
     }),
   );
-  await screen.findByText(/first chat already exists with different choices/);
+  await screen.findByText(/first chat already uses different settings/);
   expect(window.location.pathname).toBe("/setup");
   expect(readWizardDraft(status.draft_scope!)?.pending).toBeTruthy();
   expect(
@@ -679,7 +671,7 @@ it("shows download, verification and isolation progress; cancels and retries bef
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -689,9 +681,7 @@ it("shows download, verification and isolation progress; cancels and retries bef
     0,
   );
   phase = "verifying";
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry Sandbox preparation" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Retry sandbox" }));
   await waitFor(
     () =>
       expect(
@@ -715,14 +705,12 @@ it("shows download, verification and isolation progress; cancels and retries bef
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("First chat");
   expect(calls.filter((call) => call.path === "/api/setup/apply")).toHaveLength(
     1,
@@ -768,7 +756,7 @@ it("cancels obsolete Sandbox checks when changing roots or returning to Direct",
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
@@ -801,7 +789,7 @@ it("shows configuration validation failures and recovers after correcting the Pr
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -812,7 +800,7 @@ it("shows configuration validation failures and recovers after correcting the Pr
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),

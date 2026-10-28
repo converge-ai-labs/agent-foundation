@@ -189,11 +189,11 @@ it("saves a group to its owning source path with credits still opt-in", async ()
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "Save group" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save group" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(writes[0].path).toBe(
     "/api/configuration/sources/subscription_groups/custom-name.yaml",
@@ -223,9 +223,7 @@ it("can cancel group deletion and deletes only the reviewed source after confirm
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(writes).toEqual([]);
   fireEvent.click(deleteButton);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Confirm delete group" }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: "Delete group" }));
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(writes[0]).toEqual({
     path: "/api/configuration/sources/subscription_groups/custom-name.yaml",
@@ -260,7 +258,7 @@ it("lists vouchers by expiry and requires confirmation after choosing Use", asyn
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(writes).toHaveLength(0);
   fireEvent.click(screen.getAllByRole("button", { name: "Use" })[0]);
-  fireEvent.click(screen.getByRole("button", { name: "Confirm use voucher" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use voucher" }));
   await screen.findByText(/1 windows reset/);
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({
@@ -269,9 +267,7 @@ it("lists vouchers by expiry and requires confirmation after choosing Use", asyn
   });
   expect(writes[0].body.redeem_request_id).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Use" })).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Confirm use voucher" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Use voucher" })).toBeNull();
 });
 
 it("retries an uncertain redemption with the same account, voucher, and request ID", async () => {
@@ -283,7 +279,7 @@ it("retries an uncertain redemption with the same account, voucher, and request 
     await screen.findByRole("menuitem", { name: "Reset voucher…" }),
   );
   fireEvent.click((await screen.findAllByRole("button", { name: "Use" }))[0]);
-  fireEvent.click(screen.getByRole("button", { name: "Confirm use voucher" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use voucher" }));
   const retry = await screen.findByRole("button", {
     name: "Retry use voucher",
   });

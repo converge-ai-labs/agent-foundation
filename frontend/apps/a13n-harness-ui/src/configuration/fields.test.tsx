@@ -96,7 +96,7 @@ it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enab
   expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
   expect(screen.getByTestId("source").textContent).toBe(initial);
   await user.click(sidekick);
-  await user.click(screen.getByText("Delegation defaults"));
+  await user.click(screen.getByText("Subagent defaults"));
   expect(
     parse(screen.getByTestId("source").textContent!).webui.sidekick,
   ).toEqual({});
@@ -174,9 +174,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   renderFields(initial);
   expect(screen.getByTestId("source").textContent).toBe(initial);
   const user = userEvent.setup();
-  await user.click(
-    screen.getByRole("combobox", { name: "Default working directory" }),
-  );
+  await user.click(screen.getByRole("combobox", { name: "Default folder" }));
   await user.click(
     await screen.findByRole("option", { name: "Local · Chat files" }),
   );
@@ -187,7 +185,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Explicitly select no added environments",
+      name: "Local only",
     }),
   );
   value = parse(screen.getByTestId("source").textContent ?? "");
@@ -198,7 +196,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Keep this chat's environments",
+      name: "Keep current",
     }),
   );
   expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual(
@@ -226,7 +224,7 @@ it("allows the last local Project root to be removed only with Device bindings",
   expect(
     (
       screen.getByRole("button", {
-        name: "Keep this chat's environments",
+        name: "Keep current",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -315,10 +313,10 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
       .getByRole("switch", { name: "Automatic organization" })
       .getAttribute("aria-checked"),
   ).toBe("true");
-  await user.click(screen.getByText("Organization settings"));
+  await user.click(screen.getByText("Memory updates"));
   expect(screen.getByTestId("source").textContent).toBe(initial);
   fireEvent.change(
-    screen.getByRole("textbox", { name: "Organization instructions" }),
+    screen.getByRole("textbox", { name: "Update instructions" }),
     { target: { value: "Preserve decisions and preferences." } },
   );
   await user.click(
@@ -333,18 +331,15 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
       instructions: "Preserve decisions and preferences.",
     },
   });
-  expect(
-    screen.queryByRole("combobox", { name: "Organization model" }),
-  ).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Update model" })).toBeNull();
 });
 
 it("defaults organization to the global Agent model without rewriting YAML", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);
   expect(
-    (await screen.findByRole("combobox", { name: "Organization model" }))
-      .textContent,
-  ).toContain("Use global default Agent's model");
+    (await screen.findByRole("combobox", { name: "Update model" })).textContent,
+  ).toContain("Use default agent model");
   expect(screen.getByTestId("source").textContent).toBe(initial);
 });
 
@@ -354,11 +349,11 @@ it("can clear an organization override to follow the global Agent model", async 
   );
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("combobox", { name: "Organization model" }),
+    await screen.findByRole("combobox", { name: "Update model" }),
   );
   await user.click(
     await screen.findByRole("option", {
-      name: "Use global default Agent's model",
+      name: "Use default agent model",
     }),
   );
   expect(

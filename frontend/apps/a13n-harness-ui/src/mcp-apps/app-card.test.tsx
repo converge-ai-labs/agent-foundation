@@ -257,12 +257,10 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
       root_thread_id: reference.thread_id,
     },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("button", { name: "Activate interactions" }),
+      screen.queryByRole("button", { name: "Enable controls" }),
     ).toBeNull(),
   );
   PUT.mockResolvedValue({
@@ -313,9 +311,7 @@ it("activates without replacing the frame and shows exact one-time approval outs
     root_thread_id: reference.thread_id,
   };
   POST.mockResolvedValueOnce({ data: view });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await screen.findByText(/Server interactions active/);
   expect(screen.getByTitle("counter")).toBe(frame);
   let operation: Schema<"AppOperation">;
@@ -372,9 +368,7 @@ it("requires a trusted one-time confirmation for a child App handoff without rep
       route: ["researcher"],
     },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await screen.findByText(/Server interactions active/);
   POST.mockClear();
   fireEvent.click(screen.getByText("Propose App message"));

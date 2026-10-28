@@ -162,7 +162,7 @@ it("saves execution defaults through the source owner without preparing envd", a
       .getByRole("link", { name: /Manage local runtime/ })
       .getAttribute("href"),
   ).toBe("/settings/environments?tab=runtime");
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Saved", { exact: true });
   expect(content).toContain("environment-envd");
   expect(content).toContain("# Keep this comment");
@@ -179,7 +179,7 @@ it("selects a configured profile as the global execution default", async () => {
     await screen.findByRole("option", { name: "Review workspace" }),
   );
   expect(screen.queryByRole("combobox", { name: "Permissions" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Saved", { exact: true });
   expect(content).toContain("environment-review");
   expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
@@ -191,7 +191,7 @@ it("saves Host desktop capability without launching or changing execution defaul
   });
   await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(false));
   await userEvent.click(toggle);
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Saved", { exact: true });
   expect(content).toContain("computer_use: true");
   expect(content).toContain("environment-native");
@@ -210,7 +210,7 @@ it("saves collection cadence without starting or restarting a runtime", async ()
   await userEvent.click(
     await screen.findByRole("option", { name: "Every 30 seconds" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Saved", { exact: true });
   expect(content).toContain("monitoring_interval_seconds: 30");
   expect(content).toContain("/custom/envd");

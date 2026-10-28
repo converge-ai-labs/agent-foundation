@@ -78,19 +78,19 @@ export function ForgetEnvironment({
             loading={remove.isPending}
             onClick={() => remove.mutate()}
           >
-            Forget configuration
+            Forget
           </Button>
         </>
       }
     >
       <p>
-        Update any <Link to="/settings">General defaults</Link> or Project
-        defaults that reference this resource first. Existing chats keep their
-        selections; remove or replace those selections before the next Run.
+        Remove this from <Link to="/settings">General settings</Link> and
+        project defaults first. Update any existing chats that still use it
+        before their next run.
       </p>
       {references.length > 0 && (
         <div>
-          <p>Referenced by these Projects:</p>
+          <p>Used by these projects:</p>
           <ul>
             {references.map((project) => {
               const source = sources.data?.sources.find((item) =>

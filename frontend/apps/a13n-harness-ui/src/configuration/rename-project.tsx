@@ -66,7 +66,7 @@ export function RenameProject({
         document.get("kind") !== "project"
       )
         throw new Error(
-          "Project source changed or is unavailable. Open Project settings to review it.",
+          "Project settings changed or couldn't be loaded. Open them to review.",
         );
       const content = updateDocument(latest.content!, ["name"], name.trim());
       const publication = await result(
@@ -129,10 +129,7 @@ export function RenameProject({
           <p role="status">Reading project…</p>
         )}
         {dirty && (
-          <p>
-            There are unsaved changes in Project settings. Save or discard those
-            changes before renaming here.
-          </p>
+          <p>Save or discard your project changes before renaming it here.</p>
         )}
         {sources.isSuccess &&
           (!path || (source.isSuccess && !editable && !dirty)) && (

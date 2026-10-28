@@ -88,9 +88,7 @@ it("queries only archived chats with independent search and pagination, then res
   await screen.findByRole("link", { name: /Stored.*Archived/ });
   expect(screen.queryByRole("link", { name: "Active" })).toBeNull();
   expect(urls[0].searchParams.get("archived_only")).toBe("true");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more archived chats" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
   await screen.findByRole("link", { name: /Older.*Archived/ });
   expect(urls.at(-1)?.searchParams.get("cursor")).toBe("older");
   fireEvent.click(screen.getByRole("button", { name: "Restore Stored" }));

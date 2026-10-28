@@ -136,16 +136,14 @@ it("browses a level at a time, paginates with a revision, follows links, and sel
 it("keeps manual rows usable without native sharing and removes only the selected root", async () => {
   sharing = false;
   mount();
-  await screen.findByText(/native computer sharing is disabled/);
+  await screen.findByText(/Turn on computer sharing to browse folders/);
   expect(
     screen.queryByRole("button", { name: "Browse directory 1" }),
   ).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/one" },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add another directory" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
   fireEvent.change(
     screen.getByRole("textbox", { name: "Additional server directory 1" }),
     { target: { value: "/two" } },

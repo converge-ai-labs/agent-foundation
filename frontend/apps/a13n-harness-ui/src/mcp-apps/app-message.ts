@@ -45,7 +45,7 @@ export class AppMessage {
     if (this.closed || this.waiting)
       return Promise.reject(
         new Error(
-          "This View is closed or already has a pending message. Messages are not queued.",
+          "This view is closed or is already sending a message. New messages aren't queued.",
         ),
       );
     const request: Schema<"AppMessageRequest"> = {
@@ -138,9 +138,7 @@ export class AppMessage {
     this.closed = true;
     clearTimeout(this.timer);
     this.waiting?.reject(
-      new Error(
-        "The App View closed. A confirmed message may already have been accepted.",
-      ),
+      new Error("The app closed. Your confirmed message may already be sent."),
     );
     this.waiting = undefined;
   }

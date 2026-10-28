@@ -581,7 +581,7 @@ it("shows screenshot retention failure without marking a successful observation 
   );
   fireEvent.click(screen.getByRole("button", { name: /Observe desktop/ }));
   expect(screen.getByRole("status").textContent).toContain(
-    "display copy could not be retained",
+    "no preview was saved",
   );
   expect(screen.queryByText("Failed")).toBeNull();
 });

@@ -75,7 +75,8 @@ function Execution({
           <ErrorNotice error={cancel.error} />
           {cancel.isSuccess && (
             <p role="status">
-              Cancellation requested. The status shows when execution finishes.
+              Cancellation requested. The status will update when the tool
+              stops.
             </p>
           )}
           {item.available_actions?.includes("cancel") && (
@@ -125,8 +126,8 @@ export function ToolExecutions({
   return (
     <section aria-label="Tool calls">
       <p className={styles.caption}>
-        Tool calls from this app session. Viewing a result does not remove it
-        from the agent.
+        Tools used in this app session. Viewing a result keeps it available to
+        the agent.
       </p>
       <ErrorNotice error={page.error} retry={refresh} />
       {page.isPending && <p role="status">Loading tool executions…</p>}

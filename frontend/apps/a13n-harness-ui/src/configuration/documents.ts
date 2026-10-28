@@ -27,7 +27,7 @@ export const resourceKinds: {
   },
   {
     value: "harness_plugin",
-    label: "Harness plugin",
+    label: "Plugin",
     directory: "extensions",
     prefix: "plugin",
   },

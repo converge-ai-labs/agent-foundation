@@ -84,12 +84,8 @@ it("keeps dirty selections on external changes and requires review before versio
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  expect(
-    screen.getByText(/Your edits are retained against version 1/),
-  ).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Keep my edits against version 2" }),
-  );
+  expect(screen.getByText(/Your edits are based on version 1/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep my edits" }));
   fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(PATCH.mock.calls[0][1].body).toEqual({
@@ -268,7 +264,7 @@ it("sends a complete decision set keyed by question text and does not retry an u
   ).toBe(false);
   fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(POST.mock.calls[0][1].body).toEqual({
     expected_continuation_id: "C1",
     responses: [
@@ -333,7 +329,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
     { target: { value: "Inspect this" } },
   );
   fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(POST.mock.calls[0]).toEqual([
     "/api/threads/{thread_id}/children/{execution_id}/steer",
     {
@@ -452,14 +448,12 @@ it("validates an approval override as a JSON object before allowing the complete
   expect(
     (
       screen.getByRole("button", {
-        name: "Approve with edited arguments",
+        name: "Approve edits",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   fireEvent.change(input, { target: { value: '{"command":"review"}' } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Approve with edited arguments" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Approve edits" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0][1].body.responses).toEqual([
     {
@@ -485,10 +479,10 @@ it("shows the server deadline despite clock skew and refetches at expiry without
     { wrapper: harness({ POST }) },
   );
   try {
-    expect(screen.getByText(/Submit within 2s/)).toBeTruthy();
+    expect(screen.getByText(/2s left/)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText(/Submit within 1s/)).toBeTruthy();
+    expect(screen.getByText(/1s left/)).toBeTruthy();
     // A second participant/refetch sees the same deadline, not another full window.
     view.rerender(
       <DecisionForm
@@ -498,7 +492,7 @@ it("shows the server deadline despite clock skew and refetches at expiry without
       />,
     );
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText(/Waiting for the server to confirm/)).toBeTruthy();
+    expect(screen.getByText(/Waiting for the result/)).toBeTruthy();
     expect(
       (
         screen.getByRole("button", {
@@ -542,7 +536,7 @@ it("unmounting a timed form never sends a response and a restored untimed batch 
       <DecisionForm threadId="one" batch={batch} reconcile={reconcile} />,
       { wrapper },
     );
-    expect(screen.queryByText(/Submit within/)).toBeNull();
+    expect(screen.queryByText(/s left/)).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     expect(
       (

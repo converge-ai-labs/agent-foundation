@@ -374,7 +374,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
     screen
       .getByRole("textbox", { name: "Shared prompt" })
       .getAttribute("aria-description"),
-  ).toContain("Enter to send; Shift+Enter for a new line");
+  ).toContain("Enter to send, Shift+Enter for a new line");
   act(() => {
     draft.submission = { kind: "rejected", message: "Draft retained" };
     draft.notify();
@@ -388,9 +388,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
     };
     draft.notify();
   });
-  expect(
-    screen.getByRole("button", { name: "Refresh operation and history" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh chat" })).toBeTruthy();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
@@ -1411,9 +1409,7 @@ it.each([
         get.mockResolvedValue({
           data: { thread: { thread_id: "thread-one", role: "coordinator" } },
         });
-        fireEvent.click(
-          screen.getByRole("button", { name: "Check Coordinator status" }),
-        );
+        fireEvent.click(screen.getByRole("button", { name: "Check status" }));
         await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
         expect(
           screen.queryByRole("switch", { name: "Coordinate agents" }),

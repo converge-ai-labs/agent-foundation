@@ -153,7 +153,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         if (active) {
           setBackground("error");
           setError(
-            "Background notifications could not be synchronized. Check your connection and reconnect them. In-app notices remain available while WebUI is open.",
+            "Couldn't sync background alerts. Check your connection and reconnect notifications. Alerts still appear while Harness is open.",
           );
         }
       });
@@ -378,7 +378,7 @@ function PermissionDescription({ permission }: { permission: Permission }) {
   return (
     <>
       {permission === "install-required"
-        ? "Add Harness UI to your Home Screen, then open it there to enable notifications. Requires iOS/iPadOS 16.4 or later."
+        ? "Add Harness to your Home Screen and open it there to enable alerts. Requires iOS or iPadOS 16.4 or later."
         : permission === "denied"
           ? "Allow notifications in this site's browser settings or the Home Screen app's system settings."
           : permission === "unavailable"
@@ -506,7 +506,7 @@ export function NotificationSettings({
                   onClick={() => void notifications.request()}
                   loading={notifications.requesting}
                 >
-                  Allow notifications
+                  Enable alerts
                 </Button>
               )}
           </div>
@@ -579,8 +579,8 @@ export function NotificationSettings({
             notifications in the installed app.
           </li>
           <li>
-            Android: allow site and Chrome notifications. Battery restrictions,
-            force-stop and Do Not Disturb can block alerts.
+            Android: allow notifications for this site and Chrome. Battery
+            limits, force-stop and Do Not Disturb may block alerts.
           </li>
           <li>
             Delivery stays active for six hours after a visible visit. Missed

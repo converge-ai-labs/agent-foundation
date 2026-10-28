@@ -44,13 +44,7 @@ export function ResourceFields({
     readDocument(source)?.get("kind") === "agent",
   );
   const document = readDocument(source);
-  if (!document)
-    return (
-      <p>
-        Structured fields are unavailable for this document. Use the source
-        editor below.
-      </p>
-    );
+  if (!document) return <p>Edit this document in the source editor below.</p>;
   const get = (path: string[]) => document.getIn(path);
   const text = (path: string[]) =>
     typeof get(path) === "string" ? String(get(path)) : "";
@@ -162,7 +156,7 @@ export function ResourceFields({
   const referenceLists = (prefix: string[]) => (
     <>
       {list(
-        "Harness plugins",
+        "Plugins",
         [...prefix, "harness_plugins"],
         selectors.data?.harness_plugins.map((item) => ({
           value: item.resource_id,
@@ -231,7 +225,7 @@ export function ResourceFields({
           <SettingsSection
             variant="plain"
             title="Instructions"
-            description="Additional guidance for this agent, alongside its built-in instructions."
+            description="Extra instructions for this agent."
           >
             <Textarea
               aria-label="Additional instructions"
@@ -270,10 +264,10 @@ export function ResourceFields({
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "Unspecified: new chats add no remote environments; existing selections stay unchanged."
+                  ? "New chats add no remote environments. Existing chats keep theirs."
                   : bindings.length
-                    ? "Applying defaults replaces the chat’s remote environments with this selection."
-                    : "Empty selection: applying defaults removes the chat’s remote environments."}
+                    ? "Applying these defaults replaces the chat's remote environments."
+                    : "Applying these defaults removes the chat's remote environments."}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -325,10 +319,7 @@ export function ResourceFields({
                   }}
                 />
               ) : (
-                <p>
-                  Repair the host root list in advanced YAML before using the
-                  directory field.
-                </p>
+                <p>Fix the folder list in Advanced configuration first.</p>
               )}
               <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
                 {rawBindings == null && (
@@ -342,7 +333,7 @@ export function ResourceFields({
                       )
                     }
                   >
-                    Explicitly select no added environments
+                    Local only
                   </Button>
                 )}
                 {(rawBindings != null ||
@@ -353,7 +344,7 @@ export function ResourceFields({
                     disabled={!roots?.length}
                     onClick={() => setEnvironments(undefined, null)}
                   >
-                    Keep this chat's environments
+                    Keep current
                   </Button>
                 )}
               </div>
@@ -383,13 +374,13 @@ export function ResourceFields({
               </SettingsRow>
               {get(["webui", "sidekick"]) !== null && (
                 <details className={layout.groupDisclosure}>
-                  <summary>Delegation defaults</summary>
+                  <summary>Subagent defaults</summary>
                   <div>
                     {scalar(
                       "Sidekick agent",
                       ["webui", "sidekick", "agent"],
                       agentOptions,
-                      "Inherit current agent",
+                      "Use current agent",
                     )}
                     {scalar(
                       "Sidekick model",
@@ -422,7 +413,7 @@ export function ResourceFields({
                     label="Automatic organization"
                     controlId="memory-organization-enabled"
                     stackOnNarrow={false}
-                    description="Organize updated memory files with additional model requests."
+                    description="Use extra model requests to keep memory files organized."
                   >
                     <Switch
                       id="memory-organization-enabled"
@@ -435,18 +426,18 @@ export function ResourceFields({
                     />
                   </SettingsRow>
                   <details className={layout.groupDisclosure}>
-                    <summary>Organization settings</summary>
+                    <summary>Memory updates</summary>
                     <div>
                       {scalar(
-                        "Organization model",
+                        "Update model",
                         ["memory", "auto_organize", "model"],
                         models,
-                        "Use global default Agent's model",
+                        "Use default agent model",
                       )}
                       <div className={styles.fieldGroup}>
                         <FormField
-                          label="Organization instructions"
-                          description="Instructions for organizing memory."
+                          label="Update instructions"
+                          description="How to update and organize memory files."
                         >
                           <Textarea
                             variant="soft"
@@ -650,8 +641,7 @@ export function ResourceFields({
           {kind === "environment_profile" &&
             field("Adapter key", ["adapter_key"])}
           <p className={styles.sectionNote}>
-            Configure plugin-specific options in the configuration file below.
-            Provider and adapter settings vary by plugin.
+            Set this plugin's options in Advanced configuration below.
           </p>
         </SettingsSection>
       )}
@@ -677,8 +667,8 @@ export function ResourceFields({
             ? field("Server URL", ["transport", "url"])
             : field("Command", ["transport", "command"])}
           <p className={styles.sectionNote}>
-            Set arguments, environment variables and headers in Advanced
-            configuration. Keep a copy: saved connection details are hidden.
+            Add arguments, environment variables or headers in Advanced
+            configuration. Keep a copy; saved connection details are hidden.
           </p>
         </SettingsSection>
       )}

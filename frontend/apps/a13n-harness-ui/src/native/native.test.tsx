@@ -199,7 +199,7 @@ it("a stale capture or replaced draft never silently selects context", async () 
     return { data: { attachment } };
   });
   fireEvent.click(screen.getByText("Add to message"));
-  await screen.findByText(/shared draft was replaced/);
+  await screen.findByText(/shared draft changed/);
   expect(values(f.a.doc).attachment_ids).toEqual([]);
 });
 it("range inputs validate before HTTP and preserve exact one-based endpoints", async () => {
@@ -209,19 +209,19 @@ it("range inputs validate before HTTP and preserve exact one-based endpoints", a
     wrapper: f.Wrapper,
   });
   fireEvent.click(screen.getByLabelText("Choose line range"));
-  fireEvent.click(screen.getByText("Add selected lines to message"));
-  await screen.findByText(/Choose both one-based/);
+  fireEvent.click(screen.getByText("Attach selection"));
+  await screen.findByText(/Enter start and end line numbers/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("First line"), {
     target: { value: "2" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to message"));
-  await screen.findByText(/Choose both one-based/);
+  fireEvent.click(screen.getByText("Attach selection"));
+  await screen.findByText(/Enter start and end line numbers/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Last line (inclusive)"), {
     target: { value: "3" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to message"));
+  fireEvent.click(screen.getByText("Attach selection"));
   await waitFor(() =>
     expect(f.post).toHaveBeenCalledWith(
       expect.anything(),
@@ -428,7 +428,7 @@ it("filters changed files, keeps pagination scoped, and exposes ignored files in
   );
   await user.click(
     await screen.findByRole("button", {
-      name: /^cache\.log\s*Ignored · open in Files$/,
+      name: /^cache\.log\s*Open in Files$/,
     }),
   );
   expect(openFile).toHaveBeenCalledWith("/code/cache.log");
@@ -452,8 +452,8 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     { wrapper: f.Wrapper },
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to message")).toBeNull();
-  expect(screen.getByText(/nonstandard line separators/)).toBeTruthy();
+  expect(screen.queryByText("Attach selection")).toBeNull();
+  expect(screen.getByText(/unusual line breaks/)).toBeTruthy();
   fireEvent.click(screen.getByText("Add to message"));
   await waitFor(() => expect(f.post).toHaveBeenCalled());
   expect(f.post.mock.calls[0][1].body.start_line).toBeUndefined();
@@ -480,7 +480,7 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     />,
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to message")).toBeNull();
+  expect(screen.queryByText("Attach selection")).toBeNull();
 });
 
 it.each(["/code", "C:\\code"])(
@@ -500,7 +500,7 @@ it.each(["/code", "C:\\code"])(
       />,
       { wrapper: f.Wrapper },
     );
-    const save = screen.getByRole("button", { name: "Save changes" });
+    const save = screen.getByRole("button", { name: "Save" });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "renamed.txt" },
@@ -544,7 +544,7 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   fireEvent.change(screen.getByLabelText("Upload file (up to 10 MiB)"), {
     target: { files: [new File(["new bytes"], "new.bin")] },
   });
-  fireEvent.click(screen.getByText("Confirm replacement"));
+  fireEvent.click(screen.getByText("Replace file"));
   await screen.findByText("Response lost");
   expect(f.transport.fetch).toHaveBeenCalledWith(
     "/api/host/files/content?path=%2Fcode%2Ffile.txt&expected_revision=first",
@@ -552,7 +552,7 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   );
   expect(refresh).toHaveBeenCalledOnce();
   expect(done).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("Confirm replacement"));
+  fireEvent.click(screen.getByText("Replace file"));
   expect(f.transport.fetch).toHaveBeenCalledOnce();
 });
 
@@ -568,9 +568,7 @@ it("adds the exact editor selection in one deliberate action without sending a m
     { wrapper: f.Wrapper },
   );
   expect(f.post).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to message" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
   await waitFor(() =>
     expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),
   );

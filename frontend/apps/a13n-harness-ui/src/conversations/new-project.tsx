@@ -108,8 +108,7 @@ export function NewProject({
           </div>
         </SettingsSection>
         <small className="text-muted-foreground">
-          Agent and other defaults can be changed in Project settings after
-          saving.
+          Change the agent and other defaults in project settings later.
         </small>
         <ErrorNotice error={save.error} />
         <div data-a13n-form-actions className="flex justify-end gap-2">

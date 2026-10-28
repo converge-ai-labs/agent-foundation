@@ -101,7 +101,7 @@ it("keeps the original result available when sandbox startup never completes", a
     await vi.advanceTimersByTimeAsync(15000);
   });
   expect(screen.getByRole("alert").textContent).toContain(
-    "original tool result remains",
+    "saved tool result stays",
   );
   expect(bridge.sendToolResult).not.toHaveBeenCalled();
 });

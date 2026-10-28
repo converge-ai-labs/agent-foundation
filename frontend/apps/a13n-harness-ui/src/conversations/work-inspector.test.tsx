@@ -297,11 +297,11 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     ).disabled,
   ).toBe(true);
   reject(new TypeError("Acknowledgement lost"));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   view.rerender(<div>Closed again</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker · running"));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(
     (
       screen.getByRole("textbox", {

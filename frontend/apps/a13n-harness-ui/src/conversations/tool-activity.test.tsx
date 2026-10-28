@@ -400,7 +400,7 @@ it("retains saved applied diffs and explicit omission without reconstructing req
   );
   expect(screen.getByText("-observed before")).toBeTruthy();
   expect(screen.getByText("+observed after")).toBeTruthy();
-  expect(screen.getByText(/This older record did not retain/)).toBeTruthy();
+  expect(screen.getByText(/This older edit has no saved diff/)).toBeTruthy();
   expect(screen.queryByText("Requested replacement")).toBeNull();
 });
 

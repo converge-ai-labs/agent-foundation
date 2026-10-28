@@ -78,14 +78,11 @@ export function LinkedMediaPreview({ path }: { path: string }) {
       {file &&
         (kind === "image" && file.entry.size > MAX_MEDIA_BYTES ? (
           <p>
-            Preview supports files up to 10 MiB. Open the original file to
-            inspect it.
+            Too large to preview. Open the original file. The preview limit is
+            10 MiB.
           </p>
         ) : !kind ? (
-          <p>
-            This file cannot be previewed as media. Open the original file to
-            inspect it.
-          </p>
+          <p>Can't preview this file. Open the original instead.</p>
         ) : (
           <FileMedia
             key={`${path}:${file.entry.revision}:${attempt}`}

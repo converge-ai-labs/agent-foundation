@@ -182,7 +182,15 @@
 }
 @media (max-width: 600px) {
   .tabs {
-    gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    overflow: visible;
+  }
+  .tabs a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
   }
 }
 

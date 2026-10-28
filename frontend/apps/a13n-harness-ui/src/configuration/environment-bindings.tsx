@@ -60,18 +60,18 @@ export function DefaultWorkingDirectory({
   return (
     <div className={styles.defaultDirectory}>
       <ChoiceField
-        label="Default working directory"
+        label="Default folder"
         layout="stacked"
         popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
-        description="Used when a command or path doesn’t specify a directory."
+        description="Used when a command or path doesn't specify a folder."
         options={[
           ...(allowUnsetDefault && !value.environment_bindings?.length
             ? [
                 {
                   value: "",
-                  label: "Keep chat default (automatic for new chats)",
+                  label: "Use chat default",
                 },
               ]
             : []),
@@ -87,11 +87,7 @@ export function DefaultWorkingDirectory({
           ...choices,
         ]}
       />
-      {missing && (
-        <p role="alert">
-          Choose a default from the selected directories before saving.
-        </p>
-      )}
+      {missing && <p role="alert">Choose a default folder before saving.</p>}
     </div>
   );
 }
@@ -207,7 +203,7 @@ export function EnvironmentBindings({
                     <p className="break-all">{binding.working_directory}</p>
                     {binding.alias === selectedDefault && (
                       <span className="text-xs text-muted-foreground">
-                        Default working directory
+                        Default folder
                       </span>
                     )}
                   </div>
@@ -247,7 +243,7 @@ export function EnvironmentBindings({
                   "Files and execution"}
               </p>
               {(policy.egress || policy.expected_boundary) && (
-                <p>Custom network or boundary requirements are retained.</p>
+                <p>Custom network and access rules are kept.</p>
               )}
               {group.directories.map((binding) => (
                 <p key={binding.alias} className="mt-1 break-all">
@@ -277,7 +273,7 @@ export function EnvironmentBindings({
         }}
         title={editing?.group ? "Edit environment" : "Add environment"}
         size="lg"
-        description="Choose a device and its working directories. Changes are added to your draft."
+        description="Choose a device and folders to add to your draft."
         closeLabel="Close"
       >
         {editing && (
@@ -308,7 +304,7 @@ export function EnvironmentBindings({
           if (!open) setRemoving(undefined);
         }}
         title="Remove directory selection?"
-        description="This removes the directory from the selection. Files, the Device connection and captured Runs stay unchanged."
+        description="Remove this folder from the selection? Files, the device connection and run history are kept."
         closeLabel="Close"
         footer={
           <>
@@ -437,10 +433,10 @@ function DeviceEnvironmentEditor({
           ]}
           description={
             permission === "full"
-              ? "Applies to every directory below. Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to these directories; screenshots may be sent to the model and saved in history."
+              ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
               : permission === "read_only"
-                ? "Applies to every directory below. Read and browse files without changes, commands or desktop access."
-                : "Existing permissions stay unchanged for every directory unless you choose an option."
+                ? "Read files in the folders below. No file changes, commands or desktop access."
+                : "Keep each folder's current permissions unless you choose an option."
           }
         />
       </SettingsSection>
@@ -476,7 +472,7 @@ function DeviceEnvironmentEditor({
                 }
                 value={directory.alias}
                 onChange={(alias) => updateDirectory(index, { alias })}
-                description="An internal routing name. Leave new aliases empty to generate them automatically."
+                description="An internal name for this connection. Leave blank to generate one."
               />
             </details>
             {index >= initial.length &&
@@ -506,7 +502,7 @@ function DeviceEnvironmentEditor({
             }
           >
             <PlusIcon />
-            Add another directory
+            Add folder
           </Button>
         </div>
       )}

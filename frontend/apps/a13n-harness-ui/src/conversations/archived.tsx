@@ -54,7 +54,7 @@ export function ArchivedPage() {
           loading={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()}
         >
-          Show more archived chats
+          Load more
         </Button>
       )}
     </section>

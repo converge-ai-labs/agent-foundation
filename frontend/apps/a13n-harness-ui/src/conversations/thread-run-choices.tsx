@@ -94,7 +94,7 @@ export function RunEnvironments({
       value={editing}
       profiles={catalog?.environments}
       inheritedProfile={configuration?.environment_profile_id}
-      inheritLabel="Follow chat local mode"
+      inheritLabel="Use chat default"
       onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
@@ -127,7 +127,7 @@ export function RunEnvironments({
         title="Environments"
         size="lg"
         closeLabel="Close"
-        description="Choose where future runs in this tab work. Chat defaults stay unchanged."
+        description="Choose where this tab's next runs work. Chat defaults stay unchanged."
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>

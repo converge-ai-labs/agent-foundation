@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { DebugProvider } from "../shell/debug";
 import type { Schema } from "../transport/client";
 import { ContextDetails, CostDetails, TokenDetails } from "./usage-details";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  delete document.documentElement.dataset.debug;
+});
 
 const root: Schema<"UsageTotals"> = {
   model_requests: 2,
@@ -81,34 +86,36 @@ it("shows actual context counts, unknown capacity and over-capacity observations
 it("switches model scope without treating a subagent media source as extra usage", () => {
   const child = { ...root, model_requests: 1, model_cost_usd: "0.3" };
   render(
-    <TokenDetails
-      usage={{
-        ...usage,
-        model_scopes: [
-          {
-            name: "provider/root-model",
-            root,
-            descendants: zero,
-            combined: root,
-          },
-          {
-            name: "provider/media-model",
-            root: zero,
-            descendants: child,
-            combined: child,
-          },
-        ],
-        groups: [
-          {
-            model: "provider/media-model",
-            agent_instance_id: "agent-child",
-            descendant: true,
-            source: "files.media_understanding",
-            totals: child,
-          },
-        ],
-      }}
-    />,
+    <DebugProvider>
+      <TokenDetails
+        usage={{
+          ...usage,
+          model_scopes: [
+            {
+              name: "provider/root-model",
+              root,
+              descendants: zero,
+              combined: root,
+            },
+            {
+              name: "provider/media-model",
+              root: zero,
+              descendants: child,
+              combined: child,
+            },
+          ],
+          groups: [
+            {
+              model: "provider/media-model",
+              agent_instance_id: "agent-child",
+              descendant: true,
+              source: "files.media_understanding",
+              totals: child,
+            },
+          ],
+        }}
+      />
+    </DebugProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "This chat" }));
   expect(screen.getByText("provider/root-model")).toBeTruthy();
@@ -121,6 +128,13 @@ it("switches model scope without treating a subagent media source as extra usage
   expect(
     screen.getByText("Subagent · Media understanding · view"),
   ).toBeTruthy();
+  expect(screen.queryByText("agent-child")).toBeNull();
+  fireEvent.keyDown(window, {
+    key: "d",
+    code: "KeyD",
+    ctrlKey: true,
+    altKey: true,
+  });
   expect(screen.getByText("agent-child")).toBeTruthy();
 });
 
@@ -128,6 +142,8 @@ it("renders legacy summaries without new attribution fields and does not invent 
   render(<CostDetails usage={usage} />);
   expect(screen.getByText("provider/root-model")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "This chat" }));
-  expect(screen.getByText(/Model attribution is unavailable/)).toBeTruthy();
+  expect(
+    screen.getByText(/Older records don't show which models were used here/),
+  ).toBeTruthy();
   expect(number("Model cost · USD")).toBe("$0.1250");
 });

@@ -169,7 +169,7 @@ function CredentialField({
               <>
                 <SettingsRow
                   label="Provider API key"
-                  description="Shared server credential. Saved separately from the model."
+                  description="Shared by this server. Saved separately from the model."
                 >
                   <Input
                     aria-label="Provider API key"
@@ -204,7 +204,7 @@ function CredentialField({
                         );
                       }}
                     >
-                      Use saved key from this attempt
+                      Use saved key
                     </Button>
                   )}
                 </div>
@@ -550,7 +550,7 @@ function LoadedModelEditor({
     selectedPreset?.label ?? "Custom settings",
     contextBudget
       ? `${contextBudget.toLocaleString()} context`
-      : "Native context",
+      : "Model default context",
     value?.settings?.max_tokens
       ? `${Number(value?.settings.max_tokens).toLocaleString()} output`
       : null,
@@ -627,7 +627,7 @@ function LoadedModelEditor({
               <small role="status">
                 {catalog.isPending
                   ? "Loading model directory…"
-                  : "Directory unavailable. Enter a model ID or choose a bundled recommendation."}
+                  : "Couldn't load the model list. Enter a model ID or choose a suggested model."}
               </small>
             )}
             {selected?.supports_base_url && (
@@ -635,7 +635,7 @@ function LoadedModelEditor({
                 label="Base URL"
                 value={effectiveUrl}
                 onChange={setBaseUrl}
-                description="Optional API endpoint override. No credentials, query string or fragment."
+                description="Optional API address. Leave out credentials, query parameters and URL fragments."
               />
             )}
           </SettingsSection>
@@ -667,7 +667,7 @@ function LoadedModelEditor({
                       options={[
                         {
                           value: "",
-                          label: "Provider default group",
+                          label: "Default group",
                           hint:
                             !nativeGroup &&
                             subscriptions.data?.adoption[nativeProvider]
@@ -680,7 +680,7 @@ function LoadedModelEditor({
                           .map((item) => ({
                             value: item.id,
                             label: item.name,
-                            hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "Weighted balance" : "Ordered consumption"}`,
+                            hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "By weight" : "In order"}`,
                           })) ?? []),
                       ]}
                     />
@@ -708,7 +708,7 @@ function LoadedModelEditor({
                     <Link
                       to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
                     >
-                      Manage accounts and groups
+                      Manage accounts
                     </Link>
                   </div>
                 ) : selected.account ? (
@@ -727,18 +727,17 @@ function LoadedModelEditor({
                     loading={discovery.isPending}
                     onClick={() => discovery.mutate()}
                   >
-                    Fetch account models
+                    Load models
                   </Button>
                   <small>
-                    Explicitly queries this account's catalog. Only Chat
-                    Completions models are shown; access is still subject to
-                    your plan and organization policy.
+                    Loads this account's Chat Completions models. Availability
+                    depends on your plan and organization settings.
                   </small>
                   <ErrorNotice error={discovery.error} />
                   {currentDiscovery?.length === 0 && (
                     <p role="status">
-                      No compatible models returned. You can still enter a model
-                      ID manually.
+                      No compatible models found. You can enter a model ID
+                      instead.
                     </p>
                   )}
                 </>
@@ -805,7 +804,7 @@ function LoadedModelEditor({
                     value={String(value.settings?.openai_reasoning_mode ?? "")}
                     description={
                       options.data?.reasoning_mode?.reason ??
-                      "Independent of thinking effort. Pro availability and usage depend on your provider."
+                      "Separate from reasoning effort. Pro access and usage depend on your provider."
                     }
                     options={[
                       { value: "", label: "Provider default" },
@@ -933,7 +932,7 @@ function LoadedModelEditor({
                     description={
                       options.data?.known_context_window
                         ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
-                        : "Leave blank for the native default."
+                        : "Leave blank to use the model's default."
                     }
                   />
                 )}
@@ -987,7 +986,7 @@ function LoadedModelEditor({
                         else delete config.session_affinity_header;
                         update({ model_configuration: config });
                       }}
-                      description="Optional header for compatible gateways. Subscriptions use native affinity."
+                      description="Optional session header for compatible gateways. Subscription connections manage sessions automatically."
                     />
                   )}
                 </SettingsSection>
@@ -999,7 +998,7 @@ function LoadedModelEditor({
                   onClick={() => prepare.mutate(true)}
                 >
                   <ArrowCounterClockwise aria-hidden="true" />
-                  Restore recommended defaults
+                  Reset defaults
                 </Button>
               </div>
             </>

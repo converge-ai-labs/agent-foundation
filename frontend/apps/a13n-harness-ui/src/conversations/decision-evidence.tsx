@@ -102,7 +102,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
         <p role="note">
           Arguments omitted by the server.
           {request.kind === "approval" &&
-            " Approval is unavailable because the complete request cannot be inspected."}
+            "The full request couldn't be loaded. You can't approve it yet."}
         </p>
       ) : command ? (
         <>

@@ -124,9 +124,8 @@ export function ProjectPage() {
       ) : (
         <>
           <p>
-            Saved defaults apply to new chats. Existing chats keep their
-            selections until you explicitly apply Project environments or
-            defaults.
+            New chats use these defaults. Apply them from an existing chat's
+            settings to update that chat.
           </p>
           <details className={styles.details}>
             <summary>Preview defaults and check readiness</summary>
@@ -205,11 +204,7 @@ export function ReadinessPreview({
         />
         {(
           [
-            [
-              "harness_plugin_ids",
-              "Harness plugins",
-              selectors.data?.harness_plugins,
-            ],
+            ["harness_plugin_ids", "Plugins", selectors.data?.harness_plugins],
             [
               "environment_run_extension_ids",
               "Run extensions",
@@ -241,16 +236,15 @@ export function ReadinessPreview({
         <>
           <p>
             {current
-              ? "Accepted configuration preview. No thread or run was created."
-              : "Selections changed. Inspect again to refresh this preview."}
+              ? "Preview only. No chat or run was created."
+              : "Settings changed. Refresh the preview."}
           </p>
           <EnvironmentsSummary
             value={config}
             profiles={selectors.data?.environments}
           />
           <p className="text-sm text-muted-foreground">
-            Readiness checks below cover the local mode only, not Device
-            connections.
+            Checks local execution only. Device connections aren't tested.
           </p>
           <dl className={styles.definitionList}>
             {Object.entries(preview.data!.provenance).map(([axis, origin]) => (
@@ -277,9 +271,8 @@ export function ReadinessPreview({
         </>
       )}
       <p>
-        Readiness does not call a model or prove credentials are usable. Check
-        Accounts & API keys separately. Unsaved Project edits are not included
-        in this preview.
+        Checks saved settings only. It doesn't call a model or test credentials.
+        Check those in Accounts & API keys.
       </p>
     </div>
   );

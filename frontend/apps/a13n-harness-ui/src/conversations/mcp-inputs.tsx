@@ -129,8 +129,8 @@ function McpInput({
         )}
         <p className={styles.reason}>{request.message}</p>
         <p className={styles.hint}>
-          Your response goes to this MCP server. Do not enter passwords, access
-          tokens, or other secrets here.
+          Your response goes to this MCP server. Don't include passwords, tokens
+          or other secrets.
         </p>
         {request.mode === "url" ? (
           <>
@@ -142,8 +142,8 @@ function McpInput({
               Open external page
             </a>
             <p className={styles.hint}>
-              Confirm only after completing the action in your browser. This
-              does not send Host credentials to the page.
+              Finish the action in your browser, then choose Done. Server
+              credentials aren't sent to that page.
             </p>
           </>
         ) : (
@@ -288,7 +288,7 @@ function McpInput({
               disabled={locked}
               onClick={() => send({ action: "accept" })}
             >
-              I completed the action
+              Done
             </Button>
           )}
           <Button
@@ -317,8 +317,8 @@ function McpInput({
             isConnectionError(answer.error)) && (
             <>
               <p className={styles.hint}>
-                Delivery is uncertain. Check the request before retrying; the
-                business tool is never repeated.
+                Couldn't confirm delivery. Check the request before retrying.
+                The tool itself won't run again.
               </p>
               <div className={styles.actions}>
                 <Button variant="ghost" onClick={reconcile}>
@@ -329,7 +329,7 @@ function McpInput({
                   disabled={answer.isPending || !submitted}
                   onClick={() => submitted && answer.mutate(submitted)}
                 >
-                  Retry same response
+                  Retry response
                 </Button>
               </div>
             </>

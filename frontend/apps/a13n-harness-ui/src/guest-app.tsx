@@ -116,10 +116,7 @@ function AccessUnavailable() {
       <div>
         <LinkBreak size={32} />
         <h1>This link is unavailable</h1>
-        <p>
-          It may have expired or been revoked. Ask the person who shared it for
-          a new link.
-        </p>
+        <p>This link expired or was revoked. Ask the sender for a new one.</p>
       </div>
     </main>
   );
@@ -343,8 +340,7 @@ function GuestShell({
             />
             {create.isError && (
               <p className={styles.hint}>
-                Check the list before trying again; the chat may have been
-                created.
+                The chat may already exist. Check the list before trying again.
               </p>
             )}
             <nav className={`${styles.threadList} a13n-scrollbar`}>

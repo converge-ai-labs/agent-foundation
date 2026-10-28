@@ -22,9 +22,9 @@ export function DeviceFields({
       <SettingsSection
         variant="grouped"
         title="Paired Device"
-        description="This connection was approved on this host. The credential stays on the device and does not need to be entered here."
+        description="This device is approved. Its credential is saved on the device; you don't need to enter it here."
       >
-        <SettingsRow label="Native Device ID">
+        <SettingsRow label="Device ID">
           <span>{text(["device_id"])}</span>
         </SettingsRow>
         <SettingsRow
@@ -32,7 +32,7 @@ export function DeviceFields({
           description={
             document.getIn(["authentication", "revoked"])
               ? "This credential can no longer connect."
-              : "Use Environments settings to check or revoke the connection."
+              : "Check or revoke this connection in Environments."
           }
         >
           <span>
@@ -48,13 +48,13 @@ export function DeviceFields({
     <SettingsSection
       variant="grouped"
       title="Device connection"
-      description="Save the connection once; select working directories separately for Projects and chats."
+      description="Save the connection here. Choose folders in each project or chat."
     >
       <TextField
-        label="Native Device ID"
+        label="Device ID"
         value={text(["device_id"])}
         onChange={(value) => set(["device_id"], value)}
-        description="The device_id configured in envd, not the host resource ID above."
+        description="The device_id set in envd, separate from the configuration ID above."
       />
       <ChoiceField
         label="Transport"
@@ -117,7 +117,7 @@ export function DeviceFields({
             [storedKey ? "credential_ref" : "env"]: value,
           })
         }
-        description="Enter a reference, never the credential itself. Saved keys are managed in Accounts & API keys."
+        description="Enter a key reference, not the key itself. Manage saved keys in Accounts & API keys."
       />
     </SettingsSection>
   );

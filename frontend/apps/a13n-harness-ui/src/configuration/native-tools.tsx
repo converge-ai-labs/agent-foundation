@@ -120,11 +120,11 @@ export function AgentNativeTools({
     <>
       <ErrorNotice error={saved.error || options.error} />
       {!raw?.model ? (
-        <p>Select a saved Model to see its native tool choices.</p>
+        <p>Choose a saved model to see its tools.</p>
       ) : options.isPending && request ? (
         <p>Loading tool support…</p>
       ) : !tools.length ? (
-        <p>No native tool choices for this model.</p>
+        <p>This model has no built-in tool options.</p>
       ) : (
         tools.map((tool) => (
           <SettingsToggle
@@ -144,8 +144,8 @@ export function AgentNativeTools({
           (kind: string) => !tools.some((tool) => tool.value === kind),
         ) && (
           <p role="status">
-            Some configured native tools are not offered for this Model. They
-            have been preserved; review them in Capabilities or advanced YAML.
+            Some saved tools aren't available for this model. Review them in
+            Capabilities or Advanced configuration.
           </p>
         )}
     </>

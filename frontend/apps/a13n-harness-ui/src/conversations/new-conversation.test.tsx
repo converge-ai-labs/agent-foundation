@@ -577,14 +577,12 @@ it("retains an uncertain submission on the New page without a speculative bubble
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
   expect(view.container.querySelector("[data-message-id]")).toBeNull();
   expect(
-    screen.queryByRole("button", { name: "I reviewed the outcome" }),
+    screen.queryByRole("button", { name: "Allow new message" }),
   ).toBeNull();
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
   expect(writes).toHaveLength(2);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Review submission in chat" }),
-  );
-  await screen.findByRole("button", { name: "Refresh operation and history" });
+  fireEvent.click(screen.getByRole("button", { name: "Review message" }));
+  await screen.findByRole("button", { name: "Refresh chat" });
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
   expect(reads).toContain(`/api/threads/${id}/transcript`);
   expect(drafts.get(id)!.submission.kind).toBe("unknown");
@@ -600,9 +598,7 @@ it("keeps rejected first input on the New page and retries without recreating th
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Project changes are paused");
   expect(
-    screen
-      .getByRole("link", { name: "Open chat with retained input" })
-      .getAttribute("href"),
+    screen.getByRole("link", { name: "Open saved draft" }).getAttribute("href"),
   ).toBe(`/threads/${id}?compose=1`);
   expect(creations.current!.defaults.project_id).toBe("project-one");
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
@@ -863,7 +859,7 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
   expect(original.defaults.project_id).toBe("project-one");
   await act(async () => resume());
   await screen.findByText(
-    "No chat was found. You can now change projects; your input is retained.",
+    "No chat found. You can change projects now. Your input is saved here.",
   );
   expect(original.attempted).toBe(false);
   expect(
@@ -975,7 +971,7 @@ it("unlocks creation choices on the backend missing-thread response when retryin
   readMissing = true;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText(
-    "The chat was not found. Your input is retained; Send again to retry with the same identity.",
+    "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
   );
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
@@ -1081,9 +1077,7 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
   await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
   reload();
-  await screen.findByText(
-    /The previous input may already have been accepted\. Open the chat/,
-  );
+  await screen.findByText(/Your message may already be sent\. Open the chat/);
   expect(creations.current!.composer.submission.kind).toBe("unknown");
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Project changes are paused");
@@ -1115,7 +1109,7 @@ it("retains staged files across project switches and explicitly requires reattac
   });
   expect(creations.current!.composer.uploads.size).toBe(1);
   reload("/");
-  await screen.findByText(/Local files are not saved across reloads/);
+  await screen.findByText(/Local attachments are lost on reload/);
   expect(values(creations.current!.composer.doc).prompt).toBe("Build this");
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -1357,9 +1351,9 @@ it("waits for project, catalog and the selected defaults before exposing the new
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(
     screen.getByRole("combobox", { name: "Local mode" }).textContent,
-  ).toContain("Follow chat local mode");
+  ).toContain("Use chat default");
   expect(
-    screen.getByText(/Full Control runs as the server account/),
+    screen.getByText(/Runs as the server account without a sandbox/),
   ).toBeTruthy();
   expect(screen.queryByText("Preparing your chat…")).toBeNull();
   expect(writes).toHaveLength(0);
@@ -1668,7 +1662,7 @@ it.each([
     }
     if (retry) {
       const retryButton = await screen.findByRole("button", {
-        name: "Retry earlier messages",
+        name: "Retry loading",
       });
       fireEvent.scroll(reader);
       await act(async () => {});

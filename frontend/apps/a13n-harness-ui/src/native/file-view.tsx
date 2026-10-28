@@ -149,7 +149,7 @@ export function FileView({
       );
       if (buffer.uncertain)
         setMessage(
-          "Save acknowledgement lost. Do not repeat the write; refresh and inspect disk before choosing which text to keep.",
+          "Couldn't confirm the save. Refresh and check the file before saving again.",
         );
     } finally {
       buffer.saving = false;
@@ -194,7 +194,7 @@ export function FileView({
             size="sm"
             onClick={() => open(buffer.base.resolved_path)}
           >
-            Open resolved target
+            Open target
           </Button>
         </div>
       )}
@@ -305,8 +305,8 @@ export function FileView({
               : "Disk revision changed"}
           </strong>
           <p>
-            Your local text has not been replaced. Refresh, then review the
-            current disk version below before resolving.
+            Your edits are kept. Refresh and review the saved file before
+            choosing which version to keep.
           </p>
           <details>
             <summary>Show latest saved version</summary>
@@ -337,7 +337,7 @@ export function FileView({
                 </Button>
               }
               title="Replace your local text?"
-              description="Replace your local text with this inspected disk version? Download local text first if you need a copy."
+              description="Replace your edits with this saved version? Download your edits first if you need a copy."
               confirmLabel="Use disk version"
               destructive
               onConfirm={() => {
@@ -366,7 +366,7 @@ export function FileView({
                 </Button>
               }
               title="Keep your local text?"
-              description="Keep your local text and use the inspected disk revision for the next explicit save? That save will replace this disk content."
+              description="Keep your edits? Your next save will replace the file version you just reviewed."
               confirmLabel="Keep local text"
               onConfirm={() => {
                 if (
@@ -389,8 +389,8 @@ export function FileView({
       )}
       {editable && mixedLineEndings(buffer.base.text ?? "") && (
         <p>
-          This file has mixed line endings. Editing normalizes them to its first
-          line-ending style; opening or capturing does not change its bytes.
+          This file mixes line endings. Editing uses the first style throughout.
+          Viewing or attaching leaves the file unchanged.
         </p>
       )}
       {editable ? (
@@ -439,8 +439,8 @@ export function FileView({
           <div className={styles.empty}>
             <h3>Image exceeds the preview limit</h3>
             <p>
-              Image previews support up to 10 MiB. Download the original to
-              inspect it.
+              Image too large to preview. Download it to view. The preview limit
+              is 10 MiB.
             </p>
           </div>
         )
@@ -452,8 +452,8 @@ export function FileView({
               : "File exceeds the text editor limit"}
           </h3>
           <p>
-            Edit UTF-8 text up to 512 KiB without NUL characters. Uploads and
-            captures support 10 MiB. Download larger files to view them.
+            Edit UTF-8 text files up to 512 KiB, without NUL characters. Upload
+            or attach files up to 10 MiB. Download larger files to view them.
           </p>
         </div>
       )}
@@ -494,9 +494,7 @@ export function FileView({
           <p>Resolved path: {buffer.base.resolved_path}</p>
         )}
         <DebugOnly>
-          <p>
-            Server native filesystem · revision {buffer.base.entry.revision}
-          </p>
+          <p>Server file · version {buffer.base.entry.revision}</p>
         </DebugOnly>
       </details>
     </section>

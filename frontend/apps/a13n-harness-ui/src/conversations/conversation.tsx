@@ -609,8 +609,7 @@ function ConversationContent({
       <div>
         <h1>Child chat</h1>
         <p>
-          Inspect child execution through its parent; it does not have a root
-          composer.
+          View this subagent from its parent chat. You can't send messages here.
         </p>
         <Link to={`/threads/${encodeURIComponent(thread.parent_thread_id)}`}>
           Open parent chat
@@ -714,7 +713,7 @@ function ConversationContent({
                     void history.fetchNextPage();
                   }}
                 >
-                  Retry earlier messages
+                  Retry loading
                 </Button>
               )}
               <PauseConversationFollowing value={interruptScroll}>
@@ -776,7 +775,7 @@ function ConversationContent({
                     loading={history.isFetchingPreviousPage}
                     onClick={() => void history.fetchPreviousPage()}
                   >
-                    Load later messages
+                    Load newer
                   </Button>
                   <Button variant="ghost" onClick={backToLatest}>
                     Back to latest
@@ -840,8 +839,8 @@ function ConversationContent({
                       <>
                         <h2>No organization history yet</h2>
                         <p>
-                          Automatic organization will appear here. Viewing
-                          memory does not start a Run.
+                          Automatic memory updates appear here. Viewing this
+                          page won't start a run.
                         </p>
                       </>
                     ) : isCoordinator ? (
@@ -856,8 +855,8 @@ function ConversationContent({
                       <>
                         <h2>Start something together.</h2>
                         <p>
-                          Write a prompt below. People on this chat can edit the
-                          same input.
+                          Write a message below. Everyone in this chat can edit
+                          the draft.
                         </p>
                       </>
                     )}
@@ -898,7 +897,7 @@ function ConversationContent({
                 if (refreshed.isSuccess) agentSelection.reset();
               }}
             >
-              Refresh agent selection before sending
+              Refresh agent
             </Button>
           )}
         {canCompose && !thread?.archived && (

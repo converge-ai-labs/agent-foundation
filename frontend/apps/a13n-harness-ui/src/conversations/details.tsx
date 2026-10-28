@@ -96,7 +96,7 @@ export function ConversationDetails({
               loading={activity.isFetchingNextPage}
               onClick={() => void activity.fetchNextPage()}
             >
-              Load earlier activity
+              Load earlier
             </Button>
           )}
           <Children threadId={threadId} reconcile={reconcile} />
@@ -133,8 +133,7 @@ function Operation({
   if (!receipt)
     return (
       <p>
-        No run controls available. Server restarts preserve history but end
-        access to previous run controls.
+        Run controls are unavailable after a server restart. History is kept.
       </p>
     );
   const data = operation.data;
@@ -175,17 +174,17 @@ function Operation({
               <details className={layout.details}>
                 <summary>Run outcome</summary>
                 <SettingsSection>
-                  <SettingsRow label="Model execution">
+                  <SettingsRow label="Model result">
                     <span>
                       {data.outcome.execution.status.replaceAll("_", " ")}
                     </span>
                   </SettingsRow>
-                  <SettingsRow label="Saved continuation">
+                  <SettingsRow label="Saved context">
                     <span>
                       {data.outcome.continuation.status.replaceAll("_", " ")}
                     </span>
                   </SettingsRow>
-                  <SettingsRow label="Environment publication">
+                  <SettingsRow label="Environment changes">
                     <span>
                       {data.outcome.environment.published} published ·{" "}
                       {data.outcome.environment.failed} failed
@@ -270,7 +269,7 @@ export function Children({
           loading={children.isFetchingNextPage}
           onClick={() => void children.fetchNextPage()}
         >
-          Load more subagents
+          Load more
         </Button>
       )}
     </section>
@@ -421,9 +420,9 @@ export function Child({
           {!shareId && unknown && (
             <div className={styles.warning}>
               <p>
-                Acknowledgement unavailable. The subagent may already have
-                received this control. Your instruction is retained; no retry
-                was sent.
+                Couldn't confirm delivery. The subagent may already have
+                received your instruction. It is still saved here; nothing was
+                resent.
               </p>
               <div className={styles.childControlActions}>
                 <Button
@@ -432,7 +431,7 @@ export function Child({
                     reconcile();
                   }}
                 >
-                  Refresh child state
+                  Refresh status
                 </Button>
                 <Button
                   variant="ghost"
@@ -445,7 +444,7 @@ export function Child({
                     control.reset();
                   }}
                 >
-                  I checked the execution; allow a new control
+                  Allow new action
                 </Button>
               </div>
             </div>

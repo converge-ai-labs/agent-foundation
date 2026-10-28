@@ -1183,8 +1183,8 @@ export function RecoveryNotice({
 function GapNotice() {
   return (
     <p role="status">
-      Some live content is unavailable. Saved history and execution details
-      remain authoritative.
+      Some live updates are missing. Check saved history and run details for the
+      full result.
     </p>
   );
 }

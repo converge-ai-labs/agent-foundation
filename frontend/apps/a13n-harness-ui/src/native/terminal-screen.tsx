@@ -224,7 +224,7 @@ export default function TerminalScreen({
       setState((value) => ({
         ...value,
         message:
-          "This terminal protocol accepts UTF-8 input. Legacy binary mouse reports are not sent.",
+          "This terminal accepts UTF-8 input. Older binary mouse input isn't supported.",
       })),
     );
     const observer = new ResizeObserver(resize);
@@ -304,7 +304,7 @@ export default function TerminalScreen({
     const excerpt = `\n\nSelected output from Server terminal ${id} (not a complete log):\n${fence}text\n${selection}\n${fence}\n`;
     if (text.length + excerpt.length > 256 * 1024 || excerpt.includes("\0")) {
       setFeedback(
-        "Selection exceeds the shared input limit or contains NUL. Select less output; nothing was added.",
+        "Selection is too large or contains NUL characters. Select less output. Nothing was attached.",
       );
       return;
     }
@@ -432,7 +432,7 @@ export default function TerminalScreen({
             <ClipboardText />
           </TerminalAction>
           <TerminalAction
-            label="Add selection to message"
+            label="Attach selection"
             disabled={!selection || !threadId}
             onClick={addSelection}
           >
@@ -501,7 +501,7 @@ export default function TerminalScreen({
           }}
         >
           <TextField
-            label="Find in retained terminal output"
+            label="Find in terminal output"
             value={query}
             onChange={setQuery}
           />
@@ -555,7 +555,7 @@ export default function TerminalScreen({
           aria-label="Native terminal output and input"
         />
       </div>
-      <small title="Runs as the server's OS user, not in the agent's environment. Viewers share the controller's terminal size. Reconnecting does not replay input.">
+      <small title="Runs on the server as its OS user, outside the agent's environment. Everyone shares the controller's terminal size. Reconnecting won't resend input.">
         Server terminal
         {view?.controller && !session?.controls
           ? " · Someone else has control"

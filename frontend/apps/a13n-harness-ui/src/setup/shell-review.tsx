@@ -42,9 +42,8 @@ export function ShellReviewModel({
   return (
     <>
       <p>
-        Review shell commands before execution using a separate Model. Each
-        review makes an additional model request. This is not execution
-        isolation.
+        Have a separate model review commands before they run. Each review uses
+        another model request. This doesn't sandbox commands.
       </p>
       <SearchPicker
         label="Shell review model"
@@ -67,7 +66,7 @@ export function ShellReviewModel({
         label="Review model ID (optional)"
         value={value}
         onChange={onChange}
-        description="Uses the same endpoint and API key as your main Model, with separate settings. Suggestions do not guarantee endpoint access or review quality."
+        description="Uses your main model's endpoint and API key with separate settings. Check access and review quality before relying on it."
       />
       {options.isError && (
         <p role="status">
@@ -78,7 +77,7 @@ export function ShellReviewModel({
         {value.trim()
           ? `Shell review will use ${value.trim()}. Extra-high risk commands require approval.`
           : "No model selected — shell review will remain off."}{" "}
-        Existing root shell review settings stay unchanged.
+        Existing command review settings are kept.
       </p>
     </>
   );

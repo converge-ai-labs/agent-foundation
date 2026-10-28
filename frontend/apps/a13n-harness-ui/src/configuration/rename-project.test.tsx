@@ -137,7 +137,7 @@ it("does not overwrite an unsaved Project settings draft", async () => {
   };
   drafts.set(path, draft);
   mount();
-  await screen.findByText(/There are unsaved changes/);
+  await screen.findByText(/Save or discard your project changes/);
   fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), {
     target: { value: "Changed" },
   });

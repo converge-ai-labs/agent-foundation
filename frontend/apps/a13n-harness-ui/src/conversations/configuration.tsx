@@ -71,7 +71,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>Harness plugins</dt>
+        <dt>Plugins</dt>
         <dd>
           {resourceNames(
             configuration.harness_plugin_ids,
@@ -80,7 +80,7 @@ function ConfigurationSummary({
         </dd>
       </div>
       <div>
-        <dt>Environment extensions</dt>
+        <dt>Run extensions</dt>
         <dd>
           {resourceNames(
             configuration.environment_run_extension_ids,
@@ -172,8 +172,8 @@ export function ConversationConfiguration({
             <section>
               <h3>Live executor</h3>
               <p>
-                Live uses its own workspace and lightweight tools. Change its
-                Model, voice and file access in General settings.
+                Live voice has its own workspace and tools. Choose its model,
+                voice and file access in General settings.
               </p>
               <p>Next model: {data.next_model_id || "Not configured"}</p>
             </section>
@@ -181,17 +181,15 @@ export function ConversationConfiguration({
             <section>
               <h3>Automatic organization</h3>
               <p>
-                Only this scope's memory tools are available. No Environment,
-                shared Agent tools, plugins, MCP servers or subagents are
-                attached.
+                This chat can only use its memory tools. It has no execution
+                environment, shared tools, plugins, MCP servers or subagents.
               </p>
               <p>Next model: {data.next_model_id || "Not configured"}</p>
             </section>
           ) : (
             <section>
               <p className={styles.settingsHint}>
-                Changes apply to your next run. Shared resources refresh when it
-                starts.
+                Changes apply to the next run, using the latest shared settings.
               </p>
               <DebugData
                 label="Where these settings come from"
@@ -215,30 +213,32 @@ export function ConversationConfiguration({
             <details className={layout.details}>
               <summary>Apply Project defaults</summary>
               <p>Preview changes before replacing this chat’s settings.</p>
-              <Button
-                variant="outline"
-                loading={preview.isPending}
-                onClick={() => {
-                  setReviewed(null);
-                  apply.reset();
-                  setApplyEnvironments(false);
-                  preview.mutate(false);
-                }}
-              >
-                Preview defaults
-              </Button>
-              <Button
-                variant="outline"
-                loading={preview.isPending}
-                onClick={() => {
-                  setReviewed(null);
-                  apply.reset();
-                  setApplyEnvironments(true);
-                  preview.mutate(true);
-                }}
-              >
-                Preview Project environments
-              </Button>
+              <div className={styles.detailActions}>
+                <Button
+                  variant="outline"
+                  loading={preview.isPending}
+                  onClick={() => {
+                    setReviewed(null);
+                    apply.reset();
+                    setApplyEnvironments(false);
+                    preview.mutate(false);
+                  }}
+                >
+                  Preview defaults
+                </Button>
+                <Button
+                  variant="outline"
+                  loading={preview.isPending}
+                  onClick={() => {
+                    setReviewed(null);
+                    apply.reset();
+                    setApplyEnvironments(true);
+                    preview.mutate(true);
+                  }}
+                >
+                  Environments only
+                </Button>
+              </div>
               <p>
                 Environment-only changes keep your Agent, model and connections.
               </p>
@@ -264,13 +264,13 @@ export function ConversationConfiguration({
                     onClick={() => apply.mutate()}
                   >
                     {applyEnvironments
-                      ? "Apply reviewed environments"
-                      : "Apply reviewed defaults"}
+                      ? "Apply environments"
+                      : "Apply defaults"}
                   </Button>
                   {apply.isError && (
                     <p>
-                      Refresh the preview and review it again before applying.
-                      No changes were retried.
+                      Refresh and review the preview before applying. Nothing
+                      was retried.
                     </p>
                   )}
                 </div>
@@ -327,7 +327,7 @@ export function ConversationConfiguration({
             ) : (
               <p>
                 {data.capture_source === "active_operation"
-                  ? "This run is still starting. Its settings appear once they are captured."
+                  ? "Starting the run. Its settings will appear shortly."
                   : "No captured configuration is available."}
               </p>
             )}
@@ -497,12 +497,12 @@ export function ThreadSelections({
             [
               {
                 key: "harness_plugin_ids",
-                label: "Harness plugins",
+                label: "Plugins",
                 options: selectors.data?.harness_plugins,
               },
               {
                 key: "environment_run_extension_ids",
-                label: "Environment extensions",
+                label: "Run extensions",
                 options: selectors.data?.environment_run_extensions,
               },
               {
@@ -559,9 +559,9 @@ export function ThreadSelections({
       {(stale || mutation.isError) && (
         <div className={styles.warning}>
           <p>
-            Your edits are retained against version {configuration.version}.
-            Review the latest selections below before applying your changes. No
-            write was retried.
+            Your edits are based on version {configuration.version}. Review the
+            latest settings below, then keep your edits to apply them to that
+            version. Nothing was retried.
           </p>
           <h4>Latest selections · version {latest.version}</h4>
           <ConfigurationSummary configuration={latest} />
@@ -572,7 +572,7 @@ export function ThreadSelections({
               mutation.reset();
             }}
           >
-            Keep my edits against version {latest.version}
+            Keep my edits
           </Button>
         </div>
       )}

@@ -59,8 +59,8 @@ export function useAppLink() {
     >
       <strong>Open this external website?</strong>
       <p>
-        The App requested this destination. It opens in a new tab without access
-        to this chat.
+        The app wants to open this link. It opens in a new tab without access to
+        this chat.
       </p>
       <pre>{href}</pre>
       <div className={styles.actions}>

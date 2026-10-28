@@ -28,7 +28,7 @@ import styles from "./shell/workbench.module.css";
 
 const KEY_STORAGE = "a13n-harness-ui.api-key";
 const PUSH_CLEANUP_WARNING =
-  "Background notifications could not be disabled. Task previews may still arrive. Block notifications in this site's browser settings.";
+  "Couldn't turn off background alerts. Task previews may still arrive. Block this site's notifications in your browser settings.";
 export function initialKey(): string {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
   const key = fragment.get("api_key");
@@ -240,8 +240,8 @@ function OwnerApp() {
                         </div>
                         <h1>Log in to Harness UI</h1>
                         <p>
-                          Use the instance API key printed by your server, not a
-                          model provider key.
+                          Use the login key printed by your Harness server, not
+                          a model API key.
                         </p>
                         {pushWarning && <p role="alert">{pushWarning}</p>}
                         <form
@@ -276,8 +276,8 @@ function OwnerApp() {
                         </form>
                         {drafts.current.size > 0 && (
                           <p>
-                            Your unsaved changes are kept in this tab. Log in
-                            again without reloading to continue editing.
+                            Your edits are still here. Log in without reloading
+                            to keep them.
                           </p>
                         )}
                       </div>

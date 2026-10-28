@@ -174,10 +174,7 @@ const EditDiff = memo(function EditDiff({
           : "Requested fragment diff only; not proof of an applied change."}
       </small>
       {!lines ? (
-        <p>
-          Diff preview unavailable for this large change. Inspect the recorded
-          content below.
-        </p>
+        <p>Too large for a diff preview. Review the saved content below.</p>
       ) : !lines.length ? (
         <p>No content change.</p>
       ) : (
@@ -233,13 +230,12 @@ function ToolImages({ tool }: { tool: ToolView }) {
             threadId={image.thread_id}
             attachment={image.attachment}
           />
-          <span>Captured desktop · Open image</span>
+          <span>Open screenshot</span>
         </button>
       ))}
       {tool.imageUnavailable && (
         <p role="status">
-          The screenshot reached the model, but its display copy could not be
-          retained.
+          The model received the screenshot, but no preview was saved.
         </p>
       )}
       {preview && (
@@ -345,9 +341,8 @@ function ToolDetails({
       )}
       {info.executionReceipt && (
         <p role="status">
-          Execution <code>{info.executionReceipt.execution_id}</code> was handed
-          off ({info.executionReceipt.status} at handoff). This is a receipt;
-          the retained result is retrieved separately.
+          Handed off with status {info.executionReceipt.status}. Check activity
+          for the result.
         </p>
       )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
@@ -362,8 +357,8 @@ function ToolDetails({
       )}
       {tool.editOmitted && (
         <p role="status">
-          This older record did not retain the applied edit content. Current
-          Host content is not a historical diff.
+          This older edit has no saved diff. The current file may have changed
+          since then.
         </p>
       )}
       {tool.edit && tool.name !== "write" && <EditDiff edit={tool.edit} />}
@@ -548,7 +543,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
           className={styles.fileLink}
           size="sm"
           variant="ghost"
-          title="Opens this path on the Harness UI server, not in the agent's environment. Shows the current file or your unsaved draft."
+          title="Opens the server's copy of this file, or your unsaved draft. This may differ from the agent's copy."
           onClick={() => openFile(path)}
         >
           <ArrowSquareOut />
@@ -602,8 +597,8 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
             "steer_thread",
           ].includes(tool.name) && (
             <small>
-              Acceptance is not completion or saved delivery. Open the chat to
-              inspect progress; do not blindly retry an uncertain operation.
+              Check progress in the chat. Accepted doesn't mean finished or
+              saved. Check the outcome before retrying.
             </small>
           )}
         </>

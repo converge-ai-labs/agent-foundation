@@ -167,11 +167,11 @@
     height: auto;
     padding-block: 8px;
   }
-  .row [data-slot="combobox-trigger"] {
+  .row button[role="combobox"] {
     height: auto;
     padding-block: 8px;
   }
-  .row [data-slot="combobox-trigger"] .truncate {
+  .row button[role="combobox"] :global(.truncate) {
     white-space: normal;
     overflow-wrap: anywhere;
   }

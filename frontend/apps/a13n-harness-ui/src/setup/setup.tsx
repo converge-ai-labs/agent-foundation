@@ -36,7 +36,7 @@ export function Preflight({
         loading={preflight.isPending}
         onClick={() => preflight.mutate()}
       >
-        Check environment readiness
+        Check environments
       </Button>
       <ErrorNotice error={preflight.error} />
       {preflight.data && (
@@ -74,7 +74,7 @@ export function SetupPage() {
     <>
       <PageHeader
         title="Setup & readiness"
-        description="What this server needs before agents can run, and where to fix it."
+        description="Check what you need to start chatting."
         actions={<Button render={<Link to="/" />}>Open workspace</Button>}
       />
       {status?.diagnostic && (
@@ -87,7 +87,7 @@ export function SetupPage() {
           label="Default agent"
           description={
             status?.needed
-              ? "Configuration is incomplete. Choose a default agent or repair the existing resource files."
+              ? "Setup is incomplete. Choose a default agent or fix its configuration."
               : (defaultAgent ?? "Not selected")
           }
         >
@@ -104,26 +104,26 @@ export function SetupPage() {
             size="sm"
             render={<Link to="/settings/agents" />}
           >
-            Repair agent connection
+            Fix connection
           </Button>
         </SettingsRow>
         <SettingsRow
           label="Configuration files"
-          description="Read and edit the YAML resources behind these settings."
+          description="Edit the configuration files behind these settings."
         >
           <Button
             variant="outline"
             size="sm"
             render={<Link to="/settings/resources" />}
           >
-            Inspect configuration files
+            Open configuration
           </Button>
         </SettingsRow>
       </SettingsSection>
       <SettingsSection variant="grouped" title="Model accounts">
         <SettingsRow
           label="Accounts & API keys"
-          description="Credentials are shared on this server. Account status does not verify model access."
+          description="Accounts are shared on this server. Being signed in doesn't guarantee model access."
         >
           <Button
             variant="outline"
@@ -160,7 +160,7 @@ export function SetupPage() {
             size="sm"
             render={<Link to="/settings/environments" />}
           >
-            Review execution defaults
+            Review execution
           </Button>
         </SettingsRow>
       </SettingsSection>

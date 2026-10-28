@@ -154,8 +154,8 @@ export function CredentialKeys({
   return (
     <section className={styles.section} aria-label="Saved API keys">
       <p className={styles.help}>
-        Shared by models and devices on this server, separate from your
-        browser’s access key.
+        Keys for models and devices on this server. These aren't your browser
+        login key.
       </p>
       <div className={styles.listToolbar}>
         {!!keys.data?.length && (
@@ -210,7 +210,7 @@ export function CredentialKeys({
                         ? "Used by"
                         : unresolved
                           ? "Model and Device links are not fully available."
-                          : "Select this saved key in a Model’s or Device’s authentication settings."}
+                          : "Choose this key when setting up a model or device."}
                     </span>
                     <div className={styles.modelLinks}>
                       {key.resources.map((resource) => (
@@ -255,7 +255,7 @@ export function CredentialKeys({
         <p className={layout.emptySection}>
           {filter
             ? "No keys match your search."
-            : "No saved keys yet. Add an API key, then select it in a Model or Device."}
+            : "No API keys yet. Add one to use with a model or device."}
         </p>
       )}
       <ModalFrame
@@ -269,8 +269,8 @@ export function CredentialKeys({
         title={editing === "new" ? "Add API key" : "Replace API key"}
         description={
           editing === "new"
-            ? "Save a reusable key, then link it from a Model or Device."
-            : "Linked Models and Devices will use the replacement when they next load this credential."
+            ? "Save a key to use with models and devices."
+            : "Linked models and devices will use the new key next time they load it."
         }
         closeLabel="Close"
         footer={
@@ -338,7 +338,7 @@ export function CredentialKeys({
           if (!open && !remove.isPending) setDeleting(null);
         }}
         title="Remove saved key?"
-        description="Models and Devices referencing this credential will need a replacement key to authenticate."
+        description="Linked models and devices will need another key to connect."
         closeLabel="Close"
         footer={
           <>

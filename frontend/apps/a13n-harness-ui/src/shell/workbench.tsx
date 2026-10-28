@@ -283,7 +283,7 @@ function WorkbenchContent({
             <MenuSeparator />
             <MenuItem onClick={openPeople}>
               <Users />
-              People & display name
+              People & profile
             </MenuItem>
             <MenuItem render={<Link to="/usage" />}>
               <ChartBar />
@@ -396,14 +396,14 @@ function WorkbenchContent({
                 size="sm"
                 onClick={() => void results.tracker?.refresh()}
               >
-                Retry new-result tracking
+                Retry updates
               </Button>
             </div>
           )}
           {status.access === "dangerous_bypass" && (
             <div className={styles.notice}>
-              Instance authentication is disabled by the server's explicit
-              dangerous bypass setting.
+              Server login is disabled. Anyone who can reach this server can use
+              it.
             </div>
           )}
           {status.app?.candidate_error_message && (
@@ -411,8 +411,8 @@ function WorkbenchContent({
               <strong>Configuration could not be updated</strong>
               <p>{status.app.candidate_error_message}</p>
               <p>
-                Your previous settings are still active. Open Settings to
-                inspect the saved configuration and correct the changes.
+                Your previous settings are still in use. Open Settings to review
+                and fix the changes.
               </p>
             </div>
           )}
@@ -653,16 +653,16 @@ function WorkbenchContent({
             </p>
             <p>
               {status.features?.host_files
-                ? "Native computer sharing is enabled on the server."
-                : "Native sharing is disabled by this server. Start without --no-share-computer to enable it."}
+                ? "Computer sharing is on for this server."
+                : "Computer sharing is off. Restart the server without --no-share-computer to turn it on."}
             </p>
             {status.features?.host_files && !status.features?.host_git && (
               <p>Git is unavailable on this server. Files remains available.</p>
             )}
             {status.features?.host_files && !status.features?.host_terminal && (
               <p>
-                Native PTY is unavailable on this server; it requires POSIX
-                support.
+                Terminals aren't supported on this server. POSIX support is
+                required.
               </p>
             )}
           </details>

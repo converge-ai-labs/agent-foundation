@@ -59,7 +59,7 @@ export function ModelOptions({
             <small>
               {defaultModel
                 ? `Currently ${defaultModel.name}`
-                : "No default model available"}
+                : "No default model"}
             </small>
           </span>
           {value === undefined && <CheckIcon aria-hidden />}

@@ -57,7 +57,7 @@ it("confirms clearing, sends the reviewed continuation, and refreshes only after
   const { POST, onPendingChange, onCleared, reconcile, queries } = setup();
   fireEvent.click(screen.getByRole("button", { name: "Clear context" }));
   expect(screen.getByRole("dialog").textContent).toContain(
-    "Keep chat history, files, settings and your draft",
+    "Chat history, files, settings and your draft are kept",
   );
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(POST).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ it("reports uncertain outcomes without claiming success or retrying automaticall
       name: "Clear context",
     }),
   );
-  await screen.findByText(/context may already have been cleared/);
+  await screen.findByText(/context may already be cleared/);
   expect(onCleared).not.toHaveBeenCalled();
   expect(POST).toHaveBeenCalledOnce();
   expect(reconcile).toHaveBeenCalledOnce();

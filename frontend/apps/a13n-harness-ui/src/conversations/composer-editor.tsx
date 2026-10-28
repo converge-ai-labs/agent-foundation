@@ -59,8 +59,8 @@ export function ComposerEditor({
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Not shared until you send. Text and selections are saved in this browser when storage is available. Local files may need reattaching after reload. Files upload on Send. Enter to send; Shift+Enter for a new line."
-    : "Shared with this chat. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
+    ? "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line."
+    : "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () => [
       EditorView.contentAttributes.of({

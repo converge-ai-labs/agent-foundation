@@ -169,7 +169,7 @@ function OwnerAppCard({
       ?.close()
       .catch(() =>
         setError(
-          "The View closed locally, but server confirmation was lost. Already sent operations may still complete.",
+          "This view closed, but the server didn't confirm. Actions already sent may still finish.",
         ),
       );
   }
@@ -209,10 +209,7 @@ function OwnerAppCard({
       {reference.unavailable && <p role="status">{reference.unavailable}</p>}
       {error && <p role="alert">{error}</p>}
       {!opened && !reference.unavailable && (
-        <p>
-          Open the original App presentation. This does not repeat the tool
-          call.
-        </p>
+        <p>Reopen the app. The tool won't run again.</p>
       )}
       {opened && presentation.isPending && <p role="status">Loading App…</p>}
       {opened && presentation.error && (
@@ -246,7 +243,7 @@ function OwnerAppCard({
                 disabled={activating}
                 onClick={() => void activate()}
               >
-                {activating ? "Activating…" : "Activate interactions"}
+                {activating ? "Activating…" : "Enable controls"}
               </Button>
             )}
           </div>
@@ -290,8 +287,8 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
         → {session.view.root_thread_id}
       </p>
       <p>
-        This starts an ordinary turn. It does not edit your draft, steer active
-        work or queue behind a busy chat.
+        Starts a new message without changing your draft. It can't interrupt
+        active work or wait in a busy chat's queue.
       </p>
       <pre>{state.request.content.map((part) => part.text).join("\n")}</pre>
       {state.context && (
@@ -322,7 +319,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
           variant="outline"
           onClick={() => void message.reconcile()}
         >
-          Check message receipt
+          Check delivery
         </Button>
       ) : state.receipt?.status !== "accepted" &&
         state.receipt?.status !== "failed" ? (
@@ -352,8 +349,8 @@ function AppModelContext({
         <span>{state.pending ? "Updating…" : "Latest value"}</span>
       </div>
       <p>
-        This external data is not sent automatically. Only this browser's
-        selection accompanies your next ordinary message.
+        This selection will go with your next message. Nothing is sent
+        automatically, and other browsers' selections aren't included.
       </p>
       {state.context && (
         <>

@@ -40,6 +40,7 @@
   color: var(--a13n-secondary);
 }
 .workspace {
+  --memory-page-inset: clamp(24px, 5vw, 64px);
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -53,7 +54,7 @@
   gap: 24px;
   width: min(
     var(--harness-reading-width),
-    calc(100% - clamp(40px, 10vw, 128px))
+    calc(100% - 2 * var(--memory-page-inset))
   );
   margin-inline: auto;
   padding-top: 24px;
@@ -82,7 +83,7 @@
   gap: 12px;
   width: min(
     var(--harness-reading-width),
-    calc(100% - clamp(40px, 10vw, 128px))
+    calc(100% - 2 * var(--memory-page-inset))
   );
   margin-inline: auto;
   padding-block: 12px;
@@ -97,7 +98,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 24px clamp(24px, 5vw, 64px) 32px;
+  padding: 24px var(--memory-page-inset) 32px;
   overflow: auto;
 }
 .files > * {

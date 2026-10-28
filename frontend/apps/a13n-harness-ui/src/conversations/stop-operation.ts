@@ -127,7 +127,7 @@ export function useStopOperation(
       next.phase = rejected ? "rejected" : "uncertain";
       next.message = rejected
         ? `Stop was not accepted. ${error.message}`
-        : "Stop could not be confirmed. It may already have been accepted; checking operation status. No automatic retry was sent.";
+        : "Couldn't confirm the stop request. Checking whether the run stopped; the request hasn't been resent.";
     } finally {
       draft.notify();
       reconcile();

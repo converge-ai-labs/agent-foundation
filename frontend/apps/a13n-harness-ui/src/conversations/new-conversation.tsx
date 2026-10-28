@@ -85,8 +85,8 @@ export async function ensureConversation(
       const found = await checkConversation(transport, threadId, draft);
       throw new Error(
         found
-          ? "This chat already exists. Open it to review its settings before sending your retained input."
-          : "The chat was not found. Your input is retained; Send again to retry with the same identity.",
+          ? "This chat already exists. Open it and check its settings before sending your saved input."
+          : "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
       );
     }
     draft.attempted = true;
@@ -107,7 +107,7 @@ export async function ensureConversation(
       );
       if (created.thread_id !== threadId)
         throw new Error(
-          "The chat acknowledgement was incomplete. Send again to check its identity.",
+          "Couldn't confirm the chat was created. Send again to check.",
         );
       draft.created = true;
     } catch (error) {
@@ -401,12 +401,12 @@ function NewConversation({
                 <strong>Project changes are paused</strong>
                 <p>
                   {preparing
-                    ? "Finishing your first message. Wait for this attempt to finish before changing projects."
+                    ? "Sending your first message. Wait until it finishes before changing projects."
                     : unknownSubmission
-                      ? "The previous message may already have been accepted. Open the chat to review its outcome. Your input is retained."
+                      ? "Open the chat to check delivery before changing projects."
                       : draft.created
-                        ? "This draft belongs to an existing chat. Open it to continue with your retained input."
-                        : "Chat creation could not be confirmed. Check its status before changing projects. Your input is retained."}
+                        ? "This draft belongs to an existing chat. Open it to continue."
+                        : "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here."}
                 </p>
               </div>
               {!preparing &&
@@ -414,7 +414,7 @@ function NewConversation({
                   <Link
                     to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
                   >
-                    Open chat with retained input
+                    Open saved draft
                   </Link>
                 ) : (
                   <Button
@@ -431,8 +431,8 @@ function NewConversation({
           )}
           {!choicesDisabled && review.isSuccess && !review.data && (
             <p className={styles.recoveryStatus} role="status">
-              No chat was found. You can now change projects; your input is
-              retained.
+              No chat found. You can change projects now. Your input is saved
+              here.
             </p>
           )}
           <Composer
@@ -531,8 +531,8 @@ function NewConversation({
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),
           ) && (
             <p role="alert">
-              Reattach unavailable files before sending. Local attachments do
-              not survive reloads; uploads belong to their original chat.
+              Reattach missing files before sending. Local attachments are lost
+              on reload; uploaded files stay with their original chat.
             </p>
           )}
           <ErrorNotice

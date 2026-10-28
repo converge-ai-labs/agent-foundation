@@ -271,7 +271,7 @@ export function NativeWorkspace({
         }
         if (entry.kind === "other")
           throw new Error(
-            "This is a special native entry, not regular file content. Inspect, move, or delete it through its directory entry actions.",
+            "This isn't a regular file. Use its menu in the file list to inspect, move or delete it.",
           );
       }
       if (controller.signal.aborted) return;
@@ -1019,10 +1019,10 @@ export function NativeWorkspace({
                 </p>
               ) : !status.data?.features?.host_files ? (
                 <div className={styles.empty}>
-                  <h3>Native sharing is disabled</h3>
+                  <h3>Computer sharing is off</h3>
                   <p>
-                    The server has not enabled computer sharing. Chats remain
-                    available; this view cannot enable native access.
+                    Computer sharing is off on the server. Chats still work.
+                    Turn it on in server settings to access files and terminals.
                   </p>
                 </div>
               ) : (

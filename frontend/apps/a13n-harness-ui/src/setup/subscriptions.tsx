@@ -731,8 +731,8 @@ export function SubscriptionAccounts({
         <details className={`${styles.migration} ${layout.disclosure}`}>
           <summary>Import existing CLI logins</summary>
           <p>
-            Imported once on first startup. Original CLI files are unchanged;
-            logout and deletion here never re-import them.
+            Imported once on first startup. CLI files stay unchanged. Signing
+            out or deleting an account won't import it again.
           </p>
           {Object.entries(catalog.data.adoption).map(([key, value]) => (
             <p key={key}>
@@ -813,8 +813,8 @@ export function SubscriptionAccounts({
               <TextField label="Account name" value={name} onChange={setName} />
             ) : (
               <p>
-                This provider uses one server-wide account. Continue to connect
-                or manage it.
+                This provider shares one account across the server. Continue to
+                manage it.
               </p>
             )}
           </SettingsSection>
@@ -846,7 +846,7 @@ export function SubscriptionAccounts({
           if (!open) setDeleting(null);
         }}
         title={`Delete ${deleting?.name ?? "account"}?`}
-        description="Removes the managed credentials and stops future requests from using this account, including captured groups. Original CLI files remain unchanged."
+        description="Remove this saved account? Future requests can't use it, even through saved groups. Original CLI files are kept."
         closeLabel="Close"
         footer={
           <>
@@ -928,10 +928,8 @@ export function AccountGroups() {
               <strong>{item.name}</strong>
               <span>
                 {item.provider} ·{" "}
-                {item.strategy === "weighted"
-                  ? "Weighted balance"
-                  : "Ordered consumption"}{" "}
-                · {item.accounts?.length ?? 0} accounts
+                {item.strategy === "weighted" ? "By weight" : "In order"} ·{" "}
+                {item.accounts?.length ?? 0} accounts
                 {item.allow_credits
                   ? " · Credits allowed"
                   : " · Included allowance only"}
@@ -1058,7 +1056,7 @@ function ResetVoucher({
               loading={redeem.isPending}
               onClick={() => redeem.mutate()}
             >
-              {redeem.isError ? "Retry use voucher" : "Confirm use voucher"}
+              {redeem.isError ? "Retry use voucher" : "Use voucher"}
             </Button>
           </>
         )
@@ -1266,11 +1264,11 @@ function GroupEditor({
             options={[
               {
                 value: "ordered",
-                label: "Ordered consumption",
+                label: "In order",
               },
               {
                 value: "weighted",
-                label: "Weighted balance",
+                label: "By weight",
               },
             ]}
           />
@@ -1285,15 +1283,15 @@ function GroupEditor({
                 { value: "deny", label: "Included allowance only" },
                 {
                   value: "allow",
-                  label: "Allow rechargeable credits",
+                  label: "Allow extra credits",
                 },
               ]}
             />
           )}
           {draft.provider === "codex" && draft.allow_credits && (
             <p className={styles.help}>
-              Credits may be used after included allowance. Best-effort
-              scheduling; small overshoot is possible.
+              Uses credits after the included allowance. Usage may go slightly
+              over the limit.
             </p>
           )}
         </SettingsSection>
@@ -1301,8 +1299,8 @@ function GroupEditor({
           title="Accounts"
           description={
             draft.strategy === "weighted"
-              ? "Higher weights receive more Runs. The selected account stays in use while eligible."
-              : "Accounts are tried from top to bottom. Move your preferred account first."
+              ? "Higher weights get more runs. A run keeps its account while it remains eligible."
+              : "Tries accounts from top to bottom. Put your preferred account first."
           }
         >
           <FormField
@@ -1393,7 +1391,7 @@ function GroupEditor({
           </FormField>
           {!writable && (
             <p>
-              This group is read-only. Edit its owning configuration source.
+              This group is read-only here. Edit its configuration file instead.
             </p>
           )}
         </SettingsSection>
@@ -1428,7 +1426,7 @@ function GroupEditor({
             }
             onClick={() => save.mutate()}
           >
-            Save group
+            Save
           </Button>
         </div>
       </div>
@@ -1455,7 +1453,7 @@ function GroupEditor({
               disabled={!writable || save.isPending}
               onClick={() => remove.mutate()}
             >
-              Confirm delete group
+              Delete group
             </Button>
           </>
         }

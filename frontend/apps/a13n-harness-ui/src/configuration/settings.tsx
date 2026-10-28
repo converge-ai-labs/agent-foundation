@@ -95,7 +95,7 @@ export function GeneralSettings() {
         </div>
       ) : (
         <Panel title="Set up your workspace">
-          <p>Create your first agent and choose defaults to get started.</p>
+          <p>Add an agent to get started.</p>
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
@@ -169,7 +169,7 @@ export function ConnectionsPage() {
       <SourcesPage
         kinds={["harness_plugin"]}
         headingLevel={2}
-        title="Harness plugins"
+        title="Plugins"
       />
       <div className={layout.disclosures}>
         {root && (
@@ -240,8 +240,7 @@ export function EnvironmentsPage() {
               />
             ))}
           <p className={layout.hint}>
-            Choose folders and project-specific defaults from each Project’s
-            settings.
+            Choose folders and defaults in each project's settings.
           </p>
         </>
       )}
@@ -253,7 +252,7 @@ export function EnvironmentsPage() {
             aria-labelledby="local-execution-profiles"
           >
             <div className={environmentStyles.sectionHeader}>
-              <h2 id="local-execution-profiles">Local execution profiles</h2>
+              <h2 id="local-execution-profiles">Local profiles</h2>
               <NewResourceButton
                 kind="environment_profile"
                 label="Add local profile"
@@ -261,7 +260,7 @@ export function EnvironmentsPage() {
               />
             </div>
             <p className={layout.hint}>
-              Control how agents run on this server: full control or a sandbox.
+              Choose full access or a sandbox for local work.
             </p>
             <DraftLinks kinds={["environment_profile"]} />
             {selectors.isPending && <Skeleton className="h-32 w-full" />}
@@ -325,8 +324,8 @@ export function EnvironmentsPage() {
           <SourcesPage
             kinds={["environment_run_extension"]}
             headingLevel={2}
-            title="Environment extensions"
-            description="Optional extensions selected in project or global defaults."
+            title="Run extensions"
+            description="Extra features for runs. Choose them in project or global defaults."
           />
         </>
       )}
@@ -393,7 +392,7 @@ export function InstalledCatalog({
               </small>
             </div>
             {!item.configurable ? (
-              <span className={layout.hint}>Unavailable to configure</span>
+              <span className={layout.hint}>No setup form</span>
             ) : resource ? (
               <NewResourceButton
                 kind={resource}

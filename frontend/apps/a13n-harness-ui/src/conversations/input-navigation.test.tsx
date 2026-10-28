@@ -158,7 +158,7 @@ it("quickly previews each question and answer while the wave follows hover and k
     await screen.findByText("Question 4", {}, { timeout: 400 }),
   ).toBeTruthy();
   expect(screen.getByText("Output")).toBeTruthy();
-  expect(screen.getByText("No saved output yet")).toBeTruthy();
+  expect(screen.getByText("No saved output")).toBeTruthy();
   await user.hover(ticks[4]);
   expect(ticks[4].getAttribute("data-proximity")).toBe("0");
   expect(await screen.findByText("Question 5")).toBeTruthy();

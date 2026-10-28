@@ -299,7 +299,7 @@ function ShareContents({
       {!created && <ErrorNotice error={create.error} />}
       {!created && create.isError && (
         <p className={styles.hint}>
-          Check Manage links before retrying; the link may have been created.
+          The link may already exist. Check Manage links before trying again.
         </p>
       )}
       {created && (
@@ -322,7 +322,7 @@ function ShareContents({
               create.reset();
             }}
           >
-            Create another link
+            New link
           </button>
         </div>
       )}
@@ -413,8 +413,8 @@ function GrantRow({
       </Button>
       {permission === "prompt" && grant.permission !== "prompt" && (
         <p className={styles.authority}>
-          Prompts use this agent’s tools and environment with its existing
-          authority. Save only for people you trust.
+          Messages can use this agent's tools, environment and permissions.
+          Share only with people you trust.
         </p>
       )}
       <ErrorNotice error={update.error || revoke.error} />
