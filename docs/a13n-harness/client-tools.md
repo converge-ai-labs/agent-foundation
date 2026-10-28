@@ -1,15 +1,15 @@
 ---
 title: Client-side tools
-description: Declare tools that a client application executes outside the Harness Run, then resume with their results.
+description: Let a client application execute a requested action, then resume the Harness Run with its result.
 ---
 
-Use client tools when the model can request an action but a separate application must execute it: a browser action, an external application integration, or another authenticated client. The declaration supplies model guidance and JSON argument schemas, not a Python executor or credential.
+Use client tools when an action belongs to another application: opening an editor document, operating a browser, or calling an integration with the client's credentials. You declare the tool's name and arguments in Harness. The model requests it, the Run suspends, and your Host delivers the request to the client. The Host then starts a new Run with the client's result.
 
-A Run with deferred support suspends with correlated external calls. The Host authenticates the executor, performs or collects the action, persists the result, and starts a fresh Run with `DeferredToolResume`. For in-process functions, use [Tools and dependencies](tools-and-dependencies.md) instead. For the built-in `ask_user_question` request and answer shapes, see [Human-in-the-loop tools](human-in-the-loop.md); no custom client-tool declaration is needed.
+For Python functions executed inside the Run, use [Tools and dependencies](tools-and-dependencies.md). For the built-in question form, use [Human-in-the-loop tools](human-in-the-loop.md); `ask_user_question` already has its own declaration.
 
 ## Declare, suspend, and resume offline
 
-This complete example uses a deterministic model and a simulated external result. It makes no provider request and performs no browser action:
+Start with the Python 3.13 environment from [Getting started](getting-started.md). Save the following as `client_demo.py`. It uses a deterministic model and a simulated client result, so no credentials or browser are needed.
 
 ```python
 import asyncio
@@ -21,6 +21,7 @@ from a13n_harness.tools import (
     ClientToolsetDefinition,
     ClientToolsSpec,
 )
+from a13n_harness.tools.client import client_tool_name
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -35,6 +36,7 @@ async def model_stream(messages, info):
         if isinstance(part, ToolReturnPart)
     ]
     if returns:
+        assert returns[-1].content == {"opened": True}
         yield "The client action finished."
     else:
         yield {
@@ -62,22 +64,24 @@ async def main():
             ),
         ),
     )
+    client_tools = ClientToolsCapability(
+        spec=ClientToolsSpec(default_toolsets=(declaration,))
+    )
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model_stream),
-        capabilities=(
-            ClientToolsCapability(
-                spec=ClientToolsSpec(default_toolsets=(declaration,))
-            ),
-        ),
+        capabilities=(client_tools,),
     )
     first = await executable.run("Open the guide", bindings=RunBindings.embedded())
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
+    assert len(requests.calls) == 1 and not requests.approvals
     call = requests.calls[0].target_call
-    assert call.tool_name == "open_document"
+    name = client_tool_name(call, requests.metadata.get(call.tool_call_id, {}))
+    assert name == "open_document"
+    assert call.args_as_dict() == {"document_id": "guide"}
 
     # A real Host authenticates the client and validates/persists its result here.
     results = requests.build_results(calls={call.tool_call_id: {"opened": True}})
@@ -86,36 +90,68 @@ async def main():
         previous_state=first.state,
         deferred_resume=DeferredToolResume(requests, results),
     )
+    assert resumed.run_id != first.run_id
+    assert resumed.thread_id == first.thread_id
     assert resumed.output_or_raise() == "The client action finished."
     print(resumed.output_or_raise())
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-1. `ClientToolsCapability` originates from the **definition** and owns the effective surface.
-2. The model requests a tool, but Harness does not execute an application action in process.
-3. `first.deferred.calls` provides the exact call identity; `build_results()` preserves correlation and category validation.
-4. Resume uses the selected state and **fresh bindings**, not a still-open stream or an arbitrary new user message.
+Run the file in that environment:
 
-[State and Resume](state-and-resume.md) explains complete feedback coverage, approval categories, state selection, and cleanup. Serializing a checkpoint alone does not persist an external command's outcome.
+```bash
+uv run --no-sync python client_demo.py
+```
+
+Expected output:
+
+```text
+The client action finished.
+```
+
+The assertions check both sides of the handoff: the client receives `open_document(document_id="guide")`, and the model receives `{"opened": True}`. The resumed Run has a new ID while retaining the same Thread.
+
+Read the example in three parts:
+
+1. `ClientToolsCapability` installs the declaration when you build the Agent. The declaration contains model guidance, not an execution callback.
+2. The first result supplies the checkpoint and complete pending batch. Client calls appear in `requests.calls`; approvals have a separate category.
+3. `build_results()` correlates feedback with the target call ID. `DeferredToolResume` carries that feedback into a new Run with the previous state and fresh bindings.
+
+For a real integration, replace the simulated result with client delivery and result collection. Validate arguments against the accepted schema before executing the action: the external tool schema guides the model, but Harness does not run a local function validator for the client. Persist the pending batch, checkpoint, effective declarations, and accepted result according to your application's recovery needs. [State and Resume](state-and-resume.md) explains complete batch feedback and persistence ordering.
+
+To report a failed client action, construct a typed failure in place of the successful `results` line:
+
+```python
+from pydantic_ai import ToolFailed
+
+results = requests.build_results(
+    calls={call.tool_call_id: ToolFailed("The client could not open the document.")}
+)
+```
+
+Pass this result through the same `DeferredToolResume` path. Adapt the demo model's success assertion before testing this variant. A failure is still feedback for the external call, not an approval decision.
 
 ## Definition and Run selection
 
-`ClientToolsSpec` has two fields:
+Keep a fixed client toolset in `default_toolsets` when every Run uses the same application interface. Allow overrides when the Host selects the available client interface for each Run:
 
-| Field                | Default | Meaning                                                     |
-| -------------------- | ------- | ----------------------------------------------------------- |
-| `default_toolsets`   | `()`    | Definition-owned default declarations                       |
-| `allow_run_override` | `False` | Whether the Host can replace the complete surface for a Run |
+| Field                | Default | Use                                                    |
+| -------------------- | ------- | ------------------------------------------------------ |
+| `default_toolsets`   | `()`    | Declarations used when no Run override is supplied     |
+| `allow_run_override` | `False` | Allow the Host to replace those declarations for a Run |
 
-When explicitly allowed, supply `RunBindings.client_toolsets`. This is **whole-list replacement**, not a merge; `client_toolsets=()` clears the surface, while `None` retains the defaults. A binding cannot install `ClientToolsCapability` or change its `allow_run_override` policy. The effective declarations are validated and copied for the Run.
+With `allow_run_override=True`, pass the replacement tuple as `RunBindings.embedded(client_toolsets=(declaration,))`. The tuple replaces the whole list. `client_toolsets=()` clears the list; `None` keeps the defaults. The binding needs the definition-owned `ClientToolsCapability`, and cannot change its override policy. Harness validates and copies the selected declarations for the Run.
 
-Use stable `toolset_id` and tool names. A resumed external call must still match the selected declaration and current continuation contract; changing a schema or swapping executors is not a way to accept mismatched pending results.
+Retain the exact effective declarations for a pending batch and supply them again on resume. Harness checks call IDs, categories, and the current tool names and kinds. The Host compares the saved declarations or their digest: message history alone cannot establish that a same-named tool still has the same schema or executor.
 
 ## Declaration fields and bounds
 
-`ClientToolDefinition` contains `name`, `description`, `parameters_json_schema`, optional `instruction`, and JSON `metadata`. The argument schema must declare `type: "object"`. Instructions are model guidance, not enforced approval policy. Declarations are detached from mutable caller inputs.
+A `ClientToolDefinition` contains the required `name`, `description`, and `parameters_json_schema`, plus optional `instruction`, JSON `metadata`, and `permission`. The schema must have `type: "object"`. Use the description and instruction to explain when and how the model should request the action.
+
+`permission` accepts `inherit` (the default), `allow`, or `deny`. For client tools, `inherit` supplies an `allow` default. The Agent's ToolPermissions configuration can override that default. Effective `ask` and `review` modes are unsupported for external tools; implement client-side confirmation in the Host's delivery workflow.
 
 | Boundary                           | Limit                  |
 | ---------------------------------- | ---------------------- |
@@ -125,38 +161,55 @@ Use stable `toolset_id` and tool names. A resumed external call must still match
 | Argument schema                    | 64 KiB of encoded JSON |
 | Metadata                           | 16 KiB of encoded JSON |
 
-Each Toolset must contain at least one tool. Toolset IDs and effective tool names are unique; names follow the declared identifier pattern. Metadata rejects reserved Harness keys and authority-bearing keys such as credentials, grants, and policy. Do not put live clients, authentication, executable callbacks, or server authorization claims in portable declarations.
+Each toolset needs at least one tool. Toolset IDs and tool names must be unique across the effective client list. A tool name matches `[A-Za-z_][A-Za-z0-9_.:-]*`. Declarations copy their JSON data so later caller mutations do not change the selected values.
+
+Keep credentials, live connections, callbacks, and authorization in the Host. Metadata is portable model-facing data; validation rejects reserved Harness keys and authority-bearing keys, including nested credentials, grants, and policy claims. Instructions explain behavior but do not enforce approval.
 
 ## Authority and child Runs
 
-The Host owns approval UI, executor authentication, command idempotency, durable pending records, timeout/cancellation policy, and result acceptance. Client-provided metadata cannot authorize a server-side tool. [Managed tools](managed-tools.md) covers the independent in-process invocation boundary.
+The Host authenticates the executor, validates the action and result, and owns confirmation, idempotency, durable pending records, timeouts, and cancellation. Start client work from the terminal suspended result and the Host's accepted record. Tool-call observation events alone do not establish a waiting command. In-process authorization is a separate boundary described in [Managed tools](managed-tools.md).
 
-Child Runs can defer when the current Host supports feedback. A Host without that lifecycle sets `RunBindings.deferred_tools_supported=False`, which omits declaratively deferred tools, denies dynamic deferral, and fails unexpected terminal deferral with `deferred_tools_unsupported`. Do not create waiting work from an observation event; retain the exact terminal pending batch and checkpoint. [Built-in inline execution](delegation-and-codeact.md#host-managed-feedback) disables deferred tools; a supporting Host resumes its own child directly.
+A child can use client tools when its own definition enables them and its Host supports the feedback lifecycle. The parent's client declarations are not automatically inherited. The Host supplies fresh child bindings and resumes that child with its own pending batch.
+
+A Host that cannot collect feedback sets `RunBindings.deferred_tools_supported=False`. Harness removes declaratively deferred tools, denies dynamic deferral, and reports `deferred_tools_unsupported` for an unexpected terminal deferral. [Built-in inline execution](delegation-and-codeact.md#host-managed-feedback) uses this mode.
 
 ## Proxy discovery
 
-Select the definition's `ClientToolsCapability` in a `ToolSearchPlan` group, just like another capability source:
+For a large client interface, group its tools behind [ToolSearch](tool-search.md). Continue with `client_demo.py`: add the following import and replace the builder block in `main()` with this configuration. Keep the existing `client_tools` instance.
 
 ```python
 from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 
-# client_tools is the same ClientToolsCapability instance passed in capabilities.
+# Inside main(), after creating client_tools:
 search = ToolSearchPlan(
-    groups={"workspace": ToolSearchSelection("Editor actions", capabilities=(client_tools,))}
+    groups={
+        "workspace": ToolSearchSelection(
+            "Document actions", capabilities=(client_tools,)
+        )
+    }
 )
-# Pass tool_search=search when building the Harness.
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=FunctionModel(stream_function=model_stream),
+    capabilities=(client_tools,),
+    tool_search=search,
+)
 ```
 
-`ClientToolsetDefinition.toolset_id` identifies the client source; the ToolSearch group controls discovery. For a declared `select` tool, the model invokes `call_tool(group="workspace", tool="select", arguments={...})`. The internal target is `workspace__select`, and the Run suspends with the usual external call. Use the retained metadata when delivering it to the client:
+In `model_stream()`, replace the `DeltaToolCall` entry with this one. The deterministic model already knows the schema; a general model first discovers or describes the tool.
 
 ```python
-from a13n_harness.tools.client import client_tool_name
-
-entry = pending.calls[0]
-call = entry.target_call
-name = client_tool_name(call, pending.metadata.get(call.tool_call_id, {}))
-# Deliver name, call.args_as_dict(), and call.tool_call_id to the client.
-results = pending.build_results(calls={call.tool_call_id: client_result})
+0: DeltaToolCall(
+    name="call_tool",
+    json_args=(
+        '{"group":"workspace","tool":"open_document",'
+        '"arguments":{"document_id":"guide"}}'
+    ),
+    tool_call_id="external-1",
+)
 ```
 
-The client receives `select`; the stored target keeps `workspace__select` for resume validation. The minimal routing marker contains `declared_name` and `toolset_id`. Other definition metadata is not copied into pending requests. Persist the complete pending requests with the prior state, then start a fresh Run with `DeferredToolResume(pending, results)`. Successful values and native `ToolFailed` use the same target ID. Native inline deferred handlers can use the same name helper with their native call and per-call metadata. Arbitrary renaming wrappers remain unsupported for client declarations.
+Run `uv run --no-sync python client_demo.py` again. The expected output is unchanged. The stored target is now `workspace__open_document`, while `client_tool_name()` in the existing delivery code still returns `open_document`. Keep the stored target intact and key results by its `tool_call_id`.
+
+`toolset_id` identifies the client source; the ToolSearch group controls discovery. Pending metadata retains the routing marker's `declared_name` and `toolset_id`, not arbitrary declaration metadata. Persist the complete pending batch with the checkpoint. Success values and native `ToolFailed` use the same target ID. Native inline deferred handlers can also use `client_tool_name()` with their call and per-call metadata. Client declarations support ToolSearch grouping, but not arbitrary renaming wrappers.

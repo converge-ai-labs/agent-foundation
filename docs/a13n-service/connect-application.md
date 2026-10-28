@@ -1,93 +1,151 @@
 ---
 title: Connect your application
-description: Start a conversation, read the answer, and send a follow-up through a Service SDK.
+description: Connect a server-side client, submit a message, read its result, and continue the conversation.
 ---
 
-You need the Service URL, a workspace API key, and an agent with a working model. Start with the [Service quickstart](get-started.md) for deployment or [Console guide](use-platform.md) to configure an agent.
+Connect your application's backend to an agent you have already tested in Console. You will need the Service URL, the agent ID, and a workspace API key. If you are starting from scratch, deploy Service with the [quickstart](get-started.md), then configure and test an agent with the [Console guide](use-platform.md).
 
 ## Set up credentials
 
-In Console, open the agent's menu and select **Connect to app**. Follow the integration guide or copy the instructions for your coding assistant. Create a personal API key in the same dialog if you do not have one saved. You can also manage your keys under **API keys** in the sidebar. Keep the key and Service URL in server-side configuration. The key acts in its workspace with the current permissions of its principal: the user or service account it belongs to. You need the **runner** role or higher in that workspace; creating agents requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts).
+1. In Console, open the agent's menu and select **Connect to app**.
+2. Copy the **Service URL** and **Agent ID** into your server-side configuration.
+3. Use a saved personal API key, or select **Create key**. Copy a new key before closing the dialog: its secret is shown only once.
+4. Store the key as `A13N_API_KEY` in your server environment. Use **Copy for agent** if you want connection instructions for a coding assistant.
+
+You can manage personal keys under **API keys** in the sidebar. A key acts in its workspace with the current permissions of its principal, the user or service account it belongs to. Running an existing agent requires **runner** or higher; creating one requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts). Keep API keys on the server, out of browser code.
 
 ## Start with an SDK
 
-Choose your language's quick start: [Python](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md), [TypeScript](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md), [Go](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md), or [Rust](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md). Each repository owns installation and runnable examples. Match its supported Service contract to your deployment and read the documentation at the version you install; `main` may be ahead of a released package.
+Use your language's quick start: [Python](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md), [TypeScript](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md), [Go](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md), or [Rust](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md). Each repository owns installation, method signatures, and runnable examples. Read the documentation for the version you install and match its supported Service contract to your deployment; `main` may be ahead of a released package.
 
-1. Initialize the client with your Service URL and API key.
-2. Select an existing agent by ID. Find the ID in Console, or create an agent with the [Console guide](use-platform.md#create-your-own-agent).
-3. Start the agent with your first message, such as “Summarize these project notes.” Give this submission an idempotency key; reuse it if you retry the same message after losing the response.
-4. Wait for the result and handle its status. A completed result contains the answer; waiting, failed, and cancelled are distinct outcomes.
+Build the first interaction in this order:
 
-The Python high-level workflow uses `start` and `result`; follow its [quick start](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md) for the exact calls and cleanup. Other SDKs follow their language's conventions. You do not need to create a session separately or poll individual runs. The SDK tracks when your input is consumed, including time spent queued. Streaming is optional when you only need the final result.
+1. Initialize the client with the Service URL and API key.
+2. Start a conversation with the agent ID and a message such as “Summarize these project notes.” Give the submission an idempotency key. Retry the same submission with the same key if the response is lost.
+3. Retain the returned conversation and submission references. Your application needs to associate the result with this message, including any time the message spends queued.
+4. Read the result. Display `output` on completion, collect responses when waiting, and show the structured failure when execution fails.
+
+Use the SDK's application workflow to follow the submission through these states. The [HTTP walkthrough below](#direct-http-integration) shows the underlying receipts and reads. A new conversation creates its session automatically, and streaming is optional when you only need the final result.
 
 ## Send a follow-up
 
-Keep the returned thread reference and send your next message to that thread using the SDK's high-level send operation. For example, follow “Summarize these project notes” with “Which task should I do first?” Give the new message a new idempotency key. The existing history remains available.
+Send the next message to the same thread to continue its history. For example, follow “Summarize these project notes” with “Which task should I do first?” Keep the thread reference and give the new submission a new idempotency key. Track its result separately from the first message.
 
-Closing the client or disconnecting stops local observation; it does not stop the agent's work. Stopping execution is a separate explicit action. See your SDK's [application guide](sdks.md#choose-a-client) for streaming, cleanup, and recovery.
+Closing the client stops local observation; Service continues the work. Use an explicit cancellation operation when you want to stop execution. Your [SDK's application guide](sdks.md#choose-a-client) owns its streaming, cleanup, and recovery calls.
 
 ## Handle a waiting result
 
-If the agent asks a question, needs approval, or calls a client-side tool, the result is waiting. Show the pending requests, collect explicit answers, and use the SDK's waiting-action workflow to submit them. Your application owns collecting and saving answers; Service accepts only a complete response batch through `/resume`. Do not fill unanswered requests with automatic approvals or denials. Resuming continues the work in a successor run.
+A waiting run needs an action before it can continue. For a question, approval, or client-side tool call:
 
-For failures, inspect the structured failure and follow [troubleshooting](monitoring.md#troubleshoot-a-request-or-run). See [Waits, approvals and questions](agents-and-runs.md#waits-approvals-and-questions) when you need the underlying protocol.
+1. Read the run's `pending` requests and show each question or decision to the responsible user, or invoke the application's client-side tool.
+2. Collect and save responses in your application. Keep each response associated with its `tool_call_id` and category: `approvals` or `calls`.
+3. Submit the complete batch to `POST /api/v1/runs/{run_id}/resume`, with a new idempotency key. Include both category maps, even when one is empty. Every pending request needs an explicit response; unanswered requests are not automatic approvals or denials.
+4. Follow the returned successor run. The original run remains waiting as the record of that suspension.
+
+Sending another ordinary message does not answer the wait; the message stays queued. For response shapes and desktop-control waits, follow [Waits, approvals and questions](agents-and-runs.md#waits-approvals-and-questions). For a failed run, inspect `failure` and use [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
 
 ## Direct HTTP integration
 
-Use this path when implementing a protocol client or investigating a request. The [SDKs and remote CLI](sdks.md) provide the ordinary application and scripting paths.
-
-Export the same Service URL and workspace API key:
+Use these steps to see the protocol before implementing a client. Run the commands in one shell with `curl`, `jq`, and `uuidgen` installed. Replace the URL and API key with your deployment's values:
 
 ```sh
-export A13N_URL=http://127.0.0.1:8080 A13N_API_KEY=a13n_...
+export A13N_URL=http://127.0.0.1:8080
+export A13N_API_KEY=a13n_replace_with_your_key
 ```
 
 ### Select an agent
 
-Find the agent's ID in Console or list the agents available to your key:
+Use the ID from Console, or list the agents available to the key:
 
 ```sh
-curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
+curl --fail-with-body -sS "$A13N_URL/api/v1/agents" \
+  -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-To create one, find a model key under **Models** or with `GET /api/v1/models`, then replace `your-model-key` below:
+If you need to create an agent, find an enabled model's key under **Models** or with `GET /api/v1/models`. Replace `your-model-key` and send:
 
 ```sh
 MODEL_KEY=your-model-key
-curl -X POST "$A13N_URL/api/v1/agents" \
+jq -n --arg model "$MODEL_KEY" \
+  '{name: "Helper", config: {model: $model, instructions: "Answer briefly."}}' > agent.json
+curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/agents" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"name\": \"Helper\", \"config\": {\"model\": \"$MODEL_KEY\", \"instructions\": \"Answer briefly.\"}}"
+  --data-binary @agent.json
 ```
 
 ### Start a conversation
 
-Set `AGENT_ID` to the selected agent's `id` and generate an idempotency key for this message:
+Set `AGENT_ID` to the selected agent's `id`. Prepare one message and its idempotency key:
 
 ```sh
 AGENT_ID=ap_replace_with_the_returned_id
 MESSAGE_KEY=$(uuidgen)
+jq -n --arg agent "$AGENT_ID" \
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "What is a13n?"}]}}' > message.json
 ```
 
-Submit the first message. To retry after a lost response, repeat this request with the same `MESSAGE_KEY`. Use a new key for a different message.
+Submit the message and save the receipt. If the response is lost, repeat this request with the same body and `MESSAGE_KEY`; do not generate a new key for that retry.
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/threads" \
+curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $MESSAGE_KEY" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"payload\": {\"content\": [{\"type\": \"text\", \"text\": \"What is a13n?\"}]}}"
+  --data-binary @message.json > submitted.json
+jq '{thread_id: .thread.id, session_id: .thread.session_id, entry_id: .entry.id, run_id: .run.id}' submitted.json
+```
+
+The receipt contains `thread`, `entry`, and `run` when the entry already has an assigned run. `run: null` means the message has been stored but has no assigned run yet. Save the IDs for later reads:
+
+```sh
+THREAD_ID=$(jq -r '.thread.id' submitted.json)
+SESSION_ID=$(jq -r '.thread.session_id' submitted.json)
+ENTRY_ID=$(jq -r '.entry.id' submitted.json)
 ```
 
 ### Read the result
 
-The response contains `thread`, `entry`, and possibly `run`. If `run` is null, follow the [session stream](agents-and-runs.md#follow-a-session-stream) to observe acceptance. Otherwise, set `RUN_ID` to the returned run's `id` and read its status:
+Read this message's entry, including when the original receipt had `run: null`:
 
 ```sh
-RUN_ID=run_replace_with_the_returned_id
-curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
+curl --fail-with-body -sS "$A13N_URL/api/v1/threads/$THREAD_ID/inbox/$ENTRY_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY" > entry.json
+jq '{status, assigned_run_id, failure}' entry.json
 ```
 
-Repeat this request until the run is `completed`, `waiting`, `failed`, or `cancelled`. A completed run's answer is in `output`. A waiting run needs an [answer, approval, or client tool result](agents-and-runs.md#waits-approvals-and-questions); inspect the result of a failed run with the [troubleshooting guide](monitoring.md#troubleshoot-a-request-or-run).
+| Entry status | What to do                                                                              |
+| ------------ | --------------------------------------------------------------------------------------- |
+| `pending`    | Read again later. If the thread is waiting, answer that wait first.                     |
+| `assigned`   | Read `assigned_run_id` to observe execution, then re-read the entry when that run ends. |
+| `consumed`   | The run incorporated this message into saved state. Read that run's outcome.            |
+| `failed`     | Inspect the entry's `failure`; the message did not finish incorporation.                |
+| `withdrawn`  | Stop waiting for an answer to this entry.                                               |
 
-Instead of polling, follow the session stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). The run continues when the client disconnects. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the thread.
+Once `assigned_run_id` is present, read the run:
 
-See [HTTP conventions](http.md) for authentication, pagination, conditional writes, and errors; the [API reference](api-reference/index.md) lists request and response schemas. Match your [SDK's supported contract](sdks.md#keep-version-ownership-clear) to your deployed Service version.
+```sh
+RUN_ID=$(jq -r '.assigned_run_id' entry.json)
+curl --fail-with-body -sS "$A13N_URL/api/v1/runs/$RUN_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY" > run.json
+jq '{status, output, pending, failure}' run.json
+```
+
+Repeat the run read while its status is `accepted` or `running`. A `completed` run has its answer in `output`; `waiting` requires the response workflow above; `failed` and `cancelled` end execution without a completed answer.
+
+Before presenting a completed run as this message's result, re-read the entry and confirm it is `consumed` by that run. Assignment alone is not enough: a run can finish without incorporating an assigned message, returning that entry to `pending`. Continue tracking the entry in that case, rather than using the thread's latest run as its answer.
+
+After the first answer, send a follow-up to the same thread:
+
+```sh
+MESSAGE_KEY=$(uuidgen)
+jq -n --arg agent "$AGENT_ID" \
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Which component should I start with?"}]}}' > message.json
+curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
+  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $MESSAGE_KEY" \
+  --data-binary @message.json > submitted.json
+ENTRY_ID=$(jq -r '.entry.id' submitted.json)
+```
+
+Repeat the entry and run reads for this new `ENTRY_ID`. For live updates, follow the [session stream](agents-and-runs.md#follow-a-session-stream) using `SESSION_ID`, or subscribe to [webhooks](files-and-webhooks.md#webhooks). Keep the submission IDs so reconnecting can resume observation of the same work.
+
+See [HTTP conventions](http.md) for pagination, conditional writes, and errors, and the [API reference](api-reference/index.md) for complete request and response schemas.

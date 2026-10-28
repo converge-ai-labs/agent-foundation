@@ -4,13 +4,19 @@ sidebarTitle: 命令与进程
 description: 在环境中运行有界命令或长时间进程，并读取输出。
 ---
 
-使用 `environment.operations.shell` 执行有界前台命令；需要跨调用持续观测命令时，使用 `environment.operations.processes`。这些是结构化 provider API，不是面向模型的 `shell_exec` / `shell_wait` 工具签名。
+需要返回有界输出的前台结果时，选择 `environment.operations.shell`。需要跨调用观测或控制命令时，选择 `environment.operations.processes`。本页使用带类型的 provider API；Harness 的 `shell_exec` 和 `shell_wait` 等工具有各自的签名。
 
-显式配置命令访问：设置 `allowed_executables` 或 shell profile 之前，Direct Local 不运行任何命令。仅文件操作的 Direct Local 快速入门不启用执行。Direct Local 以 Host 账号运行；映射目录不是 shell 沙箱。
+运行 Direct Local 命令前，先允许可执行文件或配置 shell profile。仅文件操作的快速入门默认禁用命令。获准命令以 Host 账号运行；映射目录不是 shell 沙箱。
 
 ## 执行已配置的可执行文件
 
-这个完整示例在应用管理的临时目录中运行当前 Python 解释器。无需 agent、网络、容器或模型账号：
+在已安装 `a13n-harness` 的 Python 环境中：
+
+1. 将以下程序保存为 `command_example.py`。
+2. 运行 `python command_example.py`。
+3. 应看到 `hello from command`，且程序成功退出。程序会同时检查退出码和捕获的 stdout。
+
+程序允许解析后的 Python 可执行文件，将临时目录映射到 `/`，并打开一个执行范围。它在本地运行，无需 agent、网络、容器或模型账号：
 
 ```python
 import asyncio
@@ -60,7 +66,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`ArgvCommand` 发送一个可执行文件和参数元组，不隐式进行 shell 解析。是否允许执行由 provider 配置决定。需要 shell 语法时，使用 `ShellCommand(profile_id=..., script=..., login=...)` 和已配置的 shell profile；任意可执行文件路径不是 profile ID。
+在自己的程序中沿用示例的三项选择：允许可执行文件、选择工作路径、设置有限输出策略。`ArgvCommand` 直接传递参数元组，不做 shell 解析。使用管道或其他 shell 语法时，先配置 shell profile，再将其 ID 传给 `ShellCommand(profile_id=..., script=..., login=...)`。
 
 ## 命令请求字段
 
@@ -75,13 +81,20 @@ asyncio.run(main())
 | `keep_stdin_open` | False；计划后续写 stdin 时选择 true                                         |
 | `output_policy`   | 必填、有限的内联/总量上限和溢出策略                                         |
 
-set/unset 中的环境变量键必须互不重复，不能包含 NUL 或 `=`。值不能包含 NUL。最多接受 1,024 个环境条目。命令字符串不能为空或含 NUL；命令结构最多 1,025 个值和 1 MiB 编码字节。provider 专属验证可以进一步收窄。
+计划后续写入输入时，在启动前设置 `keep_stdin_open=True`。只请求 provider 支持的限制；不支持的限制会在分派前失败。例如，E2B 有请求超时和沙箱 TTL，但拒绝逐命令墙钟期限。请求的数值限制在适用时必须为正数且有限。
 
-请求限制在适用时必须为正数且有限。不支持的限制会失败，不会悄悄被当作已实施。例如，E2B 有请求超时和沙箱 TTL，但不支持逐命令墙钟期限。
+将请求值保持在公共上限内。环境变量键必须非空、在 set/unset 中互不重复，且不含 NUL 和 `=`；值不得含 NUL。每个请求最多接受 1,024 个环境条目。命令值必须非空且不含 NUL，最多 1,025 个值、1 MiB 编码字节。provider 策略可以进一步收窄这些上限。
 
 ## 启动、检查、等待与释放
 
-connector 的 `open()` 返回就绪执行对象后，获取其可选 `processes` 接口。其方法如下：
+对于长时间运行的命令，先打开执行对象并获取其可选 `processes` 接口：
+
+1. 调用一次 `start(request)`，保留返回的句柄。
+2. 通过该句柄读取输出并检查状态。需要等待完成观测时，使用有界 `wait`。
+3. 应用需要停止命令时，显式使用受支持的信号或 `kill`。
+4. 完成后释放观测。`release` 不表示终止进程。
+
+只选择执行对象声明支持的操作：
 
 | 方法                                                 | 行为                                                            |
 | ---------------------------------------------------- | --------------------------------------------------------------- |
@@ -97,22 +110,28 @@ connector 的 `open()` 返回就绪执行对象后，获取其可选 `processes`
 | `kill(handle)`                                       | 独立的强制控制操作                                              |
 | `release(handle)`                                    | 释放观测，不隐式终止进程                                        |
 
-使用 provider 返回的精确句柄。`ProcessIdentity` 标识 provider、环境、代次和原生进程，但不是可移植访问授权。不要构造不透明句柄载荷，也不要将 Harness 执行内进程引用复制进 provider 调用。支持 `rebind` 不代表所有 provider 都能发现或恢复任意旧进程。
+分别判断三个结果：命令完成、输出完成、进程树清理完成。`initial_terminal` 观测命令的终止状态，此时进程树可能仍需清理。检查可用的阶段、终止原因、退出码或信号、时间戳和清理结果。`missing` 或 `unknown` 表示命令情况不确定，不是再次启动的许可。
 
-状态包含阶段、可选终止原因/退出码/信号/时间戳和清理结果。主进程退出可能早于进程树清理。缺失或未知状态不能证明命令从未运行。始终区分命令完成、输出完成和清理完成。
+原样使用 provider 返回的句柄。`ProcessIdentity` 标识 provider、环境、代次和原生进程，访问仍取决于当前执行范围。只在声明支持时使用 `list` 和 `rebind`，不要将 Harness 执行内进程引用传入 provider 调用。
 
 ## 读取保留输出
 
-`EnvironmentOutputPolicy` 要求正数 `max_inline_bytes`、`max_output_bytes`，以及 `fail`、`truncate` 或 `retain` 的 `overflow` 选项；内联不能超过总量。它不同于 `ToolOutputPolicy`，后者的溢出选项使用 `spill`。
+在启动前设置 `EnvironmentOutputPolicy`。它要求正数 `max_inline_bytes` 和 `max_output_bytes`，且内联上限不超过总量，并指定 `overflow="fail"`、`"truncate"` 或 `"retain"`。环境操作使用此策略；`ToolOutputPolicy` 的溢出选项不同，包括 `spill`。
 
-`read_output()` 接受独立 stdout/stderr 游标或起始偏移量、可选 `wait_seconds=0` 和策略。按 `start_offset` 应用返回块，并使用该流返回的下一游标。输出读取是观测，不是消费字节的修改。检查 `available_start` / `available_end`、捕获类别、覆盖范围、来源、丢弃/产生计数和完成标志，不要把每份预览都视为完整输出。
+按有界分页读取进程输出：
 
-独立 `outputs` 接口读取并释放返回的保留输出引用。进程句柄、输出引用和输出游标是不同的绑定值。仍然需要检查资源范围和代次。SDK 文本观测可能不知道生产方总量，或历史不完整；反复等待不会恢复已丢弃字节。
+1. 调用 `read_output()`，传入独立的 stdout/stderr 游标或起始偏移量以及策略。需要等候输出时设置 `wait_seconds`，默认值为零。
+2. 按 `start_offset` 放置每个返回块，再保留该流的下一游标。读取不消费字节，因此重复读取同一范围是安全的。
+3. 检查 `available_start` 和 `available_end`、捕获类别、覆盖范围、来源、丢弃/产生计数和完成标志。单凭预览无法确定输出完整。
 
-需要在观测预算之外保留完整输出时，写入应用日志文件并显式管理保留。连接断开、句柄缺失或输出被驱逐后，绝不能自动重启命令。
+使用独立的 `outputs` 接口读取或释放保留输出引用。将每种绑定值传入所属 API：进程句柄、输出引用和输出游标是不同的值。普通 `shell.exec` 返回有界内联输出，并在返回前释放自身的保留资源。
+
+SDK 文本观测可能无法确定生产方总量，或存在历史缺口。继续等待无法恢复已丢弃字节，也不会重置观测预算。需要在预算之外保留完整输出时，写入有明确保留策略的应用日志文件。连接断开或观测缺失后，先检查命令结果，不要重放命令。
 
 ## 端口与生命周期
 
-通用 Envd 路径提供可选 `ports` 接口，它属于 Native Files & Shell 之外的能力。该接口支持 `inspect(PortTarget(...))` 和 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 包含地址选择（默认 `loopback` 或 `any`）和 1–65,535 的端口。这是观测，不是公共入口/隧道服务，也不是暴露端口的许可。
+等待服务开始监听时，如果执行对象声明支持可选 `ports` 接口，就可使用该接口。单次观测调用 `inspect(PortTarget(...))`；有界等待调用 `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`。`PortTarget` 接受 1–65,535 的端口和地址选择：默认 `loopback`，支持时也可选 `any`。
 
-provider 配置和实际描述符决定支持范围。将[生命周期恢复](lifecycle.md)与命令重放分开，每个独立范围使用新适配器并在结束后关闭。关闭释放本地资源，不表示销毁保留目标。
+Envd 提供端口观测。Direct Local 在 `allowed_ports` 非空时也会启用，包括仅文件操作的执行配置。Direct Local 只探测 `127.0.0.1` 上允许列表中的端口，并拒绝 `address="any"`。端口观测不会暴露服务或创建公共隧道。
+
+使用完毕后关闭各执行范围。关闭释放所属资源，不会停止或销毁底层目标；进程是否存活取决于后端。将[生命周期恢复](lifecycle.md)与命令重放分开。

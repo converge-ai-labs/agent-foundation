@@ -1,110 +1,143 @@
 ---
 title: Tracing Harness UI
 sidebarTitle: Tracing
-description: Export OpenTelemetry traces from Harness UI to Langfuse, Logfire, or any OTLP collector.
+description: Send a test Run to an OTLP backend, inspect its execution, and choose which content to export.
 ---
 
-Harness UI uses the same OpenTelemetry hierarchy as [Harness](../a13n-harness/observation.md). It adds one application span (`harness_ui.root` or `harness_ui.subagent`) around each admitted root submission and each accepted async child segment, rather than duplicating model or tool spans. Tracing is optional and off by default.
+Use tracing to find where a Run spent time, which Model and tools it used, and whether saving its continuation succeeded. Tracing is off by default. Start with a working [first conversation](setup.md) and an OTLP/HTTP collector, or use the repository's local development workflow below.
 
 ## Enable automatic OTLP export
 
-Set these environment variables before starting the CLI, WebUI, or `open_harness_ui_app()`:
+1. Open a Bash-compatible terminal. Set the tracing policy and your collector's base URL and credentials:
 
-```bash
-export A13N_HARNESS_TRACE_LEVEL=verbose
-export A13N_HARNESS_TRACE_CONTENT=none
-export A13N_HARNESS_METRICS=off
-export OTEL_SERVICE_NAME=a13n-harness-ui
-export OTEL_TRACES_EXPORTER=otlp
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector.example
-export OTEL_EXPORTER_OTLP_HEADERS='Authorization=YOUR_COLLECTOR_CREDENTIAL'
-a13n-harness-ui
-```
+   ```bash
+   export A13N_HARNESS_TRACE_LEVEL=verbose
+   export A13N_HARNESS_TRACE_CONTENT=none
+   export A13N_HARNESS_METRICS=off
+   export OTEL_SERVICE_NAME=a13n-harness-ui
+   export OTEL_TRACES_EXPORTER=otlp
+   export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+   export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector.example
+   export OTEL_EXPORTER_OTLP_HEADERS='Authorization=YOUR_COLLECTOR_CREDENTIAL'
+   ```
 
-When no Host tracer provider is already configured, the App creates its own OTLP/HTTP provider and passes it to every Harness build. Standard `OTEL_*` resource, sampling, batching, TLS, timeout and HTTP exporter configuration apply. A signal-specific trace endpoint must include `/v1/traces`; the common endpoint above is a base URL. Set `OTEL_SDK_DISABLED=true` to prevent automatic SDK setup.
+2. Replace the endpoint and header placeholders. For Langfuse or Logfire, use the matching section below. Keep `trace_content=none` for the first check.
 
-The automatic path accepts `OTEL_TRACES_EXPORTER=otlp` or `none` and the `http/protobuf` protocol. It does not initialize a metrics exporter. Supply or configure a meter provider separately if you enable Harness metrics.
+3. Start Harness UI from that terminal:
 
-At shutdown, the App drains its own exporter after active Runs, terminal sessions and live subscriptions close, off the event loop and within its shutdown waiting budget. Export remains best effort; a trace is not proof that a checkpoint or side effect was saved.
+   ```console
+   a13n-harness-ui
+   ```
+
+4. Send a short test prompt. After the reply, find `harness_ui.root` in your collector and expand its `harness.run` and model spans. For WebUI, start `a13n-harness-ui webui` from the same environment instead.
+
+The environment must be set **before** the CLI, WebUI, or embedded App starts. `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL; the signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must include `/v1/traces`. Remove conflicting `OTEL_EXPORTER_OTLP_TRACES_*` overrides when switching backends.
+
+When no Host provider exists, the App creates a private OTLP/HTTP tracer provider. Automatic setup supports `OTEL_TRACES_EXPORTER=otlp` or `none` and `http/protobuf`. Standard OTel resource, sampling, batching, TLS, and timeout settings apply. `OTEL_SDK_DISABLED=true` prevents automatic SDK setup. Metrics need a separately configured meter provider.
+
+If no trace arrives, check the endpoint, credentials, signal-specific overrides, sampling settings, and [local diagnostics](automation-and-troubleshooting.md#logs-updates-and-exit). A successful reply verifies model execution; seeing the trace verifies export. Saved conversations remain available independently of tracing and backend retention.
 
 ## Langfuse
 
-Use the Langfuse project endpoint and Basic authentication:
+Keep the tracing policy above and replace the endpoint and headers:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://cloud.langfuse.com/api/public/otel
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic%20BASE64_PUBLIC_KEY_COLON_SECRET_KEY,x-langfuse-ingestion-version=4'
 ```
 
-Replace the placeholder with the base64 encoding of your project's `public-key:secret-key`; use the endpoint for your region or self-hosted server. The v4 header selects real-time OTLP ingestion. Shared Harness enrichment adds a bounded trace name, the Thread ID as the Langfuse session ID, tags and filterable metadata to selected descendant spans, with both automatic and explicit providers. It preserves native model, token, and tool observations. No Langfuse SDK is required for this OTLP path.
+Encode your project's `public-key:secret-key` as a single-line base64 value and use it in place of the placeholder. Select the endpoint for your project's region or self-hosted server. The `x-langfuse-ingestion-version=4` header selects real-time v4 ingestion. This integration uses OTLP directly; no Langfuse SDK is needed.
 
-Look for `harness_ui.root`, its nested `harness.run`, and native Agent/model/tool spans. Async children have their own linked trace and their own Thread ID as the Langfuse session ID. Later turns on the same Thread are separate traces. Root application status can be failed even when the nested Harness Run completed, for example if continuation saving failed. Normal cancellation is not converted into an error.
-
-Filter observation metadata by `root_thread_id` to correlate a root Thread and all its child Threads across their separate traces. Child traces also expose `parent_thread_id`, `subagent_role`, `execution_id`, `segment_index` and, on resume, `resumed_from_execution_id`. Resuming a child preserves its Thread ID and Langfuse session but creates another execution segment and trace. The dispatch Link represents valid live context, not a persisted link to a previous process's trace. Roles are metadata, not prefixes added to Langfuse session IDs.
+After a test Run, locate its Thread ID as the Langfuse session ID. Each turn has its own trace. Async children use their own Thread/session IDs; filter metadata by `root_thread_id` to find the whole family. Harness adds names, tags, and correlation metadata to selected descendant spans while retaining native model, token, and tool observations.
 
 ## Logfire
 
-Use the same instrumentation with Logfire's standard OTLP ingestion:
+Keep the same tracing policy and replace both endpoint and headers:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://logfire-us.pydantic.dev
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=YOUR_LOGFIRE_WRITE_TOKEN'
 ```
 
-For an EU project use `https://logfire-eu.pydantic.dev`. Replace both endpoint and headers when switching from Langfuse; remove any conflicting `OTEL_EXPORTER_OTLP_TRACES_*` overrides. Do not add a second instrumentor such as `logfire.instrument_pydantic_ai()`.
+Use your project's write token and region; EU projects use `https://logfire-eu.pydantic.dev`. Harness already instruments its Agents, so do not also call `logfire.instrument_pydantic_ai()`.
 
-An embedding application that already owns a Logfire or OTel provider can supply that exact provider instead:
+For an embedding Host that already owns a Logfire or OTel provider, pass that provider to the App. Inside the async entry point from [Embedding](embedding.md), after loading `settings` and `configuration_path`, use this integration fragment:
 
 ```python
 from a13n_harness import HarnessInstrumentation, HarnessTraceContent
 from a13n_harness_ui.app import open_harness_ui_app
 
-# provider is the tracer provider already configured by your embedding Host.
 instrumentation = HarnessInstrumentation(
     tracer_provider=provider,
     trace_content=HarnessTraceContent.NONE,
 )
-async with open_harness_ui_app(settings, instrumentation=instrumentation) as app:
+async with open_harness_ui_app(
+    settings,
+    configuration_path=configuration_path,
+    instrumentation=instrumentation,
+) as app:
     thread = await app.create_thread()
+    receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Say hello.")
+    operation = await app.wait_root_operation(receipt.receipt_id)
+    print(operation.status)
 ```
 
-Explicit instrumentation takes precedence over environment selection. Explicit `None` disables UI/Harness observation. When a global OpenTelemetry provider is already configured, the `A13N_HARNESS_*` policy variables select it. The App never replaces, adds exporters to, or shuts down an external provider; its owning Host handles export and lifecycle. Selected UI/Harness spans receive the same automatic metadata regardless of exporter; no enrichment processor is required. The former optional `HarnessUiSpanProcessor` is no longer provided. Spans from independently instrumented SDKs do not receive the former processor's local-parent attribute propagation or Langfuse agent/tool type enrichment; Hosts needing that behavior own their SDK instrumentation. Do not also call `logfire.instrument_pydantic_ai()` for Harness-owned Agents.
+Here `provider` is the Host's already configured tracer provider. Explicit instrumentation takes precedence over environment selection; explicit `None` disables UI/Harness observation. With the default selection, the `A13N_HARNESS_*` policy can use an existing global OTel provider. The Host owns export and shutdown for either kind of external provider. The App neither replaces it nor adds exporters.
+
+UI/Harness metadata enrichment works with either provider path. Independently instrumented SDKs remain the embedding Host's responsibility. The former `HarnessUiSpanProcessor` is no longer provided.
 
 ## Repository development
 
-The repository provides separate ignored private environment files:
+From a prepared [source checkout](installation.md#run-from-source), start local Langfuse and run the scripted App smoke test:
 
 ```bash
-cp dev/harness-ui/.env.example dev/harness-ui/.env
-cp dev/harness/.env.example dev/harness/.env
 make langfuse-up
-make cli
 make harness-ui-smoke
-make harness-dev HARNESS_ARGS=summary
 ```
 
-Copy only when the private file does not exist. The templates default to public local Langfuse credentials and contain commented Logfire alternatives. `make cli` explicitly loads `dev/harness-ui/.env`; it does not write tracing settings to your user configuration. `CLI_ARGS` forwards normal CLI arguments and `HARNESS_UI_ENV` selects another private file. `make harness-dev` initializes the provider with `opentelemetry-instrument`; `make cli` relies on App setup.
+The smoke test uses a local scripted model and prints Thread/Run IDs. Find two root traces and a linked child trace in Langfuse. It retains its disposable instance under `var/harness-ui-smoke/<id>/` and needs no real model credentials.
+
+To trace your own interactive work, run `make cli`. It uses checkout-local configuration/data and explicitly loads the ignored `dev/harness-ui/.env`. The launcher creates that private file from its example when missing and preserves an existing file. Review its content policy before using real conversations. `CLI_ARGS` forwards normal CLI options; `HARNESS_UI_ENV` selects another private environment file.
+
+The separate Harness developer workflow uses `dev/harness/.env` and `make harness-dev HARNESS_ARGS=summary`. That launcher initializes its provider with `opentelemetry-instrument`; Harness UI's launcher uses the App's automatic setup.
 
 ## Deployment environment
 
-The development template declares `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`. This labels new root and child observations as `local`, independently of execution Environment profiles or mount names. For an existing private `dev/harness-ui/.env`, merge this resource attribute without replacing other settings and restart the CLI/App. Exported shell values take precedence; old observations retain their labels. An externally supplied provider must have its deployment resource set by its owning Host.
+Set `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local` to label new observations as `local`. The development template already includes this value. Merge it with other resource attributes in an existing private environment file, then restart the App. Exported shell values take precedence over that file.
+
+This label describes the deployment, independently of execution Environment profiles and mount names. Existing traces keep their labels. An external provider's Host must set the deployment resource on that provider.
 
 ## Read the execution from the root down
 
-Start at `harness_ui.root` (or a child trace's `harness_ui.subagent`):
+1. Open `harness_ui.root`, or `harness_ui.subagent` for a child segment. Check the operation status and Thread/Run IDs. The application span includes preparation and continuation saving as well as execution.
+2. Expand `configuration` to check the captured Agent, Model, Capabilities, integrations, and Environment. This bounded summary omits prompts, credentials, endpoints, and filesystem roots.
+3. Follow `harness.run` and its model/tool spans for timings, recovery, usage, and cost. Request-level model fields show changes made by a Model resolver.
+4. For delegated work, filter by `root_thread_id`. Use `parent_thread_id`, `subagent_role`, `execution_id`, and `segment_index` to identify a child segment. A resumed child keeps its Thread/session ID and adds `resumed_from_execution_id`, but starts another trace.
 
-1. Check root status and Thread/Run IDs. This span includes preparation and checkpoint saving, not only inference.
-2. Expand `configuration` to see the captured Agent, Model, Capabilities, selected integrations and Environment. This is a bounded summary, not a replay recipe; it omits credentials, prompts, endpoints and filesystem roots.
-3. Follow `harness.run` and model/tool spans for timing, recovery, usage and cost. Check request-level model fields if a resolver changed the Model.
-4. Filter by `root_thread_id` and child execution IDs to follow delegated work across traces.
+A child's dispatch Link connects valid live trace context. Durable execution lineage can outlive that context, so a resumed child need not link to a previous process's trace. Normal cancellation remains cancellation rather than an error.
 
 ### Host phases and Skill inspection
 
-`harness_ui.prepare` loads configuration and state; `harness_ui.finalize` saves continuation and finishes the Environment. Check `a13n.phase.step` and `a13n.ui.continuation.status` when a reply appears but saving fails. Skill summaries on the operation root and `harness.run` show available/read Skills for **that Thread**. A read is not proof the Agent followed the Skill.
+| Span or field                                           | Use it to answer                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `harness_ui.prepare`                                    | Did configuration, state loading, and Environment preparation succeed? |
+| `harness_ui.finalize`                                   | Did Environment finalization and continuation saving succeed?          |
+| `a13n.phase.step`                                       | Which preparation or finalization step failed?                         |
+| `a13n.ui.continuation.status`                           | Was a continuation selected for the next Run?                          |
+| Skill summaries on the operation root and `harness.run` | Which Skills were available and read in this Thread?                   |
+
+If an answer is visible but the application operation failed, inspect finalization before retrying the task. The Harness Run can succeed while saving fails. A Skill read records access; it does not establish that the Agent followed the instructions.
 
 ## Content and limitations
 
-When `A13N_HARNESS_TRACE_CONTENT` is `standard` or `full`, operation roots also contain the current submission and final output, each capped at 8 KiB. The result is not inferred from the last model response. If saving fails after an answer was generated, the answer can remain visible while the operation status is failed. Inspect `a13n.input.capture`, `a13n.output.capture` and truncation flags for absent or partial values. `none` omits these bodies. Native media is descriptive only; no binary content, full history, credentials, raw exceptions or checkpoint bodies are copied into roots. `standard` opts into native model/tool content; `full` additionally opts into upstream binary and request parameter capture. `none` omits normal execution payloads but is **not** a complete scrubber for upstream exceptions, Agent descriptions, metadata or tool schemas. Review the [Harness information boundary](../a13n-harness/observation.md) before exporting real conversations, especially to a remote backend.
+Choose the content policy before exporting real conversations:
 
-A missing trace is not a missing conversation. A conversation's root Thread keeps its transcript and checkpoint storage independently of sampling, export availability and backend retention.
+| `A13N_HARNESS_TRACE_CONTENT` | Captured content                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| `none`                       | Structural diagnostics; omits normal execution bodies                                  |
+| `standard`                   | Current submission and final output on operation roots, plus native model/tool content |
+| `full`                       | Standard content plus upstream binary and request-parameter capture                    |
+
+Operation-root input and output are each capped at 8 KiB. Inspect `a13n.input.capture`, `a13n.output.capture`, and truncation flags for missing or partial values. Roots describe native media without copying binaries, full history, credentials, raw exceptions, or checkpoint bodies. Upstream model/tool spans have their own information boundary: `none` is not a complete scrubber for exceptions, Agent descriptions, metadata, or tool schemas. Review [Harness tracing](../a13n-harness/observation.md) when choosing an export policy.
+
+At shutdown, the App drains its own exporter after active work and collaborators close, off the event loop and within its waiting budget. Export is best effort. Use the saved Thread state—not a trace or its presence in a backend—to resume work.

@@ -1,26 +1,25 @@
 ---
 title: Live Mode
-description: Talk with your agents through a continuous voice conversation.
+description: Enable voice, try a first conversation, and follow delegated work in the Live Thread.
 ---
 
-Live Mode gives the WebUI a continuous voice conversation with a persistent place for tasks and decisions. Start once, speak naturally, and move around the workspace while the microphone remains on. Stop voice separately from work already running.
+Live Mode lets you speak to Harness UI while moving between WebUI pages. Voice and task execution have separate lifetimes: stopping the microphone leaves already-started tasks running. Their results and decisions stay in the persistent Live Thread.
 
 ## Enable Live
 
-1. Add a Model with **Codex subscription** authentication and sign in to the selected account. See [Models and authentication](models-and-authentication.md).
-2. Open **Settings → General → Live**. Enable Live and select that Model.
-3. Choose the voice and whether the Live executor can use file tools. Save the settings.
-4. Press **Start voice** in the workspace header or on the **Live** page. Allow microphone access when the browser asks.
+Before starting, configure and sign in to a [Codex subscription Model](models-and-authentication.md). Open WebUI over HTTPS or localhost in a browser with microphone capture and WebRTC support. Voice also requires account and network access to Codex Live.
 
-The workspace Start voice control and sidebar Live link appear only after Live is enabled. Enable it from Settings; the workspace does not show a setup prompt.
+1. Open **Settings → General → Live**.
+2. Enable Live and select your existing Codex subscription Model.
+3. Choose a voice. Keep the default `cove` for the first test. Choose whether the Live executor may use file tools, then save.
+4. Find **Start voice** in the workspace header or open **Live** from the sidebar. Saving settings exposes these controls; it does not start the microphone.
+5. Press **Start voice** and allow microphone access. Wait for **Connected**.
+6. Say a short request, such as “Tell me what tasks you can help coordinate.” Check the **You** and **Assistant** captions and the spoken response.
+7. Press **Stop** in the header or **Stop voice** on the Live page. Confirm that the microphone indicator clears.
 
-Use HTTPS or localhost in a browser that supports microphone capture and WebRTC. The selected account and network must support Codex Live. A successful ordinary Model request does not verify voice availability.
+For file-based configuration, run `a13n-harness-ui config path` to locate `configuration_path`. Merge this fragment into that root YAML, replacing `model-codex` with the saved Model ID:
 
-First-use WebUI setup offers an initially checked Live option for Codex Models. Clear it to leave Live unconfigured. Adding a Model from Settings or an Agent leaves Live settings unchanged; enable Live in **Settings → General → Live**. Upgrades do not turn Live on automatically.
-
-The equivalent root configuration is:
-
-```yaml title="a13n-harness-ui.yaml"
+```yaml title="a13n-harness-ui.yaml — merge into the root"
 live:
   enabled: true
   model: model-codex
@@ -29,30 +28,50 @@ live:
   instructions: "Keep spoken replies concise."
 ```
 
-Live uses Codex V3 voices and defaults to `cove`. V2 voices such as `marin` and `cedar` are incompatible; replace them in any earlier Live configuration.
+Run `a13n-harness-ui config validate` against the same configuration root, then follow steps 4–7. A valid configuration or successful ordinary Model request does not establish voice connectivity; the first call checks that path. Restart voice after changing Live settings.
 
-Use an existing Codex subscription Model ID. Live needs no additional Model or Agent YAML file. Its speech model is a runtime preset; the selected Model performs delegated tasks.
+The selected Model supplies authentication and executes delegated tasks. Speech uses a runtime preset, so you do not create a separate Live Model or Agent file. Live accepts Codex V3 voices; replace legacy `marin` or `cedar` settings before starting a call.
+
+First-use WebUI setup offers a checked Live option for Codex. Clear it if you do not want Live. Adding a Model later leaves Live settings unchanged, as does upgrading. Existing explicit settings, including disabled settings, are preserved.
 
 ## Talk and Work
 
-Opening the Live page leaves the microphone off. Press **Start voice** to begin a continuous conversation. The workspace header starts the same conversation without leaving your current page. Press **Stop voice** on the Live page or **Stop** in the header to release the microphone and connection.
+Try a small delegated task after the voice test:
 
-Use **Open tasks & decisions** to inspect the persistent Live Thread. Tasks run through the ordinary Harness executor. Decisions and approvals remain in that Thread. Live can coordinate independent roots and Coordinators; managed workers retain their existing ownership rules.
+1. Start voice and ask Live to record a task or coordinate work with a configured Thread.
+2. Select **Open tasks & decisions**. Inspect the Live Thread to see the executor's work and answer any pending decision.
+3. Return to another WebUI page. The **Microphone on** indicator remains visible while the same call continues.
+4. Open the saved task result when execution finishes. If you stop voice first, return to the Live Thread to follow the work; use its ordinary cancellation control if you also want the task stopped.
 
-The built-in executor has notes, tasks, Thread collaboration, enabled global memory, and optional file tools. It uses `live-workspace` beside the selected configuration file. It does not inherit your default Agent's shell, MCP servers, plugins, Skills, or subagents. Delegate specialized work to a configured Thread instead.
+The built-in Live executor has notes, tasks, Thread collaboration, enabled global memory, and optional file tools. Its workspace is `live-workspace` beside the selected configuration file. It has its own restricted tool set rather than inheriting the default Agent's shell, MCP, plugins, Skills, CodeAct, or subagents. Delegate specialized work to a configured Thread. Managed workers retain their existing Coordinator ownership.
 
-Navigation keeps the same voice connection. A compact **Microphone on** indicator and **Stop** control remain visible in the workspace. Select the indicator to open the full Live page. That page shows **Connected** and recent captions labeled **You** or **Assistant**; stopping hides unfinished captions. A full reload or closed tab ends voice; returning never starts the microphone automatically. Only one browser can own voice in the App at a time.
+Opening the Live page leaves the microphone off. Navigation inside WebUI keeps the active call; a full reload, closed tab, or Stop ends it. Returning requires another Start action. One browser can own voice in an App at a time. Clicking the microphone indicator opens the full Live page and recent captions; stopping hides unfinished captions.
 
 ## Results and Reports
 
-A delegated task starts or steers the Live Thread. The selected final result returns to voice while the call is active. Stopping voice leaves the task running, and its saved outcome remains available in the Thread.
+A spoken delegation starts the Live executor, or steers compatible active work. Pending decisions remain in its Thread. During an active call, the selected successful final result is returned to voice after saving; tool chatter and private reasoning are not automatically spoken.
 
-Other independent roots and Coordinators can use `send_thread_message(thread_id="live", message="...", kind="report")` to report directly to the connected voice conversation. Use `kind="task"` when the message needs further executor work. Offline delivery returns `skipped` with reason `live_offline`. It creates no new Run and is not queued for later playback.
+Other independent roots and Coordinators can send a report to the connected call. This is an Agent tool call, not a shell command:
 
-Speech transcripts and task history persist independently. Context accepted by the provider is not confirmation that the user heard it. Check the source Thread for a task's saved result.
+```python
+send_thread_message(thread_id="live", message="The requested checks passed.", kind="report")
+```
+
+Use `kind="report"` for speech context and `kind="task"` when the executor should do more work. Managed workers and child executions do not gain this destination. An offline call returns `skipped` with reason `live_offline`; no task or later playback is queued.
+
+Speech transcripts and task history are saved separately. Accepted speech context does not prove that the user heard it. Open the source Thread for the task's saved result, especially after a disconnect.
 
 ## Privacy and Connection Errors
 
-Audio travels directly between the browser and OpenAI. Subscription credentials remain on the Host. The Host handles signaling, captions, delegation, and selected result text; it does not relay microphone audio.
+The browser sends audio directly to OpenAI. Subscription credentials stay on the Host, which handles signaling, captions, delegation, and selected result text without relaying microphone audio.
 
-If the connection fails, read the error and start a new session after correcting microphone, network, or account access. Provider HTTP errors are shown without exposing response bodies or credentials. Live does not silently retry a task, replace the call, change accounts, or fall back to an API key. Resolve pending decisions before adding more work. Restart voice after changing its settings.
+| Problem                                   | What to do                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------- |
+| No Live link or Start control             | Enable Live in General settings and save.                              |
+| Microphone cannot start                   | Check browser permission, HTTPS or localhost, and capture support.     |
+| Another browser owns voice                | Stop that call before starting here.                                   |
+| Provider or network connection fails      | Read the error, correct access or connectivity, then start a new call. |
+| Task needs a decision                     | Open tasks & decisions and resolve it in the Live Thread.              |
+| Task finished but no voice result arrived | Read the saved result in its Thread.                                   |
+
+Connection failure ends that call. Live does not replay tasks, switch accounts, or fall back to an API key. Provider errors omit response bodies and credentials. Check the existing task state before submitting the same work again.

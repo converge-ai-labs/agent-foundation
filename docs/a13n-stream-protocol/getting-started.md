@@ -1,12 +1,14 @@
 ---
 title: Stream Protocol quickstart
 sidebarTitle: Quickstart
-description: Convert an offline Harness Run into AG-UI events with the real stream and observer.
+description: Run an offline Agent, convert its output, and inspect the resulting AG-UI events.
 ---
+
+This example runs Harness with a test model and prints one JSON object per event. You will see where execution ends and where your application's storage or transport begins. It needs Python 3.13 and `uv`, with no model credentials.
 
 ## Prepare the source checkout
 
-Use Python 3.13 and the repository lockfile:
+Clone the repository and install its locked Stream Protocol dependencies:
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -14,11 +16,11 @@ cd agent-foundation
 uv sync --locked --package a13n-stream-protocol
 ```
 
-For a published installation, install `a13n-stream-protocol` and use the API documented for that release. It requires the matching Harness version.
+Run the remaining steps from this directory. In an existing application, install the published `a13n-stream-protocol` package and follow the documentation for its release; it pins the matching Harness version.
 
 ## Convert one Run
 
-Save as `stream_example.py` and run `uv run python stream_example.py`:
+Save the following as `stream_example.py`:
 
 ```python
 import asyncio
@@ -57,31 +59,40 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Each printed line is an AG-UI event encoded as JSON. The output includes text events, public custom observations, and a terminal event; IDs and timestamps vary. It is **JSON Lines, not SSE**. The Host chooses a delivery framing separately.
+Run it:
 
-1. Harness owns Agent execution and scoped cleanup.
-2. `observe(item)` converts one public source item, potentially into multiple AG-UI events.
-3. The Pydantic adapter serializes the typed event with its wire aliases.
-4. The Host would persist/publish the incremental events where this example prints them.
+```console
+uv run python stream_example.py
+```
+
+The program exits after its assertions pass. In the output, find `RUN_STARTED`, the text containing `Hello from the stream`, and `RUN_FINISHED`. Public CUSTOM observations appear alongside them. IDs and timestamps vary between executions.
+
+Read the loop in three steps:
+
+1. `executable.stream()` runs the Agent and yields public Harness items. Its context manager owns scoped cleanup.
+2. `observer.observe(item)` converts one item into zero or more typed AG-UI events.
+3. `dump_json(..., by_alias=True)` writes wire field names such as `messageId`. Your Host can store or send that event where the example prints it.
+
+The output uses JSON Lines. An SSE endpoint would add its own framing around these events.
 
 ## Add child Runs or multiple concurrent Runs
 
-Use `HarnessAguiStreamObserver` for a root stream that forwards inline-child observations. It preserves their source correlation and emits child-attributed output without nested root lifecycles. Keep separate stream observers for independently executed root or asynchronous child Runs. `HarnessAguiObserver` rejects other Run correlations and is appropriate only for a strictly single-Run source.
+Switch to `HarnessAguiStreamObserver` when the root stream forwards inline-child observations. It tracks each child's output within the root stream. Use a separate observer for every independently executed root or asynchronous child Run, including another Run on the same Thread.
 
-Read the [stream observer example](events.md#observe-a-harness-run) before you enable delegation.
+Follow the [stream observer example](events.md#observe-a-harness-run) when you add delegation. The quickstart's single-Run observer intentionally rejects observations from other Runs.
 
 ## Add a transport deliberately
 
-Stream Protocol supplies no HTTP routes, replay cursor, durable event ID, retention policy, or reconnect loop. Your Host must decide:
+For a live integration, replace printing with your Host's persistence and delivery function. Publish each new batch once, then decide what a reconnecting consumer can recover:
 
-- whether source observations, projected events, or both are retained;
-- which content the consumer may see;
-- how to signal gaps and terminal outcomes;
-- how to cut over from replay to live delivery without overlap;
-- how much observer state to retain in memory.
+| Consumer requirement               | Host setup                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Live events stored elsewhere       | Set `retain_events=False` and persist batches returned by `observe()`                            |
+| In-process event inspection        | Keep the default journal and read `snapshot()`                                                   |
+| Restorable messages and tool calls | Use `DisplayFold` and save [display checkpoints](replay.md#restore-a-compact-display-checkpoint) |
 
-For live-only conversion, set `retain_events=False` and persist the batches returned by `observe()`. For a resumable display, use `DisplayFold` and save [compact checkpoints](replay.md#restore-a-compact-display-checkpoint). Publish incremental events, not the full snapshot on each item.
+Give the transport durable IDs, ordering, retention, and a replay-to-live boundary. Define how clients learn about a delivery gap. Apply visibility policy before publishing. These decisions belong to your application; Stream Protocol supplies the event conversion and display state.
 
 ## Next steps
 
-[Events and processors](events.md) explains mappings, custom-event fragments, and filtering. [Replay and recovery](replay.md) explains reconstruction and why it is not Agent recovery.
+Use [Events and processors](events.md) to connect the live stream and filter content. Use [Replay and recovery](replay.md) to restore an unfinished message and verify that its final content matches uninterrupted delivery.

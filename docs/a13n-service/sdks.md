@@ -1,41 +1,50 @@
 ---
 title: SDKs and CLI
-description: Integrate through a Service SDK or the remote CLI instead of raw HTTP.
+description: Choose a Service client and build your first conversation against a running deployment.
 ---
 
-Use a Service SDK to integrate an application with a running Service, or the remote CLI for shell scripts and terminal operations. These clients call the Service HTTP API; they do not run agents inside your process. For embedded execution, use [Harness](../a13n-harness/index.md). For interactive work with agents in your repositories, use [Harness UI](../a13n-harness-ui/index.md).
+Use a Service SDK from your application, or the remote CLI from a terminal or shell script. Both connect to a running Service through its HTTP API. Service owns agent execution and persistence. To execute an agent inside your own process, use [Harness](../a13n-harness/index.md); for an interactive workbench in your repositories, use [Harness UI](../a13n-harness-ui/index.md).
 
 ## Choose a client
 
-| Client                           | Use it for                                                      | Documentation in its own repository                                                                                                                                                                                   |
-| -------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python (`a13n`)                  | Async Python applications                                       | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/docs/README.md)                            |
-| TypeScript (`@converge.ai/a13n`) | Node.js applications and same-origin browser integrations       | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/docs/README.md)                    |
-| Go                               | Go applications using context-based cancellation                | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/docs/README.md)                                    |
-| Rust (`a13n`)                    | Async Rust applications                                         | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/docs/README.md)                                |
-| Remote CLI (`a13n-service-cli`)  | Shell scripts, API exploration and explicit resource operations | [Command behavior](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/a13n-service-cli/README.md) · [Workflows](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/a13n-service-cli/docs/README.md) |
+Choose the SDK that matches your application's language. Open its quick start for installation and a first call, then its application guide for the task you are building.
 
-The SDK repositories own installation, language-specific methods, examples, compatibility and releases. Start with a quick start, then use the application guide's task chapters for conversations, streaming, waiting actions, files and memory, authentication, and recovery. The CLI workflow guide covers the equivalent shell tasks and scripting boundaries. These guides are ordinary Markdown files on GitHub, not a separate documentation website. The CLI is owned by the Rust SDK repository but has an independent executable and release channel; it is not the `a13n-service` server/operator command.
+| Client                           | Use it for                                              | Quick start and task guides                                                                                                                                                                                           |
+| -------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python (`a13n`)                  | Python applications                                     | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-python/blob/main/docs/README.md)                            |
+| TypeScript (`@converge.ai/a13n`) | TypeScript and JavaScript applications                  | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-typescript/blob/main/docs/README.md)                    |
+| Go                               | Go applications                                         | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-go/blob/main/docs/README.md)                                    |
+| Rust (`a13n`)                    | Rust applications                                       | [Quick start](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/README.md) · [Application guide](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/docs/README.md)                                |
+| Remote CLI (`a13n-service-cli`)  | Shell scripts, API exploration, and resource operations | [Command behavior](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/a13n-service-cli/README.md) · [Workflows](https://github.com/converge-ai-labs/a13n-sdk-rust/blob/main/a13n-service-cli/docs/README.md) |
+
+The remote CLI belongs to the Rust SDK repository and has its own executable and release channel. Use `a13n-service-cli` to call a deployment; the `a13n-service` command starts and operates the server.
 
 ## Connect to your deployment
 
-Start with the Service URL and credentials for the intended workspace: an API key acts in its own workspace, and a login session names a workspace ID (see [HTTP conventions](http.md#workspace)). To submit a message, also select an existing agent. [Connect your application](connect-application.md) walks through credentials, agent selection, and a first request. [Get started](get-started.md) covers deployment; [identity and access](identity.md) explains API keys versus login sessions.
+1. Get the deployment's Service URL and select a configured agent in Console. The URL must be reachable from your application's runtime.
+2. Choose credentials for the intended workspace. A workspace API key selects its own workspace; a login session uses an explicit workspace ID. Keep API keys in server-side configuration. See [identity and access](identity.md) for credential setup.
+3. Follow the selected client's installation and initialization instructions at the version you use.
+4. Send one message and display its answer before adding streaming, tools, or resource management. [Connect your application](connect-application.md) walks through this first conversation and its HTTP equivalent.
+
+For browser applications, follow the client's browser authentication instructions and the Service [workspace and CSRF rules](http.md#authentication). For a new Service deployment, start with [Get started](get-started.md).
 
 ## Invoke an agent
 
-The SDKs have two layers over the same transport and authentication:
+Start with the client's high-level conversation workflow. Use its low-level typed API when you need explicit resource operations or direct control over HTTP requests. Both use the same Service authorization and execution rules; exact method names and return types belong to the selected client's guide.
 
-- **Low-level API:** types and operations generated from the exported Service schemas, for complete protocol access and explicit resource administration.
-- **High-level API:** hand-written methods, in each language's native conventions, that start an agent and send input. Starting an agent or sending another input returns one finite **Interaction**, with stream iteration, result access, the thread reference and the original submission receipt on the same object.
+Build each message exchange around one submission:
 
-An Interaction observes the run that actually incorporates its input, including time spent queued. The Interaction follows a run only after that run consumes the queued entry; an entry assigned to a run returns to `pending` if the run completes or waits without incorporating it. Iteration ends when that run completes, fails, is cancelled or waits for human input, approval or a client-tool result; it does not follow later runs on the thread. Waiting is an outcome to handle explicitly, not permission for the SDK to approve or resume automatically. Applications that only need the result can wait for it without opening the stream.
+1. Submit input with an idempotency key. Preserve the submission receipt and thread reference so a retry or reconnect can find the same work.
+2. Wait for the run that incorporates that input, including any queue time. The [entry tracking walkthrough](connect-application.md#read-the-result) explains why an assigned entry is not yet a consumed entry.
+3. Handle the outcome: display a completed answer, collect explicit responses for a wait, or report failure or cancellation. Waiting responses continue execution in a successor run.
+4. Send a follow-up to the retained thread as a new submission. Keep its result separate from the earlier exchange.
 
-The stream carries provisional observations, not a complete transcript or the durable result. Lost output and bounded retention can leave gaps in live output; use the durable result and committed run items for readback. The low-level API retains access to the underlying session stream, but it is not a second high-level interaction mode.
+Add streaming when your application needs progress while work runs. Live output is provisional and can have gaps; use the saved result and committed run items for readback. A session stream can span multiple runs, so use the submission's entry and run IDs to select the work your screen is displaying.
 
-Service owns authorization and durable execution. Closing an Interaction, timing out or disconnecting stops local observation, not the run; interrupting a run is a separate explicit operation. Follow the selected client's guide for native cleanup, conditional writes, structured inputs and recovery.
+Follow the client's guide to close streams and release local resources. A local timeout or disconnect stops observation, while Service continues execution. Cancel the run explicitly when stopping the work is the intended action. The application guides cover waiting actions, files, memory, authentication, and recovery; the CLI workflow guide covers shell usage and scripting.
 
 ## Keep version ownership clear
 
-These repositories version independently of Service and pin a Service contract. Check the client's contract provenance and release documentation against your deployment, and read its docs at the version you consume rather than assuming `main` matches an installed package.
+SDKs and the remote CLI release independently of Service. Before upgrading a client or deployment, compare the client's pinned Service contract and release notes with the Service version you will use. Read the client documentation at the installed release or commit; the linked `main` branch may describe newer APIs.
 
-This site documents Service behavior through [HTTP conventions](http.md), the [HTTP reference](api-reference/index.md), and [Agents, threads and runs](agents-and-runs.md). It intentionally does not duplicate SDK method signatures or command recipes: those change with their owning repositories.
+Use this site for [HTTP conventions](http.md), [request and response schemas](api-reference/index.md), and [agent execution behavior](agents-and-runs.md). Use the client repository for installation commands, method signatures, examples, and language-specific lifecycle handling.

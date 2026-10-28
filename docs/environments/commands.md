@@ -4,13 +4,19 @@ sidebarTitle: Commands and processes
 description: Run bounded commands or long-lived processes in an Environment and read their output.
 ---
 
-Use `environment.operations.shell` for a bounded foreground execution, or `environment.operations.processes` for a command whose observation continues across calls. These are typed Provider APIs, not the model-facing `shell_exec` / `shell_wait` tool signatures.
+Choose `environment.operations.shell` when you need a foreground result with bounded output. Choose `environment.operations.processes` when you need to observe or control a command across calls. This page uses the typed Provider APIs; Harness tools such as `shell_exec` and `shell_wait` have their own signatures.
 
-Configure command access explicitly: Direct Local runs no command until you set `allowed_executables` or shell profiles. The file-only Direct Local quickstart does not enable execution. Direct Local runs as your Host account; a mapped directory is not a shell sandbox.
+Before running a Direct Local command, allow the executable or configure a shell profile. The file-only quickstart leaves commands disabled. An allowed command runs as your Host account; the mapped directory is not a shell sandbox.
 
 ## Execute a configured executable
 
-This complete example runs the current Python interpreter against an application-owned temporary directory. It needs no Agent, network, container, or model account:
+With `a13n-harness` installed in your Python environment:
+
+1. Save the following program as `command_example.py`.
+2. Run `python command_example.py`.
+3. Expect `hello from command` and a successful exit. The program checks both the exit code and captured stdout.
+
+The program allows the resolved Python executable, maps a temporary directory to `/`, and opens one execution scope. It runs locally without an Agent, network, container, or model account:
 
 ```python
 import asyncio
@@ -60,7 +66,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`ArgvCommand` sends one executable and argument tuple without implicit shell parsing. Its eligibility comes from Provider configuration. For shell syntax, use `ShellCommand(profile_id=..., script=..., login=...)` and a configured shell profile; an arbitrary executable path is not a profile ID.
+Follow the example's three decisions in your own program: allow the executable, choose its working path, and set a finite output policy. `ArgvCommand` passes the argument tuple directly, without shell parsing. To use pipes or other shell syntax, configure a shell profile and pass its ID to `ShellCommand(profile_id=..., script=..., login=...)`.
 
 ## Command request fields
 
@@ -75,13 +81,20 @@ asyncio.run(main())
 | `keep_stdin_open` | False; select true when later stdin writes are intended                                                 |
 | `output_policy`   | Required finite inline/total bounds and overflow policy                                                 |
 
-Environment variable keys must be unique across set/unset and cannot contain NUL or `=`. Values cannot contain NUL. At most 1,024 environment entries are accepted. Command strings cannot be empty or contain NUL; command shape is bounded to 1,025 values and 1 MiB encoded bytes. Provider-specific validation can narrow it further.
+Set `keep_stdin_open=True` before launch if you plan to write input later. Request only limits the Provider supports: unsupported limits fail before dispatch. E2B, for example, has request timeouts and sandbox TTL but rejects a per-command wall-time deadline. Requested numeric limits must be positive and finite where applicable.
 
-Requested limits must be positive and finite where applicable. Unsupported limits fail rather than silently becoming enforced. E2B, for example, does not support a per-command wall-time deadline even though its request timeout and sandbox TTL exist.
+Keep request values within the shared bounds. Environment keys must be nonempty, unique across set/unset, and free of NUL and `=`; values must be free of NUL. A request accepts up to 1,024 environment entries. Command values must be nonempty and free of NUL, with at most 1,025 values and 1 MiB of encoded bytes. Provider policy can narrow these bounds.
 
 ## Start, inspect, wait, and release
 
-After connector `open()` returns a ready execution, obtain its optional `processes` facet. Its methods are:
+For a long-running command, open an execution and obtain its optional `processes` interface:
+
+1. Call `start(request)` once and keep the returned handle.
+2. Read output and inspect status through that handle. Use a bounded `wait` when you need a completion observation.
+3. If your application must stop the command, use a supported signal or `kill` explicitly.
+4. Release the observation when finished. `release` does not imply termination.
+
+Select only actions advertised by the execution:
 
 | Method                                               | Behavior                                                                                 |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -97,22 +110,28 @@ After connector `open()` returns a ready execution, obtain its optional `process
 | `kill(handle)`                                       | Separate forceful control operation                                                      |
 | `release(handle)`                                    | Release observation; not an implicit kill                                                |
 
-Use the exact handle returned by the Provider. A `ProcessIdentity` identifies Provider, Environment, generation, and native process, but is not a portable access grant. Do not construct opaque handle payloads or copy Harness Run-local process references into Provider calls. `rebind` support does not mean all Providers can discover/recover arbitrary old processes.
+Keep three outcomes separate: command completion, output completion, and process-tree cleanup. `initial_terminal` observes the command's terminal status; the tree may still need cleanup. Inspect phase, termination reason, exit code or signal, timestamps, and cleanup outcome when available. Treat `missing` or `unknown` as uncertainty about the command, not permission to launch it again.
 
-Status includes phase, optional termination reason/exit code/signal/timestamps, and cleanup outcome. An initial exit can precede process-tree cleanup. Missing or unknown status is not evidence that a command never ran. Always distinguish command completion, output completion, and cleanup completion.
+Use the Provider's returned handle unchanged. `ProcessIdentity` identifies the Provider, Environment, generation, and native process; access still depends on the current execution. Use `list` and `rebind` only where advertised, and keep Harness Run-local process references out of Provider calls.
 
 ## Read retained output
 
-`EnvironmentOutputPolicy` requires positive `max_inline_bytes`, `max_output_bytes`, and an `overflow` choice of `fail`, `truncate`, or `retain`; inline cannot exceed total. This is not `ToolOutputPolicy`, whose overflow vocabulary includes `spill` instead.
+Set `EnvironmentOutputPolicy` before launch. It requires positive `max_inline_bytes` and `max_output_bytes`, with inline no greater than total, plus `overflow="fail"`, `"truncate"`, or `"retain"`. Use this policy for Environment operations; `ToolOutputPolicy` uses a different overflow vocabulary, including `spill`.
 
-`read_output()` accepts independent stdout/stderr cursors or start offsets, optional `wait_seconds=0`, and a policy. Apply returned chunks at their `start_offset` and use the returned next cursor for that stream. Output reads are observations, not mutations that consume bytes. Inspect `available_start` / `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags rather than treating every preview as complete.
+Read process output in bounded pages:
 
-The separate `outputs` facet reads and releases returned retained output references. A process handle, output reference, and output cursor are different bound values. Scope/generation checks still apply. SDK-text observations may have unknown producer totals or incomplete history; repeatedly waiting does not restore discarded bytes.
+1. Call `read_output()` with independent stdout/stderr cursors or start offsets and a policy. Set `wait_seconds` if the read should wait for output; its default is zero.
+2. Place each returned chunk at its `start_offset`, then retain the next cursor for that stream. Reads do not consume bytes, so rereading the same range is safe.
+3. Check `available_start` and `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags. A preview alone does not establish complete output.
 
-When full output matters beyond an observation budget, write an application log file and manage its retention explicitly. Never automatically restart a command after a disconnect, missing handle, or output eviction.
+Use the separate `outputs` interface to read or release a retained output reference. Pass each bound value to its owning API: a process handle, output reference, and output cursor are distinct. Ordinary `shell.exec` returns bounded inline output and releases its own retention resources before returning.
+
+SDK-text observations can have unknown producer totals or gaps in history. Further waits cannot recover discarded bytes or reset an observation budget. Write an application log file with explicit retention when complete output matters beyond that budget. After a disconnect or missing observation, inspect the command's outcome rather than replaying it.
 
 ## Ports and lifecycle
 
-The general Envd path provides an optional `ports` facet, beyond Native Files & Shell. It supports `inspect(PortTarget(...))` and `wait(target, desired="listening" or "not_listening", timeout_seconds=...)`. `PortTarget` carries address selection (`loopback` by default or `any`), and port 1–65,535. This is observation, not a public ingress/tunnel service or permission to expose a port.
+To wait for a service to listen, use the optional `ports` interface when the execution advertises it. Call `inspect(PortTarget(...))` for one observation, or `wait(target, desired="listening" or "not_listening", timeout_seconds=...)` for a bounded wait. `PortTarget` accepts a port from 1–65,535 and an address selection: `loopback` by default, or `any` where supported.
 
-Provider configuration and actual descriptors determine support. Keep [lifecycle recovery](lifecycle.md) separate from command replay, and close a fresh adapter after each independent scope. Close releases local resources; it does not imply retained target destruction.
+Envd provides port observation. Direct Local also enables it when `allowed_ports` is nonempty, including for a file-only execution. Direct Local probes only allowlisted ports on `127.0.0.1` and rejects `address="any"`. Port observation neither exposes the service nor creates a public tunnel.
+
+Close each execution scope after use. Close releases owned resources without stopping or destroying the backing target; process survival depends on the backend. Keep [lifecycle recovery](lifecycle.md) separate from command replay.

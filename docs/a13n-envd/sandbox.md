@@ -1,9 +1,9 @@
 ---
 title: Sandbox image
-description: Choose a minimal Envd runtime or a development sandbox with browser automation and optional workspace skills.
+description: Choose an image, connect it to a Host, and preserve your workspace between containers.
 ---
 
-The `a13n-sandbox` image has three variants. All start Envd as root and run Session commands and file operations as the provisioned `sandbox` account (`1000:1000`). The standard and desktop variants also grant that account passwordless sudo. The outer container or VM supplies isolation; these variants' default UID is not a barrier against intentional root access.
+Choose the standard `a13n-sandbox` image for development and browser automation, the desktop image for Computer Use, or slim as a minimal Envd runtime.
 
 | Variant            | Contents                                                                           | Intended use                                                                               |
 | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -11,13 +11,13 @@ The `a13n-sandbox` image has three variants. All start Envd as root and run Sess
 | Desktop            | Standard toolchain plus Xvfb, Openbox and supervised desktop startup               | Computer Use through an image-managed Envd                                                 |
 | Slim               | Envd, Debian's basic shell/utilities, runtime libraries, CA certificates and tini  | Envd operation or a base for a custom image; no Python, Node.js, compiler, sudo or browser |
 
-Slim does not meet the native Docker Provider's Python prerequisite. It does not include the optional controlled-egress network tools; use the standard variant or provision those tools in a derived image.
+All variants launch Envd as root and execute Session commands and file operations as `sandbox` (`1000:1000`). Standard and desktop grant that account passwordless sudo, so the outer container or VM supplies the isolation boundary. Slim needs additional Python for the native Docker Provider and additional network tools for controlled egress.
 
-**Controlled egress is off by default.** Ordinary use requires no `--privileged`, extra capabilities, or disabled Docker security profiles. Envd still requires a Linux runtime supporting its native process operations; a custom runtime or reduced capability set can reject them.
+Start with the default `inherit` egress mode. Ordinary use needs no `--privileged`, extra capabilities or disabled Docker security profiles. The Linux runtime must support Envd's native process operations; custom runtimes and reduced capability sets can reject them. For destination filtering, follow [controlled egress](#opt-in-controlled-egress).
 
 ## Build and check
 
-From the repository root:
+Run the build and smoke-check pair for your chosen variant from the repository root:
 
 ```bash
 make image-sandbox
@@ -28,9 +28,9 @@ make image-sandbox-desktop
 make image-check-sandbox-desktop
 ```
 
-The local tags are `a13n-sandbox:local`, `a13n-sandbox:local-slim` and `a13n-sandbox:local-desktop`. Smoke checks verify daemon startup, identity and directory permissions for all variants. Standard checks also cover the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs these checks on native AMD64 and ARM64 runners. Protocol and execution-isolation tests remain in the Envd test suite.
+These produce `a13n-sandbox:local`, `a13n-sandbox:local-slim` and `a13n-sandbox:local-desktop`. Smoke checks cover daemon startup, identity and directory permissions. Standard checks also exercise the toolchain, sudo, skill initialization and offline browser snapshots/screenshots. Container CI runs on native AMD64 and ARM64; the Envd suite owns protocol and execution-isolation tests.
 
-Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client. All variants contain the same daemon version.
+To use a published image, select a tag under `ghcr.io/converge-ai-labs/a13n-sandbox` matching your EIP client's Envd release. All three variants share the daemon version:
 
 | Channel           | Standard          | Slim                 | Desktop                    |
 | ----------------- | ----------------- | -------------------- | -------------------------- |
@@ -38,18 +38,20 @@ Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd re
 | Release candidate | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    | `X.Y.Z-rc.N-desktop`       |
 | Main development  | `dev`             | `dev-slim`           | `dev-desktop`              |
 
-RC and development publication never advance `latest`, `slim` or `desktop`. These instructions describe the source images in this checkout, not a promise that an older published tag already has these defaults.
+`latest`, `slim` and `desktop` track stable releases; RC and development publication leave them unchanged. The behavior below describes this checkout's images. When using an older tag, check that release's features and defaults.
 
 ## Managed Docker desktop in Service
 
-1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or select a published desktop tag containing this feature.
-2. In Console, add a Docker connection. Configure the existing **Docker host** for Engine management, then enable **Envd HTTP connection** and enter the hostname or IP reachable by every Service/Worker. For a local process connecting to Docker Desktop, use `127.0.0.1` for both the reachable host and bind address. For a remote Engine, explicitly configure its reachable private address and port-binding interface, and opt into the trusted plaintext private link.
-3. In the Console template editor, select **Desktop environment**. Service selects the desktop image and HTTP EIP execution together; these fields cannot be edited in this mode. **Standard environment** selects the standard image and native Docker execution. CPU, memory and mounts remain configurable.
-4. For a local build or your own image, select **Custom image** to expose image, execution, desktop and advanced/JSON settings. Use `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** enabled (`desktop: true`), and `pull_policy: never`. Do not disable networking. The image supplies desktop/envd startup; no custom initialization script is needed.
-5. Create an Environment. Service publishes envd's port, discovers its Docker-assigned host port, verifies its device identity through authenticated EIP, and checks actual desktop readiness.
-6. Enable Computer tools on the Agent and allow the required Computer operations on its environment mount. These permissions do not supply a missing desktop.
+Prepare the Docker connection, then create a desktop environment:
 
-Example Docker connection configuration for a trusted private network:
+1. Build `a13n-sandbox:local-desktop` on the selected Docker Engine, or choose a compatible published desktop tag.
+2. Add a Docker connection in Console. Configure Engine access under **Container management**. Enable **Environment operation channel** and set **Host access address** to a hostname or IP reachable by every Service/Worker.
+3. For a local process using Docker Desktop, use `127.0.0.1` for the access and listen addresses. For a remote Engine, configure its reachable private address, listen interface and trusted plaintext private-link opt-in.
+4. Select **Desktop environment** in the template editor. This preset fixes the desktop image and HTTP EIP execution together. **Standard environment** selects the standard image and native Docker execution. Both allow CPU, memory and mount settings.
+5. For a local build or your own image, select **Custom image**. Set image `a13n-sandbox:local-desktop`, execution `envd_http`, **Desktop capability** (`desktop: true`) and `pull_policy: never` for the local build. Keep networking enabled. The image starts the desktop and Envd without an initialization script.
+6. Create the environment. Service publishes Envd's port, discovers the Docker-assigned host port, authenticates the device and checks desktop readiness. Enable the agent's Computer tools and the mount's required Computer operations before starting the task.
+
+For a trusted private network, the Docker connection can use:
 
 ```json
 {
@@ -62,27 +64,34 @@ Example Docker connection configuration for a trusted private network:
 }
 ```
 
-The Docker API and envd HTTP are separate connections. Configure Docker API transport protection independently. The HTTP path publishes an ephemeral host port for container port 8888; routing/firewalls must allow it from all relevant Service/Worker roles. It provides no TLS termination and must not expose bearer-authenticated plaintext traffic on the public Internet. Deployment outbound policy still applies to the resolved endpoint. A cloud Worker cannot reach a local Mac behind NAT through this path without an existing inbound route; Service reverse WebSocket integration is separate work.
+Allow every relevant Service/Worker to reach the ephemeral host port mapped to container port 8888. Protect Docker API transport separately. Envd HTTP carries a bearer credential over the trusted private route, with no TLS termination supplied by this path; keep it off the public Internet. Deployment outbound policy also checks the resolved endpoint. A Worker outside the host network needs an inbound route to that host; this connection does not provide a reverse WebSocket tunnel.
 
-Each attachment inspects the exact retained container's current port mapping, including after restart, and verifies its expected envd device ID. The common image entrypoint creates a random credential in `/var/lib/a13n-envd/http-token` with mode 0600, or the configured `credential_file`. The provider reads it through the authorized Docker Engine connection; it never publishes the token in template JSON, instance state or API responses. Agent operations go directly over existing HTTP EIP, with no Docker exec proxy. Custom images can use the same bootstrap contract without an official image label; `execution: envd_http` also supports headless envd.
+The image creates a private random token at `/var/lib/a13n-envd/http-token` (mode 0600), or the configured `credential_file`. The provider retrieves it through the authorized Engine connection. Each attachment rechecks the retained container's port mapping and expected device ID, then sends Agent operations directly over HTTP EIP. Tokens stay out of template JSON, public instance state and API responses. Custom images can implement the same startup contract, including headless `envd_http` use.
 
-Failed readiness retains the allocated container for inspection. Closing a Run leaves it running; stop/start retains files and credentials but starts a fresh graphical session. Stop/destroy revokes access; credential rotation requires stopping the container, replacing its private token file, closing existing sessions, and restarting. Experimental relay-based desktop templates from before this change need new instances with the explicit execution and connection settings; native Docker recipes retain their defaults and fingerprints.
+For lifecycle management:
 
-The desktop launcher runs as root, with Xvfb/Openbox and Session operations under `sandbox`. It creates an Xauthority cookie, disables X11 TCP listening, supervises required processes, and fails the container if the desktop dies. The standard image's passwordless sudo behavior also applies. This feature provides Agent screenshots/input, not a live remote-desktop viewer or human takeover. X11 literal Unicode `type_text` remains unsupported; supported key events are available.
+- Inspect the retained container when readiness fails.
+- Close a Run to detach while keeping the container running.
+- Stop and start to preserve files and credentials while creating a fresh graphical session.
+- Stop or destroy to revoke access. To rotate a token, stop the container, replace its private token file, close existing sessions and restart.
+
+The root desktop launcher supervises Xvfb/Openbox running as `sandbox`, creates an Xauthority cookie and disables X11 TCP listening. A required desktop process exiting fails the container. X11 supports key events; literal Unicode `type_text` is unavailable.
+
+Human access is a separate opt-in. Set `desktop_assistance: true` and provide a browser-reachable `desktop_viewer_url` routed to the container's port 6081. Service enables the image's `A13N_DESKTOP_ACCESS` supervisor; the operator supplies the viewer route and TLS. Follow [desktop assistance](../a13n-service/environments.md#agent-requested-desktop-assistance) for permissions and the handback workflow.
 
 ## Run with a Host
 
 ### Stdio
 
-Have your EIP Host launch this command with piped stdin and stdout:
+Configure your EIP Host to launch this command with piped stdin and stdout:
 
 ```bash
 docker run --rm -i a13n-sandbox:local
 ```
 
-Keep `-i`, and do not add `-t`: stdin/stdout carry framed EIP traffic, not an interactive terminal. The default command starts Envd under tini; the standard entrypoint first initializes workspace skills. It is not a shell, HTTP listener or idle container. It waits for an EIP client while stdin remains open and exits when stdin closes. Running it without `-i` and seeing a clean exit is expected.
+Keep `-i` and omit `-t` so the pipes carry EIP frames without terminal processing. The entrypoint initializes workspace skills, then starts Envd under tini. Envd waits for the EIP client while stdin stays open and exits when stdin closes. Without `-i`, an immediate clean exit is expected.
 
-The default working directory is `/workspace`. To preserve work in a Docker-managed volume:
+Mount a Docker-managed volume at the default working directory to preserve files after container removal:
 
 ```bash
 docker volume create agent-workspace
@@ -91,11 +100,11 @@ docker run --rm -i \
   a13n-sandbox:local
 ```
 
-A new empty volume inherits the image directory's ownership. Existing volumes and bind mounts retain their ownership; arrange write access for `1000:1000` yourself. The image does not recursively chown mounted files at startup. Closing a Session does not delete files in `/workspace`, but removing a container discards files not stored in a volume or bind mount.
+A new empty volume inherits the image directory's ownership. For an existing volume or bind mount, arrange write access for `1000:1000`; startup preserves existing ownership. Session closure keeps workspace files. Container removal discards files outside volumes and bind mounts.
 
 ### Connect to Harness UI
 
-Use an outbound connection to Harness UI:
+Use separate volumes for Device credentials and workspace files, then connect outward to Harness UI:
 
 ```bash
 docker volume create agent-envd-state
@@ -107,21 +116,25 @@ docker run --rm --name agent-sandbox \
   a13n-envd connect https://host.example.com --host work
 ```
 
-Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-harness-ui). To use the sandbox with Service, run it as an HTTP daemon and [register it as an external target](../environments/remote-envd.md#connect-to-the-service).
+1. Replace the URL with an address reachable from inside the container. Container `localhost` refers to the container itself.
+2. Approve the printed verification code at the Host and keep the container running. Outbound connection mode needs no Docker port publishing.
+3. Reuse the state volume on subsequent starts to retain the Device identity and credential. Keep that credential volume exclusive to this sandbox.
 
-The persistent installation directory is `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` manages its Host-specific runtime under the installation directory. Neither runtime directory is a working directory or a Session recovery checkpoint.
+See [registration and saved Hosts](configuration.md#connect-to-harness-ui). For Service, run an HTTP daemon and [register an external target](../environments/remote-envd.md#connect-to-the-service).
+
+Installation state lives in `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` keeps Host-specific runtime data under the installation directory. Preserve work through the workspace volume, not these runtime directories.
 
 ## Workspace skills and browser automation
 
-The standard image installs a pinned agent-browser CLI and system Chromium at build time. `AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium` selects that browser on both architectures. Startup does not download a browser or skills. Run browser commands as `sandbox`, just like ordinary EIP commands.
+The standard image builds in a pinned agent-browser CLI, system Chromium and bundled skills. `AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium` selects Chromium on both architectures. Run browser commands as `sandbox`; startup uses the installed assets without downloading them.
 
-The bundled skill source is `/usr/local/share/a13n/skills`. The default entrypoint runs `a13n-sandbox-init` synchronously, then uses `exec` to start the supplied command. The initializer copies each missing skill directory into `.agents/skills` under the container's startup cwd, normally `/workspace`. Set Docker `--workdir` to select another existing writable directory. Selecting another Envd Session cwd or overriding the daemon's default working directory does not initialize that directory.
+At startup, `a13n-sandbox-init` copies missing skill directories from `/usr/local/share/a13n/skills` into `.agents/skills` under the container's initial cwd, normally `/workspace`. The entrypoint waits for initialization, then uses `exec` to start your command. Use Docker `--workdir` to seed another existing writable directory. Changing an Envd Session cwd later does not seed that directory.
 
-Existing same-name directories, files and symlinks are preserved without merging or updating. On image upgrades, an existing workspace skill remains user-owned; remove that skill directory explicitly if you want it seeded again. Failed copies are not published as partial skills. Unwritable destinations produce stderr warnings and do not prevent the requested command from starting. No initialization messages are written to stdout, which remains available for stdio EIP.
+Existing names, including files and symlinks, remain untouched. Image upgrades therefore preserve workspace skills; explicitly remove an old skill directory when you want it seeded again. Failed copies never appear as partial skills. An unwritable destination produces a stderr warning and startup continues. Keeping initialization output on stderr preserves the stdio protocol channel.
 
-When invoked as root, the initializer switches to `A13N_ENVD_EXECUTION_UID` and `A13N_ENVD_EXECUTION_GID` (image defaults `1000:1000`) before writing. Non-root callers retain their current identity. The script does not parse Envd JSON or CLI options and never recursively changes mounted-file ownership. Use the image's UID/GID environment settings consistently when selecting another provisioned account. `A13N_SANDBOX_SKILLS_DIR` can select another bundled skill source.
+For another execution account, set `A13N_ENVD_EXECUTION_UID` and `A13N_ENVD_EXECUTION_GID` consistently. The root initializer switches to those IDs before writing; non-root callers keep their identity. The initializer reads these environment variables, not Envd JSON or CLI options, and preserves mounted-file ownership. Set `A13N_SANDBOX_SKILLS_DIR` to select another bundled source.
 
-Replacing CMD still runs initialization. Replacing ENTRYPOINT opts out. Custom launchers and the native Docker Provider can call the initializer explicitly:
+Replacing CMD preserves initialization. Replacing ENTRYPOINT bypasses it, so call the initializer explicitly in a custom launcher:
 
 ```bash
 # Bypass the standard entrypoint and initialize explicitly as the workload user.
@@ -129,21 +142,21 @@ docker run --rm --user sandbox --entrypoint sh a13n-sandbox:local \
   -c 'a13n-sandbox-init && agent-browser skills get core'
 ```
 
-The native Docker Provider replaces the image entrypoint. To opt in, set its existing recipe field:
+The native Docker Provider replaces the entrypoint. Add this recipe setting to seed skills:
 
 ```yaml
 init_script: a13n-sandbox-init
 ```
 
-Neither Envd nor the Provider installs skills automatically outside this launch convention. With the Skills capability enabled, Harness UI discovers skills under the selected Device working directory's `.agents/skills` when preparing a Run.
+With the Skills capability enabled, Harness UI discovers `.agents/skills` in the selected Device working directory while preparing a Run. The startup initializer supplies those files; Envd and the Provider do not otherwise install them.
 
 ## Everyday development
 
-The standard image includes Python 3.13 with pip/venv, uv, Node.js 24, npm, pnpm, C/C++ build tools, Bash, Git, curl, SSH client, jq, ripgrep, patch, zip/unzip, process tools, sudo and CA certificates. `/workspace` and `/tmp/a13n` are writable by `sandbox`. It also installs the userspace namespace/network tools needed by opt-in egress; installing them does not grant kernel privileges. Add project-specific dependencies with sudo or a derived image. Published sandbox images support `linux/amd64` and `linux/arm64`.
+The standard toolchain includes Python 3.13 with pip/venv, uv, Node.js 24, npm, pnpm, C/C++ build tools, Bash, Git, curl, SSH client, jq, ripgrep, patch, zip/unzip, process tools, sudo and CA certificates. `sandbox` can write `/workspace` and `/tmp/a13n`. The image also installs userspace namespace/network tools for controlled egress; the deployment supplies kernel permissions. Published images support `linux/amd64` and `linux/arm64`.
 
-The standard image supports the native Docker Environment Provider. That provider replaces the daemon entrypoint with its keepalive and uses Docker exec for file and shell operations. The image label `ai.a13n.environment.user=sandbox` selects the non-root container user unless a recipe explicitly overrides `user`; standalone Envd still starts as root and launches EIP operations as `sandbox`. Native Docker does not expose an EIP listener or start Envd.
+For native Docker execution, the Provider replaces the daemon entrypoint with a keepalive and uses Docker exec for files and shell. The image label `ai.a13n.environment.user=sandbox` selects the execution user unless the recipe sets `user`. This path runs without Envd or an EIP listener.
 
-Commands executed through EIP start as `sandbox`, with `HOME=/home/sandbox`. For example:
+For EIP execution, commands start as `sandbox` with `HOME=/home/sandbox`. Install a system dependency with sudo and Python dependencies in a virtual environment:
 
 ```bash
 id -u                         # 1000
@@ -154,17 +167,15 @@ python3 -m venv .venv
 .venv/bin/python -m pip install requests
 ```
 
-System-package changes persist across Sessions in the same container, but not after that container is removed. Use a derived image for repeatable dependencies. Git author identity and SSH credentials are not supplied by the image; configure them for your own workload.
+System-package changes last for that container. Put repeatable dependencies in a derived image, and configure Git author identity and SSH credentials for your workload. File RPCs continue as the unprivileged account after sudo commands; adjust permissions or ownership on root-created files before editing them through RPCs.
 
-File RPCs remain unprivileged even after a command uses sudo. A root-owned file created by sudo may require an explicit permission/ownership change before a later file RPC can modify it.
-
-For a human debugging an already running container, select the execution account explicitly:
+To debug a running container as the workload account:
 
 ```bash
 docker exec -it --user sandbox agent-sandbox bash
 ```
 
-Docker exec does not pass through Envd: omitting `--user sandbox` uses the image's root launch account, and Envd's identity, sudo and egress policies do not constrain these direct Docker operations.
+Direct Docker exec uses Docker's authority, outside Envd's identity, sudo and egress policies. Omitting `--user sandbox` selects the image's root launch account.
 
 ## Defaults and overrides
 
@@ -179,7 +190,7 @@ Docker exec does not pass through Envd: omitting `--user sandbox` uses the image
 | Installation state | `A13N_ENVD_STATE_DIR=/var/lib/a13n-envd`                                    |
 | Standalone runtime | `A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state`                                |
 
-Environment overrides work without replacing the default command. For example, disable privilege gains for Envd workers and their descendants:
+Pass environment overrides while keeping the default command. For example, block privilege gains by Envd workers and their descendants:
 
 ```bash
 docker run --rm -i \
@@ -187,16 +198,18 @@ docker run --rm -i \
   a13n-sandbox:local
 ```
 
-This blocks worker setuid/file-capability privilege gains, including native sudo; it does not change the daemon's root launch identity or restrict a Docker administrator. Set `A13N_ENVD_FULL_CONTROL=false` for file-only use. To run as another account, provision that account in a derived image, set both execution UID/GID values, and arrange its filesystem permissions. Do not use Docker `--user` to change only the daemon identity while leaving incompatible execution IDs or root-owned state paths.
+This disables setuid/file-capability privilege gains, including native sudo. The daemon still launches as root, and Docker administrators retain their authority. For file-only use, also set `A13N_ENVD_FULL_CONTROL=false`.
 
-Image environment values take precedence over daemon JSON. Override the corresponding environment variables or use command-line options when changing these defaults. See [configuration precedence and native identity](configuration.md).
+To use another account, provision it in a derived image, set both execution IDs and arrange its filesystem permissions. Changing only Docker `--user` can leave incompatible execution IDs or root-owned state paths.
+
+Image environment values override daemon JSON. Change the corresponding environment variables or supply CLI options; see [configuration precedence and native identity](configuration.md).
 
 ### Opt-in controlled egress
 
-Controlled egress requires **both** a prepared deployment and a per-Session request:
+Enable destination filtering at both deployment and Session levels:
 
-1. Select a compatible Linux runtime and grant the [required namespace/kernel facilities](egress.md). Root inside an ordinary Docker container is not sufficient.
-2. Set `A13N_ENVD_EGRESS_MODE=controlled` at daemon startup.
+1. Prepare a compatible Linux runtime with the [required namespace/kernel facilities](egress.md). Ordinary container root is insufficient.
+2. Start Envd with `A13N_ENVD_EGRESS_MODE=controlled`.
 3. Have the trusted Host include an `egress` policy in `session.open`.
 
-The image does not grant itself Docker capabilities, auto-elevate or silently fall back. Missing facilities can fail daemon startup or Session preparation. A Session supplying an egress policy to the default inherit-mode daemon is rejected, not executed without its policy. A controlled-mode daemon also rejects Sessions that omit their policy. No general-purpose `--privileged` launch is required for the default inherit-mode image.
+Missing runtime facilities can fail startup or Session preparation. Envd rejects mismatched requests: `inherit` mode rejects a supplied policy, and `controlled` mode requires one. The image neither elevates itself nor falls back to unfiltered execution.

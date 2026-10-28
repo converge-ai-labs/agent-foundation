@@ -1,96 +1,74 @@
 ---
 title: 设置第一个 Agent
-description: 连接 Model、创建 Agent，并选择执行权限。
+description: 连接模型账户、选择工具执行权限，并验证第一条回复。
 ---
 
-设置向导会连接 Model、创建 Agent，并选择执行权限。未配置默认 Agent，或所选 Agent 没有 Model 时，设置向导会自动运行。要重新运行，先退出 TUI，然后执行：
+完成本指南后，你将得到一个能回复消息的 Agent。开始前，先[安装 Harness UI](installation.md)，并准备受支持的模型订阅或提供方 API 密钥。
+
+从希望处理的目录启动：
 
 ```console
-a13n-harness-ui setup
+cd your-repository
+a13n-harness-ui
 ```
 
-TUI 中没有 `/setup` 命令。显式运行设置会在保存后返回 shell；首次设置完成后会打开 TUI 输入框。
+将 `your-repository` 替换为自己的目录。未配置默认 Agent，或默认 Agent 没有 Model 时，会打开设置向导。如果已有 Agent，想重新运行向导，先退出终端界面，再在 shell 中运行 `a13n-harness-ui setup`。使用 WebUI 时，打开 `a13n-harness-ui webui` 打印的登录链接，按页面完成设置。
 
 ## 1. 连接 Model
 
-选择 ChatGPT、Codex、Grok 或 GitHub Copilot 订阅，或 API 密钥连接。
+**Model** 是保存的模型提供方连接。先为这次会话选择一种连接方式：
 
-| 连接方式            | 你需要提供的内容                | 凭据存储位置                                                 |
-| ------------------- | ------------------------------- | ------------------------------------------------------------ |
-| ChatGPT 订阅        | 登录并提供完整回调 URL          | Harness UI 数据根（`auth.json`）                             |
-| Codex 订阅          | 可复用的登录状态                | Host 自有账户存储；一次性导入已有登录                        |
-| Grok 订阅           | 可复用的登录状态                | Host 自有账户存储；一次性导入已有登录                        |
-| GitHub Copilot 订阅 | 设备登录或已有 Copilot CLI 登录 | Harness UI 数据根（`oauth/copilot.json`）或 Copilot CLI 存储 |
-| API 密钥            | 提供方/协议、模型 ID 和密钥引用 | 环境变量或 Harness UI 本地密钥存储                           |
+- **订阅：** 选择 ChatGPT、Codex、Grok 或 GitHub Copilot。复用检测到的账户，或按显示的提示登录。如果要立即测试回复，先完成登录再继续。
+- **API 密钥：** 选择提供方或协议，在向导的不回显字段中输入密钥。使用自定义端点时，还需要提供 API base URL，并选择端点支持的协议。
 
-复用已检测到的登录，使用向导提供的方法登录，或先配置连接，稍后运行 `a13n-harness-ui login <provider>` 登录。如果账户存储需要修复，按显示的提示操作。登录在 TUI 之外进行。
+这里输入的 API 密钥与 Model YAML 分开保存。如果已有凭据管理方式，可输入 `env:OPENAI_API_KEY` 读取环境变量，或输入 `key:key-primary` 复用已保存的密钥。环境变量必须对启动 Harness UI 的进程可用。只在专用字段中输入密钥，不要把密钥发送为对话消息。
 
-使用 API 密钥时，向导提供不回显的密钥输入框，也可填写 `env:OPENAI_API_KEY` 或 `key:key-primary`。不要将密钥粘贴到 TUI 输入框。新输入的密钥会立即保存到独立的本地密钥存储，不会写入 Model YAML。
-
-登录方式、已存密钥和账户位置见[模型与身份验证](models-and-authentication.md#subscription-login-and-api-keys)。
+也可以先配置连接，稍后再运行 `a13n-harness-ui login <provider>` 登录。各提供方的登录方法和凭据存储见[身份验证指南](models-and-authentication.md#subscription-login-and-api-keys)。
 
 ## 2. 选择模型和设置
 
-选择推荐模型，或输入区分大小写的 API 模型 ID。推荐来自已安装的目录；向 provider 确认可用性。复用 Model 时保留原设置。
+选择推荐模型，或输入区分大小写的 API 模型 ID。使用你的账户能够访问的模型；推荐列表来自目录，不代表已通过账户访问测试。复用已有 Model 时，其保存的设置保持不变。
 
-创建 Codex 连接时，向导还会提供 Fast 或 Standard 服务选项。Fast 请求优先处理，可能消耗更多配额，也不保证更快。用 `/fast` 临时切换，或修改 Model 以永久设置。
+第一次使用时，没有特定需求就保留向导提供的模型设置。之后可以修改[推理和上下文预算](models-and-authentication.md#context-and-modality-policy)。Codex 连接中的 **Fast** 请求优先服务，可能消耗更多配额，不保证回复更快。
 
-API 密钥设置多一个可跳过的 **Shell review model** 步骤。选择推荐项或输入模型 ID 才启用审查。同系列的轻量模型排在前面，但不会自动选中。跳过则不启用 shell 审查。审查模型复用相同端点和密钥引用，保存为独立 Model，不复制主 Model 的设置。每次审查都会产生额外模型请求；推荐列表不代表已验证访问权限或审查质量。
-
-设置向导为所选路由保存已知的媒体输入能力。使用自定义端点时，先验证图像、音频和视频输入支持，再修改这些声明。
-
-见[模型设置](models-and-authentication.md#native-request-settings-and-connection-wiring)、[上下文预算](models-and-authentication.md#context-and-modality-policy)和 [Fast 模式](models-and-authentication.md#fast-mode-and-service-tiers)。
+API 密钥设置还提供可选的 **Shell review model**。选择模型来审查 shell 命令，或跳过以保持审查关闭。选择后会创建一个独立 Model，复用相同的端点和密钥引用。每次审查都会发出额外的模型请求。Shell 审查和执行隔离是两项独立控制。
 
 ## 3. 选择执行权限
 
-- **Full Control：** 命令使用宿主机账户的文件系统和网络权限运行，不需要 Envd 运行时。
-- **Sandbox：** 保存前，向导会检查本地隔离的前置条件。失败不会降级到 Full Control。Windows Sandbox 使用实验性的原生 MXC 隔离；见[平台要求](environments-and-projects.md#execution-permissions)。
+这个选择决定文件和命令工具可使用的权限：
 
-TUI 中选择后即保存配置，不会额外确认。WebUI 的 Workspace 步骤会自动校验当前选择。选择 Sandbox 后，会按需下载 envd、校验可执行文件并检查隔离能力；执行选项旁和页脚都会显示进度与失败状态。可以取消准备或重试失败的检查。Full Control 使用 Direct 时不需要下载。就绪后点击 **Save and start chatting**；查看生成文件是可选操作。保存只会打开空会话，不会发送模型请求。
+| 选项             | 用途与效果                                                                        |
+| ---------------- | --------------------------------------------------------------------------------- |
+| **Full Control** | 工具使用 Host 账户的文件系统和网络权限。Direct 执行不需要下载 Envd。              |
+| **Sandbox**      | 设置向导准备本地隔离环境，检查前置条件后才保存。检查失败不会切换到 Full Control。 |
 
-选择前请阅读[执行权限](environments-and-projects.md#execution-permissions)。
+选择 Sandbox 时，先阅读[平台要求](environments-and-projects.md#execution-permissions)。Windows 使用实验性的原生 MXC 隔离。
 
-TUI 使用启动目录作为工作目录；首次提示时，会为该目录选择或创建单根 Project。设置不要求 Project 文件，也不会创建默认的 `project-local` 资源。
+终端向导完成选项后会保存配置。WebUI 中，等待 **Workspace** 检查完成，再选择 **Save and start chatting**。Sandbox 准备可能需要下载并校验 Envd；执行选项旁和页脚会显示进度与失败信息。可以取消准备，也可以重试失败的检查。
 
-## 高级设置
+不需要创建 Project 文件。终端使用启动目录，并在你发送第一条提示时选择或创建单根 Project。
 
-```console
-a13n-harness-ui setup --advanced
+## 4. 验证回复
+
+终端首次设置完成后会打开输入框。如果显式运行了 `setup` 命令，它会返回 shell；此时重新启动 `a13n-harness-ui`。WebUI 保存后会打开空对话。保存配置本身不会发送模型请求。
+
+先发送一条不需要文件或 shell 工具的消息：
+
+```text
+Reply with one short greeting. Do not use tools.
 ```
 
-高级设置提供可选的上下文、推理、shell 审查、subagent 和指令选项。常规设置会填入默认配置，之后仍可编辑 YAML；这些设置并非隐藏的应用状态。
+收到回复，说明选中的 Model 可以处理请求。接着在代码库中尝试只读任务：
 
-常规设置包含三种内置 Subagent 角色。选择启用 shell 审查时，会初始化尚未配置的 `security.shell_review`：用 Model 审查 shell 启动，在风险达到 `extra_high` 时请求审批。API 密钥设置未选择审查模型时，快捷配置初始化为关闭。Codex 设置选择独立的审查 Model，并开启 Guardian 额度关联。现有审查设置保持不变。审查与隔离是两回事；见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
-
-内置 subagent 继承父级 Model。高级设置提供全部启用或全部关闭选项；要选择单独角色，请编辑 `subagents.include`。导入外部 Codex/Claude Code subagent 是独立的 `/import` 工作流，不属于设置流程。
-
-## 添加其他连接或 Agent
-
-```console
-a13n-harness-ui add model
-a13n-harness-ui add agent
+```text
+Read the README and summarize what this project does. Do not modify files.
 ```
 
-`add model` 创建可复用的 Model，并提供独立的 Agent 创建流程。`add agent` 可让你复用 Model 或创建新 Model，再为 Agent 命名。复用只引用已有 Model，不会复制或修改它。重复名称会分配不同身份；现有默认值和对话保持不变。
-
-使用 `/agent` 切换整个 Agent。使用 `/model` 为当前 Project 选择已配置的 Model，同时保留当前 Agent 的指令和工具；`/model default` 清除该选择。
-
-## 取消或恢复设置
-
-使用上/下方向键和 Enter，或输入选项编号。Esc 返回上一步；Ctrl+C 或 Ctrl+D 取消。取消首次设置会返回 shell，不会打开 TUI 输入框。
-
-取消设置会保留已完成的登录和已保存的密钥。保存多个文件失败时，先检查错误列出的路径再重试。旧版 `.a13n-harness-ui-setup-recovery-*` 目录保持不变。
+如果问候消息失败，先检查模型 ID 和身份验证，再排查工具。如果问候成功但文件任务失败，检查工作目录和 [Environment 权限](environments-and-projects.md)。[日常使用指南](everyday-use.md)介绍追问、停止工作和打开已保存对话。
 
 ## 查看保存的内容
 
-生成的根配置会显式开启 [WebUI Sidekick](configuration.md#webui-sidekick)：
-
-```yaml
-webui:
-  sidekick: {}
-```
-
-要关闭 Sidekick，设置 `sidekick: null`，或选择 **Settings → General → Sidekick → Disabled**。设置向导保留已有 Sidekick 选择；该偏好本身不会开始工作。
+先退出终端界面，再运行以下 shell 命令：
 
 ```console
 a13n-harness-ui config path
@@ -98,4 +76,35 @@ a13n-harness-ui config show --format json
 a13n-harness-ui config validate
 ```
 
-接下来可阅读[配置用法](configuration-recipes.md)或[入门根配置](configuration.md#starter-root-document)。
+`config path` 显示所选配置和数据路径。根 YAML 保存默认值；同级 `models/` 和 `agents/` 目录保存 Model 与 Agent 资源。`config validate` 检查文件和引用，不发送模型请求，因此仍需单独进行上面的回复测试。
+
+新配置的设置向导还会用 `webui.sidekick: {}` 开启 [WebUI Sidekick](configuration.md#webui-sidekick)。要关闭它，选择 **Settings → General → Sidekick → Disabled**，或设置 `sidekick: null`。设置向导保留已有选择；这个偏好本身不会开始工作。
+
+## 添加其他连接或 Agent
+
+第一个 Agent 正常工作后，可在 shell 中使用以下任一命令：
+
+```console
+a13n-harness-ui add model
+a13n-harness-ui add agent
+```
+
+`add model` 创建可复用的 Model，之后可以进入独立的 Agent 创建流程。`add agent` 让你复用 Model 或新建 Model，再为 Agent 命名。复用只引用已有 Model，不会复制或修改它。已有默认值和对话保留原来的选择。
+
+终端中，用 `/agent` 切换整个 Agent。用 `/model` 为当前 Project 更换 Model，同时保留 Agent 的指令和工具；`/model default` 清除该选择。通过文件修改配置时，继续阅读[配置用法](configuration-recipes.md)。
+
+## 高级设置
+
+运行 `a13n-harness-ui setup --advanced`，可在设置时选择可选的上下文、推理、shell 审查、subagent 和指令设置。生成的设置都可以通过 YAML 编辑。
+
+常规设置包含三种内置 Subagent 角色，继承父级 Model。高级设置提供全部开启或全部关闭选项，之后可用 `subagents.include` 选择单独角色。导入 Codex 或 Claude Code 角色使用独立的 `/import` 工作流。
+
+选择 shell 审查后，向导会初始化尚未配置的审查设置：审查 shell 启动，在风险达到 `extra_high` 时请求审批。API 密钥设置没有选择审查模型时，快捷配置保持关闭。Codex 设置会创建独立审查 Model，并开启 Guardian 额度关联。已有审查设置保持不变。更换审查模型或策略见 [shell 审查](configuration-recipes.md#configure-shell-review)。
+
+向导为选中的路由保存已知的媒体输入能力。为自定义端点添加图像、音频或视频支持前，先验证端点实际支持这些输入；见 [Model 输入策略](models-and-authentication.md#context-and-modality-policy)。
+
+## 取消或恢复设置
+
+终端向导中，用上/下方向键和 Enter，或输入选项编号。Esc 返回上一步；Ctrl+C 或 Ctrl+D 取消。取消首次设置会返回 shell。
+
+取消后，已完成的登录和已保存的密钥仍可使用。多文件保存失败时，先检查错误中列出的路径，再重试。旧版 `.a13n-harness-ui-setup-recovery-*` 目录保持不变。

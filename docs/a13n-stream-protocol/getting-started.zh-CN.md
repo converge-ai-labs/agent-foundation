@@ -1,12 +1,14 @@
 ---
 title: Stream Protocol 快速入门
 sidebarTitle: 快速入门
-description: 使用真实流和 observer，将离线 Harness 执行转换为 AG-UI 事件。
+description: 执行离线 Agent、转换输出，并检查生成的 AG-UI 事件。
 ---
+
+本示例使用测试模型运行 Harness，每个事件打印为一个 JSON 对象。你将看到执行在哪里结束，以及应用的存储或传输从哪里接入。需要 Python 3.13 和 `uv`，无需模型凭据。
 
 ## 准备源码检出
 
-使用 Python 3.13 和仓库锁文件：
+克隆仓库并安装锁定的 Stream Protocol 依赖：
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -14,11 +16,11 @@ cd agent-foundation
 uv sync --locked --package a13n-stream-protocol
 ```
 
-使用发布版时，安装 `a13n-stream-protocol` 并遵循对应版本的 API 文档。它要求匹配的 Harness 版本。
+在该目录中完成后续步骤。在现有应用中，安装发布的 `a13n-stream-protocol` 包并使用对应版本的文档；它会固定依赖匹配的 Harness 版本。
 
 ## 转换一次执行
 
-保存为 `stream_example.py`，运行 `uv run python stream_example.py`：
+将以下内容保存为 `stream_example.py`：
 
 ```python
 import asyncio
@@ -57,31 +59,40 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-每行打印一个 JSON 编码的 AG-UI 事件。输出包含文本事件、公开自定义观测和终结事件；ID 和时间戳会变化。这是 **JSON Lines，不是 SSE**。Host 需要另行选择交付的消息帧格式。
+运行程序：
 
-1. Harness 负责 agent 执行和相应资源范围内的清理。
-2. `observe(item)` 转换一个公开源条目，可能产生多个 AG-UI 事件。
-3. Pydantic 适配器按线上协议字段别名序列化结构化事件。
-4. 此示例打印增量事件；实际 Host 在此处负责持久化或发布。
+```console
+uv run python stream_example.py
+```
+
+断言通过后程序退出。在输出中找到 `RUN_STARTED`、包含 `Hello from the stream` 的文本和 `RUN_FINISHED`。公开 CUSTOM 观测也会出现在这些事件之间。每次执行的 ID 和时间戳会变化。
+
+按三步理解循环：
+
+1. `executable.stream()` 运行 Agent 并产出公开 Harness 条目，其上下文管理器负责相应资源范围内的清理。
+2. `observer.observe(item)` 将一个条目转换为零个或多个结构化 AG-UI 事件。
+3. `dump_json(..., by_alias=True)` 使用 `messageId` 等线上字段名。在示例打印事件的位置，Host 可以存储或发送该事件。
+
+输出采用 JSON Lines。SSE 端点需要在事件外添加自己的消息帧格式。
 
 ## 添加子执行或多个并发执行
 
-对于转发内联子执行观测的根流，使用 `HarnessAguiStreamObserver`。它保留源关联，并输出带子执行归属的内容，不嵌套根执行生命周期。独立运行的根执行或异步子执行各自使用独立 stream observer。`HarnessAguiObserver` 会拒绝其他执行的关联标识，只适用于严格包含单次执行的源。
+根流转发内联子执行观测时，改用 `HarnessAguiStreamObserver`。它在根流内跟踪每个子执行的输出。每次独立运行的根执行或异步子执行都使用独立 observer，包括同一线程中的另一次执行。
 
-启用委派前，先阅读 [stream observer 示例](events.md#observe-a-harness-run)。
+添加委派时，参考 [stream observer 示例](events.md#observe-a-harness-run)。快速入门的单次执行 observer 会明确拒绝其他执行的观测。
 
 ## 明确添加传输层
 
-Stream Protocol 不提供 HTTP 路由、重放游标、持久事件 ID、保留策略或重连循环。Host 必须决定：
+接入实时应用时，用 Host 的持久化和交付函数替换打印。每个新批次发布一次，再决定消费端重连后能恢复哪些内容：
 
-- 保留源观测、投影事件，还是两者都保留；
-- 消费端可见的内容；
-- 如何报告缺口和终结结果；
-- 如何无重叠地从重放切换到实时交付；
-- 在内存中保留多少 observer 状态。
+| 消费端需求             | Host 设置                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| 实时事件已存到其他位置 | 设置 `retain_events=False`，持久化 `observe()` 返回的批次                             |
+| 在进程内检查事件       | 保留默认日志，读取 `snapshot()`                                                       |
+| 恢复消息与工具调用     | 使用 `DisplayFold` 并保存[展示检查点](replay.md#restore-a-compact-display-checkpoint) |
 
-只做实时转换时，设置 `retain_events=False` 并持久化 `observe()` 返回的批次。需要可恢复展示时，使用 `DisplayFold` 并保存[紧凑的展示检查点](replay.md#restore-a-compact-display-checkpoint)。发布增量事件，不要每次都发布完整快照。
+为传输定义持久 ID、顺序、保留策略，以及重放转实时的分界。明确客户端如何得知交付缺口。发布前应用可见性策略。这些决策属于应用；Stream Protocol 提供事件转换和展示状态。
 
 ## 下一步
 
-[事件与处理器](events.md)介绍映射、自定义事件分片和过滤。[重放与恢复](replay.md)介绍重建，以及它与 agent 恢复的区别。
+通过[事件与处理器](events.md)连接实时流并过滤内容。通过[重放与恢复](replay.md)恢复尚未结束的消息，并验证其最终内容与不中断交付一致。

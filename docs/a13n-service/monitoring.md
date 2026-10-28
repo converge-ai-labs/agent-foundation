@@ -1,123 +1,134 @@
 ---
 title: Monitor and troubleshoot
-description: Use logs, metrics, traces, and usage facts to answer operational questions.
+description: Follow a request into its run, diagnose queue and delivery problems, and inspect workspace usage.
 ---
 
-The Service produces three signals (logs, metrics and traces) and records usage facts in PostgreSQL. Each answers one kind of question:
+Start with the question you need to answer. For a failed request, follow its request ID into the logs. For a slow run, check the queue and the attempt. For cost, read the workspace's stored usage.
 
-| Question                                                | Where to look                                                          |
-| ------------------------------------------------------- | ---------------------------------------------------------------------- |
-| What happened to this request or run?                   | [Logs](#logs), searched by `request_id` or `run_id`                    |
-| Is the Service healthy, backed up or failing?           | [Metrics](#metrics), with the alert rules and the operations dashboard |
-| What did the agent do inside an attempt?                | The attempt's [trace](agents-and-runs.md#traces)                       |
-| How much did a workspace use, and what did its runs do? | The [usage](#usage) facts in PostgreSQL                                |
+| Question                                  | Start here                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| Why did a request or run fail?            | [Request and run troubleshooting](#troubleshoot-a-request-or-run) |
+| Are workers keeping up?                   | [Service metrics](#metrics)                                       |
+| What did the agent do during an attempt?  | The attempt's [trace](agents-and-runs.md#traces)                  |
+| Which agents or models used the most?     | [Workspace usage](#usage)                                         |
+| Is an environment short of CPU or memory? | [Environment monitoring](environment-monitoring.md)               |
 
-Logs and metrics never contain credentials, request or response bodies, URLs or query strings. Metrics never name an organization, a workspace or an object: per-workspace numbers come from PostgreSQL.
+You need access to process logs for request troubleshooting. Metrics need a configured scrape endpoint; traces need a configured trace backend. Workspace usage comes from PostgreSQL and works independently of those backends.
 
-For target CPU, memory, network and disk metrics, use [Environment monitoring](environment-monitoring.md). Those data sources and collection paths are independent of Service telemetry.
+## Troubleshoot a request or run
+
+Keep the failing response's status, error body and `X-Request-Id`. The error body's `request_id` repeats that header. Then follow this sequence:
+
+1. Search the process logs for `request_id`. `Request finished` gives the route template, status and duration.
+2. Find `Run accepted` in the same request's records and copy `run_id`. If the request was refused, use its error code to fix the request; no run was accepted. If a message was queued behind an active run, follow its [inbox entry](agents-and-runs.md) until it names the run that took the message.
+3. Search all relevant process logs for `run_id`, including worker logs. Use the records below to choose the next check, then read `GET /api/v1/runs/{run_id}` for the current saved status and failure message.
+4. For an executing or failed attempt, inspect its trace when tracing is configured. Use `GET /api/v1/runs/{run_id}/attempts/{attempt_id}/trace`, or search the backend for `service_run_id` and `run_attempt_id`.
+
+| Record            | What it tells you          | Next check                                                                                                                              |
+| ----------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Run accepted`    | Work was accepted.         | If no attempt follows, check worker readiness, free slots and queue age.                                                                |
+| `Attempt claimed` | A worker began an attempt. | Inspect the attempt trace and subsequent attempt records.                                                                               |
+| `Attempt ended`   | That attempt stopped.      | Read `status` and `reason`; a retry or continuation has another `Attempt claimed`, while a sealed run has ended.                        |
+| `Run sealed`      | The run ended.             | Read its saved status and reason; a waiting result may need [human input and a successor run](agents-and-runs.md#resume-a-waiting-run). |
+
+An endpoint-policy failure tells you which rule was refused, such as requiring HTTPS. Fix that configuration before starting again; the same refused configuration is not retried. A model authentication failure can include `HTTP 401`. Failure messages omit raw upstream response bodies.
+
+For missing webhook or email delivery, search `Outbox` records by `kind` and then `outbox_id`. `Outbox delivery failed` will retry; `Outbox delivery dead` records the final reason. Check [outbox retention and capacity](operations.md#outbox-retention-and-capacity) when deliveries are accumulating.
 
 ## Logs
 
-Every process logs to stdout by default, as JSON or, with `telemetry.log_format = "pretty"`, as readable text. `a13n-service run` can also write a JSON file that it rotates by size:
+Use the default JSON stdout logs with your process supervisor or log collector. For local reading, set `telemetry.log_format = "pretty"`. If the deployment needs files, add a rotating JSON log to its configuration:
 
 ```toml
 [telemetry]
 log_level = "INFO"
 log_file = "/var/log/a13n/service.log"
-log_file_max_mb = 100   # rotate when the file reaches this size
-log_file_backups = 5    # rotated files kept: service.log.1 … service.log.5
-log_stdout = false      # only the file
+log_file_max_mb = 100
+log_file_backups = 5
+log_stdout = false
 ```
 
-Each process needs a file of its own. Operator commands such as `migrate` always log to stdout.
+Choose a writable path unique to each process, then restart that process. This example keeps the active file and up to five backups and sends logs only to the file. Operator commands such as `migrate` continue to log to stdout.
 
-Records carry the IDs of the work they belong to, whichever code logged them:
+Use the IDs that match the work you are following:
 
-| While handling        | Records carry          |
-| --------------------- | ---------------------- |
-| an HTTP request       | `request_id`           |
-| a worker's claim loop | `worker_id`            |
-| an attempt            | `run_id`, `attempt_id` |
-| a sweep pass          | `sweep`                |
-| a webhook or email    | `outbox_id`, `kind`    |
+| Work               | Log fields                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| HTTP request       | `request_id`; `Request finished` also has `method`, `route`, `status`, `duration_ms` |
+| Worker and attempt | `worker_id`, then `run_id` and `attempt_id`                                          |
+| Background sweep   | `sweep`; `Sweep failed` includes `error_type` and bounded `exception_details`        |
+| Webhook or email   | `outbox_id`, `kind`, and delivery `reason`                                           |
 
-Besides failures, the Service logs these events:
-
-| Event                                                                | Fields                                                                                 |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `Request finished`                                                   | `method`, `route` (the route template), `status`, `duration_ms`; probes are not logged |
-| `Run accepted`                                                       | `run_id`, `thread_id`, `trigger`                                                       |
-| `Attempt claimed`                                                    | `run_id`, `attempt_id`, `queue_wait_ms`                                                |
-| `Attempt ended`                                                      | `run_id`, `attempt_id`, `status`, `reason`, `duration_ms`                              |
-| `Run sealed`                                                         | `run_id`, `status`, `reason` (the failure code)                                        |
-| `Outbox delivered`, `Outbox delivery failed`, `Outbox delivery dead` | `outbox_id`, `kind`, `reason`                                                          |
-| `Sweep failed`                                                       | `sweep`, `error_type`                                                                  |
-
-Configure proxies in front of the Service to redact query strings from their own access logs as well.
+Health and readiness probes are omitted from request logs. Service logs and metrics exclude credentials, request and response bodies, raw URLs and query strings. Configure the reverse proxy's access logs separately to redact query strings. Trace content has its own [export settings](configuration.md#logs-metrics-and-traces); choose `telemetry.trace_content` before sending prompts, outputs or tool payloads to a backend.
 
 ## Metrics
 
-Set `telemetry.metrics_port`, and every process serves Prometheus metrics at `/metrics` on `server.host` and that port. Prometheus and VictoriaMetrics scrape it alike. Keep the port private: it is separate from `server.port` so that nothing routes it with the API. The Helm chart serves it on port 9464 by default.
+To monitor Service processes:
+
+1. Add a metrics port to the deployment configuration. It must differ from `server.port`:
 
 ```toml
 [telemetry]
 metrics_port = 9464
 ```
 
-| Metric                                 | Labels                                                           | Meaning                                                                                                                                                                                                                          |
-| -------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http_server_request_duration_seconds` | `http_request_method`, `http_route`, `http_response_status_code` | request duration, streams included                                                                                                                                                                                               |
-| `a13n_runs_accepted_total`             | `trigger`                                                        | accepted runs                                                                                                                                                                                                                    |
-| `a13n_runs_sealed_total`               | `status`, `reason`                                               | sealed runs; `reason` is the failure code                                                                                                                                                                                        |
-| `a13n_attempt_queue_wait_seconds`      | —                                                                | how long a due run waited for a worker                                                                                                                                                                                           |
-| `a13n_attempt_duration_seconds`        | `status`                                                         | attempt duration from claim to end                                                                                                                                                                                               |
-| `a13n_worker_slots`                    | `state`: `free`, `busy`                                          | a worker's attempt slots                                                                                                                                                                                                         |
-| `a13n_backlog_size`                    | `queue`                                                          | due runs, or due deliveries of an outbox kind                                                                                                                                                                                    |
-| `a13n_backlog_oldest_age_seconds`      | `queue`                                                          | how long the oldest due item has waited                                                                                                                                                                                          |
-| `a13n_outbox_deliveries_total`         | `kind`, `result`                                                 | webhook, email and other delivery outcomes                                                                                                                                                                                       |
-| `a13n_sweep_passes_total`              | `sweep`, `result`                                                | background sweep passes                                                                                                                                                                                                          |
-| `a13n_outbox_backlog_alert`            | `kind`                                                           | 1 while an outbox kind's backlog has stayed over its threshold for `backlog_alert_seconds`, else 0; the timer resets when the process restarts. See [outbox retention and capacity](operations.md#outbox-retention-and-capacity) |
-| `a13n_outbox_dead`                     | `kind`                                                           | 1 while an outbox kind retains dead deliveries, else 0                                                                                                                                                                           |
+2. Restart the process. From the private monitoring network, read `/metrics` on `server.host` and the configured port. For a process reachable on the local machine:
 
-Workers also serve the Harness's metrics, such as `a13n_harness_run_duration_seconds`, and model token usage as `gen_ai_client_token_usage`; see [Harness observation](../a13n-harness/observation.md). Backlog counts come from a query that `all` and `control` replicas repeat every 15 seconds, capped at the larger of 10,000 and the kind's `backlog_count`; every replica reports the same values, so take their maximum. The same holds for the two outbox gauges.
+```sh
+curl --fail http://127.0.0.1:9464/metrics
+```
 
-The [monitoring bundle](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring) has alert rules, an operations dashboard and a usage dashboard, with instructions for Prometheus, VictoriaMetrics, their Kubernetes operators and Grafana.
+3. Add **every control and worker process** to your Prometheus or VictoriaMetrics scrape configuration. Use job name `a13n-service` with the repository's [monitoring bundle](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring).
+4. Import the bundle's operations dashboard and alert rules. Confirm the targets are being scraped, then inspect requests, runs, worker capacity and deliveries.
 
-## Troubleshoot a request or run
+The metrics listener is separate from the API listener. Keep it on a private network. The Helm chart enables port 9464 by default and supports a PodMonitor; the bundle describes operator and static-host setup.
 
-Start from the `X-Request-Id` of the response, which error bodies repeat as `request_id`:
+| Operational question                   | Useful metrics                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Are requests slow or failing?          | `http_server_request_duration_seconds`, grouped by method, route template and status code               |
+| Are runs being accepted and completed? | `a13n_runs_accepted_total`, `a13n_runs_sealed_total`, grouped by trigger or outcome                     |
+| Are workers saturated?                 | `a13n_worker_slots` (`free`/`busy`), `a13n_attempt_queue_wait_seconds`, `a13n_attempt_duration_seconds` |
+| Is due work accumulating?              | `a13n_backlog_size` and `a13n_backlog_oldest_age_seconds`, grouped by `queue`                           |
+| Are deliveries failing?                | `a13n_outbox_deliveries_total`, `a13n_outbox_backlog_alert`, `a13n_outbox_dead`                         |
+| Are background tasks failing?          | `a13n_sweep_passes_total`, grouped by `sweep` and `result`                                              |
 
-1. Search the logs for the `request_id`. `Request finished` gives the route and status. A request that started a run also logged `Run accepted` with the `run_id`; a refused request has none, and its status and error body say why. A message queued behind an active run starts a later run; find the message's entry in the thread's inbox, which names its run once the run is accepted.
+Backlog means work that is due now; waiting runs and future scheduled work are excluded. `all` and `control` replicas refresh the same backlog values every 15 seconds. Take the **maximum across replicas**, rather than adding them. Counts are capped at the larger of 10,000 and the outbox kind's `backlog_count`.
 
-2. Search the logs for the `run_id`. Where its records stop tells where the run is:
+The two outbox gauges also use the maximum across replicas. `a13n_outbox_backlog_alert` becomes 1 after a kind stays over its threshold for `backlog_alert_seconds`; restarting the process resets that timer. `a13n_outbox_dead` is 1 while dead deliveries are retained.
 
-   | Last record of the run                     | The run                                          | Look next at                                                                                       |
-   | ------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-   | `Run accepted`                             | waits for a worker                               | `a13n_backlog_oldest_age_seconds{queue="runs"}`, `a13n_worker_slots` and whether workers are ready |
-   | `Attempt claimed`                          | is executing                                     | the attempt's trace                                                                                |
-   | `Attempt ended` with `failed` or `yielded` | returned to the queue to be retried or continued | `reason`, then the next `Attempt claimed`                                                          |
-   | `Run sealed`                               | has ended                                        | `status` and `reason`; `GET …/runs/{run_id}` carries the failure message                           |
-
-3. Open the attempt's trace with `GET …/runs/{run_id}/attempts/{attempt_id}/trace`, or find it in Langfuse or Logfire by the `service_run_id` and `run_attempt_id` metadata.
-
-4. For a webhook or email that never arrived, search for the `Outbox` records of its `kind`: a dead delivery names its `reason`.
-
-Run failure messages include endpoint-policy reasons, such as requiring HTTPS, and model HTTP status codes, such as `HTTP 401` for authentication failures. Endpoint-policy refusals fail without retrying the same configuration. Raw upstream response bodies are not returned.
+Workers also export [Harness metrics](../a13n-harness/observation.md), including `a13n_harness_run_duration_seconds` and model token usage as `gen_ai_client_token_usage`. Service metrics describe process health and global work; use the usage API for workspace-level numbers.
 
 ## Usage
 
-Per-workspace usage is recorded as facts in PostgreSQL, never in metrics. A workspace reads its own through the [usage API](agents-and-runs.md#usage). Operators can import the usage dashboard from the monitoring bundle, which reads runs and model usage per organization, workspace and model through a read-only database role.
+Use Console or the API to read a workspace's stored run and model-usage facts. Operators who need organization-wide reporting can import the monitoring bundle's usage dashboard and connect it through a read-only PostgreSQL role.
+
+For an API report, set `A13N_URL` and a workspace `A13N_API_KEY` with read access. Choose `START` and `END` as RFC 3339 timestamps for a positive range of at most 366 days; `END` is exclusive. This request groups days in UTC:
+
+```sh
+curl --get "$A13N_URL/api/v1/usage/overview" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  --data-urlencode "start=$START" \
+  --data-urlencode "end=$END" \
+  --data-urlencode "timezone=UTC"
+```
+
+Read the overview totals and daily buckets. Use `GET /api/v1/usage/agents` or `/api/v1/usage/models` with the same time range for paginated breakdowns (`limit` and `cursor`). `GET /api/v1/usage` provides run, thread and session summaries; see [usage queries](agents-and-runs.md#usage).
 
 ### Workspace usage in the Console
 
-Open **Insights → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, run count, request count and average run time. Switch the daily chart between Spend and Tokens, then compare agents or models in the paginated breakdown.
+1. Open **Insights → Usage** in the workspace.
+2. Select the last 7 or 30 days, or a custom range of up to 366 days.
+3. Compare spend, run count, model requests, average run time and token totals.
+4. Switch the daily chart between **Spend** and **Tokens**, then compare the agent or model breakdown.
 
-![Console showing 30-day costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.webp)
+![Console showing costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.webp)
 
-*Shown with fictional usage history from the local Seed data.*
+*The screenshot uses fictional history from local Seed data.*
 
-Spend includes recorded model costs in USD. Requests without a price are counted separately: a partial subtotal is not the full cost, and entirely unknown costs display as unavailable. Cached input is already included in input tokens. Cache rate divides the summed cached input by summed input, rather than averaging request percentages.
+Interpret the numbers together:
 
-Usage dates follow ingestion time; run counts follow start time. Average run time covers started runs that have sealed, measured from start to seal, including intervening execution waits. A waiting run seals before human approval; a resumed successor is a separate run. Late usage can update an earlier day's totals. The chart follows your browser's displayed timezone.
+- **Cost:** recorded model cost is in USD. Unpriced requests are counted separately. A partial subtotal covers known costs only; entirely unknown costs display as unavailable.
+- **Cache:** cached input is included in input tokens. Cache rate is total cached input divided by total input, not an average of request percentages.
+- **Time:** usage is grouped by ingestion time, runs by start time. Average run time covers started runs that have sealed, from start to seal including intervening execution waits. A waiting run seals before human approval; a resumed successor counts as a separate run.
 
-These reads query stored facts directly and work without a trace backend. The HTTP endpoints are `GET /api/v1/usage/overview` (totals and daily buckets), `/api/v1/usage/agents` and `/api/v1/usage/models` (paged breakdowns). All take `start` and exclusive `end` RFC 3339 timestamps; overview also accepts an IANA `timezone`, and breakdowns accept `limit` and `cursor`. `GET /api/v1/usage` returns per-run, per-thread and per-session summaries.
+Late usage can update earlier totals. Console groups days in the browser's timezone; use the same timezone and time range when comparing an API report with the chart.

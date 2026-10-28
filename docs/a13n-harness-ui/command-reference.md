@@ -1,9 +1,19 @@
 ---
 title: Command reference
-description: Every shell command, option, and TUI slash command.
+description: Find a shell command or TUI command, its arguments, and the settings it changes.
 ---
 
-Use shell commands to start or manage Harness UI; use slash commands in the TUI. For a workflow rather than a syntax lookup, start with [setup](setup.md) or [TUI use](everyday-use.md).
+Shell commands start and manage Harness UI. Slash commands control a conversation inside the TUI. Start with the task below, then use the reference for exact arguments.
+
+| I want to…                   | Command                                           | Walkthrough                                         |
+| ---------------------------- | ------------------------------------------------- | --------------------------------------------------- |
+| Configure my first Agent     | `a13n-harness-ui setup`                           | [First setup](setup.md)                             |
+| Chat in the terminal         | `a13n-harness-ui`                                 | [TUI use](everyday-use.md)                          |
+| Chat in a browser            | `a13n-harness-ui webui`                           | [WebUI](webui.md)                                   |
+| Run one prompt from a script | `a13n-harness-ui run "PROMPT" --format json`      | [Automation](automation-and-troubleshooting.md)     |
+| Find or validate my files    | `a13n-harness-ui config path` / `config validate` | [Configuration](configuration.md)                   |
+| Inspect local execution      | `a13n-harness-ui environment status`              | [Environments](environments-and-projects.md)        |
+| Inspect authentication       | `a13n-harness-ui auth status`                     | [Models and accounts](models-and-authentication.md) |
 
 ## Shell invocation
 
@@ -11,345 +21,303 @@ Use shell commands to start or manage Harness UI; use slash commands in the TUI.
 a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 ```
 
-Omitting `COMMAND` opens the TUI. Put global options before the command; use `-h` or `--help` at each level. `--version` prints the version and exits before any command runs. Help and version do not initialize the App, database, Model, or Environment.
+Put global options before the command. For example, this validates an alternate configuration tree:
 
-These tables show command-line defaults; [Configuration](configuration.md) explains effective defaults. A conversation is a root Thread; `--resume` takes its Thread ID and cannot be combined with new-conversation Agent, Environment, or title overrides.
+```bash
+a13n-harness-ui --config ./a13n-harness-ui.yaml config validate
+```
+
+Omit `COMMAND` to open the TUI. Use `-h` or `--help` at any level, such as `a13n-harness-ui run --help`. Help and `--version` exit before initializing the App, database, Model, or Environment.
+
+Arguments in capitals are values you supply. Square brackets mark optional arguments in syntax descriptions. Tables distinguish parser defaults from settings loaded from [configuration](configuration.md).
 
 ### Global options
 
-| Parameter               | Type / choices        | Parser default | Meaning                                                                                    |
-| ----------------------- | --------------------- | -------------- | ------------------------------------------------------------------------------------------ |
-| `--config`              | path                  | not set        | Explicit Harness UI configuration YAML (default: ~/.a13n-harness-ui/a13n-harness-ui.yaml). |
-| `--data-root`           | path                  | not set        | Override the local Harness UI data root.                                                   |
-| `--resume`              | text                  | not set        | Resume a saved conversation by Thread ID.                                                  |
-| `--agent`               | text                  | not set        | Select a configured Agent for new conversations.                                           |
-| `--environment-mode`    | full-control, sandbox | not set        | Override the built-in Environment mode for new conversations.                              |
-| `--environment-profile` | text                  | not set        | Override the custom Environment profile for new conversations.                             |
-| `--display`             | concise, detailed     | `not set`      | Presentation only; overrides display.mode (default concise). /mode switches live.          |
-| `--no-update-check`     | boolean               | `false`        | Skip startup update detection for this invocation.                                         |
-| `--version`             | boolean               | `false`        | Show the version and exit.                                                                 |
+| Option                  | Value                     | Effect when supplied                                                                        |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `--config`              | YAML path                 | Select a configuration tree; the default root is `~/.a13n-harness-ui/a13n-harness-ui.yaml`. |
+| `--data-root`           | Directory path            | Override the local data root.                                                               |
+| `--resume`              | Thread ID                 | Open a saved conversation.                                                                  |
+| `--agent`               | Agent ID                  | Select the Agent for a new conversation.                                                    |
+| `--environment-mode`    | `full-control`, `sandbox` | Select a built-in mode for a new conversation.                                              |
+| `--environment-profile` | Profile ID                | Select a custom profile for a new conversation.                                             |
+| `--display`             | `concise`, `detailed`     | Override `display.mode`; the configured default is `concise`.                               |
+| `--no-update-check`     | Flag                      | Skip startup update detection for this invocation.                                          |
+| `--version`             | Flag                      | Print the installed version and exit.                                                       |
+
+These options are unset by default; flags default to false. `--environment-mode` and `--environment-profile` are mutually exclusive. `--resume` cannot be combined with new-conversation Agent, Environment, or title overrides. Resume first, then change the selection in the TUI.
 
 ## Commands
 
-Place global options before these subcommands. Authentication and plugin commands change local stores; `config` inspection also opens application state.
+Each heading below names a subcommand after `a13n-harness-ui`. Where `--format text|json` is listed, it defaults to `text`. Authentication and plugin commands can change local stores; `config` queries also open application state.
 
 ### `webui`
 
-Run one foreground WebUI server with bundled browser assets.
+Start the foreground browser server. Complete the [WebUI access setup](webui.md) before exposing it to other machines.
 
-| Parameter                                                       | Type / choices   | Parser default            | Meaning                                                                                                               |
-| --------------------------------------------------------------- | ---------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `--host`                                                        | text             | `"127.0.0.1"`             | Listener IPv4 or IPv6 address.                                                                                        |
-| `--port`                                                        | integer 1..65535 | `8765`                    | Listener TCP port.                                                                                                    |
-| `--apikey, --api-key`                                           | text             | not set                   | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).                                     |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`                   | Disable Web authentication only; does not change Agent permissions.                                                   |
-| `--share-computer` / `--no-share-computer`                      | boolean          | `true`                    | Share native Host Files, Git Changes, and Terminal panels as the server OS account, independent of Agent permissions. |
-| `--browser-no-sandbox` / `--browser-sandbox`                    | boolean          | `false` (sandbox enabled) | Explicitly disable or enable Chromium's sandbox. Overrides `A13N_HARNESS_UI_BROWSER_NO_SANDBOX`.                      |
+| Option                                                            | Default         | Purpose                                                                      |
+| ----------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------- |
+| `--host ADDRESS`                                                  | `127.0.0.1`     | IPv4 or IPv6 listener address.                                               |
+| `--port PORT`                                                     | `8765`          | TCP port, from 1 through 65535.                                              |
+| `--apikey KEY`, `--api-key KEY`                                   | Unset           | Override `A13N_HARNESS_UI_API_KEY`; the value is visible in shell arguments. |
+| `--dangerous-skip-permissions`, `--dangerously-bypass-permission` | Off             | Disable Web authentication, leaving Agent permissions unchanged.             |
+| `--share-computer` / `--no-share-computer`                        | Enabled         | Share Host Files, Git Changes, and Terminal as the server OS account.        |
+| `--browser-no-sandbox` / `--browser-sandbox`                      | Sandbox enabled | Override `A13N_HARNESS_UI_BROWSER_NO_SANDBOX`.                               |
 
-`--no-share-computer` also disables the Host Browser drawer, discovery and browser automation.
+`--no-share-computer` also disables the Host Browser drawer, discovery, and browser automation. Host sharing is independent of Agent permissions.
 
-Run the browser Host as a non-root user with the default sandbox enabled. For a separately isolated Host that requires disabling it, use `--browser-no-sandbox` or set `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`; this removes Chromium's sandbox protection. `--browser-sandbox` restores the sandbox even when that environment variable is set. Root is rejected unless sandbox disabling is explicit. These are server startup options; [executable bindings](configuration.md#host-browser) are configured separately.
+Run the browser Host as a non-root user with Chromium's sandbox enabled. Disabling the sandbox is an explicit choice for a separately isolated Host; root is rejected without that choice. `--browser-sandbox` restores protection even when the environment variable disables it. Configure [Browser executable overrides](configuration.md#host-browser) separately.
 
 ### `envd update`
 
-Update Envd without starting the App. Stop daemons using the installation first. With no executable override, prepare the client-selected managed version. See [Envd maintenance](automation-and-troubleshooting.md).
+Update the native Envd installation without opening the App. Stop daemons using that installation first. With no executable override, the command prepares the managed version selected by the Python client.
 
-| Parameter      | Type / choices | Parser default | Meaning                                                                          |
-| -------------- | -------------- | -------------- | -------------------------------------------------------------------------------- |
-| `--executable` | path           | not set        | Override the configured runtime with a standalone executable.                    |
-| `--version`    | text           | not set        | Exact native version; managed installations remain pinned to the client version. |
-| `--check`      | boolean        | `false`        | Inspect the selected update without installing.                                  |
-| `--force`      | boolean        | `false`        | Reinstall the selected version; mutually exclusive with `--check`.               |
+| Option              | Default | Purpose                                                                                  |
+| ------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `--executable PATH` | Unset   | Update a standalone executable instead of the configured runtime.                        |
+| `--version VERSION` | Unset   | Choose an exact native version; managed installations stay pinned to the client version. |
+| `--check`           | Off     | Inspect the update without installing.                                                   |
+| `--force`           | Off     | Reinstall the selected version; cannot be combined with `--check`.                       |
+
+See [Envd maintenance](automation-and-troubleshooting.md#logs-updates-and-exit) for the update workflow.
 
 ### `update`
 
-Update this uv-tool installation now, without starting the TUI or setup.
-
-No command-specific parameters.
+Upgrade the current uv-tool installation immediately. This command takes no additional arguments and does not ask for a second confirmation. It starts neither the TUI nor setup.
 
 ### `setup`
 
-Configure a Model, context budget, and execution permissions interactively.
-
-| Parameter    | Type / choices | Parser default | Meaning                                                                   |
-| ------------ | -------------- | -------------- | ------------------------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also choose context, reasoning, tool review, subagents, and instructions. |
+Run the interactive first-setup flow for a Model, context budget, and execution permissions. Add `--advanced` to choose context, reasoning, tool review, subagents, and instructions explicitly.
 
 ### `add agent`
 
-Create another Agent without changing existing Agents or defaults.
-
-| Parameter    | Type / choices | Parser default | Meaning                                                  |
-| ------------ | -------------- | -------------- | -------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also customize reasoning, tool review, and instructions. |
+Create another Agent while preserving existing Agents and defaults. Add `--advanced` to customize reasoning, tool review, and instructions.
 
 ### `add model`
 
-Create a reusable Model without creating or changing an Agent.
-
-| Parameter    | Type / choices | Parser default | Meaning                                                     |
-| ------------ | -------------- | -------------- | ----------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also customize subscription context and reasoning settings. |
+Create a reusable Model without creating or changing an Agent. Add `--advanced` to customize subscription context and reasoning settings.
 
 ### `run`
 
-Execute one prompt without opening the TUI.
+Submit one prompt and exit after its operation. Use `--format json` when a script needs the Thread ID, status, or structured outcome.
 
-| Parameter               | Type / choices        | Parser default | Meaning                                                 |
-| ----------------------- | --------------------- | -------------- | ------------------------------------------------------- |
-| `PROMPT`                | text                  | `required`     | Required positional argument                            |
-| `--resume`              | text                  | not set        | Continue a saved conversation by Thread ID.             |
-| `--agent`               | text                  | not set        | Agent used for a new conversation.                      |
-| `--environment-mode`    | full-control, sandbox | not set        | Built-in Environment mode used for a new conversation.  |
-| `--environment-profile` | text                  | not set        | Custom Environment profile used for a new conversation. |
-| `--title`               | text                  | not set        | Title used for a new conversation.                      |
-| `--format`              | text, json            | `"text"`       | Output format                                           |
+```bash
+a13n-harness-ui run "Reply with one short sentence." --format json
+```
+
+| Argument or option                 | Default  | Purpose                                              |
+| ---------------------------------- | -------- | ---------------------------------------------------- |
+| `PROMPT`                           | Required | Prompt text; quote it when it contains spaces.       |
+| `--resume THREAD_ID`               | Unset    | Continue a saved Thread.                             |
+| `--agent AGENT_ID`                 | Unset    | Choose an Agent for a new Thread.                    |
+| `--environment-mode MODE`          | Unset    | Choose `full-control` or `sandbox` for a new Thread. |
+| `--environment-profile PROFILE_ID` | Unset    | Choose a custom profile for a new Thread.            |
+| `--title TITLE`                    | Unset    | Name a new Thread.                                   |
+| `--format text\|json`              | `text`   | Choose the output format.                            |
+
+The resume restrictions also apply here. A failed or suspended operation exits nonzero. For a suspended decision, reopen the printed Thread ID interactively; one-shot mode has no approval selector. See [the complete script workflow](automation-and-troubleshooting.md).
 
 ### `config path`
 
-Show the selected configuration and data paths.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+Print `configuration_path` and `data_root`. Use the first value to locate the root YAML and its sibling resource directories. Accepts `--format text|json`.
 
 ### `config validate`
 
-Validate the selected source tree.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+Validate the selected source tree and report configuration errors or Capability warnings. Accepts `--format text|json`. This checks configuration, not provider or MCP connectivity.
 
 ### `config show`
 
-Show the accepted configuration.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+Inspect the accepted configuration. Accepts `--format text|json`. If a file edit failed validation, the accepted generation can differ from the files currently on disk.
 
 ### `config subagents`
 
-List package-owned subagents and their current inclusion.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+List the package-owned subagents and whether each is included. Accepts `--format text|json`.
 
 ### `import subagents`
 
-Preview or apply external subagent imports.
+Preview conversion of external subagent definitions. Review the candidates before repeating with `--apply` to write ready imports.
 
-| Parameter        | Type / choices             | Parser default | Meaning                                                               |
-| ---------------- | -------------------------- | -------------- | --------------------------------------------------------------------- |
-| `--product`      | claude-code, cursor, codex | `required`     | Product whose subagent definitions to read.                           |
-| `--scope`        | user, project              | `required`     | Read user-level or project-level definitions.                         |
-| `--project-root` | path                       | not set        | Directory to read for project scope; required with that scope.        |
-| `--user-home`    | path                       | not set        | Home directory to read for user scope (default: your home directory). |
-| `--apply`        | boolean                    | `false`        | Apply every ready candidate; omission is a dry-run preview.           |
-| `--format`       | text, json                 | `"text"`       | Output format                                                         |
+```bash
+a13n-harness-ui import subagents --product codex --scope project --project-root .
+```
+
+| Option                | Default   | Purpose                                       |
+| --------------------- | --------- | --------------------------------------------- |
+| `--product PRODUCT`   | Required  | `claude-code`, `cursor`, or `codex`.          |
+| `--scope SCOPE`       | Required  | `user` or `project`.                          |
+| `--project-root PATH` | Unset     | Source directory; required for project scope. |
+| `--user-home PATH`    | Your home | Source home directory for user scope.         |
+| `--apply`             | Off       | Write every ready candidate.                  |
+| `--format text\|json` | `text`    | Choose the output format.                     |
+
+Importing creates files; it does not enroll the imports in every Agent. Follow [Agent configuration](agents-and-subagents.md) to select them.
 
 ### `plugin install`
 
-Install one Content Plugin from a Git repository.
-
-| Parameter    | Type / choices | Parser default | Meaning                                         |
-| ------------ | -------------- | -------------- | ----------------------------------------------- |
-| `REPOSITORY` | text           | `required`     | Required positional argument                    |
-| `--plugin`   | text           | not set        | Plugin ID when the repository contains several. |
-| `--ref`      | text           | not set        | Git branch, tag, or commit to install.          |
-| `--format`   | text, json     | `"text"`       | Output format                                   |
+Install a Content Plugin from Git: `plugin install REPOSITORY`. Use `--plugin ID` when the repository has several plugins, and `--ref REF` to select a branch, tag, or commit. Both options are unset by default. Accepts `--format text|json`.
 
 ### `plugin list`
 
-List installed Content Plugins and their directories.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+List installed Content Plugins and their editable directories. Accepts `--format text|json`.
 
 ### `plugin uninstall`
 
-Permanently delete the installed Content Plugin directory, including local edits, without another confirmation. Back up edits first; reinstall does not restore them.
-
-| Parameter   | Type / choices | Parser default | Meaning                      |
-| ----------- | -------------- | -------------- | ---------------------------- |
-| `PLUGIN_ID` | text           | `required`     | Required positional argument |
-| `--format`  | text, json     | `"text"`       | Output format                |
+Delete a plugin with `plugin uninstall PLUGIN_ID`. This permanently removes its installed directory, including local edits, without another confirmation. Back up edits before running it. Accepts `--format text|json`.
 
 ### `environment list`
 
-List Environment modes and profiles.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+List available Environment modes and profiles. Accepts `--format text|json`.
 
 ### `environment status`
 
-Inspect the local Envd installation and runtime status without downloading, starting the daemon, or requesting desktop permissions.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+Inspect the local Envd installation and runtime state. This performs no download, daemon start, or desktop permission request. Accepts `--format text|json`.
 
 ### `environment check`
 
-Prepare and check a local Environment profile, downloading the matching Envd version if needed. The check leaves the saved default unchanged and exits with `0` when ready or `1` when preparation fails.
+Prepare a built-in profile and check readiness without changing the saved default. Preparation can download the matching Envd version.
 
-| Parameter   | Type / choices                                                                 | Parser default       | Meaning                   |
-| ----------- | ------------------------------------------------------------------------------ | -------------------- | ------------------------- |
-| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | `"environment-envd"` | Built-in profile to check |
-| `--format`  | text, json                                                                     | `"text"`             | Output format             |
+```bash
+a13n-harness-ui environment check --profile environment-envd
+```
 
-Desktop checks require Computer Use to be enabled in Runtime settings and Harness UI to be restarted. They may request OS permissions on the Harness Host. See [Manage local envd](environments-and-projects.md#manage-local-envd).
+`--profile` accepts `environment-native`, `environment-envd`, `environment-desktop`, or `environment-sandbox`; the default is `environment-envd`. Also accepts `--format text|json`. Exit code `0` means ready; `1` means preparation failed.
+
+For `environment-desktop`, first enable Computer Use in Runtime settings and restart Harness UI. The check may request OS permissions on the Harness Host. See [local Envd setup](environments-and-projects.md#manage-local-envd).
 
 ### `environment configure`
 
-Check a local Environment profile and save it as the new-conversation default after successful preparation. Existing Threads keep their selected profiles. The command exits with `0` on success or `1` when preparation fails; a failed check preserves the saved default. Desktop checks use the same prerequisites as `environment check`.
+Prepare a profile, then save it as the new-conversation default. `--profile` is required and uses the same choices as `environment check`. Also accepts `--format text|json`.
 
-| Parameter   | Type / choices                                                                 | Parser default | Meaning                                 |
-| ----------- | ------------------------------------------------------------------------------ | -------------- | --------------------------------------- |
-| `--profile` | environment-native, environment-envd, environment-desktop, environment-sandbox | `required`     | Built-in profile to save as the default |
-| `--format`  | text, json                                                                     | `"text"`       | Output format                           |
+Success exits `0`; preparation failure exits `1` and preserves the old default. Existing Threads keep their selections. Desktop preparation has the same prerequisites as `environment check`.
 
 ### `doctor`
 
-Inspect App and extension health.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+Inspect App and extension diagnostics. Accepts `--format text|json`. Use [troubleshooting](automation-and-troubleshooting.md) to choose the next check from the reported symptom.
 
 ### `auth status`
 
-Show Model authentication status.
-
-| Parameter  | Type / choices                | Parser default | Meaning                      |
-| ---------- | ----------------------------- | -------------- | ---------------------------- |
-| `PROVIDER` | chatgpt, codex, grok, copilot | `not set`      | Optional positional argument |
-| `--format` | text, json                    | `"text"`       | Output format                |
+Inspect Model authentication: `auth status [PROVIDER]`. The optional provider is `chatgpt`, `codex`, `grok`, or `copilot`. Accepts `--format text|json`.
 
 ### `auth key list`
 
-List saved key references without returning their key bytes.
-
-| Parameter  | Type / choices | Parser default | Meaning       |
-| ---------- | -------------- | -------------- | ------------- |
-| `--format` | text, json     | `"text"`       | Output format |
+List saved API-key references without returning secret values. Accepts `--format text|json`.
 
 ### `auth key set`
 
-Add or replace a key using a hidden prompt, never a command-line key.
-
-| Parameter   | Type / choices | Parser default | Meaning                      |
-| ----------- | -------------- | -------------- | ---------------------------- |
-| `REFERENCE` | text           | `required`     | Required positional argument |
+Store a key with `auth key set REFERENCE`, for example `auth key set key-primary`. Enter the secret at the hidden prompt; the command line contains only the reference.
 
 ### `auth key delete`
 
-Delete a saved key after confirmation. Future Model resolution using it can fail.
-
-| Parameter   | Type / choices | Parser default | Meaning                               |
-| ----------- | -------------- | -------------- | ------------------------------------- |
-| `REFERENCE` | text           | `required`     | Required positional argument          |
-| `--yes`     | boolean        | `false`        | Confirm the action without prompting. |
+Delete a key with `auth key delete REFERENCE`. The command asks for confirmation unless you add `--yes`. Models that refer to the deleted key will need a replacement before they can authenticate.
 
 ### `auth sources`
 
-List supported saved account sources without exposing credentials. Source selection is currently supported for Copilot only.
-
-| Parameter  | Type / choices                | Parser default | Meaning                      |
-| ---------- | ----------------------------- | -------------- | ---------------------------- |
-| `PROVIDER` | chatgpt, codex, grok, copilot | `required`     | Required positional argument |
-| `--format` | text, json                    | `"text"`       | Output format                |
+List account sources with `auth sources PROVIDER`. The parser accepts `chatgpt`, `codex`, `grok`, and `copilot`; Copilot supports source/account selection, and ChatGPT supports native registration selection. Accepts `--format text|json` and does not reveal credentials.
 
 ### `auth select`
 
-Explicitly replace the account and credential-source binding stored in this data root. Use a login listed by `auth sources copilot`; source paths are resolved by the Host, not supplied on the command line.
+Replace the account/source binding in this data root. First run `auth sources copilot`, then select a listed login:
 
-| Parameter   | Type / choices                | Parser default | Meaning                                                                 |
-| ----------- | ----------------------------- | -------------- | ----------------------------------------------------------------------- |
-| `PROVIDER`  | chatgpt, codex, grok, copilot | `required`     | Required positional argument; currently only Copilot supports selection |
-| `--source`  | native, copilot_cli_file      | `required`     | Credential source kind                                                  |
-| `--account` | text                          | `required`     | Selected GitHub login                                                   |
-| `--format`  | text, json                    | `"text"`       | Output format                                                           |
+```bash
+a13n-harness-ui auth select copilot --source native --account YOUR_GITHUB_LOGIN
+```
+
+`PROVIDER`, `--source`, and `--account` are required. `--source` accepts `native` or `copilot_cli_file`; the Host resolves the file path. Provider syntax is the same as `auth sources`. Copilot supports both sources; ChatGPT uses `native` with a registration key returned by `auth sources chatgpt`. Accepts `--format text|json`.
 
 ### `auth logout`
 
-Remove the selected locally stored Model credentials. For a shared Copilot CLI file source, this also deletes the selected account's supported token fields from that file and affects Copilot CLI. Other accounts are preserved; the Host does not fall back to another source.
+Remove selected local credentials with `auth logout PROVIDER`, using `chatgpt`, `codex`, `grok`, or `copilot`. Accepts `--format text|json`.
 
-| Parameter  | Type / choices                | Parser default | Meaning                      |
-| ---------- | ----------------------------- | -------------- | ---------------------------- |
-| `PROVIDER` | chatgpt, codex, grok, copilot | `required`     | Required positional argument |
-| `--format` | text, json                    | `"text"`       | Output format                |
+For a shared Copilot CLI file source, logout also removes the selected account's supported token fields from that file, affecting Copilot CLI. Other accounts stay intact; the Host does not select a fallback source.
 
 ### `login`
 
-Authenticate a compatible Model provider. Copilot supports device authorization only and defaults to the public Copilot App identity; subscribers do not need to register an OAuth App. See [models and authentication](models-and-authentication.md#github-copilot-subscription) for permissions and compatibility limits.
+Authenticate with `login PROVIDER`, using `chatgpt`, `codex`, `grok`, or `copilot`.
 
-| Parameter                  | Type / choices                | Parser default | Meaning                                                                                                            |
-| -------------------------- | ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `PROVIDER`                 | chatgpt, codex, grok, copilot | `required`     | Required positional argument                                                                                       |
-| `--allow-account-switch`   | boolean                       | `false`        | Allow login to replace a different account already stored for this provider.                                       |
-| `--device-code, --browser` | boolean                       | `true`         | Device authorization (default; ChatGPT uses callback URL paste) or a local browser callback (Codex and Grok only). |
-| `--format`                 | text, json                    | `"text"`       | Output format                                                                                                      |
+| Option                        | Default         | Purpose                                                  |
+| ----------------------------- | --------------- | -------------------------------------------------------- |
+| `--allow-account-switch`      | Off             | Permit replacement of a different stored account.        |
+| `--device-code` / `--browser` | `--device-code` | Choose device authorization or a local browser callback. |
+| `--format text\|json`         | `text`          | Choose the output format.                                |
+
+ChatGPT uses callback-URL paste for the default flow. Local browser callbacks are supported for Codex and Grok. Copilot supports device authorization only and uses the public Copilot App identity by default; subscribers need not register an OAuth App. See [Copilot setup](models-and-authentication.md#github-copilot-subscription) for permissions and compatibility.
 
 ## Slash commands
 
-Type these in the TUI composer, not your shell. Tab completes supported syntax; `/help` and `/?` show native help. There are no `/setup`, `/login`, `/approve`, `/deny`, or `/result` commands. Decisions use their typed selector.
+Type these in the TUI composer. Use Tab to complete arguments, `/help` or `/?` for help, and `/help COMMAND` for one command. Setup and login run in your shell; pending decisions use the TUI's typed selectors rather than `/approve`, `/deny`, or `/result`.
 
-“While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft. Pressing Enter while the Agent is working sends the draft text and attachments together as steering. See [TUI use](everyday-use.md).
+The tables group commands by task. “Busy” means the parser allows the command during work; the target must still be available. Enter while busy sends draft text and attachments as steering.
 
-| Command grammar                                                         | Aliases | While busy | Purpose                                                                                                                                                                                    |
-| ----------------------------------------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/help [command]`                                                       | `/?`    | Yes        | Show command help and keyboard shortcuts.                                                                                                                                                  |
-| `/mode [concise\|detailed]`                                             | —       | Yes        | Switch output detail without changing execution.                                                                                                                                           |
-| `/theme [auto\|dark\|light]`                                            | —       | Yes        | Choose the TUI theme.                                                                                                                                                                      |
-| `/mouse [on\|off]`                                                      | —       | Yes        | Toggle wheel capture; off preserves native selection/copy.                                                                                                                                 |
-| `/attach path`                                                          | —       | Yes        | Attach a file or image to the current draft.                                                                                                                                               |
-| `/paste-image`                                                          | —       | Yes        | Read clipboard images explicitly.                                                                                                                                                          |
-| `/recover`                                                              | —       | No         | Restore an unsent prompt.                                                                                                                                                                  |
-| `/status`                                                               | —       | Yes        | Show Model, context, Environment, and subscription usage.                                                                                                                                  |
-| `/ps`                                                                   | —       | Yes        | Inspect observed background processes and their last reported status.                                                                                                                      |
-| `/executions [offset\|cancel execution-id]`                             | —       | Yes        | Inspect a page of retained tool executions or request cancellation.                                                                                                                        |
-| `/subagents [execution-id\|next]`                                       | —       | Yes        | Inspect this conversation's child executions and retained output.                                                                                                                          |
-| `/usage [all\|root\|subagents\|details\|subscription\|accounts\|reset]` | —       | Yes        | Show this Thread's tokens, costs, and models for all/root/subagents; details adds attribution and Runs. Subscription limits and confirmed Codex reset credits are separate.                |
-| `/goal task description`                                                | —       | No         | Work toward a goal with completion audits and bounded continuations.                                                                                                                       |
-| `/steer message`                                                        | —       | Yes        | Steer the active Run with additional input.                                                                                                                                                |
-| `/import`                                                               | —       | No         | Preview and optionally enable external subagents with parent inheritance.                                                                                                                  |
-| `/agent [agent-id]`                                                     | —       | No         | Switch Agent, including its Model, instructions, and tools.                                                                                                                                |
-| `/model [model-id\|default\|defaults]`                                  | —       | No         | Override the Model until you quit and remember it for the Project; default clears the override and the remembered choice; defaults configures global media understanding with Save/Cancel. |
-| `/fast [on\|off\|ultrafast\|reset]`                                     | —       | No         | Select Fast or Ultrafast until you quit, without saving configuration.                                                                                                                     |
-| `/pro [on\|off\|reset]`                                                 | —       | No         | Select Pro reasoning mode; off selects Standard, reset inherits the Model.                                                                                                                 |
-| `/thinking [level]`                                                     | —       | No         | Show or change reasoning effort for subsequent turns.                                                                                                                                      |
-| `/environment [mode]`                                                   | —       | No         | Select local execution for subsequent turns; `envd` and `desktop` prepare the runtime first.                                                                                               |
-| `/new`                                                                  | —       | No         | Start a new conversation; keep all saved history.                                                                                                                                          |
-| `/resume [thread-id]`                                                   | —       | No         | Search, preview, and name saved conversations, or resume one by Thread ID.                                                                                                                 |
-| `/history`                                                              | —       | No         | Browse retained messages (Ctrl+T).                                                                                                                                                         |
-| `/notes`                                                                | —       | No         | Show saved notes with full contents within display budgets.                                                                                                                                |
-| `/config`                                                               | —       | No         | Find your configuration files.                                                                                                                                                             |
-| `/review request-id`                                                    | —       | No         | Inspect a pending request against the selected continuation.                                                                                                                               |
-| `/cancel`                                                               | —       | Yes        | Stop the active Run.                                                                                                                                                                       |
-| `/quit`                                                                 | `/exit` | Yes        | Quit the TUI; the saved conversation stays resumable.                                                                                                                                      |
+### Conversation and input
 
-`/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before changing the current conversation's next-turn profile; a failed check preserves the selection. This changes the Thread, not the new-conversation default. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
+| Command                  | Busy | Use                                                           |
+| ------------------------ | ---- | ------------------------------------------------------------- |
+| `/new`                   | No   | Start a new conversation; retain saved history.               |
+| `/resume [thread-id]`    | No   | Search, preview, name, or reopen a saved conversation.        |
+| `/history`               | No   | Browse retained messages; also available with Ctrl+T.         |
+| `/notes`                 | No   | Read saved notes within display budgets.                      |
+| `/goal task description` | No   | Start goal-driven work with audits and bounded continuations. |
+| `/attach path`           | Yes  | Add a file or image to the draft.                             |
+| `/paste-image`           | Yes  | Read an image from the TUI Host's clipboard.                  |
+| `/recover`               | No   | Restore an unsent prompt.                                     |
+| `/review request-id`     | No   | Inspect a pending request against the selected continuation.  |
+| `/steer message`         | Yes  | Send guidance to a steerable root operation.                  |
+| `/cancel`                | Yes  | Stop the active Run.                                          |
+| `/quit`, `/exit`         | Yes  | Exit the TUI; retain saved conversation state.                |
 
-`/steer message` and Enter while busy use the global `input.steering_mode`, defaulting to model interruption or cooperative tool handoff after review and validation while supported tool work continues once. Select `queued` globally to wait for the next safe boundary. `/executions` reads status without consuming results. `/cancel` stops the conversation and suppresses automatic tool-completion wake until new input; `/executions cancel execution-id` separately requests cancellation of retained work. Records are process-local. See [tool execution controls](webui.md#tool-executions-and-immediate-steering).
+`/steer` preserves its trailing message, including quotes and line breaks. Steering follows global `input.steering_mode`: immediate interruption or cooperative handoff by default, or `queued` for the next safe boundary. `/cancel` also suppresses automatic tool-completion wake until new input; it does not replace separate tool cancellation.
+
+### Model and Environment selection
+
+| Command                                | Busy | Use                                                                               |
+| -------------------------------------- | ---- | --------------------------------------------------------------------------------- |
+| `/agent [agent-id]`                    | No   | Select an Agent with its Model, instructions, and tools.                          |
+| `/model [model-id\|default\|defaults]` | No   | Override the Model, restore the default, or configure global media understanding. |
+| `/fast [on\|off\|ultrafast\|reset]`    | No   | Choose session-local Fast/Ultrafast settings.                                     |
+| `/pro [on\|off\|reset]`                | No   | Choose Pro/Standard reasoning or inherit the Model.                               |
+| `/thinking [level]`                    | No   | Choose the Model's supported reasoning effort.                                    |
+| `/environment [mode]`                  | No   | Change local execution for subsequent turns.                                      |
+| `/import`                              | No   | Preview and optionally enable external subagents with parent inheritance.         |
+| `/config`                              | No   | Locate configuration files.                                                       |
+
+`/model` remembers the override for the Project; `default` clears the session override and remembered choice. `defaults` opens the global media-understanding editor with Save/Cancel. Fast choices remain session-local.
+
+`/thinking` and completion use the selected Model's supported choices. `default` inherits configured settings. Depending on the adapter, explicit levels can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. Unknown models offer only `default` with an explanation; unsupported levels are rejected.
+
+`/environment` accepts `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before changing the Thread's next-turn profile; failure preserves the selection. This changes the current Thread, not the new-conversation default.
+
+### Status and presentation
+
+| Command                                                                 | Busy | Use                                                                                    |
+| ----------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------- |
+| `/help [command]`, `/?`                                                 | Yes  | Show help and shortcuts.                                                               |
+| `/mode [concise\|detailed]`                                             | Yes  | Change output detail, not execution.                                                   |
+| `/theme [auto\|dark\|light]`                                            | Yes  | Change the TUI theme.                                                                  |
+| `/mouse [on\|off]`                                                      | Yes  | Toggle wheel capture; `off` allows native text selection/copy.                         |
+| `/status`                                                               | Yes  | Inspect Model, context, Environment, and subscription usage.                           |
+| `/ps`                                                                   | Yes  | Inspect observed processes and last reported status.                                   |
+| `/executions [offset\|cancel execution-id]`                             | Yes  | Page through retained tool executions or request cancellation.                         |
+| `/subagents [execution-id\|next]`                                       | Yes  | Inspect child executions and retained output.                                          |
+| `/usage [all\|root\|subagents\|details\|subscription\|accounts\|reset]` | Yes  | Inspect Thread usage, subscription limits, accounts, or confirmed Codex reset credits. |
+
+`/usage details` adds Run attribution; `all`, `root`, and `subagents` select usage scope. Subscription limits are separate from Thread token and cost totals. `/executions` reads process-local status without consuming results; `cancel execution-id` requests cancellation of that retained execution. See [tool execution controls](webui.md#tool-executions-and-immediate-steering).
 
 ## Consequential actions and limitations
 
-- `auth key delete REFERENCE --yes` skips the delete confirmation explicitly; it does not make deletion reversible.
-- `plugin uninstall ID` removes installed files and edits immediately. It is not merely disabling a source.
-- `update` and `envd update` request installation without a second confirmation. Startup update detection only displays a notice; it never installs.
-- `import subagents` previews unless `--apply` is supplied; imported files are not automatically enrolled in every Agent.
-- One-shot `run` does not open interactive approval selectors; suspended/failed operations exit nonzero. Resume interactively for decisions.
-- `webui --dangerous-skip-permissions` changes HTTP authentication only, not Agent execution permissions. Read [WebUI](webui.md) before exposing a listener.
+| Action                               | Before you use it                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `plugin uninstall`                   | Back up local plugin edits; deletion is immediate.                                             |
+| `auth key delete --yes`              | Confirm the reference; this flag skips the prompt.                                             |
+| `update`, `envd update`              | Expect installation without a second confirmation. Detection alone does not install an update. |
+| `import subagents --apply`           | Inspect the preview first; this writes imported files.                                         |
+| `run`                                | Plan to reopen suspended work interactively for decisions.                                     |
+| `webui --dangerous-skip-permissions` | Understand that this removes HTTP authentication, not Agent permission checks.                 |
 
 ## Task-oriented guides
 
-- [Set up a connection](setup.md) and [manage accounts](models-and-authentication.md).
-- [Configure resources](configuration.md), [MCP servers](mcp.md), and [Skills/Content Plugins](skills-and-content-plugins.md).
-- [Use the TUI](everyday-use.md) for busy input, history, selectors, and keyboard shortcuts.
-- [Automate and diagnose](automation-and-troubleshooting.md) for exit/recovery behavior, logs, and interrupted work.
+- [Setup](setup.md): connect a Model and send a first prompt.
+- [Configuration](configuration.md): locate files, edit resources, and validate changes.
+- [Models and authentication](models-and-authentication.md): choose routes and manage credentials.
+- [MCP](mcp.md) and [Skills/Content Plugins](skills-and-content-plugins.md): add integrations.
+- [TUI use](everyday-use.md): compose input, inspect history, and handle decisions.
+- [Automation and troubleshooting](automation-and-troubleshooting.md): inspect outcomes, diagnose failures, and resume saved work.

@@ -1,27 +1,27 @@
 ---
 title: 上下文与工作状态
-description: 区分模型当前可见的内容、历史压缩，以及结构化的工作状态，并设置允许的主机等 Run 级配置。
+description: 提供当前上下文，跨 Run 保留决策，并在压缩 Thread 时分清摘要生成与检查点保存。
 ---
 
-上下文投影准备当前请求，压缩处理较长历史，工作状态保存任务事实。
+下一轮执行既需要当前信息，也需要之前的决策。上下文 Capability 准备本次模型请求，工作状态携带结构化事实，压缩则用摘要替换较长的对话历史。按信息的用途选择对应机制。
 
 ## 选择合适的机制
 
-| 需求                       | 机制                        |
-| -------------------------- | --------------------------- |
-| 当前时间、用量、文件元数据 | 运行时上下文与工作空间概览  |
-| 当前指令或选定文件         | 文件上下文                  |
-| 长 Thread 历史             | Handoff 与压缩              |
-| 跨轮次的任务和笔记         | `HarnessState` 中的工作状态 |
-| 多个 Thread 共享的持久文件 | [文件记忆](memory.md)       |
-| 按相似度召回事实           | [记录记忆](memory.md)       |
-| 空闲一段时间后缩减请求     | 冷启动过滤器                |
+| 需求                              | 机制                        |
+| --------------------------------- | --------------------------- |
+| 当前时间、用量、选定的 Run 元数据 | 运行时上下文                |
+| 工作区结构或项目指令              | 工作区概览与文件上下文      |
+| 跨轮次的任务和决策                | `HarnessState` 中的工作状态 |
+| 缩短长时间运行的对话              | Handoff 或压缩              |
+| 多个 Thread 共享的持久文件        | [文件记忆](memory.md)       |
+| 按相似度召回事实                  | [记录记忆](memory.md)       |
+| 空闲后缩短旧工具结果              | 冷启动过滤器                |
 
-按任务选择 Capability。Thread 的保存与续接见[状态与恢复](state-and-resume.md)。
+先运行[两次 Run 的示例](#context-composition)，再按需添加工作区指导或压缩。Host 如何保存和续接 Thread，见[状态与恢复](state-and-resume.md)。
 
 ## Run 配置
 
-通过 `RunConfiguration` 传入一次 Run 共享的配置：
+`RunConfiguration` 提供一次 Run 内工具和插件共享的设置。下面的片段构建配置并在本地检查 URL，不发出 HTTP 请求：
 
 ```python
 from a13n_harness import RunBindings, RunConfiguration
@@ -30,13 +30,14 @@ configuration = RunConfiguration(
     allowed_hosts={"api.example.com", "docs.example.com"},
     extensions={"example.reader": {"images": True}},
 )
+configuration.authorize_url("https://docs.example.com/guide")
 bindings = RunBindings.embedded(configuration=configuration)
-# Pass bindings to executable.run(..., bindings=bindings).
+# Pass bindings to agent.run(..., bindings=bindings).
 ```
 
-插件和工具通过 `AgentContext.configuration` 读取配置（工具内使用 `ctx.deps.configuration`）。各集成验证自身命名空间下的 `extensions` 值。
+工具读取 `ctx.deps.configuration`，插件读取 `AgentContext.configuration`。各集成验证自身命名空间下的 `extensions` 值。这些是配置输入，与下文 `RuntimeContextCapability` 选择并提供给模型的元数据分开。
 
-`allowed_hosts=None` 放行全部目标，空集合拒绝全部。条目匹配规范化的主机名/IP 或显式 `regex:` 规则。第一方 HTTP 集成执行此允许列表；自定义集成应在请求和重定向前调用 `configuration.authorize_url(url)`。限制目标时，使用本地 MCP 和 Host Web 工具，将已授权媒体物化为 `BinaryContent`，不直接转发 URL。Shell 与第三方插件的网络流量需要 Environment 或部署隔离。
+`allowed_hosts=None` 放行全部目标，空集合拒绝全部。第一方 HTTP 集成执行这些规则；自定义集成必须在首次请求及每次重定向前调用 `authorize_url()`。检查只针对 HTTP(S) URL 声明的主机名，不解析 DNS，也不实施网络隔离。Shell 和第三方网络流量需要 Environment 或部署层控制。使用受限允许列表时，选择本地 MCP 和 Host Web 工具，并将已授权媒体作为 `BinaryContent` 字节传入，而不是直接转发媒体 URL。
 
 ### 主机规则与正则表达式
 
@@ -58,41 +59,122 @@ configuration = RunConfiguration(
 | `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`、`eu.api.example.com`       |
 | `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`、`eu.api.example.com` | `notexample.com`、`example.com.evil.test` |
 
-字面点使用 `\.` 转义。`regex:(?:[a-z0-9-]+\.)*example\.com` 匹配基础域名及其子域名；`*.example.com` 不是 glob。每个重定向目标都必须匹配规则。
+字面点使用 `\.` 转义。`*.example.com` 不是 glob。
 
 YAML 中使用单引号保留反斜杠，例如 `'regex:(api|docs)\.example\.com'`。JSON 需要双反斜杠：`"regex:(api|docs)\\.example\\.com"`。上面的 Python 原始字符串可避免额外转义。
 
 ## 组合上下文
 
-组合以下 Capabilities，提供当前元数据与选定文件：
+使用[入门](getting-started.md)中准备的 Python 环境，将这个完整离线示例保存为 `context_demo.py`。第一次 Run 写入笔记，第二次恢复序列化的 State，并在当前上下文中收到这条笔记：
 
 ```python
+import asyncio
+
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness.capabilities import (
+    RuntimeContextCapability,
+    RuntimeContextConfiguration,
+    WorkingStateCapability,
+)
+
+
+async def respond(messages, info):
+    current = messages[-1]
+    assert isinstance(current, ModelRequest)
+    projected = "\n".join(
+        str(part.content) for part in current.parts if isinstance(part, UserPromptPart)
+    )
+    assert "runtime" in projected
+    returns = [part for part in current.parts if isinstance(part, ToolReturnPart)]
+    if returns:
+        assert returns[-1].content["action"] == "created"
+        yield "Decision recorded."
+    elif '<note key="decision">' in projected:
+        assert "Keep the public API stable." in projected
+        yield "Continuing with the saved decision."
+    else:
+        assert "migration" in projected
+        yield {0: DeltaToolCall(
+            name="note_write",
+            json_args='{"key":"decision","value":"Keep the public API stable."}',
+        )}
+
+
+async def main():
+    agent = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(
+            RuntimeContextCapability(
+                RuntimeContextConfiguration(metadata_keys=("project",))
+            ),
+            WorkingStateCapability(),
+        ),
+    )
+    bindings = RunBindings.embedded(metadata={"project": "migration"})
+    first = await agent.run("Record the migration decision.", bindings=bindings)
+    print(first.output_or_raise())
+    assert first.state is not None
+    restored = HarnessState.model_validate_json(first.state.model_dump_json())
+    second = await agent.run("Continue.", previous_state=restored, bindings=bindings)
+    print(second.output_or_raise())
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
+
+
+asyncio.run(main())
+```
+
+运行 `uv run --no-sync python context_demo.py`，依次输出 `Decision recorded.` 和 `Continuing with the saved decision.` 断言检查的是当前请求中的上下文投影，而不只是历史里的旧工具结果。两次 Run 属于同一 Thread，但 Run ID 不同。JSON 往返验证状态可移植；持久保存仍由 Host 负责。
+
+要加入工作区信息，将[已准备的 Environment source](environments.md#supply-a-source) 和已配置的 Model 传给以下函数：
+
+```python
+from pydantic_ai.models import Model
+
+from a13n_harness import AgentSpec, EnvironmentSource, HarnessBuilder
 from a13n_harness.capabilities import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
 )
 
-capabilities = (
-    RuntimeContextCapability(),
-    WorkspaceOutlineCapability(),
-    FileContextCapability(),
-)
+
+async def describe_workspace(source: EnvironmentSource, model: Model) -> str:
+    agent = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(
+            RuntimeContextCapability(),
+            WorkspaceOutlineCapability(),
+            FileContextCapability(),
+        ),
+    )
+    result = await agent.run(
+        "Describe the workspace using its outline and project guidance.",
+        environment=source,
+    )
+    return result.output_or_raise()
 ```
 
-- 运行时上下文在每次请求时刷新，只暴露显式选定的元数据键。
-- 工作空间概览只读取元数据，不读取文件内容，且仅出现在用户输入请求中。
-- 文件上下文在一次逻辑 Run 中只加载一次选定文件，并固定加载时使用的 Environment 路由。
+各 Capability 分别提供不同内容：
 
-通过各 Capability 的配置设置适合工作空间的字节数、条目数、深度和行数限制。
+- `RuntimeContextCapability` 在请求边界刷新时间和用量信息。`metadata_keys` 选择在用户输入请求中公开的应用元数据；不会自动公开全部 Run 元数据。
+- `WorkspaceOutlineCapability` 在用户输入请求中提供文件元数据，不读取文件正文。
+- `FileContextCapability` 每个逻辑 Run 加载一次选定文件，并检查读取时使用的 Environment 路由仍然有效。
 
-文件上下文默认读取工作目录的 `AGENTS.md`，还会提示直属子目录中的 `AGENTS.md` 路径，以及工作目录和直属子目录中的 `.agents/skills` 目录。这些提示不载入子目录文件正文或 Skill 描述。Agent 按任务需要，通过普通文件工具读取相关项目的指导和 Skill。发现入口不会扩大已选择的 Skill 目录，也不会改变权限。
+文件上下文默认读取工作目录的 `AGENTS.md`，还会列出直属子目录中的 `AGENTS.md`，以及工作目录和直属子目录中的 `.agents/skills`。这些只是入口提示，Agent 仍按需通过文件工具读取子项目指导和 Skill。如果需要 Agent 自行读取，添加 `DynamicEnvironmentCapability`。
 
-入口扫描最多检查工作目录的 64 个非隐藏条目，提示最多占用独立于文件正文预算的 8 KiB。不完整结果标记为 `incomplete`；更深层仍可能有指导文件。提示在下一个逻辑 Run 刷新，根目录没有 `AGENTS.md` 时也会发现子项目入口。设置 `FileContextConfiguration(include_project_guidance=False)` 可保留文件正文而关闭入口提示。
+入口扫描最多检查 64 个非隐藏条目，单独使用 8 KiB 预算。`incomplete` 标记表示可能还有其他指导文件。下一次 Run 会刷新提示，根目录没有 `AGENTS.md` 时也一样。设置 `FileContextConfiguration(include_project_guidance=False)` 可保留正文而关闭提示。各上下文配置还提供相应的字节数、文件数、深度或行数限制。
 
 ## 压缩较长的 Thread
 
-添加 `CompactionCapability()` 以启用自动历史压缩。默认根据报告的 token 用量，在有效 Model 上下文窗口的 90% 处触发。Model 缺少窗口信息时，设置 `AgentSpec.model_characteristics`。固定 token 阈值可使用以下策略：
+添加 `CompactionCapability()`，即可在 Run 内自动压缩。默认在报告的用量达到有效 Model 上下文窗口的 90% 时触发。Model 缺少窗口信息时，提供 `AgentSpec.model_characteristics`。要使用固定 token 阈值，将以下 Capability 放入 builder 的 `capabilities` 元组：
 
 ```python
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
@@ -112,38 +194,84 @@ flowchart TD
     class Usage,Threshold,Summary,Restore,Project,Request a13n
 ```
 
-总结请求使用同一 Agent 和完整历史。总结替换旧历史后，按顺序重放当前用户输入与已交付的 steering，包括媒体。压缩发出 `CompactionSummaryEvent`，返回状态中保存替换后的历史。压缩会调用模型，应将该请求纳入预算。
+摘要请求使用同一 Agent 和完整历史。替换成功后，Harness 按顺序重放当前用户输入和已交付的 steering，包括媒体，再投影当前笔记和任务。返回的 State 包含替换后的历史。应为这次额外模型请求预留预算。
 
-需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
+如果还希望 Agent 显式调用 `summarize`，添加 `HandoffCapability()`；默认在窗口的 65% 处开始提醒。除了设置阈值，还要选择 Capability，单独设置模型特征不会启用这两种机制。
 
 ### Host 主动压缩
 
-在两个 Run 之间调用 `compact()`，总结选定的检查点而不继续业务任务。无需配置 `CompactionCapability` 或达到阈值：
+Host 决定缩短一个已完成执行的检查点时，在两次 Run 之间调用 `agent.compact()`。它生成摘要，返回可以立即保存的 State，不继续业务任务，也无需自动压缩 Capability 或阈值。
+
+将以下程序保存为 `compact_demo.py`，在同一环境中运行 `uv run --no-sync python compact_demo.py`：
 
 ```python
-compacted = await executable.compact(
-    previous_state=latest_state,
-    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
-    bindings=bindings,
-)
-summary = compacted.output_or_raise()
-# Save compacted.state through the Host's fenced checkpoint path, then stop.
-# No ordinary run() call is needed to finish compaction.
+import asyncio
+
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.usage import UsageLimits
+
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
+
+
+async def main():
+    calls = 0
+
+    async def respond(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "Plan: inspect the schema, then migrate."
+        elif calls == 2:
+            assert "Do not call tools" in str(messages)
+            yield "Migration plan: inspect the schema next."
+        else:
+            assert "Migration plan: inspect the schema next." in str(messages)
+            yield "Ready to inspect the schema."
+
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+    )
+    first = await agent.run("Plan the migration.")
+    first.output_or_raise()
+    assert first.state is not None
+    original = first.state.model_dump_json()
+    compacted = await agent.compact(
+        previous_state=first.state, usage_limits=UsageLimits(request_limit=1)
+    )
+    print(compacted.output_or_raise())
+    assert first.state.model_dump_json() == original
+    assert compacted.state is not None
+    checkpoint = HarnessState.model_validate_json(compacted.state.model_dump_json())
+    continued = await agent.run("Continue.", previous_state=checkpoint)
+    print(continued.output_or_raise())
+    assert first.thread_id == compacted.thread_id == continued.thread_id
+    assert calls == 3
+
+
+asyncio.run(main())
 ```
 
-请求接收完整历史，不进行裁剪。它保持相同的系统提示、工具 schema、输出配置和模型设置，在末尾追加内置的禁止调用工具等约束，再拼接 `instruction`。`None` 使用默认压缩指导；传入字符串则替换默认指导。保持 executable 和 bindings 稳定，以保留提供方的缓存前缀。缓存是否可用仍由提供方决定。
+程序先输出迁移摘要，再输出 `Ready to inspect the schema.` 示例验证压缩不会修改原 State，且只使用一次模型请求。序列化可以立即进行；后续普通 Run 恢复运行时上下文，再继续任务。
 
-现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回未完成的响应、工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。成功结果中的历史已经压缩完成，可以立即保存。下次普通 Run 会在继续任务前自动恢复保留的工具发现并通知上下文恢复监听器；保存检查点无需等待这一步。
+接入应用的检查点存储时，按以下顺序执行：
 
-失败时继续使用原检查点，单独记录失败。失败结果提供安全的错误码、原因和 `failure.details.phase`；提前拒绝以及生成、导出、摘要通知失败还会发出 `compaction_failed`。取消发出取消失败通知并继续传播。准备、middleware 和清理错误沿用普通 Run 的异常契约。Host 只保存成功结果，并校验预期版本或执行所有权。保存失败或版本冲突需要明确反馈；只有发布提交成功后才提示保存完成。`CompactionSummaryEvent` 和 `compaction_completed` 表示检查点已生成，不代表持久化成功，也不会在后续恢复时重复发出。
+1. 阻止目标 Thread 并发推进，读取检查点版本。
+2. 使用新的 Host bindings 调用 `compact(previous_state=..., bindings=...)`。`instruction=None` 使用默认摘要指导；字符串替换这段指导，但保留内置的只总结历史和禁止工具调用等约束。
+3. 只接受 completed 结果。使用存储已有的预期版本或执行所有权检查，发布返回的 State。
+4. 发布提交后再报告保存成功。下一次普通 Run 在继续任务前恢复上下文。
 
-检查点必须处于已完成的边界：待处理工具、保留的执行、未恢复的 handoff 和待完成的压缩恢复应先通过普通 Run 的恢复流程完成。对这些状态调用 `compact()` 会返回 `compaction_boundary_pending`，不发起摘要请求，也不覆盖待恢复标记。刚完成压缩的检查点也带有待恢复标记：可以立即保存，但再次压缩前应等待普通 Run 完成恢复。对同一检查点重试 `compact()` 无法清除待恢复边界。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
+Agent 原有输出模式必须允许文本。原生 JSON 和提示式 JSON 模式会失败，不会切换 schema。系统提示、工具定义、输出配置、模型设置和完整历史都保留在请求中；保持它们稳定有助于复用提供方缓存，具体仍由提供方策略决定。空白摘要、工具调用、未完成响应或提供方失败都不会替换历史。
+
+如果检查点还有待处理工具、保留执行、未恢复的 handoff 或待完成的压缩恢复，会在发起摘要前返回 `compaction_boundary_pending`。先通过普通 Run 恢复处理完这些状态。刚压缩的检查点可以立即保存，但再次压缩前必须经过普通 Run。
+
+失败、异常或取消时保留原检查点。失败结果包含安全的错误码、消息和 `failure.details.phase`；准备、middleware 和清理阶段仍可能按普通 Run 契约抛出异常，取消也会继续传播。`CompactionSummaryEvent` 和 `compaction_completed` 表示摘要生成情况，不代表持久发布，也可能早于后续失败发生。之后的恢复不会重复发出它们。分别处理存储冲突和模型失败；调度和空闲计时器由 Host 实现。
 
 ### 后台压缩
 
-Host 可以独立于前台 Run 执行总结生成：
+Host 能在前台 Run 关闭后继续保留摘要工作时，可选择后台模式。它需要应用实现 `CompactionOperator`；下面的函数将已有 operator 接入 Agent：
 
 ```python
+from a13n_harness.capabilities import CompactionCapability
 from a13n_harness.compaction import BackgroundCompactionPolicy, CompactionOperator
 
 
@@ -154,13 +282,27 @@ def background_compaction(operator: CompactionOperator) -> CompactionCapability:
     )
 ```
 
-`BackgroundCompactionPolicy` 默认 `enabled=False`、`blocking_threshold=0.95`。阻塞阈值取值大于零且不超过一。只有精确计数的输入低于窗口的这个比例时，才启动后台操作或在后台运行期间继续前台；达到阈值即阻塞。输出预留空间可能要求更早阻塞。普通压缩触发线仍为 90%，替换后请求只要能容纳于实际窗口，即使高于阻塞线也可继续。`background=True` 使用默认的已开启策略。
+先实现 operator，再将返回的 Capability 加入 builder：
 
-在 operator 中实现 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(input, request)` 执行总结协议与有界瞬态重试。回调接收 `CompactionInput`，通过 `request_messages`、`settings` 和 `parameters` 获取新的可变副本，使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
+1. 提供 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。每个 Thread 最多有一个未确认操作，按 operation ID 保证提交幂等，读取不消费结果。
+2. 使用 `generate_compaction(input, request)` 生成摘要。回调获取新的 Host 授权，从 `CompactionInput` 读取 `request_messages`、`settings` 和 `parameters`。统计每次尝试，不保留父 Agent、活跃资源或可变用量对象。
+3. 先保存就绪结果，再通知。进程丢失后核实中断的工作，不把已保存记录当作执行已恢复。
+4. 通过普通 Run 应用结果，检查点提交后才清理操作。
 
-Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。达到压缩触发线时，Harness 仅在容量已验证充足时启动后台，否则直接同步压缩，不提交新的后台操作。如果已有操作正在运行，容量未知或不足时就等待该操作。后台失败（包括跨 Run 前中断）且仍需压缩时，转为同步压缩。降级成功将旧操作标记为 skipped，Host 在检查点提交后才清理它。降级失败保留原历史，仅在容量已验证充足时继续；同一 Run 不会反复重试该失败。所有摘要调用仍遵循当前用量限制和准入规则。若替换后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
+Harness 总结完整的历史前缀，保留之后的消息，包括工具结果和 steering。前台继续推进需要原生 token 计数、已知上下文窗口和显式的 `max_tokens` 输出预留。默认触发线仍为 90%；输入计数必须严格低于 95% 阻塞线，连同输出预留也必须能放入窗口。`blocking_threshold` 的范围为大于零且不超过一。后台模式默认关闭，`background=True` 启用默认策略。
 
-结果在两个 Run 之间就绪时，将其与最新选定的检查点一起传给普通 Run：
+| 模型边界的情况                       | 动作                   |
+| ------------------------------------ | ---------------------- |
+| 达到触发线、没有操作、已验证空间充足 | 提交后台工作并继续     |
+| 达到触发线、没有操作、空间未知或不足 | 同步压缩               |
+| 操作运行中、已验证空间充足           | 继续                   |
+| 操作运行中、空间未知或不足           | 等待该操作             |
+| 操作失败且仍需压缩                   | 尝试同步恢复           |
+| 结果已就绪且可应用                   | 替换匹配前缀，保留后缀 |
+
+同步恢复成功后，将失败操作标记为 `skipped`，供检查点提交后确认。恢复失败则保留历史，仅在容量已验证充足时继续，同一 Run 内不会反复重试。替换后的请求只要能放入实际窗口，就可以高于阻塞线；已确认超限时失败，不裁剪最近的工作。摘要调用始终遵循用量和准入限制。
+
+结果在两次 Run 之间就绪时，使用下面的集成片段。`executable`、`bindings`、`latest_state`、`result`、`state_store` 和 `retire_operation` 由 Host 提供；`committed_state` 必须是检查点存储实际选中并提交的 State：
 
 ```python
 from a13n_harness.compaction import compaction_disposition
@@ -177,31 +319,27 @@ if disposition is not None:
     await retire_operation(result.basis.operation_id)  # Your Host's operation store.
 ```
 
-Run 不修改传入的检查点。结果自带 `CompactionBasis`，包含操作和 Thread 身份、前缀长度及摘要指纹、保留的语义输入。Harness 在恢复逻辑改写历史之前解析并验证规范历史，仅替换匹配的前缀，保留完整后缀。检查点内容已外置时，通过 `RunBindings(state_store=...)` 提供存储。当前系统提示由 executable 决定；即使中间的 Run 更换、重排或删除系统提示，也不会使结果失效。其他历史修改会得到终态 `skipped`。匹配的历史若仍处于未闭合工具或挂起边界，则推迟应用，在后续 Run 再次传入结果。
+`CompactionBasis` 标识操作、Thread 和捕获的前缀。Harness 在恢复前验证规范历史，只替换匹配的前缀。系统提示变化可以接受，其他前缀修改会得到 `skipped`。未完成的工具或挂起边界会推迟应用，此时在后续 Run 再传入相同结果。历史内容已外置时，通过 `RunBindings(state_store=...)` 提供存储。
 
-`a13n.compaction` 命名空间记录最近处理的操作、应用依据指纹、applied/skipped 处理结果和独立的待恢复标记。同一结果再次交付时，任一已保存的处理结果都使其成为空操作。通过 `compaction_disposition` 查询，不要解析该私有命名空间。下一次 Run 首次投影上下文前，Harness 按当前定义恢复工具发现和 CodeAct 描述，并通过恢复事件重置记忆交付游标。待发送请求遵循当前图片、视频规则及容量检查。恢复过程不要求 executable 配置 `CompactionCapability` 或 operator。监听器失败或取消时保留待恢复标记，供后续重试。恢复事件本身不是保存确认。
+使用 `compaction_disposition()`，不要解析私有的 `a13n.compaction` 命名空间。保存过的 `applied` 或 `skipped` 结果使再次交付成为空操作。待恢复的运行时状态单独记录：下一次 Run 刷新工具发现和 CodeAct 描述，并重置记忆交付游标，即使没有配置压缩 Capability 或 operator 也会执行。监听器失败时保留待恢复标记，供后续重试。恢复不代表存储确认。
 
-`CompactionInput` 保存投影后的总结请求及捕获的模型配置。`CompactionResult` 仅保存应用依据和总结，应用时无需生成输入或模型配置。规范原始内容保留在 State 中。输入和结果都应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 是共享的纯历史变换；活动 Run 和下一次 Run 的联合恢复共享判断与恢复规则。普通检查点提交确认之前，同一操作持续占用未确认位置。后台完成后保存独立结果，空闲时等待下一次 Run，不改写检查点。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
+将 `CompactionInput` 和 `CompactionResult` 作为机密执行数据保存。输入包含投影后的摘要请求和模型配置，结果应用时只需自身的 basis 和摘要。规范原始内容保留在 State 中，共用的 `apply_compaction` 函数负责纯历史变换。Host 空闲时保留就绪结果，等待普通 Run 应用，不在后台改写检查点。Service 和 Harness UI 都需要各自接入 operator 和持久化流程才能使用这个模式。
 
 ## Handoff 与自动压缩
 
-续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。
+在明确的任务边界使用 `summarize`，或让自动压缩根据用量触发。有效的交接记录目标、决策、未完成工作和下一步。附上后续所需 Skill 的路径及用途；恢复后若完整正文已不可用，就重新读取这些 Skill。
 
-显式交接使用 `summarize`，自动压缩根据用量触发。阈值见[压缩较长的 Thread](#compact-a-long-thread)。
-
-直接调用 `summarize`，并确保它是该次模型响应中唯一的工具调用；不能通过 CodeAct 或 ToolSearch 代理组调用。保留的 CodeAct runner 仍在执行时，自动压缩会等待，Handoff 会拒绝调用。先等待 runner 结束并检查结果，再编写新的总结。其他保留的函数工具不会阻止上下文替换。
-
-按 Host 的接受策略保存返回的 `HarnessState`；总结不会保存应用存储。
+直接调用 `summarize`，并确保它是该响应中唯一的工具调用，不经过 CodeAct 或 ToolSearch 代理组。保留的 CodeAct runner 会阻止替换：自动压缩等待，Handoff 则拒绝调用。先等待 runner 完成并检查结果，再写新的总结。其他保留的函数工具不阻止替换。返回的 `HarnessState` 按 Host 正常的接受策略保存。
 
 ### 保留已调用的工具
 
-`summarize` 和自动压缩都会保留数量和大小受限的已调用 [ToolSearch](tool-search.md) 工具。只有完成的目标工具调用才进入工作集，包括经 CodeAct 或 proxy 分发的调用。仅搜索不会加入工具，重复调用只刷新同一条记录。普通业务工具的结果由总结承载，不再重放。
+替换后，Agent 可以复用数量受限的、实际调用过的 [ToolSearch](tool-search.md) 工具。完成的目标调用会进入这个集合，包括代理和 CodeAct 分发。只搜索不会添加条目，重复调用更新最近使用顺序。业务结果写入摘要，而不是重放旧工具输出。
 
-优先保留最近调用的工具，最多 32 个，发现上下文的估算预算为 64 KiB。预算计入原生 schema 展开和两个 CodeAct runner 目录，不计入恢复用 metadata。这是 UTF-8 字节估算，不是 token 限制。每个入选工具都保留完整的当前 schema；已移除、不可用或来源身份改变的工具会被丢弃。通过 `load_capability` 激活延迟 Capability 的生命周期不在此保留策略内。
+例如，发现 A 和 B 但只调用 A，就只保留 A。Harness 从当前定义重建发现结果，并明确标为不完整的重建记录。不会执行搜索，原查询文本替换为 `[query omitted during context replacement]`。已移除、不可用或来源变化的工具会被丢弃；`load_capability` 激活走独立生命周期。
 
-Harness 从当前定义重建一份精简的合成搜索结果，并明确提示这是重建记录、保留集合不完整、需要其他工具时可以重新搜索。此过程不会执行搜索，也不保留原始查询：原生 `queries` 和代理 `query` 都使用明确的占位符 `[query omitted during context replacement]`。搜到 A 和 B 后仅调用 A，则只保留 A；B 不占用保留预算。
+上限为 32 个不同工具和估算的 64 KiB 发现上下文，包括原生 schema 展开和两个 CodeAct 目录。入选 schema 保持完整。预算按 UTF-8 字节计算，不是 token，也不包括恢复元数据。可移植保留状态按调用顺序存储名称和来源身份，上限 128 KiB，不保存 schema 或搜索结果。
 
-例如，发现 `crm__customer_name` 并查询客户 42 后，替换上下文按以下顺序组织：
+调用 `crm__customer_name` 后，上下文替换的顺序如下：
 
 | 位置 | 显式 `summarize`                   | 自动压缩                                  |
 | ---- | ---------------------------------- | ----------------------------------------- |
@@ -210,37 +348,30 @@ Harness 从当前定义重建一份精简的合成搜索结果，并明确提示
 | 3    | 当前用户输入与已交付的 steering    | 重建提示与已调用工具的合成发现结果        |
 | 4    |                                    | 恢复标记、当前用户输入与已交付的 steering |
 
-当前笔记、任务和运行时上下文通过各自原有的 provider 重新投影。客户查询结果写入总结；保留的发现记录让 Agent 无需再次搜索即可调用 `crm__customer_name`。替换后的第一个请求中，两个 CodeAct 目录都会与保留的工具一致。
-
-可移植的保留状态只按调用先后顺序保存工具名和来源身份，最多占用 128 KiB，不缓存搜索结果或 schema。CodeAct 内调用的目标工具与直接调用遵循同一策略。保存返回的 `HarnessState`，即可将这个工作集和替换后的历史带入下一个 Run。
+笔记、任务和运行时上下文从各自当前的权威来源重新投影。摘要保存客户查询结果，保留的发现记录让 Agent 无需重新搜索即可再次调用。替换后的第一次请求中，两个 CodeAct 目录都反映这个保留集合。保存 State，才能将工作集带入下一次 Run。
 
 ## 工作状态
 
-`WorkingStateCapability` 可以在自身可移植的 Capability 命名空间中保存任务和笔记：
+第一个示例使用嵌入式工作状态：任务和笔记位于 Capability 的可移植命名空间，随 `HarnessState` 传递。恢复这份 State 时，定义中继续保留 `WorkingStateCapability()`。
 
-```python
-from a13n_harness.capabilities import WorkingStateCapability
+需要应用管理任务时，选择 provider 模式，并通过 `RunBindings.task_state` 提供新的 `TaskStateBinding`。Provider 是任务的权威来源，Harness 事件报告大小受限且已提交的变化。跨 worker 所有权、租约、调度和持久交付由 Host 或 provider 负责。
 
-capabilities = (WorkingStateCapability(),)
-```
+| 工具                     | 结果                                         |
+| ------------------------ | -------------------------------------------- |
+| `note_write(key, value)` | 创建或更新，返回 `created` 或 `updated`      |
+| `note_delete(key)`       | 幂等删除，返回 `deleted` 或 `already_absent` |
+| `note_get(key)`          | 返回完整值                                   |
+| `note_get()`             | 返回排序后的键和数量                         |
 
-这种不使用 `TaskStateBinding` 的嵌入式模式，适合在单个进程内运行或从状态恢复的 Agent。Provider 模式通过 `RunBindings.task_state` 中新建的 `TaskStateBinding` 替换任务存储：provider 仍是权威来源，Harness 事件只报告大小受限、已经提交的变更。
+笔记在用户输入请求中投影，任务还会在工具结果请求中刷新。`<note>` 包含完整值，`<note-ref>` 和 `<notes-omitted>` 提示 Agent 通过 `note_get` 获取。默认最多投影 256 条笔记和 128 个任务，共享 64 KiB 预算，可通过 `WorkingStateConfiguration` 调整。
 
-笔记工具具有明确的修改语义：
-
-- `note_write(key, value)` 创建或更新笔记，返回 `created` 或 `updated`；
-- `note_delete(key)` 是幂等操作，返回 `deleted` 或 `already_absent`；
-- `note_get(key=None)` 读取一条完整的值，或列出排序后的键及数量。
-
-笔记在用户输入请求时投影；任务还会在工具结果请求时刷新。完整笔记以 `<note>` 显示；`<note-ref>` 和 `<notes-omitted>` 指向可通过 `note_get` 读取的值。`WorkingStateConfiguration` 默认投影最多 256 条笔记和 128 个任务，共享 64 KiB 预算。
-
-笔记保存事实，任务记录执行进度，`summarize` 保留续接叙事。交接前清理过时笔记和任务状态，不必将全部内容复制到总结中。
-
-工作状态不是分布式工作流引擎。跨 worker 的所有权、持久租约、调度和交付，由 Host 或任务 provider 负责。
+用笔记记录事实，用任务记录执行进度，用摘要讲清续接脉络。交接前核对过时笔记和任务状态，不必将全部内容复制到摘要。
 
 ## 过滤器
 
-Harness 在模型请求前执行消息完整性与媒体兼容性过滤。媒体预处理不改变保存的历史或源文件。视频使用[媒体读取](multimedia-understanding.md)，图片限制见[图片输入策略](models.md#image-input-policy)。内容过滤可选，冷启动过滤默认在空闲一小时后启用：
+过滤器准备模型请求，同时保留保存的历史和源文件。消息完整性及媒体兼容性过滤在请求前执行。可选的内容过滤选择接受的媒体；冷启动过滤默认在空闲一小时后启用，缩短旧工具文本，同时保留用户输入、思考、媒体和待处理结果。
+
+下面的构建片段设置媒体选择和冷启动间隔。将 `spec` 和 `capabilities` 传给 builder；`without_cold_compression` 是关闭冷启动压缩的替代 spec：
 
 ```python
 from a13n_harness import AgentSpec
@@ -262,9 +393,9 @@ spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_6
 without_cold_compression = spec.with_updates(cold_start_filter=None)
 ```
 
-内容过滤选择兼容媒体。冷启动过滤缩短旧工具结果文本，保留用户输入、思考、媒体和待处理结果。显式 `ColdStartFilterCapability` 替换默认策略。
+显式的 `ColdStartFilterCapability` 替换默认策略。视频见[媒体读取](multimedia-understanding.md)，图片限制见[图片输入策略](models.md#image-input-policy)。
 
-图片预处理默认启用。可覆盖所选 Model 的策略或禁用：
+图片预处理默认开启。下面这个独立 spec 示例限制图片数量并关闭大图拆分；另一份 spec 则完全关闭预处理：
 
 ```python
 from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
@@ -278,4 +409,4 @@ without_image_preparation = spec.with_updates(
 )
 ```
 
-省略 `image_input` 使用默认策略，`None` 禁用预处理。限制与自定义过滤器见[图片输入策略](models.md#image-input-policy)。
+省略 `image_input` 使用默认策略，设为 `None` 关闭预处理。将此 Model 策略与所需的上下文 Capability 一起使用。

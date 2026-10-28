@@ -1,211 +1,218 @@
 ---
 title: Tools and connections
-description: Give agents built-in toolsets, MCP and app connections, client tools, and skills.
+description: Select tools for an agent, connect an external service, and verify a tool call.
 ---
 
-An agent's tools come from five places, all selected in its [revision](agents-and-runs.md#agent-configuration):
+Start with an agent that can [answer a message](use-platform.md). Add one tool source, save the agent's [revision](agents-and-runs.md#agent-configuration), then ask it to perform a small task and inspect the tool result.
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, computer, web, memory and asset publication.
-- **Platform tools**: Service API operations, such as agent configuration, run queries and finding submission. See [Platform tools](#platform-tools).
-- **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
-- **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
-- **Skills**, which add instructions and files; see [Skills](skills.md).
+Choose the source by where the operation runs:
 
-Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revision: allow, ask for approval, have a reviewer model decide, or deny.
+| Task                                      | Source                            | Setup                                                                                                                     |
+| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Read files, run commands or use a desktop | Built-in toolsets                 | Mount an [environment](environments.md) and enable the required actions                                                   |
+| Search or retrieve web content            | Web tools                         | Select a web provider for search and scrape                                                                               |
+| Read or change Service resources          | [Platform tools](#platform-tools) | Enable the relevant group and set tool permissions                                                                        |
+| Call a remote MCP server or connected app | [Connections](#connections)       | Create, authorize and test a workspace connection                                                                         |
+| Call a function in your application       | Client tools                      | Declare its schema, handle `pending.calls`, then [resume with the results](agents-and-runs.md#client-tools-and-questions) |
+| Teach an agent a workflow                 | [Skills](skills.md)               | Attach instructions and files alongside the tools the workflow needs                                                      |
+
+Set [tool permissions](agents-and-runs.md#tool-permissions) in the revision: allow, ask for approval, use model review, or deny. A selected tool also needs its underlying resource and runtime permissions.
 
 ## Built-in toolsets
 
-`GET /api/v1/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
+Use `GET /api/v1/toolsets` to inspect your deployment's tool keys, model-visible names, defaults and configuration schemas. Select tools by those keys; for example, the terminal's `exec` key exposes `shell_exec` to the model.
 
-| Toolset            | Tools (model names)                                                                                                                                                                                                                 | Default                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `files`            | `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, `grep`                                                                                                                                      | Enabled                                            |
-| `shell` (Terminal) | `shell_exec`, `shell_info`, `shell_wait`, `shell_input`, `shell_signal`                                                                                                                                                             | Enabled                                            |
-| `computer`         | `computer_describe`, `computer_observe`, `computer_zoom`, `computer_click`, `computer_move`, `computer_drag`, `computer_scroll`, `computer_type_text`, `computer_press_keys`, `computer_read_clipboard`, `computer_write_clipboard` | Disabled; also requires explicit mount permissions |
-| `web`              | `search`, `scrape`, `fetch`, `download`                                                                                                                                                                                             | Each tool disabled                                 |
-| `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete`                                                                                       | Enabled                                            |
-| `assets`           | `publish_asset`                                                                                                                                                                                                                     | Disabled                                           |
+| Toolset    | Use                                              | Default and prerequisite                                               |
+| ---------- | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| `files`    | Read, search, write and organize files           | Enabled; requires a mounted environment                                |
+| `shell`    | Start commands and inspect or control processes  | Enabled; requires a mounted environment with the relevant actions      |
+| `computer` | Observe and interact with a desktop              | Disabled; requires a compatible desktop and explicit mount permissions |
+| `web`      | `search`, `scrape`, `fetch`, `download`          | Each tool disabled; enable individually                                |
+| `memory`   | Read and update file or record memories          | Enabled; requires a matching memory mount                              |
+| `assets`   | Publish an environment file with `publish_asset` | Disabled; produces a workspace asset                                   |
 
-Computer tools require a compatible desktop and explicit action permissions on the mounted environment. See [Computer Use](environments.md#computer-use) for setup and screenshot previews.
-
-The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
+After selecting file or terminal tools, mount an [environment](environments.md) before testing the agent. For desktop setup and screenshot previews, follow [Computer Use](environments.md#computer-use). A [memory](memory.md) mounted as `read` exposes only viewing, listing and searching; writable mounts offer the matching mutation tools. Published files become [assets](files-and-webhooks.md#assets).
 
 ## Platform tools
 
-Platform tools are Service API operations that a run calls with its own short-lived credential, within the permissions of the person or key that started it. Each group is a toolset in `toolsets`, and each of its operations is a tool, keyed by its MCP tool name. Select them under **Advanced / Platform Features** in an agent's tools. The groups are disabled by default; enabling one enables all its tools, and you can then turn off the ones the agent does not need:
+Enable the required group under **Advanced / Platform Features** in the agent's tools. Each group starts disabled. Enabling it enables its operations, so turn off operations the agent does not need.
 
-| Group                   | Operations                                                                                               |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `agents`                | Agents, their versions and the toolset catalog                                                           |
-| `models`                | Models and the model catalog                                                                             |
-| `connections`           | Connections, their tools and connector apps                                                              |
-| `skills`                | Skills and their versions                                                                                |
-| `environment_templates` | Environment templates                                                                                    |
-| `schedules`             | One-time and recurring schedules, enable/pause/archive, manual dispatch and trigger history              |
-| `providers`             | Providers, and tests of their saved connections                                                          |
-| `execution`             | Sessions, threads, runs, traces and findings; its only write submits a finding (`POST /api/v1/findings`) |
+| Group                   | Resources and operations                                             |
+| ----------------------- | -------------------------------------------------------------------- |
+| `agents`                | Agents, revisions and the toolset catalog                            |
+| `models`                | Models and the model catalog                                         |
+| `connections`           | Connections, connection tools and connector apps                     |
+| `skills`                | Skills and their versions                                            |
+| `environment_templates` | Environment templates                                                |
+| `schedules`             | Create and manage schedules, dispatch them, and read trigger history |
+| `providers`             | Providers and tests of saved connections                             |
+| `execution`             | Read sessions, threads, runs, traces and findings; submit findings   |
 
-Each tool has its own permission, as built-in tools do. `inherit` takes the operation's default: `allow` for a read and `ask` for a write. A run is offered only the enabled tools. [Agent Composer](agent-composer.md#use-the-toolset-in-your-own-agents) shows the configuration and the operating skill that explains these tools to the model. Finding submission accepts the nine [finding categories](agents-and-runs.md#find-and-improve-execution-issues), one primary category per issue.
+Platform calls use the run's short-lived credential within the authority of the person or key that started it. Each operation uses its MCP tool name as its configuration key. The `inherit` permission means `allow` for reads and `ask` for writes. The only write in `execution` is `POST /api/v1/findings`; choose one primary [finding category](agents-and-runs.md#find-and-improve-execution-issues) per issue.
+
+Use the [Agent Composer example](agent-composer.md#use-the-toolset-in-your-own-agents) to pair platform tools with their operating skill. Verify a read first, then test the approval path for any writes you enabled.
 
 ## Web search and scrape
 
-`search` and `scrape` call a [web provider](resources.md#providers): add one under **Workspace settings → Providers → Web**, then select it in each tool's configuration. `fetch` and `download` use the Service's own HTTP client and need no provider. All four pass the deployment's [outbound policy](configuration.md#outbound-requests).
+To add search to an agent:
 
-| Provider type                                                            | Operations     | Credential |
-| ------------------------------------------------------------------------ | -------------- | ---------- |
-| `duckduckgo`                                                             | search         | none       |
-| `brave`, `perplexity`, `serpapi`                                         | search         | `api_key`  |
-| `deepseek`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key`  |
+1. Create a [web provider](resources.md#providers) in workspace settings. Choose a type that supports search and supply its credential when required.
+2. Enable the `web` toolset and its `search` tool. Select the saved provider in the tool configuration.
+3. Save the revision and ask the agent to search for a specific topic. Inspect the returned sources.
 
-For DeepSeek, select `deepseek` and save your DeepSeek API key as the web provider credential. The same account key can serve model and web APIs, but each provider resource has its own credential. A13N `search` calls the [DeepSeek Search API](https://api-docs.deepseek.com/guides/search/) and uses its model-facing summaries. Queries preserve DeepSeek search operators and must be at most 128 Unicode characters. The upstream result count is capped at 50; Service keeps its own lower `max_results` limit. A13N `scrape` calls DeepSeek Fetch and returns Markdown; its URL must be at most 8192 characters.
-
-![Console search and scrape provider catalog, including TinyFish](../../.github/assets/console-search-providers.webp)
-
-Enable each web tool explicitly; enabling the toolset alone enables none of them. Tool configuration:
+This agent-configuration fragment enables search and direct fetching. Replace `wprov_...` with your provider ID:
 
 ```json
 {
-  "web": {
-    "enabled": true,
-    "tools": {
-      "search": {
-        "enabled": true,
-        "config": { "provider_id": "wprov_...", "max_results": 5 }
-      },
-      "fetch": {
-        "enabled": true,
-        "config": { "deny_domains": ["internal.example.com"] }
+  "toolsets": {
+    "web": {
+      "enabled": true,
+      "tools": {
+        "search": {
+          "enabled": true,
+          "config": {"provider_id": "wprov_...", "max_results": 5}
+        },
+        "fetch": {"enabled": true}
       }
     }
   }
 }
 ```
 
-- `search` takes `provider_id` and `max_results` (1–10). `scrape` takes `provider_id` and `max_content_bytes` (up to 4 MiB). `fetch` returns up to 256 KiB.
-- Every web tool takes `allow_domains` and `deny_domains`; a bare host includes its subdomains, and an empty list means unrestricted. None of the built-in provider types supports a domain-restricted scrape, so `scrape` refuses domain lists.
-- The provider's type must serve the operation. The check happens when the revision is saved.
+`search` and `scrape` need a provider serving that operation; saving the revision checks this selection. `fetch` and `download` use Service's HTTP client and need no provider. Enabling only the toolset leaves all four tools disabled. All requests follow the deployment's [outbound policy](configuration.md#outbound-requests).
+
+| Tool     | Configuration limit                |
+| -------- | ---------------------------------- |
+| `search` | `max_results`: 1–10                |
+| `scrape` | `max_content_bytes`: up to 4 MiB   |
+| `fetch`  | `max_content_bytes`: up to 256 KiB |
+
+`allow_domains` and `deny_domains` constrain supported operations. A bare hostname includes its subdomains; empty lists add no domain restriction. Built-in scrape providers do not support domain restrictions, so `scrape` rejects nonempty domain lists. Use the provider catalog and tool schemas for the options available in your deployment.
+
+![Console search and scrape provider catalog](../../.github/assets/console-search-providers.webp)
 
 ## Connections
 
-A connection is a source of tools with one credential. Connections belong to a workspace; any member with `run` can use them in runs, and changing them needs `write`. In Console, open **Connections → New connection**.
+A connection gives agents access to one remote MCP server or one connector app account. It belongs to a workspace and holds one shared credential. Anyone with workspace `run` permission can use that account through an agent; keep a private account in a personal workspace. Creating or changing a connection requires `write`.
 
-| Kind                                | `type`                                            | `auth`                                 |
-| ----------------------------------- | ------------------------------------------------- | -------------------------------------- |
-| Remote MCP server (Streamable HTTP) | `mcp`                                             | `none`, `bearer`, `headers` or `oauth` |
-| Connector app account               | The connector provider's type, such as `composio` | `account`                              |
+The setup path is: create the connection, authorize it if needed, [test its tools](#test-and-discover-tools), then [select it in an agent](#use-a-connection-in-an-agent). A connection is usable when its status is `ready`; `pending` means it lacks a usable credential, and `reauthorization_required` means authorization must be restored. Credentials are write-only; views report `credential_configured` and `client_secret_configured`.
 
-A connection's `status` is `pending` until it has a usable credential, `ready`, or `reauthorization_required` after a lost token refresh. `failure` describes the last failed authorization operation. Credentials are write-only: views show `credential_configured` and `client_secret_configured`. `POST …/authorize` starts authorization: a browser flow, or a direct token request for an OAuth machine credential. An MCP connection whose `auth` is not `oauth` has no authorization and answers `409 conflict` with reason `no_browser_authorization`.
+To retire a connection, disable it with `PATCH {"enabled": false}` or revoke its credential with `POST …/revoke`. There is no delete operation. Disabling blocks subsequent use, including calls from active runs. Revoking clears local credentials immediately and reports best-effort remote revocation as `revoked`, `failed` or `skipped`. Revocation is also available for disabled connections and archived workspaces.
 
-Connections have no delete operation. `PATCH {"enabled": false}` stops all use at once, including tool calls of runs in progress; `{"enabled": true}` restores it. `POST …/revoke` clears the credential at once and, as a best effort, asks the provider to revoke it remotely, reporting the outcome in `remote_revocation` (`revoked`, `failed`, or `skipped` when there was nothing to revoke remotely). `PATCH` and `revoke` take the connection's `If-Match`; re-read it before changing it, because authorizations and token refreshes change its version. Revoke also works on a connection that is already disabled, or whose workspace is archived: dropping a credential is offboarding, not a change.
+Read the connection's current ETag and send it as `If-Match` for updates, authorization and revocation. Configuration changes and completed or lost authorizations change the version; routine token renewal and test results leave it unchanged.
 
 ### Remote MCP servers
 
-In Console, open **Connections → New connection** to search and browse the remote MCP server directory. Choose a listed server, or select **Custom Remote MCP** to enter your own endpoint. Connections support OAuth, bearer tokens, static headers, or no authentication, depending on the server.
+1. Open **Connections → New connection** in Console.
+2. Choose a server from the directory, or **Custom Remote MCP** for your own Streamable HTTP endpoint.
+3. Choose the server's authentication: `none`, `bearer`, `headers` or `oauth`. Supply credentials or complete the [OAuth flow](#oauth).
+4. Test discovery and confirm the tool names you want to expose.
 
-![Console connection directory with multiple remote MCP servers](../../.github/assets/console-mcp-connection.webp)
+![Console remote MCP server directory](../../.github/assets/console-mcp-connection.webp)
 
-```sh
-curl -X POST "$A13N_URL/api/v1/connections" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"type": "mcp", "name": "Docs search", "auth": "bearer",
-       "config": {"url": "https://mcp.example.com/mcp", "tools": ["search_docs", "read_doc"]},
-       "credential": {"token": "..."}}'
-```
-
-- `config.url` must pass the [outbound policy](configuration.md#outbound-requests). Credentials never go in the URL: a query parameter named like a credential (`api_key`, `token`, ...) is refused; use `headers` authentication instead.
-- `config.tools` optionally restricts the connection to named tools. Without it, the connection exposes every tool the server lists, and a run fails with `connection_tools_exceeded` if the server lists more than 128.
-- `bearer` takes `{"token": "..."}`, sent as `Authorization: Bearer`. `headers` lists header names in `config.headers` and takes their values as `{"headers": {"x-api-key": "..."}}`. Transport and protocol headers (`host`, `content-type`, `cookie`, `mcp-*`, `sec-*`, `proxy-*`, ...) cannot be set.
-- Changing the URL, authentication or OAuth client drops the stored credential. Changing only `config.tools` keeps it.
-
-MCP clients live for one attempt; tool catalogs can refresh during that attempt. Each call checks the connection's current availability and the run's permissions. Service does not support MCP elicitation (a server asking the user for input); use client tools or agent questions for durable waits.
-
-### MCP Apps for embedding applications
-
-Service saves an App tool's original arguments, declaration and full MCP result, including `_meta`. Live run output emits `a13n.mcp_apps`; detailed run items retain the same references in `content.mcp_apps`.
-
-**Wait for the session SSE `app_ready` event before enabling a live App or calling its endpoints.** The earlier `delta` containing `a13n.mcp_apps` is provisional, even when `unavailable` is `false`. You may show a loading entry at that point. `app_ready` confirms that the original data and its reference have been saved and committed. It arrives after the next checkpoint containing the App, without waiting for the run to finish. Use the event's `run_id` and each `apps[].app_id` to open the App:
-
-```text
-event: app_ready
-data: {"thread_id":"thr_...","run_id":"run_...","apps":[{"app_id":"app_...","connection_id":"conn_...","agent_revision_id":"rev_...","source_run_id":"run_...","tool_call_id":"call_...","tool_name":"show_counter","resource_uri":"ui://counter/app.html","unavailable":false}]}
-```
-
-Subscribe through `GET /api/v1/sessions/{session_id}/stream`. Ready events follow committed `items` frames and may repeat after reconnect, output repair or run completion; identify an App by `(run_id, app_id)`. If saving the original fails, the committed reference has `unavailable: true` and no ready event is sent for it. If a run ended while disconnected, or you load older history through `GET …/runs/{run_id}/items`, its available committed references can be opened directly. The thread stream does not emit `app_ready`; use the session stream for this notification. Readiness confirms saved data, not ongoing access or MCP server availability.
-
-Use these authenticated endpoints:
-
-| Request                                                   | Body                                  | Result                                                      |
-| --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | None                                  | Original tool data and freshly fetched HTML                 |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | Raw MCP result under `result`                               |
-| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | Current HTML and resource metadata for the original App URI |
-
-Opening never repeats the original tool. Each request uses a new MCP client; servers requiring the worker's original session are unsupported. Button calls use the saved connection and Agent selection, current connection availability and tool selection, and App visibility. Tools requiring approval or model review are refused, and MCP human input is unsupported. Calls are never automatically retried; `outcome_unknown` means callers must check external state before trying again. Follow-up results do not replace the saved original or enter model history.
-
-The embedding application creates the iframe, enforces resource CSP and isolation, and supplies the original arguments and result through its MCP App bridge. It owns View state and sends context or messages through the existing Run submission API. HTML is not saved, so a newer resource can be incompatible with old result data. Console does not render Apps. Objects use checkpoint format 4: upgrade all control/readers before starting the new workers. App records load the original from object storage only when opening; button calls and resource reads use private database references.
-
-### OAuth
-
-With `auth: "oauth"`, the connection obtains its token from the MCP server's authorization server. The connection holds **one** credential that serves every run in the workspace, whoever authorized it.
-
-- **Browser authorization** (`grant_type: "authorization_code"`, the default). Choose **Authorize connection** in Console, or call `POST …/connections/{connection_id}/authorize` with `{"return_url": ...}` using a login session. Open the returned `redirect_url` in the same browser before `expires_at`. Service completes authorization at its callback and redirects to `return_url`. API keys cannot start this flow (`403 forbidden`); a different browser fails with `browser_mismatch`, and an expired callback fails with `authorization_expired`. Starting a new flow keeps the working credential until the new flow completes.
-- **Client registration.** Without `config.oauth.client_id`, each authorization registers a public client dynamically. For a client registered in advance, set `client_id` and `token_endpoint_auth_method` (`none`, `client_secret_basic` or `client_secret_post`) and supply the write-only `client_secret`. Register the Service's redirect URI with the provider: `GET /api/v1/connections/redirect-uri` returns it (`{public_url}/api/v1/connections/callback`), and Console shows it in the connection form.
-- **Machine credential** (`grant_type: "client_credentials"`, with a client secret). `authorize` obtains the token directly, without a browser, and returns `redirect_url: null`. Like a bearer token, it acts for every run of the workspace. This is the only authorization an API key may start.
-- `config.oauth.scopes` requests specific scopes; empty requests the scopes the server advertises.
-- Tokens refresh on use when the server issued a refresh token, through the connection's single refresh operation; concurrent callers wait for its result, and a cancelled caller never loses a rotated credential. The credential is cleared (`reauthorization_required`) only when the server refuses it as `invalid_grant`, or the request's outcome is unknown because it may have already reached the server. A request the Service never sent keeps the credential: the outbound policy refusing it (`token_endpoint_denied` for the token request, `authorization_server_denied` during discovery) or a connection failure before anything went out (`token_endpoint_unreachable`). A new authorization revokes the grant it replaces, as a best effort, unless the replacement came from the same OAuth client, since revoking it could also end the new grant.
-
-`return_url` must be a page on the origin of [`server.public_url`](configuration.md#required-infrastructure), or an exact URL in the deployment's [`providers.return_urls`](configuration.md#outbound-requests); Console sends `{its origin}/connections/callback`. The public callback is rate limited per client address.
-
-### Composio connections
-
-[Composio](https://composio.dev) hosts app integrations and the external accounts' credentials. Configure it once, then connect accounts per app:
-
-1. Add a connector provider of type `composio` with your Composio project API key: **Workspace settings → Providers → Connector**, or `POST /api/v1/connector-providers` with `{"type": "composio", "name": ..., "credential": {"api_key": "..."}}`.
-2. Browse apps and their actions: `GET /api/v1/connector-providers/{provider_id}/apps` (`query`, `refresh=true`), `…/apps/{app}` and `…/apps/{app}/actions`.
-3. Create a connection with `type: "composio"`, `auth: "account"`, the `connector_provider_id`, and `config` naming the `app`, the pinned `actions` (1–128) and `setup`: `auth_config_id` (an existing Composio auth config, or `create:<SCHEME>` such as `create:OAUTH2`) and the pinned `toolkit_version` (`YYYYMMDD_NN`).
-4. Authorize it (a login session, like any [browser authorization](#oauth)): the user completes Composio's hosted account setup in the browser and returns through the Service's callback. The connection then binds that one external account; Composio keeps and refreshes its tokens.
-
-Each connection binds one account and exposes exactly its pinned actions. Tool calls send a stable request ID per tool call; when an action's outcome is unknown, the agent is told to check the external state before calling it again.
-
-### Test and discover tools
-
-- `POST …/connections/{connection_id}/test` discovers tools now and records the outcome in `last_test`; it needs `run`.
-- `GET …/connections/{connection_id}/tools` lists tools with their input and output schemas and annotations, cached for `providers.discovery_ttl`. Annotations such as read-only hints are shown as declared and never grant permission.
-- Before a connector connection's account is bound, `test` fails and `/tools` returns the connector app's action catalogue instead of live discovery.
-
-A connection exposes at most 128 tools to a model.
-
-### Use a connection in an agent
-
-A revision lists connections in `connection_tools`:
+For an HTTP integration, send this body to `POST /api/v1/connections` using the [workspace authentication setup](connect-application.md#direct-http-integration). Replace the example endpoint, token and tool names with your server's values:
 
 ```json
 {
-  "connection_tools": [
-    {
-      "connection_id": "conn_...",
-      "tools": ["search_docs"],
-      "permission": "allow"
-    },
-    {
-      "connection_id": "conn_...",
-      "tools": null,
-      "permission": "ask",
-      "permissions": { "delete_page": "deny" }
-    }
-  ]
+  "type": "mcp",
+  "name": "Docs search",
+  "auth": "bearer",
+  "config": {
+    "url": "https://mcp.example.com/mcp",
+    "tools": ["search_docs", "read_doc"]
+  },
+  "credential": {"token": "REPLACE_WITH_SERVER_TOKEN"}
 }
 ```
 
-- `tools: null` selects every tool the connection exposes; a list selects up to 128 of them.
-- `permission` applies to the connection's tools, and `permissions` overrides it per tool.
-- A revision can select up to 128 connections. Saving it checks that each connection is enabled and exposes the selected tools.
+`config.tools` limits the tools exposed by the connection. Omitting it exposes all listed tools; more than 128 exposed tools makes a run fail with `connection_tools_exceeded`. Put credentials in the authentication fields, not the URL. For static headers, list names in `config.headers` and supply values in `credential.headers`; transport and protocol headers are reserved.
 
-At execution, each connection must be `ready`. Before every call the Service checks that the connection is still enabled and authorized and that the run may still spend; otherwise the call is not sent. Calls are bounded by `providers.tool_call_seconds` and are never retried automatically.
+Changing the endpoint, authentication or OAuth settings clears the saved credential. Changing only the name, enabled state or tool selection preserves it. The endpoint must pass the [outbound policy](configuration.md#outbound-requests).
+
+Service keeps the MCP client for one execution attempt and checks current connection availability and run authority before each call. For a durable human response, use client tools or agent questions; Service's MCP connection has no elicitation response channel.
+
+### MCP Apps for embedding applications
+
+An embedding application can render an MCP App from a tool result. Service saves the original arguments, declaration and full result, including `_meta`; it fetches HTML when the application opens the App. Console does not render Apps.
+
+For live output:
+
+1. Subscribe to `GET /api/v1/sessions/{session_id}/stream`.
+2. Treat a delta containing `a13n.mcp_apps` as a loading reference. Even `unavailable: false` is provisional here.
+3. Wait for `app_ready`, which confirms that the original data and reference are committed. Identify each App by `(run_id, app_id)`; readiness events can repeat after reconnect.
+4. Open the App using the event's `run_id` and `apps[].app_id`.
+
+The event follows committed `items` after a checkpoint containing the App; the run need not have finished. Failed publication produces an unavailable reference and no ready event. Available committed references loaded from `GET /api/v1/runs/{run_id}/items` can be opened directly, including after a disconnected run has ended. The thread stream does not emit `app_ready`.
+
+| Request                                                   | Body                                  | Result                                          |
+| --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | None                                  | Saved original data and current HTML            |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | Raw MCP result under `result`                   |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | Current HTML and metadata for the saved App URI |
+
+Each request uses a fresh MCP client and current access checks. Opening never repeats the original tool; servers requiring the worker's original MCP session are unsupported. Button calls must satisfy the original agent's tool selection and permission, the current connection's selection, and App visibility. Operations requiring approval or model review are refused. Deployments with an admission policy also need explicit App admission support.
+
+Create the iframe, enforce resource CSP and isolation, and supply the original arguments and result through your MCP App bridge. Your application owns view state and submits context or messages through the existing run API. Follow-up tool results stay with the caller; they do not replace the original or enter model history. Calls are not retried automatically: inspect external state before retrying `outcome_unknown`. HTML is fetched afresh and may differ from the version that produced an old result. When upgrading to checkpoint format 4, upgrade control processes and readers before starting new workers.
+
+### OAuth
+
+Choose the grant for the account you want the workspace to share:
+
+| Grant                          | How to authorize                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `authorization_code` (default) | Use a login session and finish authorization in the same browser                              |
+| `client_credentials`           | Configure a client ID and secret authentication; `authorize` obtains a machine token directly |
+
+For browser authorization, choose **Authorize connection** in Console. An integrating application calls `POST /api/v1/connections/{connection_id}/authorize` with the current `If-Match` and an optional `return_url`, then opens `redirect_url` before `expires_at`. API keys cannot start browser flows. A different browser fails with `browser_mismatch`; an expired flow fails with `authorization_expired`. Starting a new flow keeps the current credential until the replacement completes.
+
+Without `config.oauth.client_id`, authorization dynamically registers a public client. For a pre-registered client, set `client_id` and `token_endpoint_auth_method` (`none`, `client_secret_basic` or `client_secret_post`), supplying `client_secret` for a secret method. Register the callback returned by `GET /api/v1/connections/redirect-uri`. A `client_credentials` grant requires a secret method, accepts API-key authorization, and returns `redirect_url: null`.
+
+`config.oauth.scopes` selects scopes; an empty list requests those advertised by the server. The optional `return_url` must share the origin of [`server.public_url`](configuration.md#required-infrastructure) or exactly match an entry in [`providers.return_urls`](configuration.md#outbound-requests).
+
+Tokens renew on use when supported by the grant. Concurrent callers share the renewal operation. If status becomes `reauthorization_required`, authorize again; inspect `failure` for the reason. A refused grant or an uncertain refresh outcome can clear the credential. An unsent request, such as one blocked by outbound policy, preserves it. A failed client-credentials renewal also requires authorization again.
+
+### Composio connections
+
+A Composio connection binds one app account; Composio holds and refreshes that account's tokens.
+
+1. Add a `composio` connector provider with your Composio project API key in workspace settings.
+2. Browse `GET /api/v1/connector-providers/{provider_id}/apps`, then the app's details and `/actions`.
+3. Create a connection with `type: "composio"`, `auth: "account"`, and `connector_provider_id`. In `config`, specify `app`, 1–128 pinned `actions`, and `setup` with `auth_config_id` and a pinned `toolkit_version` (`YYYYMMDD_NN`). Use an existing auth config or a creation value such as `create:OAUTH2`.
+4. Authorize from a login session and finish the hosted account setup in the same browser.
+5. Test discovery and select the connection in the agent.
+
+Create separate connections for separate accounts. Each connection exposes its pinned actions. Tool calls carry a stable request ID; if an action's outcome is unknown, inspect the external state before calling it again.
+
+### Test and discover tools
+
+Call `POST /api/v1/connections/{connection_id}/test` to discover tools with the current configuration and credentials. Inspect the returned `status` and `message`: a failed test can return a successful HTTP response with `status: "failed"`. The connection view records `last_test`.
+
+Use `GET /api/v1/connections/{connection_id}/tools` to inspect names, input/output schemas and annotations. Results are cached for `providers.discovery_ttl`. Both operations require `run`. Before a connector account is bound, `/tools` shows the app's action catalog and `test` fails. Read-only annotations describe tools; they do not grant permission.
+
+### Use a connection in an agent
+
+Add `connection_tools` to the agent configuration. This fragment allows document search and asks for approval for other exposed tools. Replace `conn_...` with your connection ID and use tool names returned by discovery:
+
+```json
+{
+  "connection_tools": [{
+    "connection_id": "conn_...",
+    "tools": null,
+    "permission": "ask",
+    "permissions": {"search_docs": "allow"}
+  }]
+}
+```
+
+`tools: null` selects all tools the connection exposes; a list selects at most 128 names. A revision can select up to 128 connections. Saving checks that each connection is enabled and exposes the selected tools. Per-tool `permissions` override the connection-wide `permission`.
+
+Save the revision, start a run, and ask for a document search. Inspect the tool result before testing a write. The connection must be `ready`; every call checks that it is still enabled and authorized and that the run can dispatch. Calls use `providers.tool_call_seconds` and are never retried automatically.
 
 ### Grouped tool discovery
 
-In Console, choose **Grouped proxy search** under **Tool discovery**, add a group, and select its sources. Ordinary tools remain directly exposed by default; only selected sources enter the fixed proxy. The API uses the same `tool_search` configuration:
+For a large tool collection, select **Grouped proxy search** under **Tool discovery** in Console. Add a group and select its sources. Grouping changes how the model finds tools; first enable and configure those sources normally.
+
+This fragment groups a selected connection. Replace `conn_...` in both places:
 
 ```json
 {
@@ -215,33 +222,25 @@ In Console, choose **Grouped proxy search** under **Tool discovery**, add a grou
       "knowledge": {
         "description": "Search the team handbook and project documentation",
         "connections": ["conn_..."]
-      },
-      "workspace": {
-        "description": "Read and edit workspace files",
-        "capabilities": ["environment"]
       }
     }
   }
 }
 ```
 
-The model searches with `discover_tools`, reads complete definitions with `describe_tool`, and always invokes members through `call_tool`. `list_tool_groups` lists domains; `list_tools(detail="full")` with `next_offset` retrieves the complete tool list. Discovery never adds member schemas to subsequent requests, supporting prompt caching. Service keeps the original execution path, credentials, caller headers, and tool permissions.
+The model searches with `discover_tools`, reads definitions with `describe_tool`, and calls members through `call_tool`. `list_tool_groups` lists groups; `list_tools(detail="full")` and `next_offset` page through definitions. Member schemas stay out of later model requests, while execution keeps the original credentials, caller headers and permissions.
 
-Groups can contain selected MCP or connector `connections`, `plugins` by instance name, local `capabilities` (`environment`, `web`), and `platform: true` for enabled platform tools. Grouping does not enable unavailable sources. Each source belongs to at most one group. Group names begin with a letter, use up to 32 letters, digits, underscores or hyphens, and omit `__`.
+Groups accept selected `connections`, `plugins` by instance name, `capabilities` (`environment`, `web`), and `platform: true` for enabled platform tools. A source belongs to at most one group. Names start with a letter, contain at most 32 letters, digits, underscores or hyphens, and exclude `__`.
 
-Omit `config` or set `mode: proxy`, control names, and pagination limits as described in [Harness ToolSearch](../a13n-harness/tool-search.md). Ungrouped sources stay direct. `client_tools` retain their flat external-call and client-resume protocol. Keep tools requiring approval/resume directly exposed as well.
-
-Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping.
-
-Connection selections configure execution through `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored.
+Ungrouped sources stay directly exposed. Keep tools requiring approval/resume direct; `client_tools` retain their external-call protocol. Each child agent uses its own revision's groups. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. See [Harness ToolSearch](../a13n-harness/tool-search.md) for optional `config`, control names and pagination limits.
 
 ### Caller headers
 
-A thread can carry non-credential context for its MCP connections, such as a conversation or tenant identifier, in `mcp_headers`: `{connection_id: {header: value}}`. See [threads](agents-and-runs.md#caller-headers). Header names that the connection's own authentication uses are refused.
+Put non-credential context, such as a conversation ID, in the thread's `mcp_headers`: `{connection_id: {header: value}}`. A run captures the map when accepted; edits affect later runs. Connection authentication headers cannot be overridden. Follow the [caller headers example](agents-and-runs.md#caller-headers).
 
 ## MCP server suggestions
 
-`GET /api/v1/mcp-servers?query=...` lists well-known remote MCP servers with their URL, authentication and requirements; Console uses it to prefill new connections. The Service ships a list of suggestions, and operators add or replace entries by key with `providers.mcp_servers`:
+Operators can prefill the connection form with their own server. Add an entry to deployment configuration; its `key` adds to or replaces the packaged catalog:
 
 ```toml
 [[providers.mcp_servers]]
@@ -252,4 +251,4 @@ url = "https://mcp.example.com/handbook"
 auth = "oauth"
 ```
 
-A suggestion only prefills the form; the connection is validated like any other.
+`GET /api/v1/mcp-servers?query=...` exposes the suggestions to Console and other clients. Replace the example endpoint with your server. A suggestion prefills a form; creating the connection still validates the endpoint and authentication.

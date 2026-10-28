@@ -1,44 +1,35 @@
 ---
 title: 工具与扩展类型
-description: 选择 Capability、Harness Plugin、Environment 配置、Environment Run Extension、MCP 服务器、Skill 或 Content Plugin。
+description: 为 Agent 添加工具，检查工具是否生效，并选择合适的集成类型。
 ---
 
-按集成提供的功能选择机制，再在配置中选择已安装的键或资源 ID。YAML 可以选择可执行集成，但不会安装其 Python 代码。
+为 Agent 添加新工具时，先确定由谁提供。多数内置功能是通过 Agent YAML 选择的 **Capability**。外部服务器使用 **MCP**。Environment 决定文件和 shell 操作在哪里运行。
 
-| 机制                      | 添加的内容                                                 | 配置方式                                                                                           |
-| ------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Capability                | Agent 的工具、指令、钩子、设置或生命周期行为               | Agent `capabilities`                                                                               |
-| Harness Plugin            | 围绕 Run 输入、事件、错误和结果的可信 Python 中间件        | `extensions/*.yaml`，再由 Agent/默认 `harness_plugins` 选择                                        |
-| Environment 配置          | Provider 和 Project adapter 配置                           | `extensions/*.yaml`，再选择 Environment                                                            |
-| Environment Run Extension | 每次 Run 的 Environment 集成                               | `extensions/*.yaml`，再由 Thread 选择（来自 Project 或根级 `defaults.environment_run_extensions`） |
-| MCP 服务器                | 命令或远程服务器提供的外部工具                             | `mcp/*.yaml` 或 `mcp/*.json`，再由 Agent/默认 `mcp_servers` 选择                                   |
-| Content Plugin            | 可编辑的 Skill 和 Markdown subagent 内容，不是 Python 扩展 | `a13n-harness-ui plugin` 命令                                                                      |
-
-提供方原生工具和内置搜索/抓取见[原生工具与 Web 提供方](native-and-web-tools.md)。
-
-## 原生搜索与图像生成
-
-按照[原生搜索与图像生成用法](native-and-web-tools.md#native-search-and-image-generation)配置；这是 Agent 工具选择，与 Host Web 搜索不同。
-
-## MCP 服务器
-
-先[配置 MCP 服务器](mcp.md)，再在 Agent 或默认值中选择其 ID。
-
-### MCP 字段参考
-
-完整字段见 [MCP 字段参考](mcp.md#mcp-field-reference)。
+| 我需要……                        | 配置……                           | 参考……                                                   |
+| ------------------------------- | -------------------------------- | -------------------------------------------------------- |
+| 读取文件或运行命令              | Agent 上的 `dynamic_environment` | [文件与 shell](#files-and-shell)                         |
+| 通过 Model 提供方搜索或生成图像 | 原生工具 Capability              | [原生工具](native-and-web-tools.md)                      |
+| 连接外部工具服务器              | MCP 资源及其选择                 | [MCP 设置](mcp.md)                                       |
+| 添加可复用的书面指导            | Skill 或 Markdown subagent       | [Skill 与 Content Plugin](skills-and-content-plugins.md) |
+| 改变执行机器或隔离方式          | Environment 配置                 | [Environment](environments-and-projects.md)              |
+| 添加已安装的 Python 中间件      | Harness Plugin 资源              | [插件文件](#harness-plugin-and-run-extension-files)      |
 
 ## Agent Capability
 
-每个 Agent 选择的形式是 `{capability: <catalog-key>, configuration: <JSON mapping>}`。Harness UI 提供内置 Capability 以及可配置的已安装/原生 Capability。资源文件没有任意模块导入字段。
+使用已有 [Agent](agents-and-subagents.md#create-an-agent-from-files)。运行 `a13n-harness-ui config path` 找到配置树。在 `configuration_path` 所示根 YAML 旁的 `agents/` 中编辑对应文件。
 
-常见内置键包括 `dynamic_environment`、`documents`、`web`、`skills`、`working_state`、`user_interaction`、`runtime_context`、`handoff`、`compaction` 和 `codeact`。普通目录选项有意不包含权限和审查 Capability；请使用根级 `security.shell_review`。已有原始 Agent 选择仍然兼容。Agent 只使用它选择的 Capability；例外是 Harness UI 默认添加的 `file_context` 和 `working_state`，以及根级 `tools` 开关添加的 `user_interaction` 和 `codeact`。
+1. 将所需条目加入 Agent 的 `capabilities` 列表。保留无关条目；已有同名 Capability 时编辑原条目，不要重复添加。
+2. 将该 Capability 的设置放在它自己的 `configuration` 映射下。
+3. 运行 `a13n-harness-ui config validate`。除 `valid` 外，也检查 `capability_warnings`。不可用或配置无效的普通 Capability 可能被跳过，而其余配置仍可使用。
+4. 用该 Agent 启动新对话，让它使用该功能，并检查实际工具结果。配置通过检查并不等于连接可用或 Model 支持该工具。
 
-完整的 Capability 专用 schema 由已安装的 Harness/原生实现定义，不会全部展开到 Harness UI YAML 中。请查阅 [Harness Capability 参考](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/a13n_harness/capabilities)及与你安装版本匹配的实现。`a13n-harness-ui config validate` 检查选中的键及其配置。
+已安装的 Capability 定义自己的设置 schema。YAML 通过目录键选择实现，不负责安装 Python 代码或导入任意模块。普通选择器不列出权限和审查 Capability；shell 审查应使用下方根级快捷配置。已有的显式权限策略仍受支持。
 
 ### 文件与 shell
 
-```yaml
+将以下片段合并到 Agent 文件：
+
+```yaml title="Agent file — capabilities fragment"
 capabilities:
   - capability: dynamic_environment
     configuration:
@@ -46,13 +37,15 @@ capabilities:
       shell_enabled: true
 ```
 
-这会开启 Environment 文件和 shell 工具。用 Agent 的 `tools` 列表过滤可见工具。在 [Environment 设置](environments-and-projects.md)中选择工具运行的位置。
+选择支持所需文件或 shell 操作的 [Environment](environments-and-projects.md)。然后先让 Agent 列出工作目录，再要求修改。工具同时需要 Capability 和支持相应操作的 Environment；根级工具开关可以全局关闭它们。
+
+Agent 的 `tools` 列表进一步按精确名称过滤可见工具。要只公开 `glob`、`grep`、`ls` 和 `view`，参见[只读辅助角色示例](agents-and-subagents.md#write-a-markdown-subagent)。
 
 ### Shell 审查
 
-在选中的根 `a13n-harness-ui.yaml` 中配置 shell 审查，不要通过 Agent Capability 选择器配置：
+要审查 shell 请求，将以下片段合并到**根** `a13n-harness-ui.yaml`。`model-review` 必须是已有 Model 的 ID：
 
-```yaml
+```yaml title="a13n-harness-ui.yaml — merge fragment"
 security:
   shell_review:
     enable: true
@@ -60,11 +53,13 @@ security:
     risk_threshold: high
 ```
 
-将 `model` 设置为已配置的 **Model 资源 ID**。显式根审查字段优先；Agent 中无关的权限规则保留。`enable: false` 保持显式 Agent 策略不变。审查不提供隔离。默认值、Guardian 关联和失败处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。
+验证后，在新 Run 中测试策略。根级审查字段覆盖对应的 shell 审查设置，并保留无关的 Agent 规则。`enable: false` 保持显式编写的 Agent 策略不变。审查负责评估请求，Environment 负责隔离。批准行为、错误策略和 Guardian 关联见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。
 
 ### 上下文管理
 
-```yaml
+Agent 需要监测上下文、生成交接摘要和压缩长历史时，添加这些条目：
+
+```yaml title="Agent file — capabilities fragment"
 capabilities:
   - capability: runtime_context
     configuration: {}
@@ -74,27 +69,52 @@ capabilities:
     configuration: {}
 ```
 
-通常应在 Model 上配置 `model_characteristics`，使提醒和压缩默认值保持一致。高级显式设置包括 `runtime_context.configuration.context_window_tokens`、`handoff.configuration.summary_reminder_tokens` 和 `compaction.configuration.trigger_tokens`；显式值优先于派生值。
+在 Model 的 `model_characteristics` 中统一设置上下文预算，参见 [Model 预算](models-and-authentication.md)。这些 Capability 从预算派生常规默认值。需要单独覆盖时，在相应 Capability 的 `configuration` 中配置 `runtime_context.context_window_tokens`、`handoff.summary_reminder_tokens` 或 `compaction.trigger_tokens`。显式值优先。
 
 ### 任务、提问与 CodeAct
 
-默认通过原生工作状态提供任务和笔记工具，包括有上限的笔记上下文注入。`working_state` 接受 `notes_enabled: false` 等原生配置以关闭笔记。F2 显示已提交的任务事实，不是单独的 TUI 清单存储。
+Harness UI 默认添加 `file_context` 和 `working_state`。根级开关启用时，还会添加 `user_interaction` 和 `codeact`。Skill、Web 访问、交接和压缩等其他功能需要在 Agent 中选择。
 
-根级 `tools.enable_ask_user_question` 控制 `ask_user_question`；`tools.enable_codeact` 控制 CodeAct。两项开关也控制显式编写的 Capability 选择。CodeAct 还公开 `store`、`load` 和 `forget`，用于随 Harness 续接保存显式 JSON 值；上下文中只投影已存键名。Agent Capability 配置支持 `max_state_bytes` 和 `max_state_entries` 限制状态。其 `run_code` 和 `run_program` 执行受限 Python；副作用通过符合条件的工具和现有策略实现，不提供无限制的 Python 文件系统或网络访问。默认值见[根配置参考](configuration.md#built-in-tools-and-subagents)，问题超时见[决策指南](everyday-use.md#approvals-and-questions)。
+| 功能       | 配置                                                                        | 检查方法                                                        |
+| ---------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 任务和笔记 | 默认 `working_state`；显式 `configuration: {notes_enabled: false}` 关闭笔记 | 让 Agent 创建任务清单；F2 显示已保存的任务事实                  |
+| 结构化提问 | 根级 `tools.enable_ask_user_question`                                       | 问题可以暂停并等待你回答                                        |
+| CodeAct    | 根级 `tools.enable_codeact`                                                 | Agent 可通过 `run_code` 或 `run_program` 编排符合条件的工具调用 |
+
+提问和 CodeAct 开关也控制显式 Agent 选择。CodeAct 执行受限 Python，通过工具完成副作用，并遵守工具已有权限。`store`、`load` 和 `forget` 管理显式 JSON 状态；上下文显示已存键名。需要改变状态限制时，在 `codeact` Capability 下配置 `max_state_bytes` 和 `max_state_entries`。参见[根级工具设置](configuration.md#built-in-tools-and-subagents)和[问题处理](everyday-use.md#approvals-and-questions)。
+
+## 原生搜索与图像生成
+
+工具由 Model 提供方提供时，使用[原生搜索与图像生成用法](native-and-web-tools.md#native-search-and-image-generation)。这些 Agent 选择独立于 Host 侧 Web 搜索和抓取提供方。
+
+## MCP 服务器
+
+按照 [MCP 设置](mcp.md)创建服务器资源、选择其 ID，再测试一次工具调用。创建文件与选择服务器是两个步骤。
+
+### MCP 字段参考
+
+命令、HTTP、身份验证和连接生命周期设置见 [MCP 字段参考](mcp.md#mcp-field-reference)。
 
 ## Skill
 
-显式和自动来源优先级、内置离线配置 Skill、文件访问和目录捕获见 [Skill 与 Content Plugin](skills-and-content-plugins.md)。选择 Skill 会增加知识发现能力，不会授予执行权限。
+通过 [Skill 与 Content Plugin](skills-and-content-plugins.md)添加可复用流程或参考资料。选择 `skills` Capability，并通过 Environment 提供来源。Skill 发现为 Agent 提供可阅读材料；执行仍使用已配置的工具和权限。
 
 ## Content Plugin
 
-见 [Content Plugin 安装](skills-and-content-plugins.md#install-a-content-plugin)、[卸载删除行为](skills-and-content-plugins.md#remove-a-content-plugin)和[完整仓库格式](skills-and-content-plugins.md#author-a-content-plugin-repository)。它们是可编辑内容包，不是已安装的 Python Harness Plugin。
+Content Plugin 打包可编辑的 Skill 和 Markdown subagent。[安装内容包](skills-and-content-plugins.md#install-a-content-plugin)后，选择所需内容，并在新 Run 中测试。[卸载](skills-and-content-plugins.md#remove-a-content-plugin)会删除安装目录及其中的本地编辑。分发自己的内容包时，使用[仓库格式](skills-and-content-plugins.md#author-a-content-plugin-repository)。
 
 ## Harness Plugin 与 Run Extension 文件
 
-Harness Plugin 资源选择**已安装** 的工厂。请将以下示例键和配置替换为集成文档中的值：
+这些资源选择已安装的 Python 集成。编写文件前，先将集成安装到 Harness UI 所在的 Python 环境，并从集成文档获取工厂键和配置 schema。
 
-```yaml
+1. 在所选根 YAML 旁的 `extensions/` 下创建资源文件。
+2. 在对应 Agent、Project 或根默认值中选择资源 ID。
+3. 运行 `a13n-harness-ui config validate`，修复缺失工厂或无效配置错误。
+4. 用该选择启动新 Thread，测试集成文档描述的行为。
+
+以下是**模板**，不是内置记忆插件。请将 `vendor.memory` 及其配置替换为已安装集成提供的值：
+
+```yaml title="extensions/memory.yaml — template; replace factory key"
 schema_version: "1"
 kind: harness_plugin
 id: plugin-memory
@@ -103,12 +123,12 @@ plugin_key: vendor.memory
 configuration: {}
 ```
 
-保存到 `extensions/` 下，再在 Agent 或根默认值中选择 `harness_plugins: [plugin-memory]`。验证会拒绝未知或未安装的工厂键。
+对此资源，将 `harness_plugins: [plugin-memory]` 合并到 Agent，并保留其他已选 ID。已有 Thread 保留已保存的 Plugin 选择；修改创建默认值不会改写它们。
 
-| 资源类型                                       | 共享 `schema_version`、`kind`、`id`、`name` 之外的完整字段                                          |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `harness_plugin`（`plugin-` ID）               | 必需 `plugin_key`；`configuration` 默认 `{}`                                                        |
-| `environment_run_extension`（`extension-` ID） | 必需 `extension_key`；`configuration` 默认 `{}`                                                     |
-| `environment_profile`（`environment-` ID）     | 必需 `provider_key` 和 `adapter_key`；`provider_configuration` 和 `adapter_configuration` 默认 `{}` |
+| 资源 `kind`                 | ID 前缀        | 必需实现键                    | 设置                                                           | 选择位置                                                            |
+| --------------------------- | -------------- | ----------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `harness_plugin`            | `plugin-`      | `plugin_key`                  | `configuration`，默认 `{}`                                     | Agent 或根级 `defaults.harness_plugins`                             |
+| `environment_run_extension` | `extension-`   | `extension_key`               | `configuration`，默认 `{}`                                     | 新 Thread 使用 Project 或根级 `defaults.environment_run_extensions` |
+| `environment_profile`       | `environment-` | `provider_key`、`adapter_key` | `provider_configuration`、`adapter_configuration`，各默认 `{}` | Environment 选择                                                    |
 
-Run Extension 是 Thread 选择。新 Thread 从 Project 或根级 `defaults.environment_run_extensions` 获取它们。Provider/adapter 和扩展专用配置属于已安装的实现，凭据应使用引用而非字面密钥字段。选择 provider 前，阅读[自定义 Environment 配置](environments-and-projects.md#custom-environment-profiles)。
+三类资源也都需要 `schema_version: "1"`、`kind`、`id` 和 `name`。使用集成提供的凭据引用字段，不要将密钥存入 YAML。Provider 配置流程见[自定义 Environment 配置](environments-and-projects.md#custom-environment-profiles)。

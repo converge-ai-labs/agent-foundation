@@ -3,9 +3,7 @@ title: Inputs and outputs
 description: Start or resume a Run with text and media, and handle validated outputs and every terminal outcome.
 ---
 
-An input starts or resumes one logical Run. An output is the validated application value from a completed Run. Tool returns, progress events, summaries, and saved state are not interchangeable with that output.
-
-Harness uses Pydantic AI's native input and output types. It adds a normalized result so your application can distinguish completion from suspension, failure, and cancellation.
+Give your application a typed result it can use directly. Define the output when you build the Agent, pass text or media to a Run, then handle the Run's status before publishing its output.
 
 ## Return a structured value
 
@@ -43,15 +41,46 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-The model in this example supplies test data; it does not inspect files. Pydantic AI validates the output, and Harness wraps the result with status, usage, correlation, and continuation state.
+Expected output:
+
+```json
+{"summary":"No findings","files_checked":3}
+```
+
+`TestModel` supplies fixed data so you can test your application without credentials. `output_type=ReviewSummary` defines the validated value, and `output_or_raise()` returns that value only after successful completion. To perform a real review, replace the test Model with your [configured Model](models.md) and supply the changes as input or through authorized tools.
 
 ## Choose the output contract at build time
 
-Use a Python type or native Pydantic AI `OutputSpec` through `output_type`. Alternatively, set `AgentSpec.output_schema` for a JSON-schema-defined dictionary output. Do not supply both.
+Use `output_type=str` for text, a Python type such as `ReviewSummary` for structured values, or a native Pydantic AI `OutputSpec` for its output modes and functions. The contract belongs to the executable; build another executable when you need a different contract.
 
-The contract belongs to the executable and cannot change per Run. Build another executable if the application requires a different output contract. Native output functions and output modes keep Pydantic AI's validation and retry behavior; Harness does not invent a second output parser.
+If your application loads schemas from configuration, use `AgentSpec.output_schema`. To try that path in the example, replace the build call with this block and set `output_type=None`:
+
+```python
+executable = HarnessBuilder().build(
+    AgentSpec(
+        instructions="Return a bounded review summary.",
+        output_schema=ReviewSummary.model_json_schema(),
+    ),
+    output_type=None,
+    model=TestModel(
+        custom_output_args={"summary": "No findings", "files_checked": 3}
+    ),
+)
+```
+
+Then replace the output assertions and print with:
+
+```python
+assert isinstance(output, dict)
+assert output["files_checked"] == 3
+print(output)
+```
+
+The schema path returns a validated dictionary rather than a `ReviewSummary` instance. Select exactly one output source: `output_type` or `output_schema`. Validation and output retries run through Pydantic AI; Harness also enforces the declared JSON Schema on completed dictionary values.
 
 ## Handle all terminal outcomes
+
+`output_or_raise()` is convenient for a script that requires success. An interactive application needs a branch for each status. Inside `main()`, replace the run-and-print portion with this pattern:
 
 ```python
 result = await executable.run("Complete the task")
@@ -61,7 +90,7 @@ if result.status == "completed":
     # The application decides whether and how to publish this value.
 elif result.status == "suspended":
     pending = result.deferred
-    # Persist an accepted checkpoint and ask the appropriate human/client.
+    # Save result.state and collect answers for these deferred requests.
 elif result.status == "failed":
     failure = result.failure
     # Report the safe failure and inspect any available checkpoint.
@@ -72,11 +101,11 @@ else:
 
 Use `raise_for_status()` when only successful completion is acceptable, or `output_or_raise()` when you also need the typed output. A suspended Run requires [deferred resume](state-and-resume.md), not blind resubmission of the original prompt.
 
-A terminal result is a process-local candidate after cleanup, **not** proof that your database committed it or that the client received it. Persist and deliver under your application's policy.
+Once cleanup finishes, the result includes status, usage, Thread and Run IDs, and any available continuation state. Your application then saves the result and delivers it to the client. Those application steps determine whether it is durably stored and received.
 
 ## Text and multimodal input
 
-For ordinary text, pass a string directly:
+The following snippets run inside `main()` with the same `executable`. For ordinary text, pass a string directly:
 
 ```python
 result = await executable.run("Explain the change")
@@ -96,29 +125,40 @@ result = await executable.run(
 )
 ```
 
-The embedding application owns file access, size bounds, and model support. Use [Environment multimedia understanding](multimedia-understanding.md) when the Agent should read authorized Environment files, rather than letting application paths become implicit model authority.
+Here, the application reads the file and supplies its bytes. Check file access, size bounds, and Model support in that application. To let the Agent choose and read files from an authorized Environment, configure [Environment multimedia understanding](multimedia-understanding.md).
 
 ## Produce input after Environment entry
 
-Use `input_factory` when the input depends on the current entered Environment or newly assigned Run identity:
+Use `input_factory` when input depends on the entered Environment or newly assigned Run identity. This version uses only the identity and works with the offline example. Add the import and function at module level, then replace the `executable.run(...)` call inside `main()`:
 
 ```python
 from a13n_harness import RunPreparationContext
 
 
 async def make_input(preparation: RunPreparationContext) -> str:
-    return f"Inspect the workspace for Run {preparation.run_id}."
+    return f"Return the review summary for Run {preparation.run_id}."
 
 
-result = await executable.run(input_factory=make_input, environment=environment)
+result = await executable.run(input_factory=make_input)
 ```
 
-`input` and `input_factory` are mutually exclusive. The factory runs once before model execution. The Host must supply a fresh Environment; imported state does not recreate its clients or credentials.
+The factory runs once after Environment entry and before model execution. To inspect a workspace there, pass a fresh `environment=` entry as shown in [Environment tools](environments.md) and use `preparation.environment`. Supply either `input` or `input_factory`, not both. Restored state carries conversation data; the Host supplies current clients and credentials.
 
 ## Continue history or stream progress
 
-Pass `previous_state=first.state` to continue a Thread; persist the complete `HarnessState` for restart, not just displayed text. `all_messages()` returns the complete detached message history of the result, and `new_messages()` returns only the messages this Run added.
+To continue the example in the same Thread, add this after the first completed result:
 
-Use `async with executable.stream(...)` for incremental public events. Text deltas are progress, not a replacement for the terminal result. A parent stream may also contain child events with different Run correlation; do not mistake a child's terminal event for root completion.
+```python
+follow_up = await executable.run(
+    "Return the review summary again.", previous_state=result.state
+)
+assert follow_up.thread_id == result.thread_id
+assert follow_up.run_id != result.run_id
+assert follow_up.output_or_raise() == result.output_or_raise()
+```
+
+The fixed test data makes both outputs equal. A real Model can answer from the previous conversation. For restart, persist the complete `HarnessState` as shown in [State and Resume](state-and-resume.md). Use `all_messages()` for a detached view of the complete result history and `new_messages()` for the messages this Run added.
+
+Use `async with executable.stream(...)` for incremental public events, and read `stream.result` after leaving the scope. Display text deltas as progress and use the terminal result for the application output. Child events can appear in the parent stream; correlate events to their Run rather than treating a child's terminal event as root completion.
 
 See [Agents and Runs](agents-and-runs.md#stream-events) for stream ownership and [Stream Protocol](../a13n-stream-protocol/index.md) for AG-UI projection.

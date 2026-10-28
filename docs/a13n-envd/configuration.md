@@ -1,22 +1,24 @@
 ---
 title: Daemon configuration and transports
 sidebarTitle: Configuration and transports
-description: Configure a standalone Envd daemon and how it connects to a Host.
+description: Connect Envd to a Host, choose execution settings, and collect resource metrics.
 ---
 
-This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects a working directory, required methods and an optional Session egress policy whose secrets are references, not values. The Device launch configuration separately fixes execution, Sandbox and network mode. The [sandbox image](sandbox.md) supplies ready-to-use account, shell and sudo defaults without changing the standalone daemon defaults.
+Configure Envd at startup to choose its connection, execution account, filesystem isolation and network mode. The Host owns deployment, credentials and daemon lifetime. Each EIP Session then selects a working directory and operations within those settings.
+
+Use the JSON and environment variables on this page for the daemon. Harness UI YAML and `EnvironmentProviderSpec` configure the Host-side adapter, including required methods and optional Session egress policies with secret references. For a prepared container with account, shell and sudo settings, use the [sandbox image](sandbox.md).
 
 ## Configuration layers
 
-Startup precedence, from lowest to highest:
+Envd applies five layers, with later layers taking precedence:
 
 1. Built-in defaults.
-2. Daemon JSON selected by `--config`.
-3. `A13N_ENVD_CONFIG_JSON`, using the same strict schema as the file.
+2. The daemon JSON file selected by `--config`.
+3. `A13N_ENVD_CONFIG_JSON`, validated against the same schema.
 4. Scalar `A13N_ENVD_*` environment variables.
-5. Explicit command-line arguments.
+5. Explicit CLI arguments.
 
-Objects merge recursively; arrays and scalar values replace earlier values. Each JSON layer must be valid even if a later layer overrides it. This lets a sandbox launcher configure Envd entirely through environment variables, including nested limits and shell profiles, without writing a configuration file:
+Objects merge recursively; arrays and scalar values replace earlier values. Each JSON layer must validate before merging. A launcher can supply nested settings entirely through the environment:
 
 ```bash
 export A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state
@@ -26,44 +28,48 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
-
-Device initialization negotiates the protocol and verifies the Device identity. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
+Scalar settings cover identity, execution, discovery, metadata and lifetimes: `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS` and `A13N_ENVD_DISCONNECT_GRACE_MS`. Boolean values accept `true`, `false`, `1` and `0`.
 
 ## Connect to Harness UI
 
-To connect to Harness UI, start one outbound connection:
+Start an outbound connection from the computer that will run the work:
 
 ```console
 a13n-envd connect https://host.example.com --host work
 ```
 
-1. Open the approval address that Envd prints.
-2. Sign in to the Host.
-3. Approve the matching verification code.
+1. Open the printed approval address and sign in to the Host.
+2. Approve the matching verification code.
+3. Keep Envd running. On subsequent starts, use `a13n-envd connect work` to reuse the registration.
 
-Keep Envd running. On later starts, `a13n-envd connect work` reuses its saved identity, credential and approved connection. The credential is generated on the Device and never needs to be copied into the browser. Reconnection does not require another approval. Service instead connects to an HTTP daemon you register; see [Connect to the Service](../environments/remote-envd.md#connect-to-the-service).
+Envd generates the credential on the Device, so pairing needs only the verification code in the browser. Reconnecting with saved state reuses approval. For Service, [register an HTTP daemon](../environments/remote-envd.md#connect-to-the-service) instead.
 
-The Host URL must be reachable from this computer. HTTPS is required except for loopback HTTP, such as `http://127.0.0.1:8765`. Add `--ca-file /path/to/ca.pem` for a private CA; TLS verification is never disabled. `--name` sets the approval display name, and `--default-working-directory` selects an existing native directory. `--config` supplies ordinary daemon JSON, including resource limits and command settings.
+Use a Host URL reachable from this computer. HTTPS is required except for loopback HTTP such as `http://127.0.0.1:8765`. Add `--ca-file /path/to/ca.pem` for a private CA; certificate verification stays enabled. Set `--name` for the approval display, `--default-working-directory` for an existing native directory, and `--config` for daemon JSON settings.
 
 ### Saved instances and Hosts
 
-State defaults to `~/.a13n-envd` on Unix and `%LOCALAPPDATA%/a13n-envd` on Windows (falling back to the user profile). Override it with `--state-dir` or `A13N_ENVD_STATE_DIR`. Each instance stores its identity at `instances/<instance>/device-id`; named Host configuration, credential and private runtime live under `instances/<instance>/hosts/<host>/`. The default instance name is `default`. Without `--host`, a stable name is derived from the URL. Keep this state across restarts and protect it as an account credential.
+Preserve the state directory across restarts and protect it as an account credential. Its default is `~/.a13n-envd` on Unix and `%LOCALAPPDATA%/.a13n-envd` on Windows, falling back to `%USERPROFILE%/.a13n-envd`. Override it with `--state-dir` or `A13N_ENVD_STATE_DIR`.
 
-Each running Envd process connects to **one Host**. To use two Hosts on the same physical computer, run two independent processes:
+An instance stores its Device ID at `instances/<instance>/device-id`. Each Host's configuration, credential and private runtime live under `instances/<instance>/hosts/<host>/`. The default instance is `default`; omitting `--host` derives a stable alias from the URL.
+
+Run a separate process for each Host. For two Hosts on one computer:
 
 ```console
 a13n-envd connect https://personal.example.com --instance personal --host personal
 a13n-envd connect https://team.example.com --instance team --host team
 ```
 
-Each process has its own registration and Sessions. Restart with the same `--instance` and Host alias. `connect` stays in the foreground; it does not install a system service or modify OS startup settings. If you use a service manager, preserve the launching account, state directory and intended command environment.
+Restart each process with its original instance and Host alias. Each has its own registration and Sessions. `connect` runs in the foreground; to start it automatically, configure your service manager with the same account, state directory and command environment.
 
-Authentication rejection stops the daemon without replacing its credential or requesting new trust. Check whether the registration was revoked or forgotten, whether this is the intended Host, and whether the correct state directory is mounted. Do not repeatedly delete credentials to hide an authorization failure. A genuinely new installation requires a new instance and explicit approval.
+If authentication is rejected, Envd stops and preserves its credential. Check the Host address, registration status and mounted state directory. Use a new instance and explicit approval for a genuinely new installation.
 
 ## Minimal standalone configuration
 
-The default carrier is stdio. Supply an absolute private runtime directory:
+For a Host-owned stdio daemon:
+
+1. Create and protect an absolute runtime parent directory.
+2. Save the JSON below as `/absolute/path/to/a13n-envd.json`, replacing the workspace path with an existing directory.
+3. Have the Host launch Envd with piped stdin and stdout:
 
 ```bash
 export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
@@ -71,7 +77,7 @@ export A13N_ENVD_DEVICE_ID=device-my-machine
 a13n-envd --config /absolute/path/to/a13n-envd.json
 ```
 
-The Host creates and protects the runtime parent. Envd creates an unpredictable generation-private child and takes an exclusive runtime lock. Stdin and stdout are reserved for framed EIP traffic; diagnostics use stderr.
+Envd creates an unpredictable private child for this generation and holds an exclusive runtime lock. The pipes carry framed EIP traffic; diagnostics go to stderr.
 
 ```json
 {
@@ -83,17 +89,21 @@ The Host creates and protects the runtime parent. Envd creates an unpredictable 
 }
 ```
 
-A Session can open only in an existing directory; a missing default fails Session opening, not daemon startup. If `default_working_directory` is omitted, the daemon captures its startup cwd. The working directory is **not an access root**: file paths address the whole filesystem available to the execution account, the Sandbox grants and the outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
+The default working directory becomes each Session's initial cwd. If omitted, Envd captures its startup cwd. A nonexistent directory fails Session opening rather than daemon startup. File access follows the execution account, Sandbox grants and outer sandbox, not a cwd boundary. Directory discovery reads one bounded level before a Session exists.
 
-Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
+Choose a stable Device ID with `--device-id`, JSON `device_id` or `A13N_ENVD_DEVICE_ID`, or let the installation state directory retain a generated ID. CLI metadata options override JSON. Directory discovery uses JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. On Windows, bootstrap paths use native spelling; EIP paths use `/C:/...` or `/UNC/server/share/...`.
 
 ## System information and resource monitoring
 
-Linux, macOS and Windows expose basic system information in the Device descriptor returned by EIP `initialize` and `device.describe`: operating system/version, kernel version, native architecture and CPU model when available. Envd's own version is in `initialize.server.version`.
+Read system identity through EIP `initialize` or `device.describe`: OS/version, kernel version, native architecture and CPU model when available on Linux, macOS and Windows. The daemon release is `initialize.server.version`.
 
-`a13n-envd connect` enables system, network, disk, socket, local-filesystem and daemon sampling every 10 seconds by default, including when reconnecting with a saved Host. Existing installations need an updated Envd binary and a daemon restart to use this default; updating Harness UI alone does not change a running remote daemon.
+Choose sampling for the launch mode:
 
-Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to disable sampling. Other daemon launches remain opt-in; selecting native OTLP export also enables default sampling when `monitoring` is omitted. Enable or customize sampling with `monitoring` in your daemon configuration:
+- `connect` samples system, network, disk, socket, local-filesystem and daemon usage every 10 seconds by default, including saved-Host reconnections.
+- Other launches enable sampling with `monitoring`; selecting native OTLP export also enables default sampling when this field is omitted.
+- Set `"monitoring": null` in daemon JSON to disable sampling. System identity remains available.
+
+Restart Envd to apply configuration or binary changes. Updating Harness UI alone leaves the running remote daemon unchanged. For a named filesystem and a 10-second interval, use:
 
 ```json
 {
@@ -104,9 +114,9 @@ Set `"monitoring": null` in your `--config` file or `A13N_ENVD_CONFIG_JSON` to d
 }
 ```
 
-Use absolute native paths, such as `C:\\workspace` in Windows JSON. `monitoring: {}` enables the resource overview with defaults, including automatic local-filesystem discovery. Custom settings follow the usual configuration precedence and are preserved by `connect`. Disabling sampling preserves system information. The interval accepts 1000–60000 ms. At most 16 filesystem targets are allowed, with 1–64 character names containing ASCII letters, digits, `_` or `-`. Paths cannot contain `..`.
+`monitoring: {}` selects defaults, including automatic local-filesystem discovery. `connect` preserves explicit settings and ordinary precedence. Choose an interval from 1000 to 60000 ms and up to 16 named filesystem targets. Names use 1–64 ASCII letters, digits, `_` or `-`; paths must be native absolute paths without `..`, such as `C:\\workspace` in Windows JSON.
 
-Read through your initialized Python Device connection, with no Session required:
+On an initialized Python Device connection, read the latest sample without opening a Session:
 
 ```python
 info = (await device.describe()).system_info
@@ -117,7 +127,9 @@ if report.sample is not None:
     print(sample.sample_age_ms, sample.sequence)
 ```
 
-This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSocket or stdio connection. No additional port, token or TLS configuration is needed. The method is advertised only when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.3; upgrade them together when moving from a 0.1 or 0.2 deployment. The `eip.v1` namespace and carrier framing are unchanged.
+`device.metrics` uses the existing authenticated carrier and is advertised when sampling is enabled. Envd and `a13n-envd-client` use EIP 0.3; upgrade both when migrating a 0.1 or 0.2 deployment. Carrier framing and the `eip.v1` namespace stay unchanged.
+
+Interpret the resource fields as follows:
 
 | Observation                                                  | Meaning                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +141,7 @@ This uses EIP `device.metrics` over the same authenticated HTTP, reverse WebSock
 | `sample.system.pressure`                                     | Optional Linux CPU/memory/I/O PSI.                                                                                                                                                                                                                  |
 | `sample.cgroup_v2`                                           | Optional explicitly selected Linux cgroup v2 observations.                                                                                                                                                                                          |
 
-The overview also includes:
+The overview adds platform and device inventories:
 
 | Observation                     | Meaning                                                                                                                                                                             |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -140,35 +152,35 @@ The overview also includes:
 | `sample.local_filesystems`      | Up to 16 automatically discovered local filesystems, separately from named targets. Reports opaque native identities rather than paths.                                             |
 | `sample.daemon`                 | Envd Sessions, active command groups, transfers, public carrier connections and actual retained-output bytes. Worker-dependent totals are absent if collection is incomplete.       |
 
-Inventories report truncation explicitly. Missing native sources remain absent. Interface and disk identities distinguish counter lifetimes; stacked devices are not a meaningful host-wide sum. Filesystem discovery filters pseudo and remote filesystems; mounted removable local volumes can be included. It never scans directory contents. Available fields vary by platform and native API permissions.
+Check inventory truncation and source availability before aggregating. Interface and disk identities mark counter lifetimes; summing stacked devices can double-count work. Filesystem discovery reads mounts rather than directory contents, filters pseudo/remote filesystems and can include mounted removable local volumes. Native API permissions affect available fields.
 
-On Linux, add `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"` inside `monitoring` to observe that group and its descendants. Other platforms reject this Linux-only option. The group exposes CPU user/system/total microseconds, bandwidth periods/throttling, memory usage/events, local CPU/memory limits, task count/limit, per-device I/O byte/operation counters and PSI. Limits use tagged `unlimited` or `limited` values. These are local limits, not effective limits after ancestors or affinity.
+For Linux container usage, add `"cgroup_v2_directory": "/sys/fs/cgroup/your-group"` to `monitoring`. This selects the group and descendants; other platforms reject the option. Fields cover CPU time and throttling, memory use/events, local CPU/memory limits, task counts/limits, device I/O and PSI. Tagged `unlimited`/`limited` limits describe the selected group locally; ancestor and affinity restrictions can further reduce capacity.
 
-PSI contains optional `some` and `full` records with `avg10_percent`, `avg60_percent`, `avg300_percent` and cumulative `total_usec`. The averages are kernel windows, independent of the sampling interval. System CPU `full` is absent because it is undefined at that scope. Missing fields remain absent on the wire and `None` in Python, never synthetic zero.
+PSI reports optional `some`/`full` records with `avg10_percent`, `avg60_percent`, `avg300_percent` and cumulative `total_usec`. Those are kernel windows independent of your sampling interval. System CPU has no defined `full` record. Missing fields remain absent on the wire and `None` in Python.
 
-**System metrics may describe the host even inside a container.** Select the intended cgroup explicitly; missing group observations are never replaced by host totals. APFS space describes its shared-volume view. Windows filesystem observations require the volume-information API available since Windows 10 version 1809 / Server 2019; older systems still serve other capabilities. Calculate inode utilization only for a positive inode total.
+System metrics can describe the host inside a container; use explicit cgroup observations for group usage. Missing group data stays missing. APFS reports a shared-volume view. Windows filesystem observations require the volume-information API from Windows 10 version 1809 / Server 2019; other capabilities remain available on older systems. Calculate inode utilization only when the total is positive.
 
-One sampler runs per daemon, including with zero Sessions. Reads return its latest cached sample and never trigger collection. `report.sample` is `None` until the first collection completes. A slow source leaves the previous sample readable with increasing `sample_age_ms`. Managed Linux maps runtime targets to the actual runtime binding and other targets to the original system tree, rejecting masked bootstrap paths.
+One sampler runs per daemon, even with zero Sessions. Reads return its cache. Before the first completed collection, `report.sample` is `None`; slow sources leave the prior sample available with increasing age. Managed Linux resolves runtime targets to their actual binding and other targets to the original system tree, rejecting masked bootstrap paths.
 
-When consuming reports:
+To build a chart or exporter:
 
-- Deduplicate by `(device_id, generation, sample.sequence)`.
-- Check `sample.sample_age_ms` against your maximum age before presenting or exporting current values; retain missing data as missing.
-- Compute counter rates from distinct samples; reset the baseline after generation changes, counter decreases or missing observations. Cgroups can reset independently of daemon generation.
-- Convert cumulative times to seconds, event counts to counters, byte/inode observations to gauges, and percentages to ratios as needed by your exporter.
-- Label chart peaks as sampled maxima. CPU percentages are interval averages; point observations can miss spikes.
+1. Deduplicate by `(device_id, generation, sample.sequence)`.
+2. Compare `sample.sample_age_ms` with your freshness threshold and keep missing observations as gaps.
+3. Calculate rates from distinct samples. Reset the baseline on generation changes, counter decreases or missing data; a cgroup can reset within one generation.
+4. Map cumulative time to seconds, events to counters and bytes/inodes to gauges. Convert percentages to ratios when required.
+5. Label peaks as sampled maxima: CPU values are interval averages and point observations can miss spikes.
 
-Envd retains one sample and exposes it through EIP, standard HTTP scraping and optional native OTLP export. History, alerts and product charts belong to consumers and their observability infrastructure. Session cleanup does not stop sampling; daemon shutdown does.
+Store history and manage alerts in the consumer. Envd retains one sample for EIP, HTTP scraping and optional OTLP export. Sampling lasts until daemon shutdown, independently of Session cleanup.
 
 ## Prometheus and OpenTelemetry
 
-When using the [HTTP transport](#carrier-profiles), enable `"monitoring": {}` and scrape `GET /metrics` on the same address. The response uses Prometheus text format 0.0.4. It reads the same cache as `device.metrics` without EIP initialization or a Session. No additional listener, token or TLS settings are needed. Stdio and reverse-WebSocket deployments, including `connect`, do not expose an HTTP scrape endpoint; their consumers can continue reading EIP observations.
+Choose HTTP scraping when the collector can reach Envd, or native OTLP push for outbound-only deployments. With [HTTP transport](#carrier-profiles) and `"monitoring": {}`, `GET /metrics` serves Prometheus text format 0.0.4 from the same cache as EIP. It uses the existing listener and authentication without a Session or EIP initialization. Stdio and reverse WebSocket, including `connect`, support EIP observations and OTLP push rather than an HTTP scrape endpoint.
 
-Use the HTTP listener's Bearer credential and verified HTTPS. **This credential also grants the listener's EIP authority; it is not a read-only monitoring token.** Keep it in a collector-side secret file, restrict access to the collector and use a trusted network. Public links require TLS. Existing explicit loopback/provider-private plaintext settings remain available.
+Keep the listener credential in a collector-side secret file and limit its readers: **it authorizes EIP operations as well as metrics**. Use verified HTTPS on public links. Explicit loopback/provider-private plaintext settings remain available for their trusted scopes.
 
 ### Native OTLP push
 
-Push metrics directly to an OTLP receiver with any EIP carrier, including outbound-only `connect` deployments:
+Configure an OTLP receiver and restart Envd. This works with any EIP carrier:
 
 ```bash
 export OTEL_METRICS_EXPORTER=otlp
@@ -178,7 +190,7 @@ export OTEL_METRIC_EXPORT_INTERVAL=10000
 a13n-envd connect https://host.example.com
 ```
 
-A generic OTLP endpoint or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` also selects export without `OTEL_METRICS_EXPORTER`. An omitted `monitoring` object then enables default CPU/memory sampling; explicit `"monitoring": null` disables both sampling and export. `OTEL_METRICS_EXPORTER=none` or `OTEL_SDK_DISABLED=true` disables export while preserving explicitly configured sampling. Restart Envd to apply changes.
+A generic or metrics-specific OTLP endpoint also selects export without `OTEL_METRICS_EXPORTER`. Omitted `monitoring` then enables default sampling; explicit `"monitoring": null` disables sampling and export. To stop only export while keeping explicitly configured sampling, set `OTEL_METRICS_EXPORTER=none` or `OTEL_SDK_DISABLED=true`.
 
 | Setting                                                         | Behavior                                                                                                                                                   |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -192,13 +204,15 @@ A generic OTLP endpoint or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` also selects ex
 | `OTEL_METRIC_EXPORT_INTERVAL`                                   | Export interval in milliseconds; defaults to 60000. Sampling keeps its own configured interval.                                                            |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`                 | Service name and resource attributes, such as `workspace.id=example`.                                                                                      |
 
-`[_METRICS]` denotes generic and metrics-specific forms. Metrics-specific settings take precedence. Use verified TLS outside a trusted local network. Export credentials are independent of the Envd HTTP listener token. Managed Linux copies TLS files into the private broker image and masks their original paths from Sessions. Daemon exporter settings are excluded from inherited Full Control command environments; payloads can supply their own OTEL settings explicitly.
+`[_METRICS]` marks generic and metrics-specific forms; the metrics-specific value wins. Use verified TLS outside a trusted local network. Export credentials are separate from the HTTP listener credential. Managed Linux copies TLS files into the private broker image and masks their original paths from Sessions. Commands exclude daemon exporter settings from inherited environments and can supply their own OTEL settings explicitly.
 
-The exported resource's `service.instance.id` is always the actual Device ID. Data points carry `device_id` and `generation` and use the metric names below. Counters remain cumulative absolute native values, including resets. Missing or stale resource values are omitted. OTLP values are doubles, so very large integer counts can lose precision. Export errors leave EIP and sampling available; shutdown gives the exporter a bounded flush window. Configure one ingestion route per Device to avoid duplicate ingestion from simultaneous push and scrape.
+The resource's `service.instance.id` is the actual Device ID. Points carry `device_id` and `generation` and use the metric names below. Counters export cumulative native values, including resets; missing or stale resource values are omitted. Double precision can round very large integer counts. Export failures leave sampling and EIP available, and shutdown allows a bounded flush. Choose one ingestion path per Device to avoid duplicate push/scrape data.
 
 ### Prometheus scrape configuration
 
-Mount the Envd credential as `/run/secrets/envd-token` on the Prometheus machine. Configure the actual reachable Envd address, port and CA certificate:
+1. Mount the listener credential at `/run/secrets/envd-token` on the Prometheus machine.
+2. Replace the target and CA path below with the reachable Envd endpoint and its trust certificate.
+3. Keep the scrape interval at least as long as the daemon sampling interval:
 
 ```yaml
 scrape_configs:
@@ -216,11 +230,11 @@ scrape_configs:
       - targets: [envd.example.com:8443]
 ```
 
-Omit `ca_file` for certificates trusted by the scraper's system roots. The credential file contains only the token. For explicitly configured same-machine loopback HTTP, use `scheme: http`, a loopback target and omit `tls_config`. Keep the scrape interval at least as long as the daemon sampling interval; faster scraping only rereads the cache.
+The secret file contains only the token. Omit `ca_file` when system roots already trust the server. For explicitly configured same-machine loopback HTTP, use a loopback target and `scheme: http`, and omit `tls_config`. Faster scraping only rereads the cached sample.
 
 ### OpenTelemetry Collector
 
-A Collector distribution with the [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver) can use the same scrape configuration and export through its usual pipeline:
+For a Collector with the [Prometheus receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/prometheusreceiver), place the scrape configuration in a metrics pipeline:
 
 ```yaml
 receivers:
@@ -252,11 +266,11 @@ service:
       exporters: [otlphttp/metrics]
 ```
 
-Replace the exporter endpoint and configure its authentication for your backend. For native push, use an OTLP receiver instead of the Prometheus receiver. Assign each target to one active scraper, or configure your backend's deliberate HA deduplication; identical Collector replicas otherwise duplicate scraping. The collector must be able to reach the existing Envd HTTP listener. An outbound reverse-WebSocket connection alone does not provide that route.
+Set the exporter endpoint and backend authentication. Assign each target to one active scraper, or configure backend HA deduplication for replicas. The Collector needs a route to Envd's HTTP listener; reverse WebSocket connectivity alone supplies none. For native push, configure an OTLP receiver instead.
 
 ### Metrics and freshness
 
-All series have `device_id` and `generation` labels. System metrics describe the daemon-visible system, which can be the host inside a container. `envd_cgroup_*` describes only the configured cgroup. Filesystem series use the configured `filesystem` name, never the native path, and measure the whole containing filesystem.
+Use `device_id` and `generation` to distinguish series. System series describe what the daemon sees, possibly the container host; `envd_cgroup_*` describes the selected group. Filesystem series use configured names rather than paths and measure the containing filesystem.
 
 | Series                                                                                      | Interpretation                                                                                                                 |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -273,21 +287,25 @@ All series have `device_id` and `generation` labels. System metrics describe the
 | `envd_system_pressure_stall_seconds_total`, `envd_cgroup_pressure_stall_seconds_total`      | Cumulative stall seconds with `resource` and `level` labels.                                                                   |
 | `envd_filesystem_available`, `envd_filesystem_available_bytes`                              | Target readability and account-available filesystem bytes. Total/free bytes and native inode gauges are also exposed.          |
 
-Missing values are omitted, not set to zero. Before the first completed collection, `/metrics` returns 200 with `sample_available=0` and `sample_fresh=0`, without resource values. When a cached sample is older than twice the sampling interval, it returns 200 with `sample_fresh=0` and retained sample metadata, omitting resource series until fresh observations resume. Disabled monitoring returns 404 after authentication; missing or invalid credentials return 401. Samples use scrape timestamps, with observation time carried separately.
+Interpret scrape health separately from resource freshness:
 
-For example, alert separately on `up{job="envd"} == 0` and `envd_sample_fresh{job="envd"} == 0`. Use `100 * envd_system_cpu_busy_ratio` to display percent and `rate(envd_cgroup_cpu_usage_seconds_total[5m])` for consumed CPU seconds per second. Counter decreases represent resets; a new daemon generation creates a distinct series. Cgroup recreation can reset within a generation. Missing or stale observations remain gaps; do not fill them with zero or infer complete collection from a successful scrape.
+- Before the first collection, HTTP 200 carries `sample_available=0` and `sample_fresh=0`, with no resource values.
+- When sample age exceeds twice the sampling interval, HTTP 200 carries `sample_fresh=0` and retained sample metadata. Resource series are omitted until a fresh sample arrives.
+- Disabled monitoring returns 404 after authentication. Missing or invalid credentials return 401.
+
+Series use scrape timestamps and carry observation time separately. Alert on both `up{job="envd"} == 0` and `envd_sample_fresh{job="envd"} == 0`. Display CPU percent with `100 * envd_system_cpu_busy_ratio`, and consumed CPU seconds per second with `rate(envd_cgroup_cpu_usage_seconds_total[5m])`. Counter decreases mark resets; a new generation creates new series, while cgroup recreation can reset counters within a generation. Preserve missing and stale data as gaps.
 
 ## Enable commands
 
-For native shell execution with the configured execution account's authority, use:
+Enable Full Control for a native shell running with the execution account's authority:
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-Or set `"full_control": true` in daemon JSON. `A13N_ENVD_FULL_CONTROL` overrides the JSON value; `false` or `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`) and the daemon's OTLP metrics settings. Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
+JSON `"full_control": true` selects the same mode; the scalar environment setting overrides it. Full Control supplies `/bin/sh` on Unix or PowerShell on Windows and inherits the launcher's environment and `PATH` order. It excludes daemon bootstrap variables (`A13N_ENVD_*`, `EIP_*`) and OTLP metric settings. Shell aliases and unexported variables stay with the launching shell. Per-command overrides affect that command only.
 
-Envd Full Control (`full_control`) is not a sandbox. It is independent of Harness UI's local Full Control or Sandbox mode. Do not combine it with manual executable roots or shell profiles. To configure command access explicitly instead, supply trusted executable search roots and optionally fixed shell profiles:
+Envd `full_control` enables execution, not isolation, and is separate from Harness UI's local mode. Choose either Full Control or manual executable roots/shell profiles; they cannot be combined. For explicit command configuration, use:
 
 ```json
 {
@@ -308,16 +326,16 @@ Envd Full Control (`full_control`) is not a sandbox. It is independent of Harnes
 }
 ```
 
-No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. The Host supplies the outer security boundary; optional [controlled Session egress](egress.md) adds per-Session destination restrictions and credential injection. See [execution boundaries and troubleshooting](isolation.md).
+With Full Control off and both roots/profiles empty, Envd advertises no command methods. Roots and profiles select trusted executables; the Host's outer boundary and [execution isolation](isolation.md) govern access. [Controlled Session egress](egress.md) adds destination restrictions and credential injection.
 
-Child environments are built from the daemon's supported inherited values plus explicit command inputs. Daemon control variables are not command configuration. Inspect advertised execution features instead of assuming platform support for signals, limits or executable bits.
+Check the Device's advertised execution features for signal, limit and executable-bit support. Child environments combine supported inherited values with explicit command inputs; daemon control variables remain startup configuration.
 
 ## Native identity and sudo
 
 > [!IMPORTANT]
-> **Native sudo is allowed by default.** With disabled Sandbox, Envd keeps the outer sandbox's original system tree writable. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
+> Native sudo is allowed by default. With Sandbox disabled, authorized package installation and system-file changes modify the original outer-sandbox filesystem and persist across Sessions.
 
-On Linux, **omitting execution UID/GID preserves the launching process's identity, including root**. Envd does not assume `1000:1000`, scan for a likely user, create an account, or require identity configuration merely because the launcher is root. To select a different provisioned account, set the paired `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root (`0:0`) is also a valid explicit identity. The Provider or deployment owns account provisioning, home and working-directory permissions. For example, a root launcher can select its provisioned sandbox account:
+On Linux, omitting execution UID/GID keeps the launcher's identity, including root. To switch from a root launcher, first provision the account and its home/workspace permissions, then set both `execution.uid`/`execution.gid`, both environment variables, or both CLI options. Explicit `0:0` selects root. For a provisioned `sandbox` account:
 
 ```bash
 # Replace sandbox with the account provisioned by your image or deployment.
@@ -326,13 +344,13 @@ export A13N_ENVD_EXECUTION_GID="$(id -g sandbox)"
 a13n-envd
 ```
 
-Commands, Session file RPCs (including reads, writes and transfers), working-directory access and Device directory discovery all use this execution identity and its native permissions. File RPCs never implicitly sudo; insufficient access returns a permission error. Explicit sudo affects only the command that invokes it and its descendants, not later file RPCs. Daemon credential loading and broker management remain separate from execution identity.
+Commands, file RPCs, working-directory access and directory discovery use the selected account's native permissions. A file RPC reports insufficient permission rather than invoking sudo. Sudo in a command affects that command and descendants, not later file RPCs. Credential loading and broker management remain daemon responsibilities.
 
-Switching accounts initializes native supplementary groups and account environment defaults. Retaining the launcher's identity preserves native capability inheritance for both root and non-root users; Envd does not unconditionally clear command capabilities. Only the supervisor signaling capability retained by Envd during a root-to-user switch is removed before executing commands. The outer platform and any explicitly enabled controlled-egress boundary still apply. An unprivileged launcher cannot choose a different identity.
+Account switching initializes supplementary groups and account environment defaults. Keeping the launcher's identity retains native capability inheritance. A root-to-user switch removes Envd's retained supervisor signaling capability before command execution. Outer-platform and controlled-egress restrictions still apply; an unprivileged launcher cannot select another account.
 
-`allow_sudo` permits native privilege gains; it does not grant authorization. Install sudo and configure sudoers through your image or launcher. Envd does not add passwordless sudo rules, bypass authentication, or override an outer `no_new_privs` setting or `nosuid` mount.
+Install sudo and configure sudoers in the image or deployment. `allow_sudo` permits native privilege gains subject to that authorization and outer `no_new_privs`/`nosuid` restrictions. Envd supplies no passwordless rule.
 
-Disable privilege gains in any of these ways:
+Disable additional privilege gains with one of these launch settings:
 
 ```bash
 # Environment variable
@@ -346,7 +364,7 @@ a13n-envd connect work --allow-sudo false
 A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
 ```
 
-Or use a JSON file:
+The equivalent JSON setting is:
 
 ```json
 {
@@ -354,9 +372,11 @@ Or use a JSON file:
 }
 ```
 
-The normal precedence applies: for example, `--allow-sudo true` overrides an environment value of `false`. Disabling uses Linux `no_new_privs` for the worker and descendants, so direct sudo, setuid binaries and file capabilities cannot gain additional privilege. This does not demote an already-root execution identity or revoke its existing authority. A command's own environment cannot turn it back on. Platforms without this implementation reject `false` instead of ignoring it. UID/GID configuration is Linux-only; other platforms retain their native launching identity.
+On Linux this applies `no_new_privs` to workers and descendants, blocking gains through sudo, setuid binaries and file capabilities. Existing authority, including root, remains. Startup precedence still applies (`--allow-sudo true` overrides an environment `false`); a command cannot change this policy through its own environment. Platforms without this implementation reject `false`. UID/GID selection is Linux-only; other platforms keep the native launching identity.
 
 ## Carrier profiles
+
+Choose the connection direction for your Host:
 
 | Profile             | Bootstrap                                                                        | Use                                         |
 | ------------------- | -------------------------------------------------------------------------------- | ------------------------------------------- |
@@ -364,9 +384,11 @@ The normal precedence applies: for example, `--allow-sudo true` overrides an env
 | `http`              | Bind address, protected credential file, TLS or explicit trusted plaintext scope | Host-dialed Device                          |
 | `reverse_websocket` | Outbound URL and protected credential file                                       | Device dials an authenticated Host listener |
 
-Select the profile with `A13N_ENVD_TRANSPORT`.
+Set `A13N_ENVD_TRANSPORT` to the chosen profile. For a local HTTP client:
 
-To serve a local HTTP client, first create a private runtime parent and a protected credential file. Use an existing native working directory and numeric bind address:
+1. Prepare a protected token file and an existing workspace.
+2. Replace their paths in the command below, which creates a private runtime parent and binds loopback HTTP.
+3. Launch Envd:
 
 ```bash
 mkdir -p "$HOME/.a13n-envd-runtime"
@@ -380,33 +402,38 @@ export A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback
 a13n-envd --default-working-directory /absolute/path/to/workspace
 ```
 
-Replace the credential-file and workspace paths. Connect the Python client to `http://127.0.0.1:8787` with the same credential and expected Device ID. The server exposes authenticated `/eip/control` and `/eip/transfer` routes; the client takes the base origin.
+Connect the Python client to the base origin `http://127.0.0.1:8787` using the same credential and expected Device ID. The client selects the authenticated `/eip/control` and `/eip/transfer` routes.
 
-For HTTPS, run `unset A13N_ENVD_HTTP_PLAINTEXT_SCOPE` and set both `A13N_ENVD_HTTP_TLS_CERT_FILE` and `A13N_ENVD_HTTP_TLS_KEY_FILE` before starting Envd. Configure the client to trust the certificate. A provider-private plaintext deployment uses `provider_private_link` and an explicit client opt-in, not a public HTTP endpoint. [Python transport options](python-client.md#http-options) cover proxy routing and TLS verification.
+For HTTPS, unset `A13N_ENVD_HTTP_PLAINTEXT_SCOPE`, set `A13N_ENVD_HTTP_TLS_CERT_FILE` and `A13N_ENVD_HTTP_TLS_KEY_FILE`, and configure client trust before connecting. A private provider route uses `provider_private_link` plus explicit client opt-in. Public endpoints require HTTPS. See [Python transport options](python-client.md#http-options) for proxy routing and TLS.
 
-Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`. `A13N_ENVD_REVERSE_WS_CA_FILE` adds deployment trust for `wss`. The daemon does not expose an inbound WebSocket listener.
+For outbound reverse WebSocket, set `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`; add private trust with `A13N_ENVD_REVERSE_WS_CA_FILE`. The Host owns the WebSocket listener.
 
-Credentials belong in protected files, not argv, endpoint URLs, descriptors, logs or portable Environment state. A credential authorizes Device access; it does not isolate Sessions from each other.
+Store credentials in protected files. Keep them out of argv, URLs, descriptors, logs and portable Environment state. A credential grants Device access; Session isolation comes from execution boundaries.
 
 ## Lifecycle and ownership
 
-One daemon generation serves a Device with multiple independent Sessions. Initializing a carrier opens no Session. `session.open` captures a working directory and starts one resource scope; `session.close` closes only that scope. Session-local keepalive renews only its owner. Device discovery does not keep abandoned Sessions alive.
+Initialize a Device connection, then open a Session for each resource scope. One daemon generation serves multiple Sessions; each captures its cwd and owns its operations. `session.close` closes that scope. Keepalive renews only the calling owner, so discovery traffic does not preserve abandoned Sessions.
 
-A lost framed carrier detaches its Sessions for bounded disconnect grace. An existing owner may explicitly attach the same Session in the same generation. Attachment never replays commands or resumes transfers. Expired Sessions require fresh scopes and old resource references remain invalid.
+After a framed-carrier disconnect, the owner can explicitly reattach during the grace period within the same generation. Reattachment gives access to existing resources without replaying commands or resuming transfers. After expiry, open a fresh Session and discard old references.
 
-The Host closes its Device connections during shutdown and terminates a daemon only when it owns that daemon's lifecycle. Session close does not delete files in the working directory. Native processes and private output/staging storage are reclaimed under bounded cleanup; failure is reported rather than treated as successful reclamation.
+On shutdown, the Host closes its connections and terminates only daemons whose lifecycle it owns. Session cleanup reclaims processes and private output/staging storage while preserving workspace files. Treat a reported cleanup failure as incomplete reclamation.
 
 ## Check before admitting work
+
+Check the daemon release:
 
 ```bash
 a13n-envd --version
 ```
 
-Match the exact daemon and Python client release. `A13N_ENVD_EXECUTABLE` belongs to Python Host executable selection; remove it from the daemon child environment. Unknown `A13N_ENVD_*` variables and unknown JSON fields are rejected.
-
-Device initialization verifies identity and protocol. Session readiness checks the selected scope. There is no `isolation probe` or per-command isolation mode: test the Host's outer boundary through that deployment's own launcher and checks.
+1. Match the exact Python client release.
+2. Remove Host-only `A13N_ENVD_EXECUTABLE` from the daemon child environment. Unknown `A13N_ENVD_*` variables and JSON fields fail configuration.
+3. Initialize the Device to verify protocol and identity, then check Session readiness for the selected scope.
+4. Test the outer execution boundary through the deployment's own launcher and checks. Envd has no `isolation probe` or per-command isolation mode.
 
 ## Standalone field reference
+
+Use these fields in daemon JSON:
 
 | Root field                                   | Default or meaning                                                                                                                         |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -427,12 +454,12 @@ Device initialization verifies identity and protocol. Session readiness checks t
 | `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled unless Full Control is enabled                                                                             |
 | `limits`                                     | Device aggregates and per-Session limits                                                                                                   |
 
-Important default limits include 128 Sessions, 256 Device concurrent operations, 128 concurrent operations per Session, 4 GiB Device spool capacity, 1 GiB Session spool capacity, 256 MiB output per stream and 2 MiB previews. Configured Session capacities cannot exceed Device aggregates. Output preview cannot exceed stream capacity; spool must reserve both streams.
+Default capacity is 128 Sessions, 256 concurrent Device operations, 128 concurrent operations per Session, 4 GiB Device spool, 1 GiB Session spool, 256 MiB per output stream and 2 MiB previews. Keep Session capacities within Device aggregates, previews within stream capacity, and enough spool capacity reserved for both streams.
 
 ### Shell-profile fields
 
-Required fields are `profile_id`, `display_name`, `native_executable`, `executable_search_roots` and positive `max_script_bytes`. Executables and search roots are existing absolute native paths. `fixed_arguments` defaults to `[]`, `safe_base_environment` to `{}` and `allow_login_mode` to `false`.
+Supply `profile_id`, `display_name`, `native_executable`, `executable_search_roots` and a positive `max_script_bytes`. Use existing absolute native paths for executables and roots. Optional defaults are `fixed_arguments: []`, `safe_base_environment: {}` and `allow_login_mode: false`.
 
 ## Controlled Session egress
 
-Set `"egress": {"mode": "controlled"}` in daemon JSON, `A13N_ENVD_EGRESS_MODE=controlled`, or `--egress-mode controlled` to require Linux controlled Sessions. Every Session must provide explicit tagged destinations; inherit and deny reject Session egress policy. Secret values are submitted through EIP, never this file. See [Session egress](egress.md) for prerequisites, creation, live updates and capacity behavior.
+For per-Session destination restrictions and HTTPS credential injection on Linux, follow [Session egress](egress.md). Configure controlled mode at daemon startup, then submit policies and secrets through EIP.

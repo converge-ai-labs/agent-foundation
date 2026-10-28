@@ -1,134 +1,169 @@
 ---
 title: 测试 Harness 应用
 sidebarTitle: 测试
-description: 使用确定性模型，测试 Agent 的流式输出、状态和 Environment 边界。
+description: 为输出、保存的历史、流式执行和应用集成建立离线测试。
 ---
 
-测试 Harness 应用时，应覆盖 Harness 向应用暴露的边界：确定性模型行为、终结结果、继续执行的状态、公开流事件、Environment 生命周期，以及选用的扩展。依赖 provider 网络的测试应与快速应用测试分开。
+先写三个离线测试：返回答案、恢复已保存的 Thread、消费事件流。再为应用实际使用的工具和资源补充测试。确定性的 Model 让测试运行快，也让失败容易复现。
 
 ## 从 `FunctionModel` 开始
 
-Pydantic AI 的 `FunctionModel` 无需 API key，就能运行真实的 Agent 和 Harness 执行路径：
+使用[快速开始](getting-started.md)准备的仓库和 Python 环境。在仓库根目录安装锁定的开发依赖，其中包含 pytest 和 AnyIO：
 
-```python
+```bash
+uv sync --locked --package a13n-harness --group dev
+```
+
+新建 `test_agent.py`，写入以下完整模块。`anyio_backend` fixture 显式选择 asyncio，因此测试不依赖本仓库的测试配置。
+
+```python title="test_agent.py"
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
-)
-from pydantic_ai.messages import ModelMessage
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 async def respond(
-    messages: list[ModelMessage],
-    info: AgentInfo,
+    messages: list[ModelMessage], info: AgentInfo
 ) -> AsyncIterator[str]:
-    del messages, info
-    yield "expected output"
+    del info
+    turns = 1 + sum(isinstance(message, ModelResponse) for message in messages)
+    yield f"turn-{turns}"
+
+
+def build_agent():
+    return HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
 
 
 async def test_agent_returns_expected_output() -> None:
-    model = FunctionModel(stream_function=respond)
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=model,
-    )
+    result = await build_agent().run("First turn")
 
-    result = await executable.run("Complete the task")
-
-    assert result.output_or_raise() == "expected output"
+    assert result.output_or_raise() == "turn-1"
     assert result.state is not None
 ```
 
-这个测试覆盖了 Harness 构建、Pydantic AI 执行循环、终结结果的规范化，以及状态导出。Harness 发出流式模型请求，因此 `FunctionModel` 需要 `stream_function`；只传 `FunctionModel(function=...)` 会使 Run 失败。产出字符串可模拟文本增量；需要测试工具调用、延后交互或 provider 的历史消息格式时，产出 `DeltaToolCalls`。
+将 `test_agent.py` 放在仓库根目录，然后运行：
+
+```bash
+uv run python -m pytest -q test_agent.py
+```
+
+预期结果为 `1 passed`。这个 Model 统计历史中已有的响应，不调用 provider；Harness 的构建、执行、输出校验和状态导出仍按正常路径运行。
+
+Harness 使用流式 Model 请求。应传入 `FunctionModel(stream_function=...)`；仅提供非流式 `function` 无法运行这条路径。产出字符串模拟文本，产出 `DeltaToolCalls` 模拟确定性的工具调用。[工具与依赖](tools-and-dependencies.md)提供了完整的工具调用示例。
 
 ## 明确测试继续执行
 
-继续同一个 Thread 时，`thread_id` 保持不变，`run_id` 则会重新生成：
+将以下测试追加到同一文件。它把完整状态保存到临时文件，重新构建 executable，并检查下次 Model 请求是否能看到两轮输入。
 
 ```python
-first = await executable.run("First turn")
-second = await executable.run(
-    "Second turn",
-    previous_state=first.state,
-)
+from pathlib import Path
 
-assert second.thread_id == first.thread_id
-assert second.run_id != first.run_id
+from a13n_harness import HarnessState
+
+
+async def test_saved_state_resumes_a_rebuilt_agent(tmp_path: Path) -> None:
+    first = await build_agent().run("First turn")
+    first.raise_for_status()
+    assert first.state is not None
+    checkpoint = tmp_path / "thread.json"
+    checkpoint.write_text(first.state.model_dump_json(), encoding="utf-8")
+
+    restored = HarnessState.model_validate_json(
+        checkpoint.read_text(encoding="utf-8")
+    )
+    second = await build_agent().run("Second turn", previous_state=restored)
+
+    assert second.output_or_raise() == "turn-2"
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
 ```
 
-测试应用的持久化逻辑时，应使用应用实际采用的序列化器和存储，将完整的 `HarnessState` 保存后再读取。还应确认失败或被放弃的执行不会覆盖最后一次已提交的检查点。
-
-## 保护 Provider 提示词的前缀
-
-当 Capability 会修改模型可见的消息时，应在同一次 Run 中至少发起两次模型请求。记录 Model 收到的消息。通过公开的消息 codec，将每次请求的完整消息序列与下一次请求中等长的前缀比较。确认最终转换后的内容保留在规范的结果历史中。这样可以发现仅作用于某次请求、却没有写回当前历史的转换。如果 Capability 的设计就是要替换历史，应断言准确的状态变化，而不是放宽或省略前缀检查。
-
-如果 Capability 还会提供指令，应记录每次请求的 `AgentInfo.instructions`，并确认它们完全相同。如果约定允许指令变化，则断言预期的具体变化，不要放宽稳定性检查。
+再次运行同一条 pytest 命令，预期为 `2 passed`。在应用测试中，还要调用应用实际使用的保存和读取函数。验证应用的提交规则：失败或放弃的轮次，不应替换应用打算保留的检查点。
 
 ## 将流作为有作用域的资源来测试
 
-在异步上下文中消费流，并确认收到了终结结果：
+把第三个测试追加到 `test_agent.py`：
 
 ```python
 from a13n_harness import HarnessRunResultEvent
 
-items = []
-terminal = None
-async with executable.stream("Stream the answer") as stream:
-    async for item in stream:
-        items.append(item)
-        if isinstance(item, HarnessRunResultEvent):
-            terminal = item.result
 
-assert items
-assert terminal is not None
-terminal.raise_for_status()
+async def test_stream_delivers_a_terminal_result() -> None:
+    terminal = None
+    async with build_agent().stream("First turn") as stream:
+        async for item in stream:
+            if isinstance(item, HarnessRunResultEvent):
+                terminal = item.result
+
+    assert terminal is not None
+    assert terminal.output_or_raise() == "turn-1"
+    assert terminal.state is not None
 ```
 
-如果应用向调用方暴露流式接口，还应测试消费者提前退出的情况。此时应用仍必须关闭流的作用域，释放临时 Environment 资源和当前 Run 的协作对象。
+同一条命令现在会运行全部三个测试。用 `async with` 包住整个消费过程，确保正常结束、异常和提前退出时都能关闭 Run 资源。应用向调用方转发事件流时，还应测试调用方提前退出能否关闭应用封装层及其临时资源。
+
+## 保护 Provider 提示词的前缀
+
+对于修改 Model 消息的 Capability，测试一次包含多个模型请求的完整 Run：
+
+1. 让 Model 先请求工具，再返回最终答案。
+2. 使用公开消息 codec 记录两次请求收到的消息。
+3. 将第一次的完整消息序列与第二次的等长前缀比较。
+4. 检查最终转换也保留在结果历史中。
+
+这样能发现仅修改发出请求、却未写入规范历史的实现。如果功能本就需要替换历史，则断言准确的替换结果。对于 Capability 指令，记录每次请求的 `AgentInfo.instructions`，检查其保持稳定或发生预期变化。
 
 ## 区分定义与执行时的权限
 
-用固定的 fake 对象测试定义中选定的 Capabilities。针对具体用户的策略、模型路由，以及媒体、文档、Web 或交互协作对象，则通过新的 Run 绑定注入。这样测试才与生产环境的职责边界一致，也能防止凭据或可变权限进入可复用的定义。
+把稳定行为和工具定义构建到 executable 中。与生产代码一样，通过新的 Run 绑定提供用户相关策略、模型路由，以及 Web、文档、媒体或交互协作对象。
 
-如果 Capability 暴露工具，两端都需要测试：
-
-1. 模型只能看到预期的工具接口；
-2. 协作对象收到预期的类型化请求和策略上下文。
+每项工具集成都要检查 Model 可见的工具集合，以及协作对象实际收到的类型化请求。应用负责授权规则时，加入一个拒绝操作的测试。参照[工具与依赖](tools-and-dependencies.md#supply-a-live-application-dependency)，确定各个 fake 应放在哪一层。
 
 ## 分三层测试 Environment 集成
 
-| 层级     | 使用方式                                   | 验证内容                                                              |
-| -------- | ------------------------------------------ | --------------------------------------------------------------------- |
-| 单元测试 | fake 的类型化 Environment 接口或协作对象   | 工具参数、结果转换、策略和错误                                        |
-| 本地集成 | Direct Local Provider 配合临时目录         | 真实的文件与进程行为，以及资源清理                                    |
-| 隔离集成 | Local Envd 配合已构建的 `a13n-envd` 二进制 | Environment Interaction Protocol（EIP）协商、隔离前提、生命周期和恢复 |
+选择能证明目标行为的最低成本测试层级：
 
-Direct Local 不能替代隔离环境。需要验证 EIP 或原生隔离边界的测试，应使用真实的 Local Envd 执行路径。
+| 层级     | 准备                                     | 检查内容                       |
+| -------- | ---------------------------------------- | ------------------------------ |
+| 单元测试 | fake 的类型化 Environment 接口或协作对象 | 参数、返回值、策略、错误       |
+| 本地集成 | Direct Local 与临时目录                  | 真实文件和进程操作、清理       |
+| 隔离集成 | Local Envd 与已构建的 daemon             | EIP 协商、隔离、生命周期、恢复 |
 
-在此仓库中，可以运行对应的 Local Envd 集成检查：
+Direct Local 测试 Host 文件和进程访问。需要验证原生隔离或 Environment Interaction Protocol（EIP）时，使用 Local Envd。在已准备好 Envd 开发环境的仓库 checkout 中运行：
 
 ```bash
 make local-envd-test
 ```
 
+provider 准备步骤见 [Environment 示例](../environments/examples.md)。启动 daemon 的测试与上面的三个离线测试分开运行。
+
 ## 将插件作为已安装的包来测试
 
-测试 entry point 发现时，应在隔离的 Python 虚拟环境中构建或安装扩展分发包，而不是直接修改目录。验证显式选择、配置校验、每次 Run 都创建新实例、资源清理和故障隔离。
+在隔离虚拟环境中安装扩展，再测试 entry point 发现。覆盖显式选择、无效配置、每次 Run 的新实例、清理和失败处理。直接修改内存中的目录，会跳过本项测试要验证的打包行为。
 
-仓库的[插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)提供了 entry point 和直接代码接入两种路径，都有离线测试。
+[插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)包含已安装 entry point 和直接代码组合两种方式的离线测试。
 
 ## 保留一个真实 Provider 的冒烟测试
 
-可以提供一个小型、按需启用的冒烟测试，验证 provider 凭据、模型命名和网络集成。主测试集不应依赖在线模型。除非 provider 和 seed 能保证响应确定，否则不要对模型响应做精确匹配；应验证应用约定的行为。
+添加一个小型、按需启用的测试，检查凭据、配置的 Model ID 和网络访问。断言应用的输出契约，而不是精确的生成措辞。将它与离线测试分开，让日常开发无需 provider 账号。
 
 ## 仓库示例
 
-- [Agent 应用测试](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests)覆盖多轮执行、重启恢复、失败、提前退出流，以及临时 Environment 的清理。
-- [Harness 测试](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests)展示了如何围绕公开边界，测试事件、状态、Capabilities、Environment、观测、委派和插件。
+应用超出这三个入门测试的范围后，可以参考：
+
+- [Agent Application 测试](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests)：多轮执行、重启、失败、提前退出流和临时 Environment 清理。
+- [Harness 测试](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests)：公开事件、状态、Capabilities、Environment、观测、委派和插件。

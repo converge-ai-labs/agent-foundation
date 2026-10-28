@@ -1,114 +1,110 @@
 ---
 title: 配置 provider
-description: 分别配置 provider 的目标、后端连接和凭据。
+description: 选择目标、提供连接设置，并使用当前凭据打开执行。
 ---
 
-分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。活跃会话的连续性使用单独的 Host 自有[会话恢复提示](remote-envd.md#state-concurrency-and-recovery)。
+先选择[后端](index.md#choose-a-backend)，再分别准备目标输入、账号设置和凭据：
 
-| 值                                | 职责                               | 示例                                 |
-| --------------------------------- | ---------------------------------- | ------------------------------------ |
-| 目标配置（`environment_model`）   | 该环境应开放什么                   | 根目录、Docker 挂载、E2B 模板        |
-| 账号配置（`configuration_model`） | Host 从哪里连接后端                | Docker 守护进程、E2B 域名、HTTP 端点 |
-| 凭据（`credential_model`）        | 当前访问后端的权限                 | E2B API key 或 HTTP EIP token        |
-| 运行时协作对象                    | 活跃客户端、会话和 Host 分配的资源 | 由 Host 提供，或在显式打开时获取     |
-| `EnvironmentState`                | 已验证、指向精确保留目标的引用     | 容器/沙箱身份和配置指纹              |
+| 输入                              | 填写内容                    | 示例                               |
+| --------------------------------- | --------------------------- | ---------------------------------- |
+| 目标配置（`environment_model`）   | 工作区和执行设置            | 根目录、容器挂载、必需方法         |
+| 账号配置（`configuration_model`） | 后端地址和账号选择          | Docker Engine、E2B 域名、HTTP 端点 |
+| 凭据（`credential_model`）        | 当前访问密钥                | API key 或 HTTP EIP token          |
+| 运行时协作对象                    | Host 管理的活跃连接或运行时 | 共享 Local Envd Device             |
+| `EnvironmentState`                | 指向选定目标的已保存引用    | 容器或沙箱身份                     |
 
-`management.open_provider(configuration=..., credential=...)` 获取管理客户端。`definition.execution_connector(recipe, configuration=..., credential=..., state=...)` 只验证输入并构造连接配置，`open()` 才获取执行资源。Host 也可传入 `runtime=...` 借用共享连接，此时允许提供账号配置，但不能同时提供凭据。
+调用 `definition.execution_connector(recipe, configuration=..., credential=..., state=...)` 验证输入并构造 connector。准备获取执行资源时，再调用 `open()`。借用 Host 管理的连接时，传入 `runtime=...` 和账号设置，省略 `credential`。
 
-每个定义对每种类别只管理一个模型。没有配置 schema 版本：改变输入含义就改变了 provider 类型。
+创建或启动托管目标是单独的步骤：`management.open_provider(configuration=..., credential=...)` 获取管理客户端。具体流程见[生命周期与状态](lifecycle.md)。保存目标状态供后续连接使用，活跃客户端留在内存中。要继续已有 Envd Session，使用独立的 [Session 恢复提示](remote-envd.md#state-concurrency-and-recovery)。
 
-[生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。可用操作由选定的[执行路径](index.md#choose-a-backend)及其声明的描述符决定。
+以下各节解释不同后端的配置选择。完整 schema、默认值和数值限制见[生成的字段参考](configuration-reference.md)。
 
 ## Host 出站连接
 
-在 Host 进程环境中设置 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 或小写形式。这些可信设置路由 Host 自有 HTTP 连接，不控制设备命令流量。
+需要 HTTP 代理时，在 Host 进程环境中设置 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 或 `NO_PROXY`，也支持小写形式。这些设置路由 Host 自有的 HTTP 连接。Device 上执行的命令需单独配置 [Session 出站网络](../a13n-envd/egress.md)。
 
-TLS 默认启用验证。在构建自有 HTTP 客户端前设置 `A13N_OUTBOUND_TLS_VERIFY=false`，可关闭证书和主机名检查。私有 HTTPS 端点优先使用可信 CA。已有客户端、调用方提供的客户端及 vendor SDK/WebSocket 传输保留自有 TLS 设置。
-
-端点和 CA 选项见 [Remote Envd](remote-envd.md#connect-to-an-existing-http-daemon)，设备命令访问目标见 [Session 出站网络](../a13n-envd/egress.md)。
+保持 TLS 验证启用，为私有 HTTPS 端点使用可信 CA。在构建自有 HTTP 客户端前设置 `A13N_OUTBOUND_TLS_VERIFY=false` 会关闭证书和主机名检查。已有客户端、调用方提供的客户端、厂商 SDK 和 WebSocket 传输保留各自的 TLS 设置。端点和 CA 配置见 [Remote Envd](remote-envd.md#connect-to-an-existing-http-daemon)。
 
 ## Direct Local
 
-`DirectLocalEnvironmentConfiguration` 要求绝对路径 `root.path`。根目录始终可写；仅供参考的挂载通过 Harness 权限上限禁止写操作。基础配置仅支持文件：shell 配置和允许的可执行文件默认均为空。
+1. 按[快速入门](getting-started.md)，将 `root.path` 设为已有 Host 目录的绝对路径。
+2. 保留默认的仅文件配置，或按[命令示例](commands.md)添加允许的可执行文件。
+3. 需要 shell 语法时，添加 shell profile：填写唯一 ID、绝对可执行文件路径、所需固定参数，以及 `posix` 或 `powershell` 方言。支持的 POSIX shell 需显式允许登录模式；PowerShell profile 不支持登录模式。
+4. 选择环境变量访问范围。`inherit_environment` 默认为 false。空的 `allowed_environment_keys` 拒绝所有显式设置或移除的键；列出允许的键，或使用 `None` 允许任意键。
 
-要启用单个可执行文件，参考[完整命令示例](commands.md)。需要 shell 语法时，配置绝对 shell 路径和 profile ID、可选固定参数、`posix` 或 `powershell` 方言，以及显式登录许可。profile ID 必须唯一。PowerShell profile 不能启用登录模式。
+根目录配置允许写入。要通过 Harness 挂载仅供参考的目录，在挂载权限上限中去掉写操作。Direct Local 以 Host 账号运行，不提供 OS 沙箱。它无状态，因此 connector 使用 `state=None`。
 
-`inherit_environment` 默认为 false。`allowed_environment_keys` 默认为空集合，拒绝所有显式设置或移除的键；`None` 允许任意键。请有意选择。模型编写的环境修改不能绕过该策略。使用目标前会验证绝对路径和空字符/控制字符限制。
-
-默认限制为 64 MiB 文件值、128 个并发进程、最长 24 小时墙钟时间、五秒终止宽限、1 MiB 缓冲区和 64 GiB spool。这些是 provider 限制，不是 shell 工具展示默认值。Direct Local 无状态并共享 Host 账号；任何配置都不能将它变为 OS 沙箱。
+Provider 的资源限制控制文件值、并发进程、命令墙钟时间和保留输出，与工具显示限制分开。默认值见[字段参考](configuration-reference.md)。
 
 ## Local Envd
 
-`LocalEnvdEnvironmentConfiguration` 选择可选的设备绝对路径 `working_directory`、`required_methods`、可选的会话 `egress` 和可选的 `expected_boundary`。每个适配器打开独立会话。省略目录时使用设备默认值；持久保存执行选择的 Host 在接纳工作前解析并冻结显式目录。该目录不是文件系统访问根目录。
+分两层配置 Local Envd：
 
-`LocalEnvdLaunchConfiguration` 属于 Host 运行时，不属于各个适配器。它选择执行身份、文件系统 Sandbox、出站网络模式、原生默认目录、目录发现、可信可执行文件根目录、shell 配置和资源限制。shell profile 选择 `profile_id`、绝对 `executable`、固定参数、登录许可和脚本字节上限（默认 1 MiB）。可执行文件根目录和 shell 配置默认均为空。`sandbox` 和 `egress` 选择设备的文件系统 Sandbox 和网络模式，Envd 对每个会话实施这些设置；[Host 外层边界](../a13n-envd/isolation.md)仍决定可用权限。
+1. **启动 Device。** 为 Host 运行时提供 `LocalEnvdLaunchConfiguration`：执行身份、文件系统沙箱、网络模式、默认目录、可执行文件根目录、shell profile 和资源限制。可执行文件根目录和 shell profile 初始为空。[Host 边界](../a13n-envd/isolation.md)决定可用的隔离能力。
+2. **选择每个 Session。** 设置 `LocalEnvdEnvironmentConfiguration.working_directory`、`required_methods`，以及可选的 `egress` 和 `expected_boundary`。每个 execution 打开独立 Session。工作目录选择操作的起点，文件系统策略决定可访问的范围。
 
-启动默认值为 16 MiB 文件值、64 KiB 预览、每条输出流 256 MiB、每个会话 1 GiB spool 和设备总 4 GiB spool。预览不能超过单流上限；每个会话 spool 必须为两条流预留空间，并满足设备配额。
+省略工作目录时使用 Device 默认值。持久保存 Run 选择的 Host 应在接纳工作前解析出显式目录。输出限制需要相互匹配：预览不超过单流上限，每个 Session 为两条流预留空间，Session spool 总量符合 Device 配额。
 
-Host 管理一个共享 `LocalEnvdProviderRuntime`、其二进制文件、启动和关闭。适配器 `close()` 只关闭自身会话。请单独关闭运行时，或使用其异步上下文管理器。Local Envd 仍是库/Harness UI provider，Service 不提供它。
+保持共享的 `LocalEnvdProviderRuntime` 存活，直到所有借用它的 execution 关闭，再单独关闭运行时或退出其异步上下文。execution 关闭会释放其 Session。库调用方和 Harness UI 可使用 Local Envd；Service 不提供该 provider。
 
 ## Docker
 
-使用原生执行且省略 `user` 时，provider 使用镜像标签 `ai.a13n.environment.user`；没有该标签的自定义镜像沿用镜像 USER。`a13n-sandbox` 选择 `sandbox`（UID/GID 1000）；recipe 显式设置的 `user` 优先。
+配置托管 Docker 目标时：
 
-Service 的 `DockerRecipe` 默认采用 `execution="native"`，通过 Docker exec 提供 Files & Shell。选择 `execution="envd_http"` 可通过 HTTP EIP 使用镜像管理的 Envd 守护进程。默认镜像是 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`；需要精确镜像身份时选择不可变 digest。存在本地镜像时直接使用。默认 `pull_policy="if_missing"` 时拉取缺失镜像；设为 `"never"` 时以 `environment_image_missing` 失败。重新构建或拉取标签不会重建已有环境容器。
+1. 将 `DockerConnectionConfiguration.docker_host` 设为 Host 可访问的 Engine。后续重连需访问同一 Engine。Service 的 [Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)展示了非 root 进程如何访问 socket。
+2. 选择镜像和执行路径。Service 的 `DockerRecipe` 默认采用 `execution="native"` 和 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`。Native 执行使用 Docker exec；`execution="envd_http"` 使用镜像内的 Envd 守护进程。
+3. 添加资源限制和可选绑定挂载。挂载 `source` 必须已存在于 Engine 所在机器上；`read_only` 默认为 true。保留容器自身文件系统中的 `/workspace` 和私有命令元数据。命名卷不是配方选项。
+4. 创建目标、保存状态并打开 connector。拉取或重新构建镜像标签不会替换已有容器。
 
-私有容器文件系统提供 `/workspace`。可选绑定挂载包含 Docker Engine 所在机器上已存在的绝对 `source`、容器 `target` 和 `read_only` 标志（默认 true）。不能替换 `/workspace` 或私有命令元数据。命名卷不是目标配置选项；销毁时保留外部数据。
+默认 `pull_policy="if_missing"` 只拉取缺失镜像。`"never"` 在镜像缺失时报告 `environment_image_missing`。需要精确镜像身份时使用不可变 digest。Native 执行按以下顺序选择用户：显式配方 `user`、`ai.a13n.environment.user`、镜像 USER。标准沙箱镜像选择 UID/GID 1000。
 
-`cpus` 以 CPU 核数计；`memory_gb` 使用十进制 GB（1 GB = 1,000,000,000 字节），最低 6 MiB（0.006291456 GB）；`pids_limit` 限制进程数。`environment` 设置普通变量。`init_script` 只在新容器运行，初始化失败不隐式重放。不要在这些目标配置字段中保存秘密。`disable_network` 默认关闭，启用时选择 Docker 的 `none` 网络。
+自定义 Native 镜像需要 Linux、Python 3.10+、配置的 shell，以及可写的 `/workspace` 和 `/tmp/a13n`。git-ignore 查询需要 Git。`init_script` 在新容器上运行，初始化失败不会隐式重放。它的 helper 请求超时与普通 shell 时长分开。普通变量放在 `environment`，秘密留在配方字段之外。`memory_gb` 使用十进制 GB，`cpus` 使用核数。`disable_network=true` 选择 Docker 的 `none` 网络。销毁会保留外部绑定挂载的数据。
 
-原生执行选项包括用户、shell、Python 可执行文件、停止宽限（十秒）、逐 helper 请求超时（60 秒；包含初始化脚本，不限制 agent 执行或普通 shell 时长）、文件值（16 MiB）、输出预览（64 KiB）、每流捕获字节（16 MiB）、总观测/保留预算（各 64 MiB）和并发进程观测（128）。自定义镜像需要 Linux、Python 3.10+、配置的 shell、可写 `/workspace` 和 `/tmp/a13n`；只有 git-ignore 查询需要 Git。
-
-`DockerConnectionConfiguration.docker_host` 选择 Engine socket。重启后，Host 进程必须连接同一 Engine 才能重新进入容器。Service 的 [Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)挂载 Engine socket，并授予非 root Service 进程访问权限。
-
-使用 HTTP EIP 时，在 Docker 连接的 `envd_http` 中配置 Worker 可达的主机和监听地址。Service 保留镜像入口，将容器 8888 端口发布到 Docker 分配的主机端口。使用兼容的 Envd 镜像；需要就绪检查包含可观察、可输入的桌面时，设置 `desktop: true`。镜像管理守护进程和 Session 身份，因此拒绝 recipe 的 `user` 覆盖。HTTP 执行需要网络；明文 HTTP 使用回环地址或显式信任的私有链路。Console 操作见[创建 Docker 桌面](../a13n-service/environments.md#create-a-docker-desktop)。
+使用 HTTP EIP 时，在连接的 `envd_http` 中配置 Worker 可达的主机和监听地址。Service 保留镜像入口，将容器 8888 端口发布到 Docker 分配的主机端口。使用兼容的 Envd 镜像并保持网络启用。镜像负责执行身份，因此该路径拒绝配方中的 `user` 覆盖。添加 `desktop: true`，可让就绪检查包含可观察、可输入的桌面。明文 HTTP 要求回环地址或显式信任的私有链路。Console 步骤见[创建 Docker 桌面](../a13n-service/environments.md#create-a-docker-desktop)。
 
 ## 云 provider
 
-E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 使用相同的后端/凭据/目标配置分离方式。六者的说明见[配置比较](providers.md#cloud-providers)和[生成的 schema 参考](configuration-reference.md)。
+按下文选择账号和目标设置，再通过[云 Provider](providers.md#cloud-providers)比较运行时行为。[字段参考](configuration-reference.md)列出六个 provider 的 schema 和限制。创建和保留目标需要 Host 生命周期管理；构造 execution connector 不会分配云目标。
 
 ### E2B
 
-Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用户 `user` 和 Python `/usr/bin/python3`；路径必须为绝对路径且不能包含路径穿越。默认允许互联网访问。
+设置 `E2BConnectionConfiguration.domain`（默认 `e2b.dev`），单独提供 `E2BCredential.api_key`。Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用户 `user` 和 Python `/usr/bin/python3`，并启用互联网访问。
 
-沙箱超时默认 3,600 秒（30–86,400）；请求超时默认 30 秒（最多 300）。两者都不是逐命令执行期限。文件值默认 100 MiB（最多可配置为 1 GiB）、观测字节 1 MiB、活跃观测 128、保留输出总量 128 MiB、查询条目 10,000。[运行时限制](providers.md#e2b-runtime)介绍基于文本的观测和支持的命令控制。
+分别选择沙箱生命周期和请求超时。沙箱默认 3,600 秒，请求默认 30 秒；两者都不设置逐命令期限。Host 根据保留需求维护 keepalive，并在生命周期操作后保存状态。重连会选择该精确沙箱；保留输出遵循 [E2B 运行时限制](providers.md#e2b-runtime)。
 
-`E2BConnectionConfiguration.domain` 默认为 `e2b.dev`；`E2BCredential.api_key` 是单独保护的值。Host 提供运行时凭据，在保留策略需要时维护保活，并在生命周期操作后持久保存沙箱状态。新适配器可重连精确保留的沙箱，但不会重建丢失输出或扩大访问。
-
-在 Service/Console 中，勾选桌面且不指定自定义模板时，默认自动准备私有模板（`template="auto"`、`execution="envd_http"`、`desktop_assistance=true`）。首次创建构建，后续在同一连接和凭据范围内复用。见[桌面准备](providers.md#e2b-desktop-preparation)。
-
-首次自动创建 E2B 桌面通常需要 1～2 分钟，也可能更久；后续创建复用模板。创建后，环境详情显示实际准备阶段和已等待时间。可以离开页面，后台会继续处理，稍后从环境实例列表重新打开详情。就绪后点击“查看桌面”获取只读快照，按需刷新；交互操作仍从会话中接管。创建失败会展示原因，上一轮操作结果确认后可以“重试创建”。只保存配置不会提前构建。
+Service 桌面未指定自定义模板时，使用自动私有模板准备：`template="auto"`、`execution="envd_http"` 和 `desktop_assistance=true`。首次创建构建模板，后续在同一连接和凭据范围内复用。在环境详情中跟踪实际阶段，就绪后打开**查看桌面**。只保存配置不会构建模板。见[桌面准备](providers.md#e2b-desktop-preparation)。
 
 ### Daytona
 
-`DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。工作目录为 `/workspace`。`DaytonaConnectionConfiguration` 提供可选组织约束和目标区域；`TokenCredential` 提供 API key，省略组织时从 Key 识别。Harness 需要具体快照；Service 桌面配方可以省略快照，首次创建自动构建、后续复用。
+在 `DaytonaConnectionConfiguration` 中设置区域和可选组织约束，通过 `TokenCredential` 提供 API key。省略组织时从 key 识别。在 `DaytonaEnvironmentConfiguration` 中选择 snapshot，由它确定沙箱资源；工作目录为 `/workspace`。Harness 需要具体 snapshot。Service 桌面配方可在首次创建时准备 snapshot，后续复用。
 
 ### Modal
 
-`ModalEnvironmentConfiguration` 选择镜像、资源和有限生命周期。`ModalConnectionConfiguration` 可选填写 Modal `workspace`，并指定 App（默认 `a13n-sandboxes`）；Service 自动桌面在首次创建时准备 App 和镜像；`ModalCredential` 包含 token ID 和 secret。基于文件系统快照的停止/恢复仅用于托管目标。
+在 `ModalEnvironmentConfiguration` 中选择镜像、资源和有限生命周期。在 `ModalConnectionConfiguration` 中可选填写 workspace，并选择 App（默认 `a13n-sandboxes`）。通过 `ModalCredential` 提供 token ID 和 secret。Service 自动桌面在首次创建时准备 App 和镜像。基于文件系统快照的停止/恢复属于托管目标管理。
 
 ### Vercel Sandbox
 
-`VercelEnvironmentConfiguration` 默认提供原生 Files & Shell，根目录为 `/vercel/sandbox`。选择 `execution="envd_http"` 和运维构建的 `snapshot`，即可通过 EIP 使用 `/workspace`；`desktop=true` 必须使用该路径。Service 另以 `desktop_assistance=true` 开启人工访问。`VercelConnectionConfiguration` 指定 team 和 project；`TokenCredential` 保存 Vercel access token。Provider 使用命名持久沙箱，保留原生停止／恢复和会话时限。参见[快照准备](providers.md#vercel-sandbox)。
+在 `VercelConnectionConfiguration` 中设置 team 和 project，将 access token 放入 `TokenCredential`。Native 执行使用 `/vercel/sandbox`。使用 EIP 时，选择 `execution="envd_http"` 和运维构建的 `snapshot`；该路径使用 `/workspace`，且 `desktop=true` 必须使用此路径。Service 通过 `desktop_assistance=true` 添加人工访问。provider 保留命名持久沙箱，支持原生停止/恢复，并设定有限的厂商会话生命周期。参照[快照准备](providers.md#vercel-sandbox)。
 
 ### Fly.io Sprites
 
-`SpritesEnvironmentConfiguration` 选择区域，默认目录为 `/home/sprite`。`SpritesConnectionConfiguration` 指定组织；`TokenCredential` 保存 Sprites token。不要调度显式停止：Sprites provider 不支持 `stop()`，且 Sprites 会自动休眠。
+在 `SpritesConnectionConfiguration` 中设置组织，提供 `TokenCredential`。目标配置选择区域，默认目录为 `/home/sprite`。Sprites 自动休眠；provider 没有可调度的显式 `stop()` 操作。
 
-Service 中设置 `desktop=true` 会自动选择 `execution="envd_http"`，并在每个新 Sprite 内安装桌面。执行通过私有 TCP 隧道连接 Envd，工作目录为 `/workspace`，默认启用人工接管。参见[自动创建 Sprites 桌面](../a13n-service/environments.md#automatic-sprites-desktops)。
+Service 桌面的 `desktop=true` 会选择 `execution="envd_http"`，并在每个新 Sprite 内安装桌面。该路径使用私有 TCP 隧道，工作目录为 `/workspace`；Service 默认启用人工控制。见[自动创建 Sprites 桌面](../a13n-service/environments.md#automatic-sprites-desktops)。
 
 ### Runloop
 
-`RunloopEnvironmentConfiguration` 选择 blueprint、资源规格和空闲挂起间隔，根目录为 `/home/user`。`RunloopConnectionConfiguration` 指定组织；`TokenCredential` 提供 API key。
+在 `RunloopConnectionConfiguration` 中设置组织，通过 `TokenCredential` 提供 API key。在 `RunloopEnvironmentConfiguration` 中选择 blueprint、资源规格和空闲挂起间隔；根目录为 `/home/user`。
 
-Daytona、Sprites 和 Runloop 使用客体 PATH 上的 `python3`。Modal 要求 Envd 镜像，仅在管理 helper 中使用客体 PATH 上的 `python3`；Vercel 使用其运行时 Python 路径。自定义客体镜像必须提供配置的根目录、Python 和 shell；这些路径不指向 Host 文件系统。共享命令/文件限制列于各自生成的目标配置 schema。
+自定义客体镜像应在客体内提供配置的根目录、Python 和 shell。Daytona、Sprites 和 Runloop 使用客体 PATH 上的 `python3`。Modal 需要 Envd 镜像，并用客体 PATH 上的 `python3` 运行管理 helper；Vercel 使用其运行时 Python 路径。
 
 ## 远程 HTTP / WebSocket Envd
 
-两个远程 provider 都使用 `RemoteEnvdEnvironmentConfiguration` 作为目标配置；它选择固定会话工作目录、必需方法、可选的会话 `egress` 和可选的 `expected_boundary`，不配置守护进程挂载或供应目标。必需方法名会规范化并去重。`RemoteEnvdStateData.device_id` 选择由外部管理的设备。
+1. 注册或选择由外部管理的 Device。`RemoteEnvdStateData.device_id` 标识该设备。
+2. 在 `RemoteEnvdEnvironmentConfiguration` 中设置 Session 工作目录、必需方法、可选 `egress` 和可选 `expected_boundary`。守护进程挂载在其运行位置配置。
+3. 提供传输设置。HTTP 使用 `endpoint` 和单独的 `HttpEnvdCredential`；WebSocket 使用 Host 经过认证的 connector/runtime。
+4. 打开 execution 获取 Session，使用后关闭。目标供应、停止、销毁和 keepalive 仍由外部所有者负责。
 
-HTTP 后端配置提供 `endpoint`、初始化超时（10 秒）、请求超时（30 秒）、最大在途请求（32），以及显式允许明文私有链路的选项（默认 false）。token 由单独的 `HttpEnvdCredential` 提供。远程 provider 的请求超时不同于底层 Python EIP 客户端默认值；请明确当前配置的是哪条边界。
+HTTP 默认初始化超时 10 秒、请求超时 30 秒，最多 32 个在途请求。明文私有链路需显式启用。WebSocket 默认连接超时 10 秒，其 Host 运行时管理连接和协议设置。这些 Provider 超时与底层客户端默认值分开。
 
-WebSocket 后端配置具有十秒连接超时。Host connector/运行时提供经过身份验证的连接和协议设置；不能把 URL 或 WebSocket 传输对象放进目标配置或账号配置来绕过该流程。
-
-远程 Envd provider 连接外部管理的目标，不承担托管供应、停止、销毁或目标保活。完整传输设置见 [Remote Envd](remote-envd.md)，底层会话操作见 [Python EIP 客户端](../a13n-envd/python-client.md)。
+接下来按 [Remote Envd](remote-envd.md)设置传输，或通过 [Python EIP 客户端](../a13n-envd/python-client.md)直接操作 Session。

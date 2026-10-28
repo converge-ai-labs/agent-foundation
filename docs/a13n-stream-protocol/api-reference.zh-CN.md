@@ -1,49 +1,59 @@
 ---
 title: 公开 API 与载荷参考
 sidebarTitle: API 与载荷参考
-description: 包的公开名称、自定义事件、输入元数据和终结事件。
+description: 查阅 observer 与展示 API、解析自定义载荷，并选择处理器可替换的字段。
 ---
 
-Stream Protocol 将 Harness 输出转成 AG-UI 1.0 事件，再合并为展示条目。Host 负责传输和保存检查点；Harness 负责继续执行 agent。
+实现消费端时使用本页。可运行示例见[快速入门](getting-started.md)；集成顺序和检查点处理见[事件与处理器](events.md)及[重放与恢复](replay.md)。
 
 ## 公开名称
 
-| `a13n_stream_protocol` 导出项 | 用途                                                                |
-| ----------------------------- | ------------------------------------------------------------------- |
-| `HarnessAguiObserver`         | 绑定一个线程/执行，观测源条目、获取事件独立快照，或从有限源历史恢复 |
-| `HarnessAguiStreamObserver`   | 观测一个根流及其带归属标识的内联子执行，各自维护独立分片状态        |
-| `AUTHORED_INPUT_EVENT_NAMES`  | 用户输入与引导输入的事件名称集合                                    |
-| `tool_result_content`         | 将公开执行值投影为文本或有序的上游内容 part，不执行媒体 I/O         |
-| `AguiEventProcessor`          | 同步 `(source, event) -> event or None` Host 投影回调               |
-| `AguiObservationError`        | 关联、观测、重放或处理器替换无效                                    |
-| `ContentMetadata`             | 展示约定及不透明的额外元数据                                        |
-| `fragment_custom_event`       | 拆分过大的 CUSTOM 事件，不丢失领域 JSON                             |
-| `CustomEventAssembler`        | 在一个有界订阅内重组有序帧                                          |
-| `__version__`                 | 已安装分发包版本                                                    |
+从 `a13n_stream_protocol` 导入以下名称：
 
-两个 observer 类均接受 `processor=None` 和 `retain_events=True`。提供 `observe(item)`、`snapshot(*, start=0, stop=None)`、`event_count`、异步 `resume(history)`、`export()`、类方法 `restore(continuation, processor=...)` 及只读 `thread_id` / `run_id`。Restore 创建不保留日志的 observer。观测或重建成功前不绑定 ID。
+| 名称                         | 用途                                                   |
+| ---------------------------- | ------------------------------------------------------ |
+| `HarnessAguiObserver`        | 转换严格只包含一次执行的源                             |
+| `HarnessAguiStreamObserver`  | 转换一个根流及其带归属标识的内联子执行                 |
+| `AguiEventProcessor`         | 为同步 `(source, event) -> event or None` 回调标注类型 |
+| `AguiObservationError`       | 处理无效观测、关联、重放或替换                         |
+| `AUTHORED_INPUT_EVENT_NAMES` | 选择用户与引导输入                                     |
+| `ContentMetadata`            | 读取展示、来源、媒体和应用元数据                       |
+| `tool_result_content`        | 将公开工具值投影为文本或有序内容 part，不执行媒体 I/O  |
+| `fragment_custom_event`      | 拆分过大的 CUSTOM 事件                                 |
+| `CustomEventAssembler`       | 从有序帧重组完整 CUSTOM 事件                           |
+| `__version__`                | 读取已安装分发包版本                                   |
+
+两个 observer 类都接受 `processor=None` 和 `retain_events=True`：
+
+| 成员                                   | 行为                                        |
+| -------------------------------------- | ------------------------------------------- |
+| `observe(item)`                        | 以独立元组返回新转换事件                    |
+| `event_count`                          | 统计保留的、经处理器处理后的帧              |
+| `snapshot(*, start=0, stop=None)`      | 读取半开区间 `[start, stop)` 内的独立帧副本 |
+| `await resume(history)`                | 用有限异步源前缀重建全新 observer           |
+| `export()`                             | 导出独立转换续接状态，不包含事件日志        |
+| `restore(continuation, processor=...)` | 从保存状态创建不保留日志的 observer         |
+| `thread_id`, `run_id`                  | 读取绑定的源身份；初始为 `None`             |
 
 ### 展示 API
 
-从 `a13n_stream_protocol.display` 导入展示类型，而不是从包根导入：
+从 `a13n_stream_protocol.display` 导入 `DisplayFold`、`DisplaySnapshot`、`DisplayContinuation`、`Item` 和 `StreamPosition`。
 
-| API                                                                     | 用途                                                        |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | 转换原生观测，将事件合并为展示条目                          |
-| `fold.events(source)`                                                   | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
-| `fold.fold(events, source=None)`                                        | 累积事件，返回序号和条目引用                                |
-| `fold.export()` / `DisplayFold.restore(snapshot, processor=None)`       | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
-| `fold.capture_delta()`                                                  | 导出自上次捕获以来变更的条目及其匹配的续接状态              |
-| `fold.export_continuation()`                                            | 单独导出解析状态，不复制展示条目                            |
-| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition`      | 验证并序列化检查点内容和续接状态                            |
+| 操作                                                                    | 结果                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | 创建用于转换与展示累积的 fold            |
+| `fold.events(source)`                                                   | 将原生源条目转换为序列化 AG-UI 事件      |
+| `fold.fold(events, source=None)`                                        | 累积事件并返回序号与条目引用             |
+| `fold.export()`                                                         | 导出全部条目及续接状态的独立副本         |
+| `DisplayFold.restore(snapshot, processor=None)`                         | 恢复该检查点                             |
+| `fold.capture_delta()`                                                  | 导出上次捕获以来的变更条目及当前续接状态 |
+| `fold.export_continuation()`                                            | 单独导出解析状态                         |
 
-默认展示预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷只保留名称，不无限复制载荷。`full_content=True` 保留完整展示内容。两种模式都不是恒定内存：保留的条目仍随对话增长。
-
-实时转换见[事件与处理器](events.md)；可运行的检查点恢复示例和源重建见[重放与恢复](replay.md)。
+默认预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷保留名称，而非复制完整载荷。`full_content=True` 保留完整展示内容；保留的对话大小仍随条目数量和内容大小增长。按照[检查点步骤](replay.md#restore-a-compact-display-checkpoint)，将内容、续接状态和后续事件选择保持一致。
 
 ## 对完整自定义事件分片
 
-这个完整示例在内存中完成拆分与重组，无需网络或 agent：
+运行这个内存中的拆分与重组示例，检查消费端分片处理流程：
 
 ```python
 from ag_ui.core.events import CustomEvent
@@ -61,48 +71,54 @@ assert complete["value"] == original.value
 assert not assembler.gap
 ```
 
-向 `accept()` 传入**完整序列化 CUSTOM 封装**，不要只传 `value`。UTF-8 编码后不超过 48 KiB 的事件保持完整。更大事件转换为 `a13n.stream.fragment`，携带 `id`、`index`、`count` 和字符串 `data`。标识应足够唯一，避免订阅中交错事件相互混淆。
+向 `accept()` 传入完整序列化 CUSTOM 封装。JSON 的 UTF-8 编码不超过 48 KiB 时，事件保持完整。更大事件转换为包含 `id`、`index`、`count` 和字符串 `data` 的 `a13n.stream.fragment` 帧。可能交错的事件应使用不同标识。
 
-assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个上限都必须为正数。整个事件重建完成前，或分片被拒绝时，返回 `None`。无效、不一致、乱序、嵌套或超预算序列会设置持续保持的 `gap` 标志。绝不发布不完整的领域事件。
+Assembler 默认允许 64 MiB 待处理字节和八个待处理标识，两个上限均须为正数。`accept()` 返回完整事件；等待或拒绝序列时返回 `None`。无效、不一致、乱序、嵌套或超预算的分片会设置 `gap`，该标志在此 assembler 中持续保持。
 
-一个 assembler 对应一个实时订阅。重连时创建新的 assembler。没有后续帧时，不能仅凭静默检测缺失尾部；Host 负责流终止、超时和缺口展示。分片组装不是持久重放。
+新订阅使用新的 assembler。续接检查点时，`export()` 和 `restore(state)` 可保留未完成分片；`DisplayFold` 的检查点已包含该状态。Host 负责传输终止与超时，因为无法仅凭静默发现末帧缺失。
 
 ## 输入元数据与媒体
 
-`ContentMetadata` 默认为 `display=True`、`source_id=None` 和 `media=False`，允许不透明的额外元数据。`from_native()` 读取元数据字典，输入不是字典时返回默认值。元数据用于展示，不是指令或授权。
+从 CUSTOM `value.event.role` 和 `value.event.message_id` 读取输入角色与消息 ID，元数据仍在顶层。`ContentMetadata` 默认为 `display=True`、`source_id=None` 和 `media=False`；`from_native()` 读取字典，其他输入类型返回默认值。额外应用元数据作为展示数据保留。
 
-文本输入使用 `a13n.input.user` 等按来源区分的 CUSTOM 事件；`role` 和 `message_id` 位于 `value.event` 内，展示元数据仍在顶层。客户端通常隐藏 `display=False` 的内容。缓存标记不产生展示内容。媒体使用 `a13n.input.media`，并设置 `media=True`：
+正常呈现时隐藏 `display=False` 内容。使用 `AUTHORED_INPUT_EVENT_NAMES` 选择用户与引导文本。缓存标记没有展示内容。媒体观测使用 `a13n.input.media` 和 `media=True`：
 
-| 原生输入         | 投影                                                        |
-| ---------------- | ----------------------------------------------------------- |
-| 二进制字节       | kind、媒体类型、大小和 `payload_omitted=True`；不含字节载荷 |
-| HTTP(S) 文件 URL | 引用 URL 和可用时的可选媒体类型                             |
-| 其他 URL scheme  | 省略载荷，不嵌入内联载荷                                    |
-| 已上传文件       | 文件 ID、provider 名称和媒体类型                            |
+| 原生输入         | 公开描述                                      |
+| ---------------- | --------------------------------------------- |
+| 二进制字节       | kind、媒体类型、大小和 `payload_omitted=True` |
+| HTTP(S) 文件 URL | URL 和可用的媒体类型                          |
+| 其他 URL scheme  | 省略载荷                                      |
+| 已上传文件       | 文件 ID、provider 名称和媒体类型              |
 
-这是单向观测，不是恢复模型输入的编解码器，也不是媒体存储服务。解析应用媒体引用仍需要当前 Host 访问策略。
+按 Host 当前访问策略解析引用。投影不会获取媒体，也不授予文件访问权限。应用若需要恢复原始模型输入，应单独保存原始输入。
 
 ## 终结事件
 
-- 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在 `rawEvent` 中标记 `result_omitted`，不会任意序列化 Python 对象。
-- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 是用于回复的目标调用 ID，`toolCallId` 是用于历史关联的模型调用 ID（直接调用时两者相同）；待处理回答策略仍由 Host 决定。
-- 取消转换为 `RUN_FINISHED`，其 `outcome.type="cancelled"`。
-- 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量。
-- 内联子执行使用 `SUBAGENT_STARTED`、`SUBAGENT_FINISHED` 和 `SUBAGENT_ERROR`；内容携带 `subagentRunId`，不嵌套根执行生命周期。
+读取 outcome，选择下一步界面行为：
 
-源关联包含线程、执行、序号和发生时间。终结展示事件不代表 Host 已持久提交结果、交付消息或结算计费。
+| 事件                                                      | 含义                                 |
+| --------------------------------------------------------- | ------------------------------------ |
+| `RUN_FINISHED`，success                                   | 展示完成结果与用量                   |
+| `RUN_FINISHED`，`outcome.type="interrupt"`                | 将延后调用或审批交给 Host 回答流程   |
+| `RUN_FINISHED`，`outcome.type="cancelled"`                | 显示取消                             |
+| `RUN_ERROR`                                               | 显示可安全公开的失败代码、消息和用量 |
+| `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, `SUBAGENT_ERROR` | 更新对应内联子执行的展示             |
+
+Interrupt 中，`id` 标识用于回答的延后目标，`toolCallId` 标识用于历史关联的模型调用。直接调用的两者相同。回答验证仍由 Host 决定。不兼容 JSON 的完成结果会被省略，并在 `rawEvent` 中标记 `result_omitted`。
+
+源元数据保留线程、执行、序号和发生时间。通过 Host 记录确认结果持久化、外部交付和计费；仅有终结展示事件无法确认这些结果。
 
 ## 处理器替换限制
 
-处理器在分片**之前** 看到完整领域事件。返回 `None` 可以省略事件。替换保留事件类型、ID、时间戳、生命周期/源关联和所有结构字段。只有以下内容字段可修改：
+处理器在分片前接收完整事件。返回 `None` 省略事件，或替换以下内容字段，同时保留全部结构字段：
 
-| 事件类别                        | 可修改字段        |
-| ------------------------------- | ----------------- |
-| 文本/推理内容、工具调用参数增量 | `delta`           |
-| 加密推理                        | `encrypted_value` |
-| 工具结果                        | `content`         |
-| 执行完成                        | `result`          |
-| 执行错误                        | `message`         |
-| CUSTOM 和未列出的事件           | 无                |
+| 事件类别                    | 可修改字段        |
+| --------------------------- | ----------------- |
+| 文本/推理内容和工具参数增量 | `delta`           |
+| 加密推理                    | `encrypted_value` |
+| 工具结果                    | `content`         |
+| 执行完成                    | `result`          |
+| 执行错误                    | `message`         |
+| CUSTOM 和未列出的事件       | 无                |
 
-不支持改写 CUSTOM 载荷；策略要求隐藏时，省略整个事件。替换在源条目提交前验证。重放处理器必须确定且无副作用；只有 observer 返回新提交事件后才发布或持久化。
+保持类型、ID、时间戳、生命周期和源关联不变。策略要求隐藏 CUSTOM 载荷时，省略整个事件。验证在源条目提交前完成。处理器保持确定且无副作用；仅在 `observe()` 返回后持久化或发布批次。

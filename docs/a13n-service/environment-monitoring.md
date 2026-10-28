@@ -1,39 +1,68 @@
 ---
 title: Monitor environments
-description: Select collection and history backends for environment and Device metrics, and operate optional pull collectors.
+description: Get a first resource chart, connect a historical backend, and operate environment collectors.
 ---
 
-Environment monitoring shows the resources used by an Envd target independently of agent runs. Select a workspace metrics data source on each environment. An unselected environment has no Service background collection or automatic exporter setup. [Service monitoring](monitoring.md) covers the health of Service itself.
+Use environment monitoring to see CPU, memory, network and disk activity on an Envd target, independently of agent runs. Start with **Local Cache** to get charts without a metrics database. Add an external backend when you need durable history. For Service's own health and run usage, see [Service monitoring](monitoring.md).
 
-For a first dashboard, select **Local Cache** as the environment's metrics data source, generate activity on the target, then open **Environments → Metrics** and select it. Existing targets need a running Envd sampler; [bind and verify the environment](#bind-and-verify-an-environment) if no samples appear. Local Cache keeps temporary history in Redis and needs no external metrics database.
+## Bind and verify an environment
+
+You need an environment you can manage, a supported Envd target and a Service deployment with monitoring enabled. Local Cache works with external HTTP targets and managed Docker/E2B `envd_http` targets. The target must be running and its Envd sampler enabled.
+
+1. Open the environment in Console. Under **Monitoring**, select **Configure**.
+2. Set **Metrics data source** to **Local Cache**, then select **Save selection**. For a new managed Docker/E2B `envd_http` environment, select the source before creation so Service enables the 10-second sampler.
+3. For an existing target without sampling, ask its operator to enable the [Envd sampler](../a13n-envd/configuration.md#system-information-and-resource-monitoring). Selecting a source or starting an existing environment does not reconfigure its daemon.
+4. Let the target produce samples, then select **Open dashboard**. Check a recent time range and inspect **Query details** for freshness and actual coverage. Perform your normal workload to see changes in resource use.
+
+Local Cache keeps samples in the owning Service process's memory. Redis coordinates ownership and queries between replicas. Restarting the process or changing ownership can discard history; use an external backend for retention across those events.
+
+You can also check the last 15 minutes through HTTP. Set `A13N_URL` to the Service origin, `A13N_API_KEY` to a workspace key with read access, and `ENVIRONMENT_ID` to the selected environment. A private environment also requires owner or administrator access. This shell example uses `curl` and Unix-second output from `date`:
+
+```sh
+END=$(date +%s)
+START=$((END - 900))
+curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data "{\"metric\":\"system_memory_used_bytes\",\"history\":\"temporary\",\"start\":$START,\"end\":$END,\"step\":60}" \
+  "${A13N_URL%/}/api/v1/environments/$ENVIRONMENT_ID/metrics/query"
+```
+
+For Local Cache, inspect `observation.status` and `history.series`. Fresh samples and points establish collection; a saved binding alone does not. If the chart stays empty, check the selected source, target readiness and sampler first. For pull sources, also inspect `GET /api/v1/environments/{environment_id}/metrics/collector` and the collector's target status.
+
+API clients set `metrics_data_source_id` at creation or use `PUT /api/v1/environments/{environment_id}/metrics-binding` with the environment's ETag in `If-Match`. Set the source ID to `null` to unbind. Custom source selection on external targets and custom identity labels require administrator approval.
+
+For managed creation, `metrics_application` records the source version and collection mode used at launch. Its `applied_at` confirms creation with those inputs; check the receiver to confirm ingestion. Later proxy/pull selections can change live collection against an already sampled target. Native exporter changes require target reconfiguration or replacement. Unbinding or disabling a source leaves previously injected credentials on the target until you retire or reconfigure that exporter.
 
 ## Use dashboards in Console
 
-Open **Environments → Metrics** in your workspace. Select an environment or Device to view its configured metrics. The built-in **Environment overview** is editable, just like a custom dashboard.
+Open **Environments → Metrics** and select an environment or monitoring Device. Search the target picker by name, ID or labels such as `region=west`, and combine search with type, status and data-source filters.
 
-1. Select **Edit dashboard**. Add, edit or remove panels. Drag the panel handle to move a panel and its corner to resize it. The panel editor also accepts numeric position and size; small screens stack the saved layout.
-2. Choose a typed Environment / Device metric, or select a data source and write PromQL. PromQL requires workspace administrator access. Local Cache supports typed metrics, not arbitrary PromQL.
-3. Select **Run queries** to preview the panel, then **Apply panel** to update your draft. Choose a unit or statistic view as needed.
-4. Select **Save dashboard** to share the changes with the workspace. **Discard** cancels them. **Restore defaults** replaces the built-in dashboard's draft; save to persist it. If another person saved first, your draft stays available until you explicitly reload. In-app navigation retains separate drafts for each dashboard; save before reloading the page or signing out.
+Use the time-range button to choose a recent range, absolute dates or auto-refresh. Drag across a chart to zoom; **Back to live** resumes live refresh. Hover to compare synchronized values, click legends to hide series, or use the series search on panels with more than four series.
 
-Use the target picker to search names, IDs or environment labels such as `region=west`; combine search words with type, status and data-source filters. Data-source and Device lists also offer search and status filters.
+To adapt the built-in **Environment overview** or a custom dashboard:
 
-Open the time-range button for presets, auto-refresh and absolute dates. Hover a chart to inspect synchronized values. Click legend entries to show or hide series. Panels with more than four series include a search field that filters the plotted lines and legend without querying again. Drag across a chart to zoom, or set an absolute range. Historical ranges pause auto-refresh; **Back to live** resumes it. A failed or pending refresh can show the previous result with a label and the query error. A different query or target starts with its own data.
+1. Select **Edit dashboard** and add or edit a panel.
+2. Choose a typed Environment / Device metric. Administrators can instead select a data source and enter PromQL; Local Cache supports typed metrics only.
+3. Select **Run queries**, inspect the result, then select **Apply panel**. Set the unit, time-series or statistic view, and panel size.
+4. Drag panels into place and select **Save dashboard** to share the layout. **Discard** abandons the draft. **Restore defaults** stages the built-in layout for you to save.
 
-Charts request roughly 600 evaluation steps and display up to 32 series per panel. **Query details** reports truncation, temporary retention and actual coverage. Narrow a high-cardinality query to inspect other series. Dashboard configuration is durable; selecting Local Cache does not make its sample history durable.
+Dashboard editing requires workspace write access. In-app navigation retains each dashboard's draft; save before a page reload or sign-out. If someone else saves first, your draft remains available until you explicitly reload it.
+
+Charts request roughly 600 evaluation steps and display up to 32 series per panel. Use **Query details** to inspect truncation, retention and coverage, then narrow large queries. A failed refresh can retain a labelled previous result alongside the error. Missing observations remain gaps rather than zero values. Dashboard layouts are durable; Local Cache samples are temporary.
 
 ## Choose a data source
 
-| Collection | Use when                                                                        | Infrastructure                                                              |
-| ---------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `native`   | A managed Envd target should export directly.                                   | An OTLP receiver; optional Prometheus HTTP query backend.                   |
-| `pull`     | An existing collector should scrape targets.                                    | Chart-managed vmagent or an external vmagent/Alloy; optional query backend. |
-| `proxy`    | A small deployment needs temporary history, or targets connect back to Service. | Service and Redis; optional OTLP HTTP export and query backend.             |
-| `external` | You already operate ingestion and only need queries.                            | A Prometheus HTTP query backend.                                            |
+Choose collection and history separately. A collector gets samples to storage; a query backend lets Console read them.
 
-**Local Cache** is the built-in proxy source. Its configuration is fixed. Custom sources separate collection, export and historical queries. The Helm chart optionally installs vmagent; historical storage stays external. A failed backend never silently switches to Local Cache.
+| Collection | Choose it when                                           | What to configure                                                                 |
+| ---------- | -------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `proxy`    | You want temporary charts or reverse Device connections. | Service and Redis; optional OTLP HTTP export and query backend.                   |
+| `native`   | A managed Envd target should export directly.            | An OTLP receiver; add a query backend for charts.                                 |
+| `pull`     | vmagent or Alloy should scrape targets.                  | A configured collector and its delivery pipeline; add a query backend for charts. |
+| `external` | You already operate ingestion.                           | A Prometheus HTTP query backend.                                                  |
 
-Workspace administrators create sources through `/api/v1/metrics-data-sources`. For example, this request body selects native export and an independent query endpoint:
+**Local Cache** is the built-in proxy source with fixed configuration. Workspace administrators create custom sources in Console or with `POST /api/v1/metrics-data-sources`. For example, this body configures native export and a separate query destination:
 
 ```json
 {
@@ -48,67 +77,53 @@ Workspace administrators create sources through `/api/v1/metrics-data-sources`. 
 }
 ```
 
-Use the API's workspace context and authentication described in [HTTP API](http.md). Credentials are encrypted and write-only. Responses expose presence flags. On update, omit a credential to retain it, send `null` to clear it, or supply an object to replace it. Changing an endpoint requires explicitly replacing or clearing its credential. Updates use `If-Match` with the resource ETag. A source cannot be deleted while an environment or Device references it.
+Replace the endpoints, labels and tokens for your backend, then select the returned source on the environment. Native HTTP export takes the complete metrics URL; native gRPC takes the receiver origin. Proxy export supports HTTP/protobuf. Query endpoints are the API base before `/api/v1/query` and `/api/v1/query_range`. Check deployment endpoint policy, TLS trust and network reachability for each destination.
 
-Use backend-scoped read credentials. Scope labels filter built-in queries; they do not restrict arbitrary PromQL. Custom PromQL requires workspace administration authority. Private environment queries also check environment ownership. Monitoring endpoints are human-facing and are excluded from agent tools and MCP.
+Credentials are encrypted and write-only; responses report their presence. On update, omit a credential to keep it, send `null` to clear it, or supply an object to replace it. Changing a destination requires explicitly replacing or clearing its credential. Use [conditional updates](http.md#concurrency-control). Unbind all environments and Devices before deleting a source.
+
+Scope read credentials at the backend to the workspace's permitted data. Scope labels filter built-in queries; arbitrary PromQL requires workspace administration and can query beyond those labels. Monitoring endpoints are for people and applications, outside agent tools and MCP. Backend errors remain visible rather than switching to Local Cache.
 
 > [!WARNING]
-> A native source delivers its write credential to the target process. Environment managers can select that source, and users or agents executing on the target can read and reuse the credential. Use receiver-scoped, write-only credentials and trust those executors within the permitted ingestion boundary. Resource labels do not prevent forged sample identities. Use pull or proxy collection when receiver credentials must stay outside targets.
+> Native export delivers its write credential to the target process. Users and agents that execute there can read and reuse it. Use receiver-scoped, write-only credentials and trust those executors within that ingestion scope. Labels cannot prove sample identity. Choose pull or proxy if receiver credentials must stay outside the target.
 
 ## Confirm a deployment preset
 
-Operators can offer a sanitized pull/query preset to an explicit list of workspace IDs. In an allowed workspace, administrators open **Add data source**, review the prefilled fields, and choose **Save data source**. No source or environment binding is created automatically. If preset loading fails, retry or choose **Configure manually**.
+An operator can offer a pull/query preset to an explicit list of workspaces. In an allowed workspace, an administrator can create a source from it:
 
-**Use deployment query credentials** defaults to **No**. Selecting **Yes** saves an encrypted snapshot of the current deployment read token on the server. The token never enters the browser. Editing the query destination clears consent; inheritance is allowed only for the original endpoint. A changed public preset requires reopening the form. Token-only rotation uses the current token at confirmation time; existing sources retain their snapshots after rotation or preset removal. Explicitly replace credentials on saved sources when needed.
+1. Open **Add data source** and review the prefilled collector and query endpoint.
+2. Leave **Use deployment query credentials** at **No**, or choose **Yes** to use the deployment's current read token at its original endpoint. Editing the endpoint clears that choice.
+3. Select **Save data source**, then bind the source to an environment. The preset creates neither resource automatically.
 
-Only administrators can read `/api/v1/metrics-data-sources/deployment-preset`. It returns `null` unless monitoring is enabled, the collector is configured and the workspace is allowlisted. It exposes configuration, credential presence and a revision, never the token. API clients opt in on creation with `deployment_preset_revision` and `use_deployment_query_credentials: true`; ordinary query credentials and inheritance are mutually exclusive. Backend authorization must scope the read token to the allowed workspaces' data; the allowlist and query labels are not backend tenant isolation.
+If loading fails, retry or choose **Configure manually**. Reopen the form if its public preset changed. Credential inheritance saves an encrypted server-side snapshot; the token stays out of the browser. Later deployment rotation or preset removal leaves saved sources unchanged, so replace their credentials explicitly.
 
-See [configuration](configuration.md#environment-monitoring) for Service settings and the [Helm deployment guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors) for values and Secret references.
+API clients read `GET /api/v1/metrics-data-sources/deployment-preset`, then create with its `deployment_preset_revision` and, when desired, `use_deployment_query_credentials: true`. Inheritance and explicit query credentials are mutually exclusive. Discovery requires administration and returns `null` when monitoring, collector configuration or workspace eligibility is missing. The backend must enforce data access for all allowed workspaces; the allowlist is not backend tenant isolation.
 
-## Bind and verify an environment
-
-1. Select `metrics_data_source_id` when creating or updating the environment. Use `null` to clear the selection. External identity mappings and custom sources require administrator approval.
-2. For managed Docker or E2B `envd_http` creation, select the source before creation starts. Native, proxy and pull selections enable the 10-second sampler. Native also injects metrics-specific OTEL settings and write credentials.
-3. Inspect `metrics_application`. It records the source version and collection mode frozen for creation. `applied_at` records successful creation with those inputs, not successful ingestion.
-4. Query `/api/v1/environments/{environment_id}/metrics/query`. For pull collection, also inspect `/api/v1/environments/{environment_id}/metrics/collector` and the collector's own target status.
-
-Existing targets need operator configuration when their daemon has no sampler. Start/resume does not reinject settings or recreate the target. A later selection can change live proxy/pull collection, but does not rewrite an already launched native exporter. Unbinding or disabling a source does not revoke credentials previously delivered to a target; retire or reconfigure that exporter separately.
-
-Native HTTP export uses the complete metrics URL. Native gRPC uses the receiver origin. Proxy export supports HTTP/protobuf. Query endpoints are API bases before `/api/v1/query` and `/api/v1/query_range`. Endpoint policy, TLS trust and network reachability must permit each destination.
+Operators configure the preset in [Service settings](configuration.md#environment-monitoring) or the [Helm deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors).
 
 ## Bootstrap an optional collector
 
-Service manages scrape configuration and reloads for these two collectors:
+Use this section for `pull` collection. Service writes a scrape fragment and requests reloads; the collector's existing delivery pipeline sends samples to your storage. Configure the historical query endpoint separately.
 
-| Collector     | Configuration key | Service-owned fragment                                     | Tested version |
-| ------------- | ----------------- | ---------------------------------------------------------- | -------------- |
-| vmagent       | `vmagent`         | `a13n-managed.yml`, included through `scrape_config_files` | 1.128.0        |
-| Grafana Alloy | `alloy`           | `a13n-managed.alloy`, connected to an existing receiver    | 1.10.2         |
+For Helm-managed vmagent, enable `monitoring.vmagent.enabled` and configure its remote-write destination. The chart supplies a dedicated writer, protected shared fragments, loopback reload and a persistent forwarding queue. Follow the [Helm lifecycle instructions](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors) for draining and retirement. The PVC is retained on disablement and uninstall; fence an unreachable node before forced replacement.
 
-The Linux interoperability tests exercise authenticated Envd scraping, reload, tenant labels, target removal and preservation of the operator's delivery configuration. They use Prometheus 3.2.1 as a disposable remote-write receiver. These are tested versions, not minimum-version guarantees. The tests are opt-in and do not cover collector TLS or cloud-provider deployment.
+For an external vmagent or Alloy installation:
 
-An OTLP receiver, including an operator-configured OpenTelemetry Collector, can serve native or proxy export independently. Service has no automatic scrape-configuration adapter for OpenTelemetry Collector or Prometheus Server.
-
-For managed vmagent, enable `monitoring.vmagent.enabled` in Helm and configure the complete remote-write URL or the Prometheus convenience URL. The chart supplies a dedicated singleton writer, protected fragments, loopback reload and a persistent forwarding queue. Storage and query URLs are independent. Ordinary API replicas never write fragments. Retire targets and drain the queue before disabling collection; the PVC is retained across disablement and uninstall. Follow the [Helm lifecycle instructions](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors), including node fencing before forced replacement.
-
-For external mode, use an existing collector installation with an operator-owned delivery pipeline. Service replaces only its generated scrape fragment. The collector must reach each target's HTTP listener. The Service writer must reach the collector's reload endpoint. Configure historical storage and a Prometheus HTTP query endpoint separately; a pull collector alone does not provide dashboard history.
-
-1. Create a protected shared directory. Mount the directory into Service and the collector, rather than mounting the generated file: updates use atomic replacement.
-2. Run both processes with a UID that can read Service's mode-0600 fragments. Limit directory access to trusted operators. Fragments contain listener credentials that also authorize EIP access.
-3. Use storage supporting POSIX advisory locks and atomic rename. Rolling replacements of the writer must share the same directory.
-4. Configure exactly one `all` or `control` process with `writer = true` per collector. Other API replicas use the same collector configuration with `writer = false`.
-5. Protect reload access with network policy or authenticated ingress. Configure optional `headers` in the protected Service settings. The endpoint is an origin or gateway prefix; Service appends `/-/reload`.
+1. Mount a protected shared **directory** into Service and the collector. Generated files are replaced atomically, so a single-file mount is unsuitable.
+2. Use compatible process UIDs so both can read mode-0600 fragments. The fragments contain listener credentials that also authorize EIP access.
+3. Use storage with POSIX advisory locks and atomic rename. Writer replacements must share that directory.
+4. Set `writer = true` on exactly one `all` or `control` process per collector. Other API replicas advertise the same collector with `writer = false`.
+5. Allow the collector to reach target HTTP listeners and the writer to reach the protected reload endpoint. Service appends `/-/reload` to the configured origin or gateway prefix. Optional reload `headers` belong in protected Service settings.
 
 ### vmagent
 
-Create an initial `a13n-managed.yml` containing `[]` in the shared directory with mode 0600. Add its collector-side path to your existing vmagent configuration:
+Create `a13n-managed.yml` containing `[]` in the shared directory with mode 0600. Include its collector-side path in the existing vmagent configuration:
 
 ```yaml
 scrape_config_files:
   - /etc/vmagent/a13n/a13n-managed.yml
 ```
 
-Keep existing scrape jobs and `-remoteWrite.url` settings. Configure Service using its own mount path:
+Keep your existing scrape jobs and `-remoteWrite.url`. Configure Service with its own mount path:
 
 ```toml
 [monitoring.collectors.vmagent]
@@ -118,11 +133,11 @@ allow_http_reload = true
 writer = true
 ```
 
-The generated fragment is a top-level list of scrape jobs, not a full `scrape_configs` document. Service submits a reload after replacing the fragment.
+Service replaces only `a13n-managed.yml`, a list of scrape jobs, then requests reload. Your main configuration and delivery settings remain operator-owned.
 
 ### Grafana Alloy
 
-Run Alloy with a configuration directory. Keep your receiver and existing pipelines in operator-owned `.alloy` files in that directory. For example, an existing `prometheus.remote_write "metrics"` component exposes `prometheus.remote_write.metrics.receiver`:
+Run Alloy with a configuration directory containing your receiver and pipelines. If it defines `prometheus.remote_write "metrics"`, configure Service to use that receiver:
 
 ```toml
 [monitoring.collectors.alloy]
@@ -133,34 +148,46 @@ receiver = "prometheus.remote_write.metrics.receiver"
 writer = true
 ```
 
-Service writes only `a13n-managed.alloy`. Mount the same directory at Alloy's configuration path. The receiver expression must already exist; Service does not create or edit its remote-write destination or credentials.
+Mount the same directory into Alloy. Service replaces only `a13n-managed.alloy`; the named receiver, destination and credentials must already be configured in your own files. OpenTelemetry Collector and Prometheus Server can participate in operator-owned pipelines, but Service supplies no scrape-configuration adapter for them.
 
 ### Reconciliation and retirement
 
-Create a source with `{"collection":"pull","collector":"vmagent"}` or `{"collection":"pull","collector":"alloy"}`. Add `query` independently when historical queries are needed. `/api/v1/metrics-data-sources/capabilities` reports which collectors are configured. Configuration availability is separate from runtime health.
+Create a source whose config is `{"collection":"pull","collector":"vmagent"}` or `{"collection":"pull","collector":"alloy"}`, with a separate `query` configuration for charts. Bind it to a supported HTTP target, then check each stage:
 
-Reconciliation defaults to every 30 seconds, with up to 512 environments per collector and eight concurrent route discoveries. Each selection pass checks at most four times the target limit in ID order, counting unsupported and failed rows too. A receipt with `truncated: true` means more inventory remains beyond the scan or target budget. It supports external HTTP and managed Docker/E2B `envd_http` targets. Unsupported or unavailable targets are omitted and reported, rather than redirected through Service proxy collection.
+| Check                                       | What it establishes                      | Next check                                                 |
+| ------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| `/api/v1/metrics-data-sources/capabilities` | A collector is configured.               | Inspect the environment's `/metrics/collector` status.     |
+| `reload_requested`                          | The collector accepted a reload request. | Inspect applied config and scrape health at the collector. |
+| Successful scrape                           | The collector can read the target.       | Verify storage delivery and a recent historical query.     |
 
-`reload_requested` means the collector accepted a reload request. Verify applied configuration, scrape health and delivery at the collector; vmagent reload is asynchronous. Failed reloads are retried on reconciliation. Pending or expired receipts do not prove collection is working.
+Reconciliation defaults to 30 seconds and 512 targets per collector. `truncated: true` means inventory remains beyond the scan or target budget. Unsupported or unavailable targets are omitted and reported. Failed reloads retry on the next pass; vmagent applies reloads asynchronously.
 
-To remove a source while the writer runs, disable or unbind it and verify the next successful reconciliation removes its jobs. For external collectors, before stopping the writer, removing its configuration or setting `monitoring.enabled = false`, remove the managed fragment and reload the collector yourself. Stopping reconciliation leaves previously loaded jobs active.
+To retire a target, unbind or disable its source while the writer runs, then verify the next successful reconciliation removes the job. Before stopping an external writer or disabling monitoring, remove the managed fragment and reload the collector yourself. Stopping the writer leaves previously loaded jobs active.
 
 ## Connect a reverse Device
 
-A monitoring Device registration is separate from an executable environment. Workspace administrators create it with an expected native Device identity and select a proxy source. Creation returns a one-time attachment token. Store it securely; metadata reads cannot retrieve it.
+Register a monitoring Device when an Envd target must connect back to Service. Registration is separate from an executable environment and creates no mount or execution target.
 
-Connect an Envd reverse carrier to `/api/v1/devices/{device_id}/connect` using WSS, the `eip.v1` subprotocol and the attachment token as Bearer authentication. Direct loopback WS requires the explicit development setting `A13N_MONITORING__ALLOW_LOOPBACK_WS=true` (default false). Keep it disabled behind a reverse proxy: a loopback peer may be a proxy carrying remote traffic. For TLS termination, configure `server.trusted_proxies` so the trusted proxy's secure scheme reaches Service. Query-string credentials, browser Origins and cookie-only authentication are refused. Configure the Envd sampler before connecting.
+1. As a workspace administrator, create the registration with the expected native Device identity and a proxy source.
+2. Save the attachment token returned once by creation. Metadata reads cannot retrieve it.
+3. Enable the Envd sampler, then configure its reverse carrier for `/api/v1/devices/{device_id}/connect`, WSS, the `eip.v1` subprotocol and the attachment token in the Authorization Bearer header.
+4. Select the Device in Console and verify fresh metrics. The receiving replica owns the connection and temporary history; other replicas route authorized queries to it.
 
-The receiving replica owns the socket and temporary history. Other API replicas route authorized queries to that owner. Token rotation, disablement, source removal and lost ownership retire the carrier. Reverse Devices cannot select pull collection because the carrier does not supply a collector-reachable HTTP endpoint. Native/external Device history can be queried independently of a connected carrier.
+For direct loopback development only, `A13N_MONITORING__ALLOW_LOOPBACK_WS=true` permits WS. Keep it off behind reverse proxies. For proxy TLS termination, configure `server.trusted_proxies` so Service accepts the trusted secure-scheme header. Connections reject query-string credentials, browser Origins and cookie-only authentication.
+
+Rotating the token, disabling or unbinding the registration, or losing ownership closes the connection. Reverse Devices cannot use pull: they expose no collector-reachable HTTP endpoint. Native/external Device history uses operator-managed ingestion and can be queried without an active reverse connection.
 
 ## Query and size temporary history
 
-Typed environment and Device queries select one metric and a time range. `history = "configured"` uses the selected source's query backend, or its temporary buffer when no query backend exists. `history = "temporary"` explicitly selects a proxy source's buffer. `include_snapshot = true` adds the latest EIP snapshot for overview and inventory views; ordinary chart queries return freshness and the requested series only.
+Typed queries select one metric and a range. `history = "configured"` uses the selected query backend, or the proxy buffer when no backend is configured. `history = "temporary"` explicitly selects that buffer. Add `include_snapshot = true` for the latest EIP snapshot when building an overview or inventory view.
 
-Local Cache retains minute-aggregated overview gauges for 24 hours and per-interface network and per-device disk/cgroup I/O rates for one hour. Resource history retains at most 64 sources per kind, including recently disappeared sources. Results report actual coverage and truncation. Missing and stale observations remain gaps; counter resets and source replacement break rate continuity. Interface and disk identities stay separate rather than being summed indiscriminately. Pressure and filesystem history require an external backend.
+| Local Cache history                                        | Retention                         |
+| ---------------------------------------------------------- | --------------------------------- |
+| Minute-aggregated overview gauges                          | 24 hours                          |
+| Per-interface network and per-device disk/cgroup I/O rates | 1 hour, up to 64 sources per kind |
 
-Proxy capacity defaults to 64 connections per control process and can be configured up to 512. A full inventory uses less than 2 MiB of numeric history per connection, plus Python objects, the latest snapshot and export state. Size process memory for your inventory before increasing admission. Restart or ownership changes can discard temporary history. Redis carries ownership and bounded query messages; it does not store historical samples. During a database outage, existing entries retain history and reverse connections for up to three poll intervals while Redis ownership remains valid. Current authority is still required for observations, queries and export; the cache is marked offline until authority can be checked again. Longer outages or ownership loss retire the entry.
+Inspect coverage and truncation in each result. Counter resets and source replacement interrupt rate continuity; missing and stale observations leave gaps. Interfaces and disks keep separate identities. Pressure and filesystem history require an external backend.
 
-External queries have a separate concurrency budget, default eight, a five-second deadline and a 4 MiB response limit. Each query is bounded to 200 series, 90 days and 11,000 evaluation points per series. Choose a step suited to the chart width. External rate queries use five-minute PromQL windows; temporary rates use adjacent observations, so their estimates can differ.
+Proxy capacity defaults to 64 connections per control process, configurable up to 512. At full inventory, numeric history uses less than 2 MiB per connection, plus object, snapshot and export overhead. Size process memory before increasing capacity. A database outage can retain existing history and reverse connections for up to three poll intervals while Redis ownership remains valid; observations, queries and export wait for current authority. Longer outages or lost ownership retire the cache.
 
-See [Settings reference](configuration-reference.md#monitoring) for configuration bounds. Use an external history backend for durable retention, longer resource history or larger fleets.
+External queries default to eight concurrent requests, a five-second deadline and a 4 MiB response limit. Each query allows up to 200 series, 90 days and 11,000 points per series. Choose a step suited to the chart width. External rates use five-minute PromQL windows; temporary rates use adjacent observations, so their estimates can differ. See [Settings reference](configuration-reference.md#monitoring) for bounds, and use external storage for durable history or larger fleets.

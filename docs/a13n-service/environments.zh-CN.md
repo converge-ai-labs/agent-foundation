@@ -1,301 +1,280 @@
 ---
 title: 环境
-description: 让 agent 在托管沙箱或你自己的机器上工作。
+description: 为文件和命令任务创建工作空间、复用已有机器，或给 agent 配置桌面。
 ---
 
-环境是 agent 工作的计算机，文件和终端工具都在那里执行。Service 提供两种环境：
+任务需要文件、命令或桌面时，为 agent 配置环境。先用一个模板和一个线程走通流程：让 agent 写入文件，再在后续消息中读取。这样可以同时验证执行能力和文件复用。
 
-- **托管环境：** Service 根据**模板** 创建、启动、停止和删除，例如为每个线程创建一个 Docker 容器。
-- **外部目标：** 由你自行运行 `a13n-envd` 守护进程的计算机，Service 只负责连接。
+三个资源连接起这条流程：
 
-每个托管供应商保留资源管理 provider，负责创建、检查、启停、销毁、续期和连接准备。执行遵循[共享模型](../environments/index.md#choose-a-backend)：Native Local/Docker/E2B/Vercel/Sprites/Runloop 提供适合快速搭建的 Files & Shell；Envd 提供通用执行及 OS sandbox、Egress、Computer use 和设备指标。
+| 资源     | 你选择的内容                   | 结果                       |
+| -------- | ------------------------------ | -------------------------- |
+| Provider | Docker Engine 或云账号         | Service 可以在其中管理资源 |
+| 模板     | 镜像、资源、环境变量和空闲策略 | 用于创建托管实例的配方     |
+| 线程挂载 | 实例、名称、目录和权限         | 后续运行可以使用该实例     |
 
-线程**挂载** 环境。每次运行在被接收时固定线程挂载，并一直使用到结束。没有挂载环境时，agent 没有文件或终端工具。
-
-Console 的 **Environments → Templates** 管理模板，**Environments → Instances** 列出环境；provider 位于 **Workspace settings → Providers → Environment** 。下文所有 API 路径均位于 `/api/v1` 下。
+已有自行维护的计算机时，改为[注册其 Envd 端点](#register-an-external-target)。Service 负责连接，计算机的生命周期由你管理。每次接收运行都会固定其挂载和权限，因此修改对后续运行生效。
 
 ## 工作空间自动配置
 
-挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[Service 审定的独立版本 sandbox 镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
+创建资源前，先检查**环境 → 模板**。挂载 Docker socket 的单机 Compose 部署会在 Engine 可达时准备 **Docker** provider 和 **Linux Sandbox** 模板。首次文件任务可以直接选择该模板。镜像包含 Python、Node.js、Git 和常用开发工具；命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。
 
-新工作空间要使用本地构建镜像，运行 `make image-sandbox`。在 Compose 文件的 `service.environment` 中，将 `A13N_PROVISIONING__DOCKER` 设置为完整 JSON 值 `'{"enabled":true,"image":"a13n-sandbox:local","pull_policy":"never"}'`。省略 `image` 即可使用 Service 默认镜像。覆盖文件示例见 [Compose 配置](configuration.md#workspace-provisioning)。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
+不挂载 socket 的快速入门部署不会自动配置 Docker。源码开发的 `make dev` 会启用 **Local**，在检出目录的 `var/dev/environments` 下创建 **Local Workspace** 模板。每个实例使用独立子目录。Local 命令直接以 Service 进程的操作系统用户身份执行，不提供隔离。
 
-不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
-
-Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuration.md#workspace-provisioning)中启用。`all` 角色在创建工作空间和启动时补建缺失的默认资源。设置失败时，修复 Engine 访问并重启。成功设置会保留后续修改、禁用和删除结果。它只创建 provider 和模板：请预留环境，或设置 agent 的 `default_environment_template_id`。
+通用 Service 设置默认关闭这两种自动配置。启用它们或使用本地构建镜像时，参阅[工作空间自动配置](configuration.md#workspace-provisioning)。`all` 角色在创建工作空间和启动时补建缺失的默认资源。失败时，修复 Engine 访问并重启。成功配置后会保留后续模板修改、禁用和删除结果。自动配置创建的是配置资源；实际实例在收到请求后分配。
 
 ## Provider
 
-环境 provider 是运行环境所用的账号。像其他 [provider](resources.md#providers) 一样，在 `/api/v1/environment-providers` 中创建。`GET /api/v1/provider-types/environment` 返回各类型的配置、凭据和 recipe schema。
+在**工作空间设置 → 供应商 → 环境**中添加或编辑环境 provider。你需要工作空间 `write` 权限，以及所选 Engine 或云账号的访问权限。模板中的**管理供应商**会打开同一列表，并保留模板草稿。
 
-在 Console 中，模板的**连接**选择框旁提供**管理连接**，打开连接列表后不会丢失当前模板草稿。也可从 **Workspace settings → Providers → Environment** 进入同一列表。打开连接可查看配置；拥有工作空间写权限的用户可修改名称、启用状态、配置和凭据，或选择**删除连接**。修改配置时，未提交的凭据保留原值；提供新值会替换，提供 `null` 会移除。新的认证模式必须允许保留的凭据。删除前会列出引用它的模板和环境实例；已停用模板、保留的历史实例也会阻止删除。只有没有引用的连接才能永久删除，删除范围仅为已保存的连接配置和凭据，不会删除 Docker 引擎或原生资源。
+1. 选择运行方式，填写账号设置和凭据。
+2. 保存 provider，并保持启用。
+3. Docker 可测试连接。测试只 ping Engine；创建实例才能验证镜像与执行配置。
+4. 创建模板时选择该 provider。
 
 ![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.webp)
 
-*图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
+[Provider 指南](../environments/providers.md)介绍 Docker、E2B、Daytona、Modal、Vercel、Sprites、Runloop 和 Local 的配置；[配置参考](../environments/configuration-reference.md)列出各自的 recipe 字段。API 客户端通过 `/api/v1/environment-providers` 创建 provider，通过 `GET /api/v1/provider-types/environment` 获取类型 schema。
 
-| 类型      | 环境                              | 账号                                                                                                                                 | 停止行为                   |
-| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
-| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
-| `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
-| `daytona` | Daytona 沙箱                      | 可选 `organization_id` 约束和 `target` 区域；凭据为 `{"api_key": ...}`                                                               | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`）；凭据为 `{"token_id", "token_secret"}`      | 保存文件快照后终止         |
-| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
-| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
-| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
-| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
+Docker 默认使用运维设置的 `environments.docker_host`。provider 单独指定的地址必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。Engine 访问授予宿主机级权限。宿主机绑定源必须位于 `environments.docker_mount_roots` 下，该设置默认不允许任何路径；不提供特权容器或宿主机命名空间。
 
-Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
+云实例使用已保存的账号，并向该账号计费。配置空闲停止或删除来限制保留时间。Service 会续期受支持的就绪沙箱，但仍受厂商硬性时限约束。已停止的实例可以带着保留的文件恢复；丢失的实例需要恢复或替换。Sprites 不支持显式停止，需要时使用空闲删除。
 
-使用 Docker HTTP 执行时，开启**环境操作通道**并填写**主机访问地址**。监听地址自动使用该 IP（`localhost` 使用 `127.0.0.1`），端口由 Docker 分配。**高级配置**中可覆盖监听 IP、明确允许可信私网 HTTP，或修改凭据文件路径。其他域名需要明确填写监听 IP，因为域名解析结果不一定属于 Docker 宿主机的网络接口。已有明确配置的监听地址会保留。
-
-云托管类型访问厂商持有的 API。E2B 可选择官方云或其他兼容 E2B 协议的服务；其他云托管账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
-
-接入其他兼容 E2B 协议的服务时，使用它提供的沙箱域名和 API Key 创建 `e2b` provider：
-
-```json
-{
-  "type": "e2b",
-  "name": "Compatible E2B",
-  "config": {"domain": "sandboxes.example.com"},
-  "credential": {"api_key": "YOUR_SANDBOX_API_KEY"}
-}
-```
-
-Service 从配置的沙箱域名推导 HTTPS 控制 API `https://api.<domain>`；域名须为小写 DNS 名称，不含协议、端口或路径，不支持单独覆盖 `api_url`。原生 SDK 负责控制 API 和沙箱请求，包括所选服务返回的端点；Service 不会逐个检查 SDK 请求，网络路由限制由运维基础设施负责。更换域名时，需要替换或移除凭据并创建新的环境实例。使用该服务提供的模板，并验证它与仓库锁定的 E2B SDK `2.46.4` 兼容，包括创建、连接、续期、命令和文件操作、暂停与恢复以及销毁。
-
-只有 Docker provider 可以测试（`POST …/{provider_id}/test`）：Engine 响应一次 ping。远程 Engine 无法解析时，失败消息为 `provider_unavailable`；只有策略拒绝时才返回 `provider_endpoint_denied`。
+编辑 provider 时，省略凭据会保留原值，新值会替换原值，`null` 会移除凭据。保留的模板或实例引用会阻止删除 provider。删除无引用的 provider 只移除已保存的配置和凭据，不删除底层 Engine 或云账号。
 
 ## 模板
 
-在 Console 中，选择 **环境 → 模板 → 创建模板**，进入独立的创建页面。为模板命名，选择运行方式，再选择已启用的供应商连接或打开**管理连接**添加连接。通过 **云端 / 自有** 标签互选，只展示当前类别。切换回来会恢复之前选择的运行方式，分类不改变供应商的运行行为。设置环境参数和空闲策略后保存。切换运行方式会保留各自的配置草稿。在此添加的连接单独保存，即使取消创建模板，连接仍然存在。保存模板不会启动环境。
+通过 Console 创建第一个工作空间：
 
-模板描述如何构建托管环境，以及何时停止和删除空闲环境。模板属于工作空间，创建和修改需要 `write`。此示例使用 Docker provider；将 `eprov_...` 替换为其 ID。
+1. 打开**环境 → 模板 → 创建模板**，命名为 **Python sandbox**。
+2. 选择 Docker 和已启用的 provider，设置资源限制和空闲策略后保存。保存模板不会启动容器。
+3. 编辑一个已经能调用模型的 agent，启用其 **Files** 和 **Shell** 工具集，选择此默认环境模板并保存 agent 配置。
+4. 开始新会话，要求：“在工作空间写入 `hello.txt`，内容为 `Hello from Service`，然后读回。”检查工具结果。
+5. 发送后续消息，要求再次读取同一文件。agent 应使用该线程原有的工作空间。
+
+agent 字段为 `default_environment_template_id`。根线程没有 `workspace` 挂载时，Service 在接收运行时预留实例，并以 `workspace` 挂载。`reserved` 实例有 ID，但还没有厂商资源，首次使用才准备环境。预留记录计入托管环境额度。
+
+API 配置使用[直接 HTTP 集成](connect-application.md#direct-http-integration)中的 URL 和工作空间 API Key。将 `eprov_...` 替换为 Docker provider ID。创建或编辑模板需要 `write`：
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/environment-templates" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"cpus": 2, "memory_gb": 4},
-                  "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
+curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Python sandbox","provider_id":"eprov_...",
+       "config":{"recipe":{"cpus":2,"memory_gb":4},
+                 "stop_after_seconds":1800,"delete_after_seconds":604800}}'
 ```
 
-- `provider_id` 指定工作空间中的环境 provider，`config.recipe` 按该类型的 recipe schema 校验。Docker 中可设置 `image`、宿主机目录 `mounts`（源目录必须位于 `environments.docker_mount_roots` 下）、`environment` 变量、`init_script`、`disable_network`、`user` 和资源限制；参阅 [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerrecipe)。Recipe 被拒绝时，会指出无效字段，不会返回提交的值。
-- `stop_after_seconds`（默认 1800，范围 60–2,592,000）停止在指定时间内未被运行使用的环境。`delete_after_seconds`（60–31,536,000）删除在指定时间内未被运行使用的环境，并从挂载它的线程中移除。失去 `workspace` 环境的线程会在下一次运行时得到新环境，智能体也会被告知之前的文件已不存在。设为 `null` 可关闭对应策略。两者均从最后使用时间计起。
-- `PATCH` 使用模板的 `If-Match` 修改名称、描述、provider、config 和标签。新 provider 或 recipe 仅影响之后创建的环境：环境使用创建任务派发时的模板构建，并保留该 recipe。空闲策略始终使用当前设置。
-- `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
+保存返回的模板 ID。此例在空闲 30 分钟后停止实例，七天后删除实例。两个计时器都从最后使用时间起算；`null` 关闭对应策略。空闲删除会移除线程挂载和实例文件。配置了默认模板的线程可以在下次运行时获得新工作空间。
 
-要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
+更新模板时，将模板 ETag 放入 `If-Match`。Recipe 在首次认领创建任务时固定，应在此之前修改，或创建新实例。空闲策略立即适用于已有实例。禁用模板会阻止新预留，也会阻止尚处于预留状态的实例首次创建；已经创建的实例继续可用。
 
 ### 默认环境变量
 
-所有内置 Provider 都支持 `config.recipe.environment`，例如 `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`。在模板编辑器的**环境变量**区域添加即可。命令及其普通子进程会收到这些默认值；命令显式指定的值优先，支持 unset 的执行路径也可移除默认值。Agent、Thread 和单次 Run 可通过[执行策略](agents-and-runs.md#execution-policy)覆盖这些默认值，不会修改共享 sandbox。
+在模板的**环境变量**中添加普通命令默认值，例如 `APP_MODE=agent`。API 位置为 `config.recipe.environment`：
 
-首次派发创建时，默认变量随 recipe 一起冻结。修改模板不会更新已有实例，停止后启动或从快照恢复也继续使用原值。要使用新值，请创建新实例。Local Provider 还要求变量名列入 `allowed_environment_keys`（或将该白名单设为不限制的 null）。
+```json
+{"environment":{"APP_MODE":"agent","TOOL_ENDPOINT":"https://tools.example.com"}}
+```
 
-变量名使用可移植格式（如 `APP_MODE`，不能使用 `app-mode`），值为字符串，可为空。这些值是可读取的普通配置，不用于存放凭据。平台启动、桌面和遥测变量名（`A13N_ENVD_*`、`EIP_*`、`A13N_DESKTOP*`、`OTEL_*`、`DISPLAY`、`XAUTHORITY`）保留给平台使用。Provider 凭据和已有的 secret binding 仍使用各自的控制机制。
+这是 recipe 片段。命令及其子进程接收这些值。[执行策略](agents-and-runs.md#execution-policy)和命令显式指定的值可以覆盖默认值，而不修改共享实例。Local 还要求变量名列入 `allowed_environment_keys`，除非该白名单不设限制。
+
+使用可移植的变量名和字符串值。秘密值应保留在凭据或 secret binding 控制中：模板变量是可读取的配置。平台启动、桌面和遥测变量名由平台保留。默认变量随实例 recipe 固定，停止后启动仍保留原值。要应用修改后的模板默认值，请创建新实例。
 
 ### Docker 镜像版本
 
-不设置 `recipe.image` 时，使用 Service 审定的 `ghcr.io/converge-ai-labs/a13n-sandbox` 版本。sandbox 版本由 Envd 管理，不跟随 Service 版本号：
+省略 `recipe.image` 时，Service 选择审定的 `ghcr.io/converge-ai-labs/a13n-sandbox` 镜像：
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
 | 稳定版或 RC                             | `0.5.1`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
-发布镜像支持 `linux/amd64` 和 `linux/arm64`。显式设置 `recipe.image` 可在 Service 升级后保留指定标签，也可用 digest 固定精确内容。Docker recipe 默认 `pull_policy: if_missing`：Engine 优先使用本地镜像，缺失时拉取。设置 `never` 可要求镜像必须在本地。自动配置的模板显式保存审定的 sandbox 镜像，因此后续 Service 升级不会悄悄修改它。
+Sandbox 版本归 Envd 管理，与 Service 版本独立。设置明确的标签或 digest 可选择其他镜像。`pull_policy: if_missing` 使用 Engine 本地镜像，缺失时在首次创建时拉取；`never` 要求镜像已经存在。自动配置的模板保存明确镜像，因此升级会保留这一选择。
 
-每个实例在首次创建前保存解析后的镜像；升级和中断后的创建仍使用该镜像。没有已保存镜像的旧实例保留历史默认值 `a13n-docker-environment:dev`；删除旧镜像前请重新创建这些实例以完成迁移。要使用新镜像或修改后的模板，请创建新环境。
-
-Service 使用 EIP 0.3 和 Envd 0.5.1。
+实例在重试和升级中保留已解析的镜像。要使用新镜像，请重新创建实例。未保存镜像的旧 handle 保留 `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`；移除旧镜像前应重新创建这些实例。
 
 ## 实例
 
-`GET …/environments` 列出工作空间环境，可按 `status` 筛选；已删除环境仅在 `status=deleted` 时显示。每个环境都有 `status`：
+打开**环境 → 实例**查看创建和使用状态。API 客户端使用 `GET /api/v1/environments`，或按 ID 获取单个实例。列表只有在 `status=deleted` 时才包含已删除记录。
 
-| 状态                   | 含义                                       |
-| ---------------------- | ------------------------------------------ |
-| `reserved`             | 已预留，等待首次使用；尚无厂商资源。       |
-| `creating`, `starting` | 正在创建或启动。                           |
-| `ready`                | 可用。                                     |
-| `stopping`, `stopped`  | 停止后保留文件；挂载它的运行会再次启动。   |
-| `deleting`, `deleted`  | 正在删除或已删除。已删除环境不能再次使用。 |
+| 状态                   | 下一步                           |
+| ---------------------- | -------------------------------- |
+| `reserved`             | 在运行中使用，触发准备           |
+| `creating`, `starting` | 等待就绪；有失败时查看原因       |
+| `ready`                | 挂载并执行任务                   |
+| `stopping`, `stopped`  | 等待停止完成；后续运行会再次启动 |
+| `deleting`, `deleted`  | 选择其他实例                     |
 
-`failure` 描述最近失败的操作，包含 `code`、`message`、`certainty`（`not_dispatched`、`known`，或调用可能已生效时的 `unknown`）和 `permanent`。维护任务使用相同操作 ID 重试未完成操作。永久失败会拒绝新挂载和运行，直到原因修复或环境删除。
+失败信息包含代码、消息和操作结果是否确定。Service 使用原有操作标识核对未完成操作。出现 `provider_credential_changed` 时，恢复实例原账号的访问。出现 `environment_lost` 等永久失败时，尽可能修复原因，或删除失败实例并新建。
 
 ### 预留托管环境
 
-带模板的 agent 通常自动预留环境。也可以手动创建，例如在线程之间共享：
+需要在任务前检查实例，或在线程之间共享时，可以显式创建。替换模板占位符：
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/environments" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"template_id": "envtpl_...", "name": "Shared data"}'
+curl -sS -X POST "$A13N_URL/api/v1/environments" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"template_id":"envtpl_...","name":"Shared data"}'
 ```
 
-需要 `run`，初始状态为 `creating`，后台转为 `ready`。模板空闲策略与其他环境一样适用。一个工作空间最多拥有 `environments.managed_count` 个未删除的托管环境；显式预留或运行接收时超过限制，返回 `409 conflict`，原因为 `environment_limit`。
+此操作需要 `run`，并立即开始创建：响应状态为 `creating`，随后在后台转为 `ready`。将返回的 `id` 保存为 `ENVIRONMENT`，查看 `GET /api/v1/environments/$ENVIRONMENT`，再按下文挂载。这与接收运行时的延迟预留不同。两种方式都计入 `environments.managed_count`；超过限制返回 `409 conflict`，原因为 `environment_limit`。
 
 ### 注册外部目标
 
-在目标计算机上通过 HTTP(S) 运行 `a13n-envd` 守护进程，并设置设备 ID 和 token（参阅[连接已有 HTTP 守护进程](../environments/remote-envd.md#connect-to-an-existing-http-daemon)）。然后使用端点和 token 注册：
+1. 在目标计算机运行 [HTTP Envd 守护进程](../environments/remote-envd.md#connect-to-an-existing-http-daemon)，使用稳定的设备 ID 和 token。
+2. 确保 Service worker 可以访问端点，且出站策略允许。明文 HTTP 只接受回环地址，其他地址使用 HTTPS。
+3. 使用工作空间 `write` 权限注册 origin 和 token：
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/environments" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"endpoint": "https://build-box.example.com:8443", "token": "...", "name": "Build box"}'
+curl -sS -X POST "$A13N_URL/api/v1/environments" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"endpoint":"https://build-box.example.com:8443","token":"YOUR_ENVD_TOKEN","name":"Build box"}'
 ```
 
-注册需要 `write`。端点是守护进程的 HTTP(S) 源；明文 HTTP 仅接受回环地址，且必须符合出站[端点策略](configuration.md#outbound-requests)。Service 查询设备身份并在其上打开 Envd 会话，然后记录 `ready` 环境；未指定名称时使用设备名称。Token 加密存储，永不返回；环境显示 `endpoint` 和 `device_id`。策略拒绝的端点返回 `409 conflict`，原因位于 `endpoint`。守护进程拒绝 token 与无法访问的表现相同：均返回 `503 unavailable`，原因为 `provider_connection_failed`。
+Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注册时的用户或服务账号挂载：外部目标的执行权限仅属于注册主体。所有者或工作空间管理员可以管理此注册。
 
-后续每次连接都要求相同设备；该端点出现其他守护进程时，以 `provider_device_mismatch` 拒绝，挂载此环境的运行失败。守护进程迁移或 token 变化时，重新发送 token；迁移时也提供新端点：
+轮换 token 或迁移端点时，向 `PATCH /api/v1/environments/{id}` 提交环境 ETag。修改端点时同时提交 token。Service 验证新连接仍指向同一设备；设备不同时以 `provider_device_mismatch` 拒绝。删除注册会忘记 token，计算机继续运行。
 
-```sh
-curl -X PATCH "$A13N_URL/api/v1/environments/$ENVIRONMENT" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $ENVIRONMENT_ETAG" \
-  -d '{"endpoint": "https://build-box-2.example.com:8443", "token": "..."}'
-```
-
-Service 先验证新连接；设备 ID 不同时返回 `409 conflict`，原因为 `provider_device_mismatch`。外部目标是**私有** 的：只有注册它的主体（用户或服务账号）可以挂载，只有该主体或工作空间管理员可以修改、删除。Service 不会停止或删除守护进程所在计算机；删除环境只会忘记 token。
-
-Worker 在运行中重启时，Service 会尽力复用该运行检查点中记录的 Envd 会话。外部 HTTP 目标，以及托管 Docker、E2B 和 Daytona 目标上的 Envd 执行使用相同机制；原生执行没有 Envd 会话。会话已关闭、已过期或守护进程已重启时，会创建新会话。正常清理仍会关闭会话；后续运行使用独立会话。恢复不会还原运行内的进程引用或输出观测。旧 Worker 延迟执行的清理可能关闭已恢复的会话，此后的操作会失败，不会自动重放。
+Worker 恢复会尽力复用检查点中的 Envd 会话。会话已关闭或过期时需要新建。恢复不会还原运行内的进程引用或输出观测；重试结果不确定的命令前，先检查当前状态。正常清理会关闭会话，后续运行使用独立会话。
 
 ### 停止、重命名与删除
 
-这些操作需要环境的 `If-Match` 和 `write` 权限：
+先读取环境，再将其 ETag 放入 `If-Match`。以下操作需要 `write`：
 
-- `PATCH …/environments/{environment_id}` 传入 `{"name": ...}` 重命名；外部目标还接受新的 `token` 和 `endpoint`（见上文）。
-- `POST …/stop` 停止未在使用的 `ready` 托管环境，并返回 `202`；后续运行再次启动。其他情况返回 `409 conflict`，原因例如 `in_use`、`environment_stopped`、`connect_only`（外部目标）、`stop_unsupported`，或停止可清除的永久失败码，例如 `environment_lost`。有活跃运行使用环境，或桌面协助、桌面控制占用其桌面时，环境都算正在使用。
-- `DELETE …/environments/{environment_id}` 停用未在使用的环境。请先从线程卸载，否则返回 `409 conflict`，原因为 `mounted`。**例外：** 删除永久失败的环境也会移除线程挂载，使配置了默认模板的线程在下次运行时获得新的 `workspace` 环境。未解决的操作返回 `409 conflict`，原因为 `operation_unresolved`。删除托管环境会销毁文件；删除外部目标只会忘记 token，不影响计算机。
+| 操作                                                          | 结果                                 |
+| ------------------------------------------------------------- | ------------------------------------ |
+| `PATCH /api/v1/environments/{id}`，传入 `{"name":"New name"}` | 重命名实例                           |
+| `POST /api/v1/environments/{id}/stop`                         | 停止受支持且就绪的托管实例，保留文件 |
+| `DELETE /api/v1/environments/{id}`                            | 销毁托管实例，或忘记外部注册         |
 
-`environment_lost` 等永久失败会阻止新使用；请删除环境，或在可行时修复原因。临时失败在重试成功后清除。
+停止或删除前，结束活跃运行和桌面控制。删除还需要先移除线程挂载。永久失败的实例是例外：删除时会一并移除挂载。未确定结果的操作可能以 `operation_unresolved` 阻止删除。只移除挂载会保留实例；删除托管实例会销毁文件。
 
 ## 在线程上挂载环境
 
-线程挂载决定后续运行使用哪些环境：
+通过挂载将实例连接到已有的开放线程：
+
+1. 将 `THREAD` 设为线程 ID，`ENVIRONMENT` 设为实例 ID。
+2. 读取 `GET /api/v1/threads/$THREAD/environments`，将响应 ETag 保存为 `THREAD_ETAG`，保留引号。
+3. 添加挂载。省略 `working_directory` 可使用 provider 默认目录：
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $THREAD_ETAG" \
-  -d '{"name": "data", "environment_id": "env_...", "working_directory": "/srv/data"}'
+curl -sS -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "Content-Type: application/json" -H "If-Match: $THREAD_ETAG" \
+  -d "{\"name\":\"data\",\"environment_id\":\"$ENVIRONMENT\"}"
 ```
 
-- `name` 必须匹配 `^[a-z][a-z0-9-]{0,62}$`。名为 `workspace` 的主挂载对 agent 显示为 `/workspace`，其他挂载显示为 `/mnt/{name}`。`working_directory` 是环境内的起始目录。
-- 同一线程内，每个名称和环境只能挂载一次。替换挂载需先删除再添加。
-- 一个线程最多 32 个挂载；超过时返回 `409 conflict`，原因为 `mount_limit`。接收运行时仍可在此限制之外，根据 agent 的默认模板添加 `workspace` 挂载。
-- 挂载修改使用**线程** 的 `If-Match`，返回线程的新 ETag，需要 `run`，仅影响之后接收的运行；此前接收的运行保留原挂载。`GET …/threads/{thread_id}/environments` 返回挂载和线程 ETag，`DELETE …/threads/{thread_id}/environments/{name}` 移除挂载。
-- 新线程和分叉线程通过 `environments` 字段指定初始挂载。分叉默认共享源线程挂载，除非设置 `fresh_environments`。归档线程会移除挂载。
-- 多个线程可以同时挂载和使用同一环境。
+4. 发送新消息，要求 agent 列出 `data` 中的文件。检查工具调用选择的挂载。先前已接收的运行保留原挂载。
 
-`AgentConfig.lazy_environment` 默认为 `true`。每个挂载首次使用时，Worker 最多等待 `environments.wait_seconds` 让环境就绪，创建预留目标或启动已停止目标。其他实例持有操作 claim 时，Worker 会等待其发布结果；有实例正在处理不代表已经就绪。输入附件和依赖环境的技能可在调用模型前触发首次使用。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+修改挂载需要 `run` 和**线程**的 ETag。`workspace` 显示为 `/workspace`；`data` 等命名挂载显示为 `/mnt/data`。同一线程中，每个实例和名称只能挂载一次。替换前，通过 `DELETE /api/v1/threads/{thread_id}/environments/{name}` 移除原挂载。多个线程可以同时共享实例及其文件。
 
-在首次模型请求前，Service 会读取默认挂载工作目录中可用的 `AGENTS.md`，并列出直属子目录中的 `AGENTS.md` 路径，以及工作目录和直属子目录中的 `.agents/skills` 目录。这些有界提示不读取子目录指导正文或 skill 描述，也不改变已选择的 skill 和权限。agent 按需查看相关项目。存在 `workspace` 时它就是默认挂载，否则唯一的用户挂载为默认挂载；没有 `workspace` 且存在多个命名挂载时，没有默认挂载。文件上下文准备属于环境使用，因此可能在任何工具调用之前激活默认挂载；其他挂载保持延迟激活。没有默认挂载时，不加载工作区指导。
+默认挂载为 `workspace`；没有 `workspace` 时，唯一的用户挂载作为默认挂载。存在多个命名挂载且没有 `workspace` 时，没有默认挂载。首次模型请求前，Service 读取默认目录中可用的 `AGENTS.md`，并列出附近的指导文件和 skill 目录，供按需查看。这可能在工具调用前激活默认挂载。附件和依赖环境的 skill 也可能触发准备。
 
-将 agent 配置中的 `lazy_environment` 设为 `false`，Service 会在进入 Harness 前创建或启动全部挂载的实例并等待就绪，即使工具不会使用它们。这个开关只控制实例准备时机。Harness 仍在首次实际使用时打开执行连接，并检查操作是否就绪及选定的工作目录。运行未使用某个环境时，就不会打开该环境的执行连接。没有挂载的运行无需准备。通过 `POST …/environments` 显式创建环境的行为保持不变。
-
-消息可以通过以下选项仅覆盖本次运行：
+`lazy_environment` 默认为 `true`。首次使用会创建预留实例或启动已停止实例，最多等待 `environments.wait_seconds`。设为 `false` 可在执行前准备全部挂载实例；执行连接仍在首次相关使用时打开。单次消息可以这样覆盖：
 
 ```json
-{"options": {"overrides": {"lazy_environment": false}}}
+{"options":{"overrides":{"lazy_environment":false}}}
 ```
 
-省略覆盖值或设为 `null` 时，沿用 agent 修订版本的配置。运行被接收后，重试和后续继续运行保持已接受的配置。异步子运行使用各自 agent 的配置；内联子 agent 共享父运行的环境。
-
-异步[子 agent](agents-and-runs.md#subagents) 按调用边的策略获得环境：共享父运行挂载（`shared`）、根据模板新建（`dedicated`），或不使用环境。
+重试和继续执行保留已接受的选择。分叉默认共享挂载，除非选择 `fresh_environments`；归档会移除线程挂载。异步[子 agent](agents-and-runs.md#subagents) 使用调用边的 `shared`、`dedicated` 或无环境策略。内联子 agent 共享父运行环境。
 
 ### 复用实例并选择项目目录
 
-在新会话的 **Options（选项）** 中选择 **Reuse existing（复用现有实例）**，可填写 **Working directory（工作目录）**。已有会话在会话操作 → **环境与记忆**中的 **Add environment（添加环境）** 表单也提供该字段。留空使用 Provider 默认目录。切换实例会清空上一次选择；会话的环境详情会显示已保存的目录。
+新会话的**选项**中选择**复用现有实例**，可填写**工作目录**。已有会话使用**环境与记忆 → 添加环境**。留空即使用 provider 默认目录。
 
-目录必须已存在于所选环境内。Local 的 `/projects/app` 映射到 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在电脑上的路径。其他 Provider 使用其环境内部的文件路径空间。Service 在首次激活时检查显式选择的目录；目录不存在或不可访问时会报错，不会自动创建目录，也不会将共享实例标记为故障。
+选择环境内已经存在的路径。Local 的 `/projects/app` 表示 `{模板根目录}/{环境 ID}/projects/app`，不是浏览器所在计算机的路径。Service 在激活时检查目录；目录不存在或不可访问时报告错误，不会创建目录。对应 API 字段是创建挂载时的 `working_directory`。
 
-两个会话可以在同一实例中使用不同项目目录，也可以主动选择同一目录共享文件。相对文件路径、`/workspace` 路由和命令默认工作目录均使用所选目录。进程、端口、已安装软件及系统权限仍然共享：这用于组织文件，不提供安全隔离。移除挂载不会删除目录；已接受的 Run 保留其捕获的目录选择。
+相对文件、挂载路由和命令 cwd 都使用该目录。两个线程可以在同一实例的不同目录组织工作，但仍共享进程、端口、已安装软件和操作系统权限。任务需要隔离时，选择提供隔离的后端，并为每个任务使用独立实例。
 
 ## Computer Use
 
-为 agent 提供图形桌面，让它查看屏幕、点击控件和输入文字。先准备桌面，再授予工具和挂载权限。
+桌面任务需要三个条件：兼容的图形环境、agent 已启用的**电脑**工具集，以及线程挂载的电脑权限。先准备桌面，再允许观察或交互。
 
 ### 创建 Docker 桌面
 
-1. 打开**工作空间设置 → 服务商 → 环境**，配置 Docker 连接。启用**环境操作通道**，将**主机访问地址**设为 Worker 可达的地址。Docker Engine 与此 HTTP 通道是两条独立连接。
-2. 打开**环境 → 模板 → 创建模板**。选择 Docker 和相应连接，再选择**桌面环境**。预设会选定桌面镜像、HTTP EIP 执行方式和桌面就绪要求。保存模板。
-3. 将模板设为 agent 的默认环境，或从模板创建实例，再添加到对话。
-4. 环境运行后，在**环境与记忆**中选择**检查桌面**查看就绪情况，再按下文启用权限。
+1. 配置 Docker provider 的**环境操作通道**和**主机访问地址**。Worker 必须能访问该地址及 Docker 分配的端口；Engine 访问是另一条连接。
+2. 创建 Docker 模板，选择**桌面环境**。预设会选择桌面镜像、HTTP 执行方式和桌面就绪要求。
+3. 将模板选为 agent 默认环境，或创建实例后添加到会话。
+4. 实例运行后，在**环境与记忆**中选择**检查桌面**，再按下文授予权限。
 
-明文 HTTP 操作通道使用回环地址或显式信任的私有链路，并配置相应的部署出站策略。Worker 需要访问主机地址和 Docker 分配的端口。使用自定义镜像时，选择**自定义镜像**，提供兼容 Envd HTTP 且包含图形会话的镜像，并设置 `execution: "envd_http"` 和 `desktop: true`。
+使用回环地址或明确可信的私网 HTTP 路由，并配置对应出站策略。其他主机名需要明确的监听 IP。自定义图形镜像须兼容 Envd HTTP，并设置 `execution: "envd_http"` 和 `desktop: true`。人工桌面控制还需要浏览器可达的查看路由，见下文。
 
 ### 自动创建 Vercel 桌面
 
-1. 添加 Vercel 环境连接，填写 Vercel access token，点击“加载 Vercel 团队”，选择该 Token 可访问的团队和项目。Token 需要沙箱和快照的创建、读取、删除权限。如果项目列表为空，请先在 Vercel 创建项目。
-2. 创建 Vercel 环境模板，选择该连接，勾选“桌面环境”，保留“自动桌面”。无需下载本地二进制、运行构建脚本或手填快照 ID。
-3. 从模板创建实例。首次创建会构建桌面快照，可能需要数分钟。Console 展示当前阶段和已等待时间；离开页面后仍会在后台继续，稍后可回到“环境实例”查看。
-4. 就绪后可以查看桌面预览。使用该环境的运行支持 Computer 操作和 Console 人工接管。如果创建失败，修正提示的配置或权限问题，待“重试创建”可用后重试。
+1. 使用 access token 添加 Vercel provider，选择**加载 Vercel 团队**，再选择该 token 可以访问的团队和项目。
+2. 创建模板，选择**桌面环境 → 自动桌面**。
+3. 创建实例。首次构建可能需要数分钟，Console 显示阶段和已等待时间。离开页面后，可以回到**环境实例**检查进度。
+4. 就绪后检查桌面预览，再启用 agent 权限。
 
-同一工作区、Provider、凭据版本、团队、项目和构建版本下，后续创建会复用经过校验的快照。上述输入变化会单独准备快照。临时构建沙箱会被清理，成功快照保留在 Vercel 项目中供后续复用。请使用有效期合适的 Vercel access token；短期 CLI 登录 Token 不适合无人值守的长期 Provider 连接。管理员仍可选择自定义快照，无桌面的原生环境保持原有行为。
+Token 需要沙箱和快照的创建、读取、删除权限，并有适合无人值守使用的有效期。后续创建会在同一工作空间、provider、凭据版本、团队、项目和构建版本内复用已验证快照。临时构建实例会被移除，可复用快照保留在 Vercel 项目中。
 
 ### 启用观察和操作
 
-已有兼容桌面时，从这里开始。电脑权限默认关闭，与桌面就绪状态独立。
+1. 启用 agent 的**电脑**工具集并保存。单个工具的审批仍然生效。
+2. 在**环境与记忆**中打开挂载的**电脑操作权限**。允许观察可获取截图，允许交互可使用鼠标和键盘。
+3. 发送新消息，要求 agent 描述屏幕。展开其工作步骤，在观察步骤选择**查看截图**。
+4. 执行交互任务时，检查下一张截图，确认应用发生了预期变化。
 
-1. 在 Agent 的工具配置中开启 **电脑** 工具集并保存。每个工具的审批设置仍然生效。
-2. 打开会话的 **环境与记忆** 设置。需要时先添加环境，再打开对应挂载的 **电脑操作权限**。选择 **可观察** 可获取截图与显示器信息；选择 **可操作** 还可使用鼠标和键盘。主挂载 `workspace` 使用同样的设置。
-3. 发送新消息。Run 接收时会冻结权限；修改不会撤销已接收运行的权限。
-4. 展开 Agent 的工作步骤，在观察步骤点击 **查看截图**。显示的是该步骤保存的画面。运行期间可能要到下一个检查点才能读取截图，尚未保存时可以稍后重试。
+电脑权限默认关闭。修改对新接收的运行生效，`workspace` 也遵循此规则。桌面就绪状态与权限独立：**检查桌面**只探测运行中的实例，不截图、不发送输入、不授予权限，也不启动已停止实例。已保存的步骤截图是历史画面；实时查看使用桌面控制。
 
-API 在初始挂载及新增挂载时接受精确的 `permission_ceiling.operations`。修改已有挂载使用 `PATCH /api/v1/threads/{thread_id}/environments/{name}`，携带线程的 `If-Match`。仅允许电脑观察的请求体为 `{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}`。此操作会替换整个动作集合，需要保留的文件与执行权限也必须包含在内。Console 的预设会自动保留其他权限。
+API 客户端通过 `PATCH /api/v1/threads/{thread_id}/environments/{name}` 更新挂载，并携带线程 ETag。以下请求体只允许电脑观察：
 
-电脑权限默认关闭，不限制终端命令和其他独立工具。截图预览是只读的历史画面，此视图尚不提供交互式远程桌面或人工接管。
+```json
+{"permission_ceiling":{"operations":["environment.computer.describe","environment.computer.observe","environment.computer.zoom"]}}
+```
 
-升级到此功能时，请在接收新 Run 前统一升级 Service 的 control 和 worker。旧 worker 无法读取新的挂载快照及截图依赖格式。已有挂载及历史 Run 快照保留原有文件和执行权限，电脑操作仍默认关闭。
-
-从会话操作菜单打开 **环境与记忆**，即可配置各个挂载的电脑权限。运行详情展示接收该次运行时确定的权限。挂载列表分开展示 **电脑权限** 和 **桌面状态**。桌面状态初始为 **未检查**；点击 **检查桌面** 后，会明确区分不支持桌面、未就绪和已就绪。不支持桌面的环境会提示：允许电脑操作不会让环境自动具备桌面能力。检查不会截图、发送输入或启动已停止的环境，也不会授予 Agent 权限；结果仅反映上次检查时的状态。
+动作列表会替换整个权限集合。请包含需要保留的文件和执行动作；Console 预设会保留它们。电脑权限控制 Computer 工具，Shell 和其他工具仍使用各自的权限。
 
 ### Computer 坐标模式
 
-如果模型输出相对桌面坐标，可在 agent 配置中设置：
+模型返回相对位置时，添加以下 agent 配置片段：
 
 ```json
 {"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
 ```
 
-工具会将每个轴上 0 到 1000 的相对坐标转换为观察截图的像素坐标。让模型直接传入相对坐标，不要自行乘以屏幕尺寸。对于已经输出像素坐标的模型，省略此设置或选择 `pixels`。该设置适用于鼠标位置，包括拖拽的两个端点，不改变滚动距离或键盘输入。声明所需 Computer 方法的 Envd 桌面环境可使用此设置。始终检查应用的实际状态；点击成功不代表表单已提交。
+直接传入 0 到 1000 的位置。工具将其转换为截图像素，包括拖拽的两个端点。返回像素的模型使用默认 `pixels` 模式。滚动距离和键盘输入保持不变。每次操作后都检查应用结果。
 
 ### Agent 请求桌面协助
 
-Agent 可以主动暂停并请人操作桌面。Console 的协助卡片提供“查看桌面”“开始操作”和“完成协助”。查看默认只读；只有服务端授予控制权后才能输入。完成协助会先撤销桌面连接，然后将结果填入待处理批次。确认其他问题和审批后，点击“提交回复”继续执行。Agent 恢复后必须先重新观察屏幕。
+可能需要人工输入的任务使用新的专用桌面。Recipe 必须启用 `desktop: true` 和 `desktop_assistance: true`；agent 需要 Computer 工具和挂载观察权限。按 [provider 指南](../environments/providers.md)准备兼容的桌面访问端点。
 
-启用前，由管理员准备兼容的桌面环境，并在环境配方中设置 `desktop: true` 和 `desktop_assistance: true`。仅启用 Computer 操作不会开放人工访问。
+Docker 需要配置 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，并路由到各容器的 6081 端口。Engine 和 Envd 访问不能提供这条浏览器路由。只有回环地址接受明文 WS。E2B 需要自动准备的桌面模板或兼容的自定义模板，仅有普通 `desktop` 模板还不够。Daytona 和 Modal 使用已准备的桌面 supervisor 及各自的访问路由。
 
-| Provider | 桌面访问前提                                                                                                                                                                                                                                         |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板需要补充查看端点；Agent Computer use 还需要兼容的 Envd 执行。                                                                                                                                   |
-| Docker   | 兼容的桌面镜像及 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，由部署方将路由转发到各容器的 6081 端口。连接 Docker Engine 或 Envd 不能替代浏览器访问路由；仅回环地址允许明文 WS。                                    |
-| Daytona  | 自动 `snapshot="auto"`（桌面默认），或自定义快照，预装并在启动时运行桌面访问 supervisor。Service 通过签名预览路由访问 6081 端口；supervisor 负责只读权限及强制断开已撤销的控制连接。参见 [snapshot 构建说明](../environments/providers.md#daytona)。 |
-| Modal    | 桌面配方默认 `image="auto"` 自动构建，或使用预装 Envd 与桌面访问 supervisor 的自定义镜像。Service 使用独立的 6081 TLS 通道与短期授权，参见 [Modal 构建说明](../environments/providers.md#modal)。                                                    |
+出现协助卡片后：
 
-Agent 主动请求协助和用户主动接管使用相同的 Provider 前提。凭据和桌面地址不会授予 Agent 电脑权限；仍需单独配置工具集和挂载。
+1. 选择**查看桌面**，检查任务。
+2. 选择**开始操作**，等待输入可用。
+3. 完成请求的操作，再选择**完成协助**。
+4. 检查其他待处理问题和审批，然后选择**提交回应**。完成协助只记录结果，提交完整批次才会继续 agent。
 
-Agent 需要启用 Computer 工具集，挂载需要允许屏幕观察。协助最长等待 15 分钟，桌面连接租约最多 60 秒并定期续期。关闭页面、续期失败或权限丢失会停止输入并撤销连接；不能确认撤销时，Agent 保持暂停。同一桌面同一时间只允许一人操作。
+Service 在继续前撤销人工访问。agent 随后观察当前屏幕并重新规划。同一时间只允许一个控制者操作桌面。协助最长 15 分钟，连接授权每次最多 60 秒并可续期。关闭页面或丢失权限会结束输入；清理结果未确认时，任务保持暂停。
 
-为避免后台程序与人同时输入，执行过 Shell 或进程输入、配置了初始化脚本、或缺少执行历史证据的目标不能进入人工协助。请为该流程使用新的专用桌面环境。独立 SDK 客户端、来宾 root/sudo 和基础设施管理员仍属于可信部署边界。
+已有 Shell 或进程输入活动、初始化脚本或未跟踪执行历史会阻止协助，因为无法排除后台输入。基础设施管理员和独立客户端仍属于 Service 控制范围之外的可信运维方。
 
 ### 获取与归还桌面控制权
 
-对于支持接管的运行中任务，在 Console 打开“桌面控制”，有多个桌面挂载时先选择目标，再点击“查看桌面”即可连接画面。观看不会暂停 Agent；点击“获取控制权”才会申请独占输入。Service 停止派发新工具，等待已开始的操作结束并保存结果，再授予控制权。确认安全边界前，界面显示“正在暂停 Agent”，不能输入。
+在受支持的运行中任务上接管：
 
-如果 Agent 同时发起协助请求，以服务端先确认的请求为准。Agent 先请求成功时，Console 会显示说明并切换到协助卡片，由你点击“开始操作”；你的接管先成功时，Agent 会等待这次接管完成，不再创建第二个协助请求。
+1. 打开**桌面控制**，需要时选择桌面挂载，再选择**查看桌面**。只观看时 agent 继续运行。
+2. 选择**获取控制权**。出现**正在暂停 Agent**时等待：Service 等待已接收操作结束并保存结果，之后才启用输入。
+3. 完成修改；agent 需要了解原因时可添加备注。
+4. 选择**归还控制权并继续**。访问清理确认后，后续运行保留已完成结果，观察屏幕并重新规划。
 
-操作完成后，点击“归还控制权并继续”。Service 先撤销人工输入并确认清理完成，再接受后续 Run。Agent 保留对话和已完成的工具结果，重新观察桌面并调整下一步。可选备注用于说明修改内容。如果还有其他问题或审批，应先归还控制权，再提交整个回复批次。归还成功但继续请求失败时，“继续 Agent”可重试，不会重放已完成的工具。
+agent 自己的协助请求先成功时，使用其协助卡片。还有其他问题或审批时，先归还控制权，再提交完整响应批次。归还后继续请求失败时，**继续 Agent**会重试继续执行，而不重复已完成工具。
 
-关闭页面、断开连接或点击“结束操作，保持暂停”均不会自动恢复 Agent。需要明确重连并完成归还。整个协助时段过期后，只有 Service 确认访问权限已撤销、输入已清理，才能点击“继续 Agent”显式恢复；过期本身不会继续任务。执行结果不确定、Worker 丢失执行权、存在未跟踪的后台命令、或配置了子 Agent 时，会拒绝接管，不提供强制抢占。已完成的任务可以操作桌面，但不会因此启动新的 Run。每个 Run 只选择一个接管桌面。E2B、Docker、Daytona 和 Modal 使用相同协议，都需要上文的兼容端点与路由；远端 Docker 部署仍需验证浏览器可达性和 TLS。
+关闭页面、断开连接或选择**结束操作，保持暂停**都会让任务保持暂停。请重新连接并完成归还。过期后也只有在清理确认后才能显式继续。执行结果不确定、worker 丢失执行权、未管理的后台命令和已配置的子 agent 图都会阻止接管。每次运行选择一个桌面挂载；控制已完成任务的桌面不会启动新运行。
 
-启用此能力前，同步升级 Service control 和 worker。旧 Worker 不识别新的执行屏障和桌面暂停检查点。创建用户接管历史后，数据库拒绝回滚到旧结构，应通过后续迁移修复。
+使用桌面交接前，同步升级 Service control 和 worker。已有用户控制历史后，数据库拒绝回滚到旧结构，应向前修复。
 
 ### 自动创建 Sprites 桌面
 
-1. 添加 Fly.io Sprites 连接，填写组织和 API Token。Token 需要支持带归属标签的创建、执行、删除和 URL 配置。限制名称或数量的 Token 可能拒绝设置标签，请换用满足权限要求的 Sprites Token，不要取消归属校验。
-2. 创建模板，选择该连接并勾选“桌面环境”。无需本地二进制、预构建镜像或模板 ID。
-3. 创建实例。**每个新 Sprite** 都会安装 Envd、桌面依赖和 Chrome，可能耗时数分钟。Console 显示分配、安装、启动校验阶段及已等待时间。可以离开页面，稍后回到环境实例查看进度；确认失败后可点击重试。
-4. 就绪后点击“查看桌面”获取只读截图；在使用该环境的会话中可进行交互式人工接管。
+1. 添加 Sprites provider，填写组织和允许归属标签、执行、删除、URL 设置的 token。
+2. 创建模板并启用**桌面环境**。
+3. 创建实例。每个新 Sprite 都安装 Envd、桌面依赖和 Chrome。Console 显示进度，可以稍后返回检查，或在确认失败后重试。
+4. 就绪后，选择**查看桌面**获取截图。交互访问使用会话中的桌面控制。
 
-新建另一个 Sprite 仍需安装；已有 Sprite 休眠后保留文件和安装结果。Envd 通道保持私有，浏览器桌面连接由短期授权和 VNC 密码保护，云端 API Token 留在 Service。安装失败保留所属沙箱，供明确重试或删除。Sprites 不支持显式停止；需要控制保留时间时可设置空闲删除。
+已有 Sprite 在休眠后保留文件和安装结果，新 Sprite 则重新安装。安装失败会保留所属目标，供显式重试或删除。Sprites 不支持显式停止。浏览器访问使用短期授权和 VNC 认证，云 API Token 保留在 Service。

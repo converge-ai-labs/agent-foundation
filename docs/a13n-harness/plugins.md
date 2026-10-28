@@ -1,55 +1,47 @@
 ---
 title: Plugins and extensions
-description: 'Choose the narrowest extension point: Harness middleware, Pydantic AI Capabilities, Environment provider bindings, Environment Run Extensions, or Provider plugins.'
+description: Add Run middleware, package it for configuration, and manage Environment setup and cleanup.
 ---
 
-Choose an extension by the behavior you want to add:
-
-| Extension point           | Use it for                                             |
-| ------------------------- | ------------------------------------------------------ |
-| Harness middleware plugin | Wrap input, execution, errors, or the final Run result |
-| Capability                | Add tools, instructions, or Agent-loop behavior        |
-| `EnvironmentSource`       | Prepare one Host target on first use                   |
-| `EnvironmentRunExtension` | Set up and clean up resources across entered mounts    |
-| Provider plugin           | Make an Environment Provider available to a Host       |
-
-Install the package, then explicitly select its extension. Installation alone activates nothing.
+Start with a direct plugin when you need to observe or change a complete Run. This page builds an offline audit plugin, packages the same implementation as a factory, and then demonstrates Environment setup and cleanup. Use the Python environment from [Getting started](getting-started.md); the two standalone programs need no Model credentials.
 
 ## Choose and Activate an Extension Point
 
-Select each extension through its owning API:
+Choose the extension that owns the behavior:
 
-| Extension point | Selection                                                                             |
-| --------------- | ------------------------------------------------------------------------------------- |
-| Middleware      | Pass a concrete plugin to `build()` or enable its configured `plugin_key`/`plugin_id` |
-| Capability      | Add it to definition or Run composition; see [Capabilities](capabilities.md)          |
-| Run extension   | Pass an instance to `create_environment_runtime(extensions=...)`                      |
-| Host source     | Add a Host source to `EnvironmentMount`                                               |
-| Provider plugin | Select its entry-point name, then its Provider type in Host configuration             |
+| Task                                                         | Extension                     | Selection                                            |
+| ------------------------------------------------------------ | ----------------------------- | ---------------------------------------------------- |
+| Wrap semantic input, execution, errors, or a complete result | Harness middleware            | `build(plugins=...)` or an enabled installed factory |
+| Add tools, instructions, or Agent-loop hooks                 | [Capability](capabilities.md) | Definition or Run composition                        |
+| Prepare a Host target on first use                           | `EnvironmentSource`           | `run(environment=...)` or `EnvironmentMount`         |
+| Set up and clean up resources across mounts                  | `EnvironmentRunExtension`     | `create_environment_runtime(extensions=...)`         |
+| Publish an Environment backend for Hosts                     | Provider plugin               | Selected entry-point name, then Provider type        |
 
-`AgentSpec` selects Capabilities. Configure middleware and Environment extensions separately.
+Package installation makes an extension available. The Host still selects it. `AgentSpec` selects Capabilities; middleware and Environment extensions have their own composition APIs.
 
 ## Harness Middleware
 
-Use middleware to wrap a whole Run; use a [Capability](capabilities.md) for behavior inside the Agent loop.
-
-A plugin can be supplied directly as an `AbstractHarnessPlugin` or created from a selected `HarnessPluginFactory` entry point.
+Middleware surrounds the complete Run. The following plugin emits an observation before execution and another after receiving the inner result. Its configuration is immutable during Runs, so the same instance can serve concurrent invocations.
 
 ### Wrap Execution and Emit Observations
 
-Implement an async `wrap_run()` that returns a `HarnessRunResult`. Await `call_next(exchange)` at most once, or return a complete result to short-circuit execution. Use `exchange.with_input(...)` to replace semantic input.
+Save this as `plugin_demo.py` and run `python plugin_demo.py`. The assertions check both observations and the final output.
 
 ```python
+import asyncio
 from typing import Any
 
-from a13n_harness import AbstractHarnessPlugin, HarnessRunResult
-from a13n_harness.events import HarnessExtensionEvent
+from pydantic_ai.models.function import FunctionModel
+
+from a13n_harness import AbstractHarnessPlugin, AgentSpec, HarnessBuilder, HarnessRunResult
+from a13n_harness.events import HarnessEvent, HarnessExtensionEvent
 from a13n_harness.plugins import PluginRunExchange, PluginRunNext
 
 
 class AuditPlugin(AbstractHarnessPlugin):
-    def __init__(self, plugin_id: str) -> None:
+    def __init__(self, plugin_id: str, label: str = "audit") -> None:
         self._plugin_id = plugin_id
+        self._label = label
 
     @property
     def plugin_id(self) -> str:
@@ -59,136 +51,127 @@ class AuditPlugin(AbstractHarnessPlugin):
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
     ) -> HarnessRunResult[Any]:
         await exchange.context.events.emit(
-            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "before"})
+            HarnessExtensionEvent(
+                kind="diagnostic", payload={"label": self._label, "phase": "before"},
+            )
         )
         result = await call_next(exchange)
         await exchange.context.events.emit(
-            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "after"})
+            HarnessExtensionEvent(
+                kind="diagnostic", payload={"label": self._label, "phase": "after"},
+            )
         )
         return result
+
+
+async def respond(messages, info):
+    yield "Plugin example completed."
+
+
+async def main() -> None:
+    executable = HarnessBuilder(configured_plugins_enabled=False).build(
+        AgentSpec(), output_type=str,
+        model=FunctionModel(stream_function=respond),
+        plugins=(AuditPlugin("audit-primary"),),
+    )
+    phases = []
+    async with executable.stream("Run the example.") as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
+                if item.event.kind == "diagnostic":
+                    phases.append(item.event.payload["phase"])
+    result = stream.result
+    assert result is not None
+    assert phases == ["before", "after"]
+    assert result.output_or_raise() == "Plugin example completed."
+    print(phases, result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-The Run delivers extension events through a bounded channel while middleware executes. Emission works before the continuation, after it, and during short-circuit execution. A slow consumer applies backpressure; middleware does not own or iterate the event stream.
+`wrap_run()` awaits `call_next(exchange)` at most once and returns a complete `HarnessRunResult`. To change input, pass `exchange.with_input(...)` to the continuation. To short-circuit, return a valid result without calling the continuation.
+
+The Run delivers extension observations through its bounded event channel. Slow consumption applies backpressure. Middleware emits events through `context.events`; the caller consumes the stream. Here `after` means the inner call returned; use `finally` for resource cleanup on failures as well.
 
 ### Direct Composition
 
-Direct objects are the simplest choice for an embedded application:
+The example selects `AuditPlugin("audit-primary")` through `build(plugins=...)`. That is sufficient for an embedded application; factory discovery is optional. `configured_plugins_enabled=False` keeps this standalone example independent of deployment plugin settings.
 
-```python
-from a13n_harness import HarnessBuilder
-
-plugin = AuditPlugin("audit-primary")
-executable = HarnessBuilder().build(
-    agent_spec,
-    output_type=str,
-    model=model,
-    plugins=(plugin,),
-)
-```
+Give every plugin a unique ID. Definition order is the default; `PluginOrdering` can add `wraps`, `wrapped_by`, or outermost/innermost constraints. `requires` checks presence without ordering the pair. Invalid references and cycles fail construction.
 
 ### Feature Capabilities and Current Provider Clients
 
-Select the feature Capability on the definition and supply current clients through Run bindings:
+A feature such as Web has two inputs: the definition enables its tools, and each Run receives current clients and policy. This helper reuses `AuditPlugin` from `plugin_demo.py`; the application supplies its Model and Host-owned `WebBinding`.
 
 ```python
-from a13n_harness import RunBindings
-from a13n_harness.capabilities import WebBinding
+from pydantic_ai.models import Model
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.capabilities import WebBinding, WebCapability, WebConfiguration
+from plugin_demo import AuditPlugin
 
-result = await executable.run(
-    "Read the page",
-    bindings=RunBindings.embedded(
-        web=WebBinding(client=web_client, policy=web_policy),
-    ),
-)
+
+async def run_web(model: Model, web: WebBinding, url: str) -> str:
+    executable = HarnessBuilder(configured_plugins_enabled=False).build(
+        AgentSpec(), output_type=str, model=model,
+        plugins=(AuditPlugin("audit-web"),),
+        capabilities=(WebCapability(WebConfiguration()),),
+    )
+    result = await executable.run(
+        f"Read this page: {url}", bindings=RunBindings.embedded(web=web),
+    )
+    return result.output_or_raise()
 ```
 
-Keep `WebCapability` on the definition, not in plugin contributions. The Host owns provider clients and their lifetime; clients are not saved in `HarnessState`.
-
-The [offline middleware and Web example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#middleware-and-feature-with-host-bindings) exercises a recorder plugin alongside a definition-owned Web feature, fresh typed bindings, and the standard `fetch` tool without a network request.
+Keep `WebCapability` on the definition, not in plugin contributions. The Host owns client lifetime; `HarnessState` stores no live clients. For a complete fixture client and an actual offline `fetch` call, use the [middleware and Web example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#middleware-and-feature-with-host-bindings).
 
 ### Publish a Plugin Factory
 
-Register one no-argument factory class:
+Use a factory when a Host should select this plugin by configuration. Move `AuditPlugin` and its imports into your package's `acme_harness/plugin.py` and add the following classes in the same module. The `label` field is included in the diagnostic payload; it changes real behavior.
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
+
+
+class AuditConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(default="audit", min_length=1)
+
+
+class AuditPluginFactory(HarnessPluginFactory):
+    configuration_model = AuditConfiguration
+    display_name = "Audit"
+    description = "Emit labeled Run observations."
+
+    @classmethod
+    def plugin_key(cls) -> str:
+        return "acme.audit"
+
+    def create_plugin(self, context: HarnessPluginFactoryContext) -> AuditPlugin:
+        configuration = AuditConfiguration.model_validate(dict(context.configuration))
+        return AuditPlugin(context.plugin_id, label=configuration.label)
+```
+
+Register the no-argument factory class in that distribution’s `pyproject.toml`. The entry-point name must equal `plugin_key()`.
 
 ```toml
 [project.entry-points."a13n_harness.plugins"]
 "acme.audit" = "acme_harness.plugin:AuditPluginFactory"
 ```
 
-The entry-point name and `plugin_key()` must match:
-
-```python
-from a13n_harness import AbstractHarnessPlugin
-from a13n_harness.plugin_factories import (
-    HarnessPluginFactory,
-    HarnessPluginFactoryContext,
-)
-from pydantic import BaseModel
-
-
-class AuditConfiguration(BaseModel):
-    mode: str = "metadata"
-
-
-class AuditPlugin(AbstractHarnessPlugin):
-    def __init__(self, plugin_id: str) -> None:
-        self._plugin_id = plugin_id
-
-    @property
-    def plugin_id(self) -> str:
-        return self._plugin_id
-
-
-class AuditPluginFactory(HarnessPluginFactory):
-    configuration_model = AuditConfiguration
-    display_name = "Audit"
-    description = "Record run metadata."
-
-    @classmethod
-    def plugin_key(cls) -> str:
-        return "acme.audit"
-
-    def create_plugin(
-        self,
-        context: HarnessPluginFactoryContext,
-    ) -> AbstractHarnessPlugin:
-        # context.configuration holds the validated, normalized configuration.
-        return AuditPlugin(context.plugin_id)
-```
-
-The base `validate_configuration()` calls the declared model's `model_validate()` before a Host accepts configuration. Put custom field validation and normalization in that model. Keep factory construction free of I/O and mutable Run data in `for_run()`.
+Factory validation and construction should perform no I/O. Allocate mutable per-Run state through `for_run()`, rather than storing it in the factory.
 
 ### Describe Configuration for Editors
 
-Declare `configuration_model` once, as above. Hosts generate the editor schema with `configuration_model.model_json_schema(mode="validation")`; the same model validates configuration. Field titles, descriptions, constraints, and defaults belong in the Pydantic model. `display_name` and `description` are optional, static, credential-free class attributes.
+`configuration_model` serves both validation and editor schema generation through `model_json_schema(mode="validation")`. Put defaults, constraints, descriptions, and validators in that model. Static `display_name` and `description` provide credential-free editor labels.
 
-Existing factories may keep their own `validate_configuration()` implementation without declaring a model; editors show the plugin key and a JSON editor. Service also falls back to JSON editing if schema generation fails. Schema generation happens when listing plugins, not when Harness loads factories. Backend validation remains authoritative, including custom validators that JSON Schema cannot express.
+A factory with a custom `validate_configuration()` and no model can use a JSON editor. Service also falls back to JSON editing if schema generation fails. Schemas are generated when listing plugins; backend validation remains authoritative for constraints that JSON Schema cannot express.
 
 ### Select Configured Plugins
 
-The Harness plugin document is a data schema, not a required file format:
-
-```python
-from a13n_harness import HarnessBuilder
-from a13n_harness.plugin_configuration import HarnessBuildContext
-
-configuration = {
-    "schema_version": "1",
-    "plugins": [
-        {
-            "plugin_id": "audit-primary",
-            "plugin_key": "acme.audit",
-            "enabled": True,
-            "configuration": {"mode": "metadata"},
-        }
-    ],
-}
-
-context = HarnessBuildContext.from_configuration(configuration)
-builder = HarnessBuilder(build_context=context)
-```
-
-The same schema can come from YAML or JSON:
+Install the distribution into the Host's Python environment first. Then save this as `harness-plugins.yaml`:
 
 ```yaml
 schema_version: "1"
@@ -197,249 +180,214 @@ plugins:
     plugin_key: acme.audit
     enabled: true
     configuration:
-      mode: metadata
+      label: production
 ```
 
 ```python
+from a13n_harness import HarnessBuilder
+from a13n_harness.plugin_configuration import HarnessBuildContext
+
 context = HarnessBuildContext.from_file("harness-plugins.yaml")
 builder = HarnessBuilder(build_context=context)
 ```
 
-Select entry-point keys, not `module:object` paths. `HarnessBuildContext.extensions` passes namespaced JSON to the selected factories.
+Build your Agent with this `builder`; it adds the configured plugin. Omit the direct `AuditPlugin("audit-primary")` from the earlier example to avoid duplicate IDs. The constructor resolves installed factories, and each `build()` validates configuration and creates plugins for root and child definitions.
+
+The document also accepts JSON or `HarnessBuildContext.from_configuration(mapping)`. `plugin_key` selects an installed entry point; `plugin_id` identifies an instance. `HarnessBuildContext.extensions` passes namespaced JSON to factories. Keep credentials and live clients in Host-owned bindings.
 
 ### Optional Environment-Variable Source
 
-Configured plugins are disabled by default. A deployment can opt into a document selected by environment variables:
+To let deployment settings select the document, enable ambient configuration before constructing `HarnessBuilder()`:
 
 ```bash
 export A13N_HARNESS_PLUGIN_CONFIG_ENABLED=true
 export A13N_HARNESS_PLUGIN_CONFIG_FILE=/etc/a13n/harness-plugins.yaml
 ```
 
-```python
-builder = HarnessBuilder()
-```
-
-Source precedence is JSON, explicit file, then `harness-plugins.yaml` in the working directory. Missing or invalid configuration fails construction. Only enabled entries are loaded.
+Ambient loading is off by default. When enabled, `A13N_HARNESS_PLUGIN_CONFIG_JSON` takes precedence over the explicit file, which takes precedence over `harness-plugins.yaml` in the working directory. Missing or invalid selected configuration fails construction. Only enabled entries load factories; an explicit build context bypasses ambient source lookup.
 
 ### Runtime Plugin Directories
 
-A long-lived Host can publish a complete installed distribution in a new immutable directory and add that directory to `sys.path` before constructing a replacement builder:
+For a newly available distribution in a long-lived Host:
 
-```python
-import importlib
-import sys
-from pathlib import Path
+1. Install the complete distribution into a fresh, immutable directory, including package files and entry-point metadata.
+2. Validate it before publishing the directory.
+3. Add that exact directory to `sys.path` and call `importlib.invalidate_caches()`.
+4. Construct a replacement builder and executable.
+5. Retain existing executables until their active Runs finish.
 
-
-def activate_plugin_directory(path: str | Path) -> Path:
-    plugin_directory = Path(path).resolve()
-    normalized = str(plugin_directory)
-    if normalized not in sys.path:
-        sys.path.append(normalized)
-    importlib.invalidate_caches()
-    return plugin_directory
-```
-
-The directory must contain both the import package and standard distribution metadata with the entry point. A loose `.py` file is not sufficient.
-
-Follow these steps:
-
-1. Publish into a fresh directory that is not yet searchable.
-2. Validate the complete installation.
-3. Atomically place the directory.
-4. Activate that exact path.
-5. Build a replacement executable.
-
-Do not mutate an already imported release in place or append two releases that own the same plugin key.
-
-A new builder resolves the selected installed factories. Existing executables keep their plugin graph; retain them until active Runs finish.
-
-The Host owns package installation, compatibility, and rollback.
+A loose Python file supplies no distribution entry point. Existing builders retain their factory catalog; existing executables retain their plugin graph. This workflow adds distributions, not hot replacement of already imported modules. The Host owns compatibility and rollback; do not publish two distributions with the same selected key.
 
 ## Plugin Lifecycle
 
-A plugin has three distinct phases:
+Keep data at the lifetime that owns it:
 
-1. **factory selection** during builder construction, then **plugin creation** during each `build()` for every root or child definition, for configured plugins;
-2. **Agent binding** once for each built root or child executable;
-3. **Run binding and middleware** freshly for every logical Run.
+| Phase              | Hook                                            | What to keep there             |
+| ------------------ | ----------------------------------------------- | ------------------------------ |
+| Builder/definition | Factory selection, then creation per definition | Validated configuration        |
+| Executable         | `for_agent()`, then `get_capabilities()`        | Reentrant Agent-bound behavior |
+| Logical Run        | `for_run()`, then `wrap_run()`                  | Fresh mutable Run state        |
 
-Return one valid result from `wrap_run()`. Clean plugin resources in `finally` and propagate cancellation and cleanup failures. The Harness validates each successfully returned result. A replacement that never returns because `finally` raises does not replace the last validated inner result.
+Binding replacements preserve concrete type, ID, and ordering. The audit example needs no mutable Run state and can return itself from the default binding hooks. A Capability can resolve its Run-bound plugin through `ctx.deps.plugins.require(plugin_id, ExpectedType)` after binding; see [ToolSearch contributions](tool-search.md#plugin-contributed-sources).
 
-Contribute Capabilities through `get_capabilities()` on the Agent-bound instance returned by `for_agent()`.
-
-For grouped tools, see [ToolSearch plugin-contributed sources](tool-search.md#plugin-contributed-sources).
+Clean resources in `finally` and propagate cancellation and cleanup failures. Harness validates every returned result. If cleanup raises before a replacement returns, the last valid inner result remains the retained outcome; terminal delivery is withheld. Imported plugins run with the Python process's authority, so install trusted code.
 
 ## Provider Plugins
 
-Provider plugins publish Environment definitions for Host selection. Compose Model, Web, Connector, and Memory definitions in code through `ProviderCatalog`.
+Publish a Provider plugin when other Hosts need to select your Environment backend. Start from the complete [workspace Provider implementation](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/src/a13n_plugin_examples/environment.py):
 
-Declare `ProviderManifest(api_version=1)` and require `a13n-harness>=0.10.0,<0.11.0` in published plugins. The Host owns target preparation and destruction; `connector_factory` returns an inert execution connector.
+1. Define configuration and optional credential models.
+2. Implement `describe_environment` without preparing the target.
+3. Implement `connector_factory` to return an inert execution connector.
+4. Export an `EnvironmentProviderDefinition` in `ProviderManifest(api_version=1)`.
+5. Register the manifest under `a13n_harness.providers.plugins` and have the Host explicitly select that entry-point name and Provider type.
 
-Ordinary Harness middleware loading is unchanged from 0.9.3. Its separate configuration envelope retains `schema_version="1"`; it does not share the Provider manifest version. Middleware that imports Environment APIs still needs the corresponding source migration.
+The Host prepares and destroys targets. Duplicate Provider types fail catalog construction; `ProviderCatalog.require()` raises `ProviderNotSelected` for an unavailable type. Model, Web, Connector, and Memory definitions are composed through `ProviderCatalog` in code; installed Provider manifests export Environment definitions.
 
-Declare the Provider type, configuration, credentials, and an execution connector factory:
-
-```python
-from a13n_harness.providers.authentication import Authentication, CredentialMode
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-
-ACME_SANDBOX = EnvironmentProviderDefinition(
-    type="acme_sandbox",
-    display_name="Acme Sandbox",
-    configuration_model=AcmeConnectionConfiguration,
-    credential_model=AcmeCredential,
-    environment_model=AcmeEnvironmentConfiguration,
-    connector_factory=_connector,
-    describe_environment=_describe,
-    authentication=Authentication(mode=CredentialMode.required),
-    setup_url="https://acme.example/dashboard",
-    setup_label="Acme dashboard",
-)
-```
-
-One distribution exports one `ProviderManifest` per entry point:
-
-```python
-from a13n_harness.providers.plugins import ProviderManifest
-
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
-```
-
-```toml
-[project.entry-points."a13n_harness.providers.plugins"]
-acme = "acme_providers:manifest"
-```
-
-A Host names the entry points it trusts and builds one Environment catalog from its built-in and selected definitions:
-
-```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.plugins import load_provider_plugins
-
-plugins = load_provider_plugins(("acme",))
-environments = ProviderCatalog(
-    item for plugin in plugins for item in plugin.manifest.environment
-)
-definition = environments.require("acme_sandbox")
-```
-
-Select the entry-point name and Provider type explicitly. Duplicate types fail catalog construction; `require()` raises `ProviderNotSelected` for an unavailable type.
-
-The runnable [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) publishes one manifest and a separate Harness middleware plugin from the same project. The [installed Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin) shows direct use and Harness UI loading.
+Published plugins using this Environment API require `a13n-harness>=0.10.0,<0.11.0`. The Provider manifest version is separate from middleware configuration's `schema_version="1"`. Ordinary middleware loading retains the 0.9.3 contract; middleware importing old Environment APIs needs source migration. The [installed Provider tutorial](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin) includes direct use and Harness UI selection.
 
 ## Harness Extras
 
-Execution definitions ship with Harness. Install its extra when opening a backend:
+Install the backend extra before opening its Provider:
 
-| Extra    | Adds                      | Needed by                         |
-| -------- | ------------------------- | --------------------------------- |
-| `docker` | The Docker SDK for Python | The `docker` Environment Provider |
-| `e2b`    | The asynchronous E2B SDK  | The `e2b` Environment Provider    |
-| `modal`  | The Modal SDK             | The `modal` Environment Provider  |
+| Extra    | Dependency            | Provider |
+| -------- | --------------------- | -------- |
+| `docker` | Docker SDK for Python | `docker` |
+| `e2b`    | Async E2B SDK         | `e2b`    |
+| `modal`  | Modal SDK             | `modal`  |
 
-```console
-uv add "a13n-harness[docker,e2b]"
-```
-
-Reading Provider metadata needs no vendor SDK. A missing extra fails when the Provider opens.
+For example, `uv add "a13n-harness[docker,e2b]"` installs two backend dependencies. Metadata inspection works without vendor SDKs; opening a backend requires its extra.
 
 ## Environment Inputs and Sources
 
-Pass a Host-owned `EnvironmentSource` to `run(environment=...)`. Its `ensure_ready()` prepares the target and returns a connector; see the complete [source example](environments.md#supply-a-source). Use `EnvironmentMount` for permissions and paths, or an explicit runtime for dynamic mounts:
+Use `EnvironmentSource` to connect Host preparation with Run execution. Pass a source to `run(environment=...)`, or wrap it in `EnvironmentMount` to set paths and permissions. The callback example below includes a complete `PreparedSource` for an already prepared local directory; [Environments](environments.md#supply-a-source) explains the source on its own.
 
-```python
-from a13n_harness.environment import (
-    FILE_ACTIONS,
-    EnvironmentMount,
-    EnvironmentPermissionSet,
-)
-from a13n_harness.environment.advanced import create_environment_runtime
-
-environment_runtime = create_environment_runtime(
-    mounts={
-        "workspace": EnvironmentMount(
-            source=source,
-            permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
-        ),
-    },
-    default_mount="workspace",
-)
-```
-
-`permission_ceiling` accepts exact action sets; Provider permissions can only narrow them. Static registration does not prepare targets. On first use Harness opens and owns a fresh execution, then closes it at exit. An execution already owned by another mount is rejected without closing its existing owner’s resources.
+Static registration publishes mount metadata. First dependent use calls `ensure_ready()`, opens a fresh execution, and gives Harness ownership of execution cleanup. Mount `permission_ceiling` lists exact actions; Provider permissions can narrow it further. Reusing an execution owned by another mount is rejected without closing that owner's resources.
 
 ### Host Preparation Callbacks
 
-Source `provider_key`, `environment_id`, `descriptor`, and `state` are inert metadata. `ensure_ready()` owns preparation, authoritative state publication, and waiting until the target is actually ready before returning a connector. The Host handles management failures; Harness does not automatically retry activation on the same mount. Provider discovery, credentials, and durable state remain with [Provider plugins](#provider-plugins) and the Host.
+Keep `provider_key`, `environment_id`, `descriptor`, and `state` as inert metadata. Put allocation, current-state publication, and readiness waiting in `ensure_ready()`; return a connector only when the target is usable. The Host handles management failures and durable state. Harness does not automatically retry failed activation on the same mount.
 
 ## Environment Run Extensions
 
-Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `EnvironmentRuntime`, including an empty, single-mount, or multi-mount runtime.
+Use a Run extension for resources that span the complete entered Environment, including empty or multi-mount runtimes. Extensions see the static mount set before the first Model request and leave before opened executions close.
 
 ### Callback Composition
 
-For ordinary Host setup and cleanup, register an `EnvironmentRunCallbacks` adapter instead of defining an extension class:
+Save this independent program as `environment_extension_demo.py`. It creates a marker in a temporary directory, reads it during input preparation, and checks that cleanup removed it after the Run.
 
 ```python
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from pydantic_ai.models.function import FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, RunPreparationContext
 from a13n_harness.environment import (
-    EnvironmentRunCallbacks,
-    EnvironmentRunExtensionContext,
+    EnvironmentAction, EnvironmentMount, EnvironmentPermissionSet,
+    EnvironmentRunCallbacks, EnvironmentRunExtensionContext,
 )
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
-async def prepare_environment(
-    context: EnvironmentRunExtensionContext,
-) -> None:
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
+async def prepare(context: EnvironmentRunExtensionContext) -> None:
     await context.environment.files.write_text(
-        "/workspace/.active-run",
-        f"{context.run_id}\n",
-        mode="create",
+        "/workspace/.active-run", context.run_id, mode="create",
     )
 
 
-async def clean_environment(
-    context: EnvironmentRunExtensionContext,
-) -> None:
-    await context.environment.files.remove(
-        "/workspace/.active-run",
+async def clean(context: EnvironmentRunExtensionContext) -> None:
+    await context.environment.files.remove("/workspace/.active-run")
+
+
+async def read_marker(context: RunPreparationContext) -> str:
+    marker = await context.environment.files.read_text("/workspace/.active-run")
+    assert marker.text == context.run_id
+    return "The marker exists. Finish the example."
+
+
+async def respond(messages, info):
+    yield "Extension example completed."
+
+
+async def main() -> None:
+    executable = HarnessBuilder(configured_plugins_enabled=False).build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond),
     )
+    with TemporaryDirectory() as directory:
+        root = Path(directory).resolve()
+        connector = DIRECT_LOCAL.execution_connector(
+            {"root": {"path": str(root)}}, environment_id="env-extension",
+        )
+        runtime = create_environment_runtime(
+            mounts={"workspace": EnvironmentMount(
+                source=PreparedSource(connector),
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset({
+                    EnvironmentAction.FILE_READ_TEXT,
+                    EnvironmentAction.FILE_WRITE_TEXT,
+                    EnvironmentAction.FILE_REMOVE,
+                })),
+            )},
+            default_mount="workspace",
+            extensions=(EnvironmentRunCallbacks(
+                extension_id="workspace-marker", on_enter=prepare, on_exit=clean,
+            ),),
+        )
+        result = await executable.run(
+            input_factory=read_marker,
+            bindings=RunBindings.embedded(environment=runtime),
+        )
+        assert not (root / ".active-run").exists()
+        print(result.output_or_raise(), "Marker removed.")
 
 
-active_run_callbacks = EnvironmentRunCallbacks(
-    extension_id="workspace-marker",
-    on_enter=prepare_environment,
-    on_exit=clean_environment,
-)
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-`on_enter` runs after Harness publishes the static mount set, before the first model request. Merely entering the extension does not prepare a target. If setup needs a specific operation family, request readiness explicitly:
+Run `python environment_extension_demo.py`; expect `Extension example completed. Marker removed.` The first file operation prepares the mount. Entering an extension alone does not prepare targets; setup that needs a family ready can explicitly call `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))` after importing that requirement from `a13n_harness.environment`.
 
-```python
-from a13n_harness.environment import EnvironmentReadinessRequirement
-
-await context.environment.ensure_ready(
-    EnvironmentReadinessRequirement(operations=frozenset({"files"}))
-)
-```
-
-`on_exit` runs before adapters close, including on failure or cancellation after successful entry. Use it for cleanup.
-
-Extensions enter in registration order and exit in reverse order.
+Callbacks enter in registration order and exit in reverse. `on_exit` runs after successful entry, including later failure or cancellation. If `on_enter` itself fails partway through setup, that callback owns cleanup of its partial work.
 
 ### Custom Resource Scope
 
-Use a custom async context manager when setup and cleanup share local state or need a richer resource scope:
+For setup and teardown that share local state, add this class above `main()` in the environment example:
 
 ```python
 from contextlib import asynccontextmanager
 
-from a13n_harness.environment import EnvironmentRunExtensionContext
-
 
 class WorkspaceMarkerExtension:
-    def __init__(self, extension_id: str, path: str = "/workspace/.active-run") -> None:
+    def __init__(self, extension_id: str, path: str) -> None:
         self._extension_id = extension_id
         self._path = path
 
@@ -449,99 +397,29 @@ class WorkspaceMarkerExtension:
 
     @asynccontextmanager
     async def bind(self, *, context: EnvironmentRunExtensionContext):
-        path = self._path
         await context.environment.files.write_text(
-            path,
-            f"{context.run_id}\n",
-            mode="create",
+            self._path, context.run_id, mode="create",
         )
         try:
             yield
         finally:
-            await context.environment.files.remove(path)
+            await context.environment.files.remove(self._path)
 ```
 
-Register direct extension objects on an explicit runtime with ordinary Environment inputs:
-
-```python
-from a13n_harness.environment.advanced import create_environment_runtime
-
-
-environment_runtime = create_environment_runtime(
-    mounts={"workspace": environment},
-    default_mount="workspace",
-    extensions=(WorkspaceMarkerExtension("workspace-marker"),),
-)
-```
-
-Give the runtime to the Harness through fresh Run bindings. Harness binds, activates, and closes it:
-
-```python
-from a13n_harness import RunBindings
-
-bindings = RunBindings.embedded(environment=environment_runtime)
-result = await executable.run("Use the prepared workspace", bindings=bindings)
-```
-
-The same `extensions=` sequence accepts callback adapters and custom extension objects together:
-
-```python
-environment_runtime = create_environment_runtime(
-    mounts=mounts,
-    default_mount="workspace",
-    extensions=(
-        active_run_callbacks,
-        WorkspaceMarkerExtension("custom-marker", "/workspace/.custom-run"),
-    ),
-)
-```
-
-Give each extension its own resource path as well as its own ID. The Host supplies current Provider state when constructing sources. Extensions enter after static mounts are published and exit in reverse order before opened executions close.
+Add `WorkspaceMarkerExtension("custom-marker", "/workspace/.custom-run")` to the runtime's `extensions` tuple alongside the callback adapter. Each extension needs its own ID and resource path. Give the runtime to the Run through fresh `RunBindings.embedded(environment=runtime)`; Harness owns entering and closing that runtime.
 
 ### Explicit Extension Factories
 
-A distribution can register a side-effect-free factory under:
+For configuration-driven selection, register a side-effect-free factory in the `a13n_harness.environment_run_extensions` entry-point group. `build_environment_run_extension_factory_catalog(extension_keys=(... ,))` loads selected installed keys; `explicit_factories=(factory,)` accepts local factory objects without installation.
 
-```toml
-[project.entry-points."a13n_harness.environment_run_extensions"]
-"acme.workspace-marker" = "acme_environment.extension:WorkspaceMarkerFactory"
-```
-
-Select factory keys with `build_environment_run_extension_factory_catalog()`, then create the instances:
-
-```python
-from a13n_harness import RunBindings
-from a13n_harness.environment import (
-    EnvironmentRunExtensionFactoryContext,
-    build_environment_run_extension_factory_catalog,
-)
-from a13n_harness.environment.advanced import create_environment_runtime
-
-catalog = build_environment_run_extension_factory_catalog(
-    extension_keys=("acme.workspace-marker",),
-)
-extension = catalog.create_extension(
-    EnvironmentRunExtensionFactoryContext(
-        extension_key="acme.workspace-marker",
-        extension_id="workspace-marker-primary",
-        configuration={"marker_path": "/workspace/.active-run"},
-    )
-)
-environment_runtime = create_environment_runtime(
-    mounts=mounts,
-    default_mount="workspace",
-    extensions=(extension,),
-)
-bindings = RunBindings.embedded(environment=environment_runtime)
-result = await executable.run("Use the prepared workspace", bindings=bindings)
-```
-
-`extension_key` selects the factory; `extension_id` must be unique in the runtime. Direct objects skip entry-point discovery.
+Call `catalog.create_extension(EnvironmentRunExtensionFactoryContext(extension_key=..., extension_id=..., configuration=...))`, then pass the resulting object in the same `extensions` tuple used above. The key selects the factory; the ID identifies one unique runtime instance. The [complete factory implementation](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/src/a13n_plugin_examples/environment_extension.py) and [end-to-end driver](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/src/a13n_plugin_examples/demo_environment_extension.py) supply the configuration models, installed selection, explicit selection, and marker assertions.
 
 ## Runnable Example
 
-Run the [integration package example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) for installed and direct composition with offline tests.
+Use the [integration package](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) when you are ready to test packaging. Follow its installation and run commands to exercise metadata discovery as well as direct composition. The two programs on this page test middleware and Environment lifetimes locally; the package adds the distribution entry-point path.
 
 ## Migrate middleware
 
-**Breaking migration:** replace `PluginRunResponse` and async event generators with `async def wrap_run(...)`, `await call_next(...)`, and a returned result. Emit extension observations through `context.events.emit()`. Native events and Run lifecycle events remain Harness-owned. For presentation changes, configure the Host's Stream Protocol `DisplayFold` processor before its shared live-and-persisted fold; use the same processor when restoring the fold. Do not rewrite native events in middleware.
+Replace legacy `PluginRunResponse` and async event generators with `async def wrap_run(...)`, one awaited continuation, and a returned result. Emit observations through `context.events.emit()`.
+
+Native and Run lifecycle events remain Harness-owned. For presentation changes, configure the Host's Stream Protocol `DisplayFold` processor before the shared live-and-persisted fold, and use the same processor when restoring it.

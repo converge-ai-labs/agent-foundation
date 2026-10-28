@@ -1,246 +1,246 @@
 ---
 title: 状态与恢复
-description: 保存 HarnessState，以跨进程继续、fork 或恢复 Thread。
+description: 保存已完成的一轮，重启程序，再继续同一个 Thread。
 ---
 
-`HarnessState` 是单个独立推进 Thread 的可移植续接值。它保留模型历史、带版本的 Capability 命名空间和可选的可移植 Environment 数据，有意不保留权限或 Host 生命周期状态。
-
-```mermaid
-flowchart TB
-    New["HarnessState.new()"] --> Run1["Run 1"]
-    Run1 -->|"result.state"| State["HarnessState"]
-    State --> Run2["同一 Thread 上的 Run 2"]
-    State -->|"fork()"| Branch["带新 Thread ID 的 HarnessState"]
-    Branch --> Run3["分叉 Thread 上的 Run"]
-    State <-->|"序列化和恢复"| Storage["Host 存储"]
-
-    class Run1,Run2,Run3 a13n
-    class State,Branch,Storage store
-```
-
-## 状态内容
-
-状态结构包含：
-
-- `schema_version`；
-- 稳定 `thread_id`；
-- 公共 Pydantic AI 消息历史；
-- 由 Capability ID 管理、带版本的独立 JSON 值；
-- 为已选择兼容挂载提供的可选 provider 专用可移植 Environment 状态。
-
-不包含：
-
-- Model、Toolset、Capability、插件、可调用对象或活动客户端；
-- 身份验证、策略、授权、凭据或审批；
-- 期望 Environment 挂载定义、运行时修改权限、provider 会话或启动状态；
-- Host 执行记录、尝试、租约、队列或终态提交；
-- 持久异步子级、长期记忆、交付、计费或统计状态。
-
-状态恢复数据，不恢复权限。
+应用接受一轮结果时，保存 `result.state`。下一轮读取该状态，并通过 `previous_state` 传入。Harness 在同一个 Thread 中创建新的 Run；应用重新提供当前 Model、工具和访问策略。
 
 ## 继续 Thread
 
-已完成、挂起或安全失败的结果可能携带候选状态：
+使用[快速开始](getting-started.md)准备的 Python 环境。将这个完整离线程序保存为 `conversation.py`：
 
-```python
-from a13n_harness import HarnessState
+```python title="conversation.py"
+import argparse
+import asyncio
+from collections.abc import AsyncIterator
+from pathlib import Path
 
-initial_state = HarnessState.new(thread_id="thr_productthread1")
-first = await executable.run(
-    "Draft the plan",
-    bindings=fresh_bindings(),
-    previous_state=initial_state,
-)
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-if first.state is None:
-    raise RuntimeError("No continuation state is available")
 
-second = await executable.run(
-    "Review it",
-    bindings=fresh_bindings(),
-    previous_state=first.state,
-)
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    del info
+    turn = 1 + sum(isinstance(message, ModelResponse) for message in messages)
+    yield f"turn-{turn}"
+
+
+async def main(checkpoint: Path, prompt: str) -> None:
+    previous = (
+        HarnessState.model_validate_json(checkpoint.read_text(encoding="utf-8"))
+        if checkpoint.exists()
+        else None
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
+    result = await executable.run(prompt, previous_state=previous)
+    answer = result.output_or_raise()
+    if result.state is None:
+        raise RuntimeError("Completed turn has no continuation state")
+
+    temporary = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
+    temporary.write_text(result.state.model_dump_json(), encoding="utf-8")
+    temporary.replace(checkpoint)
+    print(answer)
+    print(f"Thread: {result.thread_id}")
+    print(f"Run: {result.run_id}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("prompt")
+    args = parser.parse_args()
+    asyncio.run(main(args.checkpoint, args.prompt))
 ```
 
-`first.thread_id == second.thread_id`，而 `first.run_id != second.run_id`。Host 提供新的绑定，新 Run 创建新的上下文、`EnvironmentRuntime`、Run 绑定插件和用量累加器。
+在同一目录运行两次，使用一个新的检查点文件名：
+
+```bash
+uv run python conversation.py tutorial-thread.json "Draft the plan"
+uv run python conversation.py tutorial-thread.json "Review the plan"
+```
+
+第一个进程输出 `turn-1`，第二个输出 `turn-2`。两次 Thread ID 相同，Run ID 不同。这个确定性 Model 统计历史中已有的响应，用来检查新构建的 executable 是否收到了保存的历史，不会生成真实计划。
+
+程序只保存已完成的轮次，在序列化成功后替换文件。每个检查点文件只由一个写入方使用。应用支持并发请求或多个 worker 时，应由应用存储层协调检查点的选择和发布；参见 [Host 检查点](#host-checkpointing)。
 
 ## 序列化状态
 
-`HarnessState` 是冻结的 Pydantic 模型：
+示例使用公开的 JSON 序列化和读取接口：
 
 ```python
-from a13n_harness import HarnessState
-
-payload = state.model_dump_json()
+payload = result.state.model_dump_json()
 restored = HarnessState.model_validate_json(payload)
 ```
 
-持久化完整、经过验证的状态结构，不保存私有编码字段或原始模型增量。Host 应在 Harness 载荷之外，将它与自身定义版本、provider 生命周期状态、检查点来源及 Host 验证元数据关联。
+这两行假定已按前面的示例检查结果包含状态。保存完整结构。存储接口接受 UTF-8 字节时，也可以使用 `state.to_json_bytes()`。两种方式都会验证公开消息历史，都不会保存 executable 或打开的连接。
+
+## 状态内容
+
+| `HarnessState` 保存的内容         | 应用提供或管理的内容                    |
+| --------------------------------- | --------------------------------------- |
+| schema 版本和稳定的 Thread ID     | executable 定义及其版本                 |
+| 公开的 Model 消息历史             | Model、工具、Capabilities、插件、客户端 |
+| 带版本的 JSON Capability 数据     | 当前身份、凭据、策略、审批              |
+| 兼容 Environment 挂载的可移植状态 | 挂载选择、目标生命周期、当前授权        |
+| 可选 Host state store 产生的引用  | 被引用的字节、保留规则、存储访问        |
+
+默认情况下，新 Run 使用新的绑定、上下文和用量统计。状态携带继续执行所需的数据，Host 重建当前权限。显式延续用量统计见[用量](usage-and-limits.md)。
+
+使用 `RunBindings.state_store` 时，只要选定检查点仍需要引用的数据，就应保留这些数据，并在恢复时绑定兼容存储。未使用 store 时，相关值直接保存在状态内。执行记录、持久异步子任务、交付和长期记忆由各自的 Host 或功能存储负责。
 
 ## Fork Thread
 
-将续接数据复制为独立推进的历史时，用 `fork()`。省略 ID 让 Harness 生成，或传入不同的 Host 自选 ID：
+用 `fork()` 将已有对话分支为独立推进的 Thread。在已有 `executable` 和已读取状态 `restored` 的异步函数中：
 
 ```python
-branch_state = state.fork(thread_id="thr_productbranch1")
+branch = restored.fork()
+assert branch.thread_id != restored.thread_id
+assert branch.message_history == restored.message_history
+assert branch.environment_states == {}
 
-assert branch_state.thread_id != state.thread_id
-assert branch_state.message_history == state.message_history
+result = await executable.run("Explore another approach", previous_state=branch)
 ```
 
-不要手动编辑序列化状态。显式初始身份用 `HarnessState.new(thread_id=...)`；改变身份并保留可移植续接数据用 `state.fork(thread_id=...)`。fork 会按设计清除可移植 Environment 状态。Harness 用 ID 关联一份历史和模型会话亲和性，不把它视为权限。
+将分支保存到另一个应用记录或文件。`fork()` 保留继续执行的内容，为保留的内联子级分配新 Thread 身份，并清空可移植 Environment 状态。它不会复制 Host 管理的异步子级，也不会选择底层资源。
+
+需要应用指定身份时，在创建阶段调用 `HarnessState.new(thread_id=...)`，或在分支阶段调用 `state.fork(thread_id=...)`。将 ID 当作不透明的关联值，分支 ID 必须与来源不同。
 
 ## 流式期间导出
 
-活动流可在最新安全公共边界导出候选状态：
+大多数应用检查终态结果后再保存即可。需要中间检查点的 Host，可以在活动流中导出：
 
 ```python
-async with executable.stream("Work", bindings=fresh_bindings()) as stream:
+async with executable.stream("Continue the task", previous_state=restored) as stream:
     async for item in stream:
-        checkpoint_candidate = await stream.export_state()
+        candidate = await stream.export_state()
+        # Apply the application's checkpoint policy before saving candidate.
 ```
 
-`export_state()` 不持久化内容，也不暴露任意 token 增量。Host 决定候选是否完整、当前有效且可安全选择。终态结果仍是最简单的完整检查点边界。
+这个集成片段导出最新的安全公开消息边界，不保存任意 token 增量。Host 决定候选是否仍有效、能否安全发布。导出状态本身不会提交检查点；可选的 state store 可能在导出期间写入被引用的内容。
 
-## 恢复未回答工具调用
+### 压缩已保存的检查点
 
-检查点可能包含尚未记录结果的工具调用。崩溃后，即使结果缺失，操作也可能已运行。在将调用视为未知前，先提供 Host 保留的[已接受延迟输入](#recover-an-interrupted-deferred-resume)。外部结果、失败和显式拒绝在所有恢复模式下仍有效。其余未解决调用由 `run()` 和 `stream()` 的单 Run `tool_recovery` 决定是否重新执行：
-
-| 模式                 | 恢复后未回答的调用                                   |
-| -------------------- | ---------------------------------------------------- |
-| `"declared"`（默认） | 执行显式声明可恢复重试的工具；其他调用填入未知结果。 |
-| `"never"`            | 对每个未回答调用填入未知结果 `ToolReturnPart`。      |
-| `"always"`           | 执行当前工具集合中仍可用的每个未回答调用。           |
-
-已记录工具返回和参数重试结果仍有效。恢复保留原调用 ID 和部分结果，保存进度边界中断时也如此。不再可用工具得到未知结果。已有未知结果返回本身已是结果，即使 `"always"` 也不重新打开。新生成调用正常执行。
-
-### 在来源声明可重试工具
-
-用 `recovery_retryable()` 装饰器，或包装已有函数/原生 `Tool`：
-
-```python
-from a13n_harness.tools import recovery_retryable
-from pydantic_ai import Tool
-from pydantic_ai.capabilities import Capability
-
-@recovery_retryable
-def lookup_record(record_id: str) -> str:
-    return read_record(record_id)
-
-catalog = Capability(
-    id="acme.catalog",
-    tools=[lookup_record, recovery_retryable(Tool(search_records, name="search"))],
-)
-```
-
-辅助函数返回原生 `Tool`，只添加元数据，不包装执行；已有 `Tool` 会被复制，保留设置和其他元数据。实例方法可在构造 Capability 时用 `recovery_retryable(self.lookup_record)`。插件可如此声明各工具，无须 Host 知道工具名。
-
-动态 Toolset 构建当前工具时也可使用此函数。已有 `ToolDefinition` 元数据的集成，将 `a13n_harness.tools` 的 `RECOVERY_RETRY_SAFE_METADATA_KEY` 设为布尔 `True`。也支持原生 `SetToolMetadata`。声明从新准备的定义读取，不从已保存消息读取。
-
-声明表示即使之前结果未知，重复操作仍可接受。它与提供方派发重试和 `HarnessToolMetadata.idempotency` 独立：仅有 provider 幂等键不能证明恢复调用会复用原上游操作。
-
-### 按策略恢复
-
-```python
-result = await executable.run(
-    bindings=fresh_bindings(),
-    previous_state=checkpoint,
-    tool_recovery="declared",  # The default; use "never" to disable all replay.
-)
-```
-
-也可提供新输入。原生 Pydantic AI 续接在下次模型请求前处理保留调用和部分结果。恢复使用原生 `ToolApproved` 作为重放所选调用的程序许可。仍执行原生参数验证；当前需审批或外部执行的工具仍挂起；受管理调用按新策略和资源检查。恢复重放许可不满足当前审批要求。新的 `DeferredToolResume` 独立于 `tool_recovery` 使用提供的审批/结果批次；中断恢复使用 `recovery=True` 和当前恢复策略。提供方挂起响应保留原生续接路径。
-
-此选项属于 Run，不属于序列化状态或模型重试策略。不保证恰好一次副作用，也不阻止后续模型请求再次调用。
-
-在默认的 `"declared"` 模式下，未标记工具收到未知结果。
+Host 可调用 `await executable.compact(previous_state=restored)`，执行一个只生成摘要的 Run。检查结果后再选择返回状态。成功压缩后的检查点可立即保存；下次普通 `run()` 或 `stream()` 会先恢复运行时上下文，再继续任务。这个显式操作不要求 Compaction Capability 或阈值。完整流程和输出模式限制见[上下文管理](context.md)。
 
 ## 结构化挂起
 
-原生延迟工具和审批会以 `status="suspended"` 结束根逻辑 Run。结果包含：
+审批或外部工具可让 Run 以 `status="suspended"` 结束，同时返回 `state`、`deferred` 请求结构和 `suspend_reason="deferred"`。应用在该 Run 关闭后收集回答，再启动下一次 Run。
 
-- `state`：已接受历史和 Capability 数据；
-- `deferred`：完整的 Harness 待处理请求结构；
-- `suspend_reason="deferred"`。
-
-从 `a13n_harness` 导入 `DeferredToolRequests` 和 `DeferredToolCall`。`calls` 与 `approvals` 中的每一项都包含 `model_call`、`target_call` 和 `target_identity`。直接调用的模型调用与目标调用相同；一对一代理调用保留两者。展示 `entry.target_call`，并以它的 `tool_call_id` 为键提交结果和元数据。持久化时保留完整记录：Harness 用 `model_call` 关联历史结果，并在恢复时检查当前目标身份。
-
-该格式替代原来的原生请求数组。升级 Host 前，应处理完待办并让已接受的延后输入写入历史。旧待处理检查点不会自动转换；不含待处理或已接受延后输入的检查点格式不变。原生内联处理器仍接收原生请求对象。`DeferredToolResults` 保留原生值类型，也从 `a13n_harness` 导出。
-
-Host 在 Run 关闭后处理外部交互，再启动新 Run：
+仅含审批的流程可按以下顺序集成。此片段假定 `executable` 声明了需要审批的工具，`approvals` 包含应用已收集的决定：
 
 ```python
-from a13n_harness import DeferredToolResume
+from a13n_harness import DeferredToolResume, RunBindings
 
-first = await executable.run(
-    "Ask for confirmation",
-    bindings=fresh_bindings(),
-)
-
+first = await executable.run("Perform the action", bindings=RunBindings.embedded())
 if first.status != "suspended" or first.state is None or first.deferred is None:
-    raise RuntimeError("Expected a suspended run")
+    raise RuntimeError("Expected an approval suspension")
 
-results = first.deferred.build_results(approve_all=True)
-
+# approvals maps each target tool_call_id to the collected bool/ToolApproved/ToolDenied.
+results = first.deferred.build_results(approvals=approvals)
+accepted = DeferredToolResume(first.deferred, results)
 second = await executable.run(
-    bindings=fresh_bindings(),
     previous_state=first.state,
-    deferred_resume=DeferredToolResume(first.deferred, results),
+    bindings=RunBindings.embedded(),
+    deferred_resume=accepted,
 )
 ```
 
-确切结果构造 API 取决于延迟项是审批、外部调用还是结构化用户问题。对全部待处理项各回答一次，并保留类别。[客户端工具示例](client-tools.md)展示完整离线声明、挂起、关联外部结果和恢复。[受管理工具策略](managed-tools.md)说明审批元数据和新授权。
+完整可运行的工具声明和外部结果流程见[客户端工具](client-tools.md)。用户提问见[人工参与](human-in-the-loop.md)。每个待处理项都应在原类别下回答一次；审批映射不能回答外部调用。
 
-恢复会验证：
+将完整的 Harness `DeferredToolRequests` 与对应检查点一起保存。`calls` 或 `approvals` 的每项都包含 `model_call`、`target_call` 和 `target_identity`。展示 `target_call`，以其中的 `tool_call_id` 为回复键；Harness 使用保留的模型调用关联历史。从 `a13n_harness` 导入这些请求类型和 `DeferredToolResume`。
 
-- 存在之前状态；
-- 延迟请求与提供结果精确关联；
-- 模型调用符合合法消息历史，目标符合当前工具身份和类别；
-- 覆盖参数再次通过验证；
-- 新策略和提供方约束仍允许派发。
-
-之前审批不绕过当前策略。Host 可构造合法历史，并提供原生 `bool`、`ToolApproved` 或 `ToolDenied`，无须私有 Harness 元数据。不要求历史参数或 schema 的指纹、资源版本或受管理身份声明证明。保持待处理请求与历史一致；替换参数使用 `ToolApproved.override_args`。当前 schema 验证、审查、策略和 Environment 约束仍适用。审批不预留底层目标，也不授权未知结果后的自动重放。
-
-当前绑定支持延迟工具时，此原生流程也适用于 Host 管理的子级。[内置内联子级](delegation-and-codeact.md#host-managed-feedback)关闭延迟工具，只支持普通提示续接。没有延迟生命周期的 Host 显式设置 `deferred_tools_supported=False`；仅有父子血缘不会关闭交互。
+恢复会检查历史关联、当前目标身份、参数 schema 和新策略。`ToolApproved.override_args` 可提供替换参数。审批不会预留资源，也不会覆盖当前授权。Host 管理的子级在绑定支持延后工具时可使用此流程；内置内联子级关闭这项支持。没有延后处理生命周期的 Host 应设置 `deferred_tools_supported=False`。
 
 ## 恢复中断的延迟续接
 
-外部结果可能在原生历史记录前就已接受。例如批次同时包含外部结果和本地批准动作，执行可能在动作运行前停在检查点。中间 `HarnessState` 本身不是已接受批次的完整记录。Harness 不在 Capability 状态中保留第二份延迟结果表示。
+应用已接受的外部输入可能还未进入检查点历史。在历史纳入输入前，将已接受的 `DeferredToolResume` 保存在检查点旁：
 
-Host 将完整的 Harness `DeferredToolRequests` 和原生 `DeferredToolResults` 与所选检查点一起保留，或放入已有持久输入记录，直到历史纳入它们。发布新检查点时，`accepted.remaining(checkpoint.message_history)` 返回未纳入批次；已纳入或被后续响应替代时返回 `None`。按 Host 普通发布规则将此值与检查点持久化；收到输入或仅调用 `export_state()` 不会保存。
+1. 应用接受输入时，保留完整请求和结果。
+2. 恢复执行的事件流中，将当前检查点与 `stream.pending_deferred_input` 配对。
+3. 一起发布这两份数据。剩余输入为 `None` 时，清除保存的已接受批次。
+4. 中断后读取两份记录，通过 `recovery=True` 恢复。
 
-从中断的恢复 Run 继续时，提供保留批次和 `recovery=True`：
+`stream.pending_deferred_input` 在流关闭后仍可读取。它在历史变换前移除已消费的输入，因此压缩不会让旧输入重新生效。始终与当前规范检查点配对，不要搭配旧快照。对于独立保存的批次和未经变换的匹配历史，`accepted.remaining(history)` 可以计算未回答的剩余项。
+
+下面的片段假定 `checkpoint` 和可选的 `accepted` 已从应用存储读取：
 
 ```python
-from a13n_harness import DeferredToolResume
-
-# Loaded from the Host's checkpoint and accepted-input storage.
 recovery_input = (
     DeferredToolResume(accepted.requests, accepted.results, recovery=True)
     if accepted is not None
     else None
 )
 result = await executable.run(
-    bindings=fresh_bindings(),
     previous_state=checkpoint,
+    bindings=RunBindings.embedded(),
     deferred_resume=recovery_input,
     tool_recovery="declared",
 )
 ```
 
-恢复过滤历史已有结果，验证剩余关联和当前工具集合；即使 `tool_recovery="never"`，也消费保留外部事实和显式拒绝。绝不复用正向审批作为重放许可。未解决本地任务遵循当前恢复策略，适用时需新审批。Host 管理的子检查点也如此；这不保证恰好一次副作用，也不能恢复 Host 未保存输入。
+即使 `tool_recovery="never"`，恢复也会采纳保留的外部结果、失败和拒绝，并跳过已写入历史的结果。之前的批准不代表允许重放结果不确定的本地动作；未解决的操作仍遵循当前恢复策略和审批规则。
+
+## 恢复未回答工具调用
+
+崩溃后缺少结果，意味着操作结果可能未知。先按前节提供已保留的接受输入，再为其余未回答的历史调用选择每次 Run 的 `tool_recovery` 策略：
+
+| 模式                 | 行为                                               |
+| -------------------- | -------------------------------------------------- |
+| `"declared"`（默认） | 重放显式标为可恢复重试的工具；其他调用记录未知结果 |
+| `"never"`            | 为所有未回答调用记录未知结果                       |
+| `"always"`           | 重放当前工具集合中仍可用的未回答调用               |
+
+已记录的结果仍有效，包括已有的未知结果和参数重试结果。已移除的工具得到未知结果。这些模式不改变新生成的调用，也不保证外部副作用恰好发生一次。
+
+### 在来源声明可重试工具
+
+只有在先前操作可能已完成、重复仍可接受时，才标记该工具。例如只读查询可以写为：
+
+```python
+from a13n_harness.tools import recovery_retryable
+from pydantic_ai.capabilities import Capability
+
+
+@recovery_retryable
+def lookup_status(record_id: str) -> str:
+    """Read a status from the demonstration catalog."""
+    return {"item-1": "ready"}.get(record_id, "unknown")
+
+
+catalog = Capability(id="catalog", tools=[lookup_status])
+```
+
+将 `catalog` 传给 builder 的 `capabilities` 参数。辅助函数返回原生 `Tool`，也可复制已有 Tool 并保留其设置。对于实例方法，在构建 Capability 时标记已绑定方法。动态 Toolset 可用相同方式标记当前工具，也可在工具元数据中将 `RECOVERY_RETRY_SAFE_METADATA_KEY` 设为布尔 `True`。
+
+声明从当前工具定义读取。它独立于 provider 传输重试和 `HarnessToolMetadata.idempotency`：仅有幂等键，不能证明重放会复用原来的上游操作。
+
+### 按策略恢复
+
+在已有选定 `checkpoint` 和当前 executable 的异步函数中：
+
+```python
+result = await executable.run(previous_state=checkpoint, tool_recovery="declared")
+```
+
+Harness 在下一次 Model 请求前处理恢复的调用。当前参数校验、审批要求、外部执行要求和受管理调用策略仍适用。新的完整 `DeferredToolResume` 直接提供收集到的批次；中断后的延后恢复使用 `recovery=True` 和选定策略。
 
 ## 安全的失败状态候选
 
-Harness 能规范化中断历史时，失败结果可包含安全候选状态。例如保留完整可见文本和已完成的思考内容，排除未完成思考片段。
+失败结果可能携带规范化状态，保留可见文本和已完成的推理，去除不适合重放的未完成片段。应用按自己的恢复策略决定是否选择该状态。重复结果不确定的修改操作前，应检查外部系统，或使用该操作已有的幂等约定。
 
-候选不是持久恢复决策。选择前，Host 必须判断外部修改是否可能已派发但无权威结果。重放不确定操作前，应核对提供方状态，或复用操作专用幂等契约。
-
-`RunCleanupError.outcome` 也只是结果不确定的候选，因为未完成正常终态交付。
+`RunCleanupError.outcome` 同样是结果不确定的候选，因为正常终态交付没有完成。在核实结果前，将它与应用最后提交的检查点分开管理。
 
 ## Capability 状态
 
-有状态 Capability 使用稳定命名空间和确切版本：
+Capability 将可移植数据保存在稳定 ID 和确切版本下。在可访问当前 `AgentContext`（命名为 `context`）的 hook 或工具中：
 
 ```python
 from pydantic import BaseModel
@@ -250,11 +250,7 @@ class CounterState(BaseModel):
     value: int
 
 
-current = await context.state.read(
-    "acme.counter",
-    CounterState,
-    version="1",
-)
+current = await context.state.read("acme.counter", CounterState, version="1")
 await context.state.write(
     "acme.counter",
     CounterState(value=(current.value if current else 0) + 1),
@@ -262,28 +258,20 @@ await context.state.write(
 )
 ```
 
-未知命名空间可在 Run 中保持不透明。只有所属 Capability 解释载荷和版本。不要在 Capability 命名空间存储凭据、客户端、锁或 `EnvironmentState`。
+状态 API 校验并复制 JSON 数据。所属 Capability 解释版本；未读取的命名空间可以原样跨 Run 保留。凭据、客户端、锁和 Environment 生命周期数据仍交由各自的集成管理。
 
 ## Shell 执行与观测
 
-`DynamicEnvironmentCapability` 按各挂载实际动作组合 shell 执行、`shell_info` 发现/检查、显式偏移 `shell_wait` 和支持的 stdin/控制工具。独立的 `process-*` 引用属于一个 Harness Run。绑定 Host 持有的 `ToolExecutionRuntime` 后，顶层 Shell 执行通过 `exec-*` 标识，在同一 Thread 的多个 Run 之间保留原进程和输出捕获。查询不重置输出；原生完成不代表输出已完整捕获。
+可移植状态与实时进程控制具有不同的生命周期：
 
-Run 关闭释放未被保留的观测，不会统一终止全部进程。仍存活的 `exec-*` 执行可通过同一 Host runtime 继续控制，每次控制都检查当前授权和目标。Host 重启后，根据 Provider 状态恢复的新 adapter 可能发现后端保留的命令；该发现分配新的本地引用，不会恢复先前的 runtime。进程引用、缓冲、watcher 和输出游标不进入 Harness Capability 状态。Provider 状态保存原生恢复证据；Host 负责目标生命周期和状态发布。
+- 独立的 `process-*` 引用属于一个 Harness Run。
+- Host 的 `ToolExecutionRuntime` 持有顶层 Shell 执行时，可在同一 Thread 的多个 Run 之间保留 `exec-*` 引用，前提是该 runtime 仍持有执行。
+- Host 重启后，provider 支持的发现操作可能找到保留的命令并分配新引用。加载消息历史不会重建旧 runtime。
 
-用法和 Provider 专用限制见 [Environment 工具](environments.md)。存活 runtime 的保留与可移植检查点恢复是独立的生命周期。
+Run 关闭会释放未被保留的观测；命令是否存活由 Provider 的清理策略决定。保留的控制仍需当前授权。查询不会重置输出；原生进程完成不代表输出已完整捕获。可用动作和 provider 限制见 [Environment 工具](environments.md)。
 
 ## Host 检查点
 
-持久 Host 应将这些事实分开管理：
+持久 Host 应将检查点发布做成明确的应用操作。将选定状态与定义版本、来源、剩余的已接受输入及引用内容一起管理。允许新 Run 执行时，重新构造当前身份、凭据、策略和 Environment 绑定。
 
-| 事实                                  | 负责方              |
-| ------------------------------------- | ------------------- |
-| 可移植 Thread 续接                    | `HarnessState` 候选 |
-| 所选检查点和来源                      | Host                |
-| 定义版本和产物锁定                    | Host                |
-| 当前身份、策略和凭据                  | Host 重新构造       |
-| 期望挂载定义和权威 `EnvironmentState` | Host/Provider 集成  |
-| 执行尝试、generation、fence 和租约    | Host                |
-| 持久完成与输出交付                    | Host/产品           |
-
-完整权限边界见[嵌入 Host](hosting.md)。可运行的 [Agent Application 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)展示更简单的单应用场景：流式执行一轮、提交返回状态、重建应用，然后继续同一 Thread。
+Host 另行负责 worker 尝试、租约、并发写入协调、持久完成和输出交付。Harness 终态结果确认 Run 的结果，Host 保存成功确认检查点已发布。完整边界见[嵌入 Host](hosting.md)，单应用实现见 [Agent Application 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)。

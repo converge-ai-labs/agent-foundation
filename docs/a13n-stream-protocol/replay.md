@@ -1,24 +1,26 @@
 ---
 title: Replay and recovery
-description: Restore compact display checkpoints or rebuild an observer from exact source history.
+description: Save an unfinished display, restore it, and continue from the next event or source item.
 ---
 
-Choose the recovery API from the data your Host retained.
+A consumer restart should continue an unfinished message instead of displaying it twice. Save the display content and its parsing state at the same position, then supply the intact suffix. The examples below separate that task from rebuilding event conversion and continuing Agent execution.
 
 ## Choose the recovery path
 
-| Retained data                         | API                                                              | Restores                                       |
-| ------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
-| Display items and parser continuation | `DisplayFold.restore(snapshot)`                                  | Display content and AG-UI parsing state        |
-| Observer conversion continuation      | `HarnessAguiStreamObserver.restore(continuation, processor=...)` | Conversion for the same root stream            |
-| Exact finite Harness source prefix    | `await observer.resume(history)`                                 | Conversion; optional historical event snapshot |
-| `HarnessState`                        | Start a new Harness Run                                          | Agent execution in a new Run                   |
+Choose from the data your Host retained:
 
-Keep checkpoint items and continuation together. Resume at the next event, with no gap or overlap.
+| Saved data                         | API                                                              | Result                                              |
+| ---------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| Display items and continuation     | `DisplayFold.restore(snapshot)`                                  | Restore messages, tool calls, and parsing state     |
+| Observer continuation              | `HarnessAguiStreamObserver.restore(continuation, processor=...)` | Continue conversion for the same root stream        |
+| Exact finite Harness source prefix | `await observer.resume(history)`                                 | Rebuild conversion by replaying source observations |
+| `HarnessState`                     | Start a new Harness Run                                          | Continue Agent execution                            |
+
+Store the checkpoint with the Host position used to select its suffix. Resume immediately after that position, with no gap or overlap. Keep the Harness/Protocol release and processor policy consistent across reconstruction.
 
 ## Restore a compact display checkpoint
 
-This example saves an unfinished message, restores it, and appends the remaining events:
+Run this complete example in the [quickstart environment](getting-started.md). It cuts a message after `Hello`, serializes the checkpoint, and restores it before receiving ` world`:
 
 ```python
 from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot
@@ -46,11 +48,9 @@ assert item.content["text"] == "Hello world"
 assert item.state == "completed"
 ```
 
-The restored message is identical to uninterrupted output. Export returns a detached checkpoint and leaves active messages and tool calls open. If you use a Host processor, pass the same policy as `processor=` when constructing and restoring the fold.
+The assertions verify the whole restored snapshot, final text, and completed state. `export()` returns a detached copy and leaves active messages and tool calls open. In your Host, persist `checkpoint_json` and the corresponding delivery position together. Supply the same `processor=` when constructing and restoring a fold that uses a processor.
 
-For incremental checkpoints, call `fold.capture_delta()`. It returns changed items and the current continuation, independently of live publication. Keep the prior item prefix, merge changes by item ID, and persist the merged items with that continuation. Corrections keep their IDs. A delta alone is not a complete checkpoint; resume after the captured position with no gap or overlap.
-
-To convert native Harness observations and accumulate the display:
+For a native Harness stream, use the fold's built-in converter. The following integration fragment assumes `run_id`, `run_stream`, and your Host's storage/delivery method:
 
 ```python
 fold = DisplayFold(run_id)
@@ -59,13 +59,19 @@ async for source in run_stream:
     await host.persist_and_publish(observed)
 ```
 
-Passing `source` also records failed tool results. This checkpoint saves native conversion state; after restore, feed the next source item through the same loop. `host.persist_and_publish` represents your application's storage and delivery.
+Passing `source` lets the fold mark failed tool results as well as normalize the converted events. Export after processing a source item. The checkpoint includes native conversion state, so a restored fold can accept the next source item through the same loop.
 
-For paging, retire only immutable items and preserve the next ordinal. The repository's private `a13n-ui/display` browser normalizer uses the checkpoint and subsequent AG-UI events. Display types and limits are in [API reference](api-reference.md#display-apis).
+When full exports become expensive, use `capture_delta()`:
+
+1. Keep the items from earlier captures.
+2. Merge the captured changes by item ID; a correction keeps the existing ID.
+3. Save the merged items with the new capture's continuation and matching Host position.
+
+The delta contains only changed items, so it needs the earlier prefix to form a complete checkpoint. Checkpoint capture and live delivery tracking are independent. For paging, retire immutable items only and preserve the next ordinal. Display types and content limits are in the [API reference](api-reference.md#display-apis).
 
 ## Resume from Source History
 
-Use `resume()` on a fresh observer when you retained exact Harness source history. The journal and Host methods below belong to your application:
+Use source replay when your Host retained Harness observations rather than a converter checkpoint. Create a fresh observer, rebuild it from a finite prefix, then follow the next source item. `source_journal`, `cursor`, and `host` here are application-owned:
 
 ```python
 from a13n_stream_protocol import HarnessAguiStreamObserver
@@ -77,22 +83,26 @@ async for item in source_journal.tail(run_id=run_id, after=cursor):
     await host.persist_and_publish(observer.observe(item))
 ```
 
-Supply the exact finite, ordered prefix for one root stream and its inline children. Continue after the same cursor, excluding duplicates and detecting gaps. `resume()` returns `None`; it does not republish history. With default `retain_events=True`, `snapshot()` also contains historical events.
+`resume()` consumes an asynchronous iterable and returns `None`. It rebuilds state without publishing the historical events. With `retain_events=True`, those events also appear in `snapshot()`; the example avoids that extra journal.
 
 ### What the Host must guarantee
 
-Keep the Harness/Protocol release and processor policy unchanged. Feed AG-UI records to the display fold, and Harness source records to `observer.resume()`.
+Provide the exact ordered prefix for one root stream and its inline children. Decode it into public Harness source items. Feed serialized AG-UI records to `DisplayFold`, not to `observer.resume()`.
 
-To restore conversion without replay, save `observer.export()` and call `HarnessAguiStreamObserver.restore(saved, processor=process_event)`. Supply the processor again. The restored observer keeps no event journal.
+Select the prefix boundary and live suffix using the same Host cursor. Exclude duplicate delivery and detect gaps before conversion. Wait for replay to finish before feeding live observations; one observer accepts serial calls.
+
+If you saved `observer.export()`, restore it directly with `HarnessAguiStreamObserver.restore(saved, processor=process_event)`. Restore creates a non-retaining observer. Supply the processor again because executable callbacks are not part of the saved continuation.
 
 ### Failure and retry
 
-Failed or cancelled `resume()` leaves the observer fresh; retry with complete history. After successful observation or resume, use `observe()` rather than another `resume()`. Serialize calls and wait for reconstruction before observing live items.
+Failed or cancelled `resume()` leaves the observer fresh. Repair the history source and retry with the complete prefix. After successful observation or replay, continue with `observe()`; another `resume()` on that observer is rejected.
 
 ## Resume Is Not Agent Recovery
 
-To continue model or tool execution, use [Harness State and Resume](../a13n-harness/state-and-resume.md). The new Harness Run needs a new observer; keep earlier Run projections separately.
+Use [Harness State and Resume](../a13n-harness/state-and-resume.md) to continue model or tool execution. That creates a new Run with a new observer; retain the old Run's display separately. The same distinction applies to a Host-triggered compaction Run: its execution checkpoint and the display of its summary are separate saved values.
 
 ## Errors and Atomicity
 
-Invalid correlation or processor replacements raise `AguiObservationError`; invalid Python input types raise `TypeError`. A failed `observe()` leaves that source item uncommitted. Persist each successful batch through your Host's transaction and delivery contract.
+`AguiObservationError` identifies invalid correlation, replay use, or processor replacement. `TypeError` identifies an invalid Python input type. A failed `observe()` leaves that source item uncommitted in the observer, allowing the Host to correct the cause before retrying conversion.
+
+After successful conversion, persistence and delivery follow your Host's transaction contract. A failure there does not undo the observer's successful conversion. Use the retained batch or a selected checkpoint and exact suffix to recover delivery, rather than blindly feeding the same source item again.

@@ -4,9 +4,9 @@ sidebarTitle: Overview
 description: General execution over EIP, with OS sandbox and Egress policy enforcement, Computer use, and Device metrics.
 ---
 
-Envd (`a13n-envd`) is the general execution path for Files & Shell, **OS sandbox** and **Egress** policy enforcement, **Computer use**, and **metrics collection**. It serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection. The Host selects execution policy and owns product authorization; Envd enforces the selected boundary and reports Device observations. Vendor-specific Environment Providers continue to manage target resources and prepare connections.
+Envd runs file and command operations on a local computer, remote computer, or sandbox. It can also enforce OS sandbox and egress policies, operate a shared desktop, and collect Device metrics. Clients use the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.
 
-Connect Agents through [Harness Environment Providers](../environments/index.md), or use the [Python EIP client](python-client.md) directly.
+For an Agent, connect through [Harness Environment Providers](../environments/index.md). For an application that calls EIP directly, use the [Python client](python-client.md). The Host chooses permissions and deployment boundaries; Envd enforces the selected execution policy. Environment Providers manage vendor resources and prepare the connection.
 
 ## Choose your path
 
@@ -26,12 +26,13 @@ Connect Agents through [Harness Environment Providers](../environments/index.md)
 
 ## What it provides
 
+Use the Device's advertised methods to find the operations available on its platform and configuration:
+
 - Read, write, search, and transfer files.
-- Run commands, send input, read output, and stop processes.
+- Run commands, send input, collect output, and stop processes.
 - Inspect ports and wait for them to open.
-- Optionally observe and control a shared desktop ([computer use](computer-use.md)).
-- Check operation results, cancel work, and inspect failures.
-- Discover available operations for each platform and configuration.
+- Observe and control an enabled [shared desktop](computer-use.md).
+- Inspect operation results and failures, or cancel work.
 
 ```mermaid
 flowchart TB
@@ -48,11 +49,15 @@ flowchart TB
     class Files store
 ```
 
-One daemon serves a Device and multiple independent Sessions. Each Session owns its operations, processes, retained output, transfers and evidence. Working directory is a default, not an access boundary. Mutually untrusted workloads need separate Host-enforced outer boundaries; EIP Sessions do not isolate workloads from each other.
+One daemon serves a Device with multiple Sessions. Each Session has a fixed working directory and owns its operations, processes, output, transfers, and execution evidence. The Sessions share the Device filesystem: a working directory does not restrict file access. Put mutually untrusted workloads in separate Host-enforced boundaries.
 
 ## Try Local Envd
 
-The repository's [Environment Provider example](../environments/examples.md#local-envd) exercises file operations through a private Envd Device without a model, cloud account, or server. From the repository root:
+Run the repository's [Environment Provider example](../environments/examples.md#local-envd) to write and read a file through a private Envd Device. You need Rust and `uv` with Python 3.13; the example uses no model or cloud account.
+
+1. From the repository root, build Envd from the same checkout as the Python client.
+2. Enter the example project and install its locked dependencies.
+3. Run the Local Envd example with the binary you built.
 
 ```bash
 cargo build --locked --package a13n-envd
@@ -62,13 +67,13 @@ uv run environment-provider-example local_envd \
   --executable ../../target/debug/a13n-envd
 ```
 
-The example creates its own working directory, starts a private daemon over stdio, creates one Session for its adapter, and verifies that closing the adapter preserves that directory. The example's `LocalEnvdProviderRuntime` then closes the daemon. For Agent integration, supply an `EnvironmentSource` that returns a Local Envd connector and enable `DynamicEnvironmentCapability`; [Harness integration](../a13n-harness/environments.md) shows that boundary. A Host can reuse its `LocalEnvdProviderRuntime` across adapters, but each adapter opens an independent Session.
+The example starts a private daemon over stdio and opens one Session. It writes and reads `provider-example.txt`, then reports whether the workspace survived closing the execution. `LocalEnvdProviderRuntime` closes the daemon when the example finishes.
 
-Configure `LocalEnvdLaunchConfiguration` on that runtime when you need execution identity, Sandbox grants, egress mode, executable roots, shell profiles, or limits. Envd manages Session workers; the Host owns outer container or VM isolation. See [execution boundaries](isolation.md) and [Session credential references](../environments/remote-envd.md#session-egress-and-credential-references).
+To use the same path with an Agent, return a Local Envd connector from an `EnvironmentSource` and enable `DynamicEnvironmentCapability`; follow [Harness integration](../a13n-harness/environments.md). Configure identity, Sandbox grants, egress, executable roots, shell profiles, and limits through the runtime's `LocalEnvdLaunchConfiguration`. See [execution boundaries](isolation.md) and [Session credential references](../environments/remote-envd.md#session-egress-and-credential-references).
 
 ## Lifecycle and ownership
 
-Device discovery opens no Session. Session preparation checks fixed cwd, required methods and readiness. Cancellation or failure of one adapter cannot close a healthy shared Device. See [daemon lifecycle](configuration.md#lifecycle-and-ownership).
+A Host can reuse one `LocalEnvdProviderRuntime` across executions. Each execution opens its own Session and checks its working directory, required methods, and readiness. Discovery alone opens no Session. Closing or cancelling one execution leaves a healthy shared Device available to the others; the runtime owner closes the Device. See [daemon lifecycle](configuration.md#lifecycle-and-ownership).
 
 ## Reference topics
 

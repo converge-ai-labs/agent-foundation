@@ -1,14 +1,14 @@
 ---
 title: Discover and use Skills
 sidebarTitle: Skills
-description: Discover and materialize Skills from files or Environments, and make them available to a Run.
+description: Give an Agent a discoverable procedure, read it through file tools, and choose the Skills exposed to each Run.
 ---
 
-Add project procedures to an Agent with `SkillsCapability()`. Put Skills under `.agents/skills/` in the workspace. Each Run gives the model names, descriptions, and paths; the model reads the content through file tools when needed.
+A Skill packages instructions and supporting files for a recurring task. `SkillsCapability()` tells the model which Skills are available; file tools let it read the procedure it needs.
 
 ## Skill Package Layout
 
-Create `.agents/skills/code-review/SKILL.md`:
+Place each procedure in `.agents/skills/<name>/SKILL.md`. For example, `.agents/skills/code-review/SKILL.md` contains:
 
 ```markdown
 ---
@@ -18,57 +18,132 @@ description: Review a code change for correctness and maintainability.
 
 # Code review
 
-Follow the repository review workflow.
+Report findings with file paths.
 ```
 
-Keep supporting files such as `checklist.md` in the same directory. A configured source root and each immediate child directory can be a Skill package; discovery stops at that level. `name` identifies the Skill for conflict resolution and Run selection.
-
-Treat Skill content as untrusted model context. The Host retains control of tools, credentials, file access, and package or plugin loading.
+The frontmatter supplies the catalog entry. The body supplies the procedure after the model reads the file. Keep `checklist.md`, templates, and other supporting files beside it. Discovery checks each configured root and its immediate child directories; put deeper material inside a discovered package. The `name` field identifies the Skill for selection and duplicate resolution.
 
 ## Use Skills in a Harness Run
 
-Add `SkillsCapability()` and file tools to the Agent, then supply the workspace source. This function accepts a [prepared Environment source](environments.md#supply-a-source) and a configured Model:
+Use the Python environment from [Getting started](getting-started.md). Save the following as `skills_demo.py`. It creates the package above in a temporary workspace, selects `code-review`, and makes a real `view` tool call. The deterministic Model needs no provider credentials.
 
 ```python
-from pydantic_ai.models import Model
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from a13n_harness import AgentSpec, EnvironmentSource, HarnessBuilder, RunBindings
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import SkillsCapability
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 
-async def review_workspace(source: EnvironmentSource, model: Model) -> str:
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
+async def respond(messages, info):
+    assert 'skill name="code-review"' in str(info.instructions)
+    returns = [
+        part
+        for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        yield {0: DeltaToolCall(
+            name="view",
+            json_args='{"file_path":"/workspace/.agents/skills/code-review/SKILL.md"}',
+        )}
+    else:
+        assert "Report findings with file paths" in str(returns[-1].content)
+        yield "Skill loaded: report findings with file paths."
+
+
+async def main():
     agent = HarnessBuilder().build(
         AgentSpec(instructions="Read the code-review Skill before reviewing code."),
         output_type=str,
-        model=model,
+        model=FunctionModel(stream_function=respond),
         capabilities=(
             SkillsCapability(),
             DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
         ),
     )
-    result = await agent.run(
-        "Use code-review to review the workspace changes.",
-        environment=source,
-        bindings=RunBindings.embedded(skill_selection=frozenset({"code-review"})),
-    )
-    return result.output_or_raise()
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        skill = root / ".agents/skills/code-review/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            "---\nname: code-review\n"
+            "description: Review a code change for correctness and maintainability.\n"
+            "---\n\n# Code review\n\nReport findings with file paths.\n",
+            encoding="utf-8",
+        )
+        connector = DIRECT_LOCAL.execution_connector(
+            {"root": {"path": str(root)}}, environment_id="env-skills"
+        )
+        result = await agent.run(
+            "Read code-review and state its reporting rule.",
+            environment=PreparedSource(connector),
+            bindings=RunBindings.embedded(skill_selection=frozenset({"code-review"})),
+        )
+        print(result.output_or_raise())
+        assert skill.is_file()
+
+
+asyncio.run(main())
 ```
 
-The default manager scans `/workspace/.agents/skills`; a missing directory gives an empty catalog. The example explicitly selects `code-review`, so create that Skill before running it.
+Run it from that environment:
 
-Selection is exact and fresh for each root, resumed, or child Run:
+```bash
+uv run --no-sync python skills_demo.py
+```
 
-- leave `RunBindings.skill_selection=None` to expose the complete conflict-resolved catalog;
-- provide a non-empty set to expose only those names;
-- provide an empty set to inject no Skill instructions or paths;
-- an unknown name fails Run preparation with `skill_selection_unknown`.
+The output is `Skill loaded: report findings with file paths.` The first model request checks the catalog; the second checks the file's returned content. `SkillsCapability` supplies metadata, `DynamicEnvironmentCapability` supplies file tools, and `PreparedSource` connects the temporary directory. Run cleanup leaves the file intact; `TemporaryDirectory` removes it when the example exits.
 
-Selection is not portable `HarnessState` and grants no source or file authority. If a relevant Environment route changes, the current Run fails with `skill_catalog_stale`; it does not silently rescan or retarget frozen instructions.
+For your application, use a [prepared source](environments.md#supply-a-source) for the actual workspace and replace `FunctionModel` with your configured Model. Create the package before starting the Run. The default manager scans `/workspace/.agents/skills`; a missing optional directory yields an empty catalog.
+
+Choose exposure with `RunBindings.skill_selection`:
+
+| Value                          | Model-facing catalog                             |
+| ------------------------------ | ------------------------------------------------ |
+| `None`                         | All discovered Skills after duplicate resolution |
+| Non-empty `frozenset`          | Only the exact names supplied                    |
+| Empty `frozenset()`            | No Skill instructions or paths                   |
+| A name absent from the catalog | Preparation fails with `skill_selection_unknown` |
+
+Supply the selection afresh for each root, resumed, or child Run. Selection is not stored in portable `HarnessState`. It narrows exposure after discovery; source validation and file permissions still apply. Skill text is untrusted context, and reading it grants no tools, credentials, or plugin-loading authority.
 
 ## Add Explicit Sources
 
-Retain the canonical `/workspace/.agents/skills` source and append Host roots with normal later-source precedence:
+To add an organization library, mount it in the Environment and append its root to the default manager:
 
 ```python
 from a13n_harness.capabilities import (
@@ -87,24 +162,38 @@ manager = SkillManager.default(
 )
 ```
 
-Pass `SkillsCapability(manager)` in the Agent's capabilities to use these sources. Constructing `SkillManager(...)` directly replaces the default sources. Set `SkillsPolicy(conflict="error")` to reject duplicate names instead of applying source precedence.
+Replace `SkillsCapability()` in the example with `SkillsCapability(manager)`. The Environment must route `/environment/shared/skills` to a readable directory. This source is required, so every declared root must be available. Later sources win duplicate names by default; use `SkillsPolicy(conflict="error")` through the manager's `policy` argument to reject duplicates.
 
-With `required=False`, each missing, unroutable, or unsupported root is skipped independently. By default, `skip_invalid=True` skips individual entries whose bounded catalog read or frontmatter validation fails and logs a warning. Valid siblings remain available, and a Run can continue even when all entries are skipped. Set `skip_invalid=False` for strict validation. Root access failures, malformed paths, catalog overflow, and mount-incarnation checks remain errors.
+Use `SkillManager(...)` directly when you want to replace the default source list. For example, a Host with explicit aggregate mount paths supplies those paths rather than relying on the `/workspace` compatibility route.
+
+Choose failure behavior per source:
+
+- `required=False` skips each missing, unroutable, or unsupported root independently.
+- `skip_invalid=True`, the default, warns and skips entries with invalid bounded reads or frontmatter. Valid siblings remain available, even if the final catalog is empty.
+- `skip_invalid=False` makes those entry errors fail the scan.
+
+Root access failures, malformed paths, catalog overflow, and mount-incarnation errors always fail. These settings control discovery behavior, not access permissions.
 
 ## Design
 
-`FileSkillSource` discovers metadata under explicit roots. `SkillManager` materializes, validates, and resolves conflicts. `SkillsCapability` exposes the catalog to a Run. The standalone scan APIs also serve CLI and import workflows without building an Agent:
+The same scanning pipeline supports both Agents and Host interfaces:
 
-| Situation                          | API                                 | Result and consistency                                                              |
-| ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- |
-| Caller controls the file namespace | `scan(files=...)`                   | `tuple[SkillCatalogItem, ...]`; caller keeps the namespace stable                   |
-| Host uses an entered Environment   | `scan_environment(environment=...)` | `BoundSkillCatalog`; pins mount incarnations and checks freshness before path reuse |
+1. `FileSkillSource` names the roots to inspect.
+2. `SkillManager` runs materializers, reads metadata, validates entries, and resolves duplicates.
+3. `SkillsCapability` selects the Run's catalog and publishes its descriptions and paths.
 
-Both APIs share parsing, limits, and conflict policy. Scans read only configured roots. Environment scans stay on mount-incarnation-pinned file scopes; a relevant route change fails with `skill_catalog_stale` instead of rescanning or retargeting.
+For a CLI catalog or an import screen, call the manager without building an Agent:
+
+| Caller                                         | API                                 | Result                                    |
+| ---------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| Owns a stable file namespace                   | `scan(files=...)`                   | `tuple[SkillCatalogItem, ...]`            |
+| Uses an entered Environment with routed mounts | `scan_environment(environment=...)` | `BoundSkillCatalog` with freshness checks |
+
+Both APIs share parsing, limits, and conflict policy. Each reads only explicitly configured roots.
 
 ## Scan a Direct FileOperator
 
-For direct scanning, use canonical absolute roots in the FileOperator's namespace. A local operator rooted at the project uses `/.agents/skills`, not `/workspace/.agents/skills`:
+Use absolute paths in the supplied operator's namespace. For an operator rooted at your project, the Skill root is `/.agents/skills`. This helper takes an existing `FileOperator` and returns its catalog:
 
 ```python
 from a13n_harness.capabilities import (
@@ -130,13 +219,11 @@ async def scan_cli_skills(
     return await manager.scan(files=files)
 ```
 
-Keep the operator's namespace stable until you finish using the returned paths. Use Environment-aware scanning when mounts can change.
-
-`SkillManager.default()` uses `/workspace/.agents/skills` in Environment-backed Runs. For explicit mount roots or direct FileOperators, provide a manager with roots in that namespace.
+Keep that namespace stable while consuming the returned paths. The `/workspace` prefix belongs to Environment routing; direct scanning adds no such prefix. Choose the next API when the Host can change mounts.
 
 ## Scan an Entered Environment
 
-Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{name}` and mounts can change while the Host is active:
+Call this helper while the Host's `BoundEnvironment` is entered:
 
 ```python
 from a13n_harness.capabilities import (
@@ -157,25 +244,18 @@ async def scan_environment_skills(
     return catalog
 ```
 
-`scan_environment()` pins configured routes while reading and returns exact paths. It checks that those routes remain current before returning.
+The scan holds the configured routes on their exact mount incarnations and checks them again before returning. Each item includes `name`, `description`, logical `path`, and `source_id`, plus resolved `directory` and `document` paths. Those paths record `mount_id`; `observed_generation` records the provider generation used by the scan.
 
-A `BoundSkillCatalogItem` contains:
+Call `catalog.require_current(environment)` immediately before reusing its paths after other asynchronous work. A relevant mount, generation, or route change raises `skill_catalog_stale`; unrelated mount changes remain valid. In a Run, `SkillsCapability` performs these checks around model requests and tool calls. A stale catalog fails rather than silently sending the model to a new location.
 
-- `name`, `description`, `path`, and `source_id`;
-- `directory`, the exact resolved Skill directory;
-- `document`, the exact resolved `SKILL.md` path;
-- `directory.mount_id` and `document.mount_id`, the opaque mount incarnation used during scanning;
-- `observed_generation`, the provider generation held during scanning.
-
-Call `catalog.require_current(environment)` before reusing catalog paths. A changed relevant mount, generation, or route fails with `skill_catalog_stale`; unrelated mounts do not invalidate it.
-
-`EnvironmentPath` is valid only in the entered Environment. Import packages into Host-owned immutable storage for durable use.
+Use resolved `EnvironmentPath` values only within the entered Environment. For durable packages, import copies into Host-owned storage.
 
 ## Materialize Managed Skills
 
-A trusted Host adapter can implement `SkillMaterializer` to populate one configured source root before scanning:
+A Host can populate a selected source before discovery. Implement `SkillMaterializer.materialize` to validate and publish your managed package. This is an adapter skeleton; replace the method body with your application's import logic:
 
 ```python
+from a13n_harness.capabilities import SkillManager, SkillsCapability
 from a13n_harness.environment import FileOperator
 
 
@@ -184,25 +264,29 @@ class ManagedSkillMaterializer:
     target_root = "/workspace/.agents/skills"
 
     async def materialize(self, *, files: FileOperator) -> None:
-        # Verify the Host-owned package manifest and digest first.
-        # Then publish only beneath target_root through `files`.
+        # Application code: validate the package manifest and digest,
+        # then publish its files beneath target_root using files.
         ...
+
+
+manager = SkillManager.default(materializers=(ManagedSkillMaterializer(),))
+capability = SkillsCapability(manager)
 ```
 
-Set `target_root` to one configured source root and materialize beneath it. The FileOperator or Environment supplies access permissions.
+Set `target_root` to an explicitly configured source root and keep writes beneath it. The supplied FileOperator or Environment determines actual write access. Pass this `capability` to the builder after implementing the method.
 
 ## Host Responsibilities
 
-The Host manages source authorization, package validation, and durable storage.
+For an import workflow:
 
-To import a package:
+1. Scan with `scan_environment()` and select an item.
+2. Check freshness, then validate its content through that same Environment.
+3. Copy it into Host-owned immutable storage and validate the copy before publication.
 
-1. Scan through `scan_environment()` and select an item.
-2. Check the catalog remains current; validate content through the same Environment.
-3. Copy to Host-owned immutable storage and validate the copy before publication.
+The Host owns source authorization, package validation, revisions, and durable storage. A discovered path is sufficient to read within its active Environment; a validated stored copy is the artifact to retain for later use.
 
 ## Read Concurrency and Limits
 
-Built-in scans use up to eight read workers while preserving source precedence and name-sorted results.
+Built-in scans use at most eight read workers. Source precedence and name-sorted output stay deterministic regardless of read completion order.
 
-`max_entries_per_root` defaults to 256; `SkillsPolicy.max_skills` defaults to 512 per source and final catalog. Oversized catalogs fail instead of truncating.
+`FileSkillSource.max_entries_per_root` defaults to 256. `SkillsPolicy.max_skills` defaults to 512 for each source and the final catalog. Oversized catalogs fail rather than returning a truncated selection.

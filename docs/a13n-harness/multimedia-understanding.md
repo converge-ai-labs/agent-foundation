@@ -1,168 +1,264 @@
 ---
 title: Multimedia understanding
-description: Understand image, video, and audio files and URLs through native model input or a dedicated media-understanding Agent.
+description: Read local media or direct URLs, select native input or an analysis Model, and handle the resulting text and usage.
 ---
 
-Use `view` for media files in an Environment and `read_media_url` for direct HTTP(S) media resources. Ask for a specific result: OCR, a transcript, timestamps, or a UI review.
+Use `view` for media in an Environment and `read_media_url` for a direct HTTP(S) image, video, or audio resource. Give the tool a focused task, such as reading a label, transcribing speakers, locating an event by timestamp, or reviewing a UI.
 
-| Media configuration                                                    | Tool result                                              |
-| ---------------------------------------------------------------------- | -------------------------------------------------------- |
-| Current Model declares the matching native input capability            | Media attached as native `BinaryContent`                 |
-| No native declaration; a matching understanding provider is configured | Text analysis from a dedicated media-understanding Agent |
-| Neither is configured                                                  | `media_understanding_unavailable`                        |
+Harness chooses a path for each media kind:
 
-Harness selects the path from the configuration for each media kind. [Declare native capabilities](#declare-model-input-capabilities) or [configure an understanding Agent](#configure-the-default-media-understanding-agents), then use the tools below.
+| Configuration                                              | Result delivered to the calling Model                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Matching native input capability declared                  | Original media attached as `BinaryContent`                               |
+| No matching declaration; understanding provider configured | Text returned by a separate media-understanding Agent or custom provider |
+| Neither available                                          | `media_understanding_unavailable`                                        |
+
+A declaration describes support already present in the Model and its provider path. It does not add perception to a text-only Model. Native request failures do not switch to auxiliary inference.
 
 ## Use from `view`
 
-Enable Environment file tools through `DynamicEnvironmentCapability`; the model can then call `view`. Text viewing requires text-read permission. Media viewing requires both stat and byte-read on the selected mount; permissions on separate mounts do not combine to authorize a media read:
+First verify the complete file-to-analysis path locally. The example creates a tiny silent WAV, mounts its temporary directory, calls `view` through an Agent, and sends the bytes to a second deterministic Model. It needs the Python environment from [Quickstart](getting-started.md), with no API key or network request. Save it as `media_demo.py` and run `uv run --locked python media_demo.py` from the checkout root.
 
 ```python
-from a13n_harness.environment import (
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
-)
+import asyncio
+import wave
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-capabilities = (
-    DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.toolsets import AgentMediaUnderstandingProvider
+from pydantic_ai.messages import (
+    BinaryContent, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart,
 )
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
+def analyze(messages, info):
+    media = [
+        item for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, UserPromptPart)
+        and isinstance(part.content, list)
+        for item in part.content if isinstance(item, BinaryContent)
+    ]
+    assert len(media) == 1 and media[0].data.startswith(b"RIFF")
+    return ModelResponse(parts=[TextPart("The fixture audio reached the analysis Model.")])
+
+
+async def respond(messages, info):
+    returns = [
+        part for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        assert "view" in {tool.name for tool in info.function_tools}
+        yield {0: DeltaToolCall(
+            name="view",
+            json_args='{"file_path":"/workspace/sample.wav","instructions":"Describe the audio."}',
+        )}
+    else:
+        assert "fixture audio reached" in str(returns[-1].content)
+        yield "Audio fallback completed."
+
+
+async def main():
+    provider = AgentMediaUnderstandingProvider(models={"audio": FunctionModel(analyze)})
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
+    )
+    with TemporaryDirectory() as directory:
+        root = Path(directory).resolve()
+        with wave.open(str(root / "sample.wav"), "wb") as audio:
+            audio.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+            audio.writeframes(b"\x00\x00" * 160)
+        connector = DIRECT_LOCAL.execution_connector(
+            {"root": {"path": str(root)}}, environment_id="env-media",
+        )
+        result = await agent.run(
+            "Describe sample.wav.", environment=PreparedSource(connector),
+            bindings=RunBindings.embedded(file_media_understanding=provider),
+        )
+        print(result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-The same tool accepts text and supported media paths. For media, `instructions` should state the focused analysis needed, such as OCR, speaker transcription, timestamps, UI review, or a specific uncertain region.
+Expected output is `Audio fallback completed.`. The analysis callback checks that WAV bytes arrived and returns fixed text; it tests the integration, not speech recognition. Replace that callback's `FunctionModel` with an authenticated audio-capable Model to perform real analysis.
+
+`DynamicEnvironmentCapability` supplies the file tools, while `PreparedSource` adapts the already-created local connector. For an existing application, reuse its [Environment binding](environments.md) instead. Text viewing needs text-read permission. Media viewing needs stat and byte-read on the same selected mount; permissions from separate mounts cannot be combined.
+
+Set `instructions` to the desired output: for example, “Transcribe each speaker and mark uncertain words.” The same instructions accompany native input or reach the fallback provider.
 
 ## Read media URLs
 
-Call `read_media_url(url, instructions=None, media_type=None)` for a direct image, video, or audio resource. The tool appears automatically when the current Model or a configured understanding provider supports a media kind. Its description lists available kinds; image-only configuration does not enable video or audio.
+`read_media_url(url, instructions=None, media_type=None)` becomes available automatically when the current Model or a configured provider supports a media kind. Its description lists those kinds. The provider in the example exposes audio URL fallback as well as local audio viewing.
 
-Downloads enforce Run hostname policy on the source and each redirect, a 120-second total deadline, and bounded bytes. Response Content-Type determines the kind. When Content-Type is absent or generic binary, explicit `media_type` or the final URL extension supplies it. HTML pages are rejected. Images are limited to 100 MiB and audio/video to 16 MiB. Native video downloads also fit the current Model's encoded budget (10 MiB by default); fallback video is independent of that unsupported primary Model's budget. The receiving Model applies its own request preparation.
+1. Obtain a direct media URL, not the HTML page containing the player or image.
+2. Ask the Agent to call `read_media_url` with that URL and focused instructions. Pasting a link alone leaves it as text until the tool is called.
+3. Supply `media_type`, such as `audio/wav`, when the response has no useful Content-Type and the final URL has no recognizable extension.
+4. Inspect the returned analysis or error before deciding on another request.
 
-YouTube requires explicit native `url_input.video: [youtube]` support and unrestricted Run hostname policy. It stays a native URL, with no auxiliary-model or download fallback. Use `view` for local files; URL reads need no Environment mount or temporary file.
+Response Content-Type takes precedence; absent or generic binary Content-Type falls back to explicit MIME or the final URL extension. HTML and empty bodies are rejected. The download checks Run hostname policy for the source and every redirect, follows at most five redirects, and uses a 120-second total deadline. Images are bounded to 100 MiB; audio and video to 16 MiB. Native video also fits the current Model's encoded budget, 10 MiB by default. Fallback video uses the source bound independently of an unsupported primary Model's budget.
+
+URL acquisition keeps bytes in memory and needs no Environment mount or temporary file. The receiving Model applies its own request preparation. YouTube is a separate native-URL path: declare `url_input.video: [youtube]` and use unrestricted Run hostname policy. It stays a native URL, with no download or auxiliary-model fallback.
 
 ## Declare model input capabilities
 
-Declare the media kinds accepted by your Model and provider path in `AgentSpec.model_characteristics`:
+For native input, set the matching values in `AgentSpec.model_characteristics` and build the Agent with that spec:
 
 ```python
-from a13n_harness import (
-    AgentSpec,
-    ModelCapability,
-    HarnessModelCharacteristics,
-)
+from a13n_harness import AgentSpec, HarnessModelCharacteristics, ModelCapability
 
 agent_spec = AgentSpec(
     model_characteristics=HarnessModelCharacteristics(
-        capabilities=frozenset(
-            {
-                ModelCapability.IMAGE_UNDERSTANDING,
-                ModelCapability.VIDEO_UNDERSTANDING,
-                ModelCapability.AUDIO_UNDERSTANDING,
-            }
-        )
+        capabilities=frozenset({
+            ModelCapability.IMAGE_UNDERSTANDING,
+            ModelCapability.VIDEO_UNDERSTANDING,
+            ModelCapability.AUDIO_UNDERSTANDING,
+        })
     )
 )
 ```
 
-The three values are independent. An undeclared kind uses its configured understanding provider.
+Keep only the kinds that the selected Model and transport accept. The values are independent; an undeclared kind uses its configured understanding provider. In the local example, leaving all three undeclared deliberately selects the audio fallback. Native image preparation can change the outgoing request while retaining original bytes in history.
 
 ## Configure the default media-understanding Agents
 
-Set a provider-qualified Pydantic AI model string for each media kind that needs fallback:
+For deployment without a code-bound provider, configure each fallback kind with a provider-qualified Model string and that provider's credentials:
 
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL=google:gemini-3.7-flash
-```
-
-Supply these process environment variables through your shell, container runtime, or application. Harness reads them when fallback is needed; your application loads `.env` if you use one. Supply credentials through the selected provider's standard environment variables.
-
-Each media-understanding Agent starts with `temperature=0.1`. Override or extend its native `ModelSettings` with a bounded JSON object:
-
-```bash
-export A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.2}'
-export A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1,"max_tokens":8192}'
-export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
-```
-
-The exact variables are:
-
-| Media | Model string                             | Optional settings JSON                            |
+| Kind  | Model string variable                    | Optional native settings JSON                     |
 | ----- | ---------------------------------------- | ------------------------------------------------- |
 | Image | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL` | `A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS` |
 | Video | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL` | `A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL_SETTINGS` |
 | Audio | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL` | `A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS` |
 
-Configure the kinds your application needs. A missing model string affects only that kind. Repository contributors can use `.env.harness.example` as a template.
+For example, replace the placeholder below with an account-supported audio Model string before exporting it in your shell:
+
+```bash
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL='PROVIDER:AUDIO_MODEL'
+export A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL_SETTINGS='{"temperature":0.1}'
+```
+
+Supply the variables through the shell, container runtime, or application. Harness reads the corresponding kind when fallback is needed; your application loads `.env` files. A missing Model string affects only that kind. Repository contributors can start from `.env.harness.example`.
+
+Each understanding Agent starts with `temperature=0.1`. Settings JSON overrides or extends its native `ModelSettings`, for example `{"temperature":0.2,"max_tokens":8192}`. Use a valid bounded JSON object and settings supported by that receiving Model. To use these defaults in the local example, replace the fixture Models with real ones and omit its explicit `file_media_understanding` binding.
 
 ## Default analysis behavior
 
-Default image analysis covers visible content, OCR, layout, and style. Video and audio analysis follow the recording chronologically, including speech and on-screen or non-speech content. Transcriptions retain the original language and mark unclear content. Use `instructions` to focus either tool on the details you need.
+The default image prompt asks for visible content, OCR, layout, and style. Video and audio prompts follow the recording chronologically, including speech, on-screen content, and non-speech sounds. Transcripts preserve the source language and mark unclear content. Focused `instructions` direct the analysis toward the result your application needs.
 
-`view` accepts source images up to 100 MiB and source audio/video up to 16 MiB, subject to any smaller Environment provider limit. E2B defaults to a 100 MiB file limit; other providers retain their own defaults. Default image preparation runs after reading and limits each image or segment to 5 MiB of base64-encoded data and static source processing to 80 million pixels. It changes the model request, not the original bytes retained in native image history. Audio and video do not use this image compression.
+File acquisition accepts images up to 100 MiB and audio/video up to 16 MiB, subject to a smaller Environment provider limit. E2B defaults to a 100 MiB file limit; other providers keep their own limits. After reading, default image preparation bounds each image or segment to 5 MiB of base64 data and static source processing to 80 million pixels. Audio and video do not use image compression.
 
-The runtime bounds each file read, media-understanding Agent timeout, output, output-validation retries, and transient HTTP retries. Video receives a longer timeout than image or audio. The Environment file scope is released after the bounded read, before the media-understanding Agent or custom provider performs external model work.
+The built-in understanding Agent uses a 120-second image, 300-second video, or 180-second audio timeout. It also bounds text output, output-validation retries, and transient HTTP retries. File scope ends after the bounded read, before the analysis Agent or custom provider performs external work. Custom providers own the execution limits of their analysis implementation.
 
 ## Override one Run
 
-Advanced integrations can replace the environment-configured default for one Run:
+Use a Run binding when your Host has already resolved a Model, owns credentials, or needs specialized analysis. This factory takes an explicit native Model and your Host's selected model ID:
 
 ```python
 from a13n_harness import RunBindings
-from a13n_harness.metering import ModelUsageBinding
-from a13n_harness.toolsets import (
-    MediaUnderstandingRequest,
-    MediaUnderstandingResult,
-)
+from a13n_harness.toolsets import AgentMediaUnderstandingProvider
+from pydantic_ai.models import Model
 
 
-class CustomMediaUnderstandingProvider:
-    def supports(self, kind: str) -> bool:
-        return kind in {"image", "video", "audio"}
-
-    async def understand(
-        self,
-        request: MediaUnderstandingRequest,
-        *,
-        usage: ModelUsageBinding | None = None,
-    ) -> MediaUnderstandingResult:
-        text, usage = await analyze_with_custom_model(request)
-        return MediaUnderstandingResult(text=text, usage=usage)
-
-
-bindings = RunBindings.embedded(
-    file_media_understanding=CustomMediaUnderstandingProvider(),
-)
+def audio_bindings(model: Model, model_id: str) -> RunBindings:
+    provider = AgentMediaUnderstandingProvider(
+        models={"audio": model},
+        model_ids={"audio": model_id},
+        model_settings={"audio": {"temperature": 0.1}},
+    )
+    return RunBindings.embedded(file_media_understanding=provider)
 ```
 
-`supports(kind)` reports configured kinds without resolving credentials or making requests. Existing understand-only custom providers continue to work with `view`; implement this optional discovery method to expose URL fallback.
+Pass its return value as `bindings` to `agent.run()` or `agent.stream()`. The built-in provider accepts Model instances or provider-qualified strings. With `model_ids`, each analysis request carries the Host's ID as `ModelCall.model_id` and as the selected model ID in pricing input, so admission, attribution, and pricing use the same selection.
 
-The custom provider bound for the Run serves both tools and takes precedence over all default environment model strings. Use it for a Host-owned model resolver, custom credentials, an existing provider client, or specialized analysis behavior. It does not change model input capability declarations.
+A custom provider can adapt another analysis client. The following class takes your async analysis function explicitly; that function receives detached bounded bytes and returns a `MediaUnderstandingResult`:
 
-`AgentMediaUnderstandingProvider` is also public for code-first construction with explicit Pydantic AI `Model` instances or model strings. A Host that resolved a `Model` instance from its own model ID passes that ID per kind in `model_ids`. Each understanding request of that kind carries the ID as its `ModelCall.model_id` and as the selected model ID of its pricing input. The Host can then admit, attribute, and price the request as that model.
+```python
+from collections.abc import Awaitable, Callable
+
+from a13n_harness.metering import ModelUsageBinding
+from a13n_harness.toolsets import MediaUnderstandingRequest, MediaUnderstandingResult
+
+
+class CustomAudioProvider:
+    def __init__(
+        self,
+        analyze: Callable[
+            [MediaUnderstandingRequest, ModelUsageBinding | None],
+            Awaitable[MediaUnderstandingResult],
+        ],
+    ):
+        self.analyze = analyze
+
+    def supports(self, kind: str) -> bool:
+        return kind == "audio"
+
+    async def understand(
+        self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None,
+    ) -> MediaUnderstandingResult:
+        return await self.analyze(request, usage)
+```
+
+Bind it with `RunBindings.embedded(file_media_understanding=CustomAudioProvider(your_analyze_function))`. The callback must implement the external analysis and return its available usage through the supplied binding or result receipts, without counting the same work twice. Constructing this adapter alone does not run analysis.
+
+`supports(kind)` reports availability without resolving credentials or making requests. Older understand-only providers still work for `view`; implement discovery to expose URL fallback. A custom Run provider serves both tools and takes precedence over all environment Model strings. Its failure does not trigger an ambient default retry. Native capability declarations still take precedence for native-supported kinds.
 
 ## Usage and failures
 
-Usage of media-understanding Agents and custom providers is recorded separately with:
+Auxiliary analysis retains independent native counters and contributes to the calling Agent's Context usage snapshot and model budget. Attribution identifies the active tool-call ID and uses these sources:
 
-- source `files.media_understanding` and tool ID `filesystem.view` for files;
-- source `media.url_understanding` and stable tool ID `media.read_video_url` for URLs;
-- the active tool-call ID;
-- provider, model (`model_name`, or `product` in a custom provider's `ProviderUsage`), request count, and available token counters.
+| Input | Usage source                | Stable tool ID         |
+| ----- | --------------------------- | ---------------------- |
+| File  | `files.media_understanding` | `filesystem.view`      |
+| URL   | `media.url_understanding`   | `media.read_video_url` |
 
-This nested model work retains independent Pydantic AI counters but contributes to the calling Agent's Context usage snapshot and model budget. Known observations survive analysis failure, timeout, or cancellation. Failure after Model dispatch but before a response records unavailable usage rather than inventing tokens or cost; rejection before dispatch records no request.
+Records include provider, model (`model_name`, or custom `ProviderUsage.product`), request count, and available token counters. Known observations survive analysis failure, timeout, or cancellation. Dispatch without a response records unavailable usage; rejection before dispatch records no request.
 
-Both tools return stable bounded failures instead of attaching unsupported media or exposing provider exceptions. Each failure is an ordinary tool result visible to the calling Agent, not a Pydantic AI retry prompt, so it does not consume the calling Agent's function-tool retry allowance. Common codes include:
+Media/provider failures return bounded ordinary tool results, so the Agent can inspect them without consuming its function-tool retry allowance. Cancellation, Harness admission failures, and usage-limit failures propagate through their own Run boundaries. Use the error code to choose the next action:
 
-| Code                                        | Meaning                                                                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `media_understanding_unavailable`           | The active model lacks native support and no fallback model or custom provider is configured for that kind.  |
-| `media_understanding_configuration_invalid` | A configured settings value is not a valid bounded JSON object.                                              |
-| `media_understanding_timeout`               | The dedicated analysis exceeded its kind-specific timeout.                                                   |
-| `media_understanding_response_invalid`      | The custom media-understanding provider or the understanding model returned empty or invalid bounded output. |
-| `media_understanding_failed`                | The custom media-understanding provider or the understanding model failed without a more specific safe code. |
+| Code                                        | Next action                                                 |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| `media_understanding_unavailable`           | Configure native support or a fallback for that kind        |
+| `media_understanding_configuration_invalid` | Correct the Model or bounded settings JSON                  |
+| `media_understanding_timeout`               | Reduce or focus the input, or inspect the analysis provider |
+| `media_understanding_response_invalid`      | Make the provider return valid non-empty bounded text       |
+| `media_understanding_failed`                | Inspect the configured provider before another attempt      |
 
-See [Environments](environments.md) for file routing, authorization, and byte limits.
+Acquisition can also fail on MIME, size, HTTP status, timeout, or hostname policy. Resolve that cause before retrying. See [Environments](environments.md) for file routing and authorization.
 
 ## Migrate from `read_video_url`
 
-The new tool replaces `read_video_url` and uses `MediaUrlToolset` in Python. Keep permission rules under the stable ID `media.read_video_url`; they now govern all three media kinds. Finish or close pending old-name tool calls before upgrading, because they cannot resume on the renamed surface.
+Use the model-facing name `read_media_url` and public `MediaUrlToolset` in new integrations. Keep permission rules under the stable ID `media.read_video_url`; those rules now govern all three media kinds. Finish or close pending old-name calls before upgrading, because they cannot resume on the renamed tool surface.

@@ -133,12 +133,13 @@ sidebarTitle: Settings reference
 description: Every field of the Service settings, with its environment variable, type, bounds, and default.
 ---
 
-> [!NOTE]
-> Generated from the `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing them instead of editing rows.
+Find a setting by its section, then use the row to choose its TOML key or environment variable and check the accepted type, bounds, and default. For a complete deployment configuration, start with [Configure Service](configuration.md); that guide covers precedence, role and storage requirements, and checks across fields.
 
-Use [Configure Service](configuration.md) for precedence, examples, role/storage requirements, and cross-field validation. Types and field constraints below do not replace those combined checks. Secret defaults are masked by the schema; this reference never reads deployment environment values. Defaults apply to the source version, not every historical release.
+For example, `server.port` is `port` in the TOML `[server]` section or `A13N_SERVER__PORT` in the environment. Rows marked **JSON field** share one environment variable: set `A13N_AUTH__MAIL` to a JSON object containing the mail settings. An environment value replaces that field's file value, including the whole object for nested settings.
 
-The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](/reference/service-settings.json).
+These tables describe the built-in settings at this source version. Secret defaults are masked. Download [Service settings JSON](/reference/service-settings.json) for the full schema, including named enum and union definitions. Distribution-specific extension settings are documented by their distribution.
+
+The tables are generated from `Settings`. Contributors updating those definitions regenerate the English reference with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 """
     for section, rows in groups.items():
@@ -182,16 +183,15 @@ title: Provider configuration reference
 description: Every built-in Environment Provider configuration field, generated from the Provider models.
 ---
 
-> [!NOTE]
-> Generated from the built-in Provider Pydantic models by `scripts/docs/references.py`. Regenerate instead of editing rows.
+Find your Provider's configuration model, then use its table to check field names, accepted values, and defaults. A type such as `DirectLocalRootConfiguration` has its own table below. Start with [Configure Providers](configuration.md) to assemble a recipe, backend settings, and private credentials into a working configuration.
 
-Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed; this reference does not resolve values from your Host environment or credential store. The tables describe Provider configuration objects. For standalone daemon JSON settings, use [Envd configuration](../a13n-envd/configuration.md).
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe, account, and credential objects.
+The tables are generated from the built-in Provider models. Contributors changing those models regenerate the English page with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 ## Cloud Providers
 
-All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
+Use the links to find each cloud Provider's three configuration objects. The recipe describes the target to create, backend settings select the account or endpoint, and credentials supply private authentication. For supported operations and setup examples, see [Cloud Providers](providers.md#cloud-providers).
 
 | Provider | Recipe | Backend | Credential |
 | --- | --- | --- | --- |

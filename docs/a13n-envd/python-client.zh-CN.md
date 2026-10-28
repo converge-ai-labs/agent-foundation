@@ -1,25 +1,27 @@
 ---
 title: Python EIP 客户端
-description: 用于实现环境 provider 和其他可信 EIP 客户端的底层 Python 客户端。
+description: 连接已准备好的 Envd 设备，打开独立会话，并通过 Python 传输文件和读取进程输出。
 ---
 
-客户端以 `a13n-envd-client` 发布。多数 agent 应用应使用[环境 provider](../environments/index.md)，它们已经处理目标生命周期和适配。
+实现环境 Provider 或其他可信 EIP 集成时，使用 `a13n-envd-client`。它处理设备连接、会话范围和协议操作。agent 应用可从[环境 Provider](../environments/index.md)开始，由其将操作适配给 Harness。
 
-此包不会发现、安装、下载或启动 Envd，也不会创建反向 WebSocket 监听器、签发凭据、保留目标状态或运行 agent。
+Host 负责准备目标：安装并启动 Envd、提供凭据、保留目标状态。使用反向 WebSocket 时，Host 还负责接受连接并验证身份。传输通道就绪后，再交给底层客户端。
 
 ## 安装
+
+使用 Python 3.13 或更新版本：
 
 ```console
 uv add a13n-envd-client
 ```
 
-需要 Python 3.13 或更新版本。Python 客户端与原生守护进程使用相同的 Envd 发布版本；EIP 协商的线上协议版本是独立标识。源码示例应使用仓库锁文件，不要将发布版客户端与源码版本守护进程混用。
+客户端和原生守护进程使用相同的 Envd 发布版本。升级时一起更新，包括自定义镜像和远程端点中的守护进程。仍保留旧镜像的环境应重新创建。运行源码示例时，使用仓库锁文件和匹配的源码守护进程。
 
-扩展资源概览使用 EIP `0.3`，计划随同版本的 Envd/client `0.5.0` 系列发布。请一起升级守护进程和客户端；EIP `0.1` 和 `0.2` 对端会在版本协商时失败。这一版本线的 Harness 和 Harness UI 要求 client `>=0.5.0,<0.6.0`。自定义镜像和远程端点必须包含匹配的守护进程；连接升级后的客户端前，请重新创建仍保留旧镜像的环境。此前的 Envd `0.3.x` 和 `0.4.x` 使用 EIP `0.2`；Envd `0.2.0` 使用 EIP `0.1`。生成代码的 `eip.v1` 命名空间和二进制数据帧 profile `1` 保持不变。
+协议协商使用独立的线上协议标识。当前源码使用 EIP `0.3`；只提供 `0.1` 或 `0.2` 的对端会协商失败。生成的 Python 命名空间仍为 `eip.v1`，二进制数据帧 profile 仍为 `1`。仓库发布依赖设置中，Harness 要求 client `>=0.5.0,<0.6.0`，Harness UI 要求 `>=0.5.1,<0.6.0`。
 
 ## 连接已有 HTTP 守护进程
 
-这个完整示例需要运行中的守护进程、预期设备身份和 Host 签发的凭据。它不会配置基础设施，也不会离线测试账号访问。
+准备运行中的 HTTP 守护进程，将 `ENVD_ENDPOINT` 设为其基础 URL，`ENVD_CREDENTIAL` 设为 Host 签发的凭据，`ENVD_DEVICE_ID` 设为预期身份。使用基础 URL，而非 `/eip/control`。然后运行：
 
 ```python
 import asyncio
@@ -51,9 +53,13 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-端点是守护进程基础 URL，不是 `/eip/control`。设备初始化协商协议并验证身份，不打开会话。`open_session()` 创建独立的固定 cwd 范围并检查就绪状态。退出会话上下文仅关闭该会话。退出设备上下文会关闭其会话和物理传输，不关闭外部守护进程，也不影响设备上的文件。
+示例初始化设备、查询默认目录，并在该目录打开会话。初始化协商协议、检查身份，但不打开会话。`open_session()` 创建独立的固定 cwd 范围，检查就绪后返回。
+
+退出内层上下文会关闭该会话。退出设备上下文会关闭其管理的会话和传输通道。外部守护进程和设备文件仍由 Host 管理。
 
 ## 选择传输方式
+
+选择 Host 已准备好的传输通道：
 
 | 传输                                          | 提供内容                                            | 归属与约束                                               |
 | --------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
@@ -62,7 +68,7 @@ if __name__ == "__main__":
 | `HttpTransport(endpoint, credential, ...)`    | 守护进程基础 URL 和附加凭据                         | 经身份验证的请求和原始传输流；客户端管理内部 HTTP 连接池 |
 | `AcceptedWebSocketTransport(connection, ...)` | 已接受并完成身份验证的 `WebSocketConnection`        | 要求已协商 `eip.v1`；不监听、拨号或验证升级              |
 
-所有传输的 `max_request_bytes`、`max_response_bytes` 和 `max_transfer_frame_bytes` 均默认为 1 MiB；限制必须为正数，并收窄到协商后的描述符范围。提高客户端限制不能授予服务器不支持的方法。
+请求、响应和传输帧分别通过 `max_request_bytes`、`max_response_bytes` 和 `max_transfer_frame_bytes` 限制，默认各为 1 MiB。设置值必须为正数；协商可以将其收窄到描述符限制。方法可用性另行检查。
 
 ### HTTP 选项
 
@@ -73,32 +79,36 @@ if __name__ == "__main__":
 | `allow_plaintext_private_link` | `False`           | 显式允许支持的私有链路 HTTP 场景，并非不受限制的明文访问                |
 | 请求、响应和帧限制             | 各 `1048576` 字节 | 传输侧边界                                                              |
 
-传输不跟随重定向。HTTPS 附加连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及其小写形式；信任部署运维人员的代理来路由连接。明文回环和 provider 私有链路连接保持直连，确保凭据不会离开预期链路。TLS 验证仍使用 `verify`，不使用 `SSL_CERT_FILE` 或 `SSL_CERT_DIR`。`normalize_http_endpoint()` 应用相同端点策略，但不打开连接。允许的 URL 格式、TLS 和凭据归属见 [Remote Envd](../environments/remote-envd.md)。
+HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及其小写形式。部署运维人员的代理属于可信路由基础设施。明文回环和受支持的 provider 私有链路保持直连，让凭据留在预期链路上。重定向被禁用。
 
-自定义 `WebSocketConnection` 提供 `subprotocol`、异步 `send`、`recv`、`close` 和 `wait_closed`。Host 在交出连接前验证凭据。框架适配器将断开转换为 `EOFError` 或 `OSError`；`wait_closed` 不能与传输的 `recv` 循环竞争。
+通过 `verify` 配置 TLS；`SSL_CERT_FILE` 和 `SSL_CERT_DIR` 不决定该传输的信任根。`normalize_http_endpoint()` 检查相同的 URL 策略，但不建立连接。允许的 origin、TLS 和凭据归属见 [Remote Envd](../environments/remote-envd.md)。
+
+自定义已接受 WebSocket 的适配器需提供 `subprotocol`，以及异步 `send`、`recv`、`close`、`wait_closed`。交给传输组件前先完成身份验证。将框架断开事件转换为 `EOFError` 或 `OSError`；实现 `wait_closed` 时，不要消费传输 `recv` 循环所需的消息。
 
 ## 设备与会话归属
 
-`EIPDeviceConnection.initialize()` 接受传输、`expected_device_id`、可选客户端名称/版本、`initialization_timeout=10.0`、`request_timeout=None`，以及逐会话的 `max_in_flight=32`。仅在显式首次接触注册时使用 `expected_device_id=None`，随后保存并验证返回的身份。
+只要适配器仍借用会话，就保持所属 `EIPDeviceConnection` 存活。使用传输通道和 `expected_device_id` 初始化。仅在显式首次接触注册时使用 `expected_device_id=None`；保存返回的身份，并在后续连接时验证。
 
-设备提供：
+初始化还接受客户端名称/版本、`initialization_timeout=10.0`、`request_timeout=None`，以及逐会话的 `max_in_flight=32`。设备方法将发现与执行分开：
 
-- `descriptor` 和 `describe()`：缓存或最新观测的设备信息，包括 `system_info`、路径格式、默认工作目录和目录发现可用性。
-- `metrics()`：设备声明支持 `device.metrics` 时，读取最新缓存的资源样本。不打开会话，也不触发采集。首次采集完成前，`sample` 为 `None`。参见[监控配置与样本语义](configuration.md#system-information-and-resource-monitoring)。
-- `list_directories(DirectoryListParams(...))`：有界的单层目录列表，携带精确预期设备 ID 与代次、绝对路径、偏移量和上限。不打开会话。
-- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`：新的独立会话。省略 cwd 时选择设备默认值。受控出站网络设备要求提供 `egress`；其他设备会拒绝它。必需方法用于断言兼容性，不是权限。
-- `attach_session(descriptor)`：在断线宽限期内，显式附加到同一设备代次中的精确已有会话。绝不重放操作或恢复传输。
-- `close()`：关闭本地管理的会话，然后关闭物理连接。
+- `descriptor` 读取缓存设备信息；`describe()` 获取新视图。两者提供系统信息、路径格式、默认目录和目录发现可用性。
+- 设备声明 `device.metrics` 时，`metrics()` 读取最新缓存样本。它不打开会话，也不启动采集；首次采集完成前，`sample` 保持 `None`。参见[监控与样本语义](configuration.md#system-information-and-resource-monitoring)。
+- `list_directories(DirectoryListParams(...))` 使用绝对路径、偏移量、上限、预期设备 ID 和代际列出一层目录。它不打开会话。
+- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)` 创建新会话。省略 cwd 时采用设备默认值。controlled 设备需提供 `egress`；其他模式拒绝该字段。`required_methods` 检查兼容性，不授予权限。
+- `attach_session(descriptor)` 在断线宽限期内显式附加到同一设备代际的精确已有会话。操作和传输不会被重放或恢复。
+- `close()` 先关闭本地管理的会话，再关闭物理连接。
 
-每个会话具有固定 `session_id`、代次和工作目录，管理自己的生成式 `client`、文件传输、命令、输出和回执命名空间。独立会话可在任意传输通道上并发运行。不同会话可以复用操作 ID，但不共享证据。
+会话管理自己的生成代码客户端 `client`、传输、命令、输出和回执命名空间。身份、代际和工作目录保持固定。会话可在所有传输通道上并发运行；不同会话中的相同操作 ID 对应不同证据。
 
-`EIPSession` 提供 `describe()`、`readiness(timeout=10.0)`、`open_reader()`、`open_writer()`、`open_output()`、`observe_computer()`、`close()` 和 `abort()`。客户端在会话打开期间维护会话内保活。关闭或中止会话绝不会关闭同级会话或借用的传输通道。`abort()` 会在有限时间内尽力关闭会话，但不声称结果不确定的工作已经结束。
+通过 `EIPSession.describe()` 和 `readiness(timeout=10.0)` 检查会话，通过 `open_reader()`、`open_writer()`、`open_output()` 或 `observe_computer()` 使用资源 helper。客户端在会话打开期间维护保活。`close()` 和 `abort()` 保留同级会话及借用的传输通道。`abort()` 尝试在有限时间内关闭；结果不确定的操作仍需核对。
 
-刷新会话描述符可以收窄方法和限制；身份、代次和固定 cwd 不能改变。未就绪响应或会话内协议失败会隔离该会话。传输损坏或丢失会终止该连接上的全部本地范围。在每个借用适配器的整个生命周期中，保持设备所有者存活。
+刷新描述符可以收窄方法和限制。未就绪响应或会话内协议失败会阻止继续使用该会话；传输损坏或丢失会终止连接上的全部本地范围。
 
 ## 读写二进制文件
 
-EIP 路径是**设备文件系统命名空间** 中的绝对路径，不是挂载相对路径或 Harness 聚合路径。工作目录是默认值，不是访问边界。POSIX 使用 `/work/report.txt`；Windows 使用 `/C:/work/report.txt` 或 `/UNC/server/share/report.txt`：
+传入**设备文件系统命名空间**中的绝对路径。POSIX 使用 `/work/report.txt` 等路径；Windows 使用 `/C:/work/report.txt` 或 `/UNC/server/share/report.txt`。这些既不是挂载相对路径，也不是 Harness 聚合路径。工作目录提供默认位置，执行账号和配置的边界决定访问权限。
+
+已有就绪会话、所需方法及文件系统访问权限时，可写入并读取文件：
 
 ```python
 from a13n_envd_client.eip.v1 import EIPPath
@@ -115,24 +125,24 @@ async with session.open_reader(path) as reader:
     completion = reader.completion
 ```
 
-这些片段要求声明了对应方法，并具有操作系统写入权限。任意文本流应使用增量解码器：分块边界不一定与 UTF-8 字符边界一致。大型传输应将字节转发到有界的应用接收端，不要在内存中累积全部数据。
+此例写入 ASCII 字节。处理任意 UTF-8 流时，使用增量解码器，因为分块可能在字符中间结束。大型传输应转发到有界接收端，不要将整个文件累积在内存中。
 
 ### 文件读取器（Reader）
 
-`open_reader(path, byte_range=None, transfer_timeout_ms=None)` 返回只能进入一次的 `EIPFileReader`。它管理附加、偏移量/摘要验证、完成证据和类型化 reader 关闭。`opened` 提供协商后的打开结果；`open_context` 提供生成的操作上下文。在出现终结证据前，`completion` 不可用。
+`open_reader(path, byte_range=None, transfer_timeout_ms=None)` 返回只能进入一次的 `EIPFileReader` 上下文。它附加传输、验证偏移量和摘要，并以类型化完成证据关闭 reader。通过 `opened` 查看打开结果，通过 `open_context` 查看操作上下文。建立终结证据后，`completion` 才可用。
 
 ### 文件写入器（Writer）
 
-`open_writer(path, mode=..., executable=None, transfer_timeout_ms=None)` 返回只能进入一次、采用暂存写入的 `EIPFileWriter`。`mode` 接受生成的 `FileWriteMode` 或字符串值。`write()` 接受 bytes、bytearray 或 memoryview，实施传输限制，并按协商后的帧大小拆分块。
+`open_writer(path, mode=..., executable=None, transfer_timeout_ms=None)` 返回只能进入一次的暂存 `EIPFileWriter` 上下文。传入生成的 `FileWriteMode` 或其字符串值。`write()` 接受 bytes、bytearray 或 memoryview，实施传输限制，并按协商帧大小拆分块。
 
 > [!IMPORTANT]
-> **退出上下文不会提交。** 必须显式调用 `await writer.commit()`；否则退出会中止暂存 writer。提交封闭流，验证 SHA-256 和字节计数证据，并通过守护进程提交操作发布文件。`opened`、`transferred_bytes`、`open_context`、`commit_context` 和提交后的 `result` 提供相应证据。
+> 调用 `await writer.commit()` 才会发布文件。未成功提交便退出上下文时，会中止暂存数据。提交会封闭流、验证 SHA-256 和字节计数，再调用守护进程的提交操作。
 
-可能需要恢复时，保留提交操作 ID。分派后超时不能证明已经回滚；即使中止也可能报告提交正在进行或已经完成。
+通过 `opened`、`transferred_bytes`、`open_context`、`commit_context` 和提交后的 `result` 查看证据。可能需要恢复时，保留提交操作 ID。已分派的提交可能在本地超时后完成；中止操作也可能报告提交正在进行或已经完成。
 
 ## 读取保留的进程输出
 
-`open_output(reference, start_offset=0, observed=None)` 返回 `EIPOutputReader`，不是活跃进程句柄。`reference` 接受生成的类型或其字符串值；`observed` 可携带匹配的先前 `OutputInfo`。
+使用 `open_output(reference, start_offset=0, observed=None)` 读取保留输出，无需依赖活跃进程句柄。引用接受生成类型或字符串；`observed` 可提供匹配的既有 `OutputInfo`。
 
 ```python
 reader = session.open_output(output_reference)
@@ -142,21 +152,23 @@ while not reader.eof:
     # Persist offsets only under the Host's own output-retention policy.
 ```
 
-片段中的 `output_reference` 和 `consume_bytes` 由应用管理。`EIPOutputPage` 包含 `start_offset`、`next_offset`、`data`、`output` 和 `eof`。reader 属性提供 `reference`、`offset`、最新 `output` 和 `eof`。异步迭代产出非空字节块，以一秒一页的方式等待直到 EOF。
+为此片段提供应用自己的 `output_reference` 和 `consume_bytes`。每个 `EIPOutputPage` 包含 `start_offset`、`next_offset`、`data`、`output` 和 `eof`。reader 提供引用、偏移量、最新输出信息和 EOF 状态。异步迭代产出非空块，以一秒一页的方式等待。
 
-reader 验证连续偏移量、精确引用、单调计数器与完成状态、不可变预览前缀和终结字节计数。证据无效会因协议错误隔离所属会话。EOF 表示生产方完成且已读到保留内容末尾，不代表所有产生的字节都被保留。声称输出完整前，检查 `OutputInfo.content_complete` 和产生/保留计数器。
+reader 检查引用身份、连续偏移量、单调计数器/完成状态、不可变预览前缀和终结字节计数。无效证据会以协议错误阻止继续使用会话。EOF 表示生产方已完成且已到达保留内容末尾。是否保留了全部产出字节，应检查 `OutputInfo.content_complete` 和产生/保留计数器。
 
 ## 超时、取消与回执
 
-`RequestCoordinator` 管理单个设备 reader，以及有界的请求关联和接纳。`SessionRequester` 为操作调用和二进制传输限定范围。已发送但被调用者放弃的请求，在收到响应或传输终结事件前仍占用关联状态和容量；调用者取消不会取消共享 stdio 写入。两者都是高级传输集成基础组件；普通调用者使用 `EIPSession` 及其生成客户端。
+为每个逻辑操作提供 `EIPCallContext`。操作 ID 长度为 1–128 字符，与 JSON-RPC 请求 ID 分开；可选 `timeout_ms` 为正 uint64。按方法的回执/重放规则核对操作时，保留相同操作身份。
 
-`EIPCallContext` 要求 1–128 字符的操作 ID，可选提供正 uint64 `timeout_ms`。操作 ID 与 JSON-RPC 请求 ID 不同。方法的回执/重放语义要求结果核对时，提供稳定的操作 ID。
+显式 `timeout_ms` 设置操作预算。本地接纳有独立期限，响应等待允许该预算再加协调器余量：未配置请求超时时，余量为 30 秒。60 秒操作加上该余量，可以等待响应 90 秒。未提供操作预算时，采用配置的请求超时。初始化和就绪保留各自外层期限。
 
-提供 `timeout_ms` 时，本地接纳单独限时；响应等待允许操作预算加协调器余量（未配置请求超时时为 30 秒）。未提供操作预算时，应用配置的请求超时。因此，60 秒操作加 30 秒余量允许等待响应 90 秒。初始化和就绪仍受外层期限限制。
+取消、连接丢失或本地超时后，先检查已发送的修改，再决定下一步。使用 `receipt.get`、方法和保留证据窗口允许的重放，或原生状态检查。客户端不会自动重试结果不确定的操作，`operation.cancel` 也不证明回滚。
 
-取消、传输断开或本地超时不能证明已发送修改失败或不存在。客户端不会自动重试结果不确定的操作。发出不同操作前，通过 `receipt.get`、方法和证据窗口允许的重放，或原生状态检查核对结果。`operation.cancel` 本身不会把不确定性变为回滚。
+自定义传输集成使用 `RequestCoordinator` 管理设备的单个 reader、请求关联和有界接纳，使用 `SessionRequester` 管理会话范围内的操作与传输。已发送但被调用者放弃的请求，在响应或传输终结事件到来前保留关联状态和容量。调用者取消后，共享 stdio 写入继续运行。普通集成使用这些组件之上的 `EIPSession` 和生成客户端。
 
 ## 错误参考
+
+结合异常及其证据，区分本地状态、传输失败和已关联的守护进程错误：
 
 | 异常                      | 含义 / 证据                                   |
 | ------------------------- | --------------------------------------------- |
@@ -170,13 +182,13 @@ reader 验证连续偏移量、精确引用、单调计数器与完成状态、�
 | `EIPSessionStateError`    | 本地会话/辅助组件状态无效，或方法不可用       |
 | `EIPTransferError`        | 传输重置/失败；可选 `status` 和 `offset` 证据 |
 
-自定义传输集成实现 `EIPTransport`，通过 `EIPTransportFrame` 交换 `ControlFrame` 或生成的二进制 `DataFrame` 值。必须保留消息帧、大小限制、序列化和生命周期语义；这些导出项不是另一套资源供应 API。
+自定义传输实现 `EIPTransport`，通过 `EIPTransportFrame` 交换 `ControlFrame` 或生成的二进制 `DataFrame`。保留消息帧、大小限制、序列化和生命周期语义。资源供应仍由 Host 负责。
 
 ## 生成的方法参考
 
-下面的当前生成接口来自 `a13n_envd_client.eip.v1.METHODS`。从该模块导入参数/结果类型、枚举、编解码器、`EIP_PROTOCOL_VERSION` 和底层 `EIPClient`。IDL 和生成器管理线上 schema；不要手动编辑生成文件。
+从 `a13n_envd_client.eip.v1` 导入参数/结果模型、枚举、编解码器、`EIP_PROTOCOL_VERSION` 和底层 `EIPClient`。下表遵循该模块的 `METHODS` 元数据。线上定义由 IDL 和生成器管理；应修改来源，不要直接编辑生成文件。
 
-可用性仍由初始化后的描述符决定。Python 中存在生成的方法，不代表每个配置的守护进程都提供该方法。
+调用方法前，检查初始化后的描述符。Python 中存在生成方法，与配置的守护进程声明支持该方法，是两项独立检查。
 
 | EIP 方法                     | Python 方法                  | 参数                           | 结果                           | 重放类别            |
 | ---------------------------- | ---------------------------- | ------------------------------ | ------------------------------ | ------------------- |
@@ -235,7 +247,7 @@ reader 验证连续偏移量、精确引用、单调计数器与完成状态、�
 | `session.open`               | `session_open`               | `SessionOpenParams`            | `SessionOpenResult`            | `ledger_external`   |
 | `shell.exec`                 | `shell_exec`                 | `ShellExecParams`              | `ShellExecResult`              | `terminal_evidence` |
 
-构建请求时检查精确的版本字段和验证约束：
+通过请求模型的 schema 查看精确字段和验证约束：
 
 ```python
 from a13n_envd_client.eip.v1 import FileReadTextParams, METHODS
@@ -245,12 +257,14 @@ assert "context" in schema["properties"]
 assert "file.read_text" in METHODS
 ```
 
-[EIP 契约](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)定义操作结果、回执窗口、传输完整性和兼容性。生成的方法元数据记录重放类别，不代表允许用新操作 ID 重复结果不确定的修改。
+[EIP 契约](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)解释操作结果、回执窗口、传输完整性和兼容性。恢复结果不确定的修改时，遵循其中的重放规则；新操作 ID 代表新的工作。
 
 ## 验证与选择高层 API
+
+在仓库 checkout 中运行协议 fixture 客户端套件：
 
 ```console
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-客户端套件通过协议 fixture 覆盖消息帧、会话、错误、传输和输出。原生进程清理和守护进程可用性需要独立的 Envd 集成检查。外层沙箱由 Host 建立，而非 Envd。Host 管理进程启动和运行时初始化时，使用 [Local Envd](index.md#try-local-envd)；应用工具使用[环境操作](../environments/operations.md)。
+这些测试覆盖消息帧、会话、错误、传输和输出。原生清理与守护进程可用性由 Envd 集成检查验证。外层沙箱由 Host 建立。Host 管理进程启动和运行时准备时，选择 [Local Envd](index.md#try-local-envd)；应用工具选择[环境操作](../environments/operations.md)。

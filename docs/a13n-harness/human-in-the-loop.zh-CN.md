@@ -4,35 +4,105 @@ sidebarTitle: 人机协作
 description: 展示内置的结构化问题、定义应用自己的载荷类型，并携带关联的答案恢复执行。
 ---
 
-当 Agent 需要用户选择选项或补充说明时，可以使用 Harness 内置的 `ask_user_question` 工具。应用负责展示问题、收集答案，再恢复挂起的工作。Harness 提供问题格式并校验答案，不提供表单渲染器，也不会在等待用户时保持 Run 打开。
+使用 `ask_user_question` 暂停 Agent，等待用户选择，再携带答案继续。本页用无需 provider 账号的示例演示完整流程。应用负责表单和待处理工作的保存；Harness 提供 schema，并校验关联的答案。
 
-问题属于外部工具**调用**，不是工具**审批**。二者都通过延后反馈处理，但载荷与权限含义不同：
-
-| 交互                | 待处理类别  | Host 提供的内容                      |
-| ------------------- | ----------- | ------------------------------------ |
-| `ask_user_question` | `calls`     | 结构化答案或显式工具失败             |
-| 工具审批            | `approvals` | 批准或拒绝决定；执行仍受当前策略约束 |
-| 其他客户端工具      | `calls`     | 由所选客户端工具定义的结果           |
-
-答案不代表执行工具的许可。审批策略见[受管工具](managed-tools.md)，应用定义的外部操作见[客户端工具](client-tools.md)。
+生命周期为：执行 → 返回挂起结果 → 收集答案 → 新 Run。等待期间不保持 Harness Run 打开。
 
 ## 启用结构化问题
 
-在 Agent 定义中添加 `UserInteractionCapability`。以下应用已提供 `agent_spec` 和 `model`：
+使用[快速开始](getting-started.md)中准备的 Python 3.13 环境。将以下完整程序保存为 `question_demo.py`。脚本化 Model 提出一个问题，应用模拟选择 **Focused**。
 
-```python
-from a13n_harness import HarnessBuilder
-from a13n_harness.capabilities import UserInteractionCapability
+```python title="question_demo.py"
+import asyncio
+import json
+from collections.abc import AsyncIterator
+
+from a13n_harness import AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
+from a13n_harness.capabilities import AskUserQuestionRequest, UserInteractionCapability
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+
+question = {
+    "questions": [{
+        "question": "Which scope should be used?",
+        "header": "Scope",
+        "options": [
+            {"label": "Focused", "description": "Change the selected component."},
+            {"label": "Broad", "description": "Change the whole repository."},
+        ],
+        "multiSelect": False,
+    }]
+}
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    returns = [
+        part
+        for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        yield {0: DeltaToolCall(
+            name="ask_user_question",
+            json_args=json.dumps(question),
+            tool_call_id="question-1",
+        )}
+    else:
+        assert "Focused" in str(returns[-1].content)
+        yield "Proceeding with the focused scope."
+
 
 executable = HarnessBuilder().build(
-    agent_spec,
+    AgentSpec(),
     output_type=str,
-    model=model,
+    model=FunctionModel(stream_function=respond),
     capabilities=(UserInteractionCapability(),),
 )
+
+
+async def main() -> None:
+    first = await executable.run("Clarify the scope.", bindings=RunBindings.embedded())
+    assert first.status == "suspended"
+    assert first.state is not None and first.deferred is not None
+    requests = first.deferred
+    assert len(requests.calls) == 1 and not requests.approvals
+    call = requests.calls[0].target_call
+    assert call.tool_name == "ask_user_question"
+    pending = AskUserQuestionRequest.model_validate(call.args_as_dict())
+    print(first.status, pending.questions[0].question)
+
+    # A real application displays the question and collects this answer from a person.
+    answer = {"answers": {pending.questions[0].question: "Focused"}}
+    second = await executable.run(
+        bindings=RunBindings.embedded(),
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(
+            requests, requests.build_results(calls={call.tool_call_id: answer})
+        ),
+    )
+    assert second.run_id != first.run_id
+    print(second.output_or_raise())
+
+
+asyncio.run(main())
 ```
 
-当前 Host 支持延后工具时，模型可以请求 `ask_user_question`。`RunBindings.deferred_tools_supported=False` 会移除该工具及其指导。这适用于根和子 Agent；[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)禁用延后，而支持此生命周期的 Host 可以恢复自己管理的子 Agent。
+运行 `python question_demo.py`。预期输出：
+
+```text
+suspended Which scope should be used?
+Proceeding with the focused scope.
+```
+
+`UserInteractionCapability` 提供工具。第一个 Run 返回状态和待处理封装。`build_results()` 将答案与实际调用 ID 关联，`DeferredToolResume` 将反馈带入新的 Run。
+
+将模拟的 `answer` 赋值替换为表单、命令行提示或其他真实用户输入。等待期间保留待处理封装和状态。使用真实 Model 时，同时处理普通完成和挂起结果；是否提问由 Model 决定。
+
+`RunBindings.deferred_tools_supported=False` 会移除工具及其指导。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)使用这一设置；支持恢复的 Host 可以恢复自己管理的子 Agent。
+
+问题放在待处理 `calls` 中，工具审批放在 `approvals` 中。将问题答案作为调用结果提交；答案不会批准其他工具。审批策略见[受管工具](managed-tools.md)，其他外部操作见[客户端工具](client-tools.md)。
 
 ## 请求载荷
 
@@ -174,42 +244,17 @@ answer_payload = answer.model_dump(mode="json", exclude_none=True)
 
 ## 恢复嵌入式 Harness Run
 
-成功的问题调用让 Run 以 `status="suspended"` 结束，并返回 `state` 和 `deferred`。保留精确的待处理封装和选定状态。用户回答后，使用新绑定和关联的 `DeferredToolResume` 启动新的 Run。
+完整程序演示了两个 Run 之间的续接。在需要持久化的应用中：
 
-下面的函数使用前面配置的 `executable`。它要求恰好有一个问题调用且没有审批；模拟答案为每个问题选择第一个选项。实际应用中应替换为真实的用户交互：
+1. 收到 `status="suspended"` 后，将选定的 `state` 和精确的 `deferred` 封装一起保存。
+2. 展示每个受支持的待处理调用并收集答案。分别保存调用 ID 和问题文本。
+3. 为每个待处理调用和审批构建结果，每项在原始类别中恰好出现一次。
+4. 使用新绑定、保存的状态和 `DeferredToolResume(requests, results)` 启动新 Run。
+5. 处理新结果：它可能完成、失败、取消，也可能携带新批次再次挂起。
 
-```python
-from a13n_harness import DeferredToolResume, RunBindings
-from a13n_harness.capabilities import AskUserQuestionRequest
+外层 `calls` 映射使用 `tool_call_id`，问题答案的内层 `answers` 映射使用规范化后的问题文本。`approve_all=True` 处理审批，不回答问题。
 
-
-async def answer_question(executable):
-    first = await executable.run("Clarify the scope", bindings=RunBindings.embedded())
-    if first.status != "suspended" or first.state is None or first.deferred is None:
-        raise RuntimeError("Expected a pending question")
-    requests = first.deferred
-    if len(requests.calls) != 1 or requests.approvals:
-        raise RuntimeError("This example expects one call and no approvals")
-    call = requests.calls[0].target_call
-    if call.tool_name != "ask_user_question":
-        raise RuntimeError("Expected the built-in question tool")
-    question_request = AskUserQuestionRequest.model_validate(call.args_as_dict())
-    answer = {
-        "answers": {
-            question.question: question.options[0].label
-            for question in question_request.questions
-        }
-    }
-    results = requests.build_results(calls={call.tool_call_id: answer})
-    second = await executable.run(
-        bindings=RunBindings.embedded(),
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(requests, results),
-    )
-    return second.output_or_raise()
-```
-
-如果批次包含多个调用或审批，必须在原始类别中对每个待处理项恰好提供一次结果。外层映射使用 `tool_call_id`，问题答案的内层映射使用问题文本。不要用 `approve_all=True` 回答问题。[状态与恢复](state-and-resume.md#structured-suspension)介绍完整反馈、当前授权，以及恢复过程中断后的持久化恢复。
+重启持久化和恢复过程中断后的处理见[状态与恢复](state-and-resume.md#structured-suspension)。按该指南要求，将已接受的反馈与当前检查点配对保存。
 
 ## 通过 Service 回答
 

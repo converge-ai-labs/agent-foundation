@@ -1,59 +1,26 @@
 ---
 title: Capabilities
-description: First-party Harness Capabilities for context, tools, permissions, web, working state, and lifecycle hooks.
+description: Add reusable Agent behavior, verify it with an offline Model, and bind the services each feature needs.
 ---
 
-Add a Capability to give an Agent tools, context, memory, or lifecycle behavior. This page lists first-party choices and shows where to configure them.
+A Capability adds a feature to an Agent: tools, instructions, context, memory, or lifecycle hooks. Select the feature when building the executable. Supply its current clients and policy when starting a Run.
 
-## Composition Sources
+## Add and verify a Capability
 
-Capabilities can enter from four trusted sources:
+Use the Python 3.13 environment from [Getting started](getting-started.md). Save this complete program as `capability_demo.py`. It needs no credentials or external service.
 
-1. native `AgentSpec.capabilities`;
-2. `AgentDefinition.capabilities` or `HarnessBuilder.build(..., capabilities=...)`;
-3. a Harness plugin's Agent-bound contribution;
-4. fresh `RunBindings.capabilities`.
-
-Put stable behavior on the definition. Put current invocation policy and MCP on `RunBindings.capabilities`; supply provider clients through the corresponding typed binding fields.
-
-```mermaid
-flowchart LR
-    Spec[AgentSpec] --> PAI[Pydantic Capability composition]
-    Definition[Definition Capabilities] --> PAI
-    Plugin[Plugin contributions] --> PAI
-    Run[Fresh run Capabilities] --> PAI
-    PAI --> Loop[Pydantic AI Agent loop]
-
-    class Spec,Definition,Plugin,Run a13n
-    class PAI,Loop ext
-```
-
-Capability presence does not itself authorize external work. Tools that cross a managed boundary still evaluate fresh run policy and provider enforcement.
-
-## Select Capabilities with AgentSpec
-
-`AgentSpec.capabilities` is the declarative feature-selection surface. It can select native Pydantic AI Capability types, the closed set of Harness types supported for declarative reconstruction, and exact custom types authorized by the current Host. It does not select Harness middleware plugins, Environment run extensions, Providers, credentials, policies, or live clients.
-
-For example, `ToolPermissionsCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
-
-### Authorize a custom declarative type
-
-A trusted Host can make one directly declared dataclass Capability type available to its builder:
-
-```python
+```python title="capability_demo.py"
+import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from a13n_harness import (
-    AgentContext,
-    AgentSpec,
-    HarnessBuilder,
-)
-from a13n_harness.capability_types import CapabilityTypeCatalog
-from pydantic_ai.agent.spec import CapabilitySpec
+from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PolicyInstructionsCapability(AbstractCapability[AgentContext]):
     instructions: str
     id: str | None = "policy-instructions"
@@ -66,42 +33,106 @@ class PolicyInstructionsCapability(AbstractCapability[AgentContext]):
         return self.instructions
 
 
-catalog = CapabilityTypeCatalog.from_types(
-    (PolicyInstructionsCapability,),
+instruction = "Explain material assumptions before the answer."
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    assert instruction in (info.instructions or "")
+    yield "Capability instructions received."
+
+
+model = FunctionModel(stream_function=respond)
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=model,
+    capabilities=(PolicyInstructionsCapability(instructions=instruction),),
 )
-agent_spec = AgentSpec(
-    capabilities=[
-        CapabilitySpec(
-            name="policy_instructions",
-            arguments={
-                "instructions": "Explain material assumptions before the answer.",
-            },
-        )
-    ]
-)
-executable = HarnessBuilder(
-    capability_type_catalog=catalog,
-).build(
-    agent_spec,
+
+
+async def main() -> None:
+    result = await executable.run("Check the setup.", bindings=RunBindings.embedded())
+    print(result.output_or_raise())
+
+
+asyncio.run(main())
+```
+
+Run `python capability_demo.py`. Expected output:
+
+```text
+Capability instructions received.
+```
+
+The assertion checks the instructions sent to the Model, not just the final answer. `get_instructions()` contributes the text; `capabilities=(...)` installs the concrete instance. The Model is scripted so the check is repeatable.
+
+## Composition Sources
+
+Choose the source by what you are configuring:
+
+- **Python application:** pass concrete instances to `HarnessBuilder.build(..., capabilities=...)` or `AgentDefinition.capabilities`, as above.
+- **Portable Agent configuration:** select supported serialized types in `AgentSpec.capabilities`.
+- **Enabled Harness plugin:** contribute instances through the plugin's `get_capabilities()` method.
+- **Current invocation policy or native MCP:** attach the supported types through fresh `RunBindings.capabilities`.
+
+For a feature's clients, use typed binding fields such as `RunBindings.web` or `document_converter`. `RunBindings.capabilities` is not an arbitrary dependency-injection slot.
+
+```mermaid
+flowchart TD
+    Spec[AgentSpec] --> PAI[Capability composition]
+    Definition[Python definition] --> PAI
+    Plugin[Enabled plugins] --> PAI
+    Run[Current policy and MCP] --> PAI
+    PAI --> Loop[Agent loop]
+
+    class Spec,Definition,Plugin,Run a13n
+    class PAI,Loop ext
+```
+
+Capability presence does not itself authorize external work. Tools that cross a managed boundary still evaluate fresh run policy and provider enforcement.
+
+## Select Capabilities with AgentSpec
+
+Use `AgentSpec.capabilities` when the feature selection must be stored as data. It accepts native Pydantic AI types, supported Harness types such as `ToolPermissionsCapability`, and exact custom types authorized by the Host. Keep live clients, credentials, Environment configuration, and plugin selection in their owning Host configuration.
+
+For most Harness features, start with concrete Python composition. Use [Shell Command Review](#shell-command-review) for a built-in declarative example.
+
+### Authorize a custom declarative type
+
+To select the example's class from data, replace its `executable = ...` block with the following. Keep the class, `instruction`, `model`, and `main()` from the complete program.
+
+```python
+from a13n_harness.capability_types import CapabilityTypeCatalog
+from pydantic_ai.agent.spec import CapabilitySpec
+
+catalog = CapabilityTypeCatalog.from_types((PolicyInstructionsCapability,))
+executable = HarnessBuilder(capability_type_catalog=catalog).build(
+    AgentSpec(
+        capabilities=[
+            CapabilitySpec(
+                name="policy_instructions",
+                arguments={"instructions": instruction},
+            )
+        ]
+    ),
     output_type=str,
     model=model,
 )
 ```
 
-The two steps have different authority:
+Run the program again. The same assertion and output verify the declarative path.
 
-1. `CapabilityTypeCatalog` makes an exact serialization name and Python type available to this builder. It performs no package discovery and enables no feature by itself.
-2. `AgentSpec.capabilities` selects and configures an instance for this Agent. A name absent from the native, first-party, and Host catalogs fails during construction.
+The Host catalog makes the exact class available to this builder; the spec selects an instance. Registration alone enables nothing. An unknown name fails during construction. Custom registered classes must directly declare `@dataclass` and a unique serialization name. The Host owns package installation and trust.
 
-Use `HarnessBuilder.build(..., capabilities=(PolicyInstructionsCapability(...),))` instead when the definition already exists as trusted Python code. Use `RunBindings.capabilities` for fresh policy or MCP Capabilities; provider collaborators belong in typed binding fields. A plugin may also contribute a Capability from its trusted `get_capabilities()` implementation after that plugin is explicitly enabled.
-
-Do not confuse `AgentSpec.capabilities`, which selects Agent-loop behavior, with `AgentSpec.model_characteristics.capabilities`, which records explicit image, video, and audio understanding characteristics of the active Model.
+`AgentSpec.model_characteristics.capabilities` is a separate setting for Model image, video, and audio understanding. Use `AgentSpec.capabilities` for Agent-loop behavior.
 
 The [integration package example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#custom-capability) runs both the Host-authorized `AgentSpec` path and direct code composition against an offline Model.
 
 ## Common Definition Capabilities
 
-Video input support is built in, not an optional definition Capability. The model input capability `video_understanding` declares binary video input, which enables inline video and bounded direct URL downloads; `model_characteristics.url_input.video: [youtube]` declares native YouTube support. The unified `read_media_url` also accepts image/audio and configured understanding fallback. Permissions retain the stable `media.read_video_url` identity. Local files use `view` and share the inline video budget.
+Add the selected Capability to the build's `capabilities` tuple. Check the dependency column before running: selecting a feature and supplying its service are separate steps. Follow the dedicated guides for [Environment tools](environments.md), [Skills](skills.md), [memory](context.md), and [delegation](delegation-and-codeact.md).
 
 | Capability                     | Adds                                                                                        | Needs collaborator                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -125,13 +156,18 @@ Video input support is built in, not an optional definition Capability. The mode
 
 For large local tool collections, [ToolSearchCapability](tool-search.md) accepts a `groups` mapping of passive `ToolSearchGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery and exhaustive listing through fixed proxy schemas, with CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-search.md#host-integration) covers source selection and plugin composition.
 
-Each feature has one public Capability. Its internal run-bound instance stays private and is reused across model attempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
+Keep provider objects in the current `RunBindings`. `WebBinding` and `TaskStateBinding` package dependencies; they do not enable features and never enter `HarnessState`. The Host opens and closes providers. A Harness feature's private run-bound instance is reused across model attempts within one logical Run and replaced for the next Run.
 
 For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
 ## Native Image Generation with Saving
 
-`NativeImageGenerationCapability` combines the provider-native `ImageGenerationTool` with a required async saver. Unlike selecting the raw upstream tool, a completed generation produces a saved reference rather than leaving the image only inside the model response. There is no separate output-replacement Capability, image API client, or fallback Model.
+Use `NativeImageGenerationCapability` when an image-generation result must become a saved file or URL. It combines the provider-native tool with your async saver.
+
+1. Configure credentials for a Model that supports native image generation.
+2. Choose a Host-owned output directory and replace `/path/to/generated-images` below.
+3. Build the executable with the saver and the native tool's output format.
+4. Run it with an image-generation prompt and inspect the returned reference. This recipe uses a real provider and may incur charges.
 
 ```python
 from uuid import uuid4
@@ -227,16 +263,14 @@ These features separate stable model-facing schemas from fresh provider implemen
 
 1. Choose a PDF/Office converter in your application; Harness supplies no default converter.
 2. Implement `DocumentConverter.convert(request)` as an async method. Import the protocol, `DocumentConversionRequest`, and `DocumentConversionResult` from `a13n_harness.toolsets.documents`.
-3. Convert the request's detached `source_bytes`, honoring its page range, deadline and output limits. Return Markdown and optional `DocumentAsset` values with relative paths and bytes; keep temporary files and converter dependencies inside your adapter.
+3. Convert the request's detached `source_bytes`, honoring its page range, deadline and output limits. Return a `DocumentConversionResult` with Markdown and optional `DocumentAsset` values containing relative paths and bytes. PDF results also require consistent `total_pages`, `converted_pages`, `page_start`, and `page_end` for the requested range, capped at the document's last page. Omit page metadata for Office results. Keep temporary files and converter dependencies inside your adapter.
 4. Bind that adapter as `document_converter` below. Harness reads the authorized source and validates and publishes the returned files through the Environment.
 
-The surrounding application supplies `agent_spec`, `model`, and its converter instance:
+In your application setup, use this wiring fragment. Supply your `agent_spec`, a compatible `model`, and the `document_converter` adapter from the steps above. The Run also needs an Environment with authorized source and destination file access.
 
 ```python
-from a13n_harness import RunBindings
-from a13n_harness.capabilities import (
-    DocumentsCapability,
-)
+from a13n_harness import HarnessBuilder, RunBindings
+from a13n_harness.capabilities import DocumentsCapability
 
 executable = HarnessBuilder().build(
     agent_spec,
@@ -249,6 +283,8 @@ bindings = RunBindings.embedded(
     document_converter=document_converter,
 )
 ```
+
+Add your Environment as `environment=...` in `RunBindings.embedded(...)`, then pass `bindings` to `executable.run(...)`. Verify that the converted Markdown and assets exist at the requested destination before presenting them to a user.
 
 The default `VideoUrlCapability` provides `read_media_url` for image, video, and audio URLs. It shares native-first dispatch and configured per-kind fallback with file `view`. Direct resources become bounded bytes before native attachment or auxiliary analysis. Native video uses the current Model's encoded budget; fallback does not inherit an unsupported primary Model's budget. YouTube requires explicit native URL support and has no download or auxiliary fallback. See [multimedia understanding](multimedia-understanding.md) for configuration, limits, and migration. Web additionally evaluates a live `WebPolicy` for each Host request.
 
@@ -287,9 +323,10 @@ Host transports must retain `WebDomainPolicy` checks on each redirect before DNS
 
 `WebCapability()` defaults search to `mode="auto"`: it uses provider-native Web search when the effective Model profile supports it and otherwise uses the first usable Host search backend. Native search uses the Model provider's account and billing; it does not use Host search credentials or `WebPolicy`.
 
-Bind multiple Host backends in default fallback order, and keep search and scrape ordering independent:
+Use this wiring fragment after opening your provider adapters. `web_client` handles base HTTP operations; `web_policy` authorizes Host requests. `google_search`, `brave_search`, and `tavily_search` are search adapters; `local_scraper` and `firecrawl_scraper` are scrape adapters. Use your own names and implementations. Bind them in default fallback order, then set per-operation preferences:
 
 ```python
+from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
     WebCapability,
     WebConfiguration,
@@ -330,6 +367,8 @@ bindings = RunBindings.embedded(
 )
 ```
 
+Add `web` to the executable's `capabilities` tuple and pass `bindings` to each Run. Test with a known query and check the returned URLs. A bound client alone does not add search tools.
+
 With no configured preference, tuple order is the default priority. `backend_priority` moves available named backends first and then retains the remaining bound order. Set `backend="tavily"` to require exactly one Host backend with no fallback. A selected backend that is not bound fails before model dispatch. Use `search.mode="host"` to forbid native search, `search.mode="native"` to forbid Host search, and `search.mode="off"` when `WebCapability` is used only for fetch, scrape, or download. Scrape supports `mode="host"` and `mode="off"` and has its own exact selection or priority.
 
 One search or scrape call shares a single operation deadline across its ordered backends. A provider error, invalid response, or provider exception advances to the next backend. A timeout, cancellation, Harness `RunError`, policy failure, or post-result authorization failure ends the operation without fallback. A valid empty search result is successful and also stops fallback.
@@ -366,7 +405,7 @@ See [MCP tools](mcp.md) for native composition, Run-scoped headers, local versus
 
 ## Native Capabilities and Tools
 
-Ordinary Pydantic AI Capabilities remain valid. Place native tools or Toolsets inside a Capability rather than bypassing native composition:
+For a small function tool, use native `Capability` directly. Pass `capabilities` below when building an Agent with a Model that calls `double`. [Tools and dependencies](tools-and-dependencies.md) provides a complete offline tool-call test:
 
 ```python
 from pydantic_ai.capabilities import Capability

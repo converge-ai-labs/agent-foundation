@@ -3,13 +3,13 @@ title: Core concepts
 description: Choose an agent, exchange messages, handle requests, and continue a conversation.
 ---
 
-Use **Console** or a Service SDK to ask an agent for a project update. This walkthrough introduces **Service** through that conversation. For Harness and Harness UI, see [Choose your path](choose-your-path.md).
+Follow one conversation in **Service**: give an agent project notes, read its reply, and return with a follow-up. You need access to a Service deployment through **Console** or an SDK. For embedded Python execution or the interactive workbench, see [Choose your path](choose-your-path.md).
 
 ## Choose an agent
 
-An administrator gives you a role in a **workspace**, which contains your team's agents, other resources, and conversations. Your roles in the organization and workspace determine what you can use or change.
+Select your team's **workspace**, then choose an agent you have permission to run. The workspace groups agents, resources, and conversations. An administrator assigns organization and workspace roles that determine your access.
 
-An **agent** combines a model, instructions, and tools. Example instructions: “Summarize project progress and cite the information you used.”
+The **agent** configuration tells the model how to work and which tools it can use. For a project-update agent, the instructions might be: “Summarize the supplied notes and list two next steps.” Add other resources as the task needs them:
 
 | Part            | Role in the agent's work                                                   |
 | --------------- | -------------------------------------------------------------------------- |
@@ -19,23 +19,26 @@ An **agent** combines a model, instructions, and tools. Example instructions: �
 | **Environment** | Provides the files and command execution used by tools                     |
 | **Memory**      | Holds project decisions the agent can read and update across conversations |
 
-Start with a model and instructions. Before you ask the agent to look up real progress, add a tool or connection that reads your project data. [Tools and connections](../a13n-service/tools.md) explains the setup.
+A model and instructions are enough to summarize notes you supply. To fetch progress from a project system, configure [a tool or connection](../a13n-service/tools.md) that can read that system.
 
 ## Start a conversation
 
-Ask: “Summarize the project status and list the next two tasks.”
+1. In Console, open **Sessions → New session** and choose the agent.
+2. Send: “Summarize these notes and list two next steps: draft ready; review pending; release planned for Friday.”
+3. Read the reply as it arrives. Configured tool activity appears alongside the response.
+4. Follow up with “Make the first step more specific.”
 
-In Console, choose an agent and send your message. In an application, [start a conversation through an SDK](../a13n-service/connect-application.md).
-
-You see replies and tool activity as they arrive. While the agent works, you can add guidance or stop it. Compatible guidance joins the active run at its next model request; other messages stay queued.
+An application follows the same exchange through a [Service SDK](../a13n-service/connect-application.md). During active work, you can send guidance or stop the run. Compatible guidance joins the next model request; other messages stay queued.
 
 ## Answer a question or approve a tool call
 
-Answer questions and approve or deny tool calls in their conversation cards, then choose **Submit responses** after completing every pending item. Applications collect answers and [submit a complete resume batch](../a13n-service/agents-and-runs.md#waits-approvals-and-questions) when ready.
+When work pauses for your input, complete each question or approval card. Choose **Approve once** or **Deny** for tool approvals, then select **Submit responses** after completing all pending items. The accepted batch continues the work. Applications [collect and submit the same complete batch](../a13n-service/agents-and-runs.md#waits-approvals-and-questions).
 
 ## Continue later
 
-Open **Sessions** and choose **Continue thread**, then ask “Which task should I do first?” Applications send the follow-up to the returned thread reference. Work continues when you disconnect, and Service stores the history for your return. **Inspect execution** opens the diagnostic view when you need to investigate a problem.
+Return to **Sessions**, choose **Continue thread**, and ask another question. Service saves the conversation history, and execution continues if you disconnect. An application sends follow-ups to the thread reference returned by Service.
+
+Choose storage according to what you need to keep:
 
 | Information       | Purpose                                            |
 | ----------------- | -------------------------------------------------- |
@@ -43,11 +46,11 @@ Open **Sessions** and choose **Continue thread**, then ask “Which task should 
 | Memory            | Save and retrieve information across conversations |
 | Environment files | Store documents and other working files for tools  |
 
-To share decisions across conversations, add [memory](../a13n-service/memory.md) to the thread or agent defaults. [Environment storage and lifecycle](../a13n-service/environments.md) determine how long working files remain available.
+Attach [memory](../a13n-service/memory.md) to the thread or agent defaults to share decisions across conversations. Choose the [environment's storage and lifecycle](../a13n-service/environments.md) to control how long working files remain available.
 
 ## Understand execution when you need it
 
-A **session** groups related **threads**, each with its own history and inbox. A **run** processes input using the agent's model and tools. An **attempt** is one execution of that run; recovery starts another attempt.
+The conversation lives in a **thread**, which has its own history and inbox. Related threads belong to a **session**. Service processes input in a **run** using the agent's model and tools. Each execution of the run is an **attempt**; recovery starts another attempt.
 
 ```mermaid
 flowchart TB
@@ -60,8 +63,8 @@ flowchart TB
     class Runs,Attempts a13n
 ```
 
-Console's Debug view shows these execution details. Guidance can join an active run; answering a waiting request creates a successor run.
+Select **Inspect execution** to open Console's Debug view. Here you can distinguish guidance that joined an active run from a submitted answer batch that created a successor run.
 
-Configuration changes create immutable **revisions**, listed under **Versions**. New messages use the default revision unless they select another. Active runs and approval continuations keep their original revision.
+Agent configuration changes produce immutable **revisions**, listed under **Versions**. New messages use the default revision unless they specify another; active runs and approval continuations retain their original revision.
 
-Next, [try an agent in Console](../a13n-service/use-platform.md) or [connect your application](../a13n-service/connect-application.md). See [Agents, threads and runs](../a13n-service/agents-and-runs.md) for revision selection and execution details.
+Continue with [Console's user guide](../a13n-service/use-platform.md) or the [application integration guide](../a13n-service/connect-application.md). Use [Agents, threads and runs](../a13n-service/agents-and-runs.md) when you need to select revisions or inspect execution behavior.

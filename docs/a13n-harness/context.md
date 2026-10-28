@@ -1,27 +1,27 @@
 ---
 title: Context and working state
-description: Separate what the model sees now from history compaction and structured working state, and set Run-wide configuration such as allowed hosts.
+description: Supply current context, carry decisions across Runs, and compact a Thread without confusing summary generation with checkpoint storage.
 ---
 
-Use context projections for the current request, compaction for long history, and working state for task facts.
+A useful next turn needs both current information and remembered decisions. Context Capabilities prepare the current model request; working state carries structured facts; compaction replaces long conversation history with a summary. Choose each mechanism for the information it owns.
 
 ## Choose the right mechanism
 
-| Need                                   | Mechanism                             |
-| -------------------------------------- | ------------------------------------- |
-| Current time, usage, file metadata     | Runtime context and workspace outline |
-| Current instructions or selected files | File context                          |
-| Long Thread histories                  | Handoff and compaction                |
-| Tasks and notes across turns           | Working state in `HarnessState`       |
-| Durable files shared across Threads    | [File memory](memory.md)              |
-| Facts recalled by similarity           | [Record memory](memory.md)            |
-| Smaller requests after idle time       | Cold-start filter                     |
+| Need                                        | Mechanism                          |
+| ------------------------------------------- | ---------------------------------- |
+| Current time, usage, selected Run metadata  | Runtime context                    |
+| Workspace structure or project instructions | Workspace outline and file context |
+| Tasks and decisions across turns            | Working state in `HarnessState`    |
+| A shorter long-running conversation         | Handoff or compaction              |
+| Durable files shared across Threads         | [File memory](memory.md)           |
+| Facts recalled by similarity                | [Record memory](memory.md)         |
+| Shorter old tool results after idle time    | Cold-start filter                  |
 
-Select the Capability for your task. Use [State and Resume](state-and-resume.md) to persist and continue a Thread.
+Start with the [two-Run example](#context-composition), then add workspace guidance or compaction as needed. [State and Resume](state-and-resume.md) explains how the Host saves and continues the Thread.
 
 ## Run configuration
 
-Pass shared per-Run settings through `RunConfiguration`:
+`RunConfiguration` supplies settings shared by tools and plugins during one Run. This fragment builds a configuration and checks a URL locally; it makes no HTTP request:
 
 ```python
 from a13n_harness import RunBindings, RunConfiguration
@@ -30,13 +30,14 @@ configuration = RunConfiguration(
     allowed_hosts={"api.example.com", "docs.example.com"},
     extensions={"example.reader": {"images": True}},
 )
+configuration.authorize_url("https://docs.example.com/guide")
 bindings = RunBindings.embedded(configuration=configuration)
-# Pass bindings to executable.run(..., bindings=bindings).
+# Pass bindings to agent.run(..., bindings=bindings).
 ```
 
-Plugins and tools read `AgentContext.configuration` (`ctx.deps.configuration` inside a tool). Each integration validates its own namespaced `extensions` values.
+Tools read `ctx.deps.configuration`; plugins read `AgentContext.configuration`. Each integration validates its own namespaced `extensions` values. These are configuration inputs, separate from the model-facing metadata selected by `RuntimeContextCapability` below.
 
-`allowed_hosts=None` allows all destinations; an empty set denies all. Entries match exact normalized hostnames/IPs or explicit `regex:` rules. First-party HTTP integrations apply this allowlist. In your own integrations, call `configuration.authorize_url(url)` before requests and redirects. Under a restricted allowlist, use local MCP and Host Web tools, and materialize media as authorized `BinaryContent` instead of forwarding a URL. Shell and third-party plugin networking needs Environment or deployment isolation.
+`allowed_hosts=None` permits all destinations, while an empty set denies all. First-party HTTP integrations apply the rules. Custom integrations must call `authorize_url()` before the initial request and every redirect. The check examines the declared HTTP(S) hostname, without resolving DNS or enforcing network isolation. Use Environment or deployment controls for shell and third-party networking. Under a restricted allowlist, use local MCP and Host Web tools, and supply authorized media bytes as `BinaryContent` rather than forwarding media URLs.
 
 ### Host rules and regular expressions
 
@@ -58,41 +59,122 @@ configuration = RunConfiguration(
 | `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`, `eu.api.example.com`       |
 | `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`, `eu.api.example.com` | `notexample.com`, `example.com.evil.test` |
 
-Escape literal dots as `\.`. Use `regex:(?:[a-z0-9-]+\.)*example\.com` for a base domain and its subdomains; `*.example.com` is not a glob. Every redirect destination must match a rule.
+Escape literal dots as `\.`. `*.example.com` is not a glob.
 
 When writing YAML, use single quotes to preserve backslashes, for example `'regex:(api|docs)\.example\.com'`. JSON requires doubled backslashes: `"regex:(api|docs)\\.example\\.com"`. Python raw strings, as shown above, avoid extra escaping.
 
 ## Context Composition
 
-Combine these Capabilities to show current metadata and selected files:
+Use the Python environment from [Getting started](getting-started.md). Save this complete offline example as `context_demo.py`. The first Run writes a note; the second restores serialized State and receives that note as current context:
 
 ```python
+import asyncio
+
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness.capabilities import (
+    RuntimeContextCapability,
+    RuntimeContextConfiguration,
+    WorkingStateCapability,
+)
+
+
+async def respond(messages, info):
+    current = messages[-1]
+    assert isinstance(current, ModelRequest)
+    projected = "\n".join(
+        str(part.content) for part in current.parts if isinstance(part, UserPromptPart)
+    )
+    assert "runtime" in projected
+    returns = [part for part in current.parts if isinstance(part, ToolReturnPart)]
+    if returns:
+        assert returns[-1].content["action"] == "created"
+        yield "Decision recorded."
+    elif '<note key="decision">' in projected:
+        assert "Keep the public API stable." in projected
+        yield "Continuing with the saved decision."
+    else:
+        assert "migration" in projected
+        yield {0: DeltaToolCall(
+            name="note_write",
+            json_args='{"key":"decision","value":"Keep the public API stable."}',
+        )}
+
+
+async def main():
+    agent = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(
+            RuntimeContextCapability(
+                RuntimeContextConfiguration(metadata_keys=("project",))
+            ),
+            WorkingStateCapability(),
+        ),
+    )
+    bindings = RunBindings.embedded(metadata={"project": "migration"})
+    first = await agent.run("Record the migration decision.", bindings=bindings)
+    print(first.output_or_raise())
+    assert first.state is not None
+    restored = HarnessState.model_validate_json(first.state.model_dump_json())
+    second = await agent.run("Continue.", previous_state=restored, bindings=bindings)
+    print(second.output_or_raise())
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
+
+
+asyncio.run(main())
+```
+
+Run `uv run --no-sync python context_demo.py`. It prints `Decision recorded.` followed by `Continuing with the saved decision.` The assertions check the current request's projection, not just the old tool result in history. Both Runs belong to the same Thread, with different Run IDs. The JSON round trip demonstrates portable state; durable storage remains the Host's job.
+
+To add workspace information, supply a [prepared Environment source](environments.md#supply-a-source) and a configured Model to this helper:
+
+```python
+from pydantic_ai.models import Model
+
+from a13n_harness import AgentSpec, EnvironmentSource, HarnessBuilder
 from a13n_harness.capabilities import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
 )
 
-capabilities = (
-    RuntimeContextCapability(),
-    WorkspaceOutlineCapability(),
-    FileContextCapability(),
-)
+
+async def describe_workspace(source: EnvironmentSource, model: Model) -> str:
+    agent = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(
+            RuntimeContextCapability(),
+            WorkspaceOutlineCapability(),
+            FileContextCapability(),
+        ),
+    )
+    result = await agent.run(
+        "Describe the workspace using its outline and project guidance.",
+        environment=source,
+    )
+    return result.output_or_raise()
 ```
 
-- Runtime context is refreshed for each request and can expose only explicitly selected metadata keys.
-- Workspace outline reads metadata, not file content, and appears only on user-input requests.
-- File context loads selected files once for the logical Run and fences the Environment route used to load them.
+Each Capability contributes a different part:
 
-Use each Capability's configuration to set byte, item, depth, and line limits for your workspace.
+- `RuntimeContextCapability` refreshes timing and usage information at request boundaries. `metadata_keys` selects application metadata for user-input requests; arbitrary Run metadata is not exposed automatically.
+- `WorkspaceOutlineCapability` supplies file metadata on user-input requests, without reading file bodies.
+- `FileContextCapability` loads selected files once per logical Run and checks that their Environment routes remain valid.
 
-File context reads the working directory's `AGENTS.md` by default. It also announces immediate child `AGENTS.md` paths and `.agents/skills` directories in the working directory and its immediate children. These hints load no child file contents or skill descriptions. The Agent reads relevant project guidance and Skills through ordinary file tools when needed. Discovery does not expand the selected Skill catalog or change permissions.
+File context reads the working directory's `AGENTS.md` by default. It also lists immediate child `AGENTS.md` paths and `.agents/skills` directories in the working directory and immediate children. These are entrypoint hints: the Agent still reads child guidance and Skills through file tools when needed. Add `DynamicEnvironmentCapability` if the Agent should perform those reads itself.
 
-The hint scan examines at most 64 non-hidden working-directory entries and emits at most 8 KiB separately from the file-content budget. Partial results are marked `incomplete`; deeper guidance can still exist. Hints refresh on the next logical Run, even when the root has no `AGENTS.md`. Set `FileContextConfiguration(include_project_guidance=False)` to keep file contents without entrypoint hints.
+The hint scan examines at most 64 non-hidden entries and uses a separate 8 KiB budget. An `incomplete` marker means more guidance may exist. Hints refresh on the next Run, including when no root `AGENTS.md` exists. Set `FileContextConfiguration(include_project_guidance=False)` to keep file content but omit hints. Each context configuration also exposes limits for its own bytes, files, depth, or lines.
 
 ## Compact a long Thread
 
-Add `CompactionCapability()` to enable automatic history compaction. The default trigger is 90% of the effective Model's context window, using reported token usage. Set `AgentSpec.model_characteristics` when your Model lacks context-window information. For a fixed trigger, select a token policy:
+Add `CompactionCapability()` to compact automatically during a Run. The default trigger is reported usage reaching 90% of the effective Model's context window. Supply `AgentSpec.model_characteristics` if the Model lacks window information. To use a fixed token trigger, add this Capability to the builder's `capabilities` tuple:
 
 ```python
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
@@ -112,38 +194,84 @@ flowchart TD
     class Usage,Threshold,Summary,Restore,Project,Request a13n
 ```
 
-The summary request uses the same Agent and complete history. The summary replaces old history; current user input and delivered steering are replayed in order, including media. Compaction emits `CompactionSummaryEvent` and stores the replacement in returned state. It makes a model request, so include that request in your budget.
+The summary request uses the same Agent and complete history. After successful replacement, Harness replays current user input and delivered steering in order, including media, then projects current notes and tasks. The returned State contains the replacement. Budget for the additional model request.
 
-Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
+Add `HandoffCapability()` when the Agent should also call `summarize` explicitly. Its default reminder begins at 65% of the context window. Select the Capabilities as well as their thresholds: model characteristics alone do not enable either mechanism.
 
 ### Host-triggered compaction
 
-Call `compact()` between Runs to summarize the selected checkpoint without continuing the task. No `CompactionCapability` or threshold is required:
+Use `agent.compact()` between Runs when the Host decides to shorten a settled checkpoint. It generates a summary and returns an immediately saveable State without continuing the business task. It requires no automatic-compaction Capability or threshold.
+
+Save this as `compact_demo.py` and run `uv run --no-sync python compact_demo.py` in the same environment:
 
 ```python
-compacted = await executable.compact(
-    previous_state=latest_state,
-    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
-    bindings=bindings,
-)
-summary = compacted.output_or_raise()
-# Save compacted.state through the Host's fenced checkpoint path, then stop.
-# No ordinary run() call is needed to finish compaction.
+import asyncio
+
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.usage import UsageLimits
+
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
+
+
+async def main():
+    calls = 0
+
+    async def respond(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "Plan: inspect the schema, then migrate."
+        elif calls == 2:
+            assert "Do not call tools" in str(messages)
+            yield "Migration plan: inspect the schema next."
+        else:
+            assert "Migration plan: inspect the schema next." in str(messages)
+            yield "Ready to inspect the schema."
+
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond)
+    )
+    first = await agent.run("Plan the migration.")
+    first.output_or_raise()
+    assert first.state is not None
+    original = first.state.model_dump_json()
+    compacted = await agent.compact(
+        previous_state=first.state, usage_limits=UsageLimits(request_limit=1)
+    )
+    print(compacted.output_or_raise())
+    assert first.state.model_dump_json() == original
+    assert compacted.state is not None
+    checkpoint = HarnessState.model_validate_json(compacted.state.model_dump_json())
+    continued = await agent.run("Continue.", previous_state=checkpoint)
+    print(continued.output_or_raise())
+    assert first.thread_id == compacted.thread_id == continued.thread_id
+    assert calls == 3
+
+
+asyncio.run(main())
 ```
 
-The request receives full history without trimming. It keeps the same system prompts, tool schemas, output configuration and model settings, and appends built-in no-tools constraints plus your `instruction`. `None` selects the default compaction guidance; a string replaces that guidance. Keep the executable and bindings stable to preserve the provider's cache prefix. Cache availability remains provider-controlled.
+It prints the migration summary, then `Ready to inspect the schema.` The example verifies that compaction leaves the original State unchanged and uses one model request. Serialization happens immediately; the later ordinary Run restores runtime context and continues the task.
 
-The existing output mode must permit free text; native and prompted JSON modes fail instead of switching schemas. An unfinished response, tool call or empty summary fails without replacing history. The operation uses ordinary Run admission, usage, plugins, Environment cleanup and state export, and needs only the summary request's budget. A completed result contains the compressed history ready for immediate storage. The next ordinary Run automatically restores retained discovery and notifies context-restoration listeners before continuing; that restoration is not required to save the checkpoint.
+For an application checkpoint store, follow this sequence:
 
-On failure, keep the original checkpoint and record the failure separately. Failed results carry a safe error code/message and `failure.details.phase`; preflight rejection and generation/export/notification failures also emit `compaction_failed`. Cancellation emits a cancellation failure observation and propagates. Preparation, middleware and cleanup errors follow the ordinary Run exception contract. Save only a completed result, using the Host's expected-version or ownership check. Report save failures and conflicts explicitly; report saved success only after publication commits. `CompactionSummaryEvent` and `compaction_completed` describe the generated checkpoint, not a durable save, and are not repeated during later restoration.
+1. Prevent concurrent progress on the selected Thread and read its checkpoint version.
+2. Call `compact(previous_state=..., bindings=...)` with fresh Host bindings. `instruction=None` uses the default summary guidance; a string replaces that guidance while keeping the built-in history-only and no-tools constraints.
+3. Accept only a completed result. Publish its State with the expected-version or execution-ownership check used by your store.
+4. Report saved success after publication commits. Let the next ordinary Run restore context before continuing.
 
-The checkpoint must have a settled boundary: pending tools, retained executions, unrestored handoffs and pending compaction restoration must finish through ordinary Run recovery first. Calling `compact()` on these states returns `compaction_boundary_pending` without dispatching a summary or overwriting the pending marker. A freshly compacted checkpoint also has pending restoration: save it immediately, but wait for an ordinary Run to restore it before compacting again. Retrying `compact()` on that same checkpoint cannot clear the pending boundary. The Host must prevent concurrent Thread progress and decide when to save the returned State. `compact()` leaves the supplied checkpoint unchanged. Idle timers and automatic scheduling belong to the Host.
+The existing Agent output mode must allow text. Native and prompted JSON modes fail rather than changing schemas. System prompts, tool definitions, output configuration, model settings, and full history stay in the request; keeping them stable supports provider cache reuse, subject to provider policy. Blank summaries, tool calls, unfinished responses, or provider failures do not replace history.
+
+A checkpoint with pending tools, retained executions, an unrestored handoff, or pending compaction restoration returns `compaction_boundary_pending` before summary dispatch. Settle that boundary with ordinary Run recovery first. A newly compacted checkpoint is ready to save, but must pass through an ordinary Run before another compaction.
+
+On failure, exception, or cancellation, keep the original checkpoint. Failed results include a safe code/message and `failure.details.phase`; preparation, middleware, and cleanup can raise under the ordinary Run contract. Cancellation propagates. `CompactionSummaryEvent` and `compaction_completed` describe generation, not durable publication, and may precede a later failure. They are not repeated by the subsequent restoration. Handle storage conflicts separately from model failures; scheduling and idle timers belong to the Host.
 
 ### Background compaction
 
-A Host can run summary generation independently of the foreground Run:
+Choose background mode when your Host can retain summary work after the foreground Run closes. It requires an application-owned `CompactionOperator`; this helper connects an existing operator to the Agent:
 
 ```python
+from a13n_harness.capabilities import CompactionCapability
 from a13n_harness.compaction import BackgroundCompactionPolicy, CompactionOperator
 
 
@@ -154,13 +282,27 @@ def background_compaction(operator: CompactionOperator) -> CompactionCapability:
     )
 ```
 
-`BackgroundCompactionPolicy` defaults to `enabled=False` and `blocking_threshold=0.95`. The blocking threshold accepts values greater than zero and at most one. Counted input must be below this share of the context window to start background work or continue while it runs; equality blocks. The output reserve can require blocking earlier. The common compaction trigger remains 90%, and a physically fitting replacement can proceed above the blocking line. `background=True` uses the default enabled policy.
+Implement the operator before adding the returned Capability to the builder:
 
-Implement `submit(input)`, `inspect(thread_id)` and `wait(thread_id, operation_id)` on the operator. Keep execution alive after the submitting Run closes. Admit one unacknowledged operation per Thread, save ready results before notification, and make reads non-consuming. Use `generate_compaction(input, request)` for the summary protocol and bounded transient retries. The callback receives `CompactionInput`, reads fresh `request_messages`, `settings` and `parameters`, and uses fresh Host model authority to account for each attempt; it must not capture the parent Run's Agent, resources or mutable usage.
+1. Provide `submit(input)`, `inspect(thread_id)`, and `wait(thread_id, operation_id)`. Admit one unacknowledged operation per Thread, make submission idempotent by operation ID, and keep reads non-consuming.
+2. Generate with `generate_compaction(input, request)`. The callback obtains fresh Host authority and reads `request_messages`, `settings`, and `parameters` from its `CompactionInput`. Account for every attempt; retain no parent Agent, live resource, or mutable usage object.
+3. Save the ready result before notifying. Reconcile interrupted work after process loss rather than assuming a saved record recreates execution.
+4. Apply through an ordinary Run and retire the operation only after the resulting checkpoint commits.
 
-Harness freezes a complete prefix before the outgoing request. When the summary is ready, Harness replaces that prefix and preserves all later native messages, including tool results and steering. It applies at the next eligible model boundary. Concurrent foreground progress requires native token counting, a known context window and an explicit `max_tokens` reserve. At the compaction trigger, Harness starts background work only with verified capacity; otherwise it compacts synchronously without submitting a new operation. If an operation is already running, unknown or insufficient capacity causes waiting for that same operation. A failed operation, including one interrupted before a later Run, falls back to synchronous compaction when compaction is still needed. Successful fallback records the old operation as skipped, so the Host retires it only after checkpoint commit. Failed fallback preserves history and permits continuation only with verified capacity; it does not repeatedly retry that failure within the same Run. All summary calls retain current usage and admission limits. Harness rejects a known oversized replacement instead of trimming recent work.
+Harness summarizes a complete history prefix and retains later messages, including tool results and steering. Foreground progress requires native token counting, a known context window, and an explicit `max_tokens` output reserve. The default trigger remains 90%; counted input must stay strictly below the 95% blocking line, and the whole request must fit with its reserve. `blocking_threshold` accepts values above zero through one. Background mode defaults off; `background=True` enables its default policy.
 
-For a result ready between Runs, pass it alongside the latest selected checkpoint to the ordinary Run:
+| At a model boundary                                             | Action                                           |
+| --------------------------------------------------------------- | ------------------------------------------------ |
+| Trigger reached, no operation, verified headroom                | Submit background work and continue              |
+| Trigger reached, no operation, unknown or insufficient headroom | Compact synchronously                            |
+| Operation running, verified headroom                            | Continue                                         |
+| Operation running, unknown or insufficient headroom             | Wait for that operation                          |
+| Failed operation and compaction still needed                    | Try synchronous recovery                         |
+| Ready, applicable result                                        | Replace the matching prefix; preserve the suffix |
+
+Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity; it is not repeatedly retried within the same Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+
+When a result becomes ready between Runs, use this integration fragment. `executable`, `bindings`, `latest_state`, `result`, `state_store`, and `retire_operation` come from your Host; `committed_state` must be the State your checkpoint store actually selected and committed:
 
 ```python
 from a13n_harness.compaction import compaction_disposition
@@ -177,31 +319,27 @@ if disposition is not None:
     await retire_operation(result.basis.operation_id)  # Your Host's operation store.
 ```
 
-The Run leaves the supplied checkpoint unchanged. The result contains its own `CompactionBasis`: operation and Thread identities, prefix length and digest, and retained semantic inputs. Harness hydrates and validates canonical history before recovery changes it, then replaces only the matching prefix and preserves the complete suffix. Supply `RunBindings(state_store=...)` when checkpoint content is externalized. Current system prompts come from the executable: changing, reordering or removing system blocks, even in an intervening Run, does not invalidate a result. Other history edits produce a terminal `skipped` disposition. A matching unresolved tool or suspended boundary defers application until a later Run; supply the result again then.
+`CompactionBasis` identifies the operation, Thread, and captured prefix. Harness validates the canonical history before recovery and replaces only a matching prefix. Changing system prompts is allowed; other prefix edits yield `skipped`. An unresolved tool or suspended boundary defers application, so pass the same result again on a later Run. Supply `RunBindings(state_store=...)` when history content is externalized.
 
-The `a13n.compaction` namespace records the last processed operation, basis fingerprint, applied/skipped disposition and independent pending runtime restoration. Re-delivery with either saved disposition is a no-op. Use `compaction_disposition` rather than parsing that private namespace. Before the next Run's first context projection, Harness restores current tool discovery and CodeAct descriptions and resets memory delivery cursors through restoration events. Current image/video rules and capacity checks govern the outgoing request. The resumed executable needs neither a `CompactionCapability` nor an operator for this restoration. Listener failure or cancellation leaves restoration pending for retry. A restoration event alone is not a save acknowledgement.
+Use `compaction_disposition()` rather than parsing the private `a13n.compaction` namespace. A saved `applied` or `skipped` disposition makes re-delivery a no-op. Pending runtime restoration is tracked separately: the next Run refreshes discovery and CodeAct descriptions and resets memory delivery cursors, even without a compaction Capability or operator. A failing listener leaves restoration pending for retry. Restoration is not a storage acknowledgement.
 
-`CompactionInput` holds the projected summary request and captured model configuration. `CompactionResult` holds only its basis and summary; applying it needs no generation input or model configuration. Canonical originals remain in State. Store inputs and results as confidential execution data. Keep credentials and connection policy in the fresh Host request callback. `apply_compaction` is the shared pure history transformation; active application and next-Run joint resume share its decision and restoration rules. One operation stays outstanding until a normal checkpoint commit acknowledges it. Background completion stores the result and waits when idle, without rewriting a checkpoint. Service and Harness UI require their own operator and persistence integration to enable this mode.
+Store `CompactionInput` and `CompactionResult` as confidential execution data. Inputs contain the projected summary request and model configuration; results need only their basis and summary for application. Canonical originals stay in State. The shared `apply_compaction` function performs the pure history transformation. An idle Host retains ready results until an ordinary Run can apply them; it does not rewrite checkpoints in the background. Service and Harness UI each need their own operator and persistence integration for this mode.
 
 ## Handoff versus automatic compaction
 
-A continuation summary carries the paths and roles of Skills still needed. Reread them on resume when their full content is no longer available.
+Use `summarize` at an intentional task boundary, or let automatic compaction react to usage. A useful handoff records the objective, decisions, unfinished work, and next action. Include the paths and roles of Skills needed next; reread those Skills after restoration when their complete contents are no longer available.
 
-Use `summarize` for an explicit handoff or let compaction react to usage. See [Compact a long Thread](#compact-a-long-thread) for thresholds.
-
-Call `summarize` directly as the only tool call in its model response, outside CodeAct and ToolSearch proxy groups. While a retained CodeAct runner is active, automatic compaction waits and Handoff rejects the call. Wait for the runner to finish, inspect its result, then write a fresh summary. Other retained function tools do not block context replacement.
-
-Persist the returned `HarnessState` under your Host's acceptance policy; a summary does not save application storage.
+Call `summarize` directly as the only tool call in its response, outside CodeAct and ToolSearch proxy groups. A retained CodeAct runner blocks replacement: automatic compaction waits, while Handoff rejects the call. Wait for it to finish, inspect the result, then write a fresh summary. Other retained function tools do not block replacement. Save the returned `HarnessState` using the Host's normal acceptance policy.
 
 ### Retain called tools
 
-Both `summarize` and automatic compaction retain a bounded set of previously called [ToolSearch](tool-search.md) tools. Only completed target calls enter the working set, including calls through CodeAct and proxy dispatch. Searching alone adds nothing; repeated calls refresh one entry. Ordinary business-tool results are summarized instead of replayed.
+After replacement, the Agent can reuse a bounded set of [ToolSearch](tool-search.md) tools it actually called. Completed target calls enter this set, including proxy and CodeAct dispatch. Searching alone adds no entry; repeated calls update recency. Business results belong in the summary, not in replayed tool output.
 
-Retention selects the most recently called tools, up to 32 distinct tools within a 64 KiB estimated discovery-context budget. The estimate includes native schema expansion and both CodeAct runner directories, excluding recovery metadata. This is a UTF-8 byte estimate, not a token limit. Each selected tool keeps its complete current schema. Removed, unavailable or changed-source tools are dropped. Deferred Capability activation through `load_capability` is outside this retention policy.
+For example, discovering A and B but calling only A retains A. Harness rebuilds discovery from current definitions and labels it as a partial reconstruction. No search runs, and original query text becomes `[query omitted during context replacement]`. Removed, unavailable, or changed-source tools are dropped. Activation through `load_capability` follows a separate lifecycle.
 
-Harness rebuilds a compact synthetic search result from current definitions. A notice explicitly identifies the reconstruction, explains that the retained set is partial, and tells the Agent to search again for other tools. No search is executed. Original queries are not retained: native `queries` and proxy `query` use the explicit placeholder `[query omitted during context replacement]`. Searching for A and B and then calling only A retains only A; B does not consume the retention budget.
+The limits are 32 distinct tools and an estimated 64 KiB discovery context, including native schema expansion and both CodeAct directories. Selected schemas remain complete. This budget counts UTF-8 bytes, not tokens, and excludes recovery metadata. Portable retention state stores names and source identities in recency order, capped at 128 KiB; it stores neither schemas nor search results.
 
-For example, after discovering `crm__customer_name` and looking up customer 42, the replacement has this order:
+After a call to `crm__customer_name`, context replacement has this order:
 
 | Position | Explicit `summarize`                                             | Automatic compaction                                                |
 | -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -210,37 +348,30 @@ For example, after discovering `crm__customer_name` and looking up customer 42, 
 | 3        | Current user input and delivered steering                        | Reconstruction notice and synthetic discovery for called tools      |
 | 4        |                                                                  | Restored-context marker, current user input, and delivered steering |
 
-Current notes, tasks, and runtime context are projected again through their normal providers. The customer lookup result belongs in the summary; the retained discovery lets the Agent call `crm__customer_name` again without another search. Both CodeAct directories reflect the retained tools on the first request after replacement.
-
-Portable retention state contains only called tool names and source identities in call-recency order, capped at 128 KiB. It stores neither search results nor schemas. A target called inside CodeAct follows the same policy as a direct target call. Persist the returned `HarnessState` to carry this working set and the replacement history into another Run.
+Notes, tasks, and runtime context are projected from their current owners. The summary carries the customer result; retained discovery enables another call without a new search. Both CodeAct directories reflect the retained set on the first replacement request. Persist State to carry this working set into another Run.
 
 ## Working State
 
-`WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
+The first example uses embedded working state: tasks and notes live in the Capability's portable namespace and travel with `HarnessState`. Keep `WorkingStateCapability()` in the definition when restoring that State.
 
-```python
-from a13n_harness.capabilities import WorkingStateCapability
+For application-owned tasks, select provider mode and supply a fresh `TaskStateBinding` through `RunBindings.task_state`. The provider owns task truth; Harness events report bounded committed changes. Cross-worker ownership, leases, scheduling, and durable delivery belong to the Host or provider.
 
-capabilities = (WorkingStateCapability(),)
-```
+| Tool                     | Result                                                     |
+| ------------------------ | ---------------------------------------------------------- |
+| `note_write(key, value)` | Creates or updates; reports `created` or `updated`         |
+| `note_delete(key)`       | Idempotent deletion; reports `deleted` or `already_absent` |
+| `note_get(key)`          | Returns the complete value                                 |
+| `note_get()`             | Returns sorted keys and a count                            |
 
-This embedded mode, with no `TaskStateBinding`, is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateBinding` in `RunBindings.task_state`; the provider remains authoritative, while Harness events report bounded committed deltas.
+Notes project on user-input requests; tasks also refresh on tool-result requests. `<note>` carries a complete value. `<note-ref>` and `<notes-omitted>` direct the Agent to `note_get`. The defaults are 256 projected notes and 128 tasks sharing a 64 KiB budget, configurable through `WorkingStateConfiguration`.
 
-The note tools have explicit mutation semantics:
-
-- `note_write(key, value)` creates or updates a note and reports `created` or `updated`;
-- `note_delete(key)` is idempotent and reports `deleted` or `already_absent`;
-- `note_get(key=None)` reads one complete value or lists sorted keys with a count.
-
-Notes appear on user-input requests; tasks also refresh on tool-result requests. Complete notes appear as `<note>`; `<note-ref>` and `<notes-omitted>` point to values available through `note_get`. `WorkingStateConfiguration` defaults to 256 projected notes and 128 tasks within a shared 64 KiB budget.
-
-Use notes for facts, tasks for execution progress, and `summarize` for the continuation narrative. Reconcile stale notes and task statuses before a handoff rather than copying them all into the summary.
-
-Working state is not a distributed workflow engine. Cross-worker ownership, durable leases, schedules, and delivery belong to the Host or task provider.
+Use notes for facts, tasks for execution progress, and the summary for continuation narrative. Before handoff, reconcile stale notes and task statuses instead of copying their entire contents into the summary.
 
 ## Filters
 
-Harness applies message-integrity and media compatibility filters before model requests. Media preparation leaves saved history and source files unchanged. Use [media acquisition](multimedia-understanding.md) for video and [image input policy](models.md#image-input-policy) for image limits. Content filtering is optional; cold-start filtering is on by default after one hour of idle time:
+Filters prepare model requests while preserving saved history and source files. Integrity and media compatibility filters run before requests. Optional content filtering selects accepted media; cold-start filtering is enabled by default after one idle hour and shortens old tool text while retaining user input, thinking, media, and pending results.
+
+This construction fragment sets media selection and the cold-start interval. Pass `spec` and `capabilities` to your builder; `without_cold_compression` is the alternative spec with cold-start compression disabled:
 
 ```python
 from a13n_harness import AgentSpec
@@ -262,9 +393,9 @@ spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_6
 without_cold_compression = spec.with_updates(cold_start_filter=None)
 ```
 
-Content filtering selects compatible media. Cold-start filtering shortens old tool-result text, preserving user input, thinking, media, and pending results. An explicit `ColdStartFilterCapability` replaces the default policy.
+An explicit `ColdStartFilterCapability` replaces the default policy. Use [media acquisition](multimedia-understanding.md) for video and [image input policy](models.md#image-input-policy) for image limits.
 
-Image preparation is on by default. Override the selected Model's policy or disable it:
+Image preparation is enabled by default. This separate spec example limits images and disables large-image splitting; the alternative disables preparation entirely:
 
 ```python
 from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
@@ -278,4 +409,4 @@ without_image_preparation = spec.with_updates(
 )
 ```
 
-Omitting `image_input` uses defaults; `None` disables preparation. See [Image input policy](models.md#image-input-policy) for limits and custom filters.
+Omitting `image_input` selects defaults; setting it to `None` disables preparation. Apply this Model policy together with your chosen context Capabilities.

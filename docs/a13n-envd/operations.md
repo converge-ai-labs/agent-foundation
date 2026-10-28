@@ -4,27 +4,27 @@ sidebarTitle: Sessions and output
 description: Manage daemon readiness, Session lifetime, retained output capacity, and transfers.
 ---
 
-Envd owns one Device generation with multiple independent Sessions. Operators manage daemon/process/bootstrap lifetime; each EIP Session owns its operations, processes, transfers, and retained output. Neither a live socket nor a retained output preview is a durable Agent checkpoint.
+Open a Session for each scope of work, read the output you need, and close the Session when that scope ends. A Session owns its commands, transfers, retained output, and operation history. One daemon serves multiple Sessions; the launcher manages the daemon's lifetime.
 
 ## Establish readiness
 
-1. Create the private runtime parent.
-2. Configure Device identity, default working directory, executable policy, limits, and carrier.
-3. Start the daemon and initialize a Device connection; initialization creates no Session.
-4. Inspect the Device descriptor and optionally browse directories without opening a Session.
-5. Open a fresh Session with a fixed Device working directory and required methods.
-6. Establish readiness before dispatching work.
-7. Keep Device generation and Session identity with operation evidence, not in an unrelated global process map.
+1. Create the private runtime parent and configure the [daemon](configuration.md): Device identity, default working directory, executable policy, limits, and carrier.
+2. Start the daemon and initialize a Device connection. Initialization returns the Device descriptor without opening a Session.
+3. Inspect the descriptor's methods and boundary. Browse Device directories if you need to choose a working directory.
+4. Open a Session with that working directory and the required methods, then wait for readiness before dispatching work.
+5. Save the Device generation, Session identity, and operation receipts together so later reads and reconciliation address the same work.
 
-The admitted Session idle TTL defaults to 30 minutes. Keepalive, disconnect grace, and exact same-Session attachment follow the advertised lifecycle. Reconnecting a carrier does not reattach Sessions or recover in-flight operations.
+Keep the owning scope alive with Session keepalive. The default idle TTL is 30 minutes; use the advertised idle and disconnect-grace values for your connection. Reattachment to the same Session is explicit and requires the same generation within its deadline. Reconnecting the carrier alone does not restore Sessions or in-flight operations.
 
-Session admission and aggregate Device quotas bound concurrency. Closing one Session cleans up only its resources and preserves its siblings. A fixed working directory is not a filesystem security boundary: Sessions can access other Device paths allowed by the execution account and fixed Sandbox grants. Mutually untrusted workloads need separate outer account, container, or sandbox boundaries.
+Close the Session when its scope ends. Cleanup leaves sibling Sessions and workspace files intact. Session admission and aggregate Device quotas limit concurrency; failed cleanup continues to consume capacity until reclamation is confirmed.
 
-Use the [Python EIP client](python-client.md) for Device ownership, scoped Sessions, exact method tables, timeout handling, and descriptor narrowing. The client and daemon can have different timeout defaults.
+The working directory sets path defaults. Access to other Device paths follows the execution account and Sandbox grants. Use separate outer accounts, containers, or sandboxes for mutually untrusted workloads; see [execution boundaries](isolation.md).
+
+The [Python EIP client](python-client.md) provides scoped Session management and the method table. Configure client and daemon timeouts separately.
 
 ## Plan output capacity before daemon launch
 
-Standalone output defaults are:
+Size output capacity for concurrent commands, not just the text shown to the user. Standalone daemon defaults are:
 
 | Limit                     | Default |
 | ------------------------- | ------- |
@@ -33,33 +33,33 @@ Standalone output defaults are:
 | Each Session spool        | 1 GiB   |
 | Aggregate Device spool    | 4 GiB   |
 
-Before launching a command, the daemon reserves capacity for **both streams**. With these defaults, a live pair reserves 512 MiB; two such pairs can exhaust the 1 GiB spool before additional charges. Retained records can reduce available capacity further. A small preview does not reduce this reservation.
+Each command reserves capacity for stdout and stderr before launch. At these defaults, one live pair reserves 512 MiB. Two pairs can fill the 1 GiB Session spool before additional charges, and retained records leave less room. Reducing the inline preview alone does not reduce the reservation.
 
-A busy response can therefore indicate output-reservation pressure, not a CPU or network failure. A finite output cap is not a request to evict other retained records. Increase quota deliberately, release no-longer-needed observations, or reduce the configured per-stream reservation while maintaining `spool >= 2 * per_stream` and `preview <= per_stream`.
+If launch returns busy, check output reservations and retained spool charges. Release observations you no longer need, increase the quota, or lower the per-stream limit. Keep `spool >= 2 * per_stream` and `preview <= per_stream`. The daemon can reclaim eligible completed history under pressure; live work keeps its reservation.
 
-Python Local Envd supplies its own preview and file-value defaults through Host launch configuration. Native Docker execution has its own output limits; Docker's explicitly selected Envd execution uses its daemon's configuration. Configure the owning [runtime fields](../environments/configuration.md) rather than treating Session selection as daemon bootstrap.
+Set these limits in the configuration that launches the daemon. Python Local Envd supplies its own preview and file-value defaults through the Host's [runtime fields](../environments/configuration.md). Native Docker has separate output limits; Docker with explicitly selected Envd execution uses the daemon's limits.
 
 ## Preview, retained bytes, and completion
 
-A command result or process read can contain only a preview. Read its retained output reference with bounded offsets/cursors and preserve available ranges, provenance, completion flags, and truncation evidence.
+A command result may contain a preview plus a reference to retained bytes. To collect the output:
 
-- Command completion is not the same as complete output delivery.
-- Reaching the currently retained end is not always producer EOF.
-- Repeated reads do not consume retained content or restore omitted bytes.
-- Process inspection does not imply output attachment or reset a retention budget.
-- Release process/output observations explicitly when they are no longer needed, using the owning EIP method. Release is not equivalent to killing a live command.
+1. Keep the returned output reference and its range, completion, and truncation fields.
+2. Read bounded pages from that reference, continuing from each returned next offset or cursor. Repeated reads leave retained content available.
+3. Check producer completion as well as the retained end. A command can finish before you have read all retained bytes, and a running producer can append more after you reach the current end.
+4. Check content completeness separately. Reaching EOF does not recover bytes omitted by a retention limit.
+5. Copy important output to application-managed files or durable logs, then release unused process/output observations through their owning EIP methods.
 
-For output that must survive daemon/Session retention, use application-managed files or another durable logging destination. Do not use the private spool as an application storage API.
+Process inspection reports status; it does not attach output or reset the retention budget. Releasing observations and terminating a live command are separate operations. The private spool and a live connection are temporary execution resources, not durable Agent checkpoints.
 
 ## Transfers and uncertain commands
 
-File writes through the transfer API require explicit commit. Closing or abandoning a writer is not successful publication. Abort incomplete transfers, and use receipt/replay evidence to distinguish not-dispatched, known completion, and unknown outcomes.
+Finish a file transfer with an explicit writer commit and inspect its result. Closing or abandoning the writer aborts incomplete work rather than publishing the file. Keep the operation receipt so you can distinguish non-dispatch, known completion, and an unknown outcome.
 
-A timeout or transport loss after dispatch does not prove a write or command failed to execute. Preserve the original operation identity where its replay class permits reconciliation. Never blindly relaunch a shell command to compensate for a missing acknowledgement.
+After a timeout or transport loss, reconcile the original operation where its replay class permits. A missing acknowledgement does not establish whether the command or write ran. Relaunching it as new intent can repeat the side effect.
 
-Session loss and daemon-generation loss are distinct. A Provider's remote target (for example, a cloud sandbox) may still exist even when local handles have expired; a new generation invalidates generation-bound handles and output selectors. Provider state can identify a target, but cannot recreate discarded process output or automatically restore all commands.
+Check Session and Device generation before reusing handles. A new generation invalidates old generation-bound handles and output selectors, even if the Provider's remote target still exists. Saved Provider state identifies the target; it cannot reconstruct discarded output or restore every command.
 
-Graceful client/Session close and Provider process cleanup follow their respective ownership rules. Do not use daemon shutdown as a substitute for a product-level Run interrupt, and do not assume an abrupt kill delivered final cleanup evidence.
+Use the product's Run interrupt to stop a Run, Session close to end its execution scope, and the launcher's cleanup to stop an owned daemon. An abrupt kill leaves cleanup unconfirmed until you obtain evidence of the result.
 
 ## Diagnose failures at the right layer
 
@@ -73,4 +73,4 @@ Graceful client/Session close and Provider process cleanup follow their respecti
 | Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent      |
 | Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback       |
 
-The daemon has no general health, browser, or arbitrary HTTP endpoint. HTTP EIP exposes its authenticated control/transfer routes; readiness is an EIP operation. Keep diagnostics off stdio protocol stdout. [Configuration](configuration.md) owns carrier/bootstrap fields and [execution boundaries](isolation.md) explains Host-owned isolation.
+Check readiness through EIP. The HTTP carrier provides authenticated control and transfer routes, not a general health or browser endpoint. With stdio, write diagnostics away from protocol stdout. Use [configuration](configuration.md) for carrier and bootstrap settings.

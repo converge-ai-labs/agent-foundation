@@ -1,124 +1,163 @@
 ---
 title: Skills
-description: Package instructions and files as revisioned skills that agents load on demand.
+description: Import a workflow as a skill, pin it to an agent, and choose how its files are published.
 ---
 
-A skill is a package of instructions and supporting files that an agent can load when a task calls for it. Skills are [revisioned](resources.md#lifecycles): each new package adds an immutable revision, and agent revisions pin the exact skill revision they use. See [Harness skills](../a13n-harness/skills.md) for how agents use them at run time.
+Use a skill to give an agent reusable instructions and supporting files. The agent sees a short catalog entry and reads the relevant `SKILL.md` when needed. This page takes a release-notes skill from a local file to an agent run.
 
-A skill is identified by its [ID](resources.md#common-conventions) (`sk_…`), which paths such as `/api/v1/skills/{skill_id}` and agent configurations use. The model sees the skill by the `name` that the `SKILL.md` of its pinned revision declares. Two skills of a workspace may declare the same name, and a new revision may declare another, but the skills of one agent must declare distinct names.
+You need workspace `write` permission to import a skill and a [primary environment](environments.md) for a custom agent to load it. Configure the [tools](tools.md) the workflow needs separately. See [Harness skills](../a13n-harness/skills.md) for the catalog and on-demand reading behavior.
 
 ## Built-in skills
 
-The **Skills** page also lists release-owned built-in skills. Select **platform-operations** in an agent's **Skills** section and save a revision; the API field is `builtin_skills: ["platform-operations"]`. `GET /api/v1/builtin-skills` returns their names and descriptions. These entries have no workspace ID, revisions or import/edit actions, and selecting them does not grant platform tools or file permissions.
+To teach an agent Service operations, select **platform-operations** in its **Skills** section and save a revision. The agent-configuration fragment is:
 
-Click a built-in skill to open its read-only file browser, starting at `SKILL.md`. You can browse references and the deployment catalog, switch between Markdown preview and source, or download the ZIP. The content reflects the current Service deployment and updates with it; there is no independent version history.
+```json
+{"builtin_skills": ["platform-operations"]}
+```
 
-Custom agents, including copies of Agent Composer, require a primary environment. Their built-in and imported skills use the same `skill_sync` policy and cannot share a declared name. Shared mode places the guide at `/workspace/.agents/skills/platform-operations/SKILL.md`; isolated mode uses the package-digest directory described below. The package includes `schemas/agent-config.json` and `instance/catalog.json`, with relative references. Built-in agents retain their read-only Host files and do not require a user environment for these instructions. Existing custom agents using built-in skills must now select a session environment or configure a default environment template; without a primary environment their runs fail before the model is called.
+Enable the relevant [platform tools](tools.md#platform-tools) too. Selecting the skill supplies instructions, not tool permissions.
+
+`GET /api/v1/builtin-skills` lists release-owned skills. In Console, open one to browse `SKILL.md`, references and the deployment catalog, preview source, or download its ZIP. Built-in skills update with the deployment; they have no workspace ID or independent revision history. The platform package includes `schemas/agent-config.json` and `instance/catalog.json`.
+
+Custom agents, including Agent Composer copies, load both built-in and imported skills into their primary environment using `skill_sync`. Choose a session environment or a default environment template before running them; a missing primary environment fails before the model call. Built-in agents use their read-only Host files instead. Selected built-in and imported skills must have distinct declared names.
 
 ## Package format
 
-A skill package is a zip archive with `SKILL.md` at its root or inside its only top-level directory. `SKILL.md` is UTF-8 with YAML front matter that declares at least `name` and `description`:
+Create a directory for the package and save this file as `SKILL.md`:
 
-```markdown
+```markdown title="SKILL.md"
 ---
 name: release-notes
-description: Write release notes from merged pull requests.
+description: Write release notes from a supplied list of merged pull requests.
 ---
 
 # Release notes
 
-1. List the merged pull requests since the last tag...
+1. Read the supplied pull-request titles and descriptions.
+2. Group changes under Features, Fixes, and Maintenance; omit empty groups.
+3. Write one concise bullet per change and include its supplied PR number.
+4. Ask for missing source details instead of inventing changes or PR numbers.
 ```
 
-The declared `name` must be one portable directory component, at most 255 UTF-8 bytes: no separators, `.` or `..`, reserved device names, or reserved filename characters.
+From that directory, use Python 3 to create the ZIP:
 
-Limits: at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.md`, and paths up to 1024 bytes. Archive entries must be regular files with relative paths, stored or deflated, and not encrypted.
+```sh
+python -m zipfile -c release-notes.zip SKILL.md
+```
+
+You can include supporting files and refer to them by relative path from `SKILL.md`. Put `SKILL.md` at the archive root or inside its only top-level directory. The document must be UTF-8 with YAML front matter containing `name` and `description`.
+
+The declared name becomes the model-visible name and directory component. Use a portable name such as `release-notes`: at most 255 UTF-8 bytes, without separators, `.` or `..`, reserved device names or reserved filename characters.
+
+| Package limit    | Maximum    |
+| ---------------- | ---------- |
+| Files            | 1000       |
+| One file         | 8 MiB      |
+| Expanded package | 32 MiB     |
+| `SKILL.md`       | 256 KiB    |
+| Relative path    | 1024 bytes |
+
+Archive files must use relative paths and stored or deflate compression. Links and encrypted entries are rejected. The upload endpoint has a separate size limit: `objects.upload_bytes`, 1 MiB by default.
 
 ## Add a skill
 
-1. In Console, open **Skills → Import skill** and choose a ZIP file or a GitHub repository.
-2. Open the agent, select the imported skill and save a revision. Saving pins the selected skill revision.
-3. Start a conversation with a [primary environment](environments.md) and ask the agent to use the skill. Check that it reads `SKILL.md` before following its instructions.
+1. Open **Skills → Import skill** in Console and choose `release-notes.zip`. You can also import a directory from a public GitHub repository.
+2. Open the agent, select the imported skill, and save a revision. Saving pins the exact skill revision.
+3. Start a conversation with a [primary environment](environments.md). Supply a few merged PR descriptions and ask the agent to use `release-notes`.
+4. Inspect the run: the agent should read `SKILL.md` and produce grouped release notes from your supplied input.
 
-Through the API, a skill's source is either an upload or a public GitHub directory:
+For an HTTP integration, first [upload the ZIP](files-and-webhooks.md#uploads) and retain its returned `upload_id`. Send this body to `POST /api/v1/skills`, replacing `upl_...` with that ID:
 
-```sh
-# Stage the archive (see Uploads), then create the skill from it
-curl -X POST "$A13N_URL/api/v1/uploads" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Idempotency-Key: release-notes-1" -F file=@release-notes.zip
-
-curl -X POST "$A13N_URL/api/v1/skills" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"source": {"kind": "upload", "upload_id": "upl_..."}}'
+```json
+{"source": {"kind": "upload", "upload_id": "upl_..."}}
 ```
+
+Alternatively, use this source body with your public repository, ref and directory:
 
 ```json
 {"source": {"kind": "github", "repository": "owner/repo", "ref": "main", "path": "skills/release-notes"}}
 ```
 
-- The response's `id` (`sk_…`) identifies the skill in paths and agent configurations. `name` and `description` default to those in `SKILL.md`; pass them to override.
-- GitHub imports read public repositories anonymously. `ref` defaults to the default branch and `path` to the repository root. The resolved commit is recorded; pass `commit` to require a specific one (`409 conflict`, reason `commit_mismatch`, otherwise). Each GitHub request is bounded by `control.import_timeout`.
-- Upload size is bounded by `objects.upload_bytes` (1 MiB by default).
-- `POST …/skills/validate` with `{"source": ...}` checks a package exactly as creation would and returns its manifest (name, description, files, sizes, digest and resolved source) without storing anything.
+Service reads GitHub anonymously and records the resolved commit. Omit `ref` for the default branch or `path` for the repository root. An optional `commit` requires an exact resolved commit; a mismatch returns `409 conflict` with reason `commit_mismatch`. Each GitHub request is bounded by `control.import_timeout`.
+
+To check a source before creating the skill, send the same body to `POST /api/v1/skills/validate`. It returns the validated manifest—name, description, files, sizes, digest and resolved source—without storing the package. GitHub validation still uses the caller's upload budget.
+
+Retain the created skill's `id` (`sk_...`) for URLs and agent configuration. Its resource name and description default to the package's front matter and can be overridden for display. The model-visible name always comes from the pinned `SKILL.md`; changing the display name does not rename the skill in the model's catalog.
 
 ## Revisions
 
-- `POST …/skills/{skill_id}/revisions` with `{source, note?, make_default?}` and the skill's `If-Match` adds a revision; it becomes the default unless `make_default` is `false`. The package's `SKILL.md` may declare another `name`. A package identical to the current default is a no-op: the call returns that revision again (`201`) without creating one, regardless of `make_default`.
-- `GET …/revisions` lists revisions newest first; `POST …/revisions/{revision_id}/set-default` changes the default. A revision's `skill_id` names its skill.
-- `GET …/revisions/{revision_id}/content` downloads the archive, and `GET …/revisions/{revision_id}/files/{path}` one file of it.
-- `PATCH …/skills/{skill_id}` changes `name`, `description` and `labels`. Lists filter by `label`, `q` (name or description), `archived` and `source` (`upload` or `github`, of the default revision).
-- `POST …/archive` stops new agent revisions from pinning the skill and refuses changes; agents that already pin it keep working. `POST …/unarchive` reverses it.
+To update the workflow:
 
-An agent revision selects skills in `skills` as `{"skill_id": "sk_…", "revision_id": ...}`; without `revision_id`, saving pins the skill's current default revision. `GET /api/v1/agents?skill_id=sk_…` lists the agents with a revision that pins the skill; `skill_revision_id` filters by one skill revision.
+1. Edit the package and import it through `POST /api/v1/skills/{skill_id}/revisions` with `{source, note?, make_default?}` and the skill's current `If-Match`.
+2. Keep `make_default: true` (the default) to make new selections use it, or set `false` to stage a revision without changing the default.
+3. Save a new agent revision selecting the desired skill revision. Existing agent revisions keep their old pins.
+4. Run the same small task and inspect the new instructions and result.
+
+An agent configuration selects `{"skill_id": "sk_...", "revision_id": "rev_..."}` in `skills`. Omit `revision_id` to pin the skill's current default when saving. A package identical to the current default returns that revision again with `201`; it creates no revision, regardless of `make_default`.
+
+| Task                                     | API                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| List revisions, newest first             | `GET /api/v1/skills/{skill_id}/revisions`                                      |
+| Change the default                       | `POST /api/v1/skills/{skill_id}/revisions/{revision_id}/set-default`           |
+| Download the ZIP                         | `GET /api/v1/skills/{skill_id}/revisions/{revision_id}/content`                |
+| Read one packaged file                   | `GET /api/v1/skills/{skill_id}/revisions/{revision_id}/files/{path}`           |
+| Edit display name, description or labels | `PATCH /api/v1/skills/{skill_id}`                                              |
+| Find agents that pin the skill           | `GET /api/v1/agents?skill_id=sk_...`; add `skill_revision_id` for one revision |
+
+Skill lists support `label`, `q`, `archived` and `source` filters; `source` describes the default revision. Archive a skill to stop new agent revisions from selecting it. Existing pins continue working; unarchive restores editing and selection. Different workspace skills may declare the same name, but one agent's selected skill revisions must declare distinct names.
 
 ## Runtime synchronization
 
-Choose how concurrent agents use their skill packages, then set `skill_sync` in the agent's advanced JSON. Selecting skills or requesting shared cleanup requires a [primary environment](environments.md).
+Choose a publication mode in the agent's advanced JSON. The mode controls where skill files live in the primary environment:
 
-| Need                                              | Mode                                                       |
-| ------------------------------------------------- | ---------------------------------------------------------- |
-| Agents use the same published skill directories   | `shared` (default): the last publication of each name wins |
-| Agents need different versions in one environment | `isolated`: catalogs use package-digest paths              |
+| Need                                                   | Mode               |
+| ------------------------------------------------------ | ------------------ |
+| Use conventional shared skill paths                    | `shared` (default) |
+| Run different versions with the same name concurrently | `isolated`         |
+
+Selecting skills or requesting shared cleanup requires a primary environment. Each child agent uses its own policy.
 
 ### Shared directories
 
-The default configuration is:
+This configuration fragment selects a skill and makes the defaults explicit. Replace `sk_...` with the imported skill ID:
 
 ```json
 {
-  "skills": [{"skill_id": "sk_…"}],
+  "skills": [{"skill_id": "sk_..."}],
   "skill_sync": {"mode": "shared", "overwrite": true, "cleanup": false}
 }
 ```
 
-Shared mode publishes each selected package at `/workspace/.agents/skills/<name>` before the agent's first model request. Overwriting replaces the whole directory, including removal of obsolete files. Set `overwrite: false` to preserve existing names. Set `cleanup: true` to remove unselected entries from that shared directory; an empty selection then clears it. Shared mode does not use the package cache.
+Before the first model request, Service publishes each selected package at `/workspace/.agents/skills/<name>`. With `overwrite: true`, it replaces the whole directory and removes obsolete files. Set `overwrite: false` to preserve an existing directory, even if it differs from the selected revision.
 
-Shared paths can change while another run or child agent reads them. The last publication wins, regardless of run completion order. Separate reads can span versions, and the complete selection is not one atomic update. Cleanup can delete skills another active agent still needs. Leave the default `cleanup: false` when independent writers select different skills, or coordinate ownership of the shared directory.
+Leave `cleanup: false` when independent agents share the environment. Enabling cleanup removes unselected entries from the shared root; an empty selection clears it, including skills another agent is using. Shared mode uses no package cache.
+
+For the same name, the last publication wins. An active reader can therefore see another run's version, and separate reads can span versions. Publication is per skill, not atomic across the whole selection. Use isolated mode when each agent must keep reading its selected package.
 
 ### Isolated packages
 
-When agents need conflicting versions in the same environment, choose isolated mode:
+Set this fragment to keep different package versions side by side:
 
 ```json
 {"skill_sync": {"mode": "isolated", "cache_count": 128}}
 ```
 
-Catalog paths use `/workspace/.agents/skill-cache/<package-digest>/<name>`, so different versions coexist and identical packages reuse one directory. `cache_count` is a soft package-count budget; `0` disables trimming. Each agent applies its own budget, removing idle packages while keeping active ones. The cache can remain above budget. Shared cleanup never touches it.
+The catalog points to `/workspace/.agents/skill-cache/<package-digest>/<name>`. Identical archives reuse one directory; distinct versions use distinct paths. `cache_count` is a soft package-count budget. Each agent removes idle packages according to its budget while preserving active ones, so the cache can exceed the limit. Set `0` to disable trimming.
 
-Service publishes packages immutably; authorized file and shell operations can still modify them. Publication failure preserves existing packages. For state left by cancellation or uncertain outcomes, follow [publication and cleanup](#publication-and-cleanup).
+Shared cleanup leaves this cache untouched. Service does not overwrite published isolated packages, though authorized file and shell operations can modify them. Isolated publication separates versions; it does not make files read-only.
 
 ### Override one run
 
-Use `options.overrides.skill_sync` to select a policy for one run:
+To use isolated mode for a single message, include this fragment in its submission:
 
 ```json
 {"options": {"overrides": {"skill_sync": {"mode": "isolated"}}}}
 ```
 
-The override replaces the entire block; omitted members use the chosen mode's defaults. Children use their own agent policies. `overwrite` and `cleanup` belong only to shared mode; `cache_count` belongs only to isolated mode.
+The override replaces the whole block; omitted fields use the chosen mode's defaults. `overwrite` and `cleanup` belong to shared mode; `cache_count` belongs to isolated mode. Children retain their own agent policies.
 
 ### Publication and cleanup
 
-Each skill directory is published from a complete staged package. Linux and macOS use atomic replacement on supported filesystems, preserving the old directory if publication fails. Windows uses ordinary remove/rename for an existing directory. This keeps Windows usable while accepting a visibility gap and a missing or partially removed destination if replacement fails. Other unsupported atomic replacement operations fail without changing the old directory. Cancellation or an uncertain provider outcome can leave the replacement published or the candidate staged.
+Service stages a complete package before publishing its directory. On supported Linux and macOS filesystems, atomic replacement preserves the old directory if publication fails. Windows replaces an existing directory with remove/rename; readers can see a gap, and a failure can leave the destination missing or partly removed. Other unsupported atomic replacements fail with the old directory intact.
 
-The new layouts replace the former `.a13n/skills` layout without reading or migrating it. Cache coordination requires coherent shared-filesystem operations across environment clients. A crash or uncertain provider operation can leave staging directories, pins or eviction gates. Quiesce all clients before manually reclaiming abandoned state; protection has no timed expiry.
+After cancellation or an uncertain provider result, inspect the environment before retrying or cleaning up: the replacement may already be published, or staging and cache protection may remain. Stop all clients before manually reclaiming abandoned staging directories, pins or eviction gates. These protections have no timed expiry, and cache coordination requires coherent shared-filesystem operations across clients. The old `.a13n/skills` layout is neither read nor migrated.

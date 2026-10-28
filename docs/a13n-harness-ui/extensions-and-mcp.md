@@ -1,44 +1,35 @@
 ---
 title: Tools and extension types
-description: Choose between Capabilities, Harness Plugins, Environment profiles, Environment Run Extensions, MCP servers, Skills, and Content Plugins.
+description: Add tools to an Agent, check that they are active, and choose the right integration type.
 ---
 
-Choose an integration by what it provides, then select its installed key or resource ID in configuration. YAML selects executable integrations but does not install their Python code.
+To give an Agent a new tool, first identify who provides it. Most built-in features are **Capabilities** selected in the Agent YAML. External servers use **MCP**. The Environment determines where file and shell operations run.
 
-| Mechanism                 | Adds                                                                    | Configured through                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Capability                | Tools, instructions, hooks, settings, or lifecycle behavior on an Agent | Agent `capabilities`                                                                                    |
-| Harness Plugin            | Trusted Python middleware around Run input, events, errors, and results | `extensions/*.yaml`, then an Agent/default `harness_plugins` selection                                  |
-| Environment profile       | Provider and Project adapter configuration                              | `extensions/*.yaml`, then Environment selection                                                         |
-| Environment Run Extension | Per-Run Environment integration                                         | `extensions/*.yaml`, then a Thread selection from Project or root `defaults.environment_run_extensions` |
-| MCP server                | External tools from a command or remote server                          | `mcp/*.yaml` or `mcp/*.json`, then Agent/default `mcp_servers`                                          |
-| Content Plugin            | Editable Skill and Markdown subagent content, not a Python extension    | `a13n-harness-ui plugin` commands                                                                       |
-
-For provider-native tools and built-in search/scrape, use [Native tools and Web providers](native-and-web-tools.md).
-
-## Native search and image generation
-
-Follow the [native search and image-generation recipe](native-and-web-tools.md#native-search-and-image-generation); these are Agent tool choices, separate from Host Web search.
-
-## MCP servers
-
-[Configure an MCP server](mcp.md), then select its ID in the Agent or defaults.
-
-### MCP field reference
-
-The complete fields are in [MCP field reference](mcp.md#mcp-field-reference).
+| I need to…                                           | Configure…                         | Follow…                                                     |
+| ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| Read files or run commands                           | `dynamic_environment` on the Agent | [Files and shell](#files-and-shell)                         |
+| Search or generate images through the Model provider | Native tool Capabilities           | [Native tools](native-and-web-tools.md)                     |
+| Connect an external tool server                      | An MCP resource and its selection  | [MCP setup](mcp.md)                                         |
+| Add reusable written instructions                    | Skills or Markdown subagents       | [Skills and Content Plugins](skills-and-content-plugins.md) |
+| Change the execution machine or isolation            | An Environment profile             | [Environments](environments-and-projects.md)                |
+| Add installed Python middleware                      | A Harness Plugin resource          | [Plugin files](#harness-plugin-and-run-extension-files)     |
 
 ## Agent Capabilities
 
-Each Agent selection is `{capability: <catalog-key>, configuration: <JSON mapping>}`. Harness UI exposes its built-ins and configurable installed/native Capabilities. There is no arbitrary module import field in a resource file.
+Use an existing [Agent](agents-and-subagents.md#create-an-agent-from-files). Run `a13n-harness-ui config path` to find its configuration tree. Edit the appropriate file under `agents/`, beside the root YAML shown as `configuration_path`.
 
-Common built-in keys are `dynamic_environment`, `documents`, `web`, `skills`, `working_state`, `user_interaction`, `runtime_context`, `handoff`, `compaction`, and `codeact`. Permission and review Capabilities are intentionally absent from ordinary catalog choices; use root `security.shell_review` instead. Existing raw Agent selections remain compatible. An Agent uses a Capability only when it selects it, except `file_context` and `working_state`, which Harness UI adds by default, and `user_interaction` and `codeact`, which the root `tools` switches add.
+1. Add the needed entry to the Agent's `capabilities` list. Preserve unrelated entries, and edit an existing entry instead of adding the same Capability twice.
+2. Put that Capability's settings under its own `configuration` mapping.
+3. Run `a13n-harness-ui config validate`. Inspect `capability_warnings` as well as `valid`. An unavailable or invalid ordinary Capability can be skipped while the rest of the configuration remains usable.
+4. Start a new conversation with the Agent and ask it to use the feature. Inspect the actual tool result. Configuration acceptance alone does not test a connection or a Model's tool support.
 
-The complete Capability-specific schemas are owned by the installed Harness/native implementation, rather than flattened into Harness UI YAML. Consult the [Harness Capability reference](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/a13n_harness/capabilities) and the implementation matching your installed version. `a13n-harness-ui config validate` checks selected keys and their configuration.
+The installed Capability owns its settings schema. YAML selects the implementation by catalog key; it does not install Python code or import arbitrary modules. Permission and review Capabilities are excluded from the ordinary picker; configure shell review through the root shortcut below. Existing explicitly authored permission policies remain supported.
 
 ### Files and shell
 
-```yaml
+Merge this fragment into the Agent file:
+
+```yaml title="Agent file — capabilities fragment"
 capabilities:
   - capability: dynamic_environment
     configuration:
@@ -46,13 +37,15 @@ capabilities:
       shell_enabled: true
 ```
 
-This enables Environment file and shell tools. Filter visible tools with the Agent's `tools` list. Choose where tools run in [Environment settings](environments-and-projects.md).
+Select an [Environment](environments-and-projects.md) with the required file or shell operations. Then ask the Agent to list the working directory before requesting changes. Tools require both the Capability and an Environment that supports the operation; root tool switches can disable them globally.
+
+An Agent `tools` list further filters visible tools by exact name. Use the [read-only helper example](agents-and-subagents.md#write-a-markdown-subagent) to expose only `glob`, `grep`, `ls`, and `view`.
 
 ### Shell review
 
-Configure shell review in the selected root `a13n-harness-ui.yaml`, not an Agent Capability picker:
+To review shell requests, merge this fragment into the **root** `a13n-harness-ui.yaml`. `model-review` must identify an existing Model:
 
-```yaml
+```yaml title="a13n-harness-ui.yaml — merge fragment"
 security:
   shell_review:
     enable: true
@@ -60,11 +53,13 @@ security:
     risk_threshold: high
 ```
 
-Set `model` to a configured **Model resource ID**. Explicit root review fields take precedence; unrelated Agent permission rules remain. `enable: false` leaves explicit Agent policies unchanged. Review does not provide isolation. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for defaults, Guardian linking, and failures.
+Validate, then use a new Run to exercise the policy. Root review fields override the corresponding shell-review settings while preserving unrelated Agent rules. Setting `enable: false` leaves explicitly authored Agent policies unchanged. Review evaluates requests; the Environment supplies isolation. Follow the [shell-review recipe](configuration-recipes.md#configure-shell-review) for approval behavior, error policy, and Guardian linking.
 
 ### Context management
 
-```yaml
+Add these entries to the Agent when it should monitor context, summarize for handoff, and compact long histories:
+
+```yaml title="Agent file — capabilities fragment"
 capabilities:
   - capability: runtime_context
     configuration: {}
@@ -74,27 +69,52 @@ capabilities:
     configuration: {}
 ```
 
-Normally configure `model_characteristics` on the Model so reminder and compaction defaults stay aligned. Advanced explicit settings include `runtime_context.configuration.context_window_tokens`, `handoff.configuration.summary_reminder_tokens`, and `compaction.configuration.trigger_tokens`; explicit values take precedence over derived values.
+Set the context budget once in the Model's `model_characteristics`; see [Model budgets](models-and-authentication.md). The Capabilities derive their normal defaults from that budget. For a specific override, configure `runtime_context.context_window_tokens`, `handoff.summary_reminder_tokens`, or `compaction.trigger_tokens` inside the respective Capability's `configuration`. Explicit values take precedence.
 
 ### Tasks, questions, and CodeAct
 
-Task and note tools are available by default through native working state, including bounded note-context injection. `working_state` accepts native configuration such as `notes_enabled: false` to disable notes. F2 displays committed task facts, not a separate TUI checklist store.
+Harness UI adds `file_context` and `working_state` by default. Root switches also add `user_interaction` and `codeact` when enabled. Other features, such as Skills, Web access, handoff, and compaction, need their Agent selections.
 
-Root `tools.enable_ask_user_question` gates `ask_user_question`; `tools.enable_codeact` gates CodeAct. Both switches also gate explicitly authored Capability selections. CodeAct also exposes `store`, `load`, and `forget` for explicit JSON values saved with the Harness continuation; only stored key names are projected into context. Agent Capability configuration accepts `max_state_bytes` and `max_state_entries` to bound this state. Its `run_code` and `run_program` execute restricted Python; side effects use eligible tools and their existing policy, not unrestricted Python filesystem or network access. See the [root reference](configuration.md#built-in-tools-and-subagents) for defaults and the [decision guide](everyday-use.md#approvals-and-questions) for question timeouts.
+| Feature              | Configuration                                                                            | Check                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Tasks and notes      | Default `working_state`; explicit `configuration: {notes_enabled: false}` disables notes | Ask for a task list; F2 shows saved task facts                             |
+| Structured questions | Root `tools.enable_ask_user_question`                                                    | A question can pause for your answer                                       |
+| CodeAct              | Root `tools.enable_codeact`                                                              | The Agent can compose eligible tool calls with `run_code` or `run_program` |
+
+The question and CodeAct switches also gate explicit Agent selections. CodeAct runs restricted Python and uses tools for side effects, with their existing permissions. `store`, `load`, and `forget` manage explicit JSON state; stored key names are shown in context. Configure `max_state_bytes` and `max_state_entries` under the `codeact` Capability when you need different state limits. See [root tool settings](configuration.md#built-in-tools-and-subagents) and [question handling](everyday-use.md#approvals-and-questions).
+
+## Native search and image generation
+
+Use the [native search and image-generation recipe](native-and-web-tools.md#native-search-and-image-generation) when the Model provider supplies the tool. These Agent selections are separate from Host-side Web search and scrape providers.
+
+## MCP servers
+
+Use [MCP setup](mcp.md) to create a server resource, select its ID, and test one tool call. Creating the file and selecting the server are separate steps.
+
+### MCP field reference
+
+See the [MCP field reference](mcp.md#mcp-field-reference) for command, HTTP, authentication, and connection-lifetime settings.
 
 ## Skills
 
-See [Skills and Content Plugins](skills-and-content-plugins.md) for explicit and automatic source precedence, the built-in offline configuration Skill, file access, and catalog capture. Selecting Skills adds knowledge discovery; it does not grant execution permissions.
+Use [Skills and Content Plugins](skills-and-content-plugins.md) to add a reusable procedure or reference material. Select the `skills` Capability and make the source available through the Environment. Skill discovery gives the Agent material to read; execution still uses its configured tools and permissions.
 
 ## Content Plugins
 
-See [Content Plugin installation](skills-and-content-plugins.md#install-a-content-plugin), [destructive uninstall behavior](skills-and-content-plugins.md#remove-a-content-plugin), and the [complete repository format](skills-and-content-plugins.md#author-a-content-plugin-repository). These are editable content bundles, not installed Python Harness Plugins.
+Content Plugins package editable Skills and Markdown subagents. [Install a bundle](skills-and-content-plugins.md#install-a-content-plugin), select the needed content, and test it in a new Run. [Uninstalling](skills-and-content-plugins.md#remove-a-content-plugin) removes the installed directory, including local edits. To distribute your own bundle, use the [repository format](skills-and-content-plugins.md#author-a-content-plugin-repository).
 
 ## Harness Plugin and Run Extension files
 
-A Harness Plugin resource selects an **installed** factory. Replace this illustrative key and configuration with those documented by your integration:
+These resources select installed Python integrations. Before writing a file, install the integration into the same Python environment as Harness UI and obtain its factory key and configuration schema from the integration's documentation.
 
-```yaml
+1. Create a resource file under `extensions/`, beside the selected root YAML.
+2. Select the resource ID in the appropriate Agent, Project, or root defaults.
+3. Run `a13n-harness-ui config validate`; repair missing factory or invalid configuration errors.
+4. Start a new Thread with that selection and test the integration's documented behavior.
+
+This is a **template**, not a built-in memory plugin. Replace `vendor.memory` and its configuration with values from your installed integration:
+
+```yaml title="extensions/memory.yaml — template; replace factory key"
 schema_version: "1"
 kind: harness_plugin
 id: plugin-memory
@@ -103,12 +123,12 @@ plugin_key: vendor.memory
 configuration: {}
 ```
 
-Save it under `extensions/`, then select `harness_plugins: [plugin-memory]` in the Agent or root defaults. Validation rejects unknown or uninstalled factory keys.
+For this resource, merge `harness_plugins: [plugin-memory]` into the Agent, preserving other selected IDs. Existing Threads retain their saved Plugin selections; changing a creation default does not rewrite them.
 
-| Resource kind                                 | Complete fields beyond shared `schema_version`, `kind`, `id`, `name`                                            |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `harness_plugin` (`plugin-` ID)               | Required `plugin_key`; `configuration` defaults to `{}`                                                         |
-| `environment_run_extension` (`extension-` ID) | Required `extension_key`; `configuration` defaults to `{}`                                                      |
-| `environment_profile` (`environment-` ID)     | Required `provider_key` and `adapter_key`; `provider_configuration` and `adapter_configuration` default to `{}` |
+| Resource `kind`             | ID prefix      | Required implementation keys  | Settings                                                             | Selection                                                             |
+| --------------------------- | -------------- | ----------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `harness_plugin`            | `plugin-`      | `plugin_key`                  | `configuration`, default `{}`                                        | Agent or root `defaults.harness_plugins`                              |
+| `environment_run_extension` | `extension-`   | `extension_key`               | `configuration`, default `{}`                                        | Project or root `defaults.environment_run_extensions` for new Threads |
+| `environment_profile`       | `environment-` | `provider_key`, `adapter_key` | `provider_configuration`, `adapter_configuration`, each default `{}` | Environment selection                                                 |
 
-Run Extensions are Thread selections. New Threads take them from Project or root `defaults.environment_run_extensions`. Provider/adapter and extension-specific configuration belongs to the installed implementation, with credential references rather than literal secret fields. See [custom Environment profiles](environments-and-projects.md#custom-environment-profiles) before selecting a provider.
+All three also require `schema_version: "1"`, `kind`, `id`, and `name`. Use the integration's credential-reference fields rather than storing secrets in YAML. See [custom Environment profiles](environments-and-projects.md#custom-environment-profiles) for a provider configuration workflow.

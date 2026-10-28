@@ -1,147 +1,223 @@
 ---
 title: 使用 TUI
-description: 在 TUI 中发送提示、引导正在运行的工作，并回答问题和审批请求。
+description: 在终端中发起任务、引导 Agent、添加附件，并继续已保存的工作。
 ---
 
 ## 日常交互
 
-在仓库目录中启动 `a13n-harness-ui`，输入提示并按 Enter，开始一个对话：对话是保存历史和设置的根 Thread。Agent 工作期间，Enter 会引导当前 Run，不会将另一轮执行排队；如有待回答的问题或审批，请直接操作对应卡片。
+完成[设置](setup.md)后，在要处理的仓库目录中打开终端：
 
-```mermaid
-flowchart TB
-    Idle[空闲：Enter 发送提示词] --> Running[执行中：Enter 引导当前 Run]
-    Running -->|问题或审批| Decision[回答待处理卡片]
-    Decision --> Running
-    Running --> Result[读取结果或恢复已保存 Thread]
-
-    class Running a13n
-    class Decision warning
-    class Result success
+```bash
+a13n-harness-ui
 ```
 
-| 操作                           | 命令或按键                                                         |
-| ------------------------------ | ------------------------------------------------------------------ |
-| 发送草稿                       | Enter                                                              |
-| 换行                           | Ctrl+J 或 Alt+Enter                                                |
-| 补全斜杠命令或支持的参数       | Tab                                                                |
-| 清空空闲草稿；取消当前执行     | Ctrl+C                                                             |
-| 在草稿为空时退出               | Ctrl+D                                                             |
-| 切换简洁/详细显示              | Ctrl+O 或 `/mode concise`、`/mode detailed`                        |
-| 查看命令说明                   | `/help` 或 `/help command`                                         |
-| 开始新对话，保留历史           | `/new`                                                             |
-| 搜索和预览已保存对话           | `/resume`                                                          |
-| 恢复一段已保存对话             | `/resume <thread-id>`                                              |
-| 查看已保存消息和工具详情       | Ctrl+T 或 `/history`                                               |
-| 列出/选择已配置 Agent          | `/agent`、`/agent agent-codex`、`/agent default`                   |
-| 选择临时推理模式               | `/pro`、`/pro on`、`/pro off`、`/pro reset`                        |
-| 查看/修改推理                  | `/thinking`、`/thinking low`                                       |
-| 切换临时 Fast 处理             | `/fast`、`/fast on`、`/fast off`、`/fast ultrafast`、`/fast reset` |
-| 查看/修改执行权限              | `/environment`、`/environment sandbox`                             |
-| 查看当前设置、用量和待处理决策 | `/status`                                                          |
-| 定位配置并了解优先级           | `/config`                                                          |
-| 用额外输入引导当前 Run         | 执行期间按 Enter                                                   |
-| 取消当前执行                   | `/cancel`                                                          |
-| 取消并清理当前执行后退出       | `/quit` 或 `/exit`                                                 |
+1. 输入 `/status`，检查 Agent、Model 和 `Workspace` 工作目录。
+2. 输入具体任务，例如“说明这个仓库如何运行测试，不要修改文件”，然后按 Enter。
+3. 阅读回复。需要查看工具参数、输出或 diff 时，按 Ctrl+O。
+4. 在同一对话中继续追问；无关任务则用 `/new` 开始新对话。
+
+对话是保存历史和设置的根 Thread，每次执行是一个 Run。输入框会提示 Enter 当前的作用：
+
+| 当前状态         | Enter 的作用         |
+| ---------------- | -------------------- |
+| 空闲             | 将草稿作为新提示发送 |
+| Agent 工作中     | 向当前 Run 补充引导  |
+| 问题或审批已打开 | 确认当前交互         |
+
+Ctrl+J 或 Alt+Enter 用于换行。粘贴多行文本后，文本会留在草稿中，直到你发送。
 
 ### 选择 Agent 或 Model
 
-在空闲时进行以下选择：
+空闲时用 `/agent` 或 `/model` 打开选择器。选择后运行 `/status`，确认实际生效的设置。
 
-`/agent` 为该对话后续所有 Run 更换 Agent，包括其指令、工具、工具审查策略和默认 Model，同时保留对话历史和执行权限。运行 `a13n-harness-ui add agent` 可创建其他 Agent。
+| 要修改的内容   | 命令                                                      | 效果                                                   |
+| -------------- | --------------------------------------------------------- | ------------------------------------------------------ |
+| Agent          | `/agent <agent-id>`                                       | 为后续 Run 更换指令、工具、审查策略及 Agent 默认 Model |
+| Model          | `/model <model-id>`                                       | 保留 Agent，为当前 Project 记住 Model 偏好             |
+| 回到默认 Model | `/model default`                                          | 清除 Project 的 Model 偏好                             |
+| 推理设置       | `/thinking`                                               | 查看或修改支持的推理设置                               |
+| 临时推理模式   | `/pro on`、`/pro off`、`/pro reset`                       | 覆盖或恢复配置的模式                                   |
+| 临时处理层级   | `/fast on`、`/fast off`、`/fast ultrafast`、`/fast reset` | 请求支持的层级，或恢复默认值                           |
+| 执行权限       | `/environment`                                            | 查看可用 Environment 选项                              |
 
-| 任务                | 命令                | 结果                                          |
-| ------------------- | ------------------- | --------------------------------------------- |
-| 浏览已配置的 Model  | `/model`            | 打开 Model 选择器                             |
-| 选择 Model          | `/model <model-id>` | 保留 Agent 和 YAML，为当前 Project 记住 Model |
-| 回到 Agent 的 Model | `/model default`    | 清除 Project 的 Model 偏好                    |
+更换 Agent 或 Model 会保留历史，清除临时推理和服务层级覆盖。Model 偏好在 `/new`、更换 Agent 和重启 TUI 后保留。恢复 Thread 时，其已保存的默认 Model 优先于启动 Project 的偏好。其他已打开的 TUI 进程保留当前选择，直到重启；偏好中的 Model 被移除后，回退到 Agent 的 Model。显式 `--agent`、单次 `run` 和 API 调用跳过该 TUI 偏好。
 
-Model 偏好在 `/new`、`/resume`、`/agent` 和 TUI 重启后保留。恢复对话时，优先使用该对话保存的默认 Model；未保存时使用启动 Project 的偏好，而非历史模型。选择 Agent 或 Model 会清除临时推理和服务层级设置。
-
-其他已打开的 TUI 进程会保留当前 Model，直到重启。如果记住的 Model 已移除，启动时回退到 Agent 的 Model。`--agent`、单次 `run` 和 API 调用方跳过该 TUI 偏好。
-
-### 查找已保存对话
-
-`/resume` 打开对话浏览器，不改变当前对话或草稿。列表使用手动名称；未命名时使用首次保存输入，并按已保存对话活动排序。选中行立即预览最近保存的输入和回复。这些是有上限的摘录，不是 AI 摘要；未完成回复标为进度。
-
-| 对话浏览器操作                     | 按键              |
-| ---------------------------------- | ----------------- |
-| 搜索名称、ID 和已保存输入/回复摘录 | 在 Search 中输入  |
-| 选择行                             | 上 / 下方向键     |
-| 加载另一页结果                     | PageUp / PageDown |
-| 切换当前目录 / 所有目录            | Ctrl+A            |
-| 查看选中对话保留的消息，不切换对话 | Ctrl+T            |
-| 编辑名称；空名称恢复首次输入标签   | F2，然后 Enter    |
-| 修改或错误后刷新结果               | F5                |
-| 恢复选中的对话                     | Enter             |
-| 取消命名或返回原对话               | Escape            |
-
-默认搜索范围是当前目录；Ctrl+A 纳入其他目录和无 Project 对话。Enter 或 `/resume <thread-id>` 使用**启动目录的 Project 和根目录** 恢复，同时保留历史、Agent 和执行权限。要保留原 Project 和目录，应从原 Project 的第一个根目录启动。浏览不改变任何内容；活动对话不能在另一个 TUI 中恢复。
-
-搜索、命名、预览和历史查看都不发出模型请求。关闭历史返回对话浏览器中的同一选择。取消对话浏览器或恢复失败会保留输入框文本、光标、折叠粘贴和附件。恢复成功仍沿用原策略，只丢弃未变化的先前附件。
-
-升级后已有对话仍可恢复。旧对话在后续执行前没有保存摘录，但仍能按名称和 ID 搜索，Ctrl+T 也可读取保留消息。升级不会扫描或改写对话检查点。
-
-### 查看保留历史
-
-`/resume <thread-id>` 或 `--resume <thread-id>` 恢复已保存对话。按 Ctrl+T 浏览历史；Up/PageUp 查看旧页，End 跳至最新内容。Ctrl+T、q 或 Escape 关闭并返回草稿。已保存的显示历史与 Model 上下文分开：摘要和压缩不会删除已经保留的显示内容。检查点只覆盖其保存的显示位置；更新的实时输出可能尚未保存。
+要创建其他 Agent，可按[从文件创建 Agent](agents-and-subagents.md#create-an-agent-from-files)操作，或在 TUI 外运行 `a13n-harness-ui add agent`。
 
 ### 输入、显示与状态
 
-输入 `$` 列出可用 Skill 及简短描述，再筛选和补全名称。`$name` 可出现在普通提示中；`/` 专用于命令。
+**引导正在进行的工作。** 输入补充要求并按 Enter，或使用 `/steer <message>`。引导可包含附件。默认情况下，它会中断受支持的主模型生成；工具审查和执行则以协作方式交接。应用后的引导按编写顺序出现在对话记录中。如需仅在执行边界交付，可配置[排队引导](configuration.md#built-in-tools-and-subagents)。
 
-Harness UI Agent 继承默认冷启动过滤：3600 秒没有模型活动后，原生冷压缩可缩短已消费的工具结果。这与对话记录的显示限制不同。
+**找回被拒的输入。** 准备中、取消中和已完成的操作不接受引导。被拒或未确认的输入留在草稿中；已经开始另一份草稿时，用 `/recover` 找回。重发前先检查显示的结果：Harness UI 不会自动把这份输入发送到新 Run。
 
-多行粘贴留在草稿中，直到按 Enter。终端拦截 Alt+Enter 时，用 Ctrl+J 换行。完整命令名（如 `/ps`）会运行命令。未匹配的斜杠文本（如 `/ps-like output needs clearer colors`）作为普通输入原样发送，并显示提示。已知命令参数无效时，显示错误并保留草稿。[问题卡片](#answer-a-question)使用独立答案编辑器和受限命令。
+**查看详情。** Ctrl+O 在简洁回复／工具摘要和保留参数、输出、完整 diff 之间切换，不会重新运行工具。`/status` 显示设置和待处理决策，`/help` 解释命令。输入 `$` 可查找 Skill，并在提示中插入 `$name`。
 
-**空闲时 Enter 发送，工作期间 Enter 引导当前 Run。** 也可显式使用 `/steer <message>`。默认情况下，引导会中断受支持的主模型生成；工具审查、校验和执行以协作方式交接。输入保留编写顺序，在应用后显示于对话记录。设置 `input.steering_mode: queued` 可改为普通边界交付；见[执行控制](configuration.md#built-in-tools-and-subagents)。空闲输入在受理前显示，被拒绝时会明确标记。
+**使用命令。** Tab 补全命令和支持的参数。已知命令的参数无效时，显示错误并保留草稿。未匹配的斜杠文本会提示后作为普通输入原样发送。含空格的路径应加引号；Windows 反斜杠会保留。
 
-准备中、取消中或已完成的操作不接受引导。被拒绝或未确认输入保留在草稿中；开始其他草稿后可用 `/recover` 找回。不会静默转发到新 Run，也不会自动重发。活动 Run 中 Enter 会按编写顺序发送完整草稿，包括内联图像和文件附件。也支持只含附件的引导，限制与普通消息相同。在审批或问题选择器中，Enter 改为确认当前交互。
+### 审批与提问
 
-命令保留 Windows 反斜杠。含空格路径应加引号，如 `/attach "C:\My Photos\image.png"`。外部工具结果通过待处理决策界面提交，不使用原始斜杠命令。
+决策打开后，先阅读请求，再选择动作：
 
-**Concise** 显示 Agent 回复、简短工具摘要和已应用编辑预览。Ctrl+O 或 `/mode detailed` 查看保留参数、工具输出和完整 diff，无须重新运行工具。长行自动换行；过大或不可用内容标为省略，不会静默隐藏。`/history` 独立于显示模式读取已保存详情。
+1. 检查命令、目标、参数及已有的风险说明。用 `/review <request-id>` 查看保留详情。
+2. 使用显示的控件选择 **Approve once**、**Deny** 或 **Deny with reason**。
+3. 如果打开原因编辑器，输入原因并按 Enter。Ctrl+J/Alt+Enter 换行，Esc 返回。
 
-委派行显示子角色、提示摘录和观测状态。用 `/subagents` 查看子级结果，或 Ctrl+O 查看保留参数和输出。摘要与压缩面板会将生成文本和执行状态分开显示。
+审批不会预选答案。如果提供 **Approve with edited arguments**，必须提交完整 JSON 对象。绑定 shell 审批不能改参数：应拒绝并说明原因，要求新命令。参数被省略的请求不能批准。
 
-状态栏按空间显示当前状态、请求的 Fast 模式、累计观测 token、最近根请求上下文百分比、缓存、费用、Model 和耗时。`--` 表示不可用，不是零。用 `/status` 查看确切设置，`/usage` 查看输入/输出/缓存和各模型明细。token 和费用总量包含根级、子级和辅助模型的观测请求；`ctx` 只涉及最近根请求。
+需要外部工具结果的请求改为提供 **Provide result**。在 JSON 编辑器中填写真实结果；这个动作不会执行工具。无效 JSON 会留在编辑器中供修改。
 
-图像、音频、视频和文档输入保留为原生 Harness 内容。TUI 显示简明媒体描述和可用链接，不显示 base64。面向集成方：AG-UI 客户端还收到结构化媒体引用和 `image_object_id` 等调用方元数据，让前端自行解析内容，无须 Harness UI 返回图像字节。
+每个显示的决策使用 `tools.interaction_timeout_seconds`，默认 120 秒。编辑不会重置计时。超时会返回拒绝或未收到回答的失败。从动作选择器取消会保留待处理请求；`/status` 或恢复对话可重新打开。使用这些卡片处理决策，而非 `/approve`、`/deny` 或 `/result` 命令。Shell 审查另有模型超时和[配置教程](configuration-recipes.md#configure-shell-review)。
+
+#### 回答问题
+
+问题卡片临时替换输入框，并保留你的普通草稿和附件。
+
+1. 阅读问题和选项。上／下方向键或数字键只定位选项，不会提交。
+2. 多选问题用 Space 切换选项，再按 Enter 确认。
+3. 要自行填写答案，按 Tab 或 Ctrl+Space。Enter 提交答案，Ctrl+J/Alt+Enter 换行。
+4. 回答剩余问题。看到成功的问题与回答回执后，再将答案视为已接受；本地收集完成还不够。
+
+PageUp/PageDown 滚动卡片，不选择答案。点击只聚焦选项，滚轮只滚动。在答案编辑器中按 Esc 会返回选项并保留答案草稿；在选项中按 Esc 会取消收集，保留待处理请求。`/status` 可重新打开。
+
+答案编辑器接受 `/help`、`/mode`、`/status`、`/quit`、`/cancel`、`/theme`、`/mouse` 和 `/review`。其他已知命令会被拒绝；未知斜杠文本仍作为字面答案。Ctrl+O 和 Ctrl+T 分别查看工具详情和历史，不会回答问题。关闭历史会回到卡片。
+
+### 主题、滚动、粘贴与附件
+
+要将文件与任务一起发送：
+
+1. 输入 `/attach "path/to/notes.txt"` 或 `/attach "path/to/image.png"`。
+2. 等待加载标记变成文件或图像标记。
+3. 在标记旁添加要求，再按 Enter。也可发送仅含附件的消息。
+
+剪贴板图像需要显式按 Ctrl+V、Alt+V，或使用 `/paste-image`。普通文本粘贴仍是文本。Linux 图像剪贴板需要显示会话，以及 Wayland 的 `wl-paste` 或 X11 的 `xclip`。通过 SSH 时，读取的是运行 TUI 的机器的剪贴板：请先上传文件，再附加其远程路径。粘贴本地路径不会上传文件。
+
+`[image#1]`、`[file#2: notes.txt]` 等标记让附件保持编写顺序。Backspace/Delete 整体删除标记，Undo 恢复其内容。手动输入可见标记或从输入历史找回该文本，都不会附加文件。重试前先删除失败标记。所选 Model 必须支持输入模态；失败不会静默切换 Model 或丢弃图像。
+
+| 附件限制 | 数值                     |
+| -------- | ------------------------ |
+| 数量     | 每份草稿 8 个            |
+| 文件大小 | 单个 10 MiB，合计 20 MiB |
+| 图像格式 | PNG、JPEG、WebP、GIF     |
+| 图像尺寸 | 最多 3200 万像素         |
+
+用以下控件调整阅读与复制方式：
+
+| 任务                    | 控件                                         |
+| ----------------------- | -------------------------------------------- |
+| 修改本次 TUI 的颜色     | `/theme auto`、`/theme dark`、`/theme light` |
+| 设置持久主题            | 根配置的 `display.theme`                     |
+| 滚动输出                | PageUp / PageDown                            |
+| 恢复跟随实时输出        | Ctrl+End，或返回底部                         |
+| 让 TUI 面板处理鼠标滚轮 | `/mouse on`                                  |
+| 使用终端原生选择与复制  | `/mouse off`                                 |
+| 切换鼠标模式            | Esc；先关闭已打开的交互／补全                |
+
+Auto 主题保留终端前景色、背景色和 ANSI 调色板。两种鼠标模式都支持键盘滚动。旧输出离开实时显示后，可用 Ctrl+T 查看。
+
+### 长粘贴文本与 Thread 工作文件
+
+超过 1000 字符的粘贴文本会折叠为紧凑标记。按 Alt+E，或将光标移入标记，即可编辑文本。标记后 Backspace 或标记前 Delete 删除整块。Enter 向 App 提交完整原文。
+
+独立的[长文本输入策略](configuration.md#long-text-inputs)可将超过 8000 个 Unicode 字符的文本块作为保留文本文件引用交给 Model。折叠改变编辑器显示，文件转换改变模型接收方式。
+
+Agent 通过 `thread-files` 挂载处理与本对话相关的文件：
+
+| 位置                | 用途与生命周期                                    |
+| ------------------- | ------------------------------------------------- |
+| `attachments/`      | 已提交文件，保留供后续 Run 和恢复使用             |
+| `tmp/`              | 可丢弃的脚本、下载和中间输出；跨 Run 和重启复用   |
+| `tmp/tool-results/` | 过大工具输出；仅属于当前 Run，可在 Run 结束时清理 |
+
+临时文件在不活动三天后可被清理，检查在启动时和每小时进行。App 会保护它使用过的 Thread 目录，直到退出。清理保留附件和 Project 文件。重要结果应先让 Agent 复制到 Project 或你选择的其他位置，再依赖它们。
+
+在 Sandbox 中，Project 内的 shell 不能自动访问同级 Thread 挂载。处理附件必须选择该挂载内的工作目录。自定义 provider 可能只通过文件工具暴露它。
+
+### 查找已保存对话
+
+1. 在准备工作的目录中启动 TUI。
+2. 输入 `/resume`，按名称、ID 或已保存输入／回复摘录搜索。
+3. 选中一行查看预览。Ctrl+T 可查看历史而不切换对话。
+4. 按 Enter 恢复，再用 `/status` 检查工作目录和选择。
+
+**恢复使用启动目录的 Project 和根目录**，同时保留已保存历史、Agent 和执行权限。要保留原 Project 和目录，应从该 Project 的第一个根目录启动。活动对话不能在另一 TUI 中恢复。
+
+| 浏览器操作                     | 按键              |
+| ------------------------------ | ----------------- |
+| 选择对话                       | 上 / 下方向键     |
+| 加载另一页结果                 | PageUp / PageDown |
+| 纳入其他目录和无 Project 对话  | Ctrl+A            |
+| 重命名；空名称恢复首次输入标签 | F2，然后 Enter    |
+| 刷新结果                       | F5                |
+| 返回而不切换                   | Escape            |
+
+列表按已保存活动排序。预览来自已保存摘录，未完成回复标为进度。搜索、重命名和历史查看不发出模型请求。没有摘录的旧对话仍可按名称和 ID 搜索。取消恢复或恢复失败会保留草稿和附件。
+
+已知 ID 时，可在 TUI 使用 `/resume <thread-id>`，或在 shell 运行 `a13n-harness-ui --resume <thread-id>`。
+
+### 查看保留历史
+
+按 Ctrl+T 或输入 `/history`。Up/PageUp 查看旧页，End 跳到最新内容。Ctrl+T、q 或 Escape 关闭历史并返回草稿。
+
+已保存的显示历史与模型上下文分开。摘要、压缩和冷启动压缩可以缩短上下文，但不会删除保留的显示内容。已保存检查点只覆盖其保存位置，更新的实时输出仍可能尚未保存。
 
 ### 任务、用量与终端反馈
 
-保留工具的查询、等待、取结果和取消操作集中显示在 **Tool executions** 下。展开详情可查看各次检查和结果。返回的状态只代表上次检查；取消请求不等于取消已完成。保留工具在 TUI 空闲时完成，终端会显示简短通知并自动展示 Agent 的后续执行，不会发送或清空草稿。Stop 取消这次后续执行；`/executions cancel <execution-id>` 单独取消保留工具工作。
+根据要回答的问题选择查看命令。Agent 忙碌时也能使用：
 
-**System** 标签将命令、引导和取消反馈与 Agent 回复区分。文件摘要缩短启动目录内的路径；原始工具路径不变。
+| 问题                           | 命令                                                         |
+| ------------------------------ | ------------------------------------------------------------ |
+| 当前设置和待处理决策是什么？   | `/status`                                                    |
+| 子 Agent 返回了什么？          | `/subagents`、`/subagents next`、`/subagents <execution-id>` |
+| 观测到了哪些后台进程？         | `/ps`                                                        |
+| 本 Thread 记录了多少用量？     | `/usage` 或 `/usage all`                                     |
+| 某一范围的用量是多少？         | `/usage root`、`/usage subagents`                            |
+| 精确费用和记录覆盖情况是什么？ | `/usage details`                                             |
 
-按 F2 展开或折叠任务面板。面板最多显示五行已保存任务，活动工作优先，附带 ID 和依赖。活动行显示 subagent 总数和观测到的后台进程。执行期间也可使用以下查看命令：
+进程观测有数量上限，且仅属于本对话，不是整台 Host 的进程清单。不可用不表示已退出。用量合计包含已观测的根级、子级和辅助模型请求；`ctx` 表示最近根请求的上下文占用。`--` 表示不可用，`+` 表示数据不完整或只知道部分费用。记录用量是估计，不是订阅账单。
 
-- `/subagents` 最多列出 20 个子级执行，包括已完成工作；`/subagents next` 翻至下一页。
-- `/subagents <execution-id>` 打开保留详情，不切换对话。已保存为运行中但无本地执行权限的工作标为不可用。
-- `/ps` 显示最多 16 个近期后台进程观测，包括命令、状态、句柄和 Run。展开工具详情查看输出。
+使用 Codex Model 时，空闲状态的 `/usage subscription` 显示可用订阅窗口和重置信息。`/usage reset` 可查看并显式确认符合条件的兑换。超时或取消后结果未知时，保留当前 TUI，并重试同一兑换 ID。使用 ChatGPT Model 时，Harness UI 会引导你在 ChatGPT 管理用量，不提供数字订阅额度。
 
-subagent 总数来自保存记录。进程计数只覆盖当前对话有界实时观测，包括子级 Shell 调用，不是全 Host 清单。`+` 表示不完整，不可用不代表退出。切换对话会清除进程观测。
+**Tool executions** 集中显示保留工具的检查和结果。工具在空闲时完成，可触发 Agent 后续执行，不会发送或清空你的草稿。Stop 取消该后续执行；`/executions cancel <execution-id>` 针对保留工具本身。请求取消不等于工作已经停止。
 
-`/status` 显示实际 Agent、Model、推理、工作目录（显示为 `Workspace`）和最近根请求上下文占用。`/usage` 展示当前 Thread 已记录的 token、输入/输出、缓存、模型费用和各模型明细，包含根级、子级和辅助请求。用 `/usage root` 或 `/usage subagents` 查看单个范围，`/usage all` 返回合计，与 WebUI 的 All、Root 和 Subagents 范围一致。这些只读命令在执行期间也可使用。模型明细随终端宽度换行，不裁剪名称或 token 数量。`/usage details` 补充精确费用、记录覆盖范围、Agent/来源归属和最近 Run。未知费用不是零；`+` 表示仅有部分已知费用。非模型提供方的费用按其报告币种单独显示。这些是记录的估计，不是订阅账单；缺少用量记录的旧历史仍标为不可用，不会猜测。
+工作期间 Ctrl+C 请求取消并等待清理。空闲时第一次 Ctrl+C 清空草稿，两秒内第二次按下退出；编辑会解除这个退出手势。草稿为空时 Ctrl+D，或 `/quit`、`/exit` 也可退出。终端响铃提示完成或出现新决策。
 
-Codex Model 在空闲时，`/status` 或 `/usage subscription` 直接显示各订阅窗口的**剩余百分比**、提供方报告的本地重置时间和可用重置额度，不打开菜单。缺失限制标为不可用，不是零。用 `/usage reset` 检查可用额度：兑换需选择权益，并显式确认账户和兑换 ID；**No** 是安全选项。超时或取消可能使结果未知：保留当前 TUI，用 `/usage reset` 重试相同兑换 ID。`/status` 只报告待处理身份。后续用量刷新失败不会改变已确认结果。OAuth token 过期时间不是配额重置时间。
+故障产生私有诊断报告时，分享前先检查异常消息是否包含敏感数据。报告不会自动上传。按打印的恢复提示回到已保存状态；该提示无法恢复未发送草稿和未保存工作。
 
-ChatGPT Model（`openai-chatgpt:`）在空闲时，`/status` 和 `/usage subscription` 只提示订阅用量不可用，并显示[在 ChatGPT 中管理用量](https://chatgpt.com/settings/usage) URL，不查询账户或刷新凭据。Harness UI 暂不能读取剩余额度和重置时间；会话 token 总量与 Codex 限制都不能替代 ChatGPT 订阅额度。请确认浏览器使用的是同一 ChatGPT 账户和工作区。`/usage reset` 仍仅适用于 Codex。
+### 任务与笔记
 
-终端响铃通知 Run 完成或出现新决策。空闲时第一次 Ctrl+C 清空草稿并立即说明退出方式；两秒内再次按下会退出。编辑会解除退出确认。执行期间 Ctrl+C 立即确认取消，并等待所属资源清理，不会提前退出。
+默认包含任务和笔记工具。F2 展开或折叠任务面板，最多显示五条已保存任务，活动工作优先。`/notes` 打开已保存笔记值，Ctrl+O 展开笔记更新。笔记面板最多显示 256 条或 256 KiB，并标明省略。
 
-意外执行或 TUI 故障会生成私有临时 JSON 诊断报告，包含异常链、栈帧位置、版本和 Thread ID，不含局部变量或对话记录。不会上传任何内容。将报告附到 Issue 前，检查异常消息中的敏感数据。恢复提示包含自定义配置/数据路径；只有已保存状态可恢复，未发送输入和未保存的进行中修改不能恢复。
+要为某个 Agent 关闭笔记，在其 `working_state` Capability 条目中设置 `configuration.notes_enabled: false`。已保存任务和笔记的变化会在操作或恢复后显示。
+
+### 围绕 Goal 持续工作
+
+需要同一 Agent 按明确完成条件检查工作时，可以使用 Goal：
+
+```text
+/goal Implement the requested change, run its tests, and report any remaining blockers.
+```
+
+首次响应是第 `0` 次检查；默认预算允许再检查 10 次。Goal 状态条显示进度和结果。Ctrl+C 和 `/cancel` 仍可停止执行，普通工具权限仍然适用。
+
+Agent 以单独一行的 `[GOAL_COMPLETE]` 表示完成。摘要或压缩后必须重新审查原目标。**Verified 是 Agent 自己的完成声明，不是独立审查。** 预算耗尽、取消、错误和未验证停止保持为不同结果。
+
+根级 `max_goal_iterations` 可改变新 Goal 的预算；零或负数关闭后续检查。挂起的 Goal 保留捕获预算。仅恢复对话不会重启未完成工作。发送普通输入进入普通行为，或用 `/goal` 开始新目标和预算。WebUI 通过 [Goal 控件](webui.md)提供同一策略。
 
 ### 本地宿主机命令
 
-输入 `!command` 可自己在本地 POSIX 宿主机执行命令，例如 `!git status`。这是用户发起的 shell 执行，在 TUI 工作目录中使用宿主进程环境，**位于对话所选 Environment（包括 Sandbox）之外**。为 Agent 工具选择 Sandbox 不会隔离 `!command`。命令和输出不会注入模型上下文。
+在 POSIX 宿主机空闲时，可输入以下命令：
 
-本地命令仅在空闲、交互菜单之外接受。忙碌状态或菜单拒绝会保留草稿和附件。stdout 和 stderr 显示为输出事件，再显示退出状态和耗时。命令非交互式，stdin 收到 EOF。每条命令期限 120 秒，合并输出显示上限 256 KiB；超限输出仍会排空，避免阻塞进程。
+```text
+!git status
+```
 
-Ctrl+C 或 `/cancel` 终止所属进程组，等待清理后回到空闲。Windows 尚无等效进程组清理，因此明确不支持 `!command`；普通 Windows CLI 和 Agent 工具仍按已有执行契约受支持。
+命令使用 Host 进程环境，在 TUI 工作目录运行，**位于 Agent 所选 Environment 和 Sandbox 之外**。命令和输出不进入模型上下文。Windows 不支持这个 TUI 快捷方式；普通 Windows CLI 和 Agent 工具仍然可用。
+
+命令非交互式，stdin 关闭，期限为 120 秒，合并输出显示上限为 256 KiB。Ctrl+C 或 `/cancel` 终止所属进程组并等待清理。工作忙碌或交互打开时，命令会被拒绝并保留草稿。
 
 ### 工具开关
 
-在根 `a13n-harness-ui.yaml` 中配置内置工具：
+要修改内置交互工具，将以下片段合并到[选中的根 YAML](configuration.md#locate-and-validate-your-files)：
 
 ```yaml
 tools:
@@ -150,87 +226,6 @@ tools:
   enable_codeact: true
 ```
 
-`ask_user_question` 默认开启。设置 `enable_ask_user_question: false` 可从后续 Run 移除。每个显示问题最多等待 `interaction_timeout_seconds`（正有限数）。超时后问题调用返回失败，并明确说明未收到回答；不会选答案或批准 shell 请求。混合批次仍等待剩余决策。`/cancel` 保持请求待处理，不返回超时。
+两个工具默认开启。保存文件，在 TUI 外运行 `a13n-harness-ui config validate`，再用后续 Run 使用新的选择。将任一 enable 标志设为 `false` 可移除对应工具。交互超时必须为正有限数；它控制活动 TUI 的等待，不是持久 HTTP 决策到期时间。
 
-CodeAct 默认开启，提供受限 Python `run_code`/`run_program` 和 `store`/`load`/`forget`，在保存续接中保留值。Host 效果仍需符合条件的工具和普通策略。用 `enable_codeact: false` 关闭，在 Agent 的 `codeact` Capability 设置高级选项。全局开关和可见性过滤优先，修改影响后续 Run。TUI 回答超时不定义单次运行或 HTTP 交互生命周期。
-
-### 审批与提问
-
-选择启用审查时，设置向导为 shell 启动初始化根 `security.shell_review`，采用 `extra_high` 阈值，并对标记调用请求审批。API 密钥设置需要显式选择审查模型；跳过则关闭快捷配置。适用于所有 Agent，包括 API 密钥连接。只有非超时审查错误不会单独触发审批；其他工具策略要求仍适用。现有根设置和 Agent 文件保留。关闭快捷配置不会改变显式 Agent 策略。见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
-
-按显示编号或方向键与 Enter 选择 **Approve once**、**Deny** 或 **Deny with reason**。原因编辑器用 Enter 提交，Ctrl+J/Alt+Enter 换行，Esc 返回。支持时，**Approve with edited arguments** 接受完整 JSON 对象。绑定 shell 审批不能替换参数，应拒绝并说明原因以请求新命令。参数省略时不能批准。不预选答案，自由文本也不能批准。先检查风险、原因和命令，`/review request-id` 打开保留详情。
-
-需要真实外部结果的请求提供 **Provide result**，而不是审批。它打开 JSON 编辑器；无效 JSON 保持可编辑。选择此动作不会运行工具或编造结果。两种流程都支持 **Deny** 和 **Deny with reason** 。
-
-活动 TUI 对每个审批、外部结果或显示问题统一最多等待 `tools.interaction_timeout_seconds`。编辑不重启计时。超时不回答、不批准，而是拒绝。独立审查 Model 的期限默认 120 秒，超时也会在派发前拒绝。两者都不是待处理决策的持久服务器端到期机制。
-
-在动作选择器中，`/cancel` 丢弃本地答案，不批准任何内容；`/status` 或恢复对话会重新打开待处理决策。审批和外部结果使用此界面，不使用 `/approve`、`/deny` 或 `/result` 命令。
-
-#### 回答问题
-
-结构化 `ask_user_question` 用**问题卡片** 替换输入框。离开交互时，草稿、粘贴和附件会恢复。滚动可阅读完整选项。点击选项会聚焦；滚轮不选择答案。
-
-| 操作                           | 控件                                    |
-| ------------------------------ | --------------------------------------- |
-| 在选项间移动                   | 上 / 下方向键                           |
-| 定位编号选项而不提交           | 数字键                                  |
-| 确认单选或当前多选答案         | Enter                                   |
-| 切换多选问题中的选项           | Space                                   |
-| 滚动卡片而不改变答案           | PageUp / PageDown                       |
-| 编写自定义回答                 | 选择自定义回答动作，或 Tab / Ctrl+Space |
-| 在答案编辑器中换行             | Ctrl+J 或 Alt+Enter                     |
-| 提交输入的答案                 | 在编辑器中按 Enter                      |
-| 从编辑器返回选择并保留答案草稿 | Tab / Ctrl+Space / Esc                  |
-| 取消本地收集，保持请求待处理   | 在选择界面按 Esc                        |
-
-答案编辑器有独立草稿：返回选择再打开时保留文本，不会替换已保存的输入框草稿。上/下方向键编辑答案，不调用输入历史。新问题以选择模式打开全新答案编辑器。粘贴多行文本不会提交。
-
-答案编辑器接受 `/help`、`/mode`、`/status`、`/quit`、`/cancel`、`/theme`、`/mouse` 和 `/review` 作为受限命令。其他已识别命令会被拒绝并保留草稿；未匹配的斜杠输入保持为字面答案文本。Ctrl+O 查看保留工具详情，Ctrl+T 打开保留历史，都不回答问题。关闭历史返回卡片和答案草稿。这些问题控件不改变审批或设置选择器。
-
-答案先在本地收集，直到整个决策批次准备好。**Collected locally** 和 **Submitting question responses** 表示仍待提交；成功后显示问题与回答回执。取消收集后，可用 `/status` 重新打开待回答问题。
-
-### 围绕 Goal 持续工作
-
-空闲时使用 `/goal <objective>`，让 Agent 持续检查工作是否满足指定目标：
-
-```text
-/goal Implement the requested change, run its tests, and report any remaining blockers.
-```
-
-首次响应是第 `0` 次检查。默认情况下，同一 Agent 可再检查最多 10 次，使用普通工具和执行权限。持续显示的 Goal 状态条会展示进度和最终结果，回答问题时也可见。Ctrl+C 和 `/cancel` 仍可取消执行。Goal 模式不会扩大权限或自动批准工具。
-
-Agent 通过单独一行返回 `[GOAL_COMPLETE]` 完成协议。摘要或上下文压缩后，必须先针对原目标重新审查。**Verified 是 Agent 自己的完成声明，不是独立审查。** 预算耗尽、取消、错误和未经验证的停止都不算成功。
-
-在 `a13n-harness-ui.yaml` 根级设置 `max_goal_iterations: 10` 可修改新 Goal 的预算。零或负数关闭自动后续检查。回答待处理决策时，挂起的 Goal 保留捕获的预算。仅重新打开对话不会重启未完成的工作。发送普通输入恢复普通行为，或再次使用 `/goal` 开始新 Goal 和预算。
-
-WebUI 输入框标题栏中的 **Goal** 开关采用同一策略，桌面和窄屏均可使用。选择只应用于一次发送，确认接受后重置；提交被拒绝或结果不确定时保留选择。打开 Goal 状态可查看原目标、审查状态和 token 总量。**Prepare new Goal** 只填入草稿供检查，不会发送。
-
-### 任务与笔记
-
-默认包含任务、问题和笔记工具。F2 查看任务，`/notes` 查看保存的笔记值。笔记面板最多显示 256 条或 256 KiB，并标明省略。修改在操作或恢复后出现；Ctrl+O 展开。在 Agent `working_state` Capability 条目中设置 `configuration.notes_enabled: false` 可关闭笔记。
-
-### 主题、滚动、粘贴与附件
-
-- `/theme auto|dark|light` 修改 UI 和 Markdown 语法颜色，直到你退出；`display.theme` 设置文件默认值。Auto 保留终端前景/背景和 ANSI 调色板；被动元数据选择语法样式，不消费输入。
-- PageUp/PageDown 滚动有上限的显示历史；Ctrl+End 恢复跟随实时输出。显示内容淘汰后，Ctrl+T 浏览保留消息。
-- Scroll 模式（`/mouse on`）将滚轮交给指针所在面板，Select 模式（`/mouse off`）恢复原生复制/选择。Esc 先关闭交互或补全，否则切换模式。选择器滚动不选择，点击高亮，Enter 确认。Ctrl+Space 切换焦点。问题卡片先用 Esc 离开答案编辑器，再取消。两种模式都支持 PageUp/PageDown 和 Ctrl+End；向上滚动暂停跟随，回到底部恢复。
-- Ctrl+V、Alt+V 或 `/paste-image` 显式读取剪贴板图像。普通文本粘贴仍是文本，不会自动提交。某些终端拦截 Ctrl+V，此时用 Alt+V 或命令。
-- `/attach "path/to/image.png"` 或 `/attach "path/to/notes.txt"` 是跨平台的文件备用方式。本地 Linux 剪贴板图像要求能访问显示会话及相应工具（Wayland 使用 `wl-paste`，X11 使用 `xclip`）；系统不会自动安装这些工具。
-- 通过 SSH 时，普通文本仍可通过终端粘贴（macOS 终端使用 Cmd+V）。图像粘贴读取运行 TUI 的宿主机剪贴板，不读取你的本地计算机。在远程宿主机安装剪贴板工具不会转发本地剪贴板。先用 `scp` 等方式上传图像，再用 `/attach <remote-path>`。粘贴 Mac 的 `/Users/...` 路径不会上传文件。剪贴板失败会说明 SSH 边界或缺失的本地显示/工具，不清空草稿；SSH 检测不会阻止已经可用的剪贴板，例如转发的显示会话。
-- 图像在粘贴位置显示为 `[image#1]`，文件显示为 `[file#2: requirements.md]`，与指令内联。文件标记显示文件名，不显示父路径或内容预览；长名称在中间缩短。发送消息和重开历史使用同一文件名。方向键将每个标记视为一个编辑位置；Backspace/Delete 整体删除，Undo 连同内容恢复。删除标记不重新编号其他标记。空闲 Ctrl+C 清空草稿。最多八个附件，每文件 10 MiB，合计 20 MiB。PNG/JPEG/WebP/GIF 图像经过验证，最多 3200 万像素。普通文件通过 Thread 文件挂载供 Agent 使用。
-- 你继续输入时，`loading` 标记留在粘贴处。发送前等待加载完成。失败标记会解释问题，重试前必须删除。删除待加载标记或切换草稿可防止稍后插入图像。发送保留文本/图像顺序；消息和重开历史保留短标记，不重复内部图像路径、MIME 类型或字节数。输入或粘贴可见文本 `[image#1]` 不会附加图像；普通输入历史回忆也只恢复文本标签，不恢复图片。
-- 支持只有图像或文件的提示。所选 Model 必须支持提交模态；失败不会静默丢弃图像或切换模型。受理前发送失败会恢复草稿；已开始其他草稿时提供 `/recover`。绝不自动重发。被拒的 `/new` 或 `/resume` 也保留附件；失败命令恢复文本或提供 `/recover`，不覆盖新草稿。
-
-### 长粘贴文本与 Thread 工作文件
-
-超过 1000 字符的粘贴文本折叠为紧凑 `[Pasted text #N: ... chars]` 标记。可将多个文本块与自己的指令组合，不占满输入框。Alt+E 展开编辑（光标移入标记也一样）；标记后 Backspace 或标记前 Delete 删除整块。Enter 向 App 提交完整原文，绝不提交占位符。文本粘贴不检查剪贴板图像，也不自动提交。
-
-粘贴折叠只影响显示。另有独立策略：原文块严格超过 `input.long_text_threshold_chars`（默认 8000 个 Unicode 字符）时，可作为保留文本文件引用交给模型。Enter 为 App 提交还原完整原文，不保证模型以内联方式收到。关闭转换、文件读取前置条件、回退提示、故障和附件预算见[长文本输入策略](configuration.md#long-text-inputs)。
-
-Agent 有 `thread-files` Environment 挂载，其 `tmp/` 用于可丢弃的下载、脚本、转换和中间输出。它属于对话，不属于单次 Run，TUI 重启后复用。已提交附件独立保留在 `attachments/`；恢复对话不依赖剪贴板临时文件。移除草稿标记不删除已提交文件。
-
-过大工具结果保存在当前 Thread 的 `tmp/tool-results/`，子 Agent 的结果保存在其自己的 Thread 下，不在 Project 中创建 `.a13n/tmp/`。这些特定文件仅属于 Run：Harness 会在 Run 结束时尝试删除。它们不是保留回答或附件。
-
-临时工作在不活动三天后，于启动时和每小时自动清理。App 会保守地保护它使用过的每个 Thread 目录直到退出，也防止其他本地 App 清理。清理绝不移除已提交附件或 Project 文件。关闭或归档对话不会立即删除临时目录。不要在 `tmp/` 存放重要最终结果；让 Agent 将其复制到 Project 或其他选中位置。
-
-Sandbox 中，在 Project 运行的命令不能自动读取同级 Thread 挂载。处理附件必须选择 Thread 挂载内的工作目录。自定义 provider 可仅通过文件工具暴露该挂载；模型会看到可用操作。这不会额外授予远程宿主机或网络权限。
+CodeAct 提供受限 Python `run_code`/`run_program`，以及 `store`/`load`/`forget` 保存值。它对 Host 的操作使用符合条件的工具及其普通权限。高级运行器设置属于 Agent 的 `codeact` Capability；根开关和可见性过滤优先。

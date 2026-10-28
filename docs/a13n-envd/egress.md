@@ -1,9 +1,11 @@
 ---
 title: Session egress
-description: Restrict which destinations an Envd Session can reach, inject credentials into allowed HTTPS requests, and update the policy without restarting.
+description: Give each Session a destination policy, inject HTTPS credentials through the broker, and rotate them while commands keep running.
 ---
 
-Select controlled egress with `A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode controlled`, or daemon JSON stored outside the working directory:
+Controlled egress lets a Session call approved services while its commands hold credential placeholders instead of real secrets. The Envd broker checks destinations and inserts secrets into allowed HTTPS request headers. Start by preparing a Linux sandbox, then select controlled mode and give each Session its own policy.
+
+Set `A13N_ENVD_EGRESS_MODE=controlled`, pass `--egress-mode controlled`, or use this daemon JSON outside the working directory:
 
 ```json
 {
@@ -13,15 +15,15 @@ Select controlled egress with `A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode
 }
 ```
 
-This enables controlled Sessions on Linux. Launch the daemon as root with native mount/PID/IPC/network namespace permissions. Envd requires Linux 6.1.2 or newer, seccomp, pidfds, mount-tree cloning, `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, `/usr/bin/ldd`, and a system CA bundle. It uses native accounts, not a single-UID user namespace. Without execution UID/GID settings, Sessions retain the root launcher's identity. To run them under another provisioned account, explicitly configure its UID/GID and native sudoers as described in [configuration](configuration.md#native-identity-and-sudo). No account is assumed or created; root execution remains subject to the same egress boundary. Missing privileges or facilities fail startup or Session preparation without fallback.
+The daemon needs a root launcher with mount/PID/IPC/network namespace permissions. Prepare Linux 6.1.2 or newer, seccomp, pidfds, mount-tree cloning, a system CA bundle, and these tools: `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, `/usr/bin/ldd`. Missing facilities stop startup or Session preparation. The [sandbox image](sandbox.md) supplies the userspace tools and root launcher; its default remains `egress.mode: inherit`, and the outer runtime must grant the required permissions.
 
-The [sandbox image](sandbox.md) includes the userspace prerequisites and a root launcher, but defaults to `egress.mode: inherit`. Selecting controlled mode still requires outer-runtime permissions and an explicit policy for every Session; the image does not auto-elevate or bypass the platform's restrictions.
-
-Controlled mode prepares a private management runtime before accepting work. Every Session uses an isolated worker and must supply an explicit destination policy. Omitting it fails Session creation. Inherit and deny Devices reject Session egress policies. Sandbox grants are independent of egress mode: restricted workers expose only the granted directories and a minimal read-only system view, while disabled Sandbox retains native filesystem access.
+Sessions use native accounts. With no execution UID/GID configured, they retain the root launcher's identity. To use another account, provision it and configure [execution identity and sudo](configuration.md#native-identity-and-sudo). The egress boundary applies to either identity. Sandbox grants are a separate choice: `restricted` exposes granted directories and a minimal read-only system view; `disabled` retains native filesystem access.
 
 ## Create a controlled Session
 
-After `initialize`, add `egress` to `session.open.params`:
+1. Initialize the Device connection.
+2. Add `egress` to `session.open.params`, using the Device identity and generation returned by initialization.
+3. Send the request over the authenticated EIP carrier. Keep real secrets out of daemon configuration, command arguments and request logs.
 
 ```json
 {
@@ -42,15 +44,15 @@ After `initialize`, add `egress` to `session.open.params`:
 }
 ```
 
-The returned descriptor includes a revision and secret metadata, for example `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`. It never returns `value`. Supply real values over the authenticated EIP carrier, not daemon configuration or command arguments. Avoid logging request payloads.
+Every controlled Session requires an explicit destination policy. Devices using `inherit` or `deny` reject Session egress policies. The returned Session descriptor contains a revision and secret metadata, such as `{"env":"GH_TOKEN","sentinel":"a13n_7d4e9c2a_GH_TOKEN","inject_hosts":["api.github.com"]}`; the secret's `value` is write-only.
 
-Commands receive the sentinel in `GH_TOKEN`:
+Run commands with the placeholder supplied in `GH_TOKEN`:
 
 ```bash
 curl https://api.github.com/user -H "Authorization: Bearer $GH_TOKEN"
 ```
 
-No `HTTP_PROXY` or `HTTPS_PROXY` setting is needed. Kernel routing sends all Session traffic through the Envd broker, which runs outside the Session worker. For HTTPS on port 443, the broker replaces sentinels in request **header values** only, and only for that secret's `inject_hosts`. URLs and request bodies are unchanged. The broker validates upstream TLS. A private bundle combining system trust and the Session CA is supplied through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `NODE_EXTRA_CA_CERTS`. Clients with certificate pinning or a separate trust store need explicit integration. Envd does not bind over the native system CA bundle, so `update-ca-certificates` keeps working.
+Kernel routing sends Session traffic through the broker outside the worker, so clients need no `HTTP_PROXY` or `HTTPS_PROXY`. On HTTPS port 443, the broker replaces placeholders in request **header values** for that secret's `inject_hosts`. URLs and request bodies pass through unchanged. The broker validates upstream TLS.
 
 ```mermaid
 flowchart TB
@@ -69,17 +71,21 @@ flowchart TB
     class Refused danger
 ```
 
-Native sudo normally strips these environment variables. For root HTTPS commands, preserve the required variables according to your existing sudoers policy, for example:
+Envd supplies a private system-plus-Session CA bundle through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and `NODE_EXTRA_CA_CERTS`. Clients with certificate pinning or a separate trust store need explicit integration. The native system CA bundle remains available to `update-ca-certificates`.
+
+Sudo commonly removes those variables. Preserve the ones your root HTTPS client needs under the existing sudoers policy, or configure that client's trust store:
 
 ```bash
 sudo --preserve-env=SSL_CERT_FILE,CURL_CA_BUNDLE curl https://api.github.com/
 ```
 
-Alternatively configure the application's trust store. Envd does not silently edit sudoers or the global trust store. Destination enforcement remains active even when a client's TLS trust is misconfigured.
+Destination checks continue to apply when client TLS trust is misconfigured. Envd leaves sudoers and the global trust store unchanged.
 
-Response header values, body bytes and trailers redact exact secret values, including matches across chunks. This is literal redaction, not prevention of an upstream service intentionally encoding or transforming a secret. HTTP uses HTTP/1.1; protocol upgrades and compressed responses are rejected. Request compression is not rewritten. HTTP on port 80 performs no credential injection and refuses requests whose headers carry a sentinel. Other TCP ports and UDP forward permitted traffic without secret substitution.
+The broker redacts exact secret values from response headers, body bytes and trailers, including matches across chunks. Encoded or transformed values are outside literal redaction. HTTP/1.1 is supported; protocol upgrades and compressed responses are rejected. Request compression passes through unchanged. HTTP port 80 rejects sentinel-bearing headers and injects no credentials. Other TCP ports and UDP carry allowed traffic without secret substitution.
 
 ## Destination policy
+
+Choose one required `destinations` value:
 
 | Required `destinations`                           | Behavior                                                            |
 | ------------------------------------------------- | ------------------------------------------------------------------- |
@@ -87,15 +93,15 @@ Response header values, body bytes and trailers redact exact secret values, incl
 | `{"mode":"allowlist","hosts":[]}`                 | Deny external access.                                               |
 | `{"mode":"allowlist","hosts":["api.github.com"]}` | Permit only exact listed DNS names or explicitly listed public IPs. |
 
-Wildcards, suffix matching and URL patterns are not supported. `inject_hosts` must be nonempty and, in allowlist mode, a subset of `hosts`. Public mode still restricts injection to `inject_hosts`. There is no second daemon-level destination list.
+Use exact names: wildcards, suffix matching and URL patterns are invalid. A secret's `inject_hosts` must be nonempty and, with an allowlist, a subset of `hosts`. In public mode, `inject_hosts` still limits where that secret is sent. The Session policy is the Envd destination list; outer-platform restrictions apply independently.
 
-The broker rejects private, loopback, link-local, metadata and other nonpublic upstream addresses, including DNS answers containing any nonpublic address. Direct IP access never grants credential injection. The current interception path uses IPv4 inside the Session; DNS names may resolve to IPv4 or IPv6 upstream. Native IPv6 connections from payloads have no external route.
+The broker rejects private, loopback, link-local, metadata and other nonpublic upstream addresses. A DNS answer containing any nonpublic address is rejected. Direct IP connections require explicit allowlist entries and never receive injected credentials.
 
-Local services in the Session's own loopback namespace remain reachable. They do not refer to the outer sandbox's loopback services.
+Session interception uses IPv4; the broker can connect to DNS-resolved IPv4 or IPv6 upstream addresses. Native IPv6 connections from commands have no external route. Local services remain reachable on the Session's own loopback, separate from the outer sandbox's loopback.
 
 ## Update without restarting
 
-Send `egress.update` with the Session selector and its current revision:
+Read the current revision from Session metadata, then send `egress.update` with the Session selector. This example adds `example.com` and rotates `GH_TOKEN` together:
 
 ```json
 {
@@ -114,35 +120,35 @@ Send `egress.update` with the Session selector and its current revision:
 }
 ```
 
-Each successful atomic update increments `revision`. A stale revision returns `conflict`; read current metadata through `environment.describe` or `session.attach` before deciding what to retry. Omitted update fields stay unchanged. `destinations: {"mode":"allowlist","hosts":[]}` denies external access; `destinations: {"mode":"public"}` restores public-domain access. Updates cannot change the Device's Sandbox, identity or network mode.
+An update validates and publishes atomically, then increments `revision`. If it returns `conflict`, read current metadata through `environment.describe` or `session.attach` before choosing a new update. Omitted fields retain their values. An empty allowlist denies external access; public mode restores public-domain access. Device identity, Sandbox grants and network mode stay fixed.
 
-`set_secrets` adds or replaces bindings. Rotation preserves the sentinel, so an existing process using `$GH_TOKEN` gets the new value on its next HTTPS request. `remove_secrets` deletes bindings; delete then re-add allocates a new sentinel. Old deleted sentinels are rejected in intercepted request headers. When denying a host, remove or change its secret injection bindings in the same update.
+`set_secrets` adds or replaces bindings. Rotation keeps the sentinel, so a process already using `$GH_TOKEN` uses the replacement value on its next HTTPS request. `remove_secrets` retires the binding; deleting and re-adding creates a new sentinel. Intercepted headers containing retired sentinels are rejected. When removing a permitted host, remove or change its injection bindings in the same update.
 
-New commands receive current bindings. Running processes keep their original environment: adding a variable does not insert it into an existing process, and deleting one does not erase its old sentinel there. Commands cannot override or unset bound secret and CA variables through command environment configuration. Retry fingerprints use the original command request, so policy changes do not accidentally launch a duplicate operation.
+New commands receive current bindings. Running processes keep their existing environment: adding a binding does not add a variable to them, and deleting one leaves the old sentinel in their memory. Command environment settings cannot override or unset bound secret or CA variables. Retry matching uses the original command request, so changing policy does not create a new operation.
 
 ## Files, sockets and lifetime
 
-Controlled commands and file operations run in the same native-identity worker. With `sandbox.mode: disabled`, the **outer sandbox's original system tree stays writable**: authorized sudo package installs, service users, permissions, ACLs, linker/CA updates and system-file changes persist across Sessions and are visible from the outer sandbox. `/tmp`, `/run`, device/kernel views and shared memory have private mounts; a working directory under `/tmp` is rebound to its original backing directory. The small immutable management runtime is only for the broker and bootstrap, not a substitute payload image.
+Commands and file operations share the same native-identity worker. With `sandbox.mode: disabled`, package installs, service accounts, permissions, ACLs, linker/CA updates and system-file changes modify the outer sandbox's original writable tree. Those changes persist across Sessions. `/tmp`, `/run`, device/kernel views and shared memory use private mounts; a working directory under `/tmp` is rebound to its original backing directory.
 
-Envd hides its configuration, transport credentials, broker runtime and the launching account's `.a13n` directory. Masks are attached before worker views are cloned, so renaming an ancestor does not reveal protected files to a later Session. Protected files with extra hardlinks or working directories overlapping protected paths reject preparation. Keep unrelated credentials out of the working directory and image; this is not a general filesystem secrecy policy.
+Before accepting work, Envd prepares an immutable private runtime for the broker and bootstrap. Workers use the original system tree with Envd configuration, transport credentials, broker runtime and the launch account's `.a13n` directory masked. Masks precede worker cloning, so renaming an ancestor does not expose those files to later Sessions. Extra hardlinks to protected files or an overlapping working directory reject preparation. Store unrelated credentials outside the working directory and image.
 
-With disabled Sandbox, native sudo is enabled by default and uses existing sudoers. Restricted Linux Sandbox instead drops capabilities and blocks privilege gain, including for UID 0. Session-local Unix sockets, socketpairs, PTYs and low-port services work. Namespace/mount reconfiguration, raw/packet/VSOCK networking, network-administration capabilities, unsafe devices/kernel controls and io_uring bypasses are unavailable, including after sudo. These restrictions protect explicit egress and broker credentials rather than making ordinary system administration read-only. The Host still owns CPU/memory limits and the outer sandbox lifecycle.
+Disabled Sandbox enables native sudo by default under existing sudoers. Restricted Linux Sandbox drops capabilities and blocks privilege gain, even for UID 0. Both retain the controlled-egress restrictions: namespace/mount changes, raw/packet/VSOCK networking, network-administration capabilities, unsafe device/kernel controls and io_uring bypasses remain unavailable after sudo. Session-local Unix sockets, socketpairs, PTYs and low-port services work. The Host supplies CPU/memory limits and owns the outer sandbox's lifetime.
 
 ### Deployment prerequisites
 
-Use a dedicated disposable sandbox without foreign privileged services, cron/systemd jobs that execute payload-writable files, or externally privileged/network-proxy sockets accessible through shared paths. A service outside the worker namespace could otherwise execute modified files or forward a socket request outside the network policy. Do not mount a Docker socket or external SSH-agent/database proxy into the shared tree and assume per-process egress can constrain it.
+Use a dedicated disposable sandbox. Keep foreign privileged services, cron/systemd jobs that execute payload-writable files, and external privileged or network-proxy sockets out of its shared tree. A service outside the worker can otherwise execute a modified file or forward traffic beyond the policy. This includes Docker sockets and external SSH-agent or database proxies.
 
-The launcher must provide trusted artifacts for every daemon start. The private management snapshot protects a running broker from later system-tree changes; it does not make an already modified sandbox image trustworthy for the next startup. Rebuild or restore trusted launcher artifacts as needed. This is not whole-machine flow isolation or isolation between mutually hostile Sessions sharing a writable system tree.
+Supply trusted launcher artifacts on every daemon start. The management snapshot protects the running broker from later system changes; restore or rebuild trusted artifacts before restarting from a tree modified by root workloads. Use separate deployments for mutually hostile Sessions. Controlled egress constrains worker traffic, not every process on a shared machine.
 
-Detach retains the worker and policy during the Session's disconnect grace period. Reattach returns current policy metadata. Close, expiry, broker failure and daemon death stop controlled execution and networking. Real secrets and the Session CA private key remain in broker memory.
+Detach retains the worker and policy for the disconnect grace period; reattach returns current policy metadata. Close, expiry, broker failure or daemon death stops controlled execution and networking. Real secrets and the Session CA private key stay in broker memory.
 
-Each controlled Session reserves its configured Session budgets against Device totals at creation. This conservative allocation can admit fewer idle Sessions than `max_sessions`; increase the corresponding Device totals when needed. Capacity is released after confirmed worker death. If staged files cannot be proven cleaned, their reservation remains charged until daemon teardown; repeated failed cleanup cannot bypass Device accounting.
+Each Session reserves its configured budgets against Device totals at creation. If idle Sessions exhaust a Device total before reaching `max_sessions`, increase the relevant total. Worker death releases capacity once confirmed. Staging reservations remain charged until daemon teardown when file cleanup cannot be confirmed.
 
 ## Verify a sandbox image
 
-1. Install the prerequisites above.
-2. Provision the execution account.
-3. Run the public EIP integration test with the root launcher used for deployment:
+1. Install the prerequisites above and provision the execution account.
+2. Use a disposable sandbox with the same root launcher as deployment.
+3. Run the repository's public EIP integration tests:
 
 ```bash
 python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
@@ -153,13 +159,15 @@ python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
 python3 crates/a13n-envd/tests/execution_linux.py /path/to/a13n-envd --controlled
 ```
 
-The test uses generated dummy credentials against `httpbin.org`. `--http-host httpbingo.org` selects an alternative compatible endpoint. On images that only permit essential development services, `--http-host api.github.com` verifies header substitution through GitHub media-type validation and response-header redaction instead of Basic authentication and body echo. It checks real HTTPS authentication, response redaction, policy updates, replay, filesystem access, native Unix sockets, capacity reuse, and broker-death cleanup. `--local-network-fixture` also creates a temporary public-address alias in the outer test namespace for TCP/UDP echo checks; use it only in a disposable privileged Linux sandbox.
+The egress fixture uses generated test credentials against `httpbin.org`; `--http-host httpbingo.org` selects a compatible alternative. It checks HTTPS authentication, response redaction, policy updates, replay, filesystem/socket behavior, capacity reuse and broker-death cleanup. For networks limited to development services, `--http-host api.github.com` checks header substitution and response-header redaction through media-type validation, replacing the Basic Auth/body-echo checks.
+
+Add `--local-network-fixture` only in a disposable privileged Linux sandbox. It creates a temporary public-address alias in the outer test namespace for TCP/UDP echo checks.
 
 ## Cloud platform validation record
 
-The following results were recorded by **2026-09-22**. All five cloud platforms used the same Linux x86_64 binary and generated dummy credentials. Provider credentials stayed outside the Session. These are Envd runtime probes on disposable sandboxes, not validation of a Provider/Service egress integration or every vendor image.
+This historical record covers probes completed by **2026-09-22** using one Linux x86_64 binary on five cloud platforms. Tests used generated credentials; provider credentials stayed outside Sessions.
 
-**These results predate the native identity and sudo changes introduced on 2026-09-22.** Current egress requires a root launcher, native accounts and the prerequisites at the top of this page. The old non-root launch results below do not establish current non-root launcher support. Read-only system-tree and named-Unix-socket denial checks belonged to the old implementation; current writable-system and native-socket behavior is described in [files, sockets and lifetime](#files-sockets-and-lifetime). The cloud matrix has not been rerun against that implementation.
+**The matrix predates the native identity and sudo changes introduced on 2026-09-22 and has not been rerun for that implementation.** Use the root-launcher requirements above for current deployments. Old non-root launches, read-only system-tree checks and named-socket denials describe the tested binary. Current behavior is explained in [files, sockets and lifetime](#files-sockets-and-lifetime). The record covers these Envd sandbox probes, not Provider/Service integration or platform-wide support.
 
 ### Cloud results for the tested binary
 
@@ -172,21 +180,21 @@ The following results were recorded by **2026-09-22**. All five cloud platforms 
 | Modal default gVisor | Reported `4.19.0-gvisor` | Root                        | Ordinary Session/readiness, shell execution and file read/write passed. Controlled Session creation returned `unsupported`. |
 | Modal VM Sandbox     | `7.2.6`                  | Root                        | Ordinary Envd flow, full HTTPS fixture, controlled Session lifecycle and in-VM TCP/UDP echo passed.                         |
 
-The **full HTTPS fixture** verifies Basic Auth using a substituted header, exact secret redaction from the echo response, and absence of the real secret from Session metadata. The **controlled Session lifecycle** checks policy hot updates, replay, the tested version's filesystem/socket restrictions, quota reuse and cleanup of a detached `setsid` descendant after broker death. The probes exercise the public EIP interface. Separate ordinary Session shell/file smoke checks were run on both Modal runtimes; the other cloud runs used the controlled Session fixture.
+The **full HTTPS fixture** checked substituted Basic Auth headers, exact secret redaction from echo responses and secret-free Session metadata. The **controlled Session lifecycle** checked policy updates, replay, that binary's filesystem/socket restrictions, quota reuse and cleanup of detached `setsid` descendants after broker death. Both Modal runtimes also ran ordinary Session shell/file smoke checks; the other platforms ran the controlled fixture.
 
-TCP/UDP echo passed in a disposable privileged local Linux container and in Modal VM using `--local-network-fixture`. The echo services ran inside the outer test environment; these results do not claim external Internet TCP/UDP interoperability. TCP/UDP echo was not tested on E2B, Runloop, Vercel or Daytona. Sprites and other unlisted platforms were not covered by this validation campaign.
+TCP/UDP echo passed with `--local-network-fixture` in a privileged local Linux container and Modal VM. These were echo services inside the outer test environment. External Internet TCP/UDP and TCP/UDP on E2B, Runloop, Vercel or Daytona were not tested. Sprites and unlisted platforms were outside this campaign.
 
 ### Daytona network restrictions
 
-Direct requests outside Envd to `httpbin.org`, `httpbingo.org` and `example.com` failed, while `api.github.com` remained reachable. This is consistent with Daytona's [organization-tier network restrictions](https://www.daytona.io/docs/en/network-limits/); the tested organization's tier was not independently verified and its network policy was not changed. An Envd allowlist cannot override an outer platform restriction.
+Direct requests outside Envd reached `api.github.com` but failed for `httpbin.org`, `httpbingo.org` and `example.com`. An Envd allowlist cannot widen the outer platform's permitted destinations.
 
-The `--http-host api.github.com` fixture first receives HTTP 415 for an unsupported `Accept` value. Substituting the sentinel with `application/json` produces HTTP 200, and the same value is redacted from the response `Content-Type`. This proves header substitution and response-header redaction, not the blocked Basic Auth/body-echo scenario.
+The GitHub fixture received HTTP 415 for an unsupported `Accept` value. Replacing its sentinel with `application/json` produced HTTP 200, then redacted that value from response `Content-Type`. This verified header substitution and header redaction; Basic Auth/body echo remained blocked.
 
 ### Modal runtime selection
 
-Default gVisor rejected the tested controlled `session.open` with `unsupported` and `unshare: Operation not permitted`. A separate `nft list ruleset` probe returned `Protocol not supported`. Running as root did not supply the required facilities.
+The tested default gVisor runtime rejected controlled `session.open` with `unsupported` and `unshare: Operation not permitted`; a separate `nft list ruleset` returned `Protocol not supported`. Root launch did not provide the missing facilities.
 
-The [VM Sandbox runtime (Beta)](https://modal.com/docs/guide/vm-sandboxes) passed the test. Select it when creating the sandbox through the Modal SDK:
+The tested VM Sandbox runtime passed with this Modal SDK selection:
 
 ```python
 sandbox = modal.Sandbox.create(
@@ -196,10 +204,10 @@ sandbox = modal.Sandbox.create(
 )
 ```
 
-This SDK setting selects the outer runtime; it is not an Envd configuration field or an option added to the built-in Modal Provider by this validation. Provision the current Envd prerequisites and rerun the tests below before deploying a new binary or image.
+The SDK setting selected the outer runtime. It was neither an Envd field nor a new built-in Modal Provider option. For a new image or binary, prepare the current prerequisites and rerun [image verification](#verify-a-sandbox-image).
 
 ### Test preparation and limits
 
-Test images were prepared with missing networking tools and CA certificates. Temporary launch probes used a Vercel timeout accepted by the account and omitted Daytona resource overrides incompatible with its default snapshot. Modal's local SDK client needed proxy-support dependencies and an explicit CA bundle path for the host Python installation; these were client connection settings, not payload proxy configuration. None of these probe adjustments changed production Provider code.
+The probes installed missing networking tools and CA certificates. Vercel used an account-accepted timeout; Daytona omitted resource overrides incompatible with its default snapshot. Modal's host-side Python client used proxy-support dependencies and an explicit CA bundle. These were test setup changes; production Provider code was unchanged.
 
-All temporary cloud sandboxes were terminated; native Provider instances were reconciled absent and all five Modal instances, including connection-diagnostic attempts, were confirmed stopped. For a new validation run, record the validation date, image, runtime, kernel, launch identity and fixture coverage together, including any behavior changes that have not been retested. A pass on one image or a previous Envd binary is not a platform-wide support guarantee.
+All temporary sandboxes were terminated. Native Provider instances were reconciled absent, and all five Modal instances, including diagnostic attempts, were confirmed stopped. Record the date, image, runtime, kernel, launch identity and fixture coverage together when repeating the campaign, including changed behavior still awaiting a test.

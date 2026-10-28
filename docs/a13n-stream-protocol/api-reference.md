@@ -1,49 +1,59 @@
 ---
 title: Public API and payload reference
 sidebarTitle: API and payload reference
-description: The package's public names, custom events, input metadata, and terminal events.
+description: Look up observer and display APIs, decode custom payloads, and choose processor replacements.
 ---
 
-Stream Protocol exposes AG-UI 1.0 conversion, content projection, and compact display normalization. Hosts own transport and checkpoint storage; Harness owns execution continuation.
+Use this page while implementing a consumer. For a runnable starting point, use the [quickstart](getting-started.md); for integration order and checkpoint handling, use [Events and processors](events.md) and [Replay and recovery](replay.md).
 
 ## Public names
 
-| Export from `a13n_stream_protocol` | Purpose                                                                                                   |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `HarnessAguiObserver`              | Bind one Thread/Run, observe source items, snapshot detached events, or resume from finite source history |
-| `HarnessAguiStreamObserver`        | Observe one root stream with attributed inline children and independent multipart state                   |
-| `AUTHORED_INPUT_EVENT_NAMES`       | Names for authored user and steering input                                                                |
-| `tool_result_content`              | Project a public execution value into text or ordered upstream content parts without media I/O            |
-| `AguiEventProcessor`               | Synchronous `(source, event) -> event or None` Host projection callback                                   |
-| `AguiObservationError`             | Invalid correlation, observation, replay, or processor replacement                                        |
-| `ContentMetadata`                  | Presentation conventions plus opaque extra metadata                                                       |
-| `fragment_custom_event`            | Split an oversized CUSTOM event without losing its domain JSON                                            |
-| `CustomEventAssembler`             | Reassemble ordered frames within one bounded subscription                                                 |
-| `__version__`                      | Installed distribution version                                                                            |
+Import these names from `a13n_stream_protocol`:
 
-Both observer classes accept `processor=None` and `retain_events=True`. They expose `observe(item)`, `snapshot(*, start=0, stop=None)`, `event_count`, async `resume(history)`, `export()`, classmethod `restore(continuation, processor=...)`, and read-only `thread_id` / `run_id`. Restore creates a non-retaining observer. IDs are unbound until observation or reconstruction succeeds.
+| Name                         | Use it to                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `HarnessAguiObserver`        | Convert a strictly single-Run source                                            |
+| `HarnessAguiStreamObserver`  | Convert one root stream and its attributed inline children                      |
+| `AguiEventProcessor`         | Type a synchronous `(source, event) -> event or None` callback                  |
+| `AguiObservationError`       | Handle invalid observation, correlation, replay, or replacement                 |
+| `AUTHORED_INPUT_EVENT_NAMES` | Select authored user and steering input                                         |
+| `ContentMetadata`            | Read display, source, media, and application metadata                           |
+| `tool_result_content`        | Project public tool values into text or ordered content parts without media I/O |
+| `fragment_custom_event`      | Split an oversized CUSTOM event                                                 |
+| `CustomEventAssembler`       | Reassemble complete CUSTOM events from ordered frames                           |
+| `__version__`                | Read the installed distribution version                                         |
+
+Both observer classes accept `processor=None` and `retain_events=True`:
+
+| Member                                 | Behavior                                                          |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `observe(item)`                        | Return the new converted events as a detached tuple               |
+| `event_count`                          | Count retained post-processor frames                              |
+| `snapshot(*, start=0, stop=None)`      | Read detached frames in the half-open range `[start, stop)`       |
+| `await resume(history)`                | Rebuild a fresh observer from a finite asynchronous source prefix |
+| `export()`                             | Detach conversion continuation, excluding the event journal       |
+| `restore(continuation, processor=...)` | Create a non-retaining observer from saved conversion state       |
+| `thread_id`, `run_id`                  | Read the bound source identity; initially `None`                  |
 
 ### Display APIs
 
-Import display types from `a13n_stream_protocol.display`, not the package root:
+Import `DisplayFold`, `DisplaySnapshot`, `DisplayContinuation`, `Item`, and `StreamPosition` from `a13n_stream_protocol.display`.
 
-| API                                                                     | Purpose                                                                         |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | Convert native observations and normalize raw events into display items         |
-| `fold.events(source)`                                                   | Convert one native source item with the fold's non-retaining stream observer    |
-| `fold.fold(events, source=None)`                                        | Accumulate events and return sequence/item references                           |
-| `fold.export()` / `DisplayFold.restore(snapshot, processor=None)`       | Detach and restore a `DisplaySnapshot` containing items and continuation        |
-| `fold.capture_delta()`                                                  | Detach items changed since the previous capture, with the matching continuation |
-| `fold.export_continuation()`                                            | Detach parser state separately from display items                               |
-| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition`      | Validate and serialize checkpoint content and continuation                      |
+| Operation                                                               | Result                                                                 |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | Create a fold for conversion and display accumulation                  |
+| `fold.events(source)`                                                   | Convert a native source item to serialized AG-UI events                |
+| `fold.fold(events, source=None)`                                        | Accumulate events and return sequence/item references                  |
+| `fold.export()`                                                         | Detach all items with their continuation                               |
+| `DisplayFold.restore(snapshot, processor=None)`                         | Restore that checkpoint                                                |
+| `fold.capture_delta()`                                                  | Detach items changed since the last capture, with current continuation |
+| `fold.export_continuation()`                                            | Detach parser state separately                                         |
 
-The default display preview limits each text, argument, or result field to 262,144 characters and marks truncation. Large observation payloads keep their name rather than an unbounded payload copy. `full_content=True` retains full display content. Neither mode is constant-memory: retained items still grow with the conversation.
-
-See [Events and processors](events.md) for live conversion and [Replay and recovery](replay.md) for executable checkpoint restore and source reconstruction.
+Default previews cap each text, argument, or result field at 262,144 characters and mark truncation. Large observation payloads retain their name rather than a full payload copy. `full_content=True` keeps full display content; retained conversation size still grows with the number and size of items. Use the [checkpoint procedure](replay.md#restore-a-compact-display-checkpoint) to keep content, continuation, and suffix selection together.
 
 ## Fragment a complete custom event
 
-This complete example performs an in-memory round trip without network or an Agent:
+Run this in-memory round trip to check a consumer's framing path:
 
 ```python
 from ag_ui.core.events import CustomEvent
@@ -61,48 +71,54 @@ assert complete["value"] == original.value
 assert not assembler.gap
 ```
 
-Pass the **complete serialized CUSTOM envelope** to `accept()`, not only its `value`. Events at or below 48 KiB encoded UTF-8 remain intact. Larger events become `a13n.stream.fragment` events with `id`, `index`, `count`, and string `data`. Choose identities unique enough for interleaved events in your subscription.
+Pass the complete serialized CUSTOM envelope to `accept()`. Events whose JSON occupies at most 48 KiB of UTF-8 stay intact. Larger events become `a13n.stream.fragment` frames containing `id`, `index`, `count`, and string `data`. Use distinct identities for events that can interleave.
 
-The assembler defaults to 64 MiB pending bytes and eight pending identities; both bounds must be positive. It returns `None` until an entire event is reconstructed, or on rejected fragments. Invalid, inconsistent, out-of-order, nested, or over-budget sequences set the sticky `gap` flag. It never publishes a partial domain event.
+The assembler defaults to a 64 MiB pending-byte budget and eight pending identities. Both limits must be positive. `accept()` returns a complete event or `None` while waiting or rejecting a sequence. Invalid, inconsistent, out-of-order, nested, or over-budget fragments set `gap`, which stays set for that assembler.
 
-One assembler belongs to one live subscription. Create a new assembler on reconnect. A missing tail with no subsequent frame cannot be detected from silence alone; the Host owns stream termination/timeouts and gap presentation. Fragment assembly is not durable replay.
+For a fresh subscription, create a fresh assembler. For checkpoint continuation, `export()` and `restore(state)` preserve pending fragments; `DisplayFold` includes that state in its checkpoint. The Host handles transport termination and timeouts, because silence alone cannot reveal a missing final frame.
 
 ## Input metadata and media
 
-`ContentMetadata` defaults to `display=True`, `source_id=None`, and `media=False`, and allows opaque extra metadata. `from_native()` reads a metadata dict or returns defaults for a non-dict input. Metadata is presentation data, not instructions or authorization.
+Read input roles and message IDs from CUSTOM `value.event.role` and `value.event.message_id`. Metadata remains at the top level. `ContentMetadata` defaults to `display=True`, `source_id=None`, and `media=False`; `from_native()` reads a dict or returns defaults for other input types. Extra application metadata is preserved as presentation data.
 
-Text input uses source-specific CUSTOM events such as `a13n.input.user`; `role` and `message_id` live inside `value.event`, while presentation metadata remains top-level. A client normally hides content with `display=False`. Cache markers produce no presentation content. Media uses `a13n.input.media` with `media=True`:
+Hide `display=False` content in normal presentation. Use `AUTHORED_INPUT_EVENT_NAMES` for user and steering text. Cache markers have no presentation content. Media observations use `a13n.input.media` and `media=True`:
 
-| Native input      | Projection                                                          |
-| ----------------- | ------------------------------------------------------------------- |
-| Binary bytes      | Kind, media type, size, and `payload_omitted=True`; no byte payload |
-| HTTP(S) file URL  | Reference URL and optional available media type                     |
-| Other URL schemes | Payload omitted rather than embedding inline payloads               |
-| Uploaded file     | File ID, provider name, and media type                              |
+| Native input      | Public descriptor                                  |
+| ----------------- | -------------------------------------------------- |
+| Binary bytes      | Kind, media type, size, and `payload_omitted=True` |
+| HTTP(S) file URL  | URL and available media type                       |
+| Other URL schemes | Omitted payload                                    |
+| Uploaded file     | File ID, provider name, and media type             |
 
-This is one-way observation, not a codec for restoring model input or a media-storage service. Resolving an application media reference still requires current Host access policy.
+Resolve references through your Host's current access policy. The projection performs no media fetch and supplies no authority to access a file. Keep original model input separately if your application needs to restore it.
 
 ## Terminal events
 
-- Completed output becomes `RUN_FINISHED` with success outcome and usage. Non-JSON-safe output is omitted and marked `result_omitted` in `rawEvent` rather than serialized as arbitrary Python.
-- Suspended output becomes `RUN_FINISHED` with `outcome.type="interrupt"` and one interrupt per deferred call or approval. `id` identifies the target call for answers, while `toolCallId` identifies the model call for transcript correlation (equal for direct calls); Host pending-answer policy remains authoritative.
-- Cancellation becomes `RUN_FINISHED` with `outcome.type="cancelled"`.
-- Failure becomes `RUN_ERROR` with safe failure code/message and usage.
-- Inline children use `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR`; their content carries `subagentRunId` rather than nested root lifecycles.
+Read the outcome to choose the next UI action:
 
-Source correlation includes Thread, Run, sequence, and occurrence time. A terminal presentation event does not mean the Host durably committed the result, delivered a message, or settled billing.
+| Event                                                     | Interpretation                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `RUN_FINISHED`, success                                   | Display the completed result and usage                            |
+| `RUN_FINISHED`, `outcome.type="interrupt"`                | Present deferred calls or approvals to the Host's answer workflow |
+| `RUN_FINISHED`, `outcome.type="cancelled"`                | Show cancellation                                                 |
+| `RUN_ERROR`                                               | Show the safe failure code/message and usage                      |
+| `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, `SUBAGENT_ERROR` | Update the attributed inline child's display                      |
+
+For an interrupt, `id` identifies the deferred target for answers, while `toolCallId` identifies the model call for transcript correlation. Direct calls use the same ID for both. Host answer validation remains authoritative. A non-JSON-safe completed result is omitted and marked `result_omitted` in `rawEvent`.
+
+Source metadata retains Thread, Run, sequence, and occurrence time. Use Host records to confirm durable result storage, external delivery, and billing; terminal presentation alone does not establish those outcomes.
 
 ## Processor replacement limits
 
-The processor sees complete domain events **before** fragmentation. It can return `None` to omit an event. Replacements preserve event type, IDs, timestamps, lifecycle/source correlation, and every structural field. Only these content fields are mutable:
+A processor receives the complete event before fragmentation. Return `None` to omit it, or replace one of the following content fields while preserving all structural fields:
 
-| Event family                                      | Mutable field     |
-| ------------------------------------------------- | ----------------- |
-| Text/reasoning content, tool-call argument deltas | `delta`           |
-| Encrypted reasoning                               | `encrypted_value` |
-| Tool result                                       | `content`         |
-| Run finished                                      | `result`          |
-| Run error                                         | `message`         |
-| CUSTOM and unlisted events                        | None              |
+| Event family                                    | Mutable field     |
+| ----------------------------------------------- | ----------------- |
+| Text/reasoning content and tool argument deltas | `delta`           |
+| Encrypted reasoning                             | `encrypted_value` |
+| Tool result                                     | `content`         |
+| Run finished                                    | `result`          |
+| Run error                                       | `message`         |
+| CUSTOM and unlisted events                      | None              |
 
-CUSTOM payload rewriting is not supported; omit the event if policy requires suppression. Replacements are validated before the source item is committed. Replay processors must be deterministic and side-effect-free; publish/persist only after the observer returns its newly committed events.
+Keep type, IDs, timestamps, lifecycle, and source correlation unchanged. Omit a CUSTOM event as a whole when policy requires hiding its payload. Validation finishes before the source item commits. Keep processors deterministic and side-effect-free; persist or publish the batch only after `observe()` returns.

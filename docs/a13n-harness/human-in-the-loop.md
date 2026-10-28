@@ -4,35 +4,105 @@ sidebarTitle: Human-in-the-loop
 description: Render built-in structured questions, define application-owned payload types, and resume with correlated answers.
 ---
 
-Use Harness's built-in `ask_user_question` tool when an Agent needs a person to choose options or supply clarification. Your application renders the question, collects the answer, and resumes the suspended work. Harness supplies the question format and validates the answer; it does not supply a form renderer or keep a Run open while waiting for a person.
+Use `ask_user_question` to pause an Agent for a person's choice, then continue with the answer. This page walks through that round trip without a provider account. Your application supplies the form and stores the pending work; Harness supplies the schema and validates the correlated answer.
 
-Questions are external tool **calls**, not tool **approvals**. Both use deferred feedback, but their payloads and authority are different:
-
-| Interaction             | Pending category | What the Host supplies                                      |
-| ----------------------- | ---------------- | ----------------------------------------------------------- |
-| `ask_user_question`     | `calls`          | A structured answer or an explicit tool failure             |
-| Tool approval           | `approvals`      | An approve/deny decision, subject to fresh execution policy |
-| Other client-side tools | `calls`          | A result defined by the selected client tool                |
-
-An answer is not permission to execute a tool. See [Managed tools](managed-tools.md) for approval policy and [Client-side tools](client-tools.md) for application-defined external actions.
+The lifecycle is: run → suspended result → collect an answer → fresh Run. Waiting does not keep a Harness Run open.
 
 ## Enable structured questions
 
-Add `UserInteractionCapability` to your Agent definition. In an application that already supplies `agent_spec` and `model`:
+Use the Python 3.13 environment from [Getting started](getting-started.md). Save this complete program as `question_demo.py`. The scripted Model asks one question; the application simulates selecting **Focused**.
 
-```python
-from a13n_harness import HarnessBuilder
-from a13n_harness.capabilities import UserInteractionCapability
+```python title="question_demo.py"
+import asyncio
+import json
+from collections.abc import AsyncIterator
+
+from a13n_harness import AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
+from a13n_harness.capabilities import AskUserQuestionRequest, UserInteractionCapability
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+
+question = {
+    "questions": [{
+        "question": "Which scope should be used?",
+        "header": "Scope",
+        "options": [
+            {"label": "Focused", "description": "Change the selected component."},
+            {"label": "Broad", "description": "Change the whole repository."},
+        ],
+        "multiSelect": False,
+    }]
+}
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
+    returns = [
+        part
+        for message in messages if isinstance(message, ModelRequest)
+        for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+    if not returns:
+        yield {0: DeltaToolCall(
+            name="ask_user_question",
+            json_args=json.dumps(question),
+            tool_call_id="question-1",
+        )}
+    else:
+        assert "Focused" in str(returns[-1].content)
+        yield "Proceeding with the focused scope."
+
 
 executable = HarnessBuilder().build(
-    agent_spec,
+    AgentSpec(),
     output_type=str,
-    model=model,
+    model=FunctionModel(stream_function=respond),
     capabilities=(UserInteractionCapability(),),
 )
+
+
+async def main() -> None:
+    first = await executable.run("Clarify the scope.", bindings=RunBindings.embedded())
+    assert first.status == "suspended"
+    assert first.state is not None and first.deferred is not None
+    requests = first.deferred
+    assert len(requests.calls) == 1 and not requests.approvals
+    call = requests.calls[0].target_call
+    assert call.tool_name == "ask_user_question"
+    pending = AskUserQuestionRequest.model_validate(call.args_as_dict())
+    print(first.status, pending.questions[0].question)
+
+    # A real application displays the question and collects this answer from a person.
+    answer = {"answers": {pending.questions[0].question: "Focused"}}
+    second = await executable.run(
+        bindings=RunBindings.embedded(),
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(
+            requests, requests.build_results(calls={call.tool_call_id: answer})
+        ),
+    )
+    assert second.run_id != first.run_id
+    print(second.output_or_raise())
+
+
+asyncio.run(main())
 ```
 
-The model can request `ask_user_question` when the current Host supports deferred tools. `RunBindings.deferred_tools_supported=False` omits the tool and its guidance. This applies to roots and children; [built-in inline children](delegation-and-codeact.md#host-managed-feedback) disable deferral, while a supporting Host can resume its own child.
+Run `python question_demo.py`. Expected output:
+
+```text
+suspended Which scope should be used?
+Proceeding with the focused scope.
+```
+
+`UserInteractionCapability` exposes the tool. The first Run returns its state and pending envelope. `build_results()` associates the answer with the actual call ID; `DeferredToolResume` carries that feedback into a fresh Run.
+
+Replace the simulated `answer` assignment with your form, CLI prompt, or other human input. Keep the pending envelope and state while waiting. With a real Model, handle ordinary completed answers as well as suspension; asking a question is the Model's choice.
+
+`RunBindings.deferred_tools_supported=False` omits the tool and its guidance. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) use that setting; a supporting Host can resume its own child.
+
+Questions use pending `calls`, while tool approvals use `approvals`. Submit question answers as call results. An answer does not approve another tool; see [Managed tools](managed-tools.md) for approval policy and [Client-side tools](client-tools.md) for other external actions.
 
 ## Request payload
 
@@ -174,42 +244,17 @@ answer_payload = answer.model_dump(mode="json", exclude_none=True)
 
 ## Resume an embedded Harness Run
 
-A successful question call ends the Run with `status="suspended"`, `state`, and `deferred`. Retain the exact pending envelope and selected state. Once the person has answered, start a fresh Run with fresh bindings and a correlated `DeferredToolResume`.
+The complete program demonstrates the two-Run path. In a durable application:
 
-The following function uses the `executable` configured above. It expects one question call and no approvals; the simulated response chooses the first option for each question. Replace that selection with your application's human interaction:
+1. On `status="suspended"`, retain the selected `state` and exact `deferred` envelope together.
+2. Render each supported pending call and collect its answer. Keep each call's ID separate from its question texts.
+3. Build results for every pending call and approval, each exactly once in its original category.
+4. Start a new Run with fresh bindings, the saved state, and `DeferredToolResume(requests, results)`.
+5. Handle the new result. It may complete, fail, be cancelled, or suspend with another batch.
 
-```python
-from a13n_harness import DeferredToolResume, RunBindings
-from a13n_harness.capabilities import AskUserQuestionRequest
+The outer `calls` mapping uses `tool_call_id`; a question answer's inner `answers` mapping uses normalized question text. `approve_all=True` answers approvals, not questions.
 
-
-async def answer_question(executable):
-    first = await executable.run("Clarify the scope", bindings=RunBindings.embedded())
-    if first.status != "suspended" or first.state is None or first.deferred is None:
-        raise RuntimeError("Expected a pending question")
-    requests = first.deferred
-    if len(requests.calls) != 1 or requests.approvals:
-        raise RuntimeError("This example expects one call and no approvals")
-    call = requests.calls[0].target_call
-    if call.tool_name != "ask_user_question":
-        raise RuntimeError("Expected the built-in question tool")
-    question_request = AskUserQuestionRequest.model_validate(call.args_as_dict())
-    answer = {
-        "answers": {
-            question.question: question.options[0].label
-            for question in question_request.questions
-        }
-    }
-    results = requests.build_results(calls={call.tool_call_id: answer})
-    second = await executable.run(
-        bindings=RunBindings.embedded(),
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(requests, results),
-    )
-    return second.output_or_raise()
-```
-
-For a batch containing several calls or approvals, cover every pending item exactly once in its original category. The outer mapping uses `tool_call_id`; the question answer's inner mapping uses question text. Do not use `approve_all=True` as an answer to a question. [State and resume](state-and-resume.md#structured-suspension) covers complete feedback, fresh authorization, and durable recovery after an interrupted resume.
+For restart persistence and recovery after an interrupted resume, follow [State and resume](state-and-resume.md#structured-suspension). Keep accepted feedback paired with its current checkpoint as that guide describes.
 
 ## Answer through Service
 
