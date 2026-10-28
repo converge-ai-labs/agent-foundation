@@ -257,6 +257,7 @@ class EnvironmentRunPlan:
         mounts: Sequence[_PreparedMount],
         runtime: EnvironmentRuntime,
         tool_result_directory: str,
+        retained_history_directory: str,
         default_environment: str,
     ) -> None:
         self._publications = tuple(publications)
@@ -264,6 +265,7 @@ class EnvironmentRunPlan:
         self._mounts = tuple(mounts)
         self.runtime = runtime
         self.tool_result_directory = tool_result_directory
+        self.retained_history_directory = retained_history_directory
         self.environments: Mapping[str, EnvironmentConnector] = MappingProxyType(
             {item.alias: item.environment for item in mounts}
         )
@@ -438,6 +440,9 @@ class EnvironmentRunService:
             default_environment=composition.default_environment or mounts[0].alias,
             tool_result_directory=(
                 f"{(thread_mount.mount_path or '/environment/thread-files').rstrip('/')}/tmp/tool-results"
+            ),
+            retained_history_directory=(
+                f"{(thread_mount.mount_path or '/environment/thread-files').rstrip('/')}/history"
             ),
         )
 

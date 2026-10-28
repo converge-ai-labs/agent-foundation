@@ -1088,7 +1088,10 @@ async def test_joint_resume_applies_across_intervening_system_prompt_changes(mid
     ]
     assert retained[0].metadata.source_id == "attachment"
     assert retained[0].metadata.display is False
-    assert retained[0].metadata.model_extra == {"attachment_id": "asset"}
+    assert retained[0].metadata.model_extra == {
+        "attachment_id": "asset",
+        "a13n.input-provenance": {"kind": "task", "run_id": first.run_id},
+    }
 
 
 async def test_joint_resume_empty_suffix_uses_latest_assistant_for_new_input_and_does_not_replay_it():
@@ -1732,3 +1735,66 @@ async def test_background_policy_rejects_invalid_threshold(threshold):
 
     with pytest.raises(ValidationError):
         BackgroundCompactionPolicy(blocking_threshold=threshold)
+
+
+@pytest.mark.parametrize("mismatch", [None, "model", "history", "error", "tools"])
+async def test_emergency_reuses_only_applicable_background_native_overflow(mismatch):
+    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+    from pydantic_ai.tools import ToolDefinition
+
+    previous = _previous()
+    operator = _Operator()
+    calls = []
+
+    async def stream(messages, info):
+        summary = _COMPACTION_PROMPT in _user_values(messages)
+        calls.append("summary" if summary else "primary")
+        if summary or calls.count("primary") == 1:
+            raise ModelContextWindowExceededError("test", "too large")
+        yield "done"
+
+    model = FunctionModel(stream_function=stream)
+    input = CompactionInput.create(
+        operation_id="failed-summary",
+        thread_id=previous.thread_id,
+        run_id="prior",
+        model_name="different" if mismatch == "model" else model.model_name,
+        provider_name=model.system,
+        messages=previous.message_history,
+        parameters=ModelRequestParameters(
+            function_tools=[ToolDefinition(name="old_tool")] if mismatch == "tools" else []
+        ),
+        settings={},
+    )
+    operator.operation = CompactionOperation(
+        input=input,
+        status="failed",
+        error_code="provider_unavailable" if mismatch == "error" else "model_context_window_exceeded",
+    )
+    if mismatch == "history":
+        previous = previous.model_copy(
+            update={
+                "message_history_json": encode_messages(
+                    [ModelRequest(parts=[UserPromptPart("replacement")]), ModelResponse(parts=[TextPart("new")])]
+                )
+            }
+        )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=[CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator)],
+    )
+    result = await executable.run("continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert calls == (
+        ["primary", "primary"]
+        if mismatch is None
+        else ["primary", "summary", "primary"]
+        if mismatch == "history"
+        else ["summary", "primary", "primary"]
+    )
+    assert result.state.agent_context_state.get(EMERGENCY_STATE_ID) is not None
+    assert await compaction_disposition(result.state, basis=input.basis) == "skipped"
+    assert operator.submissions == 0

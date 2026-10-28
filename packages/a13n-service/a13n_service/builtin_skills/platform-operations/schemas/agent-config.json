@@ -1296,6 +1296,11 @@
       "default": null,
       "title": "Default Environment Template Id"
     },
+    "emergency_handoff": {
+      "default": true,
+      "title": "Emergency Handoff",
+      "type": "boolean"
+    },
     "execution": {
       "anyOf": [
         {

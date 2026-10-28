@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from copy import deepcopy
 
 import pytest
 from a13n_harness import HarnessBuilder, HarnessEvent, RunBindings
@@ -207,3 +208,134 @@ async def test_handoff_keeps_model_cut_when_tool_checkpoint_is_already_queued(
     saved = await load_state(service.runtime.objects, pointer)
     assert saved is not None and open_tool_calls(saved.harness.message_history) == frozenset()
     assert scripted_model.requests.qsize() == 1
+
+
+@pytest.mark.parametrize("fail_commit", [False, True])
+async def test_emergency_replacement_must_commit_before_resume(fail_commit):
+    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_harness.capabilities import CompactionCapability
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    boundaries = Boundaries(lambda: {})
+    fold = DisplayFold("host-run", Tail(), attempt=1, page_items=20, page_bytes=65536)
+    boundaries.freeze_display = lambda _: fold.snapshot()
+    staged_emergency = asyncio.Event()
+    release_commit = asyncio.Event()
+    cuts = []
+    calls = 0
+
+    async def commit(staged):
+        cuts.append(staged)
+        marker = staged.state.agent_context_state.get(EMERGENCY_STATE_ID)
+        if marker is not None:
+            assert marker.data["scope_id"] == "host-run"
+            assert "Emergency handoff" in str(staged.state.message_history)
+            staged_emergency.set()
+            await release_commit.wait()
+            if fail_commit:
+                raise RuntimeError("lost checkpoint fence")
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        assert release_commit.is_set()
+        assert cuts[-1].completed.done()
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=[CompactionCapability(), boundaries],
+    )
+
+    async def run():
+        async with executable.stream("task", bindings=RunBindings.embedded(emergency_scope_id="host-run")) as stream:
+            async with boundaries.process(commit):
+                async for _ in stream:
+                    pass
+                await boundaries.drain()
+            return stream.result
+
+    async with asyncio.timeout(5):
+        task = asyncio.create_task(run())
+        await staged_emergency.wait()
+        await asyncio.sleep(0)
+        assert calls == 2
+        release_commit.set()
+        if fail_commit:
+            with pytest.raises(RuntimeError, match="lost checkpoint fence"):
+                await task
+            assert calls == 2
+        else:
+            result = await task
+            assert result.output_or_raise() == "done"
+            assert calls == 3
+
+
+@pytest.mark.parametrize("overflow_after_takeover", [False, True])
+async def test_emergency_checkpoint_survives_worker_takeover(
+    skill_service, scripted_model, runs_kit, monkeypatch, overflow_after_takeover
+):
+    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs.checkpoints import StatePointer, load_state
+    from a13n_service.runs.execute import _Attempt
+    from a13n_service.runs.tables import RunRow
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    service = skill_service
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "retain this task"))["run"]["id"]
+    create, commit = OpenAIChatModel._completions_create, _Attempt._commit
+    calls = []
+    yielded = False
+
+    async def overflowing(self, messages, *args, **kwargs):
+        calls.append(deepcopy(messages))
+        if len(calls) <= 2 or overflow_after_takeover:
+            raise ModelContextWindowExceededError("test", "too large")
+        return await create(self, messages, *args, **kwargs)
+
+    async def yield_after_emergency_commit(self, state, **kwargs):
+        nonlocal yielded
+        result = await commit(self, state, **kwargs)
+        marker = state.agent_context_state.get(EMERGENCY_STATE_ID)
+        if marker is not None and marker.data["pending"] and not yielded:
+            yielded = True
+            self.control.handoff.set()
+        return result
+
+    monkeypatch.setattr(OpenAIChatModel, "_completions_create", overflowing)
+    monkeypatch.setattr(_Attempt, "_commit", yield_after_emergency_commit)
+    async with asyncio.timeout(20):
+        await (await runs_kit.attempt(service))
+    assert yielded and len(calls) == 2
+    assert (await runs_kit.get_run(service, run_id))["status"] == "accepted"
+    async with short_session(service.runtime.storage) as session:
+        pointer = StatePointer.model_validate((await session.get_one(RunRow, run_id)).checkpoint)
+    saved = await load_state(service.runtime.objects, pointer)
+    assert saved is not None
+    marker = saved.harness.agent_context_state.get(EMERGENCY_STATE_ID)
+    assert marker is not None
+    assert marker.data["scope_id"] == run_id and marker.data["pending"] is True
+    assert "retain this task" in str(saved.harness.message_history)
+
+    scripted_model.say("resumed")
+    async with asyncio.timeout(20):
+        await (await runs_kit.attempt(service))
+    final = await runs_kit.get_run(service, run_id)
+    # Cooperative handoff adds a physical attempt without charging the retry budget.
+    attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
+    assert len(attempts) == 2
+    assert final["attempts"] == 1
+    assert final["status"] == ("failed" if overflow_after_takeover else "completed")
+    assert len(calls) == 3
+    assert "Emergency handoff" in str(calls[-1])
+    assert "retain this task" in str(calls[-1])
+    if overflow_after_takeover:
+        assert "emergency_handoff_exhausted" in str(final)

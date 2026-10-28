@@ -2143,3 +2143,42 @@ it.each([
     expect(display.browserActivityRunId).toBe(active ? "run-one" : undefined);
   },
 );
+
+it("retains emergency warnings after successful recovery without retry state", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 110;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  for (const outcome of ["prepared", "resumed"]) {
+    emit("CUSTOM", {
+      name: "a13n.harness.recovery",
+      value: {
+        event: {
+          payload: {
+            type: "emergency_handoff",
+            outcome,
+            warning: "Immediate root-cause investigation is required.",
+          },
+        },
+      },
+    });
+  }
+  emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Completed" });
+  emit("RUN_FINISHED", {});
+  expect(display.recovery).toBeUndefined();
+  const warning = [...display.blocks.values()].filter(
+    (block) => block.kind === "activity",
+  );
+  expect(warning).toHaveLength(1);
+  expect(warning[0].text).toContain(
+    "Immediate root-cause investigation is required.",
+  );
+  expect(warning[0].text).toContain("resumed");
+});

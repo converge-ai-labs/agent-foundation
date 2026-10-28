@@ -46,7 +46,12 @@ async def test_primary_annotations_precede_context_and_survive_repeated_preparat
     history = [ModelRequest(parts=[UserPromptPart([item.value for item in content])])]
     ctx = cast(
         RunContext[AgentContext],
-        SimpleNamespace(deps=SimpleNamespace(_model_input=state), messages=history, run_id="attempt-one", run_step=1),
+        SimpleNamespace(
+            deps=SimpleNamespace(_model_input=state, run_id="logical-run"),
+            messages=history,
+            run_id="attempt-one",
+            run_step=1,
+        ),
     )
     request_context = ModelRequestContext(
         model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("unused")])),
@@ -193,7 +198,10 @@ async def test_media_steering_and_new_run_preserve_annotations_with_changed_syst
     ]
     assert [item.metadata.source_id for item in items] == ["initial", "steering", "next-run"]
     assert [item.metadata.display for item in items] == [False, True, True]
-    assert items[1].metadata.model_extra == {"attachment_id": "file-one"}
+    assert items[1].metadata.model_extra == {
+        "attachment_id": "file-one",
+        "a13n.input-provenance": {"kind": "steer", "run_id": run.result.run_id},
+    }
     assert steering_input_ids(state.message_history) == ("input-one",)
     assert [
         part.content
@@ -419,4 +427,7 @@ async def test_recovery_attempt_annotations_follow_current_prompt_not_initial_in
     assert initial.metadata.source_id == "initial"
     assert continuation.metadata.source_id == "recovery"
     assert continuation.metadata.display is False
-    assert continuation.metadata.model_extra == {"attachment_id": "recovery-file"}
+    assert continuation.metadata.model_extra == {
+        "attachment_id": "recovery-file",
+        "a13n.input-provenance": {"kind": "recovery", "run_id": result.run_id},
+    }

@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import TypeAdapter
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
+from pydantic_ai.exceptions import ModelContextWindowExceededError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -134,7 +135,13 @@ class _CompactionRunStream(HarnessRunStream[str]):
             raise
         except Exception as exc:
             self._diagnostic_error = exc
-            code = exc.code if isinstance(exc, HarnessError) else "compaction_failed"
+            code = (
+                "model_context_window_exceeded"
+                if isinstance(exc, ModelContextWindowExceededError)
+                else exc.code
+                if isinstance(exc, HarnessError)
+                else "compaction_failed"
+            )
             await self._emit_failure(operation_id, code)
             # Failed compaction never hands the Host a replacement checkpoint,
             # even when export or notification failed after summary generation.

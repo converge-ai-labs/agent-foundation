@@ -57,7 +57,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
 from a13n_service.resources.agents.toolsets import enabled_tools
-from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs
+from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.agent import ResolvedAgent
@@ -1047,6 +1047,8 @@ class _Attempt:
             tool_execution=self.runtime.executions if self.plan.retain_tools else None,
             codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
+            emergency_scope_id=lease.run_id,
+            retained_history_directory=f"{placement.ROOT}/history/{lease.thread_id}",
             request_context=self.plan.request_context,
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),

@@ -268,6 +268,17 @@ A checkpoint with pending tools, retained executions, an unrestored handoff, or 
 
 On failure, exception, or cancellation, keep the original checkpoint. Failed results include a safe code/message and `failure.details.phase`; preparation, middleware, and cleanup can raise under the ordinary Run contract. Cancellation propagates. `CompactionSummaryEvent` and `compaction_completed` describe generation, not durable publication, and may precede a later failure. They are not repeated by the subsequent restoration. Handle storage conflicts separately from model failures; scheduling and idle timers belong to the Host.
 
+### Emergency handoff
+
+When both an ordinary request and its applicable compaction request exceed the Model window, Harness attempts one last-resort continuation in the same logical Run. It reconstructs a mechanical history excerpt within 24,000 characters, prioritizing the current task and user corrections. It retains current instructions, separately stored state, execution ownership and usage limits. Recorded tool calls are evidence, not requests to replay.
+
+History preservation is best effort. Supply `RunBindings.retained_history_directory` for an authorized Environment location that survives continuation and enable a file reader. Missing storage, write failures or oversized originals produce explicit loss notices and still allow reconstruction. Read retained files selectively; their availability follows the Environment's lifetime. Hosts with worker takeover also supply one stable `emergency_scope_id` per logical Run and commit the replacement history and marker before resuming dispatch.
+
+The path is enabled by default with `CompactionCapability`. Set `emergency_handoff=False` on that Capability to opt out independently of transient retries or background mode. A second overflow after reconstruction fails with `emergency_handoff_exhausted`.
+
+> [!WARNING]
+> Every emergency handoff requires immediate root-cause investigation, even when continuation succeeds. Check compaction configuration and unbounded tool output first. The warning and recovery outcome remain visible; success does not fix the underlying cause.
+
 ### Background compaction
 
 Choose background mode when your Host can retain summary work after the foreground Run closes. It requires an application-owned `CompactionOperator`; this helper connects an existing operator to the Agent:
@@ -302,7 +313,7 @@ Harness summarizes a complete history prefix and retains later messages, includi
 | Failed operation and compaction still needed                    | Try synchronous recovery                         |
 | Ready, applicable result                                        | Replace the matching prefix; preserve the suffix |
 
-Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity, except that a native summary overflow allows one ordinary request to establish whether emergency handoff is needed. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
 
 If continuation is blocked, `compaction_capacity_unavailable` reports the attempt count and failure type, or explains that the request budget cannot cover a summary and the pending ordinary request. It preserves the original exception as its cause without including provider response bodies. Retry in a new Run for a transient failure; increase the request limit when the diagnostic identifies insufficient budget.
 

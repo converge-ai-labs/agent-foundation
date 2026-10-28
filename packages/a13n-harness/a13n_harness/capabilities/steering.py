@@ -136,6 +136,13 @@ class SteeringBridge:
                 )
                 await self._write(self._retained_requests)
 
+    async def replace_retained(self, prompt: str) -> None:
+        """Replace delivered inputs after lossy recovery, preserving accepted pending inputs."""
+        async with self._lock:
+            request = _request_for_input(prompt, source_run_id=self._run_id)
+            self._retained_requests = (request,) if self._retain_inputs else ()
+            await self._write(self._retained_requests)
+
     def pause(self) -> None:
         """Keep accepting ordered input while the current native attempt drains."""
         self._between_attempts = True
@@ -389,7 +396,16 @@ def _request_for_input(
     metadata = {_SOURCE_RUN_METADATA_KEY: source_run_id}
     if input_id is not None:
         metadata[_INPUT_ID_METADATA_KEY] = input_id
-    return input_request(deepcopy(input), metadata=metadata)
+    from a13n_harness._emergency import mark_input
+    from a13n_harness.content import annotate_prompt, content_items
+
+    content = deepcopy(input)
+    request = input_request(content, metadata=metadata)
+    return annotate_prompt(
+        request,
+        0,
+        mark_input(content_items(content), kind="steer" if input_id is not None else "task", run_id=source_run_id),
+    )
 
 
 @dataclass(init=False)

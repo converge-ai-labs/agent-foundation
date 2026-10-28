@@ -787,6 +787,19 @@ export class FocusDisplay {
       return;
     }
     if (
+      name === "a13n.harness.recovery" &&
+      payload.type === "emergency_handoff"
+    ) {
+      const key = `${scope}:emergency-handoff`;
+      setBlock(key, {
+        id: key,
+        kind: "activity",
+        text: `${string(payload.warning)} Outcome: ${string(payload.outcome)}.`,
+        metadata: { "a13n.recovery": "emergency_handoff" },
+      });
+      return;
+    }
+    if (
       !subagentRunId &&
       name === "a13n.harness.recovery" &&
       payload.type === "model_retry_scheduled"

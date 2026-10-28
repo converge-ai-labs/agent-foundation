@@ -4,7 +4,7 @@
 
 One Harness Run is one process-local logical invocation of an `ExecutableAgent`. It validates already constructed Environment inputs, enters a fresh Run-local mount aggregate, creates one outer `AgentContext`, binds one plugin chain, owns one shared `RunUsage` accumulator, and produces at most one terminal Harness result.
 
-A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service run attempts, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
+A logical Harness Run may contain several sequential `ModelAttempt` values for `ModelRecoveryPolicy`, immediate steering, or [emergency handoff](09-context-and-memory.md#emergency-handoff). A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service run attempts, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Runs retain its native deferred boundary when current Host bindings support it, independently of parent lineage. Unsupported Runs resolve runtime deferral as denied tool results inside the same loop and reserve terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
@@ -45,6 +45,8 @@ class RunBindings:
     ] = ()
     metadata: Mapping[str, JsonValue] = {}
     model_context: ModelContextMiddleware | None = None
+    emergency_scope_id: str | None = None
+    retained_history_directory: str | None = None
 ```
 
 The trusted caller may supply fresh bindings for a logical run; an embedded call that omits them receives fresh embedded bindings. The Harness:
@@ -64,6 +66,8 @@ The same context and entered Environment facade are reused by every internal `Mo
 The logical Run receives one `run_id`, and each internal `ModelAttempt` receives a transient model-attempt ID, but they do not define the provider model session or prompt-cache scope. All attempts read the same State-owned `AgentContext.thread_id`. A later continuation creates a new Harness run and fresh bindings while restoring that ID from the selected State; a new root or child State and an explicit `HarnessState.fork()` use distinct IDs. No `RunBindings`, metadata, or invocation argument can override it. [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the provider mapping contract.
 
 `RunBindings.embedded()` creates a process-local Agent instance and accepts an optional model resolver, model-context middleware, Capabilities, metadata, and bounded Host references. When neither adapter inputs nor an explicit `RunBindings.environment` runtime are supplied, Harness creates an empty bound facade. It never discovers a Provider or hidden provider configuration.
+
+The emergency scope identifies one Host logical Run across restored Harness invocations; it grants no execution authority. `AgentContext.emergency_handoff_pending` lets a Host require its existing checkpoint commit before dispatching the reconstructed request. The retained-history directory is an Environment path governed by current routing and permissions, with retention owned by the Host. [Emergency Handoff](09-context-and-memory.md#emergency-handoff) owns the allowance and preservation rules.
 
 ## Run Configuration
 

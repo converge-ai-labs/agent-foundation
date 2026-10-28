@@ -291,7 +291,10 @@ class AgentReconstructor:
                     definition,
                     capabilities=tuple(
                         CompactionCapability(
-                            item.policy, background=composition.background_compaction, operator=compaction
+                            item.policy,
+                            background=composition.background_compaction,
+                            operator=compaction,
+                            emergency_handoff=item.emergency_handoff,
                         )
                         if isinstance(item, CompactionCapability)
                         else item

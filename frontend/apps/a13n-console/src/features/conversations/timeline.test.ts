@@ -512,3 +512,26 @@ it("retains the source entry of steering even when historical paging omits the i
     },
   ]);
 });
+
+it("shows emergency warnings in a completed run and retains their raw diagnostics", () => {
+  const { entries } = timeline(
+    custom("a13n.harness.recovery", {
+      type: "emergency_handoff",
+      outcome: "resumed",
+      warning: "Immediate root-cause investigation is required.",
+      before_chars: 100000,
+    }),
+    text("answer", "assistant", "Completed"),
+  );
+  expect(entries.find((entry) => entry.kind === "event")).toMatchObject({
+    notice: {
+      kind: "emergency",
+      tone: "warning",
+      outcome: "resumed",
+      message: "Immediate root-cause investigation is required.",
+    },
+  });
+  expect(entries.find((entry) => entry.kind === "other")).toMatchObject({
+    observations: [{ detail: { payload: { before_chars: 100000 } } }],
+  });
+});

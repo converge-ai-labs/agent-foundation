@@ -187,6 +187,8 @@ class RunBindings:
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
+    emergency_scope_id: str | None = None
+    retained_history_directory: str | None = None
     state_store: StateStore | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
@@ -216,6 +218,10 @@ class RunBindings:
                 parse_mount_path(self.tool_result_directory)
             except ValueError as exc:
                 raise ValueError("tool_result_directory must be a canonical absolute Environment path") from exc
+        if self.retained_history_directory is not None:
+            parse_mount_path(self.retained_history_directory)
+        if self.emergency_scope_id is not None and not self.emergency_scope_id:
+            raise ValueError("emergency_scope_id must not be empty")
         if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
@@ -279,6 +285,8 @@ class RunBindings:
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
         tool_result_directory: str | None = None,
+        emergency_scope_id: str | None = None,
+        retained_history_directory: str | None = None,
         state_store: StateStore | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
@@ -310,6 +318,8 @@ class RunBindings:
             producer_observer=producer_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
+            emergency_scope_id=emergency_scope_id,
+            retained_history_directory=retained_history_directory,
             metadata=metadata or {},
             observation=observation,
             state_store=state_store,
@@ -470,6 +480,8 @@ class AgentContext:
         compare=False,
     )
     tool_result_directory: str | None = None
+    emergency_scope_id: str | None = None
+    retained_history_directory: str | None = None
     _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
     # The restored state's fields this Harness does not know, which every export keeps.
     _state_extensions: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
@@ -484,6 +496,11 @@ class AgentContext:
     _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
     _tool_pending_approvals: dict[str, dict[str, JsonValue]] = field(default_factory=dict, repr=False, compare=False)
     _tool_executions: RunToolExecutions = field(default_factory=RunToolExecutions, repr=False, compare=False)
+
+    @property
+    def emergency_handoff_pending(self) -> bool:
+        """Whether the next primary dispatch requires a committed recovery checkpoint."""
+        return self._model_recovery.emergency_pending
 
     @property
     def tool_approval(self) -> ToolApprovalContext | None:

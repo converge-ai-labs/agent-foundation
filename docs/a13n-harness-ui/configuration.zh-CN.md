@@ -215,6 +215,21 @@ background_compaction:
 
 清理在启动时及每小时执行。已处理摘要先随检查点标记，再删除；未使用工作七天后过期，活跃 Run/请求受到保护，对话历史保留。嵌入式 App 可修改 `StorageSettings.compaction_retention_seconds`。关闭后台模式影响后续 Run；已保存未过期摘要仍可使用，Model 预算不变。
 
+### 紧急 handoff
+
+普通执行和正常压缩都超过 Model 窗口时，Harness UI 会尝试一次有界、有损的续跑。成功后警告仍然可见。每次触发都要立即调查，先检查压缩配置和工具输出未受限的问题。历史会尽力保存在 Thread 的 `history/` 目录，不受临时文件清理影响；文件不可用不会阻止重建。
+
+要关闭，在 Agent 的 `compaction` Capability 中设置以下选项，无需显式指定 token 阈值：
+
+```yaml
+capabilities:
+  - capability: compaction
+    configuration:
+      emergency_handoff: false
+```
+
+此设置同时适用于同步和后台模式。用量和请求限制仍然生效。重建后再次溢出会结束 Run，不会循环恢复。
+
 ### 文件记忆
 
 记忆默认开启。在选中 YAML 旁，`memory/global/` 保存跨 Project 事实，`memory/projects/<project-id>/` 保存 Project 事实。无 Project 对话只使用全局记忆。`MEMORY.md` 保持短索引，详细主题分文件保存。记忆是历史上下文，与对话历史和 Full Control 权限分开。

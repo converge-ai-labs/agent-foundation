@@ -235,6 +235,7 @@ export function entryGlyph(entry: TimelineEntry): Icon {
 
 /** The words a lifecycle fact is worth; the decision itself is `lifecycle.ts`. */
 function noticeText(notice: LifecycleNotice, t: TFunction): string {
+  if (notice.kind === "emergency") return notice.message;
   if (notice.kind === "attempt")
     return t("Attempt {{attempt}} started · {{reason}}", {
       attempt: notice.attempt,
@@ -259,6 +260,7 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
 
 /** What follows a lifecycle fact's head: a stop's reason and its message. */
 function noticeDetail(notice: LifecycleNotice): string {
+  if (notice.kind === "emergency") return notice.outcome;
   if (notice.kind !== "outcome") return "";
   // A wait's head already names its reason, and a stop's head its status.
   const reason =

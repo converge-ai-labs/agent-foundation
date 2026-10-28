@@ -4580,6 +4580,11 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      /**
+       * Emergency Handoff
+       * @default true
+       */
+      emergency_handoff?: boolean;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
@@ -4663,6 +4668,11 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      /**
+       * Emergency Handoff
+       * @default true
+       */
+      emergency_handoff?: boolean;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions

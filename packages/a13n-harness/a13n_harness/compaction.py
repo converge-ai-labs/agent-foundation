@@ -167,20 +167,7 @@ class CompactionInput(BaseModel):
             prefix_digest=_prefix_digest(messages),
             replay_json=encode_messages(retained_requests).decode(),
         )
-        # Remove structured output requirements, preserving ordinary tools,
-        # instructions, native configuration and tool_choice for cache reuse.
-        parameters = replace(
-            parameters,
-            # Host-only tool metadata may hold live callbacks and resources.
-            # Serialize provider definitions, never copy or retain those owners.
-            function_tools=[replace(tool, metadata=None) for tool in parameters.function_tools],
-            output_mode="text",
-            output_object=None,
-            output_tools=[],
-            prompted_output_template=None,
-            allow_text_output=True,
-            allow_image_output=False,
-        )
+        parameters = _compaction_parameters(parameters)
         return cls(
             basis=basis,
             run_id=run_id,
@@ -209,6 +196,21 @@ class CompactionInput(BaseModel):
     @property
     def settings(self) -> ModelSettings:
         return cast(ModelSettings, _SETTINGS.validate_json(self.settings_json))
+
+
+def _compaction_parameters(parameters: ModelRequestParameters) -> ModelRequestParameters:
+    """Summary configuration used for dispatch and native-failure applicability."""
+    return replace(
+        parameters,
+        # Host-only metadata can hold callbacks; compare provider definitions only.
+        function_tools=[replace(tool, metadata=None) for tool in parameters.function_tools],
+        output_mode="text",
+        output_object=None,
+        output_tools=[],
+        prompted_output_template=None,
+        allow_text_output=True,
+        allow_image_output=False,
+    )
 
 
 class CompactionResult(BaseModel):

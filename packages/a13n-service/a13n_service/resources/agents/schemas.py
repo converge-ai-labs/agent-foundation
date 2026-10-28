@@ -202,6 +202,7 @@ class AgentConfig(_Frozen):
     model_settings: ModelSettings = Field(default_factory=dict)
     model_characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
     background_compaction: BackgroundCompactionPolicy = Field(default_factory=BackgroundCompactionPolicy)
+    emergency_handoff: bool = True
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)

@@ -11,7 +11,12 @@ import type {
   ExecutionObservation,
   ExecutionStep,
 } from "./execution";
-import { attemptEvent, retryEvent, type LifecycleNotice } from "./lifecycle";
+import {
+  attemptEvent,
+  emergencyEvent,
+  retryEvent,
+  type LifecycleNotice,
+} from "./lifecycle";
 import { reportsTokens, type StepUsage } from "./usage";
 
 /**
@@ -288,6 +293,10 @@ export function runTimeline({
     });
   }
   const entries = assemble(roots);
+  for (const observation of execution.observations) {
+    const warning = emergencyEvent(observation);
+    if (warning) entries.push(warning);
+  }
   if (execution.observations.length)
     entries.push(otherEntry(execution.observations));
   return { entries, totals: runTotals(run, execution, coverage), coverage };

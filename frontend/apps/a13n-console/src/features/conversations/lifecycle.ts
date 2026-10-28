@@ -1,5 +1,6 @@
 import type { Schema } from "../../shared/api";
-import type { ModelRetry } from "./execution";
+import type { ExecutionObservation, ModelRetry } from "./execution";
+import { isRecord } from "../../service-client";
 import { resultExcerpt } from "./format";
 import type { EventEntry } from "./timeline";
 
@@ -10,6 +11,12 @@ import type { EventEntry } from "./timeline";
  * reads. This decision is pure so both disclosure levels agree on it.
  */
 export type LifecycleNotice =
+  | {
+      kind: "emergency";
+      tone: "warning";
+      message: string;
+      outcome: string;
+    }
   | {
       kind: "attempt";
       tone: Tone;
@@ -91,6 +98,26 @@ export function attemptEvent(
       reason: attempt.start_reason,
     },
     attempt.started_at ?? attempt.created_at,
+  );
+}
+
+export function emergencyEvent(
+  observation: ExecutionObservation,
+): EventEntry | null {
+  if (observation.name !== "emergency_handoff" || !isRecord(observation.detail))
+    return null;
+  const payload = observation.detail.payload;
+  if (!isRecord(payload) || typeof payload.warning !== "string") return null;
+  return eventEntry(
+    observation.id,
+    {
+      kind: "emergency",
+      tone: "warning",
+      message: payload.warning,
+      outcome:
+        typeof payload.outcome === "string" ? payload.outcome : "unknown",
+    },
+    observation.occurredAt,
   );
 }
 

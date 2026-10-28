@@ -158,6 +158,8 @@ class ModelRecoveryState:
     attempt_id: str | None = None
     consecutive_failures: int = 0
     request_error: BaseException | None = None
+    context_replacement: tuple[ModelMessage, ...] | None = None
+    emergency_pending: bool = False
 
 
 @dataclass(frozen=True, slots=True)

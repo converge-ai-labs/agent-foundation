@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import Any, cast
 
 from pydantic_ai import RunContext
 from pydantic_ai.agent import CallToolsNode, ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelContextWindowExceededError, ModelHTTPError
+from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.settings import ModelSettings
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, HarnessError
@@ -82,6 +84,7 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
         request_index = self._next_request_index
         self._next_request_index += 1
         request_id = f"model-request-{request_index + 1}"
+        previous_request_index = self._active_request_index
         self._active_request_index = request_index
         await emit_harness_event(
             ctx.deps.events,
@@ -101,6 +104,13 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
         except BaseException as exc:
             if primary_request:
                 recovery.request_error = exc
+                if isinstance(exc, ModelContextWindowExceededError):
+                    from a13n_harness.capabilities.context import CompactionCapability
+
+                    for capability in ctx.capabilities.values():
+                        if isinstance(capability, CompactionCapability):
+                            await capability.recover_overflow(ctx)
+                            break
             try:
                 await emit_harness_event(
                     ctx.deps.events,
@@ -115,6 +125,11 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
             # accepted progress in the primary execution being recovered.
             if primary_request and isinstance(result, CallToolsNode) and result.model_response.state == "complete":
                 recovery.consecutive_failures = 0
+                if recovery.emergency_pending:
+                    from a13n_harness._emergency import record_outcome
+
+                    await record_outcome(ctx.deps, "resumed")
+                    recovery.emergency_pending = False
             await emit_harness_event(
                 ctx.deps.events,
                 kind="lifecycle",
@@ -125,7 +140,27 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
             )
             return result
         finally:
-            self._active_request_index = None
+            self._active_request_index = previous_request_index
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        from a13n_harness._emergency import EMERGENCY_STATE_ID, EmergencyState
+
+        state = await ctx.deps.state.read(EMERGENCY_STATE_ID, EmergencyState, version="1")
+        if state is None:
+            return request_context
+        # A successful resume consumes the allowance, not the remote-history reset.
+        # Explicit None overrides model defaults; removing a key would restore the
+        # old remote seed. Keep this in the mandatory owner even if compaction is removed.
+        settings = dict(request_context.model_settings or {})
+        settings.update(
+            openai_conversation_id=None,
+            openai_previous_response_id=None,
+            xai_previous_response_id=None,
+            google_cached_content=None,
+        )
+        return replace(request_context, model_settings=cast(ModelSettings, settings))
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps is not self._context:

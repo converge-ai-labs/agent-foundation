@@ -1387,6 +1387,12 @@ class StreamRenderer:
                             self.finish()
                             label = f" · {identity}" if child else ""
                             self.append(f"[System{label}] Retrying model request…\n", kind="notice")
+                    elif isinstance(recovery, dict) and recovery.get("type") == "emergency_handoff":
+                        self.finish()
+                        label = f" · {terminal_text(identity)}" if child else ""
+                        warning = terminal_text(str(recovery.get("warning", "Emergency context handoff")))
+                        outcome = terminal_text(str(recovery.get("outcome", "unknown")))
+                        self.append(f"[Warning{label}] {warning} Outcome: {outcome}.\n", kind="notice")
                     return
                 if name in AUTHORED_INPUT_EVENT_NAMES:
                     content = event.get("content")
