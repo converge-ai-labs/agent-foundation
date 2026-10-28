@@ -1,14 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { X, Plus, ArrowClockwise, Trash } from "@phosphor-icons/react";
+import { Plus, ArrowClockwise, Trash } from "@phosphor-icons/react";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./terminal.module.css";
-import { usePanelSize } from "./panel-size";
 
 export type TerminalRequest = { cwd: string; projectId: string };
 
@@ -21,7 +20,6 @@ export function TerminalPanel({
   selected,
   select,
   onActive,
-  collapse,
   unauthorized,
   request,
   threadId,
@@ -34,7 +32,6 @@ export function TerminalPanel({
   selected: string;
   select: (id: string) => void;
   onActive?: (id: string) => void;
-  collapse: () => void;
   unauthorized: () => void;
   request?: TerminalRequest;
   threadId?: string;
@@ -56,20 +53,9 @@ export function TerminalPanel({
   const [pending, setPending] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [height, setHeight] = usePanelSize(
-    "a13n.native.terminal-height",
-    35,
-    20,
-    70,
-  );
   const [visited, setVisited] = useState<string[]>([]);
   const handledRequest = useRef<TerminalRequest | undefined>(undefined);
   const created = useRef<string | null>(null);
-  const resizeStart = useRef<{
-    y: number;
-    height: number;
-    available: number;
-  } | null>(null);
   const refresh = () =>
     void queries.invalidateQueries({ queryKey: ["native"] });
   const projectSessions =
@@ -200,62 +186,8 @@ export function TerminalPanel({
       }}
       hidden={!visible}
       className={styles.panel}
-      style={{ flexBasis: `${height}%` }}
       aria-label="Shared native terminals"
     >
-      <div
-        className={styles.resizeHandle}
-        role="separator"
-        aria-label="Resize terminal"
-        aria-orientation="horizontal"
-        aria-valuemin={20}
-        aria-valuemax={70}
-        aria-valuenow={height}
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-            event.preventDefault();
-            setHeight((value) =>
-              Math.max(
-                20,
-                Math.min(70, value + (event.key === "ArrowUp" ? 5 : -5)),
-              ),
-            );
-          }
-        }}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          resizeStart.current = {
-            y: event.clientY,
-            height,
-            available:
-              event.currentTarget.closest("section")!.parentElement!
-                .parentElement!.clientHeight,
-          };
-        }}
-        onPointerMove={(event) => {
-          const start = resizeStart.current;
-          if (start && start.available)
-            setHeight(
-              Math.round(
-                Math.max(
-                  20,
-                  Math.min(
-                    70,
-                    start.height +
-                      ((start.y - event.clientY) / start.available) * 100,
-                  ),
-                ),
-              ),
-            );
-        }}
-        onPointerUp={() => {
-          resizeStart.current = null;
-        }}
-        onLostPointerCapture={() => {
-          resizeStart.current = null;
-        }}
-      />
       <header className={styles.header}>
         <strong>Terminal{projectName ? ` · ${projectName}` : ""}</strong>
         <div className={styles.actions}>
@@ -293,13 +225,6 @@ export function TerminalPanel({
               <Trash />
             </TerminalAction>
           )}
-          <TerminalAction
-            label="Collapse terminal panel"
-            shortcut={shortcuts.toggle}
-            onClick={collapse}
-          >
-            <X />
-          </TerminalAction>
         </div>
       </header>
       <ErrorNotice

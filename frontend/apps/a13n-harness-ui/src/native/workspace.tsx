@@ -57,8 +57,7 @@ import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
-import { TerminalAction } from "./terminal-action";
-import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
+import { terminalShortcut } from "./terminal-shortcuts";
 import { BrowserPanel } from "../browser/panel";
 import { BrowserActivity } from "../browser/activity";
 import { usePanelSize } from "./panel-size";
@@ -153,7 +152,8 @@ export function NativeWorkspace({
   const hasSupportingViews = !!(
     status.data?.features?.host_files ||
     status.data?.features?.host_git ||
-    status.data?.features?.browser
+    status.data?.features?.browser ||
+    status.data?.features?.host_terminal
   );
   const [tabLayout, setTabLayout] = useState(
     () => readPreference("native-layout", "sidebar") === "tabs",
@@ -228,7 +228,6 @@ export function NativeWorkspace({
   const [fileLine, setFileLine] = useState<number>();
   const [terminalRequest, setTerminalRequest] = useState<TerminalRequest>();
   const [view, setView] = useState<"page" | "file" | "diff">("page");
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [focusedArea, setFocusedArea] = useState<
     "page" | "native" | "explorer" | "terminal"
   >("page");
@@ -239,13 +238,19 @@ export function NativeWorkspace({
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
-  const [pane, setPane] = useState<"files" | "changes" | "browser" | null>(
-    null,
-  );
+  const [pane, setPane] = useState<
+    "files" | "changes" | "browser" | "terminal" | null
+  >(null);
   const tabSequence = useRef(0);
   const nextTabId = () => `view-${++tabSequence.current}`;
   const [tabs, dispatchTabs] = useReducer(workspaceTabs, emptyTabs("new-0"));
   const activeTab = tabs.items.find((tab) => tab.id === tabs.active)!;
+  const terminalVisible =
+    isWorkspace &&
+    pane === "terminal" &&
+    !sidebarCollapsed &&
+    (!singleView || nativeActive) &&
+    !projectLoading;
   const viewTabsElement = useRef<HTMLDivElement>(null);
   const [tabsOverflow, setTabsOverflow] = useState({
     left: false,
@@ -283,6 +288,7 @@ export function NativeWorkspace({
     status.data?.features?.host_files,
     status.data?.features?.host_git,
     status.data?.features?.browser,
+    status.data?.features?.host_terminal,
     tabs.items,
   ]);
   useEffect(() => {
@@ -382,6 +388,11 @@ export function NativeWorkspace({
       setDiffChoices([]);
       setView("page");
       setFocusedArea("explorer");
+    } else if (tab.kind === "terminal") {
+      setPane("terminal");
+      setTerminalOpened(true);
+      setView("page");
+      setFocusedArea("terminal");
     } else if (tab.kind === "browser") {
       setPane("browser");
       setView("page");
@@ -425,14 +436,12 @@ export function NativeWorkspace({
     applyTab(content);
     setNativeActive(true);
     setSidebarCollapsed(false);
-    if (window.matchMedia("(max-width: 999px)").matches) setTerminalOpen(false);
   };
   const activateTab = (tab: WorkspaceTab) => {
     dispatchTabs({ type: "select", id: tab.id });
     applyTab(tab);
     setNativeActive(true);
     setSidebarCollapsed(false);
-    if (window.matchMedia("(max-width: 999px)").matches) setTerminalOpen(false);
   };
   const addTab = () => {
     revealTab({ kind: "new" }, false);
@@ -526,8 +535,6 @@ export function NativeWorkspace({
       setNativeActive(true);
       setPane(link.pane);
       setFocusedArea("native");
-      if (window.matchMedia("(max-width: 999px)").matches)
-        setTerminalOpen(false);
       if (link.pane === "changes") {
         revealTab({
           kind: "changes",
@@ -547,8 +554,7 @@ export function NativeWorkspace({
     if (link.terminal && status.data?.features?.host_terminal) {
       setTerminalId(link.terminal);
       setFocusedArea("terminal");
-      setTerminalOpen(true);
-      setTerminalOpened(true);
+      revealTab({ kind: "terminal" });
     }
     // Navigation never creates a session, claims control or adds model input.
     // Explicit file/Changes links override defaults; terminals remain Project-scoped.
@@ -567,8 +573,6 @@ export function NativeWorkspace({
     if (!(link.pane && link.path) && !link.terminal) {
       setNativeActive(false);
       setFocusedArea("page");
-      if (window.matchMedia("(max-width: 700px)").matches)
-        setTerminalOpen(false);
     }
   }, [location.pathname, location.search]);
   const nativeTarget = (): Schema<"PageTarget"> | null =>
@@ -598,7 +602,7 @@ export function NativeWorkspace({
           : focusedArea === "explorer"
             ? nativeTarget()
             : focusedArea === "terminal" &&
-                terminalOpen &&
+                terminalVisible &&
                 activeTerminalId &&
                 activeTerminalId === terminalId
               ? { kind: "terminal", terminal_id: activeTerminalId }
@@ -613,7 +617,7 @@ export function NativeWorkspace({
     directory,
     root,
     selected,
-    terminalOpen,
+    terminalVisible,
     terminalId,
     activeTerminalId,
     onFocus,
@@ -628,20 +632,14 @@ export function NativeWorkspace({
   const openTerminal = (cwd: string) => {
     if (!projectId) return;
     setTerminalRequest({ cwd, projectId });
-    setTerminalOpened(true);
-    setTerminalOpen(true);
-    setFocusedArea("terminal");
-    if (window.matchMedia("(max-width: 999px)").matches) setNativeActive(false);
+    revealTab({ kind: "terminal" });
   };
   const toggleTerminal = () => {
     cancelOpening();
-    setTerminalOpen(!terminalOpen);
-    if (!terminalOpen) {
-      setFocusedArea("terminal");
-      if (window.matchMedia("(max-width: 999px)").matches)
-        setNativeActive(false);
-    } else focusCenter();
-    setTerminalOpened(true);
+    if (terminalVisible) {
+      setSidebarCollapsed(true);
+      focusCenter();
+    } else revealTab({ kind: "terminal" });
     refresh();
   };
   useEffect(() => {
@@ -689,11 +687,11 @@ export function NativeWorkspace({
       previous.state &&
       previous.state !== "inactive" &&
       runState === "inactive" &&
-      (pane || terminalOpen)
+      (pane || terminalVisible)
     )
       refresh();
     previousRun.current = { threadId, state: runState };
-  }, [threadId, runState, pane, terminalOpen]);
+  }, [threadId, runState, pane, terminalVisible]);
   const previousArea = useRef(focusedArea);
   useEffect(() => {
     if (
@@ -708,7 +706,7 @@ export function NativeWorkspace({
     openingRequest.current?.abort();
     setOpening(false);
   };
-  const show = (next: "files" | "changes" | "browser") => {
+  const show = (next: "files" | "changes" | "browser" | "terminal") => {
     revealTab(
       next === "files"
         ? {
@@ -723,7 +721,7 @@ export function NativeWorkspace({
               selection: null,
               choices: [],
             }
-          : { kind: "browser" },
+          : { kind: next },
     );
     refresh();
   };
@@ -745,14 +743,19 @@ export function NativeWorkspace({
     animateLayout(
       () => {
         if (next.kind !== "resize") setWidth(restoreWidth);
-        setTerminalOpen(false);
         if (next.kind === "tabs") {
           setSidebarCollapsed(false);
           setTabLayout(true);
           setNarrowSidebar(false);
 
           setNativeActive(true);
-          setFocusedArea(view === "page" ? "explorer" : "native");
+          setFocusedArea(
+            pane === "terminal"
+              ? "terminal"
+              : view === "page"
+                ? "explorer"
+                : "native",
+          );
           requestAnimationFrame(() => paneElement.current?.focus());
         } else {
           setSidebarCollapsed(next.kind === "close");
@@ -789,6 +792,13 @@ export function NativeWorkspace({
       available: status.data?.features?.host_git,
     },
     {
+      key: "terminal" as const,
+      label: "Terminal",
+      description: "Open shared terminal sessions",
+      icon: TerminalWindow,
+      available: status.data?.features?.host_terminal,
+    },
+    {
       key: "browser" as const,
       label: "Browser",
       description: "View the host browser",
@@ -820,7 +830,9 @@ export function NativeWorkspace({
                 ? "Files"
                 : tab.kind === "changes"
                   ? "Changes"
-                  : "Browser",
+                  : tab.kind === "terminal"
+                    ? "Terminal"
+                    : "Browser",
       icon:
         tab.kind === "new"
           ? Plus
@@ -830,23 +842,19 @@ export function NativeWorkspace({
               ? Folder
               : tab.kind === "changes"
                 ? GitDiff
-                : Globe,
+                : tab.kind === "terminal"
+                  ? TerminalWindow
+                  : Globe,
       tab,
     })),
   ];
   const activeView = nativeActive || !singleView ? tabs.active : "conversation";
   const splitLayout =
-    isWorkspace &&
-    !singleView &&
-    !sidebarCollapsed &&
-    (hasSupportingViews || status.data?.features?.host_terminal);
+    isWorkspace && !singleView && !sidebarCollapsed && hasSupportingViews;
   return (
     <ReturnToChat
       value={() => {
         setNativeActive(false);
-        if (window.matchMedia("(max-width: 999px)").matches) {
-          setTerminalOpen(false);
-        }
         setFocusedArea("page");
         requestAnimationFrame(() =>
           document
@@ -856,7 +864,7 @@ export function NativeWorkspace({
       }}
     >
       <div
-        className={`${styles.workarea} ${singleView ? styles.tabLayout : ""} ${isWorkspace && terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
+        className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
       >
         <header
           className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
@@ -1046,7 +1054,6 @@ export function NativeWorkspace({
                         if (tab) activateTab(tab);
                         else {
                           cancelOpening();
-                          setTerminalOpen(false);
                           setNativeActive(false);
                           setFocusedArea("page");
                         }
@@ -1083,18 +1090,6 @@ export function NativeWorkspace({
                 <DebugOnly>
                   <EnvironmentMonitor />
                 </DebugOnly>
-                {status.data?.features?.host_terminal && (
-                  <TerminalAction
-                    label="Terminal"
-                    shortcut={terminalShortcutLabels().toggle}
-                    aria-pressed={terminalOpen}
-                    onClick={toggleTerminal}
-                  >
-                    <TerminalWindow
-                      weight={terminalOpen ? "duotone" : "regular"}
-                    />
-                  </TerminalAction>
-                )}
               </div>
             </nav>
           )}
@@ -1123,8 +1118,6 @@ export function NativeWorkspace({
                 value={
                   status.data?.features?.host_files && !projectLoading
                     ? (target) => {
-                        if (window.matchMedia("(max-width: 999px)").matches)
-                          setTerminalOpen(false);
                         void open(target);
                       }
                     : undefined
@@ -1240,7 +1233,7 @@ export function NativeWorkspace({
               )}
             </aside>
           )}
-          {isWorkspace && pane && pane !== "browser" && (
+          {isWorkspace && pane && pane !== "browser" && pane !== "terminal" && (
             <aside
               id={`${workspaceId}-native`}
               role="tabpanel"
@@ -1507,36 +1500,42 @@ export function NativeWorkspace({
               )}
             </aside>
           )}
+          {terminalOpened && status.data?.features?.host_terminal && (
+            <aside
+              className={`${styles.pane} ${styles.terminalPane}`}
+              ref={pane === "terminal" ? paneElement : undefined}
+              tabIndex={-1}
+              id={pane === "terminal" ? `${workspaceId}-native` : undefined}
+              role="tabpanel"
+              aria-labelledby={
+                pane === "terminal"
+                  ? `${workspaceId}-${tabs.active}-tab`
+                  : undefined
+              }
+              aria-label="Terminal"
+              hidden={!terminalVisible}
+              onFocusCapture={() => setFocusedArea("terminal")}
+              onPointerDown={() => setFocusedArea("terminal")}
+            >
+              <TerminalPanel
+                visible={terminalVisible}
+                directory={localRoots.includes(root) ? root : projectRoot}
+                projectId={project?.project_id ?? ""}
+                projectName={project?.name}
+                request={terminalRequest}
+                threadId={threadId}
+                openFile={(target, line) => void open(target, line)}
+                selected={terminalId}
+                onActive={setActiveTerminalId}
+                select={(id) => {
+                  setTerminalId(id);
+                  setFocusedArea(id ? "terminal" : "page");
+                }}
+                unauthorized={unauthorized}
+              />
+            </aside>
+          )}
         </div>
-        {terminalOpened && status.data?.features?.host_terminal && (
-          <div
-            className={styles.terminalDock}
-            onFocusCapture={() => setFocusedArea("terminal")}
-            onPointerDown={() => setFocusedArea("terminal")}
-          >
-            <TerminalPanel
-              visible={isWorkspace && terminalOpen && !projectLoading}
-              directory={localRoots.includes(root) ? root : projectRoot}
-              projectId={project?.project_id ?? ""}
-              projectName={project?.name}
-              request={terminalRequest}
-              threadId={threadId}
-              openFile={(target, line) => void open(target, line)}
-              selected={terminalId}
-              onActive={setActiveTerminalId}
-              select={(id) => {
-                setTerminalId(id);
-                setFocusedArea(id ? "terminal" : "page");
-              }}
-              collapse={() => {
-                setTerminalOpen(false);
-                focusCenter();
-                refresh();
-              }}
-              unauthorized={unauthorized}
-            />
-          </div>
-        )}
       </div>
     </ReturnToChat>
   );

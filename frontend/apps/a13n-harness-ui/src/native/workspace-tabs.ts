@@ -10,7 +10,8 @@ export type TabContent =
       selection: DiffSelection | null;
       choices: DiffSelection[];
     }
-  | { kind: "browser" };
+  | { kind: "browser" }
+  | { kind: "terminal" };
 
 export type WorkspaceTab = TabContent & { id: string };
 export type WorkspaceTabs = { items: WorkspaceTab[]; active: string };
@@ -36,6 +37,7 @@ function sameTarget(a: WorkspaceTab, b: WorkspaceTab) {
     case "changes":
       return b.kind === "changes" && a.root === b.root;
     case "browser":
+    case "terminal":
       return true;
     default:
       return false;
@@ -65,7 +67,10 @@ export function workspaceTabs(
     }
     case "open": {
       const existing = state.items.find((tab) => sameTarget(tab, action.tab));
-      if (existing && action.tab.kind === "browser")
+      if (
+        existing &&
+        (action.tab.kind === "browser" || action.tab.kind === "terminal")
+      )
         return { ...state, active: existing.id };
       const id =
         existing?.id ?? (action.replace ? state.active : action.tab.id);

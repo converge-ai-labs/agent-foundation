@@ -40,22 +40,27 @@ it("selects an already open file and removes only the replaced picker", () => {
   expect(selected.active).toBe(file.id);
 });
 
-it.each([false, true])(
-  "reuses the sole Browser tab and retains the initiating new tab with replace=%s",
-  (replace) => {
-    const browser: WorkspaceTab = { id: "browser", kind: "browser" };
+it.each([
+  ["browser", false],
+  ["browser", true],
+  ["terminal", false],
+  ["terminal", true],
+] as const)(
+  "reuses the sole %s tab and retains the initiating new tab with replace=%s",
+  (kind, replace) => {
+    const tab: WorkspaceTab = { id: "existing", kind };
     const state = {
-      items: [browser, { id: "new", kind: "new" } as const],
+      items: [tab, { id: "new", kind: "new" } as const],
       active: "new",
     };
     const next = workspaceTabs(state, {
       type: "open",
-      tab: { id: "unused", kind: "browser" },
+      tab: { id: "unused", kind },
       replace,
     });
-    expect(next.active).toBe(browser.id);
+    expect(next.active).toBe(tab.id);
     expect(next.items).toBe(state.items);
-    expect(next.items.filter((tab) => tab.kind === "browser")).toHaveLength(1);
+    expect(next.items.filter((item) => item.kind === kind)).toHaveLength(1);
   },
 );
 

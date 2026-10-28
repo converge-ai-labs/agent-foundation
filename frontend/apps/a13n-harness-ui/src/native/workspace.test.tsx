@@ -1,4 +1,3 @@
-import userEvent from "@testing-library/user-event";
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { useContext, useEffect, type ReactNode } from "react";
@@ -284,7 +283,7 @@ function setup(
   );
   return { focus, get };
 }
-async function chooseView(name: "Files" | "Changes" | "Browser") {
+async function chooseView(name: "Files" | "Changes" | "Browser" | "Terminal") {
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
@@ -512,7 +511,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
   expect(screen.getByText("Patch reviewed.txt")).toBeTruthy();
   expect(screen.queryByText("Opening…")).toBeNull();
 });
-it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
+it("shortcut collapse and confirmed process removal clear terminal page presence", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
@@ -520,9 +519,9 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
       terminal_id: "terminal-current",
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  fireEvent.keyDown(window, { code: "Backquote", key: "`", ctrlKey: true });
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  fireEvent.keyDown(window, { code: "Backquote", key: "`", ctrlKey: true });
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "terminal",
@@ -537,7 +536,7 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
 
 it("narrow peer navigation reveals the requested native or configuration view, not a hidden view behind Terminal", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Terminal" });
+  await screen.findByRole("tab", { name: "Terminal" });
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
     addEventListener() {},
@@ -864,27 +863,18 @@ it("retains resource tabs through Settings and direct Chat interaction updates f
   await screen.findByText("Editor /native/first.txt");
 });
 
-it("mobile Chat and chat navigation reveal the chat instead of leaving it behind Terminal", async () => {
+it("Chat and chat navigation detach the Terminal viewer while retaining its tab", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
   setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Terminal" });
-  vi.stubGlobal("matchMedia", () => ({
-    matches: true,
-    addEventListener() {},
-    removeEventListener() {},
-  }));
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-  expect(
-    screen
-      .getByRole("button", { name: "Terminal" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await screen.findByRole("tab", { name: "Terminal" });
+  const terminal = screen.getByLabelText("Terminal panel");
+  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+  expect(terminal.hasAttribute("hidden")).toBe(true);
+  await chooseView("Terminal");
+  expect(terminal.hasAttribute("hidden")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
-  expect(
-    screen
-      .getByRole("button", { name: "Terminal" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
+  expect(terminal.hasAttribute("hidden")).toBe(true);
+  expect(screen.getByRole("tab", { name: "Terminal" })).toBeTruthy();
 });
 
 it.each(["Chat", "Conversation tab", "diff"])(
@@ -1013,11 +1003,12 @@ it("Files, Changes and new-terminal context follow Thread roots instead of chang
   expect(screen.queryByLabelText("Project root")).toBeNull();
   await chooseView("Changes");
   await screen.findByText("Repository /native · Diff");
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await chooseView("Terminal");
   await screen.findByText("Terminal context project-one · /native");
   fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
   await chooseView("Changes");
   await screen.findByText("Repository /other · Diff");
+  await chooseView("Terminal");
   await screen.findByText("Terminal context project-two · /other");
   await chooseView("Files");
   await screen.findByText("Folder /other");
@@ -1351,7 +1342,7 @@ it.each(["/?project=project-one", "/new?project=project-one"])(
     await screen.findByText("Folder /native");
     await chooseView("Changes");
     await screen.findByText("Repository /native · Diff");
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    await chooseView("Terminal");
     await screen.findByText("Terminal context project-one · /native");
   },
 );
@@ -1388,7 +1379,11 @@ it.each(["Message", "Shared prompt"])(
 
 it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and create with the current Project root", async () => {
   setup("/threads/current");
-  await screen.findByRole("button", { name: "Terminal" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
   const terminalVisible = () =>
     screen.queryByLabelText("Terminal panel")?.hasAttribute("hidden") === false;
   const chord = { code: "Backquote", key: "`", ctrlKey: true };
@@ -1422,7 +1417,14 @@ it.each([false, true])(
   async (sharing) => {
     setup("/threads/current", sharing, undefined, null);
     await screen.findByText("Chat remains mounted /threads/current");
-    if (sharing) await screen.findByRole("button", { name: "Terminal" });
+    if (sharing)
+      await waitFor(() =>
+        expect(
+          screen
+            .getByRole("button", { name: "New tab" })
+            .hasAttribute("disabled"),
+        ).toBe(false),
+      );
     expect(
       fireEvent.keyDown(window, {
         code: "Backquote",
@@ -1497,4 +1499,61 @@ it("browser activity suggests the existing Browser without replacing a new tab",
     screen.getByRole("tab", { name: "Browser" }).getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.getAllByRole("tab", { name: "New tab" })).toHaveLength(newTabs);
+});
+
+it("keeps Terminal in the shared pane across layout switches and retains its viewer when closing its tab", async () => {
+  const { get } = setup("/threads/current?terminal=terminal-current");
+  const terminalTab = await screen.findByRole("tab", { name: "Terminal" });
+  const viewer = screen.getByLabelText("Terminal panel");
+  const pane = screen.getByRole("tabpanel", { name: "Terminal" });
+  expect(pane.contains(viewer)).toBe(true);
+  expect(
+    pane.parentElement?.contains(
+      screen.getByRole("separator", { name: "Resize supporting panel" }),
+    ),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("separator", { name: "Resize terminal" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  expect(screen.getByLabelText("Terminal panel")).toBe(viewer);
+  expect(screen.getByRole("tab", { name: "Terminal" })).toBe(terminalTab);
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  const newTab = screen.getByRole("tab", { name: "New tab" });
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  expect(screen.getByRole("tab", { name: "New tab" })).toBe(newTab);
+  expect(screen.getAllByRole("tab", { name: "Terminal" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Close tab: Terminal" }));
+  expect(viewer.hasAttribute("hidden")).toBe(true);
+  await chooseView("Terminal");
+  expect(screen.getByLabelText("Terminal panel")).toBe(viewer);
+  expect(viewer.hasAttribute("hidden")).toBe(false);
+  expect(
+    get.mock.calls.filter(([url]) => url === "/api/host/terminals"),
+  ).toHaveLength(0);
+});
+
+it("snapping the Terminal pane to full-width retains terminal focus and its session", async () => {
+  const { focus } = setup("/threads/current?terminal=terminal-current");
+  await waitFor(() =>
+    expect(focus).toHaveBeenLastCalledWith({
+      kind: "terminal",
+      terminal_id: "terminal-current",
+    }),
+  );
+  for (let i = 0; i < 10; i++) {
+    const splitter = screen.queryByRole("separator", {
+      name: "Resize supporting panel",
+    });
+    if (!splitter) break;
+    fireEvent.keyDown(splitter, { key: "ArrowLeft" });
+  }
+  expect(screen.getByRole("tab", { name: "Chat" })).toBeTruthy();
+  expect(screen.getByRole("tabpanel", { name: "Terminal" })).toBeTruthy();
+  await waitFor(() =>
+    expect(focus).toHaveBeenLastCalledWith({
+      kind: "terminal",
+      terminal_id: "terminal-current",
+    }),
+  );
 });
