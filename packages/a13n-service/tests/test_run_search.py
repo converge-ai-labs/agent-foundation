@@ -167,14 +167,16 @@ async def test_run_update_returns_stamps_without_loading_search_vector(service, 
         run = await session.get(RunRow, submitted["run"]["id"])
         version, updated_at = run.version, run.updated_at
         run.labels = {"reviewed": "yes"}
-        event.listen(storage.engine.sync_engine, "before_cursor_execute", capture)
+        # Count this transaction only; runtime maintenance uses other pooled connections.
+        connection = (await session.connection()).sync_connection
+        event.listen(connection, "before_cursor_execute", capture)
         try:
             await session.flush()
             assert run.version == version + 1
             assert run.updated_at > updated_at
             stamps = run.version, run.updated_at
         finally:
-            event.remove(storage.engine.sync_engine, "before_cursor_execute", capture)
+            event.remove(connection, "before_cursor_execute", capture)
     assert len(statements) == 1 and statements[0].startswith("UPDATE runs SET")
     assert "RETURNING runs.version, runs.updated_at" in statements[0]
     async with short_session(storage) as session:
