@@ -1,5 +1,5 @@
 import { SettingsSection } from "./settings";
-import { useContext, type ReactNode } from "react";
+import { useContext, type ReactNode, type FocusEventHandler } from "react";
 import { Button, FormField, Input } from "a13n-ui";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { isConnectionError } from "../transport/client";
@@ -106,6 +106,7 @@ export function TextField({
   type = "text",
   disabled = false,
   autoFocus = false,
+  onFocus,
 }: {
   label: string;
   value: string;
@@ -114,6 +115,7 @@ export function TextField({
   type?: string;
   disabled?: boolean;
   autoFocus?: boolean;
+  onFocus?: FocusEventHandler<HTMLInputElement>;
 }) {
   return (
     <FormField label={label} description={description}>
@@ -123,6 +125,7 @@ export function TextField({
         type={type}
         disabled={disabled}
         autoFocus={autoFocus}
+        onFocus={onFocus}
         autoComplete="off"
       />
     </FormField>

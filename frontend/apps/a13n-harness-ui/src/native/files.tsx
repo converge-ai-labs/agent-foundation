@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -426,6 +426,7 @@ export function FileOperation({
   cancel?: () => void;
 }) {
   const { client, fetch } = useTransport();
+  const focusedName = useRef(false);
   const [name, setName] = useState(
     "entry" in operation ? basename(operation.entry.path) : "",
   );
@@ -542,7 +543,22 @@ export function FileOperation({
         </p>
       ) : (
         <>
-          <TextField label="Name" value={name} onChange={setName} />
+          <TextField
+            label="Name"
+            value={name}
+            onChange={setName}
+            onFocus={(event) => {
+              if (operation.kind !== "move" || focusedName.current) return;
+              focusedName.current = true;
+              const extension =
+                operation.entry.kind === "file" ? name.lastIndexOf(".") : -1;
+              event.currentTarget.setSelectionRange(
+                0,
+                extension > 0 ? extension : name.length,
+              );
+              event.currentTarget.scrollLeft = 0;
+            }}
+          />
           <details className={layout.details}>
             <summary>Folder · {basename(folder)}</summary>
             <div>
@@ -572,9 +588,9 @@ export function FileOperation({
         </label>
       )}
       {operation.kind !== "delete" && operation.kind !== "replace" && (
-        <p>
-          A file with this name already exists. Choose Upload replacement from
-          its menu to replace it.
+        <p className={styles.operationHint}>
+          Existing files aren't replaced. Choose a new name, or use Upload
+          replacement from the file's menu.
         </p>
       )}
       {operation.kind === "delete" && recursive && (

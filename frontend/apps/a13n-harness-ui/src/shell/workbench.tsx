@@ -386,7 +386,7 @@ function WorkbenchContent({
         </SheetPopup>
       </Sheet>
       <div className={styles.workspace}>
-        <main id="main-content" className={styles.main}>
+        <main id="main-content" tabIndex={-1} className={styles.main}>
           {disconnected && <ConnectionNotice retry={live.retrySummary} />}
           {(results.storageError || results.lookupError) && (
             <div role="alert" className={styles.notice}>

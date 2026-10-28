@@ -24,7 +24,8 @@ export function ImagePreview({
   retry?: () => void;
 }) {
   const [actualSize, setActualSize] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [failedSource, setFailedSource] = useState<string>();
+  const imageError = !!src && failedSource === src;
   return (
     <Dialog
       open
@@ -74,7 +75,7 @@ export function ImagePreview({
               }
               onClick={() => setActualSize(!actualSize)}
             >
-              <img src={src} alt={name} onError={() => setImageError(true)} />
+              <img src={src} alt={name} onError={() => setFailedSource(src)} />
             </button>
           )}
         </div>

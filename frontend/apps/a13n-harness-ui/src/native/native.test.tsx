@@ -500,6 +500,10 @@ it.each(["/code", "C:\\code"])(
       />,
       { wrapper: f.Wrapper },
     );
+    const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+    fireEvent.focus(nameInput);
+    expect(nameInput.selectionStart).toBe(0);
+    expect(nameInput.selectionEnd).toBe(4);
     const save = screen.getByRole("button", { name: "Save" });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Name"), {

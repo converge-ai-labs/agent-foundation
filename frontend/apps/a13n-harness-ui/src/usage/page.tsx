@@ -258,23 +258,23 @@ export function UsagePage() {
               <dt>Estimated cost</dt>
               <dd>
                 <Cost totals={data.summary} />
+                <small>
+                  USD ·{" "}
+                  {data.summary.unknown_model_costs
+                    ? `${number(data.summary.unknown_model_costs)} unknown-cost requests`
+                    : "Recorded prices"}
+                </small>
               </dd>
-              <small>
-                USD ·{" "}
-                {data.summary.unknown_model_costs
-                  ? `${number(data.summary.unknown_model_costs)} unknown-cost requests`
-                  : "Recorded prices"}
-              </small>
             </div>
             <div>
               <dt>Total tokens</dt>
               <dd>
                 <Count value={data.summary.total_tokens} />
+                <small>
+                  <Count value={data.summary.input_tokens} /> input ·{" "}
+                  <Count value={data.summary.output_tokens} /> output
+                </small>
               </dd>
-              <small>
-                <Count value={data.summary.input_tokens} /> input ·{" "}
-                <Count value={data.summary.output_tokens} /> output
-              </small>
             </div>
             <div>
               <dt>Model requests</dt>
@@ -520,6 +520,8 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
           {days.map((day, index) => (
             <button
               key={day.day}
+              type="button"
+              tabIndex={index === selected ? 0 : -1}
               className={styles.barTarget}
               title={`${day.day} · ${description(day, true)}`}
               aria-label={`${day.day} · ${description(day, true)}`}
@@ -527,16 +529,20 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
               onFocus={() => setSelected(index)}
               onClick={() => setSelected(index)}
               onKeyDown={(event) => {
-                const move =
+                const targetIndex =
                   event.key === "ArrowRight"
-                    ? 1
+                    ? Math.min(days.length - 1, index + 1)
                     : event.key === "ArrowLeft"
-                      ? -1
-                      : 0;
-                if (move) {
+                      ? Math.max(0, index - 1)
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? days.length - 1
+                          : undefined;
+                if (targetIndex !== undefined) {
                   event.preventDefault();
                   const target =
-                    event.currentTarget.parentElement?.children[index + move];
+                    event.currentTarget.parentElement?.children[targetIndex];
                   if (target instanceof HTMLElement) target.focus();
                 }
               }}

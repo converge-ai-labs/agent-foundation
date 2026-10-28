@@ -210,6 +210,7 @@ export function ComposerEditor({
             overflow: "auto",
             fontFamily: "inherit",
           },
+          ".cm-placeholder": { color: "var(--a13n-secondary)" },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
           ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
             {

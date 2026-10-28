@@ -206,3 +206,40 @@ it("reveals additional filters and token details without refetching or losing UR
   expect(screen.getByTestId("location").textContent).toContain("project_id=p");
   expect(fetcher.mock.calls.length).toBe(reads);
 });
+
+it("keeps daily bars in one tab stop while arrow keys and Home/End move between days", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      json({
+        ...payload,
+        daily: [
+          { day: "2026-09-06", totals },
+          { day: "2026-09-07", totals },
+          { day: "2026-09-08", totals },
+        ],
+      }),
+    ),
+  );
+  mount();
+  const last = await screen.findByRole("button", {
+    name: "2026-09-08 · 120 tokens",
+  });
+  const first = screen.getByRole("button", { name: "2026-09-06 · 120 tokens" });
+  const middle = screen.getByRole("button", {
+    name: "2026-09-07 · 120 tokens",
+  });
+  expect(
+    [first, middle, last].filter((button) => button.tabIndex === 0),
+  ).toEqual([last]);
+  last.focus();
+  fireEvent.keyDown(last, { key: "Home" });
+  expect(document.activeElement).toBe(first);
+  expect(
+    [first, middle, last].filter((button) => button.tabIndex === 0),
+  ).toEqual([first]);
+  fireEvent.keyDown(first, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(middle);
+  fireEvent.keyDown(middle, { key: "End" });
+  expect(document.activeElement).toBe(last);
+});

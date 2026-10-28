@@ -498,3 +498,13 @@
   font-weight: 400;
   font-size: 14px;
 }
+
+@media (max-width: 400px) {
+  .listToolbar {
+    flex-wrap: wrap;
+  }
+  .listToolbar > [data-slot="input-control"] {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}

@@ -23,31 +23,36 @@
   border-style: solid;
 }
 .idLabel {
-  opacity: 0.7;
+  color: var(--a13n-secondary);
 }
 .data {
+  position: relative;
   margin-top: 8px;
   border: 1px dashed var(--a13n-border);
   border-radius: 10px;
   background: var(--a13n-surface);
   font-size: 12px;
 }
-.data > summary {
+.data > details > summary {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  min-height: 40px;
+  padding: 8px 88px 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--a13n-secondary);
   cursor: pointer;
   list-style: none;
 }
-.data > summary::before {
+.data > details > summary::before {
   content: none;
 }
-.data > summary::-webkit-details-marker {
+.data > details > summary::-webkit-details-marker {
   display: none;
 }
-.data > pre {
+.data > details > pre {
   margin: 0;
   max-height: 420px;
   overflow: auto;
@@ -62,7 +67,7 @@
   padding: 1px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, #d97706 16%, transparent);
-  color: #b45309;
+  color: #92400e;
   font-size: 14px;
   font-weight: 500;
 }
@@ -70,7 +75,12 @@
   color: #fbbf24;
 }
 .copy {
-  margin-left: auto;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -79,4 +89,15 @@
 }
 .copy:hover {
   color: var(--a13n-text);
+}
+
+.copyFailure {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--a13n-danger);
+  font-size: 14px;
+}
+.data > details > pre:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
 }

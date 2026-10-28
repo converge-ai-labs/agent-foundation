@@ -70,6 +70,28 @@ export function DebugOnly({ children }: { children: ReactNode }) {
   return useDebug().enabled ? <>{children}</> : null;
 }
 
+/** Clipboard denial is recoverable and must never become an unhandled error. */
+function useDebugCopy() {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = async (text: string) => {
+    setCopied(false);
+    setFailed(false);
+    try {
+      await copyText(text);
+      setCopied(true);
+    } catch {
+      setFailed(true);
+    }
+  };
+  return { copied, failed, copy };
+}
+
 /** Inline identifier chip shown in Debug mode; click copies the value. */
 export function DebugId({
   label,
@@ -79,23 +101,23 @@ export function DebugId({
   value?: string | null;
 }) {
   const { enabled } = useDebug();
-  const [copied, setCopied] = useState(false);
+  const { copied, failed, copy } = useDebugCopy();
   if (!enabled || !value) return null;
   return (
     <button
       type="button"
       className={styles.id}
-      title={`Copy ${label ?? "identifier"}`}
+      title={
+        failed ? "Could not copy. Try again." : `Copy ${label ?? "identifier"}`
+      }
       onClick={(event) => {
         event.stopPropagation();
-        void copyText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        });
+        void copy(value);
       }}
     >
       {label && <span className={styles.idLabel}>{label}</span>}
       <span>{copied ? "Copied" : value}</span>
+      {failed && <span role="alert">Copy failed</span>}
     </button>
   );
 }
@@ -111,29 +133,32 @@ export function DebugData({
   open?: boolean;
 }) {
   const { enabled } = useDebug();
-  const [copied, setCopied] = useState(false);
+  const { copied, failed, copy } = useDebugCopy();
   if (!enabled) return null;
   const text = JSON.stringify(value, null, 2) ?? "undefined";
   return (
-    <details className={styles.data} open={open}>
-      <summary>
-        <span className={styles.badge}>Debug</span>
-        <span>{label}</span>
-        <button
-          type="button"
-          className={styles.copy}
-          onClick={(event) => {
-            event.preventDefault();
-            void copyText(text).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            });
-          }}
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </summary>
-      <pre>{text}</pre>
-    </details>
+    <div className={styles.data}>
+      <details open={open}>
+        <summary>
+          <span className={styles.badge}>Debug</span>
+          <span>{label}</span>
+        </summary>
+        <pre tabIndex={0} role="region" aria-label={label}>
+          {text}
+        </pre>
+      </details>
+      <button
+        type="button"
+        className={styles.copy}
+        onClick={() => void copy(text)}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      {failed && (
+        <p role="alert" className={styles.copyFailure}>
+          Copy failed. Try again or select the text.
+        </p>
+      )}
+    </div>
   );
 }

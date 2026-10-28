@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import {
@@ -363,6 +363,7 @@ function AddModelDialog({
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
+  const title = useRef<HTMLSpanElement>(null);
   const { client } = useTransport();
   const queries = useQueryClient();
   const [id] = useState(() => `model-${crypto.randomUUID().slice(0, 8)}`);
@@ -401,7 +402,13 @@ function AddModelDialog({
       onOpenChange={(open) => {
         if (!open && !save.isPending) onClose();
       }}
-      title="Add model"
+      title={
+        <span ref={title} tabIndex={-1}>
+          Add model
+        </span>
+      }
+      initialFocus={title}
+      disablePointerDismissal
       size="lg"
       closeLabel="Close"
       footer={

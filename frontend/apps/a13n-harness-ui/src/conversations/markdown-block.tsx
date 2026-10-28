@@ -125,7 +125,11 @@ function Diagram({
           {current.error}
         </p>
       )}
-      {(original || !current?.src) && <pre>{children}</pre>}
+      {(original || !current?.src) && (
+        <pre tabIndex={0} role="region" aria-label="Diagram source">
+          {children}
+        </pre>
+      )}
       {expanded && current?.src && (
         <ImagePreview
           src={current.src}
@@ -217,7 +221,11 @@ export function MarkdownPre({
               Waiting for the complete diagram…
             </p>
           )}
-          <pre>
+          <pre
+            tabIndex={0}
+            role="region"
+            aria-label={language ? `${language} code` : "Code block"}
+          >
             <SyntaxCode source={source} language={language} />
           </pre>
         </>

@@ -77,6 +77,8 @@
   font-variant-numeric: tabular-nums;
 }
 .summary small {
+  font-weight: 400;
+  letter-spacing: normal;
   display: block;
   margin-top: 8px;
   color: var(--a13n-secondary);
@@ -279,6 +281,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
+  .filters > * {
+    min-width: 0;
+  }
+  .filters [data-slot="select-trigger"] {
+    min-width: 0;
+    width: 100%;
+  }
   .filterToggle {
     grid-column: 1 / -1;
   }
@@ -288,17 +297,6 @@
   }
   .summary > div:first-child {
     grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 4px 12px;
-  }
-  .summary > div:first-child dt {
-    margin: 0;
-  }
-  .summary > div:first-child small {
-    grid-column: 1 / -1;
-    margin: 0;
   }
   .chartReadout {
     width: 100%;
