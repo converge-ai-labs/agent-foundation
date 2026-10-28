@@ -41,7 +41,11 @@ def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> 
     import tomllib
 
     project = tomllib.loads((REPOSITORY_ROOT / manifest).read_text())["project"]
-    requirements = [requirement for requirement in project["dependencies"] if requirement.startswith("pydantic-ai")]
+    requirements = [
+        requirement
+        for requirement in project["dependencies"]
+        if re.match(r"pydantic-ai(?:-slim)?(?:\[|[<>=!~;\s]|$)", requirement)
+    ]
     assert len(requirements) == 1
     assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.63\.\*", requirements[0])
 
