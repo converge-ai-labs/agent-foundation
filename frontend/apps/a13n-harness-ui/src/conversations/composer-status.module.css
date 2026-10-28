@@ -4,8 +4,9 @@
   margin: 4px auto 0;
   /* Metric text starts on the composer content line (13px inset + 8px). */
   padding-inline: 12px;
-  flex-shrink: 0;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
 }
 .metrics {
   display: flex;
@@ -17,17 +18,22 @@
   font-variant-numeric: tabular-nums;
 }
 .metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--conversation-footer-control-height, 24px);
+  padding: 2px 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
+  line-height: 20px;
   white-space: nowrap;
 }
 button.metric {
   cursor: pointer;
 }
 .metrics strong {
-  margin-left: 4px;
   font-weight: 400;
   color: var(--a13n-text);
 }
@@ -364,16 +370,6 @@ button.metric {
 .numbers .scope {
   margin: 4px 0 0;
 }
-/* Keep trailing values and inset focus outlines visible at every width. */
-.metrics {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.metrics::-webkit-scrollbar {
-  display: none;
-}
-
 @container conversation-page (max-width: 600px) {
   .bar {
     width: 100%;

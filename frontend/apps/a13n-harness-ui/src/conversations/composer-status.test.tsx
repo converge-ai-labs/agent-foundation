@@ -64,6 +64,7 @@ it.each([
         tokens: [
           ["input_tokens", 10000],
           ["output_tokens", 2345],
+          ["cache_read_tokens", 5000],
         ],
       },
     };
@@ -105,6 +106,13 @@ it.each([
     expect(
       screen.getByRole("button", { name: "Cost details" }).textContent,
     ).toContain("Usage");
+    expect(screen.getByText("Speed").textContent).toBe("Speed —");
+    expect(
+      screen.getByRole("button", { name: "Cache details" }).textContent,
+    ).toBe("Cache 40.5%");
+    fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
+    expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(
       screen.getByRole("button", { name: "Tokens details" }).textContent,
@@ -134,6 +142,7 @@ it.each([
           tokens: [
             ["input_tokens", 11000],
             ["output_tokens", 2345],
+            ["cache_read_tokens", 6000],
           ],
         },
       }),
@@ -166,6 +175,13 @@ it.each([
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(screen.getByText("2s")).toBeTruthy();
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+    expect(screen.queryByText("Time")).toBeNull();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
+    expect(
+      screen.getByRole("button", { name: "Cache details" }).textContent,
+    ).toBe("Cache 45.0%");
     view.unmount();
     queries.clear();
   },

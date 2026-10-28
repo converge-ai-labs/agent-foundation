@@ -1916,10 +1916,12 @@ dl.detailGrid > .detailLongRow dd {
 }
 
 .conversationFooter {
+  --conversation-footer-control-height: 24px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
   flex-shrink: 0;
   width: min(var(--harness-reading-width), 100% - 84px);
   min-height: 24px;
@@ -1932,11 +1934,13 @@ dl.detailGrid > .detailLongRow dd {
   padding: 0;
 }
 .conversationFooter button {
+  display: inline-flex;
+  align-items: center;
   position: relative;
   isolation: isolate;
-  height: 24px;
-  min-height: 24px;
-  padding: 4px 8px;
+  height: var(--conversation-footer-control-height);
+  min-height: var(--conversation-footer-control-height);
+  padding: 2px 8px;
   border-radius: 5px;
   line-height: 20px;
 }
@@ -1968,9 +1972,8 @@ dl.detailGrid > .detailLongRow dd {
   .childControlActions button {
     min-height: 44px;
   }
-  .conversationFooter button {
-    height: 44px;
-    min-height: 44px;
+  .conversationFooter {
+    --conversation-footer-control-height: 44px;
   }
 }
 @container conversation-page (max-width: 600px) {

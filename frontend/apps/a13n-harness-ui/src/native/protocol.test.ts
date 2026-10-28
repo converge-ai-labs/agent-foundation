@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { open, writeFile } from "node:fs/promises";
+import { open, readFile, writeFile } from "node:fs/promises";
+import { parse } from "yaml";
 import { startApp } from "../../tests/app-fixture";
 import { createTransport, result, type Transport } from "../transport/client";
 import { FileBuffer, joinPath } from "./buffer";
@@ -25,6 +26,28 @@ afterAll(async () => {
   await app?.close();
   vi.unstubAllGlobals();
 }, 20000);
+it("disables the Host browser while retaining native computer sharing", async () => {
+  const configuration = parse(
+    await readFile(
+      joinPath(app.fixture_root, "config/a13n-harness-ui.yaml"),
+      "utf8",
+    ),
+  );
+  expect(configuration.browser.mode).toBe("disabled");
+  const status = await result(transport.client.GET("/api/status"));
+  expect(status.features?.host_files).toBe(true);
+  expect(status.features?.host_terminal).toBe(true);
+  const thread = await result(
+    transport.client.POST("/api/threads", { body: {} }),
+  );
+  const browser = await result(
+    transport.client.GET("/api/threads/{thread_id}/browser", {
+      params: { path: { thread_id: thread.thread_id } },
+    }),
+  );
+  expect(browser.status).toBe("disabled");
+});
+
 const read = (path: string) =>
   result(
     transport.client.GET("/api/host/files/text", {

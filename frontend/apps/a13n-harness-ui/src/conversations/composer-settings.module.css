@@ -1,5 +1,5 @@
 .popup {
-  width: min(264px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -61,6 +61,10 @@
   gap: 0;
 }
 .choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 8px;
   width: 100%;
   height: auto;
   min-height: var(--harness-menu-row);
@@ -73,6 +77,11 @@
 .choice > span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.choice > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 .choice small {
   display: block;
@@ -353,8 +362,12 @@
 
 .choiceLabel {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+.choiceLabel > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .choiceText {
@@ -365,6 +378,15 @@
 }
 .choiceText > span {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.choiceText > span > span {
+  min-width: 0;
+}
+.choiceText > span > small {
+  flex-shrink: 0;
+  margin-top: 0;
+  white-space: nowrap;
 }

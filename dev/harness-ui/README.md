@@ -33,7 +33,14 @@ make webui WEBUI_ARGS='--port 9000 --no-share-computer'
 make cli HARNESS_UI_ENV=/absolute/path/to/.env
 ```
 
-`make webui` builds and installs the bundled browser assets before starting the foreground server. It passes no API key and does not skip authentication: without a CLI or `A13N_HARNESS_UI_API_KEY` environment key, the server generates a fresh key and prints a directly usable login link. A supplied key retains normal precedence and is not echoed. The default listener is `127.0.0.1:8765`, and native computer sharing is on; `WEBUI_ARGS` forwards server options such as `--host`, `--port`, and `--no-share-computer`. Ctrl+C stops the server. No browser is opened automatically.
+`make webui` builds and installs the bundled browser assets before starting the foreground server. It passes no API key and does not skip authentication: without a CLI or `A13N_HARNESS_UI_API_KEY` environment key, the server generates a fresh key and prints a directly usable login link. A supplied key retains normal precedence and is not echoed. The default listener is `127.0.0.1:8765`, and native computer sharing is on; `WEBUI_ARGS` forwards server options such as `--host`, `--port`, and `--no-share-computer`. Ctrl+C stops the server. The launcher does not open the WebUI login link automatically.
+
+With computer sharing enabled, the default `browser.mode: auto` prepares a separate Host Chromium process. On macOS, this uses the logged-in desktop and can interrupt normal desktop use. Use `WEBUI_ARGS='--no-share-computer'` to disable native sharing, or set the following in `var/harness-ui/a13n-harness-ui.yaml` and restart to keep native Files and Terminal available without starting the Host browser:
+
+```yaml
+browser:
+  mode: disabled
+```
 
 For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS`; these follow and override the development defaults. An explicit `--config` bypasses copying and initialization entirely, even if that file is missing. Overriding only `--data-root` retains the development configuration path and selects the destination for its initial API-key copy. Overriding only `--config` leaves runtime data workspace-local, so referenced API keys must already exist there or be added explicitly. Help and version commands do not copy configuration or credentials. Do not point an unreleased build at daily-use state unless you accept that older installed versions may no longer read it.
 
@@ -53,7 +60,7 @@ uv run --locked python dev/harness-ui/review.py --port 8876
 A13N_HARNESS_UI_URL=http://127.0.0.1:8876 pnpm --dir frontend --filter a13n-harness-ui-webui dev --port 5184
 ```
 
-Open `http://127.0.0.1:5184` and log in with `test-only-key`. The disposable instance seeds fictional Projects and chats with Markdown, code, tables, tool steps, long output, and failure states. Prompts containing `[slow]`, `[long]`, `[failure]`, or `[question]` exercise those states through the real App. Model output and tool results are scripted; the shell tool never executes its supplied command. Native Files and Terminal use the local Host, so deliberate native actions retain their normal effects. Ctrl+C removes the temporary configuration, history, and fixture workspace; existing configuration and credentials are not copied.
+Open `http://127.0.0.1:5184` and log in with `test-only-key`. The disposable instance seeds fictional Projects and chats with Markdown, code, tables, tool steps, long output, and failure states. Prompts containing `[slow]`, `[long]`, `[failure]`, or `[question]` exercise those states through the real App. Model output and tool results are scripted; the shell tool never executes its supplied command. The Host browser is disabled. Native Files and Terminal use the local Host, so deliberate native actions retain their normal effects. Ctrl+C removes the temporary configuration, history, and fixture workspace; existing configuration and credentials are not copied.
 
 ## Disposable MCP Apps demo
 
@@ -85,7 +92,7 @@ Each invocation retains its own configuration and data under `var/harness-ui-smo
 
 ## Native browser integration
 
-Ordinary tests do not launch a browser. To opt in, supply an installed Chromium executable explicitly:
+Ordinary Python tests block automatic Host browser startup. Frontend protocol-test fixtures explicitly set `browser.mode: disabled`, including native Files and Terminal tests. The default test suites do not require a browser installation or desktop permissions. Native browser integration tests skip unless explicitly enabled. To run the headless CDP and Linux VNC scenarios, supply an installed Chromium executable:
 
 ```bash
 uv run --locked pytest \
@@ -97,14 +104,14 @@ uv run --locked pytest \
 
 The executable argument also enables the native tests; no browser test environment variables are needed. Tests create disposable profiles and do not download browsers. The Harness CDP scenarios run headless; the Harness UI scenarios require Linux and prepared VNC/display components from the [Host browser guide](../../docs/a13n-harness-ui/webui.md). Missing VNC adapters skip their own scenarios, and WayVNC requires a non-root account with a usable Chromium sandbox. An explicitly supplied invalid browser path fails rather than selecting another browser. The sandbox remains enabled by default; pass `--browser-no-sandbox` only when the test environment explicitly requires it. This test option is independent of the WebUI startup environment variable.
 
-For the macOS Screen Sharing integration test, first complete the [macOS preparation](../../docs/a13n-harness-ui/webui.md#install-host-components) and supply `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` in the Host environment. Then opt in explicitly:
+The macOS native window-capture test requires macOS 14 or later, a logged-in graphical session, an installed Chromium browser, and Screen Recording permission for the application running the test. Follow the [macOS preparation](../../docs/a13n-harness-ui/webui.md#install-host-components), then opt in for one command:
 
 ```bash
 A13N_TEST_MACOS_BROWSER='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
   uv run --locked pytest packages/a13n-harness-ui/tests/test_host_browser_macos.py
 ```
 
-This test opens windows on the logged-in desktop and temporarily changes the system text clipboard, restoring its previous text afterward. It checks native VNC authentication, framebuffer delivery, Command-paste of Unicode text and handback. It uses a disposable browser profile and does not change Screen Sharing settings. Without this opt-in, the native test skips; fake TCP RFB and clipboard subprocess tests remain part of the ordinary suite.
+This test opens real Chromium windows on the logged-in desktop and can interrupt normal desktop use. Run it only when desktop disruption is acceptable; keep `A13N_TEST_MACOS_BROWSER` unset in the ordinary development environment. It uses a disposable profile and checks ScreenCaptureKit JPEG delivery, frame updates, exact window ownership, takeover/handback, and close cleanup. Capture stays in memory and is limited to Harness-owned windows. The test sends no native input and does not read or write the system clipboard. Screen Sharing and VNC passwords are not required. Without the opt-in variable, the macOS native test skips; mocked browser and capture tests remain in the ordinary Python suite.
 
 ## Deployment environment
 

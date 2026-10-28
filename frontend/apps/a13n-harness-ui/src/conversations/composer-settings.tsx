@@ -259,7 +259,7 @@ export function SettingsChoices({
             {item.icon}
             <span className={styles.choiceText}>
               <span>
-                {item.label}
+                <span>{item.label}</span>
                 {item.badge && <small>{item.badge}</small>}
               </span>
               {item.description && <small>{item.description}</small>}

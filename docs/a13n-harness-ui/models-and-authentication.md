@@ -51,6 +51,8 @@ Use your saved IDs. Agent/Model selection clears temporary thinking, Fast, and P
 
 An active operation keeps its captured values. Markdown children inherit the parent's effective Model; independently configured children and auxiliary Models retain their own. Observed cost is an estimate, not a subscription bill. See [selection and recovery](everyday-use.md#everyday-interaction) and [usage controls](everyday-use.md#tasks-usage-and-terminal-feedback).
 
+In both TUI and WebUI, each Agent receives its current Thread ID and provider model name automatically. It can identify its Model or attribute work without inspecting configuration or asking you. This uses the current Run's resolved Model, not its local resource ID or a selection for the next Run. Child Agents receive their own Model name.
+
 ## Codex Model example
 
 This example adds a Codex subscription Model to an existing configuration.

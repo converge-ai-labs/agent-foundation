@@ -1,20 +1,63 @@
 .strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  container: activity-strip / inline-size;
+  display: grid;
   gap: 4px;
   flex-shrink: 0;
   /* Same column as the composer (see conversation.module.css). */
   width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto 8px;
-  /* Controls start on the composer content inset (border + padding). */
-  padding-inline: 12px;
+  padding-inline: 8px;
   color: var(--a13n-secondary);
   min-width: 0;
 }
 .strip button {
   font-size: 14px;
   color: var(--a13n-secondary);
+}
+.shortcuts,
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.shortcuts > button {
+  flex-shrink: 0;
+  padding-inline: 8px;
+}
+.shortcuts button:is(:hover, [data-popup-open]) {
+  color: var(--a13n-text);
+}
+.shortcuts .more {
+  display: none;
+}
+.backgroundActivity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+@container activity-strip (max-width: 600px) {
+  .shortcuts .secondaryShortcut {
+    display: none;
+  }
+  .shortcuts .more {
+    display: inline-flex;
+  }
+}
+@container activity-strip (max-width: 360px) {
+  .shortcuts > button {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .shortcuts > button > svg {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .shortcuts > button {
+    min-height: 44px;
+  }
 }
 .count {
   font-size: 14px;
@@ -26,15 +69,18 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
-  flex: 1 1 160px;
+  flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding-inline: 8px;
   font-size: 14px;
 }
 .active > svg {
   flex-shrink: 0;
+}
+.active > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .popup {
   width: min(800px, calc(100vw - 32px));
@@ -256,20 +302,6 @@
   .processSummary {
     min-height: 44px;
     padding-block: 8px;
-  }
-  .active {
-    display: none;
-  }
-  .strip {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .strip::-webkit-scrollbar {
-    display: none;
-  }
-  .strip > * {
-    flex-shrink: 0;
   }
   .strip button svg {
     width: 16px;
