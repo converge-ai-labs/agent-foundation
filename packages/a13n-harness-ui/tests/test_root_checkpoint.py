@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 
 import pytest
 from a13n_harness import HarnessBuilder, HarnessEvent, HarnessRunStream, HarnessState, ModelRecoveryPolicy, RunBindings
@@ -55,6 +56,7 @@ async def _consume(run: HarnessRunStream[str], events: list[HarnessEvent]) -> No
 async def test_checkpoint_exports_committed_handoff_and_context_not_provider_merged_history() -> None:
     saved: list[HarnessState] = []
     calls: list[list[ModelMessage]] = []
+    instructions: list[str | None] = []
     events: list[HarnessEvent] = []
 
     async def save(state: HarnessState) -> str:
@@ -63,6 +65,7 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         calls.append(messages)
+        instructions.append(info.instructions)
         # The actual Pydantic wrapper must save before dispatch, not after output.
         assert len(saved) == len(calls)
         if len(calls) == 1:
@@ -114,7 +117,21 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
     assert len(calls[-1]) == 1
     assert len(checkpoint.message_history) > len(calls[-1])
     assert result.state is not None
-    assert checkpoint.message_history == result.state.message_history[:-1]
+    # Pydantic AI records the instructions actually sent after all before-hooks,
+    # including this checkpoint. The handoff rebuilt the trailing request, so
+    # only its dispatch-time instruction annotation is added after saving.
+    saved_request = checkpoint.message_history[-1]
+    sent_request = result.state.message_history[-2]
+    assert isinstance(saved_request, ModelRequest)
+    assert isinstance(sent_request, ModelRequest)
+    assert saved_request.instructions is None
+    assert sent_request.instructions == instructions[-1]
+    assert sent_request.instructions is not None
+    assert "Keep the standing instruction." in sent_request.instructions
+    assert checkpoint.message_history == (
+        *result.state.message_history[:-2],
+        replace(sent_request, instructions=None),
+    )
     markers = [event.event.continuation_id for event in events if isinstance(event.event, ThreadCheckpointEvent)]
     assert markers == ["checkpoint-1", "checkpoint-2"]
     first_input = next(
@@ -122,6 +139,14 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
     )
     first_marker = next(i for i, event in enumerate(events) if isinstance(event.event, ThreadCheckpointEvent))
     assert first_input < first_marker
+
+    # The saved AgentSpec and capabilities reconstruct the same instructions
+    # when continuing from the pre-dispatch checkpoint.
+    resumed = await executable.run(None, bindings=RunBindings.embedded(), previous_state=checkpoint)
+    assert resumed.output_or_raise() == "done"
+    assert instructions[-1] == instructions[-2]
+    assert "Continue with the completed design." in _user_text(calls[-1])
+    assert "Obsolete background" not in _user_text(calls[-1])
 
 
 @pytest.mark.parametrize("cancel_helper", [False, True])
