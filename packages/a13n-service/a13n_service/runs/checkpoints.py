@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -27,7 +26,6 @@ from a13n_harness import HarnessState, StateStore, StoredRef
 from a13n_harness.environment.session_recovery import EnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
-from pydantic_ai.messages import ModelMessage
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -115,16 +113,6 @@ class PageRef(_Frozen):
     refs: tuple[ContentObject, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class PreparedState:
-    """Complete checkpoint bytes and the metadata needed to publish their pointer."""
-
-    data: bytes
-    seq: int
-    attempt: int
-    refs: tuple[StoredRef, ...]
-
-
 class RunState(_Frozen):
     model_config = ConfigDict(extra="allow", frozen=True)
 
@@ -140,22 +128,13 @@ class RunState(_Frozen):
     # Private same-Run attachment hints, never inherited by a successor Run.
     envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
-    def prepare(self) -> tuple[tuple[ModelMessage, ...], PreparedState]:
-        """Prepare the complete checkpoint and detached messages for input-consumption checks."""
-        if type(self) is not RunState or type(self.harness) is not HarnessState:
-            encoded = self.model_dump_json().encode()
-            messages = self.harness.message_history
-        else:
-            messages, harness = self.harness.prepare_serialization()
-            envelope = self.model_dump_json(exclude={"harness"}).encode()
-            encoded = b"".join((envelope[:-1], b',"harness":', harness, b"}"))
-        return messages, PreparedState(encoded, self.seq, self.attempt, self.harness.refs)
-
     def to_json_bytes(self) -> bytes:
-        """Encode a complete checkpoint without re-encoding its validated message history."""
+        """Serialize the complete checkpoint, reusing the Harness's encoded history."""
         if type(self) is not RunState or type(self.harness) is not HarnessState:
             return self.model_dump_json().encode()
-        return self.prepare()[1].data
+        harness = self.harness.to_json_bytes()
+        envelope = self.model_dump_json(exclude={"harness"}).encode()
+        return b"".join((envelope[:-1], b',"harness":', harness, b"}"))
 
 
 def run_prefix(organization_id: str, run_id: str) -> str:
@@ -381,7 +360,7 @@ async def publish_display(
 async def publish_checkpoint(
     runtime: Runtime,
     lease: Lease,
-    state: PreparedState,
+    state: RunState,
     snapshot: Snapshot,
     *,
     contents: Contents | None = None,
@@ -391,7 +370,7 @@ async def publish_checkpoint(
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
     written, *display = await _all(
         [
-            _publish(runtime, lease, "state", state.data),
+            _publish(runtime, lease, "state", state.to_json_bytes()),
             *_display_writes(runtime, lease, snapshot),
         ]
     )
@@ -402,7 +381,7 @@ async def publish_checkpoint(
         format=FORMAT,
         seq=state.seq,
         attempt=state.attempt,
-        refs=state.refs,
+        refs=state.harness.refs,
     )
     return pointer, _display_write(snapshot, display)
 

@@ -722,20 +722,7 @@ class _Attempt:
             if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
-        messages, prepared = RunState(
-            # The Service never restores accounting from state: every charge is in its usage records.
-            harness=without_usage(state),
-            seq=self.seq + 1,
-            attempt=self.lease.number,
-            deferred=deferred,
-            envd_sessions={
-                name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
-            }
-            if outcome is None
-            else {},
-            resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
-            or self.offers.requested,
-        ).prepare()
+        messages = state.message_history
         consumed = self.offers.incorporated(messages)
         del messages
         usage = self.usage.pending()
@@ -743,12 +730,24 @@ class _Attempt:
         pointer, display = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
-            prepared,
+            RunState(
+                # The Service never restores accounting from state: every charge is in its usage records.
+                harness=without_usage(state),
+                seq=self.seq + 1,
+                attempt=self.lease.number,
+                deferred=deferred,
+                envd_sessions={
+                    name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
+                }
+                if outcome is None
+                else {},
+                resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
+                or self.offers.requested,
+            ),
             snapshot,
             contents=self.contents,
             control=self.control,
         )
-        del prepared
         display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker
         steers: list[Offered] = []

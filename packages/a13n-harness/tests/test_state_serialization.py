@@ -1,4 +1,4 @@
-"""Complete state persistence must preserve native messages and reject invalid history."""
+"""State persistence reuses encoded history; external imports validate native messages."""
 
 import json
 import warnings
@@ -9,7 +9,7 @@ from a13n_harness import HarnessState
 from a13n_harness import state as state_module
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, StoredRef
-from pydantic import model_serializer
+from pydantic import ValidationError, model_serializer
 from pydantic_ai.messages import (
     BinaryContent,
     ModelRequest,
@@ -54,9 +54,6 @@ def test_complete_json_bytes_preserve_native_state(messages: Any) -> None:
         future_envelope={"items": [False, None, {"value": "preserve"}]},
     )
     encoded = state.to_json_bytes()
-    messages, prepared = state.prepare_serialization()
-    assert messages == state.message_history
-    assert prepared == encoded
     assert json.loads(encoded) == json.loads(state.model_dump_json())
     restored = HarnessState.model_validate_json(encoded)
     assert restored == HarnessState.model_validate_json(state.model_dump_json())
@@ -82,7 +79,7 @@ def test_serialization_keeps_input_and_output_messages_detached() -> None:
     assert "message_history" not in state.model_dump(exclude={"message_history"})
 
 
-def test_preparation_decodes_once_and_keeps_bytes_independent_of_returned_messages(monkeypatch) -> None:
+def test_reading_decodes_once_and_serialization_reuses_history_bytes(monkeypatch) -> None:
     state = HarnessState.new(message_history=[ModelResponse(parts=[TextPart("original")])])
     expected = state.to_json_bytes()
     decoded = []
@@ -92,43 +89,43 @@ def test_preparation_decodes_once_and_keeps_bytes_independent_of_returned_messag
         decoded.append(value)
         return original(value)
 
+    def encode(value):
+        pytest.fail("Serialization must reuse the encoded history")
+
     monkeypatch.setattr(state_module, "decode_messages", decode)
-    messages, encoded = state.prepare_serialization()
+    monkeypatch.setattr(state_module, "encode_messages", encode)
+    messages = state.message_history
     cast(TextPart, messages[0].parts[0]).content = "changed"
-    assert encoded == expected
     assert decoded == [state.message_history_json]
-    # Each preparation validates afresh, without retaining decoded messages on the state.
-    fresh, repeated = state.prepare_serialization()
-    assert fresh[0].parts[0].content == "original"
-    assert repeated == expected
-    assert len(decoded) == 2
     assert state.to_json_bytes() == expected
-    assert len(decoded) == 3
+    assert state.to_json_bytes() == expected
+    assert len(decoded) == 1
+    assert state.message_history[0].parts[0].content == "original"
+    assert len(decoded) == 2
 
 
-def test_preparation_uses_the_current_history_and_envelope() -> None:
+def test_serialization_uses_current_history_and_envelope() -> None:
     state = HarnessState.new(message_history=[ModelResponse(parts=[TextPart("original")])])
-    _, before = state.prepare_serialization()
+    before = state.to_json_bytes()
     replacement = HarnessState.new(message_history=[ModelResponse(parts=[TextPart("replacement")])])
     copied = state.model_copy(
         update={"thread_id": "thr_other", "message_history_json": replacement.message_history_json}
     )
-    messages, encoded = copied.prepare_serialization()
-    assert messages == replacement.message_history
+    encoded = copied.to_json_bytes()
+    assert copied.message_history == replacement.message_history
     assert json.loads(encoded) == json.loads(copied.model_dump_json())
     assert json.loads(encoded)["thread_id"] == "thr_other"
     assert state.to_json_bytes() == before
 
 
-def test_preparation_does_not_bypass_other_state_validation() -> None:
+def test_other_fields_keep_standard_serialization() -> None:
     invalid = HarnessState.new().model_copy(update={"environment_states_json": b"[1]"})
-    for serialize in (invalid.prepare_serialization, invalid.to_json_bytes):
-        with pytest.raises(PydanticSerializationError):
-            serialize()
+    with pytest.raises(PydanticSerializationError):
+        invalid.to_json_bytes()
 
 
 @pytest.mark.parametrize("part_kind", ["user", "tool"])
-def test_invalid_mutated_native_dataclasses_still_fail_serialization(part_kind: str) -> None:
+def test_standard_pydantic_serialization_still_rejects_invalid_mutated_dataclasses(part_kind: str) -> None:
     if part_kind == "user":
         part = UserPromptPart("valid")
         cast(Any, part).content = 123
@@ -140,18 +137,36 @@ def test_invalid_mutated_native_dataclasses_still_fail_serialization(part_kind: 
     # Native dataclass instances can pass validate_python even after invalid mutation.
     with warnings.catch_warnings(record=True):
         state = HarnessState.new(message_history=[message])
-    for serialize in (state.model_dump_json, state.to_json_bytes, state.prepare_serialization):
-        with pytest.raises(PydanticSerializationError):
-            serialize()
+    with pytest.raises(PydanticSerializationError):
+        state.model_dump_json()
 
 
-@pytest.mark.parametrize("history", [b"not json", b"null", b"{}", b"[1]", b"\xff", b"[] trailing", ["invalid"]])
-def test_unchecked_history_cannot_bypass_validation(history: Any) -> None:
-    original = HarnessState.new()
-    state = original.model_copy(update={"message_history_json": history})
-    for serialize in (state.model_dump_json, state.to_json_bytes, state.prepare_serialization):
-        with pytest.raises(PydanticSerializationError):
-            serialize()
+@pytest.mark.parametrize(
+    "history",
+    [
+        None,
+        {},
+        [1],
+        [{"kind": "request", "parts": [{"part_kind": "user-prompt", "content": 123}]}],
+        [
+            {
+                "kind": "response",
+                "parts": [{"part_kind": "tool-call", "tool_name": "lookup", "args": 123, "tool_call_id": "c1"}],
+            }
+        ],
+    ],
+)
+def test_external_history_is_validated_on_import(history: Any) -> None:
+    payload = json.loads(HarnessState.new().to_json_bytes())
+    payload["message_history"] = history
+    with pytest.raises(ValidationError):
+        HarnessState.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize("data", [b"not json", b"\xff", b"{} trailing"])
+def test_malformed_external_json_is_rejected(data: bytes) -> None:
+    with pytest.raises(ValidationError):
+        HarnessState.model_validate_json(data)
 
 
 def test_subclass_retains_its_custom_serializer() -> None:
@@ -161,8 +176,7 @@ def test_subclass_retains_its_custom_serializer() -> None:
             return {"custom": self.thread_id}
 
     state = CustomState.new(thread_id="thr_custom")
-    messages, encoded = state.prepare_serialization()
-    assert messages == state.message_history
+    encoded = state.to_json_bytes()
     assert encoded == state.model_dump_json().encode()
     assert state.to_json_bytes() == encoded
     assert json.loads(encoded) == {"custom": "thr_custom"}

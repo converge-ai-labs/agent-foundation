@@ -223,31 +223,17 @@ class HarnessState(BaseModel):
         """Return detached portable state for each stateful Environment mount."""
         return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
-    def prepare_serialization(self) -> tuple[tuple[ModelMessage, ...], bytes]:
-        """Return detached history and its complete JSON envelope from one validation pass.
+    def to_json_bytes(self) -> bytes:
+        """Serialize a state using its existing history bytes, without decoding or revalidating them.
 
-        The encoded result is independent of later edits to the returned messages. Nothing is cached on the state.
+        In-process callers must preserve the message type contract. Import external JSON with
+        model_validate_json(); this method does not validate unchecked internal mutations.
         Subclasses retain their standard Pydantic serializer.
         """
-        history = self.message_history_json
-        if type(self) is not HarnessState or not isinstance(history, bytes):
-            encoded = self.model_dump_json().encode()
-            return self.message_history, encoded
-        try:
-            messages = decode_messages(history)
-        except (ValueError, TypeError):
-            # Preserve Pydantic's serialization error for unchecked or invalid native message values.
-            encoded = self.model_dump_json().encode()
-            return self.message_history, encoded
-        envelope = self.model_dump_json(exclude={"message_history"}).encode()
-        encoded = b"".join((envelope[:-1], b',"message_history":', history, b"}"))
-        return messages, encoded
-
-    def to_json_bytes(self) -> bytes:
-        """Encode the complete continuation envelope; subclasses retain their standard serializer."""
         if type(self) is not HarnessState:
             return self.model_dump_json().encode()
-        return self.prepare_serialization()[1]
+        envelope = self.model_dump_json(exclude={"message_history"}).encode()
+        return b"".join((envelope[:-1], b',"message_history":', cast(bytes, self.message_history_json), b"}"))
 
     def fork(self, *, thread_id: str | None = None) -> HarnessState:
         """Copy portable continuation data into a distinct generated or Host-selected Thread."""
