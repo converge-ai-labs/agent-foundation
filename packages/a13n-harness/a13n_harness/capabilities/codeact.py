@@ -6,7 +6,13 @@ from dataclasses import dataclass, replace
 
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import (
+    CapabilityInstructionSource,
+    InstructionId,
+    InstructionPart,
+    ModelResponse,
+    ToolCallPart,
+)
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset
 
@@ -23,10 +29,11 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
 )
 from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
-from a13n_harness.toolsets.codeact import CodeActToolset, render_codeact_runner_description
+from a13n_harness.toolsets.codeact import CodeActToolset, render_codeact_catalog
 from a13n_harness.toolsets.codeact_state import CODEACT_STATE_ID, CodeActStateToolset
 
 CODEACT_CAPABILITY_ID = CODEACT_STATE_ID
+_CATALOG_INSTRUCTION_ID = InstructionId(CapabilityInstructionSource(CODEACT_CAPABILITY_ID), name="catalog")
 
 
 @dataclass(init=False)
@@ -110,20 +117,8 @@ class CodeActCapability(AbstractModelContextCapability):
         if manager is None or manager.tools is None:
             return ""
         # Realtime resolves instructions after final tool preparation, but never
-        # invokes before_model_request. Advertise the same callable directory here.
-        blocks: list[str] = []
-        for tool in manager.tools.values():
-            metadata = tool.tool_def.metadata or {}
-            if metadata.get("a13n.codeact.runner") is not True:
-                continue
-            blocks.append(
-                render_codeact_runner_description(
-                    manager.tools,
-                    ctx=ctx,
-                    program=metadata.get("a13n.codeact.program") is True,
-                )
-            )
-        return "\n\n".join(blocks)
+        # invokes before_model_request. Share one directory between both runners.
+        return render_codeact_catalog(manager.tools, ctx=ctx)
 
     async def before_model_request(
         self,
@@ -131,7 +126,7 @@ class CodeActCapability(AbstractModelContextCapability):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         self._require_context(ctx)
-        refresh_codeact_descriptions(ctx, request_context)
+        refresh_codeact_catalog(ctx, request_context)
         return request_context
 
     async def after_model_request(
@@ -174,7 +169,7 @@ class CodeActCapability(AbstractModelContextCapability):
             )
 
 
-def refresh_codeact_descriptions(
+def refresh_codeact_catalog(
     ctx: RunContext[AgentContext],
     request_context: ModelRequestContext,
     *,
@@ -183,27 +178,35 @@ def refresh_codeact_descriptions(
     """Refresh presentation after replacement without changing native dispatch state."""
     from a13n_harness.tools.discovery import replacement_tools
 
+    if request_context.messages:
+        tail = request_context.messages[-1]
+        if isinstance(tail, ModelResponse) and tail.state == "suspended":
+            # Native continuation replays the original prefix and existing deltas;
+            # it does not run instruction-history updates for this request.
+            return
     manager = ctx.tool_manager
     if manager is None or manager.tools is None:
         return
+    parameters = request_context.model_request_parameters
+    if not any((tool.metadata or {}).get("a13n.codeact.runner") is True for tool in parameters.function_tools):
+        return
     tools = manager.tools if retained_names is None else replacement_tools(ctx, retained_names)
-    projected = []
-    for definition in request_context.model_request_parameters.function_tools:
-        metadata = definition.metadata or {}
-        if metadata.get("a13n.codeact.runner") is True:
-            definition = replace(
-                definition,
-                description=render_codeact_runner_description(
-                    tools,
-                    ctx=ctx,
-                    program=metadata.get("a13n.codeact.program") is True,
-                ),
-            )
-        projected.append(definition)
-    request_context.model_request_parameters = replace(
-        request_context.model_request_parameters,
-        function_tools=projected,
+    catalog = InstructionPart(
+        content=render_codeact_catalog(tools, ctx=ctx),
+        id=_CATALOG_INSTRUCTION_ID,
+        dynamic=True,
+        on_change="append",
     )
+    # Native instruction history owns baselines, changes, and re-anchoring after
+    # compaction. Keep tool declarations byte-stable as availability changes.
+    parts = list(parameters.instruction_parts or ())
+    for index, part in enumerate(parts):
+        if part.id == _CATALOG_INSTRUCTION_ID:
+            parts[index] = catalog
+            break
+    else:
+        parts.append(catalog)
+    request_context.model_request_parameters = replace(parameters, instruction_parts=parts)
 
 
 __all__ = ["CODEACT_CAPABILITY_ID", "CodeActCapability", "CodeActConfig"]

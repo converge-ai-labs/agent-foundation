@@ -202,6 +202,7 @@ class BackgroundCompaction:
 
                         async def request(input: CompactionInput):
                             messages, settings, parameters = input.request_messages, input.settings, input.parameters
+                            messages = model.prepare_messages(messages, parameters)
                             context = ModelRequestContext(
                                 model=model,
                                 model_id=selected.key,

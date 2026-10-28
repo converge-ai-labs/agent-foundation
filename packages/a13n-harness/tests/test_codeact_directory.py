@@ -6,16 +6,21 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
+from a13n_harness import HarnessBuilder, HarnessState, RunBindings
+from a13n_harness.capabilities.codeact import CodeActCapability
 from a13n_harness.toolsets.codeact import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
     _build_catalog,
     _render_tool_declaration,
-    render_codeact_runner_description,
+    render_codeact_catalog,
 )
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition
+from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.messages import InstructionDeltaPart, ModelMessagesTypeAdapter, ModelRequest, ModelResponse
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.usage import RunUsage
 
 
@@ -142,16 +147,15 @@ async def test_runner_directory_uses_current_prepared_schemas_and_eligibility() 
         "required": ["query"],
     }
     updated = replace(original, tool_def=replace(original.tool_def, parameters_json_schema=updated_schema))
-    for program in (False, True):
-        before = render_codeact_runner_description(tools, ctx=ctx, program=program)
-        after = render_codeact_runner_description({**tools, "lookup-items": updated}, ctx=ctx, program=program)
-        assert "async def lookup_items(*, count: int)" in before
-        assert "async def lookup_items(*, query: str)" in after
-        assert "count: int" not in after
-        assert "denied" not in after
-        assert "(tool `lookup-items`)" in after
-        encoded_schema = after.split("Arguments JSON Schema: ", 1)[1].splitlines()[0]
-        assert json.loads(encoded_schema) == updated_schema
+    before = render_codeact_catalog(tools, ctx=ctx)
+    after = render_codeact_catalog({**tools, "lookup-items": updated}, ctx=ctx)
+    assert "async def lookup_items(*, count: int)" in before
+    assert "async def lookup_items(*, query: str)" in after
+    assert "count: int" not in after
+    assert "denied" not in after
+    assert "(tool `lookup-items`)" in after
+    encoded_schema = after.split("Arguments JSON Schema: ", 1)[1].splitlines()[0]
+    assert json.loads(encoded_schema) == updated_schema
     assert original.tool_def.parameters_json_schema != updated_schema
 
 
@@ -167,9 +171,8 @@ async def test_deferred_catalog_tracks_current_discovery_and_prepared_membership
     for discovered in (False, True, False):
         ctx.discovered_tool_names = {"lookup"} if discovered else set()
         assert bool(_build_catalog(tools, ctx=ctx).definitions) is discovered
-        for program in (False, True):
-            description = render_codeact_runner_description(tools, ctx=ctx, program=program)
-            assert ("async def lookup" in description) is discovered
+        description = render_codeact_catalog(tools, ctx=ctx)
+        assert ("async def lookup" in description) is discovered
         assert tools["lookup"].tool_def.defer_loading
     ctx.discovered_tool_names = {"lookup"}
     assert not _build_catalog({}, ctx=ctx).definitions  # Stale discovery cannot restore a removed tool.
@@ -187,3 +190,101 @@ async def test_deferred_tools_participate_in_preparation_name_collision_checks()
     ).get_tools(ctx)
     with pytest.raises(UserError, match="CodeAct tool-name collision"):
         _build_catalog(tools)
+
+
+@pytest.mark.anyio
+async def test_catalog_changes_append_once_without_rewriting_runner_definitions_or_prefix() -> None:
+    requests = 0
+    prefixes: list[str | None] = []
+    runners: list[list[ToolDefinition]] = []
+
+    def lookup(value: int) -> int:
+        return value
+
+    async def prepare(ctx, definition):
+        if requests >= 4:
+            return None
+        if requests >= 2:
+            return replace(
+                definition,
+                parameters_json_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"value": {"type": "string"}},
+                    "required": ["value"],
+                },
+            )
+        return definition
+
+    async def model(messages, info):
+        nonlocal requests
+        prefixes.append(info.instructions)
+        runners.append([tool for tool in info.function_tools if tool.name in {"run_code", "run_program"}])
+        requests += 1
+        if requests < 6:
+            yield {0: DeltaToolCall(name="run_code", json_args='{"code":"1"}', tool_call_id=f"step-{requests}")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            Capability(
+                toolsets=[
+                    CodeActPolicyToolset(
+                        FunctionToolset([Tool(lookup, prepare=prepare)]), CodeActToolPolicy(default=True)
+                    )
+                ]
+            ),
+            CodeActCapability(),
+        ),
+    )
+    result = await executable.run("run", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert requests == 6
+    assert all(definitions == runners[0] for definitions in runners)
+    assert all(prefix == prefixes[0] for prefix in prefixes)
+    assert prefixes[0] is not None and prefixes[0].count("async def lookup") == 1
+    assert "value: int" in prefixes[0]
+    changes = [
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, InstructionDeltaPart) and str(part.id) == "capability:a13n.codeact:catalog"
+    ]
+    assert len(changes) == 2
+    assert changes[0].content is not None and "value: str" in changes[0].content
+    assert changes[1].content is not None and "async def lookup" not in changes[1].content
+    assert "async def store" in changes[1].content
+
+    # A new native run resumes the same instruction window without restoring the
+    # removed tool or appending the unchanged stored-values-only catalog again.
+    assert result.state is not None
+    resumed = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=result.state)
+    assert resumed.output_or_raise() == "done"
+    assert prefixes[-1] == prefixes[0]
+    resumed_changes = [
+        part
+        for message in resumed.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, InstructionDeltaPart) and str(part.id) == "capability:a13n.codeact:catalog"
+    ]
+    assert resumed_changes == changes
+
+    # A suspended provider response continues the exact prior request: its
+    # original catalog baseline plus the already-recorded changes.
+    history = deepcopy(list(result.state.message_history))
+    assert isinstance(history[-1], ModelResponse)
+    history[-1].state = "suspended"
+    suspended = result.state.model_copy(
+        update={"message_history_json": ModelMessagesTypeAdapter.dump_json(history).decode()}
+    )
+    suspended = HarnessState.model_validate_json(suspended.model_dump_json())
+    continued = await executable.run(None, bindings=RunBindings.embedded(), previous_state=suspended)
+    assert continued.output_or_raise()
+    assert prefixes[-1] == prefixes[0]
+    assert runners[-1] == runners[0]

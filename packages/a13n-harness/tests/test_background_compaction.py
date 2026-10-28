@@ -868,16 +868,12 @@ async def test_state_restoration_uses_current_discovery_and_codeact_tools():
     assert second.output_or_raise()
     assert effects == [20, 21]
     assert "double" in snapshots[0][1].model_request_parameters.revealed_tool_names
-    for tool in snapshots[0][1].function_tools:
-        if tool.name in {"run_code", "run_program"}:
-            assert "async def double" in tool.description
-            assert "async def triple" not in tool.description
+    assert snapshots[0][1].instructions.count("async def double") == 1
+    assert "async def triple" not in snapshots[0][1].instructions
 
     _, snapshots = await _run_calls((CodeActCapability(),), [], previous_state=compacted)
     assert not snapshots[0][1].model_request_parameters.revealed_tool_names
-    for tool in snapshots[0][1].function_tools:
-        if tool.name in {"run_code", "run_program"}:
-            assert "async def double" not in tool.description
+    assert "async def double" not in snapshots[0][1].instructions
 
 
 @pytest.mark.parametrize("too_large", [False, True])

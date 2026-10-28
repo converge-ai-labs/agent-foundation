@@ -159,6 +159,7 @@ class CompactionRun(CompactionOperator):
                 raise ValueError("Background compaction requires a captured Model recipe")
             model = await resolver.resolve(input.model_id, thread_id=input.basis.thread_id)
             messages, settings, parameters = input.request_messages, input.settings, input.parameters
+            messages = model.prepare_messages(messages, parameters)
             context = ModelRequestContext(
                 model=model,
                 model_id=input.model_id,

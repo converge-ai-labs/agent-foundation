@@ -124,10 +124,18 @@ async def test_archive_fences_late_publication(service, scripted_model, runs_kit
 
 
 async def test_generation_outlives_seal_and_cancelled_waiter_with_late_usage(service, scripted_model, runs_kit, caplog):
+    from pydantic_ai.messages import InstructionDeltaPart, ModelMessagesTypeAdapter
+
     lease = await setup(service, scripted_model, runs_kit)
     plan = await _plan(service.runtime, lease)
     attempt = _Attempt(service.runtime, lease, AttemptControl(), plan)
     input = frozen(lease, model_id=plan.agent.model.key)
+    messages = input.request_messages
+    messages.insert(
+        -1,
+        ModelRequest(parts=[InstructionDeltaPart(id="capability:a13n.codeact:catalog", content="def lookup(): ...")]),
+    )
+    input = input.model_copy(update={"request_json": ModelMessagesTypeAdapter.dump_json(messages).decode()})
     operator = CompactionRun(
         service.runtime.compactions,
         lease,
