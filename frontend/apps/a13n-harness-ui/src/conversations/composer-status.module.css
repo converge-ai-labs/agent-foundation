@@ -42,6 +42,22 @@ button.metric {
 }
 .popup [data-slot="popover-viewport"] {
   max-height: min(560px, 75dvh, var(--available-height));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.popup [data-slot="popover-viewport"] > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  width: 100%;
+}
+.popupBody {
+  min-height: 0;
+  padding: 0 12px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -49,7 +65,13 @@ button.metric {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px;
+  background: var(--popover);
+}
+.popupHeader > :first-child {
+  flex: 1;
 }
 .contextCapacity {
   margin-top: 16px;
@@ -141,20 +163,33 @@ button.metric {
   font-weight: 500;
 }
 .emptyScope {
-  margin: 0 0 16px;
+  margin: 16px 0;
+  padding: 24px 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  text-align: center;
   color: var(--a13n-secondary);
   font-size: 14px;
 }
 .breakdown {
-  margin-block: 4px;
+  margin-block: 8px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.breakdown > .numbers,
+.breakdown > .scope {
+  margin: 8px 16px 12px;
+}
+.breakdown[open] {
+  padding-bottom: 4px;
 }
 .breakdown > summary {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  margin-inline: -6px;
-  padding: 4px 8px;
+  margin-inline: 0;
+  padding: 8px 12px;
   border-radius: 5px;
   list-style: none;
   cursor: pointer;
@@ -241,7 +276,7 @@ button.metric {
 }
 .models {
   list-style: none;
-  margin: 4px 0 8px 12px;
+  margin: 4px 16px 8px;
   padding: 0;
 }
 .models li {

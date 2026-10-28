@@ -1,5 +1,7 @@
-import { SettingsChoice as ChoiceField } from "../shell/settings";
-import { Desktop } from "@phosphor-icons/react";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import styles from "./environments.module.css";
 
 import type { Schema } from "../transport/client";
@@ -47,17 +49,10 @@ export function EnvironmentsEditor({
   );
   return (
     <div className={styles.editor}>
-      <section className={styles.environment} aria-label="Local environment">
-        <div className={styles.heading}>
-          <Desktop aria-hidden />
-          <div>
-            <h3>Local · Harness server</h3>
-            <p>The computer running Harness</p>
-          </div>
-          <span className={styles.count}>
-            {roots.length ? directoryCount(roots.length) : "Chat files only"}
-          </span>
-        </div>
+      <SettingsSection
+        title="Local"
+        description="The computer running Harness."
+      >
         <ChoiceField
           label="Local mode"
           description={
@@ -104,7 +99,7 @@ export function EnvironmentsEditor({
             )
           }
         />
-      </section>
+      </SettingsSection>
       <EnvironmentBindings
         bindings={value.environment_bindings ?? []}
         localRoots={roots}

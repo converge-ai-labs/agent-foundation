@@ -68,9 +68,7 @@ it("shows actual context counts, unknown capacity and over-capacity observations
   expect(number("Used tokens")).toBe("25,000");
   expect(screen.queryByText("Context window")).toBeNull();
   expect(screen.queryByRole("meter")).toBeNull();
-  expect(
-    screen.getByText("Context limit unavailable for this model."),
-  ).toBeTruthy();
+  expect(screen.getByText("Context limit unavailable.")).toBeTruthy();
   view.rerender(<ContextDetails used={1100} capacity={1000} />);
   expect(number("Remaining tokens")).toBe("0");
   expect(number("Over capacity")).toBe("100");
@@ -146,4 +144,15 @@ it("renders legacy summaries without new attribution fields and does not invent 
     screen.getByText(/Older records don't show which models were used here/),
   ).toBeTruthy();
   expect(number("Model cost · USD")).toBe("$0.1250");
+});
+
+it("shows an empty scoped view without unknown-cost placeholders and restores totals on return", () => {
+  render(<TokenDetails usage={{ ...usage, descendants: zero }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Subagents" }));
+  expect(screen.getByText("No usage in this scope yet.")).toBeTruthy();
+  expect(screen.queryByText("Total tokens")).toBeNull();
+  expect(screen.queryByText("Model cost · USD")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  expect(number("Total tokens")).toBe("15,456");
+  expect(screen.queryByText("No usage in this scope yet.")).toBeNull();
 });

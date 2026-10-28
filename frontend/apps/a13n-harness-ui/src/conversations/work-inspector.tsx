@@ -6,7 +6,6 @@ import {
   DialogTrigger,
   DialogPopup,
   DialogTitle,
-  DialogDescription,
   DialogClose,
   Skeleton,
 } from "a13n-ui";
@@ -133,6 +132,8 @@ export function WorkInspector({
           <div className={styles.heading}>
             <DialogTitle>Chat activity</DialogTitle>
             <HelpTip label="About activity">
+              {key === "processes" &&
+                "Recent processes from this chat and its subagents. Other server processes are not shown. "}
               {workCaption(
                 key === "notes" ? work.notes.data : work.tasks.data,
                 work.stale || !connected,
@@ -185,11 +186,8 @@ export function WorkInspector({
               })}
             </div>
             <div className={styles.inspectorBody}>
-              {key === "processes" && (
-                <DialogDescription className={styles.caption}>
-                  Recent processes from this chat and its subagents. Other
-                  server processes aren't shown.
-                </DialogDescription>
+              {key !== "tools" && (
+                <h3 className={styles.panelTitle}>{labels[key]}</h3>
               )}
               {key === "tasks" && (
                 <>
@@ -229,12 +227,14 @@ export function WorkInspector({
               )}
               {key === "children" && tab === key && (
                 <>
-                  {summary && (
-                    <p className={styles.caption}>
-                      {summary.children.active ?? 0} active ·{" "}
-                      {summary.children.unavailable ?? 0} unavailable
-                    </p>
-                  )}
+                  {summary &&
+                    ((summary.children.active ?? 0) > 0 ||
+                      (summary.children.unavailable ?? 0) > 0) && (
+                      <p className={styles.caption}>
+                        {summary.children.active ?? 0} active ·{" "}
+                        {summary.children.unavailable ?? 0} unavailable
+                      </p>
+                    )}
                   <Children
                     threadId={threadId}
                     reconcile={reconcile}

@@ -211,8 +211,9 @@
 :where([data-a13n-modal] [data-slot="dialog-footer"]) {
   padding: 16px 24px 24px;
 }
-:where([data-a13n-modal] > [data-slot="dialog-close"]) {
-  top: 16px;
+[data-a13n-modal]
+  > :is([data-slot="dialog-close"], button[aria-label="Close"]) {
+  top: 20px;
   right: 16px;
   width: 32px;
   height: 32px;
@@ -301,6 +302,13 @@
 }
 
 @media (max-width: 600px) {
+  [data-a13n-modal]
+    > :is([data-slot="dialog-close"], button[aria-label="Close"]) {
+    top: 6px;
+    right: 6px;
+    width: 44px;
+    height: 44px;
+  }
   [data-a13n-modal] [data-slot="dialog-header"] {
     padding: 16px 56px 16px 16px;
   }

@@ -59,7 +59,7 @@
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .heading h2 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
 }
 .tabs {
@@ -287,8 +287,46 @@
   flex: 1;
 }
 
-.inspectorBody:has(> p:only-child) {
+/* Activity uses the same grouped rows as Settings. */
+.tasks:not(:empty),
+.notes:has(> details) {
+  padding: 4px var(--harness-group-inset);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.notes > details {
+  padding-block: 8px;
+}
+.panelToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--a13n-secondary);
+}
+.panelToolbar > span:first-child {
+  flex: 1;
+  font-weight: 500;
+}
+.emptyState {
   display: grid;
   place-content: center;
+  min-height: 128px;
+  margin: 0;
+  padding: 24px 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
   color: var(--a13n-secondary);
+  text-align: center;
+}
+
+.panelTitle {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
+}
+
+.children {
+  margin-top: 0;
 }

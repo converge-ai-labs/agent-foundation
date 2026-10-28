@@ -1514,7 +1514,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
     await user.click(
       await screen.findByRole("menuitem", { name: "People & profile" }),
     );
-    const color = await screen.findByRole("combobox", { name: "Your color" });
+    const color = await screen.findByRole("combobox", { name: "Color" });
     expect(color.textContent).toBe("Purple");
     expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
     component.unmount();
@@ -1530,7 +1530,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
       await screen.findByRole("menuitem", { name: "People & profile" }),
     );
     const remembered = await screen.findByRole("combobox", {
-      name: "Your color",
+      name: "Color",
     });
     expect(remembered.textContent).toBe("Purple");
     await user.click(remembered);
@@ -1551,7 +1551,7 @@ it("persists the initial collaboration color and restores explicit changes", asy
       await screen.findByRole("menuitem", { name: "People & profile" }),
     );
     expect(
-      (await screen.findByRole("combobox", { name: "Your color" })).textContent,
+      (await screen.findByRole("combobox", { name: "Color" })).textContent,
     ).toBe("Green");
   } finally {
     random.mockRestore();

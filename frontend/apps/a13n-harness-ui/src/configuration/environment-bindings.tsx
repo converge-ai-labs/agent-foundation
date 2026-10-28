@@ -58,10 +58,9 @@ export function DefaultWorkingDirectory({
   const missing =
     !!selected && !choices.some((item) => item.value === selected);
   return (
-    <div className={styles.defaultDirectory}>
+    <SettingsSection title="Working folder" className={styles.defaultDirectory}>
       <ChoiceField
         label="Default folder"
-        layout="stacked"
         popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
@@ -88,7 +87,7 @@ export function DefaultWorkingDirectory({
         ]}
       />
       {missing && <p role="alert">Choose a default folder before saving.</p>}
-    </div>
+    </SettingsSection>
   );
 }
 

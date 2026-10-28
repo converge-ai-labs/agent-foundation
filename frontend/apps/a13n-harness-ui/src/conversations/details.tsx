@@ -1,3 +1,4 @@
+import activityStyles from "./work-inspector.module.css";
 import { useThreadWork, workCaption } from "./work";
 import { TaskList, NoteList } from "./work-lists";
 import { useRef, useState, type ReactNode } from "react";
@@ -245,7 +246,9 @@ export function Children({
 }) {
   const children = useChildExecutions(threadId);
   return (
-    <section className={styles.children}>
+    <section
+      className={`${styles.children} ${display ? activityStyles.children : ""}`}
+    >
       {!display && <h3>Subagents</h3>}
       {children.isPending && <p role="status">Loading subagents…</p>}
       <ErrorNotice
@@ -262,7 +265,9 @@ export function Children({
             live={display?.childOutput(child)}
           />
         ))}
-      {children.data?.pages[0].total === 0 && <p>No subagent executions.</p>}
+      {children.data?.pages[0].total === 0 && (
+        <p className={activityStyles.emptyState}>No subagent executions.</p>
+      )}
       {children.hasNextPage && (
         <Button
           variant="ghost"

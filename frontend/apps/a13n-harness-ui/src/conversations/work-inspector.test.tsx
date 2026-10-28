@@ -110,7 +110,9 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     ),
   ).toBe(true);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Chat activity" }),
+  );
   await screen.findAllByText("Task outside this list");
   expect(screen.queryByText("task-before")).toBeNull();
   const summary = screen
@@ -131,16 +133,19 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     metaKey: true,
     altKey: true,
   });
-  await user.keyboard("{Escape}");
-  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Chat activity" }),
+  );
   expect(
     screen.getByRole("button", { name: "Inspect notes" }).textContent,
   ).toContain("3");
   await user.click(screen.getByRole("button", { name: "Inspect notes" }));
   await screen.findByText("Decision");
-  expect(screen.getByText(/Not saved yet/)).toBeTruthy();
+  await user.hover(screen.getByRole("button", { name: "About activity" }));
+  expect(await screen.findByText(/Not saved yet/)).toBeTruthy();
   expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
-  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
   run = "run-two";
   display.reset();
   refreshThread(setup.queries, "root", "lifecycle");
@@ -396,7 +401,9 @@ it("inspects observed processes in place, updates status and discloses missing o
     harness(GET),
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Chat activity" }),
+  );
   await user.click(screen.getByRole("button", { name: "Inspect processes" }));
   expect(screen.getByText("No background processes observed.")).toBeTruthy();
   display.processes.result(
@@ -444,7 +451,7 @@ it("inspects observed processes in place, updates status and discloses missing o
     screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).not.toContain("1");
   expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
-  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
   await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
 });
 
@@ -512,7 +519,9 @@ it("shares one open inspector with Goal and forgets a cleared Goal selection", a
     screen.getByRole("button", { name: "Inspect Goal: Verified" }),
   );
   await screen.findByRole("heading", { name: "Verified by the Agent" });
-  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Chat activity" }),
+  );
   await screen.findByRole("heading", { name: "Chat activity" });
   await waitFor(() =>
     expect(

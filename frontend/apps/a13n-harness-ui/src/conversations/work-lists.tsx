@@ -93,7 +93,9 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
           </li>
         ))}
       </ul>
-      {!page.tasks?.length && <p>No tasks yet.</p>}
+      {!page.tasks?.length && (
+        <p className={styles.emptyState}>No tasks yet.</p>
+      )}
       {!!page.omitted && <p>{page.omitted} tasks outside this bounded view.</p>}
     </>
   );
@@ -108,7 +110,9 @@ export function NoteList({ page }: { page?: Schema<"NotePage"> | null }) {
           <MessageText text={note.value} />
         </details>
       ))}
-      {!page.notes?.length && <p>No notes yet.</p>}
+      {!page.notes?.length && (
+        <p className={styles.emptyState}>No notes yet.</p>
+      )}
       {!!page.omitted && <p>{page.omitted} notes omitted by the server.</p>}
     </div>
   );

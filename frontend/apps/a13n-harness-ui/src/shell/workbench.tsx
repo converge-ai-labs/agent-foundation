@@ -66,7 +66,7 @@ import {
 } from "./settings";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
-import { ParticipantAvatars } from "./participant-avatars";
+import { ParticipantAvatars, ParticipantAvatar } from "./participant-avatars";
 import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
@@ -154,6 +154,7 @@ function WorkbenchContent({
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [displayName, setDisplayName] = useState(profile.display_name);
   const openPeople = () => {
+    setMenu(false);
     setDisplayName(profile.display_name);
     setPeopleOpen(true);
   };
@@ -615,29 +616,30 @@ function WorkbenchContent({
                 setPeopleOpen(false);
               }}
             >
-              <SettingsRow
-                label="Your display name"
-                controlId="workspace-display-name"
-              >
-                <Input
-                  id="workspace-display-name"
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                />
+              <SettingsRow label="Name" controlId="workspace-display-name">
+                <div className={styles.profileNameControl}>
+                  <Input
+                    aria-label="Your display name"
+                    id="workspace-display-name"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                  />
+                  <Button
+                    aria-label="Save name"
+                    type="submit"
+                    variant="outline"
+                    disabled={
+                      !displayName.trim() ||
+                      Array.from(displayName.trim()).length > 80
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
               </SettingsRow>
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={
-                  !displayName.trim() ||
-                  Array.from(displayName.trim()).length > 80
-                }
-              >
-                Save name
-              </Button>
             </form>
             <ChoiceField
-              label="Your color"
+              label="Color"
               value={profile.color}
               onValueChange={(color) => updateProfile({ ...profile, color })}
               options={profileColors}
@@ -666,43 +668,51 @@ function WorkbenchContent({
               </p>
             )}
           </details>
-          {live.presence?.participants.map((participant) => (
-            <div
-              className={styles.resourceRow}
-              key={participant.participant_id}
-            >
-              <strong>
-                {participant.display_name || "Anonymous"}
-                {participant.participant_id === live.presence?.participant_id
-                  ? " (you)"
-                  : ""}
-              </strong>
-              <span>{participant.foreground ? "Active tab" : "Away"}</span>
-              <small>
-                {live.presence?.same_page_participant_ids?.includes(
+          <SettingsSection title="People">
+            {live.presence?.participants.map((participant) => {
+              const own =
+                participant.participant_id === live.presence?.participant_id;
+              const samePage =
+                live.presence?.same_page_participant_ids?.includes(
                   participant.participant_id,
-                )
-                  ? "Same page"
-                  : participant.availability}
-              </small>
-              {participant.focus && (
-                <small>{participant.focus.target.kind}</small>
-              )}
-              {participant.focus &&
-                participant.availability === "available" &&
-                pageLink(participant.focus, sources.data?.sources) && (
-                  <Link
-                    to={pageLink(participant.focus, sources.data?.sources)!}
-                    onClick={() => setPeopleOpen(false)}
-                  >
-                    Open page
-                  </Link>
-                )}
-              {participant.unavailable_reason && (
-                <small>{participant.unavailable_reason}</small>
-              )}
-            </div>
-          ))}
+                );
+              const href =
+                participant.focus && participant.availability === "available"
+                  ? pageLink(participant.focus, sources.data?.sources)
+                  : undefined;
+              return (
+                <div
+                  className={styles.personRow}
+                  key={participant.participant_id}
+                >
+                  <ParticipantAvatar participant={participant} />
+                  <div className={styles.personInfo}>
+                    <strong>
+                      {participant.display_name || "Anonymous"}
+                      {own && <span className={styles.personYou}> · You</span>}
+                    </strong>
+                    <span>
+                      {participant.foreground ? "Active" : "Away"}
+                      {samePage ? " · This page" : ""}
+                    </span>
+                    {participant.unavailable_reason && (
+                      <span>{participant.unavailable_reason}</span>
+                    )}
+                  </div>
+                  {href && !own && !samePage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      render={<Link to={href} />}
+                      onClick={() => setPeopleOpen(false)}
+                    >
+                      Open page
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </SettingsSection>
         </div>
       </ModalFrame>
     </div>

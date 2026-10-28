@@ -63,6 +63,7 @@ export function RunEnvironments({
       <Button
         type="button"
         variant="ghost"
+        aria-label="Use chat defaults"
         className={panelStyles.resetAction}
         disabled={disabled}
         onClick={() => {
@@ -70,7 +71,7 @@ export function RunEnvironments({
           closeEditor();
         }}
       >
-        Use chat defaults
+        Reset to defaults
       </Button>
       <div className={panelStyles.confirmActions}>
         <Button type="button" variant="outline" onClick={closeEditor}>
@@ -78,6 +79,7 @@ export function RunEnvironments({
         </Button>
         <Button
           type="button"
+          aria-label="Use for next run"
           disabled={disabled || invalid || !editing}
           onClick={() => {
             if (!editing || disabled) return;
@@ -85,7 +87,7 @@ export function RunEnvironments({
             closeEditor();
           }}
         >
-          Use for next run
+          Apply
         </Button>
       </div>
     </>
@@ -128,7 +130,7 @@ export function RunEnvironments({
         title="Environments"
         size="lg"
         closeLabel="Close"
-        description="Choose where this tab's next runs work. Chat defaults stay unchanged."
+        description="Applies to upcoming runs in this tab."
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>

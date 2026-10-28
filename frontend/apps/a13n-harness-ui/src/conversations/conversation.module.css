@@ -897,7 +897,7 @@
 }
 .children > details {
   background: var(--a13n-surface);
-  padding: 12px 12px;
+  padding: 12px var(--harness-group-inset);
 }
 .children > details > summary {
   color: var(--a13n-text);

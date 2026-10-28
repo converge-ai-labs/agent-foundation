@@ -12,6 +12,7 @@ import {
   PopoverTitle,
 } from "a13n-ui";
 import { useOperation, useThreads } from "./queries";
+import { HelpTip } from "../shell/help-tip";
 import { ErrorNotice } from "../shell/ui";
 import {
   elapsedTime,
@@ -131,6 +132,12 @@ export function ComposerStatus({
               <PopoverPopup side="top" align="end" className={styles.popup}>
                 <div className={styles.popupHeader}>
                   <PopoverTitle>{title}</PopoverTitle>
+                  {label === "Context" && (
+                    <HelpTip label="About context">
+                      Tokens in the latest request. Chat totals are in Usage.
+                      The context limit depends on the model.
+                    </HelpTip>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -148,24 +155,26 @@ export function ComposerStatus({
                     <ArrowClockwise />
                   </Button>
                 </div>
-                {label === "Context" ? (
-                  <ContextDetails
-                    used={tokens}
-                    capacity={context.data?.context_window}
+                <div className={styles.popupBody}>
+                  {label === "Context" ? (
+                    <ContextDetails
+                      used={tokens}
+                      capacity={context.data?.context_window}
+                    />
+                  ) : (
+                    <UsageDetails usage={usage.data} />
+                  )}
+                  <ErrorNotice
+                    inline
+                    error={
+                      usage.error ||
+                      context.error ||
+                      inspection.error ||
+                      observed.error ||
+                      activity.error
+                    }
                   />
-                ) : (
-                  <UsageDetails usage={usage.data} />
-                )}
-                <ErrorNotice
-                  inline
-                  error={
-                    usage.error ||
-                    context.error ||
-                    inspection.error ||
-                    observed.error ||
-                    activity.error
-                  }
-                />
+                </div>
               </PopoverPopup>
             </Popover>
           ))}

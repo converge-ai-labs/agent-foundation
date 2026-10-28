@@ -125,19 +125,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.profileForm {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0 8px;
-  padding-block: 0 16px;
-}
-.profileForm > :first-child {
-  flex: 1 0 100%;
+.stack .profileForm {
+  padding-block: 0;
   min-width: 0;
 }
-.profileForm > button {
-  margin-left: auto;
+.profileNameControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.profileNameControl input {
+  min-width: 0;
+  flex: 1;
+}
+.personRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+}
+.personRow + .personRow {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.personInfo {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.personInfo strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.personInfo > span,
+.personYou {
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  font-weight: 400;
 }
 @media (max-width: 700px) {
   .profileButton {
@@ -1117,5 +1144,16 @@
   .settingsContent {
     padding: 24px 24px 32px;
     scrollbar-gutter: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .profileForm [data-slot="settings-row"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profileForm [data-slot="settings-row"] > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
   }
 }

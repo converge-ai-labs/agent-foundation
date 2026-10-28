@@ -60,13 +60,8 @@ export function ContextDetails({
         )}
       </dl>
       {limit == null && (
-        <p className={styles.scope}>
-          Context limit unavailable for this model.
-        </p>
+        <p className={styles.scope}>Context limit unavailable.</p>
       )}
-      <p className={styles.scope}>
-        Context in the latest request. Chat totals are in Usage.
-      </p>
     </>
   );
 }
@@ -178,14 +173,16 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           </Button>
         ))}
       </div>
-      <dl className={styles.usageOverview}>
-        <dt>Total tokens</dt>
-        <dd>{totals.model_requests ? total.toLocaleString() : "—"}</dd>
-        <dt>Model cost · USD</dt>
-        <dd>
-          <CostValue totals={totals} />
-        </dd>
-      </dl>
+      {totals.model_requests > 0 && (
+        <dl className={styles.usageOverview}>
+          <dt>Total tokens</dt>
+          <dd>{totals.model_requests ? total.toLocaleString() : "—"}</dd>
+          <dt>Model cost · USD</dt>
+          <dd>
+            <CostValue totals={totals} />
+          </dd>
+        </dl>
+      )}
       {total > 0 && (
         <div className={styles.tokenDistribution}>
           <div className={styles.tokenBar} aria-hidden="true">
@@ -208,7 +205,10 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           <details className={styles.breakdown}>
             <summary>
               Token breakdown{" "}
-              <span>{totals.model_requests.toLocaleString()} requests</span>
+              <span>
+                {totals.model_requests.toLocaleString()}{" "}
+                {totals.model_requests === 1 ? "request" : "requests"}
+              </span>
             </summary>
             <TokenRows totals={totals} />
           </details>
@@ -291,7 +291,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           </details>
         </>
       ) : (
-        <p className={styles.emptyScope}>No model responses recorded here.</p>
+        <p className={styles.emptyScope}>No usage in this scope yet.</p>
       )}
       {totals.provider_receipts > 0 && (
         <details className={styles.attribution}>

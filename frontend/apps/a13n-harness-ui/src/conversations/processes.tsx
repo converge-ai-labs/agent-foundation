@@ -25,7 +25,9 @@ export function Processes({
           Live observations are incomplete. Status may be stale.
         </p>
       )}
-      {!observations.length && <p>No background processes observed.</p>}
+      {!observations.length && (
+        <p className={styles.emptyState}>No background processes observed.</p>
+      )}
       <ul className={styles.tasks}>
         {observations
           .slice(-16)

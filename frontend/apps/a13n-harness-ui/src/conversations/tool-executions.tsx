@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import { HelpTip } from "../shell/help-tip";
 import { Badge, Button } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -125,44 +127,54 @@ export function ToolExecutions({
   };
   return (
     <section aria-label="Tool calls">
-      <p className={styles.caption}>
-        Tools used in this app session. Viewing a result keeps it available to
-        the agent.
-      </p>
+      <div className={styles.panelToolbar}>
+        <span>Tool calls</span>
+        <HelpTip label="About tool calls">
+          Tools used in this app session. Viewing a result keeps it available to
+          the agent.
+        </HelpTip>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Refresh tool calls"
+          loading={page.isFetching}
+          onClick={refresh}
+        >
+          <ArrowClockwise />
+        </Button>
+      </div>
       <ErrorNotice error={page.error} retry={refresh} />
       {page.isPending && <p role="status">Loading tool executions…</p>}
-      {page.data?.length === 0 && <p>No tool executions on this page.</p>}
+      {page.data?.length === 0 && (
+        <p className={styles.emptyState}>
+          {offset > 0 ? "No more tool calls." : "No tool calls yet."}
+        </p>
+      )}
       <ul className={styles.tasks}>
         {page.data?.map((item) => (
           <Execution key={item.execution_id} item={item} refresh={refresh} />
         ))}
       </ul>
-      <div className={styles.actions}>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={offset === 0 || page.isFetching}
-          onClick={() => setOffset(offset - 20)}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={page.data?.length !== 20 || page.isFetching}
-          onClick={() => setOffset(offset + 20)}
-        >
-          Next
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={page.isFetching}
-          onClick={refresh}
-        >
-          Refresh
-        </Button>
-      </div>
+      {(offset > 0 || page.data?.length === 20) && (
+        <div className={styles.actions}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={offset === 0 || page.isFetching}
+            onClick={() => setOffset(offset - 20)}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page.data?.length !== 20 || page.isFetching}
+            onClick={() => setOffset(offset + 20)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
