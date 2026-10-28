@@ -949,7 +949,7 @@ export function NativeWorkspace({
               aria-expanded={supportingExpanded}
               onClick={toggleSupportingPanel}
             >
-              <SidebarSimple />
+              <SidebarSimple mirrored />
             </Button>
           )}
         </header>
