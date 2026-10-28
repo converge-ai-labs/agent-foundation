@@ -900,6 +900,33 @@ function ConversationContent({
               Refresh agent
             </Button>
           )}
+        {!readOnly && detail.data && (
+          <WorkInspector
+            threadId={threadId}
+            display={display}
+            connected={connection === "Live"}
+            reconcile={reconcile}
+            goal={showGoal ? goal : null}
+            activity={thread?.root_activity}
+            onUseGoal={
+              goal &&
+              thread?.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? () => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${goal.objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
+          />
+        )}
         {canCompose && !thread?.archived && (
           <Composer
             autoFocus={pageReady && search.get("compose") === "1"}
@@ -1005,33 +1032,6 @@ function ConversationContent({
           </p>
         )}
         <div className={styles.conversationFooter}>
-          {!readOnly && detail.data && (
-            <WorkInspector
-              threadId={threadId}
-              display={display}
-              connected={connection === "Live"}
-              reconcile={reconcile}
-              goal={showGoal ? goal : null}
-              activity={thread?.root_activity}
-              onUseGoal={
-                goal &&
-                thread?.root_activity.state === "inactive" &&
-                detail.data?.available_actions?.includes("run") &&
-                draft.submission.kind !== "pending" &&
-                draft.submission.kind !== "unknown"
-                  ? () => {
-                      const text = draft.doc.getText("text");
-                      text.insert(
-                        text.length,
-                        `${text.length ? "\n\n" : ""}${goal.objective}`,
-                      );
-                      draft.mode = "goal";
-                      draft.notify();
-                    }
-                  : undefined
-              }
-            />
-          )}
           {!guest && !readOnly && thread && !thread.archived && (
             <ComposerStatus
               threadId={threadId}

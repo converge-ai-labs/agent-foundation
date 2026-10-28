@@ -1,5 +1,5 @@
 import { HelpTip } from "../shell/help-tip";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -8,6 +8,10 @@ import {
   DialogTitle,
   DialogClose,
   Skeleton,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
 } from "a13n-ui";
 import {
   ListChecks,
@@ -30,6 +34,15 @@ import { Processes } from "./processes";
 import { ToolExecutions } from "./tool-executions";
 import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
+
+const activityViews = {
+  tasks: { label: "Tasks", Icon: ListChecks },
+  notes: { label: "Notes", Icon: Notebook },
+  children: { label: "Subagents", Icon: UsersThree },
+  processes: { label: "Processes", Icon: Terminal },
+  tools: { label: "Tools", Icon: Wrench },
+};
+type ActivityView = keyof typeof activityViews;
 
 function Loading({ label }: { label: string }) {
   return (
@@ -58,9 +71,10 @@ export function WorkInspector({
 }) {
   const guest = useGuestAccess();
   const debug = useDebug();
-  const [tab, setTab] = useState<
-    "goal" | "tasks" | "notes" | "children" | "processes" | "tools" | null
-  >(null);
+  const [tab, setTab] = useState<"goal" | ActivityView | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (!goal && tab === "goal") setTab(null);
   }, [goal, tab]);
@@ -74,27 +88,18 @@ export function WorkInspector({
   const active = summary?.tasks.active;
   const complete = summary?.tasks.completed ?? 0;
   const total = summary?.tasks.total ?? 0;
-  const childTotal = summary
-    ? [
-        summary.children.running,
-        summary.children.succeeded,
-        summary.children.failed,
-        summary.children.cancelled,
-        summary.children.lost,
-      ].reduce<number>((sum, count) => sum + (count ?? 0), 0)
-    : 0;
+  const childActive = summary?.children.active ?? 0;
   const processes = display.processes.background;
   const running = processes.filter((item) => item.phase === "running").length;
   const incomplete =
     !connected ||
     display.gap ||
     [...display.children.values()].some((child) => child.display.gap);
-  const labels = {
-    tasks: "Tasks",
-    notes: "Notes",
-    children: "Subagents",
-    processes: "Processes",
-    tools: "Tools",
+  const counts: Partial<Record<ActivityView, number | string>> = {
+    tasks: total ? `${complete}/${total}` : undefined,
+    notes: summary?.notes.total,
+    children: childActive,
+    processes: running,
   };
   const tabs = (
     ["tasks", "notes", "children", "processes", "tools"] as const
@@ -102,35 +107,128 @@ export function WorkInspector({
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
     <div className={styles.strip} aria-label="Work inspection">
-      {goal && (
-        <GoalStatus
-          goal={goal}
-          activity={activity}
-          open={tab === "goal"}
-          onOpenChange={(open) => setTab(open ? "goal" : null)}
-          onUseObjective={onUseGoal}
-        />
+      {(goal || active) && (
+        <div className={styles.summary}>
+          {goal && (
+            <GoalStatus
+              goal={goal}
+              activity={activity}
+              open={tab === "goal"}
+              onOpenChange={(open) =>
+                setTab((current) =>
+                  open ? "goal" : current === "goal" ? null : current,
+                )
+              }
+              onUseObjective={onUseGoal}
+            />
+          )}
+          {active && (
+            <span
+              className={styles.active}
+              title={active.active_form || active.subject}
+            >
+              <TaskIcon status={active.status} />
+              <span>{active.active_form || active.subject}</span>
+            </span>
+          )}
+        </div>
       )}
       <Dialog
         open={tab !== null && tab !== "goal"}
-        onOpenChange={(open) => setTab(open ? "tasks" : null)}
+        onOpenChange={(open) => {
+          if (!open) setTab((current) => (current === "goal" ? current : null));
+        }}
       >
-        <DialogTrigger
-          render={<Button variant="ghost" size="sm" />}
-          aria-label="Chat activity"
+        <div className={styles.shortcuts}>
+          {tabs.map((item) => {
+            const { label, Icon } = activityViews[item];
+            return (
+              <DialogTrigger
+                key={item}
+                render={<Button variant="ghost" size="sm" />}
+                className={
+                  item === "tasks" || item === "children"
+                    ? undefined
+                    : styles.secondaryShortcut
+                }
+                aria-label={`Inspect ${label.toLowerCase()}`}
+                title={
+                  item === "children"
+                    ? "Subagents · active executions"
+                    : item === "processes"
+                      ? "Processes · observed running processes"
+                      : undefined
+                }
+                onClick={(event) => {
+                  returnFocus.current = event.currentTarget;
+                  setTab(item);
+                }}
+              >
+                <Icon />
+                {label}
+                {!!counts[item] && (
+                  <span className={styles.count}>{counts[item]}</span>
+                )}
+              </DialogTrigger>
+            );
+          })}
+          <Menu>
+            <MenuTrigger
+              ref={moreTrigger}
+              render={<Button variant="ghost" size="sm" />}
+              className={styles.more}
+              aria-label="More activity"
+            >
+              More
+              {!guest && running > 0 && (
+                <span
+                  className={styles.backgroundActivity}
+                  aria-label={`${running} observed running processes`}
+                  title={`${running} observed running processes`}
+                >
+                  <Terminal />
+                  <span>{running}</span>
+                </span>
+              )}
+              <CaretDown />
+            </MenuTrigger>
+            <MenuPopup
+              align="end"
+              finalFocus={tab !== null ? false : undefined}
+            >
+              {tabs
+                .filter((item) => item !== "tasks" && item !== "children")
+                .map((item) => {
+                  const { label, Icon } = activityViews[item];
+                  return (
+                    <MenuItem
+                      key={item}
+                      onClick={() => {
+                        returnFocus.current = moreTrigger.current;
+                        setTab(item);
+                      }}
+                    >
+                      <Icon />
+                      {label}
+                      {!!counts[item] && (
+                        <span className={styles.count}>{counts[item]}</span>
+                      )}
+                    </MenuItem>
+                  );
+                })}
+            </MenuPopup>
+          </Menu>
+        </div>
+        <DialogPopup
+          showCloseButton={false}
+          className={styles.popup}
+          initialFocus={heading}
+          finalFocus={() => (tab === "goal" ? false : returnFocus.current)}
         >
-          <ListChecks />
-          Activity
-          {!!total && (
-            <span className={styles.count}>
-              {complete}/{total}
-            </span>
-          )}
-          <CaretDown />
-        </DialogTrigger>
-        <DialogPopup showCloseButton={false} className={styles.popup}>
           <div className={styles.heading}>
-            <DialogTitle>Chat activity</DialogTitle>
+            <DialogTitle ref={heading} tabIndex={-1}>
+              Chat activity
+            </DialogTitle>
             <HelpTip label="About activity">
               {key === "processes" &&
                 "Recent processes from this chat and its subagents. Other server processes are not shown. "}
@@ -151,35 +249,19 @@ export function WorkInspector({
           <div className={styles.activityLayout}>
             <div className={styles.tabs} aria-label="Activity views">
               {tabs.map((item) => {
-                const Icon =
-                  item === "tasks"
-                    ? ListChecks
-                    : item === "notes"
-                      ? Notebook
-                      : item === "children"
-                        ? UsersThree
-                        : item === "tools"
-                          ? Wrench
-                          : Terminal;
-                const count =
-                  item === "children"
-                    ? childTotal
-                    : item === "notes"
-                      ? summary?.notes.total
-                      : item === "processes"
-                        ? running
-                        : undefined;
+                const { label, Icon } = activityViews[item];
+                const count = counts[item];
                 return (
                   <Button
                     key={item}
                     variant="ghost"
                     size="sm"
-                    aria-label={`Inspect ${labels[item].toLowerCase()}`}
+                    aria-label={`Inspect ${label.toLowerCase()}`}
                     aria-pressed={key === item}
                     onClick={() => setTab(item)}
                   >
                     <Icon />
-                    {labels[item]}
+                    {label}
                     {!!count && <span className={styles.count}>{count}</span>}
                   </Button>
                 );
@@ -187,7 +269,9 @@ export function WorkInspector({
             </div>
             <div className={styles.inspectorBody}>
               {key !== "tools" && (
-                <h3 className={styles.panelTitle}>{labels[key]}</h3>
+                <h3 className={styles.panelTitle}>
+                  {activityViews[key].label}
+                </h3>
               )}
               {key === "tasks" && (
                 <>
@@ -246,15 +330,6 @@ export function WorkInspector({
           </div>
         </DialogPopup>
       </Dialog>
-      {active && (
-        <span
-          className={styles.active}
-          title={active.active_form || active.subject}
-        >
-          <TaskIcon status={active.status} />
-          {active.active_form || active.subject}
-        </span>
-      )}
     </div>
   );
 }
