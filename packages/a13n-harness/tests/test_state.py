@@ -413,3 +413,54 @@ async def test_namespace_snapshots_reuse_immutable_encoding_without_decoding_unc
     detached.pop("opaque")
     assert updated.get("opaque") is not None
     assert original.get("counter") is None
+
+
+async def test_deferred_namespace_is_built_once_when_read_and_superseded_by_write():
+    state = AgentContextState()
+    builds: list[int] = []
+
+    def produce(value):
+        def build():
+            builds.append(value)
+            return CounterState(value=value)
+
+        return build
+
+    state._defer("counter", produce(1), version="1")
+    state._defer("counter", produce(2), version="1")
+    assert builds == []
+    assert await state.read("counter", CounterState, version="1") == CounterState(value=2)
+    assert await state.read("counter", CounterState, version="1") == CounterState(value=2)
+    assert builds == [2]
+
+    state._defer("counter", produce(3), version="1")
+    await state.write("counter", CounterState(value=4), version="1")
+    exported = await state.snapshot()
+    assert builds == [2]
+    entry = exported.get("counter")
+    assert entry is not None and entry.data == {"value": 4}
+
+    state._defer("counter", produce(5), version="1")
+    changed = await state.snapshot()
+    assert changed is not exported
+    entry = changed.get("counter")
+    assert entry is not None and entry.data == {"value": 5}
+    assert await state.snapshot() is changed
+
+
+async def test_failed_deferred_namespace_keeps_failing_instead_of_exposing_an_older_value():
+    state = AgentContextState()
+    await state.write("counter", CounterState(value=1), version="1")
+
+    def fail() -> CounterState:
+        raise ValueError("too large")
+
+    state._defer("counter", fail, version="1")
+    for _ in range(2):
+        with pytest.raises(ValueError, match="too large"):
+            await state.snapshot()
+        with pytest.raises(ValueError, match="too large"):
+            await state.read("counter", CounterState, version="1")
+    await state.write("counter", CounterState(value=3), version="1")
+    entry = (await state.snapshot()).get("counter")
+    assert entry is not None and entry.data == {"value": 3}

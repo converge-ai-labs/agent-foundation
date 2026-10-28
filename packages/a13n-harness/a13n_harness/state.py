@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import lru_cache
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -265,6 +265,8 @@ class AgentContextState:
         self._entries = snapshot.entries if snapshot is not None else {}
         self._encoded_entries = {key: self._encode_entry(key, entry) for key, entry in self._entries.items()}
         self._snapshot: AgentContextStateSnapshot | None = snapshot or AgentContextStateSnapshot()
+        # Namespaces whose owner builds their value only when this state is read or exported.
+        self._deferred: dict[str, tuple[Callable[[], BaseModel], str]] = {}
         self._lock = asyncio.Lock()
 
     @staticmethod
@@ -291,6 +293,7 @@ class AgentContextState:
         """Read and validate one Capability's state without exposing shared bytes."""
         _validate_namespace(capability_id, version)
         async with self._lock:
+            self._materialize(capability_id)
             entry = self._entries.get(capability_id)
             if entry is None:
                 return None
@@ -325,14 +328,42 @@ class AgentContextState:
         _validate_namespace(capability_id, version)
         entry = CapabilityState(version=version, data=value.model_dump(mode="json"))
         async with self._lock:
-            if self._entries.get(capability_id) != entry:
-                self._entries[capability_id] = entry
-                self._encoded_entries[capability_id] = self._encode_entry(capability_id, entry)
-                self._snapshot = None
+            self._deferred.pop(capability_id, None)
+            self._store(capability_id, entry)
+
+    def _defer(self, capability_id: str, produce: Callable[[], BaseModel], *, version: str) -> None:
+        """Replace one namespace with the value `produce` returns when this state is next read or exported.
+
+        `produce` runs at that read, so the namespace holds the owner's value at that moment, not at this call. Repeated
+        calls before the next read or export coalesce into one build. A later `write` of the namespace supersedes the
+        deferral. A failing `produce` stays deferred, so every later read or export fails the same way instead of
+        returning an older value.
+        """
+        _validate_namespace(capability_id, version)
+        # Synchronous with no await: no lock holder can observe a partial update.
+        if capability_id not in self._deferred:
+            # Cached snapshots predate the value this namespace will hold.
+            self._snapshot = None
+        self._deferred[capability_id] = (produce, version)
+
+    def _materialize(self, capability_id: str | None = None) -> None:
+        """Build deferred namespaces now; callers hold the lock."""
+        for key in tuple(self._deferred) if capability_id is None else (capability_id,):
+            if (deferred := self._deferred.get(key)) is not None:
+                produce, version = deferred
+                self._store(key, CapabilityState(version=version, data=produce().model_dump(mode="json")))
+                del self._deferred[key]
+
+    def _store(self, capability_id: str, entry: CapabilityState) -> None:
+        if self._entries.get(capability_id) != entry:
+            self._entries[capability_id] = entry
+            self._encoded_entries[capability_id] = self._encode_entry(capability_id, entry)
+            self._snapshot = None
 
     async def snapshot(self) -> AgentContextStateSnapshot:
         """Return a detached snapshot suitable for a HarnessState envelope."""
         async with self._lock:
+            self._materialize()
             if self._snapshot is None:
                 encoded = b"{" + b",".join(self._encoded_entries.values()) + b"}"
                 self._snapshot = AgentContextStateSnapshot.model_construct(entries_json=encoded)

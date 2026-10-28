@@ -567,6 +567,8 @@ class RunUsageLedger:
             (r.response_ordinal for r in self._records.values() if isinstance(r, ModelUsageRecord)), default=-1
         )
         self._flush_lock = asyncio.Lock()
+        # Sequence and coverage last published to the state; every other snapshot field is fixed for the ledger.
+        self._published: tuple[int, str] | None = None
         self._limits = limits
         self._baseline = deepcopy(baseline) if baseline is not None else RunUsage()
         self.requests = RequestBudget(
@@ -580,7 +582,12 @@ class RunUsageLedger:
 
     @property
     def snapshot(self) -> UsageSnapshot:
-        return UsageSnapshot(
+        """Build the full detached accounting state; its cost grows with the retained records."""
+        return UsageSnapshot(**dict(self._scope()), records=self.records)
+
+    def _scope(self) -> UsageScope:
+        """Bounded identity and progress, without copying or validating any record."""
+        return UsageScope(
             usage_id=self.usage_id,
             thread_id=self.thread_id,
             run_id=self.run_id,
@@ -590,7 +597,6 @@ class RunUsageLedger:
             sequence=self._sequence,
             tool_calls=self._tool_calls,
             model_usage_coverage=self.model_usage_coverage,
-            records=self.records,
         )
 
     async def save(self) -> None:
@@ -598,6 +604,7 @@ class RunUsageLedger:
         async with self._flush_lock:
             if self._state is not None:
                 await self._state.write(USAGE_CAPABILITY_ID, self.snapshot, version="1")
+                self._published = (self._sequence, self.model_usage_coverage)
 
     def summary(self, *, tool_calls: int | None = None) -> RunUsageSummary:
         if tool_calls is not None:
@@ -728,29 +735,32 @@ class RunUsageLedger:
         from a13n_harness.events import UsageReportPayload, emit_harness_event
 
         async with self._flush_lock:
-            snapshot = self.snapshot
+            # No await precedes the delivery below, so this sequence, the pending changes and any snapshot or scope
+            # built for the Host describe the same instant. The full snapshot is built only where a consumer needs it.
+            sequence = self._sequence
             pending = tuple(self._pending.values())
-            if self._state is not None:
-                await self._state.write(USAGE_CAPABILITY_ID, snapshot, version="1")
-            if snapshot.sequence == self._reported_sequence:
+            if self._state is not None and (published := (sequence, self.model_usage_coverage)) != self._published:
+                self._state._defer(USAGE_CAPABILITY_ID, lambda: self.snapshot, version="1")
+                self._published = published
+            if sequence == self._reported_sequence:
                 return
-            if snapshot.sequence != self._persisted_sequence:
+            if sequence != self._persisted_sequence:
                 if self.reporter is not None:
                     try:
                         if isinstance(self.reporter, UsageDeltaReporter):
                             await self.reporter.report_delta(
                                 UsageDelta(
-                                    scope=snapshot.scope,
+                                    scope=self._scope(),
                                     after_sequence=self._persisted_sequence,
                                     records=tuple(
                                         record.model_copy(deep=True)
-                                        for sequence, record in pending
-                                        if sequence > self._persisted_sequence
+                                        for changed, record in pending
+                                        if changed > self._persisted_sequence
                                     ),
                                 )
                             )
                         else:
-                            await self.reporter.report(snapshot)
+                            await self.reporter.report(self.snapshot)
                     except asyncio.CancelledError as exc:
                         task = asyncio.current_task()
                         if task is not None and task.cancelling():
@@ -758,12 +768,12 @@ class RunUsageLedger:
                         raise UsageReportError("Host usage reporter was cancelled.") from exc
                     except Exception as exc:
                         raise UsageReportError() from exc
-                self._persisted_sequence = snapshot.sequence
+                self._persisted_sequence = sequence
             if not display:
                 return
             if self._events is not None:
                 chunks = _report_chunks([record for _, record in pending])
-                report_id = _stable_id("report", self.usage_id, str(snapshot.sequence))
+                report_id = _stable_id("report", self.usage_id, str(sequence))
                 for index, chunk in enumerate(chunks):
                     await emit_harness_event(
                         self._events,
@@ -771,7 +781,7 @@ class RunUsageLedger:
                         payload=UsageReportPayload(
                             report_id=report_id,
                             usage_id=self.usage_id,
-                            usage_sequence=snapshot.sequence,
+                            usage_sequence=sequence,
                             reason=reason,
                             trigger_record_id=trigger_record_id,
                             chunk_index=index,
@@ -779,10 +789,10 @@ class RunUsageLedger:
                             records=tuple(record.model_dump(mode="json") for record in chunk),
                         ),
                     )
-            for sequence, record in pending:
-                if self._pending.get(record.record_id) == (sequence, record):
+            for changed, record in pending:
+                if self._pending.get(record.record_id) == (changed, record):
                     del self._pending[record.record_id]
-            self._reported_sequence = snapshot.sequence
+            self._reported_sequence = sequence
 
 
 @dataclass(init=False)
