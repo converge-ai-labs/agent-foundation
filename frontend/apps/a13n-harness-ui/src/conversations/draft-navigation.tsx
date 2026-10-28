@@ -36,7 +36,7 @@ export function DraftNavigation() {
               : "Drafts"
         }
       >
-        <PencilSimple aria-hidden="true" />
+        <PencilSimple size={18} aria-hidden="true" />
         <span>Drafts</span>
         <span className={styles.draftsCount}>
           {error ? (

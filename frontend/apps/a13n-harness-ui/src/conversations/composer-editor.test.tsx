@@ -95,7 +95,9 @@ it.each(["", "Shared"])(
       />,
     );
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-    expect(textbox.textContent).toBe(text);
+    expect(textbox.textContent).toBe(
+      text || "Ask anything, or describe a task…",
+    );
     expect(draft.doc.getText("text").toString()).toBe(text);
     act(() => {
       draft.participants = {
@@ -123,7 +125,7 @@ it.each(["", "Shared"])(
       draft.notify();
     });
     await screen.findByText("Bob");
-    expect(textbox.querySelector(".cm-placeholder")).toBeNull();
+    expect(!!textbox.querySelector(".cm-placeholder")).toBe(!text);
     expect(draft.doc.getText("text").toString()).toBe(text);
     expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
   },
@@ -457,7 +459,7 @@ it("previews staged images locally and releases the thumbnail when removed", asy
   }
 });
 
-it("keeps an empty editor blank and preserves input when its accessible context changes", () => {
+it("keeps the placeholder out of authored input and preserves the editor across context changes", () => {
   const draft = new ThreadDraft();
   const editor = { current: null as EditorView | null };
   const props = {
@@ -469,10 +471,14 @@ it("keeps an empty editor blank and preserves input when its accessible context 
   };
   const view = render(<ComposerEditor {...props} />);
   const initial = editor.current;
-  expect(screen.getByRole("textbox").textContent).toBe("");
+  expect(screen.getByRole("textbox").textContent).toBe(
+    "Ask anything, or describe a task…",
+  );
   view.rerender(<ComposerEditor {...props} local />);
   expect(editor.current).toBe(initial);
-  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+    "Ask anything, or describe a task…",
+  );
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Keep this objective"));
   view.rerender(<ComposerEditor {...props} />);

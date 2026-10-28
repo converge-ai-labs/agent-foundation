@@ -88,7 +88,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
       kind: "unknown",
       action: "send",
       message:
-        "The previous input may already have been accepted. Open the conversation and review its history before sending again.",
+        "Your message may already be sent. Open the chat and check before sending again.",
     };
   return {
     threadId: saved.threadId,
@@ -169,7 +169,7 @@ export class NewDraftStore {
         kind: "unknown",
         action: "send",
         message:
-          "Review the archived conversation's outcome before sending this input again.",
+          "Review the archived chat's outcome before sending this input again.",
       };
     this.retain({
       threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
@@ -216,7 +216,7 @@ export class NewDraftStore {
       this.error = "";
     } catch {
       this.error =
-        "Draft could not be saved in this browser. Keep this tab open to retain your input.";
+        "Couldn't save the draft. Keep this tab open to keep your input.";
     }
     if (this.error !== previousError) draft.composer.notify();
   }

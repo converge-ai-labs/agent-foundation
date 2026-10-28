@@ -1,9 +1,12 @@
 .bar {
-  width: 100%;
-  max-width: 860px;
+  /* Same column as the composer (see conversation.module.css). */
+  width: min(var(--harness-reading-width), 100% - 84px);
   margin: 4px auto 0;
-  flex-shrink: 0;
+  /* Metric text starts on the composer content line (13px inset + 8px). */
+  padding-inline: 12px;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
 }
 .metrics {
   display: flex;
@@ -11,32 +14,26 @@
   flex-wrap: wrap;
   gap: 0 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .metric {
-  padding: 5px 6px;
-  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--conversation-footer-control-height, 24px);
+  padding: 2px 8px;
   border: 0;
-  border-radius: 6px;
   background: transparent;
   color: inherit;
   font: inherit;
+  line-height: 20px;
   white-space: nowrap;
 }
 button.metric {
   cursor: pointer;
 }
-button.metric:hover,
-.metric[data-popup-open] {
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-}
-.metric:focus-visible {
-  outline: 1px solid var(--ring);
-}
 .metrics strong {
-  margin-left: 3px;
   font-weight: 400;
   color: var(--a13n-text);
 }
@@ -44,18 +41,215 @@ button.metric:hover,
   color: var(--warning-foreground);
 }
 .popup {
-  width: min(380px, calc(100vw - 24px));
-  font-size: 13px;
+  width: min(360px, calc(100vw - 24px));
+  font-size: 14px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
-  max-height: min(720px, 75dvh);
+}
+.popup [data-slot="popover-viewport"] {
+  max-height: min(560px, 75dvh, var(--available-height));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.popup [data-slot="popover-viewport"] > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  width: 100%;
+}
+.popupBody {
+  min-height: 0;
+  padding: 0 12px 12px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.popupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px;
+  background: var(--popover);
+}
+.popupHeader > :first-child {
+  flex: 1;
+}
+.contextCapacity {
+  margin-top: 16px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.contextMeter {
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--a13n-surface);
+}
+.contextMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--info-foreground);
+}
+.contextMeter[data-full] > span {
+  background: var(--warning-foreground);
+}
+.usageOverview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  margin: 16px 0 12px;
+}
+.usageOverview dt {
+  grid-row: 1;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+.usageOverview dd {
+  grid-row: 2;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.usageOverview dd strong {
+  font-weight: inherit;
+}
+.usageOverview .scope {
+  margin: 4px 0 0;
+  font-size: 14px;
+  letter-spacing: normal;
+}
+.tokenDistribution {
+  margin-bottom: 12px;
+}
+.tokenBar {
+  display: flex;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--a13n-border);
+}
+.tokenBar > span {
+  height: 100%;
+  background: var(--a13n-secondary);
+  border-radius: inherit;
+}
+.tokenLegend {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+.tokenLegend > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tokenLegend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--a13n-secondary);
+}
+.tokenLegend > span:last-child i {
+  background: var(--a13n-border);
+}
+.tokenLegend strong {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.emptyScope {
+  margin: 16px 0;
+  padding: 24px 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  text-align: center;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+.breakdown {
+  margin-block: 8px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.breakdown > .numbers,
+.breakdown > .scope {
+  margin: 8px 16px 12px;
+}
+.breakdown[open] {
+  padding-bottom: 4px;
+}
+.breakdown > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-inline: 0;
+  padding: 8px 12px;
+  border-radius: 5px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+.breakdown > summary:hover,
+.modelHeader:hover {
+  background: var(--a13n-hover);
+}
+.breakdown > summary::-webkit-details-marker {
+  display: none;
+}
+.breakdown > summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-inline: 4px 4px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  color: var(--a13n-secondary);
+}
+.breakdown[open] > summary::before {
+  transform: rotate(45deg);
+}
+.breakdown > summary > span {
+  margin-left: auto;
+  color: var(--a13n-secondary);
+}
+.breakdown > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.analyticsLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0;
+  padding-block: 12px;
+  border-top: 1px solid var(--a13n-border-soft);
+  font-size: 14px;
+}
+.popup .analyticsLink {
+  margin: 8px -12px -12px;
+  padding-inline: 12px;
+}
+.analyticsLink:hover {
+  background: var(--a13n-hover);
 }
 .numbers {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 16px;
-  margin: 16px 0;
+  gap: 4px 16px;
+  margin: 12px 0;
 }
 .numbers dt {
   color: var(--a13n-secondary);
@@ -65,32 +259,59 @@ button.metric:hover,
   text-align: right;
   font-weight: 500;
 }
+.contextNumbers[data-unknown-limit] {
+  align-items: baseline;
+  margin-block: 16px 12px;
+}
+.contextNumbers[data-unknown-limit] dd {
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
 .scope {
   display: block;
   margin: 8px 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 .sectionTitle {
-  margin: 16px 0 0;
-  font-size: 13px;
+  margin: 12px 0 0;
+  font-size: 14px;
   font-weight: 500;
 }
 .models {
   list-style: none;
-  margin: 8px 0;
+  margin: 4px 16px 8px;
   padding: 0;
 }
 .models li {
-  padding: 12px 0;
+  padding: 4px 0;
+}
+.models li + li {
   border-top: 1px solid var(--a13n-border-soft);
 }
 .modelHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+  min-height: 32px;
+  margin-inline: -4px;
+  padding: 4px;
+  border-radius: 4px;
+}
+.modelHeader::before {
+  grid-column: 1;
+}
+.modelHeader:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.modelDetails[open] > summary {
+  margin-bottom: 8px;
 }
 .usageDetails {
   min-width: 0;
@@ -102,7 +323,7 @@ button.metric:hover,
   padding: 4px;
   margin-top: 12px;
   background: var(--a13n-surface);
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .scopeSelector button {
   flex: 1;
@@ -111,29 +332,33 @@ button.metric:hover,
   background: var(--a13n-elevated);
   color: var(--a13n-text);
 }
+:global(.dark) .scopeSelector button[aria-pressed="true"] {
+  background: var(--a13n-selected);
+}
 .attribution summary {
   cursor: pointer;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .attribution summary:focus-visible {
   outline: 1px solid var(--ring);
   outline-offset: 3px;
 }
 .sourceGroup {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: var(--a13n-surface);
-  border-radius: 10px;
+  margin-top: 12px;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid var(--a13n-border);
   overflow-wrap: anywhere;
 }
 .models .numbers {
   margin: 8px 0;
-  gap: 3px 16px;
-  font-size: 12px;
+  gap: 4px 16px;
+  font-size: 14px;
 }
 .modelName {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .modelCost {
   text-align: right;
@@ -143,5 +368,52 @@ button.metric:hover,
 }
 .models .scope,
 .numbers .scope {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+}
+@container conversation-page (max-width: 600px) {
+  .bar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+  .breakdown > summary,
+  .modelHeader,
+  .attribution summary,
+  .scopeSelector button,
+  .analyticsLink,
+  .popupHeader button {
+    min-height: 44px;
+  }
+  .attribution summary {
+    display: flex;
+    align-items: center;
+  }
+  .popupHeader button {
+    min-width: 44px;
+  }
+}
+
+.usageOverview dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.scopeSelector {
+  background: transparent;
+  padding: 0;
+  gap: 8px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  border-radius: 0;
+}
+.scopeSelector button {
+  border-radius: 0;
+  padding: 8px 4px;
+  color: var(--a13n-secondary);
+}
+.scopeSelector button[aria-pressed="true"],
+:global(.dark) .scopeSelector button[aria-pressed="true"] {
+  background: transparent;
+  box-shadow: inset 0 -2px var(--a13n-text);
+  color: var(--a13n-text);
 }

@@ -337,7 +337,7 @@ export class ThreadDraft {
       const update = Y.encodeStateAsUpdate(this.doc);
       if (update.length > 512 * 1024) {
         this.error =
-          "Draft exceeds the server's 512 KiB CRDT limit. Copy your text before rejoining a fresh draft.";
+          "This draft is over the 512 KiB limit. Copy your text before joining a new draft.";
         this.notify();
         return;
       }

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap } from "@codemirror/view";
+import {
+  drawSelection,
+  EditorView,
+  keymap,
+  placeholder,
+} from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -54,8 +59,8 @@ export function ComposerEditor({
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Not shared until you send. Text and selections are saved in this browser when storage is available. Local files may need reattaching after reload. Files upload on Send. Enter to send; Shift+Enter for a new line."
-    : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
+    ? "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line."
+    : "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () => [
       EditorView.contentAttributes.of({
@@ -150,6 +155,8 @@ export function ComposerEditor({
       doc: doc.getText("text").toString(),
       extensions: [
         EditorView.lineWrapping,
+        // Match the caret to the text metrics, including an empty placeholder.
+        drawSelection(),
         EditorView.domEventHandlers({
           focus: activate,
           keydown: activate,
@@ -182,27 +189,34 @@ export function ComposerEditor({
           ...composerWordKeymap,
           ...defaultKeymap,
         ]),
+        placeholder("Ask anything, or describe a task…"),
         yCollab(doc.getText("text"), awareness, { undoManager: draft.undo }),
         EditorView.theme({
           "&": {
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
             fontSize: "var(--composer-font-size, 14px)",
-            minHeight: "var(--composer-content-height, 64px)",
+            minHeight: "var(--composer-content-height, 28px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "var(--composer-content-height, 64px)",
-            padding: "8px 2px",
+            minHeight: "var(--composer-content-height, 28px)",
+            padding: "4px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
             maxHeight:
-              "max(64px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",
+              "max(48px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",
             overflow: "auto",
             fontFamily: "inherit",
           },
+          ".cm-placeholder": { color: "var(--a13n-secondary)" },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
+          ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
+            {
+              backgroundColor:
+                "color-mix(in srgb, var(--a13n-signal) 22%, transparent)",
+            },
           "&.cm-focused": { outline: "none" },
           ".cm-ySelectionCaret": {
             borderLeftWidth: "2px",
@@ -212,11 +226,11 @@ export function ComposerEditor({
           ".cm-ySelectionCaretDot": { display: "none" },
           ".cm-ySelectionInfo": {
             fontFamily: "inherit",
-            fontSize: "11px",
+            fontSize: "14px",
             fontWeight: "500",
-            lineHeight: "18px",
+            lineHeight: "20px",
             top: "-20px",
-            padding: "0 5px",
+            padding: "0 4px",
             borderRadius: "4px 4px 4px 0",
             maxWidth: "160px",
             overflow: "hidden",
@@ -338,26 +352,26 @@ export function ComposerEditor({
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul": {
                   fontFamily: "var(--a13n-font)",
-                  fontSize: "13px",
+                  fontSize: "14px",
                   boxSizing: "border-box",
                   minWidth: "0",
                   maxWidth: "100%",
                   maxHeight: "min(280px, 40vh)",
-                  padding: "5px",
-                  scrollPadding: "5px",
+                  padding: "4px",
+                  scrollPadding: "4px",
                   overscrollBehavior: "contain",
                   scrollbarWidth: "thin",
                   scrollbarColor: "var(--a13n-scrollbar-thumb) transparent",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-                  padding: "7px 10px",
+                  padding: "8px 12px",
                   borderRadius: "var(--a13n-radius-row)",
                   lineHeight: "20px",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul > li + li": {
-                  marginTop: "2px",
+                  marginTop: "4px",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul > li:hover": {
                   backgroundColor: "var(--a13n-hover)",
@@ -375,9 +389,9 @@ export function ComposerEditor({
                 },
                 ".cm-tooltip-autocomplete .cm-completionDetail": {
                   display: "block",
-                  margin: "2px 0 0",
-                  fontSize: "12px",
-                  lineHeight: "18px",
+                  margin: "4px 0 0",
+                  fontSize: "14px",
+                  lineHeight: "21px",
                   color: "var(--a13n-secondary)",
                   fontStyle: "normal",
                   overflow: "hidden",

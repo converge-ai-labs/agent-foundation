@@ -58,7 +58,7 @@ it("retains unsaved configuration on cancel and navigates only after confirmed d
   );
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   let dialog = await screen.findByRole("dialog", {
-    name: "Discard this unsaved configuration?",
+    name: "Discard draft?",
   });
   expect(dialog.textContent).toContain(path);
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -67,7 +67,7 @@ it("retains unsaved configuration on cancel and navigates only after confirmed d
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   dialog = await screen.findByRole("dialog", {
-    name: "Discard this unsaved configuration?",
+    name: "Discard draft?",
   });
   await user.click(
     within(dialog).getByRole("button", { name: "Discard draft" }),
@@ -127,7 +127,7 @@ it("creates a model directly without requiring a separate validation step", asyn
   expect(
     screen.getByText("Advanced configuration").closest("details")?.open,
   ).toBe(false);
-  await user.click(screen.getByRole("button", { name: "Create model" }));
+  await user.click(screen.getByRole("button", { name: "Create" }));
   await waitFor(() => expect(drafts.get(path)?.base).toBe(content));
   expect(client.PUT).toHaveBeenCalledWith(
     "/api/configuration/sources/{relative_path}",
@@ -144,7 +144,7 @@ it("creates a model directly without requiring a separate validation step", asyn
 it("checks without saving and keeps a rejected draft available for repair", async () => {
   const { client, drafts, path, content, user } = mountEditor("model");
   await user.click(screen.getByText("Advanced configuration"));
-  await user.click(screen.getByRole("button", { name: "Check configuration" }));
+  await user.click(screen.getByRole("button", { name: "Check settings" }));
   await screen.findByText("Configuration valid · not saved");
   expect(client.POST).toHaveBeenCalledWith("/api/configuration/validate", {
     params: { query: { path } },
@@ -153,7 +153,7 @@ it("checks without saving and keeps a rejected draft available for repair", asyn
   expect(client.PUT).not.toHaveBeenCalled();
   expect(drafts.get(path)?.base).toBeNull();
   client.PUT.mockRejectedValueOnce(new Error("Invalid configuration"));
-  await user.click(screen.getByRole("button", { name: "Create model" }));
+  await user.click(screen.getByRole("button", { name: "Create" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Invalid configuration",
   );
@@ -163,9 +163,10 @@ it("checks without saving and keeps a rejected draft available for repair", asyn
 
 it("confirms cancelling an existing edit and restores the saved content without publishing", async () => {
   const { client, drafts, path, content, user } = mountEditor("agent", false);
-  await screen.findByRole("button", { name: "Save changes" });
-  await user.click(screen.getByText("Advanced configuration"));
-  const id = screen.getByRole("textbox", { name: "Resource ID" });
+  await screen.findByRole("heading", { name: "Example" });
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  await user.click(await screen.findByText("Advanced configuration"));
+  const id = screen.getByRole("textbox", { name: "ID" });
   await user.clear(id);
   await user.type(id, "agent-edited");
   expect(drafts.get(path)?.content).toContain("custom: keep");
@@ -173,7 +174,9 @@ it("confirms cancelling an existing edit and restores the saved content without 
   let dialog = await screen.findByRole("dialog", {
     name: "Discard this local draft?",
   });
-  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "Keep editing" }),
+  );
   expect(drafts.get(path)?.content).toContain("agent-edited");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -181,7 +184,7 @@ it("confirms cancelling an existing edit and restores the saved content without 
     name: "Discard this local draft?",
   });
   await user.click(
-    within(dialog).getByRole("button", { name: "Reload saved version" }),
+    within(dialog).getByRole("button", { name: "Reload saved" }),
   );
   expect(drafts.get(path)?.content).toBe(content);
   expect(client.PUT).not.toHaveBeenCalled();

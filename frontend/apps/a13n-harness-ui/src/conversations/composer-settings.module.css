@@ -1,5 +1,5 @@
 .popup {
-  width: min(400px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -13,13 +13,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 4px 8px;
   outline: none;
 }
 .title {
   flex: 1;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
+}
+.header > button {
+  width: 28px;
+  height: 28px;
 }
 .body {
   min-width: 0;
@@ -27,16 +31,16 @@
   max-height: min(65dvh, 540px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 16px 16px;
+  padding: 4px;
 }
 .row {
   display: flex;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--harness-menu-row);
   height: auto;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 10px 8px;
+  gap: 8px;
+  padding: 4px 8px;
   font-weight: 400;
 }
 .row > span:first-child {
@@ -54,13 +58,17 @@
 .choices {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 8px;
   width: 100%;
   height: auto;
-  min-height: 44px;
-  padding: 10px 8px;
+  min-height: var(--harness-menu-row);
+  padding: 4px 8px;
   justify-content: space-between;
   white-space: normal;
   text-align: left;
@@ -70,10 +78,15 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.choice > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
 .choice small {
   display: block;
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .group {
@@ -89,15 +102,25 @@
   gap: 8px;
   margin-top: 16px;
 }
+.resetAction {
+  margin-inline-end: auto;
+}
+.confirmActions {
+  display: flex;
+  gap: 8px;
+}
 .hint {
   margin: 8px 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   overflow-wrap: anywhere;
 }
 @media (max-width: 639px) {
   .body input {
     font-size: 16px;
+  }
+  .header button {
+    min-width: 44px;
   }
   .header button,
   .body button,
@@ -113,16 +136,119 @@
   min-width: 0;
   max-width: 100%;
 }
+.modelTrigger {
+  max-width: 160px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  font-weight: 400;
+  gap: 8px;
+}
+.modelTrigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelTrigger > svg {
+  width: 12px;
+  flex-shrink: 0;
+}
+.taskPopup {
+  width: min(240px, calc(100vw - 24px));
+}
+.taskPopup[data-dialog-open] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.optionList {
+  padding: 4px;
+}
+.optionRow,
+.optionAction {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--harness-menu-row);
+  height: auto;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.optionRow:hover:not(:has([data-disabled])),
+.optionAction:hover:not(:disabled) {
+  background: var(--a13n-hover);
+}
+.optionRow > svg,
+.optionAction > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--a13n-secondary);
+}
+.optionAction > svg:last-child {
+  width: 12px;
+  height: 12px;
+}
+.optionCopy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+}
+.optionCopy small {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--a13n-secondary);
+  white-space: normal;
+}
+.optionActions {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border);
+}
+.optionCopy .environmentLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.optionRow [data-slot="switch"] {
+  --thumb-size: 12px;
+}
+.optionHint {
+  margin: 4px 8px 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.optionRow:has([data-disabled]) {
+  cursor: default;
+  color: var(--a13n-tertiary);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
 .identity > button {
   flex-shrink: 0;
 }
 .summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .summary > span:not([aria-hidden]) {
   min-width: 0;
@@ -133,93 +259,59 @@
 .modelControls {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 16px;
-}
-.controlHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.controlHeading > button:last-child {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
-}
-.controlState {
-  flex: 1;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
+  gap: 0;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border);
 }
 .levels {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   width: 100%;
   gap: 4px;
-  margin-top: 8px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--a13n-hover);
+  margin-top: 4px;
 }
 .levels > button {
-  flex: 1 1 auto;
+  width: 100%;
   height: auto;
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: 12px;
+  min-height: var(--harness-menu-row);
+  padding: 4px 8px;
+  justify-content: space-between;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.levels > button:hover {
+  background: var(--a13n-hover);
+}
+.levels small {
+  display: block;
+  margin-top: 1px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
 }
 .speedControl {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 .speedControl .hint {
-  margin: 0;
+  margin: 8px 8px;
   line-height: 1.6;
 }
-.speedToggles {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.speedToggles .controlState {
-  min-width: 100px;
-  text-align: right;
-}
-.fastToggle {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  box-shadow: none;
-}
-.fastToggle[aria-pressed="true"] {
-  color: var(--primary-foreground);
-  border-color: var(--a13n-accent);
-  background: var(--a13n-accent);
-}
 @container composer (max-width: 480px) {
-  .environmentButton {
-    width: 44px;
+  .modelTrigger {
+    max-width: 170px;
   }
-  .environmentLabel {
-    display: none;
-  }
-  .summary {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
-    font-size: 11px;
-    line-height: 16px;
-  }
-  .summary > span:not([aria-hidden]) {
-    max-width: 100%;
-  }
+  /* Narrow composers keep one line: the model name only; the agent stays
+     available in the settings popover the summary opens. */
+  .summary > span:not([aria-hidden]):first-child,
   .summary > [aria-hidden] {
     display: none;
   }
@@ -229,4 +321,72 @@
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+@media (max-width: 639px) {
+  .sheet .header {
+    padding: 8px 16px 4px;
+  }
+  .sheet .title {
+    font-size: 16px;
+    line-height: 20px;
+  }
+  .sheet .body {
+    padding: 4px;
+  }
+}
+
+.choice[aria-pressed="true"],
+.levels > button[data-state="on"] {
+  background: transparent;
+  color: var(--a13n-text);
+}
+.choice,
+.levels > button {
+  min-height: var(--harness-menu-row);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.levels {
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.choiceLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.choiceLabel > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.choiceText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+.choiceText > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.choiceText > span > span {
+  min-width: 0;
+}
+.choiceText > span > small {
+  flex-shrink: 0;
+  margin-top: 0;
+  white-space: nowrap;
 }

@@ -3,39 +3,46 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 840px;
+  max-width: 680px;
   margin-inline: auto;
 }
 .page > button {
   align-self: flex-start;
 }
-.search {
-  width: min(100%, 360px);
-}
 .rows {
   display: grid;
-  gap: 12px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.rows:empty {
+  display: none;
 }
 .row {
   min-width: 0;
-  padding-block-end: 12px;
-  border-bottom: 1px solid var(--a13n-border);
+  padding: 8px;
 }
-.row > small {
-  padding-inline: 8px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+.row + .row {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.row strong {
+  font-size: 14px;
+}
+.row small {
+  font-size: 14px;
 }
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 64px 16px;
+  padding: 48px 16px;
   text-align: center;
   color: var(--a13n-secondary);
 }
 .empty h2 {
   margin: 0;
   color: var(--a13n-text);
+  font-size: 16px;
+  font-weight: 500;
 }

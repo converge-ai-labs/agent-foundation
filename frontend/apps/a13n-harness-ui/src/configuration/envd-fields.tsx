@@ -1,11 +1,14 @@
+import styles from "../shell/workbench.module.css";
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField, SettingsRow, SettingsSection, Switch } from "a13n-ui";
+import { Switch } from "a13n-ui";
 import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
-import styles from "../shell/workbench.module.css";
 
 type FieldsProps = { source: string; onChange: (source: string) => void };
 
@@ -48,13 +51,10 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
   )?.ready;
   return (
     <>
-      <p>
-        Default for new conversations. Projects can override this selection.
-      </p>
-      <SettingsSection>
+      <SettingsSection variant="grouped">
         <SettingsRow
           label="Runtime"
-          description="Direct runs on this Host without downloading a runtime."
+          description="Direct runs on this host without downloading a runtime."
         >
           <ChoiceField
             label="Runtime"
@@ -89,8 +89,8 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
             label="Permissions"
             description={
               direct
-                ? "Commands run as the Host account with filesystem and network access."
-                : "Sandbox restricts files and processes to the selected workspace grants."
+                ? "Commands use the server's account, with file and network access."
+                : "Sandbox limits file and process access to the allowed workspace."
             }
           >
             {direct ? (
@@ -119,7 +119,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
         {!custom && !direct && !sandbox && (
           <SettingsRow
             label="Computer Use"
-            description="Allow agents using this default to observe and control the Host desktop."
+            description="Let agents using this default see and control this computer's desktop."
           >
             <Switch
               aria-label="Computer Use"
@@ -137,14 +137,12 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           Custom profile: <code>{selected}</code>. Change its configuration in
           Profiles & extensions.
         </p>
-      ) : direct ? (
-        <p className="text-sm text-muted-foreground">Ready to use.</p>
-      ) : (
+      ) : direct ? null : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/30 p-4 text-sm">
           <div>
             <p>
               {ready
-                ? "envd checked on this Host"
+                ? "envd checked on this host"
                 : "Prepare envd before running with this default."}
             </p>
             <p className="text-muted-foreground">
@@ -199,10 +197,10 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
   };
   return (
     <>
-      <SettingsSection>
+      <SettingsSection variant="grouped">
         <SettingsRow
           label="Runtime source"
-          description="Managed downloads the exact release selected by the installed client."
+          description="Automatically downloads the envd version required by Harness."
         >
           <ChoiceField
             label="Runtime source"
@@ -223,18 +221,16 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           />
         </SettingsRow>
         {custom && (
-          <div className={styles.fieldGroup}>
-            <TextField
-              label="Executable path"
-              value={executable}
-              onChange={(value) => update({ executable: value })}
-              description="Absolute path on the Harness Host to a13n-envd. Custom executables are never downloaded automatically."
-            />
-          </div>
+          <TextField
+            label="Executable path"
+            value={executable}
+            onChange={(value) => update({ executable: value })}
+            description="Full path to a13n-envd on this server. You must install and update it yourself."
+          />
         )}
         <SettingsRow
           label="Metrics collection"
-          description="App collection and built-in local Envd sampling. External daemons and custom launch recipes keep their own sampling interval. Restart Harness UI after saving."
+          description="How often Harness collects metrics. This also sets sampling for its local envd runtime. Other runtimes keep their own interval. Restart Harness UI to apply."
         >
           <ChoiceField
             label="Metrics collection interval"
@@ -262,7 +258,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
         </SettingsRow>
         <SettingsRow
           label="Desktop capability"
-          description="Permit Computer Use runtimes on this Host. Agents still need a profile that explicitly allows desktop access."
+          description="Allow desktop controls on this server. Each agent still needs a profile with desktop access."
         >
           <Switch
             aria-label="Desktop capability"

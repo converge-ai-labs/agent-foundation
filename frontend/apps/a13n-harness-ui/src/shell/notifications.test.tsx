@@ -196,12 +196,35 @@ it("keeps attention notices without permission or when desktop reminders are dis
   expect(
     await screen.findByText("Which project should I update?"),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Turn off reminders" }));
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
   permission = "granted";
   vi.mocked(document.hasFocus).mockReturnValue(false);
   event = notice("receipt-3", "failed");
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
+});
+it("dismisses setup without disabling notifications and remembers the dismissal", () => {
+  const view = mount();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Dismiss notification setup" }),
+  );
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  expect(
+    screen
+      .getByRole("switch", { name: "Enable browser notifications" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  view.unmount();
+  mount();
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  const toggle = screen.getByRole("switch", {
+    name: "Enable browser notifications",
+  });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  expect(screen.getByLabelText("Notification permission")).toBeTruthy();
 });
 it("reflects permission revocation and another tab disabling reminders", () => {
   permission = "granted";
@@ -294,11 +317,9 @@ it.each([
     mount("/settings#notifications");
     expect(screen.getByText("Open from Home Screen")).toBeTruthy();
     expect(
-      screen.getAllByText(/Add Harness UI to your Home Screen/).length,
+      screen.getAllByText(/Add Harness to your Home Screen/).length,
     ).toBeGreaterThan(0);
-    expect(
-      screen.queryByRole("button", { name: "Allow notifications" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Enable alerts" })).toBeNull();
     expect(
       screen
         .getByRole("button", { name: "Send test notification" })
@@ -323,7 +344,7 @@ it("uses real capabilities in the installed iPad app without blocking permission
   });
   mount("/settings#notifications", transport);
   expect(enable).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Allow notifications" }));
+  fireEvent.click(screen.getByRole("button", { name: "Enable alerts" }));
   await screen.findByText("Enabled on this device");
   expect(enable).toHaveBeenCalledWith(transport);
   transport.close();
@@ -349,15 +370,15 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   });
   vi.stubGlobal("Notification", undefined);
   mount("/settings#notifications");
-  expect(
-    screen.getAllByText(/Add Harness UI to your Home Screen/),
-  ).toHaveLength(1);
+  expect(screen.getAllByText(/Add Harness to your Home Screen/)).toHaveLength(
+    1,
+  );
   const help = screen.getByText("Delivery help").closest("details")!;
   expect(help.open).toBe(false);
   fireEvent.click(screen.getByText("Delivery help"));
   expect(help.open).toBe(true);
   expect(help.textContent).toContain("Share → Add to Home Screen");
-  expect(help.textContent).toContain("six-hour delivery window");
+  expect(help.textContent).toContain("six hours");
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(
     screen.queryByText(/Without background delivery, keep WebUI open/),
@@ -385,9 +406,7 @@ it.each(["completed", "failed", "suspended"] as const)(
     expect(screen.getAllByText(event.notice!.brief)).toHaveLength(
       currentCount + 1,
     );
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Open conversation" })[0],
-    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Open chat" })[0]);
     expect(await screen.findByText("/threads/never-visited")).toBeTruthy();
     expect(native).not.toHaveBeenCalled();
   },
@@ -414,9 +433,7 @@ it("has no permission-only setup or local test fallback without Push support", (
       .getByRole("button", { name: "Send test notification" })
       .hasAttribute("disabled"),
   ).toBe(true);
-  expect(
-    screen.queryByRole("button", { name: "Allow notifications" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Enable alerts" })).toBeNull();
   fireEvent.click(screen.getByText("Emit"));
   expect(screen.getByText(event.notice!.brief)).toBeTruthy();
   expect(native).not.toHaveBeenCalled();

@@ -1,9 +1,8 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--harness-section-gap);
   width: 100%;
-  max-width: 680px;
   min-width: 0;
 }
 
@@ -17,6 +16,9 @@
 
 .sectionHeader > h2 {
   margin: 0;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
 }
 
 .sectionHeader > button {
@@ -38,11 +40,6 @@
 }
 
 @media (max-width: 600px) {
-  .sectionHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .profileLink > :first-child {
     flex-basis: 100%;
   }

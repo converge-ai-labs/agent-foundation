@@ -1,26 +1,40 @@
 .page {
   width: 100%;
-  max-width: 1376px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 32px 48px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  padding: 0 0 8px;
 }
 .filters {
   display: grid;
-  grid-template-columns: 160px repeat(3, minmax(0, 1fr));
+  grid-template-columns: 160px minmax(0, 240px) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: var(--harness-section-gap);
+}
+.filterToggle {
+  justify-self: start;
+}
+.extraFilters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 560px;
   gap: 16px;
-  margin-top: 24px;
+  margin-top: 16px;
 }
 .picker {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .picker > span {
+  font-size: 14px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 20px;
+}
+.page [data-slot="field-label"] {
+  font-size: 14px;
+  line-height: 20px;
 }
 .picker > button {
   width: 100%;
@@ -31,20 +45,20 @@
   gap: 16px;
   margin-top: 16px;
 }
-.freshness {
+.page .freshness {
   min-height: 18px;
   margin: 12px 0 24px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .results {
   display: grid;
-  gap: 32px;
+  gap: var(--harness-section-gap);
 }
 .summary {
   display: grid;
-  grid-template-columns: 1.25fr repeat(4, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--harness-section-gap);
   margin: 0;
 }
 .summary > div {
@@ -52,26 +66,26 @@
 }
 .summary dt {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 8px;
 }
 .summary dd {
   margin: 0;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
   letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
 }
 .summary small {
+  font-weight: 400;
+  letter-spacing: normal;
   display: block;
-  margin-top: 6px;
+  margin-top: 8px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .trend {
-  background: var(--a13n-surface);
-  border-radius: 12px;
-  padding: 20px 24px 16px;
+  padding-block: 8px;
   min-width: 0;
 }
 .sectionHeader {
@@ -79,24 +93,30 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .sectionHeader h2 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   margin: 0;
 }
 .sectionHeader > :last-child {
   margin-left: auto;
 }
+.breakdownControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .chartReadout {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .chartScale {
   color: var(--a13n-tertiary);
-  font-size: 11px;
+  font-size: 14px;
   margin-bottom: 12px;
 }
 .chartScroll {
@@ -105,8 +125,8 @@
 .bars {
   display: flex;
   align-items: end;
-  height: 172px;
-  gap: 3px;
+  height: 144px;
+  gap: 4px;
 }
 .barTarget {
   display: flex;
@@ -135,8 +155,8 @@
   display: flex;
   justify-content: space-between;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin-top: 10px;
+  font-size: 14px;
+  margin-top: 12px;
 }
 .breakdown {
   min-width: 0;
@@ -148,16 +168,16 @@
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  white-space: normal;
 }
 .table th,
 .table td {
-  padding: 12px 10px;
+  padding: 12px;
   text-align: right;
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .table thead th {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -172,19 +192,25 @@
 .table tbody th {
   font-weight: 500;
 }
-.table tbody tr:hover {
-  background: var(--a13n-hover);
+.table td {
+  white-space: nowrap;
 }
 .rowName {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+.table:has(th:nth-child(5)) .rowName {
+  min-width: 144px;
 }
 .rowName button {
+  min-width: 0;
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border: 0;
   background: transparent;
   padding: 0;
@@ -199,6 +225,12 @@
   display: inline-flex;
   color: var(--a13n-secondary);
 }
+@media (max-width: 600px) {
+  .table th,
+  .table td {
+    padding-inline: 8px;
+  }
+}
 .pagination {
   display: flex;
   align-items: center;
@@ -206,7 +238,7 @@
   gap: 12px;
   margin-top: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .pagination > div {
   display: flex;
@@ -218,10 +250,21 @@
   text-align: center;
 }
 .note {
-  font-size: 12px;
+  composes: details from "../shell/workbench.module.css";
+  font-size: 14px;
   line-height: 1.65;
   color: var(--a13n-secondary);
   max-width: 960px;
+}
+.note > summary {
+  min-height: 36px;
+  padding-block: 8px;
+  font-size: 14px;
+}
+.page .note p {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--a13n-secondary);
 }
 .barTarget:focus-visible,
 .rowName button:focus-visible,
@@ -230,32 +273,27 @@
   outline-offset: 3px;
   border-radius: 3px;
 }
-@media (max-width: 1100px) {
-  .page {
-    padding: 24px;
-  }
+@media (max-width: 600px) {
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-@media (max-width: 600px) {
-  .page {
-    padding: 20px 16px;
-  }
-  .filters {
     gap: 12px;
   }
+  .filters > * {
+    min-width: 0;
+  }
+  .filters [data-slot="select-trigger"] {
+    min-width: 0;
+    width: 100%;
+  }
+  .filterToggle {
+    grid-column: 1 / -1;
+  }
   .summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 16px;
   }
-  .summary dd {
-    font-size: 24px;
-  }
-  .trend {
-    padding: 16px;
+  .summary > div:first-child {
+    grid-column: 1 / -1;
   }
   .chartReadout {
     width: 100%;

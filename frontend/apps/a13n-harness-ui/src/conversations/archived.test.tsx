@@ -54,7 +54,7 @@ const row = (id: string, archived = true) => ({
   project_name: "One",
 });
 
-it("queries only archived conversations with independent search and pagination, then restores without navigating", async () => {
+it("queries only archived chats with independent search and pagination, then restores without navigating", async () => {
   const urls: URL[] = [];
   let restored = false;
   let mutation: unknown;
@@ -88,9 +88,7 @@ it("queries only archived conversations with independent search and pagination, 
   await screen.findByRole("link", { name: /Stored.*Archived/ });
   expect(screen.queryByRole("link", { name: "Active" })).toBeNull();
   expect(urls[0].searchParams.get("archived_only")).toBe("true");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more archived conversations" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
   await screen.findByRole("link", { name: /Older.*Archived/ });
   expect(urls.at(-1)?.searchParams.get("cursor")).toBe("older");
   fireEvent.click(screen.getByRole("button", { name: "Restore Stored" }));
@@ -98,13 +96,11 @@ it("queries only archived conversations with independent search and pagination, 
     expect(screen.queryByRole("link", { name: /Stored.*Archived/ })).toBeNull(),
   );
   expect(mutation).toEqual({ expected_version: 3, patch: { archived: false } });
-  expect(
-    screen.getByRole("heading", { name: "Archived conversations" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Archived chats" })).toBeTruthy();
   fireEvent.change(screen.getByRole("searchbox"), {
     target: { value: "missing" },
   });
-  await screen.findByText("No matching conversations");
+  await screen.findByText("No matching chats");
   expect(urls.at(-1)?.searchParams.has("cursor")).toBe(false);
 });
 
@@ -115,6 +111,6 @@ it("shows a failed list as an error rather than an empty archive", async () => {
   );
   mount();
   await screen.findByText("Archive unavailable");
-  expect(screen.queryByText("No archived conversations")).toBeNull();
+  expect(screen.queryByText("No archived chats")).toBeNull();
   expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
 });

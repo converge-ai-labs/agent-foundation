@@ -94,7 +94,7 @@ it("counts working environments independently of directories and auxiliary files
   expect(environmentSummary({ local_roots: ["/one", "/two"] })).toBe(
     "Local · 2 directories",
   );
-  expect(environmentSummary({})).toBe("Local · Thread files");
+  expect(environmentSummary({})).toBe("Local · Chat files");
   const bindings = [
     remote,
     { ...remote, alias: "notes", working_directory: "/notes" },
@@ -180,7 +180,7 @@ it("shows readable directory choices while keeping routing identities internal",
   expect(choices).toEqual([
     { value: "workspace", label: "Local · /one" },
     { value: "workspace-2", label: "Local · /two" },
-    { value: "thread-files", label: "Local · Thread files" },
+    { value: "thread-files", label: "Local · Chat files" },
     { value: "build", label: "Build machine · /work" },
   ]);
   expect(changeLocalRoots({ local_roots: ["/one", "/two"] }, ["/two"])).toEqual(

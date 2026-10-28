@@ -1,7 +1,12 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ArrowClockwise, ArrowUpRight } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ArrowUpRight,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
 import { Button, ChoiceField, SearchPicker, SegmentedControl } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -47,6 +52,11 @@ export function UsagePage() {
   const { client } = useTransport();
   const filters = usageFilters(params);
   const invalid = rangeError(filters);
+  const [moreFilters, setMoreFilters] = useState(
+    !!(filters.thread_id || filters.model),
+  );
+  const [tokenDetails, setTokenDetails] = useState(false);
+  const extraFilters = Number(!!filters.thread_id) + Number(!!filters.model);
   const query = useQuery({
     queryKey: ["usage-analytics", filters],
     queryFn: ({ signal }) =>
@@ -101,7 +111,7 @@ export function UsagePage() {
       label: filters.project_id ?? "No project",
     });
   const threadOptions = [
-    { value: "all", label: "All threads" },
+    { value: "all", label: "All chats" },
     ...options(data?.threads),
   ];
   if (
@@ -123,7 +133,7 @@ export function UsagePage() {
     <div className={styles.page}>
       <PageHeader
         title="Usage"
-        description="Where your tokens and model estimated cost go."
+        description="Tokens and estimated model cost across your chats."
         actions={
           <Button
             variant="ghost"
@@ -172,33 +182,47 @@ export function UsagePage() {
             }
           />
         </div>
-        <div className={styles.picker}>
-          <span>Thread</span>
-          <SearchPicker
-            label="Thread"
-            placeholder="All threads"
-            emptyMessage="No threads found"
-            groups={[{ label: "Root threads", options: threadOptions }]}
-            value={filters.thread_id ?? "all"}
-            onValueChange={(value) =>
-              change({ thread_id: value === "all" ? undefined : value })
-            }
-          />
-        </div>
-        <div className={styles.picker}>
-          <span>Actual model</span>
-          <SearchPicker
-            label="Actual model"
-            placeholder="All models"
-            emptyMessage="No models in this period"
-            groups={[{ label: "Recorded models", options: modelOptions }]}
-            value={filters.model ?? "all"}
-            onValueChange={(value) =>
-              change({ model: value === "all" ? undefined : value })
-            }
-          />
-        </div>
+        <Button
+          variant="outline"
+          className={styles.filterToggle}
+          aria-expanded={moreFilters}
+          aria-controls="usage-more-filters"
+          onClick={() => setMoreFilters(!moreFilters)}
+        >
+          <SlidersHorizontal />
+          Filters{extraFilters ? ` · ${extraFilters}` : ""}
+        </Button>
       </div>
+      {moreFilters && (
+        <div className={styles.extraFilters} id="usage-more-filters">
+          <div className={styles.picker}>
+            <span>Chat</span>
+            <SearchPicker
+              label="Chat"
+              placeholder="All chats"
+              emptyMessage="No chats found"
+              groups={[{ label: "Chats", options: threadOptions }]}
+              value={filters.thread_id ?? "all"}
+              onValueChange={(value) =>
+                change({ thread_id: value === "all" ? undefined : value })
+              }
+            />
+          </div>
+          <div className={styles.picker}>
+            <span>Model</span>
+            <SearchPicker
+              label="Model"
+              placeholder="All models"
+              emptyMessage="No models in this period"
+              groups={[{ label: "Recorded models", options: modelOptions }]}
+              value={filters.model ?? "all"}
+              onValueChange={(value) =>
+                change({ model: value === "all" ? undefined : value })
+              }
+            />
+          </div>
+        </div>
+      )}
       {params.get("range") === "custom" && (
         <div className={styles.dates}>
           <TextField
@@ -232,35 +256,25 @@ export function UsagePage() {
         <div aria-busy={query.isFetching} className={styles.results}>
           <dl className={styles.summary}>
             <div>
-              <dt>Model estimated cost</dt>
+              <dt>Estimated cost</dt>
               <dd>
                 <Cost totals={data.summary} />
+                <small>
+                  USD ·{" "}
+                  {data.summary.unknown_model_costs
+                    ? `${number(data.summary.unknown_model_costs)} unknown-cost requests`
+                    : "Recorded prices"}
+                </small>
               </dd>
-              <small>
-                USD ·{" "}
-                {data.summary.unknown_model_costs
-                  ? `${number(data.summary.unknown_model_costs)} unknown-cost requests`
-                  : "Recorded prices"}
-              </small>
             </div>
             <div>
               <dt>Total tokens</dt>
               <dd>
                 <Count value={data.summary.total_tokens} />
-              </dd>
-              <small>Input + output</small>
-            </div>
-            <div>
-              <dt>Input tokens</dt>
-              <dd>
-                <Count value={data.summary.input_tokens} />
-              </dd>
-              <small>Includes cache reads / writes</small>
-            </div>
-            <div>
-              <dt>Output tokens</dt>
-              <dd>
-                <Count value={data.summary.output_tokens} />
+                <small>
+                  <Count value={data.summary.input_tokens} /> input ·{" "}
+                  <Count value={data.summary.output_tokens} /> output
+                </small>
               </dd>
             </div>
             <div>
@@ -268,53 +282,67 @@ export function UsagePage() {
               <dd>
                 <Count value={data.summary.model_requests} />
               </dd>
-              <small>Recorded contributions</small>
             </div>
           </dl>
           <DailyChart key={`${data.start}:${data.end}`} days={data.daily} />
           <section className={styles.breakdown} aria-label="Usage breakdown">
             <div className={styles.sectionHeader}>
               <h2>Breakdown</h2>
-              <SegmentedControl
-                label="Group by"
-                value={filters.group_by ?? "project"}
-                onValueChange={(value) => change({ group_by: value })}
-                options={[
-                  { value: "project", label: "Projects" },
-                  { value: "thread", label: "Threads" },
-                  { value: "model", label: "Models" },
-                ]}
-              />
-              <ChoiceField
-                label="Sort"
-                variant="filter"
-                value={filters.order_by ?? "tokens"}
-                onValueChange={(value) => change({ order_by: value })}
-                options={[
-                  { value: "tokens", label: "Most tokens" },
-                  { value: "cost", label: "Highest cost" },
-                ]}
-              />
+              <div className={styles.breakdownControls}>
+                <SegmentedControl
+                  label="Group by"
+                  value={filters.group_by ?? "project"}
+                  onValueChange={(value) => change({ group_by: value })}
+                  options={[
+                    { value: "project", label: "Projects" },
+                    { value: "thread", label: "Chats" },
+                    { value: "model", label: "Models" },
+                  ]}
+                />
+                <ChoiceField
+                  label="Sort"
+                  variant="filter"
+                  value={filters.order_by ?? "tokens"}
+                  onValueChange={(value) => change({ order_by: value })}
+                  options={[
+                    { value: "tokens", label: "Most tokens" },
+                    { value: "cost", label: "Highest cost" },
+                  ]}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={tokenDetails}
+                  onClick={() => setTokenDetails(!tokenDetails)}
+                >
+                  Token details
+                </Button>
+              </div>
             </div>
-            <div className={styles.tableScroll}>
+            <div
+              className={styles.tableScroll}
+              role="region"
+              aria-label="Usage breakdown table"
+              tabIndex={0}
+            >
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th scope="col">
                       {filters.group_by === "model"
-                        ? "Actual model"
+                        ? "Model"
                         : filters.group_by === "thread"
-                          ? "Thread"
+                          ? "Chat"
                           : "Project"}
                     </th>
                     {[
                       "Requests",
-                      "Input",
-                      "Output",
-                      "Cache read",
-                      "Cache write",
-                      "Est. cost (USD)",
-                      "Unknown cost",
+                      "Tokens",
+                      ...(tokenDetails
+                        ? ["Input", "Output", "Cache read", "Cache write"]
+                        : []),
+                      "Est. cost",
+                      ...(tokenDetails ? ["Unknown cost"] : []),
                     ].map((label) => (
                       <th scope="col" key={label}>
                         {label}
@@ -332,13 +360,17 @@ export function UsagePage() {
                             onClick={() => narrow(group)}
                             title={`Filter to ${group.label}`}
                           >
-                            {group.label}
+                            {filters.group_by === "model" ? (
+                              <ModelIdentity name={group.label} />
+                            ) : (
+                              group.label
+                            )}
                           </button>
                           {group.thread_id && (
                             <Link
                               to={`/threads/${encodeURIComponent(group.thread_id)}`}
-                              aria-label={`Open conversation: ${group.label}`}
-                              title="Open conversation"
+                              aria-label={`Open chat: ${group.label}`}
+                              title="Open chat"
                             >
                               <ArrowUpRight size={16} />
                             </Link>
@@ -349,23 +381,32 @@ export function UsagePage() {
                         <Count value={group.totals.model_requests} />
                       </td>
                       <td>
-                        <Count value={group.totals.input_tokens} />
+                        <Count value={group.totals.total_tokens} />
                       </td>
-                      <td>
-                        <Count value={group.totals.output_tokens} />
-                      </td>
-                      <td>
-                        <Count value={group.totals.cache_read_tokens} />
-                      </td>
-                      <td>
-                        <Count value={group.totals.cache_write_tokens} />
-                      </td>
+                      {tokenDetails && (
+                        <>
+                          <td>
+                            <Count value={group.totals.input_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.output_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.cache_read_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.cache_write_tokens} />
+                          </td>
+                        </>
+                      )}
                       <td>
                         <Cost totals={group.totals} />
                       </td>
-                      <td>
-                        <Count value={group.totals.unknown_model_costs} />
-                      </td>
+                      {tokenDetails && (
+                        <td>
+                          <Count value={group.totals.unknown_model_costs} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -412,15 +453,22 @@ export function UsagePage() {
               </div>
             </footer>
           </section>
-          <p className={styles.note}>
-            Includes retained archived, Memory and Live threads, subagents and
-            auxiliary model calls. Projects use each root thread’s current
-            assignment. Model estimates are not invoices or subscription spend;
-            unknown costs are excluded from known subtotals (+). Cache counters
-            are subsets. Days use each record’s latest response time, not
-            streaming increments. Missing records do not establish zero lifetime
-            usage.
-          </p>
+          <details className={styles.note}>
+            <summary>About these estimates</summary>
+            <p>
+              Estimated model cost, not a bill or subscription charge. + means
+              some prices are missing from the subtotal.
+            </p>
+            <p>
+              Includes saved chats, archived chats, Memory, Live voice,
+              subagents and supporting model calls. Older usage may be missing.
+            </p>
+            <p>
+              Usage follows each main chat's current project. Each record is
+              counted on the day of its latest response, not as tokens stream
+              in. Cache tokens are already included in the totals.
+            </p>
+          </details>
         </div>
       )}
     </div>
@@ -477,6 +525,8 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
           {days.map((day, index) => (
             <button
               key={day.day}
+              type="button"
+              tabIndex={index === selected ? 0 : -1}
               className={styles.barTarget}
               title={`${day.day} · ${description(day, true)}`}
               aria-label={`${day.day} · ${description(day, true)}`}
@@ -484,16 +534,20 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
               onFocus={() => setSelected(index)}
               onClick={() => setSelected(index)}
               onKeyDown={(event) => {
-                const move =
+                const targetIndex =
                   event.key === "ArrowRight"
-                    ? 1
+                    ? Math.min(days.length - 1, index + 1)
                     : event.key === "ArrowLeft"
-                      ? -1
-                      : 0;
-                if (move) {
+                      ? Math.max(0, index - 1)
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? days.length - 1
+                          : undefined;
+                if (targetIndex !== undefined) {
                   event.preventDefault();
                   const target =
-                    event.currentTarget.parentElement?.children[index + move];
+                    event.currentTarget.parentElement?.children[targetIndex];
                   if (target instanceof HTMLElement) target.focus();
                 }
               }}

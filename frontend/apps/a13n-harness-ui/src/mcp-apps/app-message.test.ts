@@ -32,7 +32,7 @@ it("does not write before trusted confirmation and rejects additional requests i
   expect(POST).not.toHaveBeenCalled();
   await expect(
     messages.propose([{ type: "text", text: "Second" }]),
-  ).rejects.toThrow("not queued");
+  ).rejects.toThrow("aren't queued");
   messages.decline();
   expect(((await first) as Error).message).toContain("declined");
   expect(POST).not.toHaveBeenCalled();

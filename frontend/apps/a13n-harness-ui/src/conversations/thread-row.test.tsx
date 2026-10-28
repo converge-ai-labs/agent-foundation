@@ -43,7 +43,7 @@ beforeEach(() => {
           fail
             ? {
                 error: {
-                  message: "Conversation changed. Try again after refreshing.",
+                  message: "Chat changed. Try again after refreshing.",
                 },
               }
             : {},
@@ -136,7 +136,7 @@ it("archives directly from the menu with its observed version and opens the New 
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0].method).toBe("PATCH");
@@ -155,29 +155,27 @@ it("keeps the persistent Live destination out of archive actions", async () => {
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await screen.findByRole("menu");
-  expect(
-    screen.queryByRole("menuitem", { name: "Archive conversation" }),
-  ).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Archive chat" })).toBeNull();
   expect(requests).toHaveLength(0);
 });
-it("does not change the current page when archiving another conversation", async () => {
+it("does not change the current page when archiving another chat", async () => {
   mount({ selected: false });
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(screen.getByLabelText("Location").textContent).toBe("/settings");
 });
-it("restores an archived conversation directly from the same menu", async () => {
+it("restores an archived chat directly from the same menu", async () => {
   mount({ archived: true });
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Restore conversation" }),
+    await screen.findByRole("menuitem", { name: "Restore chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(await requests[0].json()).toEqual({
@@ -194,7 +192,7 @@ it("does not archive an active operation or silently retry a metadata conflict",
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   const item = await screen.findByRole("menuitem", {
-    name: "Archive conversation",
+    name: "Archive chat",
   });
   expect(item.getAttribute("aria-disabled")).toBe("true");
   fireEvent.click(item);
@@ -206,9 +204,9 @@ it("does not archive an active operation or silently retry a metadata conflict",
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
-  await screen.findByText("Conversation changed. Try again after refreshing.");
+  await screen.findByText("Chat changed. Try again after refreshing.");
   expect(requests).toHaveLength(1);
   expect(screen.getByLabelText("Location").textContent).toBe(
     "/threads/thread-one",
@@ -229,12 +227,10 @@ it.each([false, true])(
       screen.getByRole("button", { name: "Actions for Example" }),
     );
     await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Archive conversation" }),
+      await screen.findByRole("menuitem", { name: "Archive chat" }),
     );
     if (failure) {
-      await screen.findByText(
-        "Conversation changed. Try again after refreshing.",
-      );
+      await screen.findByText("Chat changed. Try again after refreshing.");
       expect(newDrafts.current).toBe(draft);
     } else {
       await waitFor(() =>
@@ -252,11 +248,12 @@ it.each([
   { waiting: true, failed: false, label: "Needs your answer" },
   { waiting: false, failed: true, label: "Failed" },
 ])(
-  "retains an explicit $label state in a compact row",
+  "announces $label with a trailing status icon in a compact row",
   ({ waiting, failed, label }) => {
     mount({ waiting, failed });
     const state = screen.getByText(label);
-    expect(state.className).toContain("attentionState");
+    expect(state.className).toContain("srOnly");
+    expect(state.parentElement?.querySelector("svg")).not.toBeNull();
     expect(
       screen.getByRole("link", { name: new RegExp(`Example.*${label}`) }),
     ).toBeTruthy();
@@ -267,19 +264,17 @@ it.each([false, true])(
   "toggles a shared star while running without navigation (starred=%s)",
   async (starred) => {
     mount({ starred, running: true });
-    expect(
-      screen.queryByRole("button", { name: /Star conversation:/ }),
-    ).toBeNull();
-    expect(
-      !!screen.queryByRole("img", { name: "Starred conversation: Example" }),
-    ).toBe(starred);
+    expect(screen.queryByRole("button", { name: /Star chat:/ })).toBeNull();
+    expect(!!screen.queryByRole("img", { name: "Starred chat: Example" })).toBe(
+      starred,
+    );
     expect(screen.getByText("Running")).toBeTruthy();
     await userEvent.click(
       screen.getByRole("button", { name: "Actions for Example" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", {
-        name: `${starred ? "Unstar" : "Star"} conversation`,
+        name: `${starred ? "Unstar" : "Star"} chat`,
       }),
     );
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -300,32 +295,28 @@ it("keeps failed star changes explicit without showing an optimistic star", asyn
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   );
-  await screen.findByText("Conversation changed. Try again after refreshing.");
+  await screen.findByText("Chat changed. Try again after refreshing.");
   expect(requests).toHaveLength(1);
   expect(
-    screen.queryByRole("img", { name: "Starred conversation: Example" }),
+    screen.queryByRole("img", { name: "Starred chat: Example" }),
   ).toBeNull();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   expect(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   ).toBeTruthy();
 });
 
 it("does not offer stars for coordinator workers", async () => {
   mount({ worker: true });
-  expect(
-    screen.queryByRole("button", { name: /Star conversation/ }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /Star chat/ })).toBeNull();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
-  expect(
-    screen.queryByRole("menuitem", { name: "Star conversation" }),
-  ).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Star chat" })).toBeNull();
 });
 
 it("opens a worker draft from a running Coordinator without sending it a message", async () => {
@@ -343,29 +334,29 @@ it("opens a worker draft from a running Coordinator without sending it a message
   expect(requests).toHaveLength(0);
 });
 
-it("keeps Coordinator identity through compact activity and explicit attention states", () => {
+it("keeps Coordinator identity and trailing activity through state changes", () => {
   const { row, rerender } = mount({ coordinator: true, activeWorkerCount: 2 });
-  const link = screen.getByRole("link", { name: /Example/ });
-  const identity = link.querySelector("svg");
-  const summary = within(link).getByText("2 workers active").closest("small")!;
-  expect(summary.querySelector("svg")).toBeNull();
+  const link = screen.getByRole("link", { name: /Example.*Coordinator/ });
+  const summary = within(link)
+    .getByLabelText("2 workers active")
+    .closest("small")!;
+  expect(link.querySelector("svg")).toBeNull();
 
   row.thread.root_activity.state = "preparing";
   rerender(row, 2);
-  expect(summary.textContent).toBe("Preparing · 2 workers active");
-  const spinner = summary.querySelector("svg");
+  expect(summary.textContent).toBe("2 active");
+  const status = within(link).getByTitle("Preparing");
+  const spinner = status.querySelector("svg");
   expect(spinner).not.toBeNull();
 
   row.thread.root_activity.state = "running";
   rerender(row, 1);
-  expect(summary.textContent).toBe("Running · 1 worker active");
-  expect(summary.querySelector("svg")).toBe(spinner);
+  expect(summary.textContent).toBe("1 active");
+  expect(within(link).getByTitle("Running").querySelector("svg")).toBe(spinner);
 
   row.pending_decision = { kind: "question", count: 1 };
   rerender(row, 1);
-  expect(
-    within(link).getByText("Needs your answer · 1 worker active"),
-  ).toBeTruthy();
+  expect(within(link).getByTitle("Needs your answer")).toBe(status);
   expect(link.querySelectorAll("svg")).toHaveLength(1);
 
   row.pending_decision = null;
@@ -376,13 +367,13 @@ it("keeps Coordinator identity through compact activity and explicit attention s
     submitted_at: "2026-01-01T00:00:00Z",
   };
   rerender(row, 0);
-  expect(within(link).getByText("Failed")).toBeTruthy();
+  expect(within(link).getByTitle("Failed")).toBe(status);
 
   row.thread.last_execution = null;
   rerender(row, 0);
   expect(link.querySelector("small")).toBeNull();
-  expect(link.querySelector("svg")).toBe(identity);
-  expect(screen.getByRole("link", { name: /Example/ })).toBe(link);
+  expect(link.querySelector("svg")).toBeNull();
+  expect(screen.getByRole("link", { name: /Example.*Coordinator/ })).toBe(link);
 });
 
 it("finishes Star on confirmation without waiting for list refresh or invalidating history", async () => {
@@ -414,7 +405,7 @@ it("finishes Star on confirmation without waiting for list refresh or invalidati
   const actions = screen.getByRole("button", { name: "Actions for Example" });
   await userEvent.click(actions);
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   );
   await waitFor(() => expect(actions.getAttribute("aria-busy")).toBe("true"));
   expect(

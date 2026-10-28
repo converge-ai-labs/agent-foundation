@@ -1,0 +1,35 @@
+/*
+ * Shared disclosure marker for every <details>/<summary> pair.
+ * Zero-specificity selectors let a module restyle or remove the marker
+ * (`summary::before { content: none }`) without fighting this default.
+ */
+:where(details) > :where(summary) {
+  list-style: none;
+  cursor: pointer;
+}
+:where(details) > :where(summary)::-webkit-details-marker {
+  display: none;
+}
+:where(details) > :where(summary)::before {
+  content: "";
+  display: inline-block;
+  flex: 0 0 auto;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin-inline: 4px 12px;
+  vertical-align: 0.15em;
+  border-inline-end: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.6;
+  transform: rotate(-45deg);
+  transition: transform 150ms ease-out;
+}
+:where(details[open]) > :where(summary)::before {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(details) > :where(summary)::before {
+    transition: none;
+  }
+}

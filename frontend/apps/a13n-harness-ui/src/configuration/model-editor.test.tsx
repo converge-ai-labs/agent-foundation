@@ -206,6 +206,12 @@ function mount(initial = original, onReady = vi.fn()) {
     </MemoryRouter>,
   );
 }
+async function openDefaults(user: ReturnType<typeof userEvent.setup>) {
+  const tab = await screen.findByRole("tab", { name: "Model defaults" });
+  await waitFor(() => expect(tab.hasAttribute("disabled")).toBe(false));
+  await user.click(tab);
+  await screen.findByRole("tabpanel", { name: "Model defaults" });
+}
 async function chooseModel(id: string) {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Model" }));
@@ -228,7 +234,7 @@ it.each([false, true])(
       : original;
     mount(initial);
     const user = userEvent.setup();
-    await user.click(await screen.findByText("Model defaults"));
+    await openDefaults(user);
     await user.click(
       await screen.findByRole("combobox", { name: "Context budget" }),
     );
@@ -246,12 +252,18 @@ it.each([false, true])(
     expect(source()).toContain("# Local budget");
     expect(source()).toContain("# Keep custom setting");
     expect(parse(source()).settings).toEqual(parse(original).settings);
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await openDefaults(user);
+    expect(
+      (screen.getByLabelText("Working context budget") as HTMLInputElement)
+        .value,
+    ).toBe("64000");
   },
 );
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();
-  await user.click(await screen.findByText("Model defaults"));
+  await openDefaults(user);
   const preset = await screen.findByRole("combobox", {
     name: "Settings preset",
   });
@@ -319,7 +331,7 @@ it("edits the permanent reasoning mode without clobbering effort, and removes on
       "  thinking: high\n  openai_reasoning_mode: pro\n  openai_reasoning_summary: detailed",
     ),
   );
-  await user.click(await screen.findByText("Model defaults"));
+  await openDefaults(user);
   await user.click(
     await screen.findByRole("combobox", { name: "Reasoning mode" }),
   );
@@ -379,7 +391,7 @@ it("saves an unauthenticated subscription recipe independently of the Agent draf
   const onSaved = mountAddModel();
   fireEvent.click(screen.getByRole("button", { name: "Add model" }));
   expect(screen.queryByRole("button", { name: "Use this model" })).toBeNull();
-  const save = screen.getByRole("button", { name: "Save model" });
+  const save = screen.getByRole("button", { name: "Save" });
   await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
   expect(
     screen.getByText(/Connect an account before running this model/),
@@ -419,7 +431,7 @@ it("cannot save the previous recipe after changing the visible connection or mod
   await user.click(screen.getByRole("button", { name: "Add model" }));
 
   const save = screen.getByRole("button", {
-    name: "Save model",
+    name: "Save",
   }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false));
   mocks.prepare.mockImplementation(() => new Promise(() => {}));
@@ -454,7 +466,7 @@ it("maps a saved Copilot recipe through shared declarations without login or cat
   expect(
     (
       (await screen.findByRole("button", {
-        name: "Fetch account models",
+        name: "Load models",
       })) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -467,7 +479,7 @@ it("only fetches account models on an explicit action and leaves the saved recip
   mocks.accountReady = true;
   mount(copilotSource);
   const fetch = await screen.findByRole("button", {
-    name: "Fetch account models",
+    name: "Load models",
   });
   await waitFor(() =>
     expect((fetch as HTMLButtonElement).disabled).toBe(false),
@@ -490,7 +502,7 @@ it("discards a catalog response after the ready account changes source", async (
   );
   mount(copilotSource);
   const fetch = await screen.findByRole("button", {
-    name: "Fetch account models",
+    name: "Load models",
   });
   await waitFor(() =>
     expect((fetch as HTMLButtonElement).disabled).toBe(false),
@@ -510,7 +522,7 @@ it("removes a completed account catalog immediately after an identity-only chang
   mocks.accountReady = true;
   mount(copilotSource);
   const fetch = await screen.findByRole("button", {
-    name: "Fetch account models",
+    name: "Load models",
   });
   await waitFor(() =>
     expect((fetch as HTMLButtonElement).disabled).toBe(false),
@@ -553,7 +565,7 @@ authentication: {kind: codex_subscription${selected ? `, group: ${selected}` : "
     await waitFor(() =>
       expect(
         screen
-          .getByRole("link", { name: "Manage accounts and groups" })
+          .getByRole("link", { name: "Manage accounts" })
           .getAttribute("href"),
       ).toBe(expected),
     );
@@ -611,7 +623,7 @@ it.each(["openai:gpt-5", "google-cloud:gemini-2.5-pro"])(
     });
     expect(source()).toBe(edited);
     expect(mocks.prepare).not.toHaveBeenCalled();
-    expect(screen.queryByText("Restore recommended defaults")).toBeNull();
+    expect(screen.queryByText("Reset defaults")).toBeNull();
   },
 );
 

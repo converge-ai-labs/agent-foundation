@@ -4,7 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
+import {
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { readDocument, updateDocument } from "./documents";
 import { DraftContext } from "./sources";
 import styles from "../shell/workbench.module.css";
@@ -62,7 +66,7 @@ export function RenameProject({
         document.get("kind") !== "project"
       )
         throw new Error(
-          "Project source changed or is unavailable. Open Project settings to review it.",
+          "Project settings changed or couldn't be loaded. Open them to review.",
         );
       const content = updateDocument(latest.content!, ["name"], name.trim());
       const publication = await result(
@@ -94,7 +98,7 @@ export function RenameProject({
     <ModalFrame
       open
       title="Rename project"
-      description="Change the display name without changing folders, project identity, or conversations."
+      description="Update the name shown in your workspace."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -107,7 +111,9 @@ export function RenameProject({
           if (editable && name.trim() && !save.isPending) save.mutate();
         }}
       >
-        <TextField label="Project name" value={name} onChange={setName} />
+        <SettingsSection>
+          <TextField label="Project name" value={name} onChange={setName} />
+        </SettingsSection>
         <ErrorNotice
           error={sources.error || source.error || save.error}
           retry={
@@ -123,16 +129,21 @@ export function RenameProject({
           <p role="status">Reading project…</p>
         )}
         {dirty && (
-          <p>
-            There are unsaved changes in Project settings. Save or discard those
-            changes before renaming here.
-          </p>
+          <p>Save or discard your project changes before renaming it here.</p>
         )}
         {sources.isSuccess &&
           (!path || (source.isSuccess && !editable && !dirty)) && (
             <p>This project source is unavailable or read only.</p>
           )}
         <div className={styles.actions}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={close}
+          >
+            Cancel
+          </Button>
           <Button
             type="submit"
             loading={save.isPending}
@@ -145,14 +156,7 @@ export function RenameProject({
           >
             Save name
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={save.isPending}
-            onClick={close}
-          >
-            Cancel
-          </Button>
+
           {!save.isPending && (
             <Link
               to={`/projects/${encodeURIComponent(projectId)}`}

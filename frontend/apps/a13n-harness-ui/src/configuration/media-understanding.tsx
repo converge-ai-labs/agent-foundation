@@ -1,4 +1,6 @@
-import { ChoiceField, SettingsRow } from "a13n-ui";
+import { ModelIcon } from "../shell/model-identity";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import { ChoiceField } from "a13n-ui";
 import { useSelectors } from "../transport/context";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
@@ -16,7 +18,7 @@ export function MediaUnderstandingFields({
   const selectors = useSelectors();
   const document = readDocument(source);
   return (
-    <>
+    <SettingsSection variant="grouped">
       {mediaKinds.map((kind) => (
         <SettingsRow key={kind} label={mediaLabels[kind]}>
           <ChoiceField
@@ -45,11 +47,15 @@ export function MediaUnderstandingFields({
               },
               ...(selectors.data?.models ?? [])
                 .filter((model) => model.media_capabilities?.includes(kind))
-                .map((model) => ({ value: model.model_id, label: model.name })),
+                .map((model) => ({
+                  value: model.model_id,
+                  label: model.name,
+                  icon: <ModelIcon model={model} />,
+                })),
             ]}
           />
         </SettingsRow>
       ))}
-    </>
+    </SettingsSection>
   );
 }

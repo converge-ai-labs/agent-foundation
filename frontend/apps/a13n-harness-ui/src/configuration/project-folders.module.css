@@ -5,6 +5,21 @@
   gap: 12px;
   min-width: 0;
 }
+.folders {
+  gap: 8px;
+}
+.label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+.directoryRow {
+  gap: 8px;
+}
+.directoryRow > [data-slot="button"] {
+  flex-shrink: 0;
+}
 .row {
   display: flex;
   align-items: end;
@@ -18,7 +33,7 @@
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .browser {
   padding: 12px;
@@ -33,10 +48,13 @@
   gap: 8px;
 }
 .path {
+  flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .entries {
   max-height: 240px;
@@ -50,7 +68,8 @@
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 8px;
+  min-height: var(--harness-control-height, 32px);
+  padding: 4px 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -68,6 +87,8 @@
   min-width: 0;
 }
 .entry > svg {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 .entry:focus-visible {
@@ -75,10 +96,19 @@
   outline-offset: -2px;
 }
 @media (max-width: 480px) {
-  .row {
-    flex-wrap: wrap;
+  .browseButton > span {
+    display: none;
   }
-  .row > :first-child {
-    flex-basis: 100%;
+  .directoryRow > [data-slot="button"] {
+    width: var(--harness-control-height);
+    height: var(--harness-control-height);
+    padding: 0;
+  }
+}
+@media (pointer: coarse) {
+  .entry,
+  .directoryRow > [data-slot="button"] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

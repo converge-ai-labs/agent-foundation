@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eraser } from "@phosphor-icons/react";
 import { Button, ModalFrame } from "a13n-ui";
+import { useTaskOptionsDialog } from "./task-options";
+import { ArrowCounterClockwise, CaretRight } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import styles from "./composer-settings.module.css";
 
 export function ClearContext({
   threadId,
@@ -25,6 +27,7 @@ export function ClearContext({
   const queries = useQueryClient();
   // Confirm exactly the context the user opened, not a newer shared head.
   const [target, setTarget] = useState<string | null>(null);
+  useTaskOptionsDialog(!!target);
   const clear = useMutation({
     mutationFn: (expected: string) =>
       result(
@@ -51,7 +54,8 @@ export function ClearContext({
     <>
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="sm"
+        className={styles.optionAction}
         aria-label="Clear context"
         title="Clear context · keep chat history and your draft"
         disabled={disabled || !continuationId || clear.isPending}
@@ -61,15 +65,17 @@ export function ClearContext({
           setTarget(continuationId!);
         }}
       >
-        <Eraser />
+        <ArrowCounterClockwise aria-hidden />
+        <span>Clear context</span>
+        <CaretRight aria-hidden size={14} />
       </Button>
       <ModalFrame
         open={!!target}
         onOpenChange={(open) => {
           if (!open && !clear.isPending) setTarget(null);
         }}
-        title="Clear conversation context?"
-        description="Start the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded. Chat history, files, conversation settings, and your unsent draft are kept."
+        title="Clear chat context?"
+        description="Reset the agent's context, notes, tasks and pending requests. Chat history, files, settings and your draft are kept."
         closeLabel="Close confirmation"
         footer={
           <>
@@ -94,14 +100,14 @@ export function ClearContext({
         <ErrorNotice error={clear.error} />
         {clear.error && !(clear.error instanceof ApiError) && (
           <p role="alert">
-            The result could not be confirmed. Refresh the conversation before
-            trying again; the context may already have been cleared.
+            Couldn't confirm the reset. The context may already be cleared.
+            Refresh the chat before trying again.
           </p>
         )}
         {stale && (
           <p role="alert">
-            The conversation changed. Close this dialog and review it before
-            clearing context.
+            The chat changed. Close this dialog and review it before clearing
+            context.
           </p>
         )}
       </ModalFrame>

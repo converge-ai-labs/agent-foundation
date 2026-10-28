@@ -8,6 +8,22 @@ Agent resources and Thread selections remain mutable between Runs. The App captu
 
 Root admission captures `role` (`ordinary`, `coordinator`, or `worker`) and nullable `coordinator_thread_id` from durable role and ownership records. These values do not depend on Sidekick or automatic follow-up. Historical captures lacking `role` remain readable with null (not recorded), without inferring a role from legacy fields or rewriting immutable objects. Child compositions inherit neither role nor owner. Each new root admission, including deferred execution and planned restart recovery, refreshes role and owner from durable state. Planned restart retains the other captured dependency settings and publishes a new capture only when these identity fields differ. Coordinator and worker instructions are injected on every applicable WebUI root Run, including messages and resumed execution. Active Runs retain their capture.
 
+## Current Agent Context
+
+Every reconstructed Harness UI Agent, including child Agents and memory organization, projects its current Thread ID and resolved native Model name through the Harness model-context pipeline. This is default Host behavior shared by CLI and WebUI, independent of optional tools and Thread collaboration. The Model name comes from the current invocation's resolved Model, not a resource alias, a recipe ID, the next-Run selection, or a newly read configuration file. It is the requested provider model identifier used for attribution; it does not attest to private routing behind a provider endpoint.
+
+Harness UI replaces the default `a13n.agent-context` block with plain text inside an `<agent-context source="a13n-harness-ui">` wrapper:
+
+```xml
+<agent-context source="a13n-harness-ui">
+Current Thread: thread-example
+Current Model: gpt-5
+Use the current Model name when attributing work to a model.
+</agent-context>
+```
+
+The identity block exposes no internal Run, Agent, Model-resource, or recipe IDs. The Thread ID remains available for interaction. Other context sources, tool results, and historical projections remain intact. The block is refreshed at eligible input and ordinary tool-result boundaries; tool-result projections identify themselves as automatic metadata rather than new user instructions. Exact continuations retain Harness's no-projection boundary. After compaction or handoff, the next eligible boundary supplies fresh identity without relying on old history.
+
 ## Models
 
 One file under `models/` defines a reusable Model resource:

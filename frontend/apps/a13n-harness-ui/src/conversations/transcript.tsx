@@ -37,6 +37,7 @@ import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
 import { InputContent, type InputPart } from "./input-content";
 import { inputSource, type LocalInput } from "./local-input";
+import { DebugData } from "../shell/debug";
 import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
@@ -453,11 +454,6 @@ function Rows({
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
         <section className={styles.assistantMessage}>
-          {!row.subagentRunId &&
-            ((index === 0 && !continuation) ||
-              (index > 0 &&
-                (all[index - 1].kind === "input" ||
-                  all[index - 1].subagentRunId))) && <header>Assistant</header>}
           <MessageText text={row.text} />
           {row.truncated && (
             <small>Saved preview truncated by the server.</small>
@@ -525,6 +521,7 @@ export const SavedEntry = memo(function SavedEntry({
         threadId={threadId}
         continuation={continuation}
       />
+      <DebugData label={`Transcript entry ${entry.position}`} value={entry} />
     </article>
   );
 });
@@ -1073,7 +1070,7 @@ function ExecutionSegment({
       ["Receiving input", "Awaiting result"].includes(describeTool(tool).phase),
     ).length;
   const preview = toolInfo
-    ? `${toolInfo.label} ${toolInfo.summary} · ${toolInfo.phase}`
+    ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
     : latest?.kind === "thinking"
       ? "Reasoning…"
       : "View the available execution steps";
@@ -1123,7 +1120,7 @@ function ExecutionReader({
       ref={reader}
       hidden={!open}
       role="region"
-      aria-label="Execution details"
+      aria-label="Work log"
       tabIndex={0}
       data-execution-reader
       className={`${styles.executionContent} a13n-scrollbar`}
@@ -1186,8 +1183,8 @@ export function RecoveryNotice({
 function GapNotice() {
   return (
     <p role="status">
-      Some live content is unavailable. Saved history and execution details
-      remain authoritative.
+      Some live updates are missing. Check saved history and run details for the
+      full result.
     </p>
   );
 }

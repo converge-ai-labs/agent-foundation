@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge, Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./decisions.module.css";
+import { copyText } from "../platform";
 
 type Request = Schema<"ApprovalRequestView"> | Schema<"ExternalRequestView">;
 export function record(value: unknown): Record<string, unknown> | undefined {
@@ -101,7 +102,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
         <p role="note">
           Arguments omitted by the server.
           {request.kind === "approval" &&
-            " Approval is unavailable because the complete request cannot be inspected."}
+            "The full request couldn't be loaded. You can't approve it yet."}
         </p>
       ) : command ? (
         <>
@@ -130,7 +131,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
           </dl>
           {rest && Object.keys(rest).length > 0 && (
             <details>
-              <summary>Other execution parameters</summary>
+              <summary>More settings</summary>
               <pre className={styles.code}>{JSON.stringify(rest, null, 2)}</pre>
             </details>
           )}
@@ -164,7 +165,7 @@ function CopyCommand({ command }: { command: string }) {
       onClick={() => {
         void (async () => {
           try {
-            await navigator.clipboard.writeText(command);
+            await copyText(command);
             setStatus("Copied");
           } catch {
             setStatus("Copy failed");

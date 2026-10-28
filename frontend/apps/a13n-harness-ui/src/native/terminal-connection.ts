@@ -107,7 +107,7 @@ export class TerminalConnection {
           throw new Error("Terminal output positions are not contiguous.");
         if (this.pendingBytes + bytes.length > OUTPUT_LIMIT) {
           this.detach(
-            "Output paused: this view could not keep up. Reconnect after rendering; only retained bytes can be recovered.",
+            "Output paused because this view fell behind. Reconnect to recover saved output; some may be missing.",
           );
           return;
         }
@@ -126,7 +126,7 @@ export class TerminalConnection {
           ...(frame.gap
             ? {
                 message:
-                  "Output gap: missing bytes are unavailable. The screen restarts from retained raw output, not a full screen snapshot.",
+                  "Some output is missing. The terminal will rebuild from saved output, so the screen may be incomplete.",
               }
             : {}),
         });
@@ -141,14 +141,14 @@ export class TerminalConnection {
         }
       } catch {
         this.detach(
-          "Invalid terminal output. Reconnect to inspect; no input has been retried.",
+          "Invalid terminal output. Reconnect to check. No input was resent.",
         );
       }
     };
     socket.onclose = (event) => {
       if (this.socket !== socket) return;
       this.detach(
-        "Disconnected. The shared process may still be running. Reconnect as a read-only viewer.",
+        "Disconnected. The terminal may still be running. Reconnect to view it without taking control.",
       );
       if (event.code === 4401) this.unauthorized();
     };
@@ -194,7 +194,7 @@ export class TerminalConnection {
     if (this.socket?.readyState !== WebSocket.OPEN) return false;
     if (this.socket.bufferedAmount > 64 * 1024) {
       this.detach(
-        "Input connection is congested. Delivery may be partial; inspect before typing again. Nothing is replayed.",
+        "The connection is backed up. Some input may have arrived. Check the terminal before typing again. Nothing is resent.",
       );
       return false;
     }
@@ -227,7 +227,7 @@ export class TerminalConnection {
     this.controlTimer = setTimeout(
       () =>
         this.detach(
-          "Control acknowledgement is uncertain. Reconnect as a viewer; no control action is retried.",
+          "Couldn't confirm the control action. Reconnect as a viewer. Nothing was retried.",
         ),
       10000,
     );
@@ -238,7 +238,7 @@ export class TerminalConnection {
     if (new TextEncoder().encode(text).length > 16 * 1024) {
       this.publish({
         message:
-          "Input exceeds 16 KiB. Paste a smaller selection; nothing from this paste was sent.",
+          "Paste is over the 16 KiB limit. Nothing was sent. Try a smaller selection.",
       });
       return false;
     }

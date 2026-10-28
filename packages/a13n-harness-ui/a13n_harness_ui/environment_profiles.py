@@ -71,10 +71,7 @@ FULL_CONTROL_PROFILE: Final = BuiltInEnvironmentProfile(
     profile_id=FULL_CONTROL_PROFILE_ID,
     mode=EnvironmentMode.full_control,
     name="Full Control",
-    description=(
-        "Runs commands directly as the Host user; commands may access paths outside Project roots "
-        "and use Host networking."
-    ),
+    description=("Runs as the server account, with network access and access to files outside your project."),
     provider_key="direct_local",
     adapter_key="a13n.native-project-root",
 )
@@ -83,8 +80,8 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     mode=EnvironmentMode.sandbox,
     name="Sandbox",
     description=(
-        "Runs through local a13n-envd with explicit write grants and inherited Host networking, including localhost. "
-        "Windows permits broad disk reads; Linux and macOS restrict reads to granted and runtime paths."
+        "Uses local envd. Writes need permission; network access includes localhost. "
+        "Windows allows broad file reads. Linux and macOS limit reads to allowed folders and runtime files."
     ),
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
@@ -93,7 +90,7 @@ ENVD_PROFILE: Final = BuiltInEnvironmentProfile(
     profile_id="environment-envd",
     mode=EnvironmentMode.full_control,
     name="Full Control · envd",
-    description="Runs through local envd as the Host account, without a sandbox. Computer Use is off.",
+    description="Uses local envd as the server account. No sandbox or desktop access.",
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
 )
@@ -101,7 +98,7 @@ DESKTOP_PROFILE: Final = BuiltInEnvironmentProfile(
     profile_id="environment-desktop",
     mode=EnvironmentMode.full_control,
     name="Full Control · envd + Computer Use",
-    description="Local envd with access to the Harness Host desktop, including screen observation and input.",
+    description="Uses local envd with access to view and control the server desktop.",
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
 )

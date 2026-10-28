@@ -110,7 +110,7 @@ function setup(dirty = false) {
 
 it("selects compatible defaults, preserves root fields, saves and clears", async () => {
   const { user } = setup();
-  await user.click(screen.getByText("Media understanding defaults"));
+  await user.click(screen.getByText("Media models"));
   const image = await screen.findByRole("combobox", {
     name: "Image understanding",
   });
@@ -124,12 +124,7 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
   expect(screen.queryByRole("option", { name: "Text" })).toBeNull();
   await user.click(await screen.findByRole("option", { name: "Vision" }));
   expect(state.put).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("heading", { name: "Fallback models", level: 2 }),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "Check configuration" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check settings" })).toBeNull();
   const actions = screen.getByRole("contentinfo", {
     name: "Configuration actions",
   });
@@ -151,7 +146,7 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
 
 it("quick actions refresh the clean editor and disable unsupported purposes", async () => {
   const { user, drafts } = setup();
-  await user.click(screen.getByText("Media understanding defaults"));
+  await user.click(screen.getByText("Media models"));
   await screen.findByRole("combobox", { name: "Image understanding" });
   await user.click(screen.getByRole("button", { name: "Actions for Vision" }));
   const video = await screen.findByRole("menuitem", {
@@ -174,7 +169,7 @@ it("quick actions refresh the clean editor and disable unsupported purposes", as
 
 it("does not quick-save an existing root draft and supports confirmed discard", async () => {
   const { user, drafts } = setup(true);
-  await user.click(screen.getByText("Media understanding defaults"));
+  await user.click(screen.getByText("Media models"));
   await screen.findByRole("combobox", { name: "Image understanding" });
   await user.click(screen.getByRole("button", { name: "Actions for Vision" }));
   await user.click(
@@ -183,7 +178,7 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
     }),
   );
   await screen.findByText(
-    "Save or discard the root configuration draft first.",
+    "Save or discard your global settings changes first.",
   );
   expect(state.put).not.toHaveBeenCalled();
   expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
@@ -192,7 +187,7 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
   expect(state.put).not.toHaveBeenCalled();
   expect(drafts.get("custom.yaml")?.content).toContain("theme: dark");
   await user.click(
-    within(dialog).getByRole("button", { name: "Reload saved version" }),
+    within(dialog).getByRole("button", { name: "Reload saved" }),
   );
   await waitFor(() =>
     expect(drafts.get("custom.yaml")?.content).toBe(state.content),
@@ -201,7 +196,7 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
 
 it("retains media edits and shows save failures beside the shared actions", async () => {
   const { user, drafts } = setup();
-  await user.click(screen.getByText("Media understanding defaults"));
+  await user.click(screen.getByText("Media models"));
   await user.click(
     await screen.findByRole("combobox", { name: "Image understanding" }),
   );

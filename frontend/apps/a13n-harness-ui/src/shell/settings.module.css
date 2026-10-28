@@ -1,0 +1,212 @@
+.section > :first-child:has(> h3) {
+  margin-bottom: 8px;
+}
+.section > :first-child > h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
+}
+.section > :first-child:has(> h3) > p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
+  border-radius: 8px;
+  padding: 4px var(--harness-group-inset);
+}
+.section
+  > [data-slot="settings-section-content"]:not([data-variant="plain"])
+  [data-slot="textarea-control"] {
+  background: var(--card);
+  border-color: var(--input);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
+  align-items: center;
+  min-height: 48px;
+  gap: 4px 16px;
+  padding-block: 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.row > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.row [data-slot="settings-row-label"] {
+  display: block;
+  font-weight: 400;
+}
+.row > :first-child > p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.row > :last-child {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--a13n-secondary);
+}
+.row [data-slot="select-trigger"],
+.row button[role="combobox"] {
+  width: auto;
+  max-width: 100%;
+  min-height: var(--harness-control-height);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+  justify-content: flex-end;
+}
+.row [data-slot="button"],
+.row [data-slot="input-control"],
+.row [data-slot="select-trigger"],
+.row [data-slot="combobox-trigger"] {
+  font-size: 14px;
+}
+.row [data-slot="select-value"] {
+  text-align: right;
+}
+.row [data-slot="select-trigger"] > span:first-child {
+  flex: 1;
+  justify-content: flex-end;
+}
+.row [data-slot="select-trigger"]:hover,
+.row button[role="combobox"]:hover,
+.row [data-popup-open] {
+  background: var(--a13n-hover);
+}
+.row [data-slot="select-trigger"]:focus-visible,
+.row button[role="combobox"]:focus-visible {
+  border-color: var(--ring);
+}
+.row button[data-slot="combobox-trigger"] {
+  width: auto;
+  max-width: 260px;
+}
+.textInput {
+  width: 260px;
+  max-width: 100%;
+}
+@media (pointer: coarse) {
+  .row {
+    min-height: 44px;
+  }
+}
+@media (max-width: 600px) {
+  .section
+    > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
+    padding-inline: var(--harness-group-inset);
+  }
+  .row {
+    min-height: 44px;
+    gap: 4px 12px;
+    padding-block: 8px;
+  }
+  .row:has([data-slot="input-control"]) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 8px 16px;
+  }
+  .row:has([data-slot="input-control"]) > :first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .row:has([data-slot="input-control"]) > :last-child {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
+  }
+}
+
+/* Long action labels must not steal the explanation's reading width. */
+@media (max-width: 600px) {
+  .row:has(> :last-child > a[data-slot="button"]) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding-block: 8px;
+  }
+  .row:has(> :last-child > a[data-slot="button"]) > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+}
+
+/* Supporting copy describes the whole field; on phones it needs the row's
+   width rather than the narrow label column beside a control. */
+@media (max-width: 600px) {
+  .row > :first-child {
+    display: contents;
+  }
+  .row [data-slot="settings-row-label"] {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+  .row > :first-child > p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 0 4px;
+  }
+  .row:has(> :last-child > a[data-slot="button"]) > :last-child {
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 600px) {
+  .row [data-slot="select-trigger"] {
+    height: auto;
+    padding-block: 8px;
+  }
+  .row button[role="combobox"] {
+    height: auto;
+    padding-block: 8px;
+  }
+  .row button[role="combobox"] :global(.truncate) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .row [data-slot="select-value"] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.section
+  > [data-slot="settings-section-content"][data-variant="plain"]
+  > [data-slot="settings-row"]
+  + [data-slot="settings-row"] {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+
+/* A disclosure inside a settings group reuses its parent's surface. */
+.section .section > [data-slot="settings-section-content"] {
+  padding-inline: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* A selected identity stays together even when the field reserves a wide column. */
+.row button[role="combobox"] > span:first-child {
+  width: auto;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+.row button[role="combobox"] > span:first-child > span {
+  width: auto;
+  flex: 0 1 auto;
+}

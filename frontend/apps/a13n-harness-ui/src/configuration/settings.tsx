@@ -1,7 +1,10 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
-import { Link, Outlet, useLocation, useSearchParams } from "react-router";
+import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsSection, Skeleton } from "a13n-ui";
+import { Skeleton, Switch } from "a13n-ui";
+import { debugShortcutLabel, useDebug } from "../shell/debug";
 import {
   useSelectors,
   useSources,
@@ -9,7 +12,7 @@ import {
   useTransport,
 } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel, SearchField } from "../shell/ui";
 import {
   SourceDocument,
   SourcesPage,
@@ -27,105 +30,41 @@ import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
 import environmentStyles from "./environments-page.module.css";
 
-import {
-  SlidersHorizontal,
-  Robot,
-  Cpu,
-  Desktop,
-  Key,
-  PlugsConnected,
-  FileCode,
-} from "@phosphor-icons/react";
-
-const sections = [
-  { path: "/settings", label: "General", icon: SlidersHorizontal },
-  { path: "/settings/agents", label: "Agents", icon: Robot },
-  { path: "/settings/models", label: "Models", icon: Cpu },
-  { path: "/settings/environments", label: "Environments", icon: Desktop },
-  { path: "/settings/accounts", label: "Accounts & API keys", icon: Key },
-  { path: "/settings/connections", label: "Connections", icon: PlugsConnected },
-  { path: "/settings/resources", label: "Configuration files", icon: FileCode },
-];
 export function SettingsLayout() {
-  const location = useLocation();
-  const sources = useSources();
-  const drafts = useContext(DraftContext);
-  const path = new URLSearchParams(location.search).get("path") ?? "";
-  const source = sources.data?.sources.find(
-    (item) => item.relative_path === path,
-  );
-  const sourceKind =
-    source?.resource_kind ??
-    readDocument(drafts.get(path)?.content ?? "")?.get("kind");
-  const sourceSection =
-    sourceKind === "root"
-      ? "/settings"
-      : sourceKind === "project"
-        ? "/projects"
-        : sourceKind === "model"
-          ? "/settings/models"
-          : sourceKind === "agent"
-            ? "/settings/agents"
-            : sourceKind === "harness_plugin"
-              ? "/settings/connections"
-              : sourceKind === "environment_profile" ||
-                  sourceKind === "device" ||
-                  sourceKind === "environment_run_extension"
-                ? "/settings/environments"
-                : sourceKind === "mcp_server"
-                  ? "/settings/connections"
-                  : "/settings/resources";
   return (
-    <div className={styles.settingsFrame}>
-      <div className={styles.settings}>
-        <nav
-          className={`${styles.settingsNav} a13n-scrollbar`}
-          aria-label="Settings sections"
-        >
-          <h2>Settings</h2>
-          {location.pathname.startsWith("/projects") && (
-            <Link
-              className={styles.activeNav}
-              to="/projects"
-              aria-current="page"
-            >
-              Projects
-            </Link>
-          )}
-          {sections.map(({ path, label, icon: Icon }) => {
-            const active =
-              location.pathname === "/settings/source"
-                ? sourceSection === path
-                : location.pathname === path ||
-                  (path !== "/settings" &&
-                    location.pathname.startsWith(`${path}/`));
-            return (
-              <Link
-                key={path}
-                to={path}
-                aria-current={active ? "page" : undefined}
-                className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? styles.settingsUtilityLink : ""}`}
-              >
-                <Icon
-                  aria-hidden="true"
-                  size={18}
-                  weight={active ? "duotone" : "regular"}
-                />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className={`${styles.settingsContent} a13n-scrollbar`}>
-          <Outlet />
-        </div>
-      </div>
+    <div className={`${styles.settingsContent} a13n-scrollbar`}>
+      <Outlet />
     </div>
   );
 }
 
+function DebugModeSetting() {
+  const debug = useDebug();
+  return (
+    <SettingsSection variant="grouped" title="Developer">
+      <SettingsRow
+        label="Debug mode"
+        stackOnNarrow={false}
+        controlId="debug-mode"
+        description={
+          <>
+            Show identifiers, raw payloads, events and token details across the
+            app. Toggle anywhere with{" "}
+            <kbd className={styles.kbd}>{debugShortcutLabel()}</kbd>.
+          </>
+        }
+      >
+        <Switch
+          id="debug-mode"
+          checked={debug.enabled}
+          onCheckedChange={(checked) => debug.setEnabled(checked)}
+        />
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
 export function GeneralSettings() {
-  const location = useLocation();
   const sources = useSources();
   const status = useStatus(5000);
   const memory = status.data?.app.memory_organization;
@@ -150,30 +89,26 @@ export function GeneralSettings() {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="General settings"
+            title="General"
             embedded
           />
         </div>
       ) : (
         <Panel title="Set up your workspace">
-          <p>Create your first agent and choose defaults to get started.</p>
+          <p>Add an agent to get started.</p>
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
-      <details
-        id="notifications"
-        className={layout.disclosure}
-        open={location.hash === "#notifications" || undefined}
-      >
-        <summary>
-          Notifications<small>Task results and requests for your input</small>
-        </summary>
+      <section id="notifications">
         <NotificationSettings embedded />
-      </details>
+      </section>
+      <div className={layout.formWidth}>
+        <DebugModeSetting />
+      </div>
       <details className={layout.disclosure}>
-        <summary>Setup & diagnostics</summary>
+        <summary>Setup and diagnostics</summary>
         {memory && (
-          <SettingsSection title="Memory organization status">
+          <SettingsSection variant="plain" title="Memory organization status">
             <p role="status" className={styles.fieldGroup}>
               {(memory.active_scopes?.length ?? 0) > 0
                 ? `Organizing: ${memory.active_scopes?.join(", ")}`
@@ -208,7 +143,7 @@ export function AgentsPage() {
         description="Configure instructions, models and tools for each agent."
       />
       <details className={layout.disclosure}>
-        <summary>Available capabilities</summary>
+        <summary>Installed capabilities</summary>
         <InstalledCatalog kind="capability" />
       </details>
     </>
@@ -234,23 +169,28 @@ export function ConnectionsPage() {
       <SourcesPage
         kinds={["harness_plugin"]}
         headingLevel={2}
-        title="Agent plugins"
+        title="Plugins"
       />
-      {root && (
+      <div className={layout.disclosures}>
+        {root && (
+          <details className={layout.disclosure}>
+            <summary>
+              <span>Chat defaults</span>
+              <small>Connections and extensions for new chats</small>
+            </summary>
+            <SourceDocument
+              path={root.relative_path}
+              title={null}
+              embedded
+              section="connections"
+            />
+          </details>
+        )}
         <details className={layout.disclosure}>
-          <summary>Conversation defaults</summary>
-          <SourceDocument
-            path={root.relative_path}
-            title="Default connections & extensions"
-            embedded
-            section="connections"
-          />
+          <summary>Installed plugins</summary>
+          <InstalledCatalog kind="harness_plugin" />
         </details>
-      )}
-      <details className={layout.disclosure}>
-        <summary>Available plugins</summary>
-        <InstalledCatalog kind="harness_plugin" />
-      </details>
+      </div>
     </>
   );
 }
@@ -303,8 +243,7 @@ export function EnvironmentsPage() {
               />
             ))}
           <p className={layout.hint}>
-            Choose folders and project-specific defaults from each Project’s
-            settings.
+            Choose folders and defaults in each project's settings.
           </p>
         </>
       )}
@@ -316,15 +255,15 @@ export function EnvironmentsPage() {
             aria-labelledby="local-execution-profiles"
           >
             <div className={environmentStyles.sectionHeader}>
-              <h2 id="local-execution-profiles">Local execution profiles</h2>
+              <h2 id="local-execution-profiles">Local profiles</h2>
               <NewResourceButton
                 kind="environment_profile"
                 label="Add local profile"
                 variant="outline"
               />
             </div>
-            <p>
-              Control how agents run on this server: full control or a sandbox.
+            <p className={layout.hint}>
+              Choose full access or a sandbox for local work.
             </p>
             <DraftLinks kinds={["environment_profile"]} />
             {selectors.isPending && <Skeleton className="h-32 w-full" />}
@@ -379,19 +318,18 @@ export function EnvironmentsPage() {
             </div>
           </section>
           <details className={layout.disclosure}>
-            <summary>Installed environment providers</summary>
-            <p>Create a profile from an installed provider.</p>
+            <summary>
+              <span>Environment providers</span>
+              <small>Create a profile from an installed provider</small>
+            </summary>
             <InstalledCatalog kind="environment_provider" />
           </details>
-          <details className={layout.disclosure}>
-            <summary>Environment extensions</summary>
-            <SourcesPage
-              kinds={["environment_run_extension"]}
-              headingLevel={2}
-              title="Environment extensions"
-              description="Optional extensions selected in project or global defaults."
-            />
-          </details>
+          <SourcesPage
+            kinds={["environment_run_extension"]}
+            headingLevel={2}
+            title="Run extensions"
+            description="Extra features for runs. Choose them in project or global defaults."
+          />
         </>
       )}
       {selectedTab === "runtime" && <RuntimePage embedded />}
@@ -410,12 +348,17 @@ export function InstalledCatalog({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
-  const items = catalog.data?.filter(
-    (item) =>
-      item.kind === kind &&
-      `${item.key} ${item.distribution_name ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const available = catalog.data?.filter((item) => item.kind === kind);
+  const catalogLabel =
+    kind === "capability"
+      ? "capabilities"
+      : kind === "environment_provider"
+        ? "environment providers"
+        : "plugins";
+  const items = available?.filter((item) =>
+    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key) : ""} ${item.distribution_name ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
   );
   const resource: ResourceKind | undefined =
     kind === "environment_provider"
@@ -426,20 +369,23 @@ export function InstalledCatalog({
   return (
     <div className={styles.stack}>
       <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
-      <div className={styles.search}>
-        <TextField
-          type="search"
-          label="Search installed plugins"
+      {!!available?.length && (
+        <SearchField
+          label={`Search installed ${catalogLabel}`}
           value={search}
           onChange={setSearch}
         />
-      </div>
+      )}
       {catalog.isPending && <Skeleton className="h-32 w-full" />}
       <div className={styles.resourceList}>
         {items?.map((item) => (
           <div className={styles.resourceRow} key={`${item.kind}:${item.key}`}>
             <div>
-              <strong>{item.key}</strong>
+              <strong>
+                {item.kind === "capability"
+                  ? capabilityLabel(item.key)
+                  : item.key}
+              </strong>
               <small>
                 {item.distribution_name ??
                   (item.source === "pydantic" ? "Built-in" : item.source)}
@@ -449,7 +395,7 @@ export function InstalledCatalog({
               </small>
             </div>
             {!item.configurable ? (
-              <span>Unavailable to configure</span>
+              <span className={layout.hint}>No setup form</span>
             ) : resource ? (
               <NewResourceButton
                 kind={resource}
@@ -462,12 +408,18 @@ export function InstalledCatalog({
                 }}
               />
             ) : (
-              <span>Available to agents</span>
+              <span className={layout.hint}>Available to agents</span>
             )}
           </div>
         ))}
       </div>
-      {items?.length === 0 && <p>No matching installed plugins.</p>}
+      {items?.length === 0 && (
+        <p className={layout.hint}>
+          {available?.length
+            ? `No matching installed ${catalogLabel}.`
+            : `No installed ${catalogLabel}.`}
+        </p>
+      )}
     </div>
   );
 }

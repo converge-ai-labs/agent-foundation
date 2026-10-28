@@ -5,22 +5,31 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 304px;
+  width: 232px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  padding: 16px 12px;
-  background: var(--a13n-surface);
-  border-right: 1px solid var(--a13n-border);
+  padding: 12px 8px;
+  background: var(--sidebar);
+  border-right: 0;
 }
 .sidebarCollapsed {
   display: none;
 }
+.navigationBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.navigationBody[hidden] {
+  display: none;
+}
 .supportingNav {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   margin-top: 12px;
 }
 .sidebarHeader {
@@ -28,7 +37,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 0 12px 8px;
+  min-height: 36px;
+  padding: 0 4px 8px 8px;
+}
+/* Desktop shells draw their own titlebar: keep the header draggable and
+   leave room for macOS window controls. */
+:global(html[data-desktop]) .sidebarHeader {
+  padding-top: 32px;
+  app-region: drag;
+}
+:global(html[data-desktop]) .sidebarHeader :is(a, button) {
+  app-region: no-drag;
 }
 .headerActions {
   display: flex;
@@ -46,22 +65,25 @@
   color: var(--a13n-text);
   text-decoration: none;
   white-space: nowrap;
-  font-size: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border-radius: 8px;
 }
-.brandMark {
-  display: inline-flex;
+.brand:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+/* The access card carries the same brand lockup as the sidebar. */
+.accessBrand {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--a13n-text);
-  color: var(--a13n-canvas);
-  border-radius: 9px;
+  gap: 8px;
   font-size: 16px;
-  width: 38px;
-  height: 38px;
+  font-weight: 500;
 }
 .sidebarCaption {
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
   padding: 0 12px 12px;
@@ -73,12 +95,13 @@
   composes: row from "./navigation-row.module.css";
   background: var(--a13n-selected);
   color: var(--a13n-text);
+  font-weight: 500;
 }
 .profileButton {
   max-width: 180px;
   min-width: 0;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
 }
 .colorSwatch {
   width: 12px;
@@ -95,37 +118,88 @@
   flex-shrink: 0;
   border-radius: 50%;
   color: white;
-  font-size: 11px;
+  font-size: 14px;
 }
 .profileName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.profileForm {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-}
-.profileForm > :first-child {
-  flex: 1;
+.stack .profileForm {
+  padding-block: 0;
   min-width: 0;
+}
+.profileNameControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.profileNameControl input {
+  min-width: 0;
+  flex: 1;
+}
+.personRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+}
+.personRow + .personRow {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.personInfo {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.personInfo strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.personInfo > span,
+.personYou {
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  font-weight: 400;
 }
 @media (max-width: 700px) {
   .profileButton {
-    max-width: 112px;
     padding-inline: 4px;
+  }
+  .profileName {
+    display: none;
   }
 }
 .sidebarFooter {
   margin-top: auto;
-  padding: 12px 8px 0;
+  padding-top: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
+/* The footer shares the navigation icon and label columns. */
 .sidebarFooter small {
   display: block;
-  padding-top: 4px;
+  padding: 0 8px 0 34px;
+  line-height: 20px;
+}
+.peopleButton {
+  composes: row from "./navigation-row.module.css";
+  flex: 0 1 auto;
+}
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.footerIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .workspace {
   flex: 1;
@@ -151,7 +225,7 @@
   overflow-wrap: anywhere;
 }
 .main :where(h2) {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 1.4;
   margin: 0 0 16px;
@@ -159,8 +233,8 @@
 .main :where(p) {
   margin: 0;
   color: var(--a13n-text-supporting);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: inherit;
+  line-height: 1.6;
 }
 .main code {
   overflow-wrap: anywhere;
@@ -171,14 +245,36 @@
   color: inherit;
 }
 .pageHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
+}
+.pageHeader > div:first-child {
+  display: contents;
+}
+.pageHeader > div > :is(h1, h2) {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
+  align-items: center;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: var(--harness-control-height);
+  overflow-wrap: anywhere;
+  margin: 0;
 }
 .pageHeader p {
+  grid-column: 1 / -1;
+  grid-row: 2;
   max-width: 660px;
   color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.pageHeader > .actions {
+  grid-column: 2;
+  grid-row: 1;
+  justify-content: flex-end;
 }
 .actions {
   display: flex;
@@ -189,7 +285,7 @@
 .panel {
   min-width: 0;
   background: var(--a13n-surface);
-  padding: 20px;
+  padding: 24px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -208,18 +304,14 @@
 .panel > button {
   align-self: flex-start;
 }
+.stack:has(> [data-slot="settings-row"]) {
+  gap: 0;
+}
 .formGrid,
 .twoColumns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
-}
-.formGrid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 16px;
-}
-.formGrid > * {
-  min-width: 0;
 }
 .hero {
   border: 1px solid var(--a13n-border);
@@ -231,7 +323,7 @@
   background: var(--a13n-surface);
 }
 .hero h2 {
-  font-size: 22px;
+  font-size: 20px;
   letter-spacing: -0.025em;
   margin: 12px 0;
 }
@@ -239,9 +331,8 @@
   max-width: 480px;
 }
 .eyebrow {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0.14em;
   color: var(--a13n-secondary);
 }
 .heroStats {
@@ -253,52 +344,20 @@
   align-items: baseline;
 }
 .heroStats strong {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 500;
 }
 .heroStats span {
   color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.cardGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.projectCard {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 12px;
-  background: var(--a13n-elevated);
-  text-decoration: none;
-  transition: border-color 0.15s;
-}
-.projectCard:hover {
-  border-color: var(--a13n-secondary);
-}
-.projectCard strong {
   font-size: 14px;
-  font-weight: 500;
-  margin-top: 4px;
-}
-.projectCard small,
-.projectCard span {
-  font-size: 12px;
-  color: var(--a13n-secondary);
-}
-.projectCard code {
-  max-width: 100%;
 }
 .resourceList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  background: var(--a13n-surface);
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
   overflow: hidden;
 }
 .resourceList:empty {
@@ -308,17 +367,17 @@
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 12px 16px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: 4px;
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 .resourceRow:last-child {
   border-bottom: none;
-}
-a.resourceRow:hover {
-  background: var(--a13n-hover);
 }
 .resourceRow > :first-child {
   flex: 1;
@@ -327,10 +386,36 @@ a.resourceRow:hover {
 .resourceRow small {
   color: var(--a13n-secondary);
   display: block;
-  font-size: 11px;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.resourceRow small:empty {
+  display: none;
 }
 .resourceRow strong {
   font-weight: 500;
+}
+/* Trailing row metadata: a muted kind label and neutral status tags. */
+.kind {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 999px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
 }
 .notice {
   display: flex;
@@ -342,7 +427,7 @@ a.resourceRow:hover {
   border-left: 3px solid var(--a13n-accent);
   border-radius: 8px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .connectionNotice,
@@ -350,11 +435,11 @@ a.resourceRow:hover {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px 12px;
   background: var(--a13n-surface);
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -395,18 +480,134 @@ a.resourceRow:hover {
 .errorMessage > svg {
   margin-top: 1px;
 }
-.details {
-  border-top: 1px solid var(--a13n-border);
-  padding-top: 16px;
+.errorInline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 4px;
+  max-width: 640px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
-.details summary {
+.errorInline .errorMessage {
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+}
+.errorInline .errorMessage > svg {
+  margin-top: 0;
+}
+.errorInline > button {
+  flex-shrink: 0;
+  height: 24px;
+  padding-inline: 8px;
+  color: var(--a13n-text-supporting);
+}
+/* Secondary actions are text actions whose labels sit flush with the panel
+   edges, so they align with the controls above instead of floating inside a
+   ghost button's padding. */
+.textAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 12px;
 }
-.details pre {
-  font-size: 12px;
+.textAction:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.textAction:disabled {
+  opacity: 0.5;
+  text-decoration: none;
+  cursor: default;
+}
+.textAction:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+/* Shared disclosure rows keep advanced controls close to their context. */
+.details {
+  width: 100%;
+}
+:where(.details) > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 36px;
+  padding: 8px 0;
+  list-style: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  user-select: none;
+}
+:where(.details) > summary::-webkit-details-marker {
+  display: none;
+}
+:where(.details) > summary::before {
+  content: "";
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: center;
+  width: 6px;
+  height: 6px;
+  border-inline-end: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--a13n-secondary);
+  transform: rotate(-45deg);
+  transition: transform 150ms ease-out;
+}
+:where(.details) > summary:has(small)::before {
+  grid-row: 1 / span 2;
+}
+:where(.details)[open] > summary::before {
+  transform: rotate(45deg);
+}
+:where(.details) > summary:hover {
+  color: var(--a13n-secondary);
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.details) > summary,
+  :where(.details) > summary::before {
+    transition: none;
+  }
+}
+:where(.details) > summary:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+/* Opened content sits close to its summary; the parent's gap separates the
+   disclosure from its siblings, so the last child adds no trailing space. */
+:where(.details)[open] > summary {
+  margin-bottom: 8px;
+}
+:where(.details) > summary small {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+:where(.details) > :not(summary):not(:last-child) {
+  margin-bottom: 8px;
+}
+:where(.details) pre {
+  font-size: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -415,7 +616,7 @@ a.resourceRow:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .checks {
   display: flex;
@@ -438,14 +639,14 @@ a.resourceRow:hover {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--a13n-border);
 }
 .definitionList > div:last-child {
   border-bottom: 0;
 }
 .definitionList dt {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .definitionList dd {
@@ -454,44 +655,47 @@ a.resourceRow:hover {
 .definitionList small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .back {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
   text-decoration: none;
   align-self: flex-start;
 }
 .muted {
   color: var(--a13n-secondary) !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
 }
 .access {
   min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
 }
 .accessCard {
-  width: min(100%, 440px);
+  width: min(100%, 400px);
   background: var(--a13n-elevated);
   border: 1px solid var(--a13n-border);
-  border-radius: 16px;
-  padding: 36px;
+  border-radius: 12px;
+  padding: 32px;
   display: grid;
-  gap: 20px;
+  gap: 24px;
 }
 .accessCard h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.03em;
 }
 .accessCard p {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
+}
+.accessCard .accessError {
+  color: var(--a13n-danger);
 }
 .skipLink {
   position: fixed;
@@ -513,6 +717,10 @@ a.resourceRow:hover {
   overflow: hidden;
   max-width: 300px;
 }
+.mobileNavigation[data-nested-dialog-open] {
+  opacity: 0;
+  pointer-events: none;
+}
 .mobileNavigationHeader {
   display: flex;
   align-items: center;
@@ -521,13 +729,6 @@ a.resourceRow:hover {
   padding-right: 32px;
 }
 @media (max-width: 1100px) {
-  .cardGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .pageHeader {
-    flex-direction: column;
-    gap: 16px;
-  }
   .twoColumns {
     grid-template-columns: 1fr;
   }
@@ -544,31 +745,31 @@ a.resourceRow:hover {
   .mobileMenu {
     display: inline-flex;
   }
-  .cardGrid {
+  .formGrid {
     grid-template-columns: 1fr;
   }
   .hero {
     padding: 24px;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
   }
   .hero h2 {
-    font-size: 24px;
+    font-size: 20px;
   }
   .heroStats {
     display: flex;
     gap: 12px;
   }
   .heroStats strong {
-    font-size: 22px;
+    font-size: 20px;
   }
   .panel {
     padding: 16px;
   }
   .resourceRow {
     flex-wrap: wrap;
-    padding: 12px 16px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 4px 8px;
   }
   .resourceRow > :first-child {
     flex-basis: 100%;
@@ -582,76 +783,84 @@ a.resourceRow:hover {
   }
 }
 
-.settingsFrame {
-  container: settings-layout / inline-size;
+.settingsNavigation {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  gap: 4px;
 }
-.settings {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  gap: 32px;
+.backToChats {
+  composes: row from "./navigation-row.module.css";
+  margin-bottom: 16px;
+  color: var(--a13n-secondary);
+}
+.settingsNavigationTitle {
+  padding: 0 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
 }
 .settingsNav {
-  flex: 0 0 176px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
   min-height: 0;
   overflow: auto;
 }
 .settingsNav .activeNav {
-  background: var(--a13n-surface);
-}
-.settingsUtilityLink {
-  margin-top: 24px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+  background: var(--a13n-selected);
 }
 .settingControl {
-  width: 280px;
+  width: auto;
   max-width: 100%;
 }
-.settingsNav h2 {
-  padding: 0 12px;
-  margin-bottom: 16px;
+.settingControlWithActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+}
+.settingControlWithActions > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.settingControlWithActions > button:last-child {
+  flex-shrink: 0;
 }
 .settingsContent {
-  container: settings-content / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--harness-section-gap);
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  scrollbar-gutter: stable;
-  padding: 0 4px 24px 0;
+  padding: 24px clamp(24px, 5vw, 64px) 48px;
+  scrollbar-gutter: stable both-edges;
 }
 .settingsContent > * {
   flex-shrink: 0;
-  min-width: 0;
+  /* One reading measure for every settings page: headers, lists, cards
+     and disclosures share the same right edge. */
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
 }
-.settingsContent .pageHeader {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
+.settingsContent .pageHeader > div > h1 {
+  min-height: var(--harness-control-height);
+  font-size: 20px;
+  line-height: 24px;
 }
-.settingsContent .pageHeader > :first-child {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-.settingsContent .pageHeader > .actions {
-  flex: 0 0 auto;
-  max-width: 100%;
-}
-.settingsContent .pageHeader :is(h1, h2) {
-  margin: 0;
+.settingsContent .pageHeader > div > h2 {
+  min-height: 24px;
+  font-size: 16px;
+  line-height: 20px;
 }
 .settingsContent .pageHeader p {
-  margin-top: 8px;
+  font-size: 14px;
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;
@@ -659,49 +868,81 @@ a.resourceRow:hover {
 .search {
   width: min(100%, 320px);
 }
+@media (max-width: 639px) {
+  .search {
+    width: 100%;
+  }
+}
+.emptyList {
+  margin: 0;
+  padding: 16px 12px;
+  border-radius: 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
 .panelContent {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-block: 20px;
+  padding-block: 8px;
 }
 .panelContent > button {
   align-self: flex-start;
 }
-/* Keep room for the 680px form, navigation, gap, and scrollbar. */
-@container settings-layout (max-width: 920px) {
-  .settings {
-    flex-direction: column;
-    gap: 20px;
-  }
-  .settingsNav {
-    display: flex;
-    flex: none;
-    gap: 4px;
-    overflow: auto;
-  }
-  .settingsNav h2 {
-    display: none;
-  }
-  .settingsUtilityLink {
-    margin-top: 0;
-  }
-  .settingsNav a {
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-}
-
 .sourceDocument {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--harness-section-gap);
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   min-width: 0;
 }
-.sourceDocument > .pageHeader > :first-child {
+.sourceHeader > .pageHeader {
+  align-items: center;
+}
+.sourceSubsection {
+  gap: 12px;
+}
+.sourceAdvanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.sourceAdvanced > button {
+  align-self: flex-start;
+}
+.sourceCode {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sourceCode > header {
+  display: grid;
+  gap: 4px;
+}
+.sourceCode > header > h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.sourceCode > header > p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--a13n-secondary);
+}
+.sourceHeader {
+  display: grid;
+  gap: 16px;
+}
+.sourceHeader > .pageHeader > :first-child {
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+.sourceHeader > .pageHeader > .actions {
+  flex-shrink: 0;
 }
 .editorActions {
   position: sticky;
@@ -711,8 +952,8 @@ a.resourceRow:hover {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
-  padding-block: 16px;
+  gap: 12px;
+  padding-block: 12px;
   border-top: 1px solid var(--a13n-border);
   background: var(--a13n-canvas);
 }
@@ -725,24 +966,36 @@ a.resourceRow:hover {
   flex-direction: column;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .configurationForm {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--harness-section-gap);
   min-width: 0;
 }
-.configurationForm > .stack {
-  gap: 24px;
-}
+/* Field groups use spacing to separate their controls. */
 .fieldGroup {
-  padding-block: 20px;
+  padding-block: 12px;
 }
-@container (max-width: 420px) {
-  .settingControl {
-    width: 100%;
-  }
+.fieldGroup:has(> .stack > [data-slot="settings-row"]) {
+  padding-block: 0;
+}
+.sectionNote {
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.sectionNote > :is(h3, p) {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+.sectionNote > h3 {
+  color: var(--a13n-text);
+  font-weight: 500;
+  margin-bottom: 4px;
 }
 .selectionOptions {
   display: grid;
@@ -759,10 +1012,10 @@ a.resourceRow:hover {
 .selectionOption {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
@@ -771,4 +1024,136 @@ a.resourceRow:hover {
 }
 .selectionOption > span {
   min-width: 0;
+}
+/* Unknown route: a centered state, like other empty states. */
+.notFound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 64px 24px;
+  max-width: 420px;
+  text-align: center;
+  color: var(--a13n-secondary);
+}
+.notFound h2 {
+  margin: 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-lg);
+  font-weight: 600;
+}
+.notFound p {
+  margin: 0 0 8px;
+}
+/* Inline keyboard shortcut inside prose. */
+.kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 4px;
+  background: var(--a13n-surface);
+  font: inherit;
+  font-size: inherit;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.workspaceMenu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-text);
+  text-align: left;
+  cursor: pointer;
+}
+.workspaceMenu:hover,
+.workspaceMenu[data-popup-open] {
+  background: var(--a13n-hover);
+}
+.workspaceMenu:focus-visible {
+  outline: 2px solid var(--ring);
+}
+.workspacePerson {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.workspacePerson strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.workspaceMenu .profileAvatar {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+}
+.sidebarFooter .workspacePerson small {
+  padding: 0;
+  font-size: 14px;
+  color: var(--a13n-secondary);
+}
+.workspacePopup {
+  width: 248px;
+}
+.version {
+  display: block;
+  padding: 12px 8px 4px;
+  color: var(--a13n-tertiary);
+  font-size: 14px;
+}
+.debugMenuLabel,
+.debugIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.debugIndicator {
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pageHeader > div > h1 {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.configurationFields {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .settingsContent {
+    padding: 24px 24px 32px;
+    scrollbar-gutter: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .profileForm [data-slot="settings-row"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profileForm [data-slot="settings-row"] > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+  }
 }

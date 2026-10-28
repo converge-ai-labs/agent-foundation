@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Schema, type Transport } from "../transport/client";
 import { ThreadSelections } from "./configuration";
@@ -26,7 +27,7 @@ function harness(client: object) {
     return (
       <QueryClientProvider client={queries}>
         <TransportContext value={{ client } as Transport}>
-          {children}
+          <MemoryRouter>{children}</MemoryRouter>
         </TransportContext>
       </QueryClientProvider>
     );
@@ -62,7 +63,7 @@ it("keeps dirty selections on external changes and requires review before versio
     <ThreadSelections threadId="one" configuration={configuration} />,
     { wrapper },
   );
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   const checkbox = await screen.findByRole("checkbox", { name: "Tools" });
   fireEvent.click(checkbox);
   view.rerender(
@@ -75,23 +76,17 @@ it("keeps dirty selections on external changes and requires review before versio
       }}
     />,
   );
-  expect((checkbox as HTMLInputElement).checked).toBe(true);
+  expect(checkbox.getAttribute("aria-checked")).toBe("true");
   expect(
     (
       screen.getByRole("button", {
-        name: "Save next Run selections",
+        name: "Save for next run",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  expect(
-    screen.getByText(/Your edits are retained against version 1/),
-  ).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Keep my edits against version 2" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  expect(screen.getByText(/Your edits are based on version 1/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep my edits" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(PATCH.mock.calls[0][1].body).toEqual({
     expected_version: 2,
@@ -133,16 +128,14 @@ it("clears a saved default Model with an explicit null versioned patch", async (
     />,
     { wrapper },
   );
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   const choice = await screen.findByRole("combobox", { name: "Default model" });
   await waitFor(() => expect(choice.textContent).toBe("Saved model"));
   await user.click(choice);
   await user.click(
     await screen.findByRole("option", { name: "Follow Agent model" }),
   );
-  await user.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(PATCH.mock.calls[0][1].body).toEqual({
     expected_version: 1,
@@ -153,14 +146,86 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   await waitFor(() => expect(choice.textContent).toBe("Follow Agent model"));
   await user.click(choice);
   await user.click(await screen.findByRole("option", { name: "Saved model" }));
-  await user.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(2));
   expect(PATCH.mock.calls[1][1].body).toEqual({
     expected_version: 2,
     patch: { default_model_id: "model-one" },
   });
+});
+
+it("keeps embedded selection actions in the dialog footer and removes them after saving", async () => {
+  const footer = document.createElement("div");
+  document.body.append(footer);
+  const PATCH = vi.fn().mockResolvedValue({
+    data: {
+      thread_id: "one",
+      metadata_version: 1,
+      configuration: {
+        ...configuration,
+        version: 2,
+        mcp_server_ids: ["mcp-one"],
+      },
+    },
+  });
+  const wrapper = harness({
+    PATCH,
+    GET: vi.fn(async (path) => ({
+      data:
+        path === "/api/projects"
+          ? []
+          : {
+              agents: [],
+              environments: [],
+              mcp_servers: [{ resource_id: "mcp-one", name: "Tools" }],
+            },
+    })),
+  });
+  const view = render(
+    <ThreadSelections
+      threadId="one"
+      configuration={configuration}
+      embedded
+      actionsContainer={footer}
+    />,
+    { wrapper },
+  );
+  try {
+    const checkbox = await screen.findByRole("checkbox", { name: "Tools" });
+    expect(
+      screen.queryByRole("button", { name: "Save for next run" }),
+    ).toBeNull();
+    fireEvent.click(checkbox);
+    expect(
+      footer.contains(
+        screen.getByRole("button", { name: "Save for next run" }),
+      ),
+    ).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard selection edits" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Save for next run" }),
+    ).toBeNull();
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
+    expect(PATCH.mock.calls[0][1].body).toEqual({
+      expected_version: 1,
+      patch: { mcp_server_ids: ["mcp-one"] },
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Save for next run" }),
+      ).toBeNull(),
+    );
+    view.unmount();
+    expect(footer.childElementCount).toBe(0);
+  } finally {
+    view.unmount();
+    footer.remove();
+  }
 });
 
 const batch = {
@@ -199,7 +264,7 @@ it("sends a complete decision set keyed by question text and does not retry an u
   ).toBe(false);
   fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(POST.mock.calls[0][1].body).toEqual({
     expected_continuation_id: "C1",
     responses: [
@@ -264,7 +329,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
     { target: { value: "Inspect this" } },
   );
   fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(POST.mock.calls[0]).toEqual([
     "/api/threads/{thread_id}/children/{execution_id}/steer",
     {
@@ -304,15 +369,14 @@ it("disables selection editing during the submitted versioned write", async () =
   render(<ThreadSelections threadId="one" configuration={configuration} />, {
     wrapper,
   });
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
-  expect(screen.getByRole("checkbox", { name: "B" }).matches(":disabled")).toBe(
-    true,
-  );
+  const blockedChoice = screen.getByRole("checkbox", { name: "B" });
+  expect(blockedChoice.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(blockedChoice);
+  expect(blockedChoice.getAttribute("aria-checked")).toBe("false");
   expect(
     screen.getByRole("combobox", { name: "Agent" }).matches(":disabled"),
   ).toBe(true);
@@ -384,14 +448,12 @@ it("validates an approval override as a JSON object before allowing the complete
   expect(
     (
       screen.getByRole("button", {
-        name: "Approve with edited arguments",
+        name: "Approve edits",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   fireEvent.change(input, { target: { value: '{"command":"review"}' } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Approve with edited arguments" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Approve edits" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0][1].body.responses).toEqual([
     {
@@ -417,10 +479,10 @@ it("shows the server deadline despite clock skew and refetches at expiry without
     { wrapper: harness({ POST }) },
   );
   try {
-    expect(screen.getByText(/Submit within 2s/)).toBeTruthy();
+    expect(screen.getByText(/2s left/)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText(/Submit within 1s/)).toBeTruthy();
+    expect(screen.getByText(/1s left/)).toBeTruthy();
     // A second participant/refetch sees the same deadline, not another full window.
     view.rerender(
       <DecisionForm
@@ -430,7 +492,7 @@ it("shows the server deadline despite clock skew and refetches at expiry without
       />,
     );
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText(/Waiting for the server to confirm/)).toBeTruthy();
+    expect(screen.getByText(/Waiting for the result/)).toBeTruthy();
     expect(
       (
         screen.getByRole("button", {
@@ -474,7 +536,7 @@ it("unmounting a timed form never sends a response and a restored untimed batch 
       <DecisionForm threadId="one" batch={batch} reconcile={reconcile} />,
       { wrapper },
     );
-    expect(screen.queryByText(/Submit within/)).toBeNull();
+    expect(screen.queryByText(/s left/)).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
     expect(
       (
@@ -523,7 +585,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
   await user.clear(path);
   await user.type(path, "/selected");
   expect(onChange).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+  await user.click(screen.getByRole("button", { name: "Use for next run" }));
   expect(onChange).toHaveBeenCalledWith({
     local_roots: ["/selected"],
     environment_bindings: [
@@ -536,8 +598,6 @@ it("edits Run-only local and remote selections without changing the Thread", asy
     default_environment: "build",
   });
   await user.click(screen.getByRole("button", { name: "Environments" }));
-  await user.click(
-    screen.getByRole("button", { name: "Use conversation defaults" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Use chat defaults" }));
   expect(onChange).toHaveBeenLastCalledWith(undefined);
 });

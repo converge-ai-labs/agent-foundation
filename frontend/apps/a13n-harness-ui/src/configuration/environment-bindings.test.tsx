@@ -167,9 +167,7 @@ it("selects an explicit Device directory and preserves it when reopening", async
       }) as HTMLInputElement
     ).value,
   ).toBe("");
-  await user.click(
-    screen.getByRole("button", { name: "Select this directory" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Choose folder" }));
   await user.click(screen.getByRole("button", { name: "Use environment" }));
   expect(JSON.parse(screen.getByTestId("selection").textContent!)).toEqual({
     bindings: [
@@ -199,7 +197,7 @@ it("retains manual paths offline, retries observations, and respects disabled di
   available = false;
   mount(<Fields />);
   const user = await chooseDevice();
-  await screen.findByText(/Device unavailable/);
+  await screen.findByText(/Device offline/);
   await user.type(
     screen.getByRole("textbox", { name: "Working directory" }),
     "/known",
@@ -210,7 +208,7 @@ it("retains manual paths offline, retries observations, and respects disabled di
   available = true;
   discovery = false;
   await user.click(screen.getByRole("button", { name: "Retry connection" }));
-  await screen.findByText(/Directory browsing is disabled/);
+  await screen.findByText(/Folder browsing is off/);
   expect(
     (
       screen.getByRole("textbox", {
@@ -334,15 +332,11 @@ it("forgets local configuration through the existing API without any Device conn
   const link = await screen.findByRole("link", { name: "Build project" });
   expect(link.getAttribute("href")).toContain("projects%2Fbuild.yaml");
   blocked = true;
-  await user.click(
-    screen.getByRole("button", { name: "Forget configuration" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Forget" }));
   await screen.findByText("Configuration references are invalid.");
   expect(screen.getByRole("dialog")).toBeTruthy();
   blocked = false;
-  await user.click(
-    screen.getByRole("button", { name: "Forget configuration" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Forget" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
     requests

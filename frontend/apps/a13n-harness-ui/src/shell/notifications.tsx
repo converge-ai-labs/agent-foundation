@@ -1,3 +1,4 @@
+import { SettingsRow, SettingsSection } from "./settings";
 import {
   createContext,
   useCallback,
@@ -23,13 +24,14 @@ import {
   supportsPush,
   testPush,
 } from "./push";
-import { PageHeader, Panel } from "./ui";
+import { PageHeader } from "./ui";
 import styles from "./notifications.module.css";
 
 type Permission = NotificationPermission | "unavailable" | "install-required";
 type Background = "disabled" | "checking" | "enabled" | "error";
 type SummaryEvent = Schema<"SummaryInvalidation">;
 const ENABLED = "notifications.enabled";
+const PROMPT_DISMISSED = "notifications.prompt-dismissed";
 export function notificationPermission(): Permission {
   if (!window.isSecureContext) return "unavailable";
   const appleMobile =
@@ -74,6 +76,13 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [enabled, updateEnabled] = useState(
     () => readPreference(ENABLED, "true") !== "false",
   );
+  const [promptDismissed, setPromptDismissed] = useState(
+    () => readPreference(PROMPT_DISMISSED, "false") === "true",
+  );
+  const dismissPrompt = () => {
+    writePreference(PROMPT_DISMISSED, "true");
+    setPromptDismissed(true);
+  };
   const [permission, setPermission] = useState(notificationPermission);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState("");
@@ -144,7 +153,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         if (active) {
           setBackground("error");
           setError(
-            "Background notifications could not be synchronized. Check your connection and reconnect them. In-app notices remain available while WebUI is open.",
+            "Couldn't sync background alerts. Check your connection and reconnect notifications. Alerts still appear while Harness is open.",
           );
         }
       });
@@ -181,6 +190,10 @@ function NotificationState({ children }: { children: ReactNode }) {
     current.current.enabled = value;
     writePreference(ENABLED, String(value));
     updateEnabled(value);
+    if (value) {
+      writePreference(PROMPT_DISMISSED, "false");
+      setPromptDismissed(false);
+    }
     setPermission(notificationPermission());
     setError("");
     setTestStatus("");
@@ -256,9 +269,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name =
-        detail?.thread.title ||
-        detail?.thread.excerpt?.first_input ||
-        "Conversation";
+        detail?.thread.title || detail?.thread.excerpt?.first_input || "Chat";
       const state = {
         completed: "Task completed",
         failed: "Task failed",
@@ -283,11 +294,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         actionProps: {
           children: (
             <>
-              <span className={styles.desktopLabel}>Open conversation</span>
+              <span className={styles.desktopLabel}>Open chat</span>
               <span className={styles.mobileLabel}>Open</span>
             </>
           ),
-          "aria-label": "Open conversation",
+          "aria-label": "Open chat",
           onClick: () => current.current.navigate(path),
         },
       });
@@ -336,13 +347,14 @@ function NotificationState({ children }: { children: ReactNode }) {
       <div className={styles.frame} ref={frame}>
         {children}
         {enabled &&
+          !promptDismissed &&
           !settings &&
           !requesting &&
           background !== "checking" &&
           (permission !== "granted" ||
             (supportsPush() &&
               (background === "disabled" || background === "error"))) && (
-            <PermissionToast />
+            <PermissionToast onDismiss={dismissPrompt} />
           )}
       </div>
     </NotificationsContext>
@@ -366,7 +378,7 @@ function PermissionDescription({ permission }: { permission: Permission }) {
   return (
     <>
       {permission === "install-required"
-        ? "Add Harness UI to your Home Screen, then open it there to enable notifications. Requires iOS/iPadOS 16.4 or later."
+        ? "Add Harness to your Home Screen and open it there to enable alerts. Requires iOS or iPadOS 16.4 or later."
         : permission === "denied"
           ? "Allow notifications in this site's browser settings or the Home Screen app's system settings."
           : permission === "unavailable"
@@ -375,15 +387,21 @@ function PermissionDescription({ permission }: { permission: Permission }) {
     </>
   );
 }
-function PermissionToast() {
+function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
   const notifications = useNotifications()!;
+  const requestLabel =
+    notifications.permission === "granted"
+      ? notifications.background === "error"
+        ? "Reconnect"
+        : "Enable background delivery"
+      : "Enable notifications";
   return (
     <aside
       className={styles.permissionToast}
       aria-label="Notification permission"
     >
-      <Bell size={20} aria-hidden="true" />
-      <div>
+      <Bell size={14} aria-hidden="true" />
+      <div className={styles.permissionBody}>
         <h2>
           {notifications.permission === "granted"
             ? notifications.background === "error"
@@ -402,31 +420,31 @@ function PermissionToast() {
         </p>
         {notifications.error && <p role="alert">{notifications.error}</p>}
         <div className={styles.actions}>
+          <Link to="/settings/notifications">Settings</Link>
           {(notifications.permission === "default" ||
             (notifications.permission === "granted" && supportsPush())) && (
             <Button
               size="sm"
               onClick={() => void notifications.request()}
               loading={notifications.requesting}
+              aria-label={requestLabel}
             >
-              {notifications.permission === "granted"
-                ? notifications.background === "error"
-                  ? "Reconnect"
-                  : "Enable background delivery"
-                : "Enable notifications"}
+              <span className={styles.desktopLabel}>{requestLabel}</span>
+              <span className={styles.mobileLabel}>
+                {requestLabel === "Reconnect" ? requestLabel : "Enable"}
+              </span>
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => notifications.setEnabled(false)}
-            aria-label="Turn off reminders"
-            className={styles.dismissReminder}
+            onClick={onDismiss}
+            aria-label="Dismiss notification setup"
+            title="Dismiss notification setup"
+            className={styles.reminderClose}
           >
-            <span className={styles.desktopLabel}>Turn off reminders</span>
-            <X className={styles.mobileLabel} aria-hidden />
+            <X aria-hidden />
           </Button>
-          <Link to="/settings/notifications">Settings</Link>
         </div>
       </div>
     </aside>
@@ -438,76 +456,96 @@ export function NotificationSettings({
   embedded?: boolean;
 }) {
   const notifications = useNotifications()!;
+  const pushReady =
+    notifications.enabled &&
+    notifications.permission === "granted" &&
+    supportsPush();
+  const backgroundLabel = pushSubscriptionId()
+    ? "Reconnect background notifications"
+    : "Enable background notifications";
   return (
-    <>
-      <PageHeader
-        title="Notifications"
-        level={embedded ? 2 : 1}
-        description="This browser"
-      />
-      <Panel title="Browser notifications">
-        <div className={styles.settingRow}>
-          <div>
-            <label htmlFor="desktop-notifications">
-              Enable browser notifications
-            </label>
-            <p>
-              Task results and requests for your input across all conversations.
-              Previews may appear on your lock screen.
-            </p>
-          </div>
+    <div className={styles.settings}>
+      {!embedded && (
+        <PageHeader
+          title="Notifications"
+          description="Task results and requests for your input on this browser."
+        />
+      )}
+      <SettingsSection
+        variant="grouped"
+        title={embedded ? "Notifications" : undefined}
+      >
+        <SettingsRow
+          label="Enable browser notifications"
+          stackOnNarrow={false}
+          controlId="desktop-notifications"
+          description="Alerts from every chat in this browser. Previews may appear on your lock screen."
+        >
           <Switch
             id="desktop-notifications"
             checked={notifications.enabled}
             onCheckedChange={notifications.setEnabled}
           />
-        </div>
-        <p>
-          Browser permission:{" "}
-          <strong>{permissionLabels[notifications.permission]}</strong>
-        </p>
-        {notifications.permission !== "granted" && (
-          <p>
-            <PermissionDescription permission={notifications.permission} />
-          </p>
-        )}
-        <p>
-          Background delivery:{" "}
-          <strong>{backgroundLabels[notifications.background]}</strong>
-          <br />
-          {notifications.background === "enabled"
-            ? "Connected. Alerts stay active for six hours after your last visit on this device."
-            : notifications.permission !== "granted"
-              ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
-              : "Without working push delivery, only in-app notices are available while WebUI is open."}
-        </p>
-        <div className={styles.actions}>
-          {notifications.enabled &&
-            notifications.permission === "granted" &&
-            supportsPush() && (
+        </SettingsRow>
+        <SettingsRow
+          label="Browser permission"
+          description={
+            notifications.permission !== "granted" && (
+              <PermissionDescription permission={notifications.permission} />
+            )
+          }
+        >
+          <div className={styles.state}>
+            <span className={styles.status}>
+              {permissionLabels[notifications.permission]}
+            </span>
+            {notifications.enabled &&
+              notifications.permission === "default" && (
+                <Button
+                  variant="outline"
+                  onClick={() => void notifications.request()}
+                  loading={notifications.requesting}
+                >
+                  Enable alerts
+                </Button>
+              )}
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          label="Background delivery"
+          description={
+            notifications.background === "enabled"
+              ? "Alerts stay active for six hours after your last visit on this device."
+              : notifications.permission !== "granted"
+                ? "Needs notification permission. In-app notices remain available."
+                : "Without working push delivery, only in-app notices are available while WebUI is open."
+          }
+        >
+          <div className={styles.state}>
+            <span className={styles.status}>
+              {backgroundLabels[notifications.background]}
+            </span>
+            {pushReady && (
               <Button
                 onClick={() => void notifications.request()}
                 loading={notifications.requesting}
                 variant={
                   notifications.background === "enabled" ? "outline" : "default"
                 }
+                aria-label={backgroundLabel}
               >
-                {pushSubscriptionId()
-                  ? "Reconnect background notifications"
-                  : "Enable background notifications"}
+                {pushSubscriptionId() ? "Reconnect" : "Enable"}
               </Button>
             )}
-          {notifications.enabled && notifications.permission === "default" && (
-            <Button
-              variant="outline"
-              onClick={() => void notifications.request()}
-              loading={notifications.requesting}
-            >
-              Allow notifications
-            </Button>
-          )}
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          label="Test notification"
+          description="Send an alert to check delivery on this device."
+        >
           <Button
             variant="outline"
+            aria-label="Send test notification"
             disabled={
               !notifications.enabled ||
               notifications.permission !== "granted" ||
@@ -516,36 +554,44 @@ export function NotificationSettings({
             }
             onClick={notifications.test}
           >
-            Send test notification
+            Send test
           </Button>
-        </div>
-        {notifications.error && <p role="alert">{notifications.error}</p>}
-        {notifications.testStatus && (
-          <p role="status">{notifications.testStatus}</p>
-        )}
-        <details className={styles.details}>
-          <summary>Delivery help</summary>
-          <p>
-            The server must stay running and reach your browser's push service.
-            On iPhone or iPad, use Safari's Share → Add to Home Screen, then
-            enable notifications from the Home Screen app.
-          </p>
-          <p>
-            On Android Chrome, allow this site's notifications and Chrome's
-            system notifications. Force-stopping the browser, battery
-            restrictions, or Do Not Disturb can prevent alerts. On iPhone or
-            iPad, enable notifications inside the Home Screen app, not a Chrome
-            or Safari tab. Send a test notification to check delivery.
-          </p>
-          <p>
-            In-app notices remain available without notification permission.
-            Background push uses your browser's push service and can show alerts
-            alongside in-app notices even for the conversation you are viewing.
-            Keeping a WebUI page visible renews the six-hour delivery window.
-            Missed history is not replayed as new alerts.
-          </p>
-        </details>
-      </Panel>
-    </>
+        </SettingsRow>
+      </SettingsSection>
+      {notifications.error && (
+        <p role="alert" className={styles.message}>
+          {notifications.error}
+        </p>
+      )}
+      {notifications.testStatus && (
+        <p role="status" className={styles.message}>
+          {notifications.testStatus}
+        </p>
+      )}
+      <details className={styles.details}>
+        <summary>Delivery help</summary>
+        <p>
+          Keep the server running and connected to your browser's push service.
+        </p>
+        <ul>
+          <li>
+            iPhone / iPad: in Safari, choose Share → Add to Home Screen. Enable
+            notifications in the installed app.
+          </li>
+          <li>
+            Android: allow notifications for this site and Chrome. Battery
+            limits, force-stop and Do Not Disturb may block alerts.
+          </li>
+          <li>
+            Delivery stays active for six hours after a visible visit. Missed
+            alerts are not replayed.
+          </li>
+        </ul>
+        <p>
+          In-app notices still work without permission. System alerts may also
+          appear for the chat you are viewing.
+        </p>
+      </details>
+    </div>
   );
 }

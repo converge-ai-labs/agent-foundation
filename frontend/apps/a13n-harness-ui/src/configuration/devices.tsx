@@ -5,12 +5,14 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { DebugId } from "../shell/debug";
 import { DraftLinks } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 import { ConnectDevice, PendingDevice } from "./connect-device";
 import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
 import environmentStyles from "./environments-page.module.css";
+import layout from "./settings.module.css";
 
 export function DevicesSection() {
   const { client } = useTransport();
@@ -33,8 +35,8 @@ export function DevicesSection() {
         <ConnectDevice />
       </div>
       <p>
-        Connect another computer with envd to use its directories. Local
-        execution profiles do not change its permissions.
+        Use folders and tools on another computer, with that computer’s
+        permissions.
       </p>
       <ErrorNotice error={devices.error || pairings.error} />
       {!!pairings.data?.length && (
@@ -49,50 +51,55 @@ export function DevicesSection() {
         </div>
       )}
       <DraftLinks kinds={["device"]} />
-      {devices.data?.length === 0 && <p>No Devices connected yet.</p>}
-      {devices.data?.map((device) => {
-        const source = sources.data?.sources.find(
-          (item) =>
-            item.resource_kind === "device" &&
-            item.resource_ids.includes(device.id),
-        );
-        return (
-          <div className={styles.resourceRow} key={device.id}>
-            <div>
-              <strong>{device.name}</strong>
-              <small>
-                {device.id} · {device.transport}
-              </small>
-              {device.registration === "revoked" ? (
-                <p className="text-sm text-muted-foreground">
-                  Revoked · connections are blocked
-                </p>
-              ) : (
-                <DeviceStatus deviceId={device.id} />
-              )}
+      {devices.data?.length === 0 && (
+        <p className={layout.emptySection}>No devices connected yet.</p>
+      )}
+      <div className={styles.resourceList}>
+        {devices.data?.map((device) => {
+          const source = sources.data?.sources.find(
+            (item) =>
+              item.resource_kind === "device" &&
+              item.resource_ids.includes(device.id),
+          );
+          return (
+            <div className={styles.resourceRow} key={device.id}>
+              <div>
+                <strong>{device.name}</strong>
+                <small>
+                  {device.transport}
+                  <DebugId label="Device" value={device.id} />
+                </small>
+                {device.registration === "revoked" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Revoked · connections are blocked
+                  </p>
+                ) : (
+                  <DeviceStatus deviceId={device.id} />
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {device.registration === "paired" && (
+                  <RevokeDevice device={device} />
+                )}
+                {source && (
+                  <>
+                    <Link
+                      to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+                    >
+                      Edit connection
+                    </Link>
+                    <ForgetEnvironment
+                      path={source.relative_path}
+                      name={device.name}
+                      resourceId={device.id}
+                    />
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {device.registration === "paired" && (
-                <RevokeDevice device={device} />
-              )}
-              {source && (
-                <>
-                  <Link
-                    to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-                  >
-                    Edit connection
-                  </Link>
-                  <ForgetEnvironment
-                    path={source.relative_path}
-                    name={device.name}
-                    resourceId={device.id}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -123,8 +130,8 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
         }
       }}
       title={`Revoke ${device.name}?`}
-      description="Disconnect this Device and block its saved credential. Runs using it lose their connection. Remote files and captured history are preserved."
-      closeLabel="Cancel"
+      description="Disconnect this device and revoke its credential? Active runs will lose access. Remote files and chat history are kept."
+      closeLabel="Close"
       trigger={
         <Button size="sm" variant="ghost">
           Revoke
@@ -150,8 +157,8 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
       }
     >
       <p>
-        This revokes trust, rather than only forgetting local configuration. The
-        daemon will not automatically request a new credential.
+        The device's credential will stop working. Reconnect it manually to
+        request a new one.
       </p>
       <ErrorNotice error={revoke.error} />
     </ModalFrame>

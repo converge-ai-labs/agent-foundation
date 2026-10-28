@@ -151,7 +151,7 @@ export function TerminalPanel({
     if (pending || attempted) {
       setError(
         new Error(
-          "A terminal action is unresolved. Inspect its outcome before opening another terminal.",
+          "Check the previous terminal action before opening another terminal.",
         ),
       );
       return;
@@ -264,9 +264,7 @@ export function TerminalPanel({
             shortcut={shortcuts.create}
             disabled={pending || attempted || !projectId || !directory}
             description={
-              directory
-                ? `Start in ${directory}`
-                : "Open a project conversation first"
+              directory ? `Start in ${directory}` : "Open a project chat first"
             }
             onClick={() => void create()}
           >
@@ -348,10 +346,10 @@ export function TerminalPanel({
           </h3>
           <p>
             {selected && sessions.isSuccess
-              ? "This terminal is not available in the current project. Open a conversation in its project to view it."
+              ? "This terminal belongs to another project. Open a chat in that project to view it."
               : projectId
-                ? "Start a shell in this project's folder, or select one of its existing sessions."
-                : "Open a conversation in a project to see its terminals."}
+                ? "Start a terminal in this project's folder, or open an existing session."
+                : "Open a chat in a project to see its terminals."}
           </p>
         </div>
       )}
@@ -380,7 +378,7 @@ export function TerminalPanel({
       <ErrorNotice error={error} />
       {attempted && error != null && !closing && (
         <p role="status">
-          The outcome may be unknown. Refresh the session list before starting
+          Couldn't confirm the result. Refresh the session list before starting
           another terminal.
         </p>
       )}
@@ -392,19 +390,18 @@ export function TerminalPanel({
           }
         }}
         title="End this terminal session?"
-        description="This closes the session and its native jobs for everyone. Closing only the panel does not do this."
+        description="Ends this session and its jobs for everyone. To keep it running, close only the panel."
         closeLabel="Cancel"
       >
         <ErrorNotice error={error} />
         {attempted && error != null && (
           <p role="status">
-            The outcome may be unknown. This action will not be repeated. Close
-            this dialog and refresh the session list before deciding what to do
-            next.
+            Couldn't confirm the result. Nothing was retried. Close this dialog
+            and refresh the session list before continuing.
           </p>
         )}
         <Button disabled={pending || attempted} onClick={() => void close()}>
-          {pending ? "Waiting…" : "End session for everyone"}
+          {pending ? "Waiting…" : "End session"}
         </Button>
       </ModalFrame>
     </section>

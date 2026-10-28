@@ -10,14 +10,16 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
+import { DebugProvider } from "../shell/debug";
 import { ComposerStatus } from "./composer-status";
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.useRealTimers();
 });
 it.each([
-  ["default", "Standard"],
+  ["default", "Provider default"],
   ["ultrafast", "Ultrafast"],
 ] as const)(
   "ticks the exact current receipt and paints live context and speed %s without waiting for a saved transcript",
@@ -62,6 +64,7 @@ it.each([
         tokens: [
           ["input_tokens", 10000],
           ["output_tokens", 2345],
+          ["cache_read_tokens", 5000],
         ],
       },
     };
@@ -86,17 +89,31 @@ it.each([
     const content = (liveTokens: number, busy: boolean) => (
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
-          <ComposerStatus
-            threadId="one"
-            receipt="current"
-            busy={busy}
-            liveTokens={liveTokens}
-          />
+          <DebugProvider>
+            <ComposerStatus
+              threadId="one"
+              receipt="current"
+              busy={busy}
+              liveTokens={liveTokens}
+            />
+          </DebugProvider>
         </TransportContext>
       </QueryClientProvider>
     );
     const view = render(content(250, true));
     expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Cost details" }).textContent,
+    ).toContain("Usage");
+    expect(screen.getByText("Speed").textContent).toBe("Speed —");
+    expect(
+      screen.getByRole("button", { name: "Cache details" }).textContent,
+    ).toBe("Cache 40.5%");
+    fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
+    expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(
       screen.getByRole("button", { name: "Tokens details" }).textContent,
     ).toBe("Tokens 12.3K");
@@ -125,6 +142,7 @@ it.each([
           tokens: [
             ["input_tokens", 11000],
             ["output_tokens", 2345],
+            ["cache_read_tokens", 6000],
           ],
         },
       }),
@@ -135,19 +153,15 @@ it.each([
     expect(screen.getByText("13.3K")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
     expect(screen.getByText("13,345")).toBeTruthy();
-    expect(screen.getByText("11,000")).toBeTruthy();
+    expect(screen.getByText("11,000", { selector: "strong" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Context details" }));
     expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
-    expect(
-      screen.queryByRole("heading", { name: "Conversation usage" }),
-    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Chat usage" })).toBeNull();
     expect(screen.getByText("400")).toBeTruthy();
     expect(screen.getByText("1,000")).toBeTruthy();
     expect(screen.getByText("600")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
-    expect(
-      screen.getByRole("heading", { name: "Conversation usage" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
     expect(screen.getByText("13,345")).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
@@ -161,6 +175,13 @@ it.each([
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(screen.getByText("2s")).toBeTruthy();
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+    expect(screen.queryByText("Time")).toBeNull();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
+    expect(
+      screen.getByRole("button", { name: "Cache details" }).textContent,
+    ).toBe("Cache 45.0%");
     view.unmount();
     queries.clear();
   },

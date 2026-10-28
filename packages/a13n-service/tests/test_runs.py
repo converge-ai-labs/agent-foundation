@@ -7,10 +7,12 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from a13n_harness import state as state_module
 from a13n_service.api_tools import tool_name
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.admission import CallContext
+from a13n_service.runs.execute import _Attempt
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.tenancy.tables import GrantRow
@@ -20,7 +22,42 @@ from sqlalchemy import delete, select, update
 pytestmark = pytest.mark.anyio
 
 
-async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.fixture
+def checkpoint_history_decodes(monkeypatch):
+    counts = []
+    decoded = []
+    commits = []
+    original_decode = state_module.decode_messages
+    original_commit = _Attempt._commit
+
+    def decode(value):
+        decoded.append(value)
+        return original_decode(value)
+
+    async def commit(self, state, **kwargs):
+        finished = asyncio.Event()
+        commits.append(finished)
+        start = len(decoded)
+        try:
+            result = await original_commit(self, state, **kwargs)
+            counts.append(sum(value is state.message_history_json for value in decoded[start:]))
+            return result
+        finally:
+            finished.set()
+
+    async def completed_counts():
+        # A sealed database row is visible before _commit finishes advancing the thread.
+        async with asyncio.timeout(10):
+            for finished in commits:
+                await finished.wait()
+        return counts
+
+    monkeypatch.setattr(state_module, "decode_messages", decode)
+    monkeypatch.setattr(_Attempt, "_commit", commit)
+    return completed_counts
+
+
+async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit, checkpoint_history_decodes) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model)
     scripted_model.say("Hello there")
     submitted = await runs_kit.start_thread(executing, agent, "hi")
@@ -38,9 +75,12 @@ async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit)
         assert datetime.fromisoformat(item["started_at"]) <= datetime.fromisoformat(item["ended_at"]), item
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
+    assert await checkpoint_history_decodes() == [1, 1]  # Model boundary, then final state.
 
 
-async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_client_tool_waits_and_resume_answers_it(
+    executing, scripted_model, runs_kit, checkpoint_history_decodes
+) -> None:
     lookup = {
         "name": "lookup",
         "description": "Look a value up",
@@ -71,6 +111,7 @@ async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_mod
     second = await scripted_model.request()
     tool_results = [message for message in second["messages"] if message["role"] == "tool"]
     assert tool_results and "42" in tool_results[0]["content"]
+    assert await checkpoint_history_decodes() == [1, 1, 1, 1]  # Model + waiting, resumed model + completed.
 
 
 async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

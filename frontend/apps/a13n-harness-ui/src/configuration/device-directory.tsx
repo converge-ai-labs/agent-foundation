@@ -65,7 +65,7 @@ export function DeviceDirectory({
         label={label}
         value={value}
         onChange={onChange}
-        description="An absolute path on the Device, not this server. This is not a filesystem sandbox."
+        description="Enter a full path on the device. This folder does not restrict access to other files."
       />
       <div className="flex flex-wrap gap-2">
         <Button
@@ -93,8 +93,8 @@ export function DeviceDirectory({
       {info.data && !info.data.available && (
         <div>
           <p role="status">
-            Device unavailable. You can keep or enter a known path, or remove
-            its selection without connecting.
+            Device offline. Keep or enter a folder path, or remove it from the
+            selection.
           </p>
           <Button
             type="button"
@@ -108,9 +108,7 @@ export function DeviceDirectory({
         </div>
       )}
       {info.data?.available && !info.data.directory_discovery && (
-        <p>
-          Directory browsing is disabled. Use the default or enter a known path.
-        </p>
+        <p>Folder browsing is off. Use the default or enter a path.</p>
       )}
       <ErrorNotice error={info.error} retry={() => void info.refetch()} />
       {location && (
@@ -153,7 +151,7 @@ export function DeviceDirectory({
                     setLocation(undefined);
                   }}
                 >
-                  Select this directory
+                  Choose folder
                 </Button>
               </div>
               <div className="max-h-64 overflow-y-auto">

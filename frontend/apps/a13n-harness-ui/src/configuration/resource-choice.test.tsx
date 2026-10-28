@@ -24,7 +24,7 @@ it("keeps an unavailable reference visible and only changes it after an explicit
         { value: "agent-one", label: "Assistant" },
       ]}
       onValueChange={onChange}
-      description="Used for new conversations."
+      description="Used for new chats."
     />,
   );
   const trigger = screen.getByRole("combobox", { name: "Default agent" });

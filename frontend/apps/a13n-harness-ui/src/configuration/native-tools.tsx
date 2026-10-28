@@ -1,14 +1,10 @@
-import { useId } from "react";
-import { Checkbox } from "a13n-ui";
+import { SettingsToggle } from "../shell/settings";
 import { useQuery } from "@tanstack/react-query";
-import { Lightning } from "@phosphor-icons/react";
-import management from "./management.module.css";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { connectionId } from "./model-editor";
 import { readDocument } from "./documents";
-import styles from "../shell/workbench.module.css";
 
 type Tool = Schema<"ModelToolChoice">;
 export function nativeToolKind(value: unknown): string | undefined {
@@ -75,7 +71,6 @@ export function AgentNativeTools({
   source: string;
   onChange: (source: string) => void;
 }) {
-  const id = useId();
   const { client } = useTransport();
   const sources = useSources();
   const raw = readDocument(source)?.toJS();
@@ -122,59 +117,37 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   return (
-    <div className={styles.fieldGroup}>
-      <h4 className={management.subsectionTitle}>
-        <Lightning aria-hidden="true" />
-        Model-native tools
-      </h4>
-      <div className={management.nativeOptions}>
-        <ErrorNotice error={saved.error || options.error} />
-        {!raw?.model ? (
-          <p>Select a saved Model to see its native tool choices.</p>
-        ) : options.isPending && request ? (
-          <p>Loading tool support…</p>
-        ) : !tools.length ? (
-          <p>No native tool choices for this model.</p>
-        ) : (
-          tools.map((tool) => (
-            <label key={tool.value} className={management.nativeOption}>
-              <Checkbox
-                aria-labelledby={`${id}-${tool.value}-label`}
-                aria-describedby={`${id}-${tool.value}-description`}
-                checked={configured.includes(tool.value)}
-                disabled={!tool.capability}
-                onCheckedChange={(checked) =>
-                  onChange(toggleNativeTool(source, tool, checked))
-                }
-              />
-              <span className={management.optionText}>
-                <span id={`${id}-${tool.value}-label`}>
-                  {tool.label}
-                  {tool.recommended && (
-                    <span className={management.recommendation}>
-                      Recommended
-                    </span>
-                  )}
-                </span>
-                <small id={`${id}-${tool.value}-description`}>
-                  {tool.description}
-                  {!tool.capability &&
-                    " Configure required provider parameters in advanced YAML."}
-                </small>
-              </span>
-            </label>
-          ))
+    <>
+      <ErrorNotice error={saved.error || options.error} />
+      {!raw?.model ? (
+        <p>Choose a saved model to see its tools.</p>
+      ) : options.isPending && request ? (
+        <p>Loading tool support…</p>
+      ) : !tools.length ? (
+        <p>This model has no built-in tool options.</p>
+      ) : (
+        tools.map((tool) => (
+          <SettingsToggle
+            key={tool.value}
+            label={tool.label}
+            description={`${tool.description}${tool.recommended ? " Recommended for this model." : ""}${!tool.capability ? " Configure required provider parameters in advanced YAML." : ""}`}
+            checked={configured.includes(tool.value)}
+            disabled={!tool.capability}
+            onCheckedChange={(checked) =>
+              onChange(toggleNativeTool(source, tool, checked))
+            }
+          />
+        ))
+      )}
+      {options.data &&
+        configured.some(
+          (kind: string) => !tools.some((tool) => tool.value === kind),
+        ) && (
+          <p role="status">
+            Some saved tools aren't available for this model. Review them in
+            Capabilities or Advanced configuration.
+          </p>
         )}
-        {options.data &&
-          configured.some(
-            (kind: string) => !tools.some((tool) => tool.value === kind),
-          ) && (
-            <p role="status">
-              Some configured native tools are not offered for this Model. They
-              have been preserved; review them in Capabilities or advanced YAML.
-            </p>
-          )}
-      </div>
-    </div>
+    </>
   );
 }

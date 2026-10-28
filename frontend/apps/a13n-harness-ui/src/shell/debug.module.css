@@ -1,0 +1,103 @@
+.id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  height: 20px;
+  border: 1px dashed var(--a13n-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: copy;
+}
+.id:hover {
+  color: var(--a13n-text);
+  border-style: solid;
+}
+.idLabel {
+  color: var(--a13n-secondary);
+}
+.data {
+  position: relative;
+  margin-top: 8px;
+  border: 1px dashed var(--a13n-border);
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.data > details > summary {
+  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 88px 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+.data > details > summary::before {
+  content: none;
+}
+.data > details > summary::-webkit-details-marker {
+  display: none;
+}
+.data > details > pre {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 12px;
+  border-top: 1px dashed var(--a13n-border);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 16%, transparent);
+  color: #92400e;
+  font-size: 14px;
+  font-weight: 500;
+}
+:global(.dark) .badge {
+  color: #fbbf24;
+}
+.copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.copy:hover {
+  color: var(--a13n-text);
+}
+
+.copyFailure {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--a13n-danger);
+  font-size: 14px;
+}
+.data > details > pre:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}

@@ -95,7 +95,7 @@ it("keeps question receipts between independently keyed execution stretches with
   expect(screen.queryByText("Every surface")).toBeNull();
   expect(container.querySelectorAll("[data-turn-id]")).toHaveLength(1);
   expect(container.querySelectorAll("[data-message-id]")).toHaveLength(1);
-  const toggles = screen.getAllByRole("button", { name: /Execution details/ });
+  const toggles = screen.getAllByRole("button", { name: /Work log/ });
   expect(toggles).toHaveLength(2);
   fireEvent.click(toggles[0]);
   expect(toggles.map((item) => item.getAttribute("aria-expanded"))).toEqual([
@@ -146,7 +146,7 @@ it("correlates a resume result with its saved call and preserves disclosures thr
   const details = screen.getByRole("button", { name: "Questions & details" });
   fireEvent.click(details);
   const execution = screen.getAllByRole("button", {
-    name: /Execution details/,
+    name: /Work log/,
   });
   fireEvent.click(execution[1]);
   view.rerender(
@@ -163,7 +163,7 @@ it("correlates a resume result with its saved call and preserves disclosures thr
   );
   expect(screen.getByRole("region", { name: "Answers" })).toBe(receipt);
   expect(details.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getAllByRole("button", { name: /Execution details/ })).toEqual(
+  expect(screen.getAllByRole("button", { name: /Work log/ })).toEqual(
     execution,
   );
   expect(execution[1].getAttribute("aria-expanded")).toBe("true");
@@ -288,7 +288,7 @@ it("does not correlate equal question text or provider call IDs", () => {
 
 it.each(["failed", "denied", "interrupted"] as const)(
   "keeps %s questions visible without inferring an answer",
-  (outcome) => {
+  async (outcome) => {
     render(
       <ConversationTranscript
         threadId="one"
@@ -307,7 +307,15 @@ it.each(["failed", "denied", "interrupted"] as const)(
     expect(question.closest("[data-execution-reader]")).toBeNull();
     expect(screen.getByText("Which scope?")).toBeTruthy();
     expect(screen.getByText("Not answered")).toBeTruthy();
-    expect(screen.getByText("Response window ended")).toBeTruthy();
+    expect(screen.getByText("No answer was submitted.")).toBeTruthy();
+    expect(screen.queryByText("Response window ended")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Questions & details" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Arguments & result" }),
+    ).toBeNull();
+    expect(await screen.findByText(/Response window ended/)).toBeTruthy();
   },
 );
 
@@ -375,10 +383,10 @@ it.each(["empty history", "partial batch"])(
     ).toBe(field);
     expect((field as HTMLInputElement).value).toBe("Retain this answer");
     fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-    await screen.findByText(/Acknowledgement unavailable/);
+    await screen.findByText(/Couldn't confirm delivery/);
     view.rerender(body(false));
     view.rerender(body(true));
-    expect(screen.getByText(/Acknowledgement unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Couldn't confirm delivery/)).toBeTruthy();
     expect(
       (
         screen.getByRole("button", {
@@ -431,7 +439,7 @@ it("keeps inline child questions and replies inside execution without replacing 
   expect(
     screen.getByText("Root reply").closest("[data-execution-reader]"),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
   expect(
     screen.getByText("Child-only reply").closest("[data-execution-reader]"),
   ).not.toBeNull();

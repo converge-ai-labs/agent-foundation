@@ -1,90 +1,73 @@
 .page {
-  container: new-conversation / size;
+  container-type: size;
+  container-name: new-conversation conversation-page;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   height: 100%;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 8vh;
 }
-.welcome {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 32px 20px;
+.inputArea > .welcome {
+  margin: 0 0 16px;
   text-align: center;
-}
-.welcome > svg {
-  width: 48px;
-  height: 48px;
-  color: var(--a13n-secondary);
-  opacity: 0.55;
-}
-.welcome h1 {
-  max-width: 760px;
-  margin: 0;
-  font-size: clamp(22px, 2.5vw, 32px);
-  font-weight: 400;
-  line-height: 1.4;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.35;
   letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
-}
-.welcome h1 span {
-  text-decoration: underline dotted var(--a13n-border);
-  text-underline-offset: 6px;
 }
 .inputArea {
   flex-shrink: 0;
-  width: min(100%, 860px);
+  width: min(100%, 680px);
   margin: 0 auto;
-  padding-bottom: 8px;
 }
-@container new-conversation (max-height: 520px) {
-  .welcome {
+.inputArea > section {
+  width: 100%;
+}
+.context {
+  display: flex;
+  justify-content: center;
+  border: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  min-width: 0;
+}
+.location {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+.location > svg {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--a13n-secondary);
+  pointer-events: none;
+}
+.location > button {
+  max-width: 300px;
+  width: auto;
+  min-width: 150px;
+  height: 32px;
+  padding-inline: 32px 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+@container new-conversation (max-height: 320px) {
+  .inputArea > .welcome {
     display: none;
   }
   .inputArea {
     margin-top: auto;
   }
-}
-.context {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 20px;
-  margin: 0 4px 6px;
-  padding: 0 4px;
-  border: 0;
-}
-.context > * {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-}
-.location {
-  width: 320px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  max-width: min(320px, 100%);
-}
-.location > svg {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  width: 18px;
-  height: 18px;
-}
-.location > button {
-  width: 100%;
-  min-width: 0;
-  height: 32px;
-  padding-inline: 6px;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
 }
 .mode {
   display: inline-flex;
@@ -96,7 +79,7 @@
   height: 32px;
   padding-inline: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   box-shadow: none;
 }
@@ -110,12 +93,13 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  margin: 0 8px 12px;
-  padding: 12px 14px;
+  gap: 12px;
+  width: min(var(--harness-reading-width), 100% - 84px);
+  margin: 0 auto 12px;
+  padding: 12px 12px;
   border-radius: 12px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -133,14 +117,16 @@
   text-decoration: underline;
 }
 .recoveryStatus {
-  margin: 0 12px 12px;
+  width: min(var(--harness-reading-width), 100% - 84px);
+  margin: 0 auto 12px;
+  padding-inline: 12px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .setup {
   display: inline-block;
-  margin: 10px 8px;
-  font-size: 13px;
+  margin: 12px 8px;
+  font-size: 14px;
 }
 .srOnly {
   position: absolute;
@@ -150,14 +136,15 @@
   clip-path: inset(50%);
 }
 @media (max-width: 600px) {
-  .welcome {
-    gap: 16px;
-    padding: 24px 8px;
+  .page {
+    justify-content: flex-start;
+    padding: 12vh 0 0;
+  }
+  .inputArea > .welcome {
+    font-size: 20px;
   }
   .context {
     gap: 8px;
-    padding-inline: 10px;
-    margin-inline: 6px;
   }
   .location {
     max-width: 100%;
@@ -170,4 +157,12 @@
 
 .choicePopup {
   min-width: min(300px, calc(100vw - 32px));
+}
+
+@container new-conversation (max-width: 600px) {
+  .context,
+  .projectNotice,
+  .recoveryStatus {
+    width: 100%;
+  }
 }

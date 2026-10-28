@@ -199,10 +199,90 @@ function mount() {
   );
 }
 
+it.each([false, true])(
+  "keeps model overrides while navigating compact option pages (mobile: %s)",
+  async (onMobile) => {
+    mobile = onMobile;
+    const user = userEvent.setup();
+    mount();
+    await user.click(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Thinking" }));
+    await user.click(screen.getByRole("button", { name: "Low" }));
+    expect(draft.controls).toEqual({ thinking: "low" });
+    expect(
+      screen.getByRole("button", { name: "Thinking" }).textContent,
+    ).toContain("Low");
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Fast mode" }));
+    expect(draft.controls).toEqual({ thinking: "low", fast: true });
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Standard mode" }));
+    expect(draft.controls.fast).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Use model speed" }));
+    expect(draft.controls).toEqual({ thinking: "low", fast: null });
+    await user.keyboard("[Escape]");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull(),
+    );
+    expect(draft.submission.kind).toBe("idle");
+  },
+);
+
+it.each([false, true])(
+  "distinguishes inherited and explicit agents with long names (mobile: %s)",
+  async (onMobile) => {
+    mobile = onMobile;
+    const user = userEvent.setup();
+    const onAgentChange = vi.fn();
+    const name = "OpenAI GPT-6 Astra Coding";
+    render(
+      <ThreadRunChoices
+        catalog={{
+          ...catalog,
+          agents: [{ ...catalog.agents[0], name }],
+        }}
+        agentId=""
+        defaultAgentId="writer"
+        disabled={false}
+        controls={{}}
+        onAgentChange={onAgentChange}
+        onModelChange={() => {}}
+        onControlsChange={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Agent" }));
+    const inherited = screen.getByRole("button", {
+      name: /OpenAI GPT-6 Astra Coding\s*Default/,
+    });
+    const explicit = screen.getByRole("button", {
+      name: /OpenAI GPT-6 Astra Coding\s*writer/,
+    });
+    expect(inherited.getAttribute("aria-pressed")).toBe("true");
+    expect(explicit.getAttribute("aria-pressed")).toBe("false");
+    await user.click(explicit);
+    expect(onAgentChange).toHaveBeenCalledWith("writer");
+    await user.click(screen.getByRole("button", { name: "Agent" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: /OpenAI GPT-6 Astra Coding\s*Default/,
+      }),
+    );
+    expect(onAgentChange).toHaveBeenLastCalledWith("");
+  },
+);
+
 it("edits working folders in-place, cancels without applying, and locks pending selections", async () => {
   mobile = true;
   const user = userEvent.setup();
   mount();
+  if (!screen.queryByRole("button", { name: "Environments" }))
+    await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   const folder = screen.getByDisplayValue("/workspace");
@@ -210,12 +290,17 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.type(folder, "/changed");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(draft.environment).toBeUndefined();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Environments" })).toBeNull(),
+  );
+  if (!screen.queryByRole("button", { name: "Environments" }))
+    await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
   const restoredFolder = screen.getByDisplayValue("/workspace");
   await user.clear(restoredFolder);
   await user.type(restoredFolder, "/accepted");
-  await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+  await user.click(screen.getByRole("button", { name: "Use for next run" }));
   expect(draft.environment?.local_roots).toEqual(["/accepted"]);
   await user.click(
     screen.getByRole("button", { name: "Agent & Model settings" }),
@@ -232,6 +317,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.click(
     screen.getByRole("button", { name: "Close Agent & Model settings" }),
   );
+  await user.click(screen.getByRole("button", { name: "Chat options" }));
   expect(
     (
       screen.getByRole("button", {
@@ -240,9 +326,8 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     ).disabled,
   ).toBe(true);
   expect(
-    (screen.getByRole("button", { name: "Goal" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+    screen.getByRole("switch", { name: "Goal" }).getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 
 it.each([false, true])(
@@ -253,6 +338,8 @@ it.each([false, true])(
     const user = userEvent.setup();
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
+    if (!screen.queryByRole("button", { name: "Environments" }))
+      await user.click(screen.getByRole("button", { name: "Chat options" }));
     await user.click(screen.getByRole("button", { name: "Environments" }));
     const folder = screen.getByDisplayValue("/workspace");
     await user.clear(folder);
@@ -264,10 +351,12 @@ it.each([false, true])(
     expect(await screen.findByDisplayValue("/staged")).toBeTruthy();
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(draft.environment).toEqual({ environment_profile_id: "sandbox" });
-    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+    await user.click(screen.getByRole("button", { name: "Use for next run" }));
     expect(draft.environment?.local_roots).toEqual(["/staged"]);
     expect(draft.environment?.environment_profile_id).toBe("sandbox");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Environments" })).toBeNull(),
+    );
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   },
 );

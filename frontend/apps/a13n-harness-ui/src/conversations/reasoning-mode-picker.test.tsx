@@ -85,7 +85,16 @@ it("does not interpret provider default as Standard and locks changes when disab
       onChange={change}
     />,
   );
-  expect(screen.getByText("Provider default")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Default" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("button", { name: "Standard" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
   await user.click(screen.getByRole("button", { name: "Pro" }));
   expect(change).not.toHaveBeenCalled();
 });

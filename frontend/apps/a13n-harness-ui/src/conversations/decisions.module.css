@@ -6,7 +6,7 @@
 }
 .request + .request {
   border-top: 1px solid var(--a13n-border);
-  padding-top: 20px;
+  padding-top: 24px;
 }
 .heading,
 .actions {
@@ -17,7 +17,7 @@
 }
 .heading {
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 14px;
 }
 .heading h3 {
   font-size: 14px;
@@ -25,7 +25,7 @@
 }
 .tool,
 .hint {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   overflow-wrap: anywhere;
 }
@@ -46,12 +46,14 @@
   background: var(--a13n-surface);
   padding: 12px;
   border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .context {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
-  font-size: 13px;
+  gap: 8px 16px;
+  font-size: 14px;
 }
 .context dt {
   color: var(--a13n-secondary);
@@ -59,17 +61,30 @@
 .context dd {
   overflow-wrap: anywhere;
 }
-.evidence summary {
-  font-size: 12px;
+.evidence summary,
+.denialReason summary {
+  font-size: 14px;
   cursor: pointer;
   padding-block: 4px;
 }
+.denialReason[open] > summary {
+  margin-bottom: 8px;
+}
 @media (max-width: 480px) {
+  .editor {
+    font-size: 16px;
+  }
+  .evidence summary,
+  .denialReason summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
   .context {
     grid-template-columns: 1fr;
     gap: 4px;
   }
   .context dd + dt {
-    margin-top: 6px;
+    margin-top: 8px;
   }
 }

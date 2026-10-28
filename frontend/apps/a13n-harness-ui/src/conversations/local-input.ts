@@ -61,6 +61,6 @@ export function conversationTitle(
       .join(" ")
       .trim()
       .slice(0, 160) ||
-    "Untitled conversation"
+    "Untitled chat"
   );
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import {
   cleanup,
   fireEvent,
@@ -19,7 +20,7 @@ import { FileBuffers, FileBuffer } from "./buffer";
 import { FileView } from "./file-view";
 import { NativeWorkspace } from "./workspace";
 import { Changes } from "./changes";
-import { FileOperation } from "./files";
+import { FileOperation, Files } from "./files";
 
 vi.mock("../configuration/editor", () => ({
   SourceEditor: ({
@@ -61,12 +62,14 @@ const file: Schema<"FileText"> = {
 };
 function fixture() {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
-  const get = vi.fn(async (path: string): Promise<{ data: unknown }> => {
-    if (path === "/api/status")
-      return { data: { features: { host_files: true, host_git: true } } };
-    if (path === "/api/projects") return { data: [] };
-    return { data: file };
-  });
+  const get = vi.fn(
+    async (path: string, _options?: unknown): Promise<{ data: unknown }> => {
+      if (path === "/api/status")
+        return { data: { features: { host_files: true, host_git: true } } };
+      if (path === "/api/projects") return { data: [] };
+      return { data: file };
+    },
+  );
   const post = vi.fn();
   const put = vi.fn();
   const transport = {
@@ -114,6 +117,41 @@ const attachment: Schema<"ThreadAttachment"> = {
     location: "host",
   },
 };
+it("opens file actions by keyboard and preserves files when the editor is dismissed", async () => {
+  const f = fixture();
+  f.get.mockImplementation(async (path) => ({
+    data:
+      path === "/api/status"
+        ? { features: { host_files: true, host_git: false } }
+        : {
+            entries: [file.entry],
+            directory: { revision: "directory-one" },
+            resolved_path: "/code",
+            next_offset: null,
+          },
+  }));
+  const user = userEvent.setup();
+  render(<Files directory="/code" path="" open={vi.fn()} refresh={vi.fn()} />, {
+    wrapper: f.Wrapper,
+  });
+  const actions = await screen.findByRole("button", {
+    name: "Actions for file.txt",
+  });
+  actions.focus();
+  await user.keyboard("{Enter}");
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename or move" }),
+  );
+  await screen.findByRole("dialog", { name: "Rename or move" });
+  expect(f.post).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    screen.getByRole("button", { name: /^file\.txt\s*5 B$/ }),
+  ).toBeTruthy();
+  expect(f.post).not.toHaveBeenCalled();
+  expect(f.put).not.toHaveBeenCalled();
+});
 it("adds only acknowledged attachment metadata to the original destination when navigation changes during capture", async () => {
   const f = fixture();
   let acknowledge!: (value: unknown) => void;
@@ -161,7 +199,7 @@ it("a stale capture or replaced draft never silently selects context", async () 
     return { data: { attachment } };
   });
   fireEvent.click(screen.getByText("Add to message"));
-  await screen.findByText(/shared draft was replaced/);
+  await screen.findByText(/shared draft changed/);
   expect(values(f.a.doc).attachment_ids).toEqual([]);
 });
 it("range inputs validate before HTTP and preserve exact one-based endpoints", async () => {
@@ -171,19 +209,19 @@ it("range inputs validate before HTTP and preserve exact one-based endpoints", a
     wrapper: f.Wrapper,
   });
   fireEvent.click(screen.getByLabelText("Choose line range"));
-  fireEvent.click(screen.getByText("Add selected lines to message"));
-  await screen.findByText(/Choose both one-based/);
+  fireEvent.click(screen.getByText("Attach selection"));
+  await screen.findByText(/Enter start and end line numbers/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("First line"), {
     target: { value: "2" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to message"));
-  await screen.findByText(/Choose both one-based/);
+  fireEvent.click(screen.getByText("Attach selection"));
+  await screen.findByText(/Enter start and end line numbers/);
   expect(f.post).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Last line (inclusive)"), {
     target: { value: "3" },
   });
-  fireEvent.click(screen.getByText("Add selected lines to message"));
+  fireEvent.click(screen.getByText("Attach selection"));
   await waitFor(() =>
     expect(f.post).toHaveBeenCalledWith(
       expect.anything(),
@@ -275,7 +313,7 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
   }));
   render(
     <NativeWorkspace onFocus={vi.fn()} unauthorized={vi.fn()}>
-      <p>Conversation stays mounted</p>
+      <p>Chat stays mounted</p>
     </NativeWorkspace>,
     { wrapper: f.Wrapper },
   );
@@ -287,7 +325,7 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
   expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
-  expect(screen.getByText("Conversation stays mounted")).toBeTruthy();
+  expect(screen.getByText("Chat stays mounted")).toBeTruthy();
   expect(f.get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,
   );
@@ -313,6 +351,95 @@ it("missing Git is an explicit unavailable view, not a clean tree", async () => 
   );
 });
 
+it("filters changed files, keeps pagination scoped, and exposes ignored files in the filter menu", async () => {
+  const f = fixture();
+  const select = vi.fn();
+  const openFile = vi.fn();
+  const repository = {
+    root: "/code",
+    git_dir: "/code/.git",
+    common_dir: "/code/.git",
+    head_oid: "head",
+    branch: "main",
+  };
+  f.get.mockImplementation(async (path, ...args) => {
+    const options = args[0] as
+      | { params?: { query?: { include_ignored?: boolean; offset?: number } } }
+      | undefined;
+    const query = options?.params?.query;
+    if (path === "/api/status")
+      return { data: { features: { host_git: true } } };
+    if (path === "/api/host/git/repository")
+      return { data: { state: "repository", repository } };
+    return {
+      data: {
+        repository,
+        revision: "status-version",
+        next_offset: query?.offset ? null : 1,
+        entries: query?.offset
+          ? []
+          : query?.include_ignored
+            ? [{ path: "cache.log", kind: "ignored" }]
+            : [
+                {
+                  path: "checkout.ts",
+                  kind: "ordinary",
+                  index_status: ".",
+                  worktree_status: "M",
+                },
+              ],
+      },
+    };
+  });
+  render(
+    <Changes
+      path="/code"
+      selected={null}
+      select={select}
+      openFile={openFile}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^checkout\.ts\s*M$/ }),
+  );
+  expect(select).toHaveBeenCalledWith(
+    { repository_path: "/code", path: "checkout.ts", comparison: "unstaged" },
+    [{ repository_path: "/code", path: "checkout.ts", comparison: "unstaged" }],
+  );
+  expect(screen.queryByText("Staged")).toBeNull();
+  expect(
+    screen.getByText("Counts and filtering cover loaded changes only."),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Filter loaded changes by path"), {
+    target: { value: "missing" },
+  });
+  expect(screen.getByText("No loaded changes match this filter.")).toBeTruthy();
+  expect(screen.queryByText("No changes in this worktree.")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Filter loaded changes by path"), {
+    target: { value: "" },
+  });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Change filters" }));
+  await user.click(
+    await screen.findByRole("menuitemcheckbox", {
+      name: "Show ignored entries",
+    }),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: /^cache\.log\s*Open in Files$/,
+    }),
+  );
+  expect(openFile).toHaveBeenCalledWith("/code/cache.log");
+  await user.click(screen.getByRole("button", { name: "Load more changes" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Load more changes" }),
+    ).toBeNull(),
+  );
+});
+
 it("nonstandard source separators offer only explicit whole-source capture, for Files and Changes", async () => {
   const f = fixture();
   f.post.mockResolvedValue({ data: { attachment } });
@@ -325,8 +452,8 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     { wrapper: f.Wrapper },
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to message")).toBeNull();
-  expect(screen.getByText(/nonstandard line separators/)).toBeTruthy();
+  expect(screen.queryByText("Attach selection")).toBeNull();
+  expect(screen.getByText(/unusual line breaks/)).toBeTruthy();
   fireEvent.click(screen.getByText("Add to message"));
   await waitFor(() => expect(f.post).toHaveBeenCalled());
   expect(f.post.mock.calls[0][1].body.start_line).toBeUndefined();
@@ -353,8 +480,54 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     />,
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Add selection to message")).toBeNull();
+  expect(screen.queryByText("Attach selection")).toBeNull();
 });
+
+it.each(["/code", "C:\\code"])(
+  "renames and moves within %s using the inspected revision",
+  async (directory) => {
+    const f = fixture();
+    const sep = directory.startsWith("C:") ? "\\" : "/";
+    const entry = { ...file.entry, path: `${directory}${sep}file.txt` };
+    f.post.mockResolvedValue({ data: {} });
+    const done = vi.fn();
+    render(
+      <FileOperation
+        operation={{ kind: "move", entry }}
+        directory={directory}
+        refresh={vi.fn()}
+        done={done}
+      />,
+      { wrapper: f.Wrapper },
+    );
+    const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+    fireEvent.focus(nameInput);
+    expect(nameInput.selectionStart).toBe(0);
+    expect(nameInput.selectionEnd).toBe(4);
+    const save = screen.getByRole("button", { name: "Save" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "renamed.txt" },
+    });
+    fireEvent.click(screen.getByText("Folder · code"));
+    fireEvent.change(screen.getByLabelText("Destination folder"), {
+      target: { value: `${directory}${sep}archive` },
+    });
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(done).toHaveBeenCalledWith(
+        `${directory}${sep}archive${sep}renamed.txt`,
+      ),
+    );
+    expect(f.post).toHaveBeenCalledWith("/api/host/files/move", {
+      body: {
+        path: entry.path,
+        destination: `${directory}${sep}archive${sep}renamed.txt`,
+        expected_revision: "first",
+      },
+    });
+  },
+);
 
 it("raw replacement uses the inspected revision and does not replay an unknown write", async () => {
   const f = fixture();
@@ -375,7 +548,7 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   fireEvent.change(screen.getByLabelText("Upload file (up to 10 MiB)"), {
     target: { files: [new File(["new bytes"], "new.bin")] },
   });
-  fireEvent.click(screen.getByText("Confirm replacement"));
+  fireEvent.click(screen.getByText("Replace file"));
   await screen.findByText("Response lost");
   expect(f.transport.fetch).toHaveBeenCalledWith(
     "/api/host/files/content?path=%2Fcode%2Ffile.txt&expected_revision=first",
@@ -383,7 +556,7 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   );
   expect(refresh).toHaveBeenCalledOnce();
   expect(done).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("Confirm replacement"));
+  fireEvent.click(screen.getByText("Replace file"));
   expect(f.transport.fetch).toHaveBeenCalledOnce();
 });
 
@@ -399,9 +572,7 @@ it("adds the exact editor selection in one deliberate action without sending a m
     { wrapper: f.Wrapper },
   );
   expect(f.post).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to message" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
   await waitFor(() =>
     expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),
   );

@@ -1,10 +1,16 @@
+import {
+  SettingsTextField as TextField,
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
+import styles from "./environments.module.css";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { DeviceDirectory, useDeviceInfo } from "./device-directory";
 import { ConnectDevice } from "./connect-device";
 import {
@@ -52,19 +58,19 @@ export function DefaultWorkingDirectory({
   const missing =
     !!selected && !choices.some((item) => item.value === selected);
   return (
-    <div className="flex flex-col gap-2">
+    <SettingsSection title="Working folder" className={styles.defaultDirectory}>
       <ChoiceField
-        label="Default working directory"
+        label="Default folder"
+        popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
-        description="Used for relative paths and commands without an explicit directory."
+        description="Used when a command or path doesn't specify a folder."
         options={[
           ...(allowUnsetDefault && !value.environment_bindings?.length
             ? [
                 {
                   value: "",
-                  label:
-                    "Keep Thread default / automatic for new conversations",
+                  label: "Use chat default",
                 },
               ]
             : []),
@@ -80,12 +86,8 @@ export function DefaultWorkingDirectory({
           ...choices,
         ]}
       />
-      {missing && (
-        <p role="alert">
-          Choose a default from the selected directories before saving.
-        </p>
-      )}
-    </div>
+      {missing && <p role="alert">Choose a default folder before saving.</p>}
+    </SettingsSection>
   );
 }
 
@@ -100,10 +102,7 @@ export function BindingSummary({
   return (
     <>
       {deviceEnvironments(bindings).map((group) => (
-        <section
-          key={group.key}
-          className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3"
-        >
+        <section key={group.key} className={styles.summaryEnvironment}>
           <p className="font-medium">
             {devices.data?.find((item) => item.id === group.deviceId)?.name ??
               group.deviceId}
@@ -114,7 +113,7 @@ export function BindingSummary({
             {directoryCount(group.directories.length)}
           </p>
           {group.directories.map((binding) => (
-            <p key={binding.alias} className="break-all">
+            <p key={binding.alias} className={styles.summaryPath}>
               {binding.working_directory}
               {binding.alias === defaultEnvironment && (
                 <span className="ml-2 text-muted-foreground">Default</span>
@@ -158,7 +157,7 @@ export function EnvironmentBindings({
   const selectedDefault = selectedWorkingDirectory(value);
   const removingDefault = removing?.alias === selectedDefault;
   return (
-    <section className="flex flex-col gap-4" aria-label="Remote environments">
+    <section className={styles.remote} aria-label="Remote environments">
       <ErrorNotice error={devices.error} />
       {deviceEnvironments(bindings).map((group) => {
         const name =
@@ -168,7 +167,7 @@ export function EnvironmentBindings({
         return (
           <section
             key={group.key}
-            className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-4"
+            className={styles.environment}
             aria-label={`${name} environment`}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -196,17 +195,14 @@ export function EnvironmentBindings({
                 </Button>
               </div>
             </div>
-            <ul className="flex min-w-0 flex-col gap-2">
+            <ul className={styles.directoryList}>
               {group.directories.map((binding) => (
-                <li
-                  key={binding.alias}
-                  className="flex items-center justify-between gap-3"
-                >
+                <li key={binding.alias} className={styles.directory}>
                   <div className="min-w-0 text-sm">
                     <p className="break-all">{binding.working_directory}</p>
                     {binding.alias === selectedDefault && (
                       <span className="text-xs text-muted-foreground">
-                        Default working directory
+                        Default folder
                       </span>
                     )}
                   </div>
@@ -239,14 +235,14 @@ export function EnvironmentBindings({
                 Add directory
               </Button>
             </div>
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Execution details</summary>
+            <details className={styles.advanced}>
+              <summary className="cursor-pointer">Run details</summary>
               <p className="mt-2">
                 {policy.permission_ceiling?.operations?.join(", ") ??
                   "Files and execution"}
               </p>
               {(policy.egress || policy.expected_boundary) && (
-                <p>Custom network or boundary requirements are retained.</p>
+                <p>Custom network and access rules are kept.</p>
               )}
               {group.directories.map((binding) => (
                 <p key={binding.alias} className="mt-1 break-all">
@@ -260,7 +256,8 @@ export function EnvironmentBindings({
       <div>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
+          size="sm"
           disabled={bindings.length >= 64}
           onClick={() => setEditing({})}
         >
@@ -274,8 +271,9 @@ export function EnvironmentBindings({
           if (!open) setEditing(undefined);
         }}
         title={editing?.group ? "Edit environment" : "Add environment"}
-        description="Choose a Device, its access policy and working directories. Changes stay in this draft until you save the enclosing settings."
-        closeLabel="Cancel"
+        size="lg"
+        description="Choose a device and folders to add to your draft."
+        closeLabel="Close"
       >
         {editing && (
           <DeviceEnvironmentEditor
@@ -305,8 +303,8 @@ export function EnvironmentBindings({
           if (!open) setRemoving(undefined);
         }}
         title="Remove directory selection?"
-        description="This removes the directory from the selection. Files, the Device connection and captured Runs stay unchanged."
-        closeLabel="Cancel"
+        description="Remove this folder from the selection? Files, the device connection and run history are kept."
+        closeLabel="Close"
         footer={
           <>
             <Button
@@ -397,52 +395,62 @@ function DeviceEnvironmentEditor({
       ),
     );
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <ChoiceField
-        label="Device"
-        placeholder="Choose a Device"
-        value={deviceId}
-        onValueChange={selectDevice}
-        options={[
-          ...(deviceId && !availableDevices.some((item) => item.id === deviceId)
-            ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
-            : []),
-          ...availableDevices.map((item) => ({
-            value: item.id,
-            label: item.name,
-          })),
-        ]}
-      />
-      <ConnectDevice
-        label="Connect new Device"
-        onConnected={(device) => {
-          setConnected(device);
-          selectDevice(device.id);
-        }}
-      />
-      <ChoiceField
-        label="Allowed actions"
-        value={permission}
-        onValueChange={setPermission}
-        placeholder="Keep existing permissions"
-        options={[
-          { value: "read_only", label: "Read only" },
-          { value: "full", label: "Full control" },
-        ]}
-        description={
-          permission === "full"
-            ? "Applies to every directory below. Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to these directories; screenshots may be sent to the model and saved in history."
-            : permission === "read_only"
-              ? "Applies to every directory below. Read and browse files without changes, commands or desktop access."
-              : "Existing permissions stay unchanged for every directory unless you choose an option."
-        }
-      />
+    <div className={styles.editor}>
+      <SettingsSection>
+        <ChoiceField
+          label="Device"
+          placeholder={
+            availableDevices.length ? "Choose a device" : "No devices connected"
+          }
+          disabled={!availableDevices.length && !deviceId}
+          description={
+            !availableDevices.length && !deviceId
+              ? "Connect a device to add a remote environment."
+              : undefined
+          }
+          value={deviceId}
+          onValueChange={selectDevice}
+          options={[
+            ...(deviceId &&
+            !availableDevices.some((item) => item.id === deviceId)
+              ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
+              : []),
+            ...availableDevices.map((item) => ({
+              value: item.id,
+              label: item.name,
+            })),
+          ]}
+        />
+        <ChoiceField
+          label="Allowed actions"
+          value={permission}
+          onValueChange={setPermission}
+          placeholder="Keep existing permissions"
+          options={[
+            { value: "read_only", label: "Read only" },
+            { value: "full", label: "Full control" },
+          ]}
+          description={
+            permission === "full"
+              ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
+              : permission === "read_only"
+                ? "Read files in the folders below. No file changes, commands or desktop access."
+                : "Keep each folder's current permissions unless you choose an option."
+          }
+        />
+      </SettingsSection>
+      <div>
+        <ConnectDevice
+          label="Connect new device"
+          onConnected={(device) => {
+            setConnected(device);
+            selectDevice(device.id);
+          }}
+        />
+      </div>
       {deviceId &&
         directories.map((directory, index) => (
-          <div
-            key={`${deviceId}:${index}`}
-            className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/40 p-3"
-          >
+          <div key={`${deviceId}:${index}`} className={styles.draftDirectory}>
             <DeviceDirectory
               deviceId={deviceId}
               value={directory.path}
@@ -453,10 +461,8 @@ function DeviceEnvironmentEditor({
                   : `Working directory ${index + 1}`
               }
             />
-            <details>
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                Advanced routing
-              </summary>
+            <details className={styles.advanced}>
+              <summary>Advanced routing</summary>
               <TextField
                 label={
                   index === 0
@@ -465,7 +471,7 @@ function DeviceEnvironmentEditor({
                 }
                 value={directory.alias}
                 onChange={(alias) => updateDirectory(index, { alias })}
-                description="An internal routing name. Leave new aliases empty to generate them automatically."
+                description="An internal name for this connection. Leave blank to generate one."
               />
             </details>
             {index >= initial.length &&
@@ -495,12 +501,12 @@ function DeviceEnvironmentEditor({
             }
           >
             <PlusIcon />
-            Add another directory
+            Add folder
           </Button>
         </div>
       )}
       <ErrorNotice error={error} />
-      <div className="flex justify-end gap-2">
+      <div data-a13n-form-actions className={styles.actions}>
         <Button type="button" variant="outline" onClick={cancel}>
           Cancel
         </Button>

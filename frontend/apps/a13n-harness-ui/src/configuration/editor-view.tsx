@@ -13,6 +13,45 @@ import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+
+const sourceHighlighting = syntaxHighlighting(
+  HighlightStyle.define([
+    {
+      tag: [tags.keyword, tags.bool, tags.null],
+      color: "var(--harness-code-keyword)",
+    },
+    { tag: [tags.string, tags.regexp], color: "var(--harness-code-string)" },
+    {
+      tag: [tags.number, tags.atom, tags.propertyName, tags.typeName],
+      color: "var(--harness-code-value)",
+    },
+    {
+      tag: tags.definition(tags.variableName),
+      color: "var(--harness-code-definition)",
+    },
+    {
+      tag: tags.comment,
+      color: "var(--harness-code-comment)",
+      fontStyle: "italic",
+    },
+    {
+      tag: tags.heading,
+      color: "var(--harness-code-definition)",
+      fontWeight: "600",
+    },
+    {
+      tag: tags.link,
+      color: "var(--harness-code-value)",
+      textDecoration: "underline",
+    },
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: tags.strong, fontWeight: "600" },
+    { tag: tags.deleted, color: "var(--harness-code-deletion)" },
+    { tag: tags.inserted, color: "var(--harness-code-string)" },
+  ]),
+);
 
 export type EditorPosition = {
   anchor: number;
@@ -89,7 +128,7 @@ export function SourceEditor({
       parent: host.current,
       doc: value,
       extensions: [
-        basicSetup,
+        sourceHighlighting,
         filename ? fileLanguage(filename) : language === "yaml" ? yaml() : [],
         wrapMode.current.of(wrap ? EditorView.lineWrapping : []),
         keymap.of([
@@ -103,6 +142,7 @@ export function SourceEditor({
           },
           { key: "Mod-g", run: gotoLine },
         ]),
+        basicSetup,
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
         EditorView.contentAttributes.of({ "aria-label": label }),
@@ -136,14 +176,20 @@ export function SourceEditor({
         }),
         EditorView.theme({
           "&": {
-            fontSize: "13px",
-            ...(fill ? { height: "100%" } : {}),
+            fontSize: "12px",
+            ...(fill
+              ? { height: "100%" }
+              : {
+                  border: "1px solid var(--a13n-border)",
+                  borderRadius: "6px",
+                  overflow: "hidden",
+                }),
             backgroundColor: "var(--a13n-canvas)",
             color: "var(--a13n-text)",
           },
           ".cm-content": {
             fontFamily: "var(--a13n-mono)",
-            minHeight: fill ? "100%" : "240px",
+            minHeight: fill ? "100%" : "160px",
           },
           ".cm-gutters": {
             backgroundColor: "var(--a13n-surface)",
@@ -154,8 +200,32 @@ export function SourceEditor({
             backgroundColor: "var(--a13n-surface)",
           },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
+          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+            {
+              backgroundColor: "var(--a13n-selected)",
+            },
+          ".cm-panels, .cm-tooltip": {
+            backgroundColor: "var(--a13n-elevated)",
+            color: "var(--a13n-text)",
+            borderColor: "var(--a13n-border)",
+          },
+          ".cm-textfield, .cm-button": {
+            background: "var(--a13n-surface)",
+            color: "var(--a13n-text)",
+            border: "1px solid var(--a13n-border)",
+            borderRadius: "4px",
+            minHeight: "32px",
+            padding: "4px 8px",
+            font: "inherit",
+          },
+          ".cm-button:hover": { background: "var(--a13n-hover)" },
+          ".cm-foldPlaceholder": {
+            backgroundColor: "var(--a13n-surface)",
+            color: "var(--a13n-secondary)",
+            borderColor: "var(--a13n-border)",
+          },
           ".cm-scroller": {
-            maxHeight: fill ? "none" : "560px",
+            maxHeight: fill ? "none" : "min(400px, 50dvh)",
             overflow: "auto",
           },
         }),

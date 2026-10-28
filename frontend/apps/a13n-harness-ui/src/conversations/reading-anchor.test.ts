@@ -32,7 +32,7 @@ it("falls back to the input when the anchored process row is collapsed", () => {
   expect(reader.scrollTop).toBe(364);
 });
 
-it("keeps nested execution anchors separate from the conversation anchor", () => {
+it("keeps nested execution anchors separate from the chat anchor", () => {
   const reader = document.createElement("div");
   reader.innerHTML =
     '<section data-turn-id="one"><div data-execution-reader><div data-reading-anchor="step"></div></div><div data-reading-anchor="answer"></div></section>';

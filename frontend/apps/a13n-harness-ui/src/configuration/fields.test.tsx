@@ -90,13 +90,13 @@ it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enab
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
   const user = userEvent.setup();
-  const sidekick = await screen.findByRole("combobox", { name: "Sidekick" });
-  expect(sidekick.textContent).toContain("Disabled");
+  const sidekick = await screen.findByRole("switch", { name: "Sidekick" });
+  expect(sidekick.getAttribute("aria-checked")).toBe("false");
   expect(screen.queryByRole("combobox", { name: "Sidekick agent" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
   expect(screen.getByTestId("source").textContent).toBe(initial);
   await user.click(sidekick);
-  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  await user.click(screen.getByText("Subagent defaults"));
   expect(
     parse(screen.getByTestId("source").textContent!).webui.sidekick,
   ).toEqual({});
@@ -174,11 +174,9 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   renderFields(initial);
   expect(screen.getByTestId("source").textContent).toBe(initial);
   const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Default folder" }));
   await user.click(
-    screen.getByRole("combobox", { name: "Default working directory" }),
-  );
-  await user.click(
-    await screen.findByRole("option", { name: "Local · Thread files" }),
+    await screen.findByRole("option", { name: "Local · Chat files" }),
   );
   let value = parse(screen.getByTestId("source").textContent ?? "");
   expect(value.defaults).toEqual({
@@ -187,7 +185,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Explicitly select no added environments",
+      name: "Local only",
     }),
   );
   value = parse(screen.getByTestId("source").textContent ?? "");
@@ -198,7 +196,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Leave Thread environments and default unchanged",
+      name: "Keep current",
     }),
   );
   expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual(
@@ -226,7 +224,7 @@ it("allows the last local Project root to be removed only with Device bindings",
   expect(
     (
       screen.getByRole("button", {
-        name: "Leave Thread environments and default unchanged",
+        name: "Keep current",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -306,23 +304,25 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
   renderFields(initial);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("combobox", { name: "File memory" })).textContent,
-  ).toContain("Enabled");
+    (await screen.findByRole("switch", { name: "File memory" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
   expect(
-    screen.getByRole("combobox", { name: "Automatic organization" })
-      .textContent,
-  ).toContain("Enabled");
+    screen
+      .getByRole("switch", { name: "Automatic organization" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  await user.click(screen.getByText("Memory updates"));
   expect(screen.getByTestId("source").textContent).toBe(initial);
   fireEvent.change(
-    screen.getByRole("textbox", { name: "Organization instructions" }),
+    screen.getByRole("textbox", { name: "Update instructions" }),
     { target: { value: "Preserve decisions and preferences." } },
   );
   await user.click(
-    screen.getByRole("combobox", { name: "Automatic organization" }),
+    screen.getByRole("switch", { name: "Automatic organization" }),
   );
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
-  await user.click(screen.getByRole("combobox", { name: "File memory" }));
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("switch", { name: "File memory" }));
   expect(parse(screen.getByTestId("source").textContent!).memory).toEqual({
     enabled: false,
     auto_organize: {
@@ -331,18 +331,15 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
       instructions: "Preserve decisions and preferences.",
     },
   });
-  expect(
-    screen.queryByRole("combobox", { name: "Organization model" }),
-  ).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Update model" })).toBeNull();
 });
 
 it("defaults organization to the global Agent model without rewriting YAML", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);
   expect(
-    (await screen.findByRole("combobox", { name: "Organization model" }))
-      .textContent,
-  ).toContain("Use global default Agent's model");
+    (await screen.findByRole("combobox", { name: "Update model" })).textContent,
+  ).toContain("Use default agent model");
   expect(screen.getByTestId("source").textContent).toBe(initial);
 });
 
@@ -352,11 +349,11 @@ it("can clear an organization override to follow the global Agent model", async 
   );
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("combobox", { name: "Organization model" }),
+    await screen.findByRole("combobox", { name: "Update model" }),
   );
   await user.click(
     await screen.findByRole("option", {
-      name: "Use global default Agent's model",
+      name: "Use default agent model",
     }),
   );
   expect(
@@ -372,17 +369,15 @@ it("edits Agent working state without losing custom configuration", async () => 
   renderFields(initial);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("checkbox", { name: "Tasks" })).getAttribute(
+    (await screen.findByRole("switch", { name: "Tasks" })).getAttribute(
       "aria-checked",
     ),
   ).toBe("true");
   expect(
-    screen
-      .getByRole("checkbox", { name: "Notes" })
-      .getAttribute("aria-checked"),
+    screen.getByRole("switch", { name: "Notes" }).getAttribute("aria-checked"),
   ).toBe("false");
   expect(screen.getByTestId("source").textContent).toBe(initial);
-  screen.getByRole("checkbox", { name: "Tasks" }).focus();
+  screen.getByRole("switch", { name: "Tasks" }).focus();
   await user.keyboard(" ");
   expect(
     parse(screen.getByTestId("source").textContent!).capabilities[0]
@@ -395,6 +390,7 @@ it("allows typing multiple skill directories and preserves advanced options", as
     'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: skills\n    configuration: {roots: [], custom: keep}\n',
   );
   const user = userEvent.setup();
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   const roots = await screen.findByRole("textbox", {
     name: "Additional skill directories",
   });
@@ -412,10 +408,11 @@ it("edits web options without replacing nested custom constraints", async () => 
     'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: web\n    configuration:\n      search: {mode: auto, allowed_domains: [example.com]}\n      download: {max_bytes: 1234}\n',
   );
   const user = userEvent.setup();
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   await user.click(await screen.findByText("Web options"));
   await user.click(screen.getByRole("combobox", { name: "Web search" }));
   await user.click(await screen.findByRole("option", { name: "Host search" }));
-  await user.click(screen.getByRole("checkbox", { name: "Download files" }));
+  await user.click(screen.getByRole("switch", { name: "Download files" }));
   expect(
     parse(screen.getByTestId("source").textContent!).capabilities[0]
       .configuration,

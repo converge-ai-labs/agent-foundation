@@ -12,6 +12,7 @@ import {
   PopoverTitle,
 } from "a13n-ui";
 import { useOperation, useThreads } from "./queries";
+import { HelpTip } from "../shell/help-tip";
 import { ErrorNotice } from "../shell/ui";
 import {
   elapsedTime,
@@ -21,6 +22,8 @@ import {
 } from "./usage";
 import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
+import { useDebug } from "../shell/debug";
+import { ArrowClockwise } from "@phosphor-icons/react";
 
 export function ComposerStatus({
   threadId,
@@ -33,6 +36,7 @@ export function ComposerStatus({
   busy?: boolean;
   liveTokens?: number;
 }) {
+  const { enabled: debug } = useDebug();
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
   const row = activity.data?.pages
@@ -91,90 +95,110 @@ export function ComposerStatus({
   return (
     <div className={styles.bar}>
       <div className={styles.metrics}>
-        {mainAccount && (
+        {debug && mainAccount && (
           <span
             className={styles.metric}
             title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
           >
-            MAIN <strong>{mainAccount.account_name}</strong>
+            Account <strong>{mainAccount.account_name}</strong>
           </span>
         )}
         {(
           [
-            ["Tokens", summary.tokens, "Conversation usage"],
+            ["Tokens", summary.tokens, "Chat usage"],
             ["Context", summary.context, "Context usage"],
-            ["Cost", summary.cost, "Conversation usage"],
-            ["Cache", summary.cache, "Conversation usage"],
+            ["Cost", summary.cost, "Chat usage"],
+            ["Cache", summary.cache, "Chat usage"],
           ] as const
-        ).map(([label, value, title]) => (
-          <Popover
-            key={label}
-            open={detail === label}
-            onOpenChange={(open) =>
-              setDetail((current) =>
-                open ? label : current === label ? null : current,
-              )
-            }
-          >
-            <PopoverTrigger
-              className={styles.metric}
-              aria-label={`${label} details`}
+        )
+          .filter(([label]) => debug || label !== "Tokens")
+          .map(([label, value, title]) => (
+            <Popover
+              key={label}
+              open={detail === label}
+              onOpenChange={(open) =>
+                setDetail((current) =>
+                  open ? label : current === label ? null : current,
+                )
+              }
             >
-              {label} <strong>{value}</strong>
-            </PopoverTrigger>
-            <PopoverPopup side="top" align="start" className={styles.popup}>
-              <PopoverTitle>{title}</PopoverTitle>
-              {label === "Context" ? (
-                <ContextDetails
-                  used={tokens}
-                  capacity={context.data?.context_window}
-                />
-              ) : (
-                <UsageDetails usage={usage.data} />
-              )}
-              <ErrorNotice
-                error={
-                  usage.error ||
-                  context.error ||
-                  inspection.error ||
-                  observed.error ||
-                  activity.error
-                }
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={usage.isFetching || context.isFetching}
-                onClick={() => {
-                  void usage.refetch();
-                  void context.refetch();
-                  void inspection.refetch();
-                  if (receipt) void observed.refetch();
-                  else void activity.refetch();
-                }}
+              <PopoverTrigger
+                className={styles.metric}
+                aria-label={`${label} details`}
               >
-                Refresh usage
-              </Button>
-            </PopoverPopup>
-          </Popover>
-        ))}
+                {label === "Cost" && !debug ? "Usage" : label}{" "}
+                <strong>{value}</strong>
+              </PopoverTrigger>
+              <PopoverPopup side="top" align="end" className={styles.popup}>
+                <div className={styles.popupHeader}>
+                  <PopoverTitle>{title}</PopoverTitle>
+                  {label === "Context" && (
+                    <HelpTip label="About context">
+                      Tokens in the latest request. Chat totals are in Usage.
+                      The context limit depends on the model.
+                    </HelpTip>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Refresh usage"
+                    title="Refresh usage"
+                    loading={usage.isFetching || context.isFetching}
+                    onClick={() => {
+                      void usage.refetch();
+                      void context.refetch();
+                      void inspection.refetch();
+                      if (receipt) void observed.refetch();
+                      else void activity.refetch();
+                    }}
+                  >
+                    <ArrowClockwise />
+                  </Button>
+                </div>
+                <div className={styles.popupBody}>
+                  {label === "Context" ? (
+                    <ContextDetails
+                      used={tokens}
+                      capacity={context.data?.context_window}
+                    />
+                  ) : (
+                    <UsageDetails usage={usage.data} />
+                  )}
+                  <ErrorNotice
+                    inline
+                    error={
+                      usage.error ||
+                      context.error ||
+                      inspection.error ||
+                      observed.error ||
+                      activity.error
+                    }
+                  />
+                </div>
+              </PopoverPopup>
+            </Popover>
+          ))}
+        {(debug || active) && (
+          <span
+            className={styles.metric}
+            title="Elapsed time for the current or latest operation."
+          >
+            {active ? "Working" : "Time"}{" "}
+            <strong>{elapsedTime(operation, now)}</strong>
+          </span>
+        )}
         <span
           className={styles.metric}
-          title="Elapsed time for the current or latest operation."
-        >
-          Time <strong>{elapsedTime(operation, now)}</strong>
-        </span>
-        <span
-          className={styles.metric}
-          title="Requested speed for this run. Speed changes apply to the next run; actual speed depends on the provider."
+          title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
         >
           Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
         </span>
-        {capturedAgent?.reasoning_mode &&
+        {debug &&
+          capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (
             <span
               className={styles.metric}
-              title="Captured reasoning mode request, not the next-run draft or a guarantee of provider access."
+              title="Reasoning mode requested for this run. Provider access may vary. Changes apply next time."
             >
               Mode{" "}
               <strong>

@@ -334,7 +334,7 @@ it("cancels an old continuation's whole-turn load and never mixes its late respo
   queryClient.clear();
 });
 
-it("does not read a turn already covered by the conversation window", async () => {
+it("does not read a turn already covered by the chat window", async () => {
   const GET = vi.fn();
   const { queryClient, wrapper } = turnHistoryHarness(GET);
   const hook = renderHook(() => useTurnHistory("one", "C0", turn, false), {

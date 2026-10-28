@@ -101,7 +101,7 @@ Unsynchronized edits can be lost on reload or browser crash. Synchronized text r
 
 Type `$` and a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape dismisses. Insertion does not send. `$name` remains editable text and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
 
-Use **Tasks**, **Notes**, **Subagents**, and **Processes** above the composer to inspect work without replacing your draft. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
+Use **Tasks**, **Notes**, **Subagents**, **Processes**, and **Tools** above the composer to open the corresponding activity view without replacing your draft. Counts show completed/total tasks, notes, active subagent executions, and observed running processes. In narrow chat columns, **More** contains Notes, Processes, and Tools. Closing the inspector returns focus to the entry that opened it. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
 
 Process counts cover observed running handles, excluding foreground calls. The panel shows up to 16 entries from 128 retained observations. Run completion or lost observation marks unfinished handles unavailable, not exited. Reload does not reconstruct them from saved messages.
 
@@ -118,11 +118,11 @@ Costs are recorded USD model estimates: **—** means unknown, **$0** is a known
 
 ## Agent and Model settings
 
-Open the icon beside the Agent and Model names in the composer footer. Choose an Agent, Model, Reasoning mode, Thinking level, or speed setting. The inheritance control restores the corresponding default; speed uses **Use model setting**. On phones, these controls open in a bottom sheet; **Goal**, **Coordinator**, and **Environments** remain in the composer header.
+Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.
 
 For a persistent Model choice, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
 
-Use **Clear context** beside attachments to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
+Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
 ### Thinking for the next Run
 
@@ -367,12 +367,12 @@ PNG dimensions follow the source-pixel crop, independent of preview zoom or scre
 
 ## Share a Thread or Project
 
-1. Choose **Share** beside the Thread microphone, or **Share Project** from the Project menu.
+1. Choose **Share** beside the Thread microphone, or **Share** from the Project menu.
 2. Select **Thread** or **Project**. Project access covers current/future Threads and ends for a Thread moved out.
-3. Choose **Can view** for history, attachments, and live output, or **Can prompt** for shared editing, uploads, sending, and steering. Prompt guests can create Threads in a shared Project using its defaults.
+3. Choose **View only** for history, attachments, and live output, or **Send messages** for shared editing, uploads, sending, and steering. Prompt guests can create Threads in a shared Project using its defaults.
 4. Select one hour, one day, or seven days, then **Create link**.
-5. **Copy link** before closing; its secret appears once. Use **Preview as guest** to inspect the guest view.
-6. Under **Active links**, edit permission and **Save**, or **Revoke** access.
+5. **Copy link** before closing; its secret appears once. Use **Open shared view** to inspect the guest view.
+6. Under **Manage links**, edit permission and **Save**, or **Revoke** access.
 
 Only give prompt links to trusted people. Their prompts use the Agent's existing tools and Environment authority, including cross-conversation tools. Link scope limits browser/API access, not Agent execution.
 
@@ -380,7 +380,7 @@ Guests cannot configure the instance, answer approvals, manage links, or use nat
 
 ## Work with a Coordinator
 
-1. Select a Project and enable **Coordinator** in the composer.
+1. Select a Project and enable **Coordinate agents** in **Chat options**.
 2. Send the objective. The conversation becomes a Coordinator; **Goal** remains a separate [option](everyday-use.md#work-toward-a-goal).
 3. Expand the Coordinator's sidebar row to inspect its workers and their independent histories.
 4. To assign work directly, choose **New worker** in its actions and send the assignment in that worker conversation.

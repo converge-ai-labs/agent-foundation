@@ -96,21 +96,13 @@ export function ThreadRow({
   );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row);
-  const needsAttention =
-    !!row.pending_decision || state === "Failed" || state === "Outcome unknown";
-  const activity = [
-    state,
+  const workerActivity =
     activeWorkerCount > 0
       ? `${activeWorkerCount} ${activeWorkerCount === 1 ? "worker" : "workers"} active`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+      : "";
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
-  const starLabel = row.thread.starred
-    ? "Unstar conversation"
-    : "Star conversation";
+  const starLabel = row.thread.starred ? "Unstar chat" : "Star chat";
   const star = useMutation({
     mutationFn: () =>
       result(
@@ -181,23 +173,6 @@ export function ThreadRow({
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
           }
         >
-          <span className={styles.threadIcon}>
-            {isCoordinator ? (
-              <CoordinatorIcon size={18} />
-            ) : (
-              <ThreadStateIcon row={row} />
-            )}
-            {unsent && (
-              <span
-                className={styles.draftMarker}
-                role="img"
-                aria-label="Draft · Unsent input"
-                title="Draft · Unsent input"
-              >
-                <PencilSimple size={10} weight="bold" aria-hidden="true" />
-              </span>
-            )}
-          </span>
           <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
             {row.thread.role === "coordinator" && title !== "Coordinator" && (
@@ -211,20 +186,32 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {needsAttention ? (
-              <small className={styles.attentionState}>
-                {isCoordinator ? activity : state}
-              </small>
-            ) : !isCoordinator && state ? (
-              <small className={styles.srOnly}>{state}</small>
-            ) : null}
-            {isCoordinator && activity && !needsAttention && (
-              <small className={styles.coordinatorActivity} title={activity}>
-                {state && <ThreadStateIcon row={row} />}
-                <span>{activity}</span>
-              </small>
-            )}
           </span>
+          {isCoordinator && workerActivity && (
+            <small
+              className={styles.coordinatorActivity}
+              title={workerActivity}
+              aria-label={workerActivity}
+            >
+              {activeWorkerCount} active
+            </small>
+          )}
+          {unsent && (
+            <span
+              className={styles.draftMarker}
+              role="img"
+              aria-label="Draft · Unsent input"
+              title="Unsent input"
+            >
+              <PencilSimple size={12} aria-hidden="true" />
+            </span>
+          )}
+          {state && (
+            <span className={styles.threadStatus} title={state}>
+              <ThreadStateIcon row={row} />
+              <span className={styles.srOnly}>{state}</span>
+            </span>
+          )}
           {unread && (
             <span
               className={styles.resultDot}
@@ -252,7 +239,7 @@ export function ThreadRow({
           <span
             className={styles.threadStar}
             role="img"
-            aria-label={`Starred conversation: ${title}`}
+            aria-label={`Starred chat: ${title}`}
             title="Starred · Shared with everyone in this project"
           >
             <Star size={12} weight="fill" aria-hidden="true" />
@@ -293,13 +280,14 @@ export function ThreadRow({
             )}
             {(
               [
-                ["rename", "Rename conversation", PencilSimple],
-                ["share", "Share conversation", ShareNetwork],
-                ["details", "Conversation details", SlidersHorizontal],
+                ["rename", "Rename chat", "Rename", PencilSimple],
+                ["share", "Share chat", "Share", ShareNetwork],
+                ["details", "Chat details", "Details", SlidersHorizontal],
               ] as const
-            ).map(([action, label, Icon]) => (
+            ).map(([action, label, caption, Icon]) => (
               <MenuItem
                 key={action}
+                aria-label={label}
                 onClick={() =>
                   navigate(
                     `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
@@ -307,7 +295,7 @@ export function ThreadRow({
                 }
               >
                 <Icon />
-                {label}
+                {caption}
               </MenuItem>
             ))}
             {row.thread.role === "ordinary" &&
@@ -318,7 +306,7 @@ export function ThreadRow({
                   disabled={fork.isPending}
                   onClick={() => fork.mutate()}
                 >
-                  <GitFork /> Fork conversation
+                  <GitFork /> Fork chat
                 </MenuItem>
               )}
             {row.thread.role === "ordinary" &&
@@ -339,8 +327,8 @@ export function ThreadRow({
               >
                 <CoordinatorIcon size={16} />
                 {row.thread.auto_followup
-                  ? "Pause automatic follow-up"
-                  : "Enable automatic follow-up"}
+                  ? "Pause follow-ups"
+                  : "Enable follow-ups"}
               </MenuItem>
             )}
             {row.thread.configuration.agent_source.kind !== "live" && (
@@ -352,9 +340,7 @@ export function ThreadRow({
                 onClick={() => archive.mutate()}
               >
                 <Archive />
-                {row.thread.archived
-                  ? "Restore conversation"
-                  : "Archive conversation"}
+                {row.thread.archived ? "Restore chat" : "Archive chat"}
               </MenuItem>
             )}
           </MenuPopup>

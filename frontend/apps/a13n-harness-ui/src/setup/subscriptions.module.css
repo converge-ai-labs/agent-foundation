@@ -1,47 +1,37 @@
 .section {
-  container: subscription-section / inline-size;
-  min-width: 0;
   display: grid;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
 }
 .heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-}
-.heading > :first-child {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-.heading > button {
-  flex-shrink: 0;
+  gap: 16px;
 }
 .heading h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 28px;
 }
-.heading p,
-.migration p {
-  margin: 6px 0 0;
+.heading p {
+  margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
-.search {
-  max-width: 300px;
+.migration p {
+  margin: 8px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
 }
 .rows {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .accountCard {
   min-width: 0;
-  padding: 20px 24px;
-  background: var(--a13n-surface);
-  border-radius: 10px;
+  padding: 12px 12px;
 }
 .accountHeader,
 .accountIdentity,
@@ -56,37 +46,34 @@
 .accountHeader {
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
 }
 .accountIdentity {
   min-width: 0;
   gap: 12px;
 }
 .accountName {
-  min-width: 0;
-  overflow-wrap: anywhere;
   flex-wrap: wrap;
   gap: 8px;
 }
 .accountMeta {
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .cardActions {
   flex-shrink: 0;
-  gap: 2px;
+  gap: 4px;
   color: var(--a13n-secondary);
 }
 .plan {
-  padding: 1px 6px;
+  padding: 1px 8px;
   border-radius: 4px;
   background: var(--a13n-elevated);
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   text-transform: capitalize;
 }
 .status {
-  gap: 5px;
+  gap: 4px;
 }
 .status::before {
   content: "";
@@ -111,7 +98,7 @@
   align-content: start;
   justify-items: start;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -120,12 +107,12 @@
 }
 .balanceValue {
   color: var(--a13n-text);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .summaryItem {
-  gap: 6px;
+  gap: 8px;
 }
 .summaryItem svg {
   flex-shrink: 0;
@@ -135,13 +122,14 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px;
-  background: var(--a13n-surface);
+  padding: 12px;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
   border-radius: 8px;
 }
 .identity {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 .identity strong {
@@ -152,7 +140,7 @@
 .identity > span,
 .usage,
 .members {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .actions,
@@ -174,7 +162,7 @@
 }
 .quotaGroup {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 .quotaLabel {
   color: var(--a13n-text);
@@ -187,12 +175,12 @@
 }
 .quotaDetail {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .meter {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .meterHeading {
@@ -203,7 +191,7 @@
 }
 .meterHeading strong {
   color: var(--a13n-text);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
 }
 .meterHeading > span:first-child {
@@ -235,18 +223,17 @@
 
 .migration summary {
   cursor: pointer;
-  font-size: 12px;
-  color: var(--a13n-secondary);
-  padding: 6px 0;
+  font-size: 14px;
+  color: var(--a13n-text);
 }
 .members > span {
   background: var(--a13n-elevated);
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 6px;
 }
 .voucherList {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -255,8 +242,9 @@
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  padding: 16px;
-  background: var(--a13n-surface);
+  padding: 12px;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
   border-radius: 8px;
 }
 .voucherRow > button {
@@ -266,7 +254,7 @@
   display: grid;
   flex: 1;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
   overflow-wrap: anywhere;
 }
 .voucherDetails strong {
@@ -276,21 +264,24 @@
 .voucherDetails p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .voucherDetails > span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .form {
   display: grid;
   gap: 16px;
 }
+.form:has(> [data-slot="settings-row"]) {
+  gap: 0;
+}
 .member {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .member > span:not(.memberNumber) {
@@ -302,31 +293,29 @@
 }
 .providerSection {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 .providerSection + .providerSection {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 .providerHeading {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .providerHeading h3,
 .groupFields h3 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
 }
 .providerHeading > span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .groupDetail {
-  container: subscription-section / inline-size;
-  min-width: 0;
   display: grid;
   gap: 24px;
 }
@@ -336,9 +325,9 @@
 }
 .groupFields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 32px;
+  gap: 24px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -346,6 +335,11 @@
 }
 .groupFields > div {
   min-width: 0;
+}
+.memberField > div > div > p {
+  padding-block: 16px 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
 }
 .member {
   padding: 12px;
@@ -367,7 +361,7 @@
 }
 .help {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   line-height: 1.6;
 }
@@ -375,7 +369,7 @@
   display: flex;
   gap: 8px 16px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: 14px;
 }
 .modelLinks a {
   color: var(--a13n-text);
@@ -384,15 +378,9 @@
 .modelLinks a:hover {
   text-decoration: underline;
 }
-.empty {
-  background: var(--a13n-surface);
-  padding: 24px;
-  border-radius: 12px;
-  color: var(--a13n-secondary);
-}
-@container subscription-section (max-width: 560px) {
+@media (max-width: 700px) {
   .accountCard {
-    padding: 14px;
+    padding: 12px;
   }
   .accountIdentity {
     gap: 8px;
@@ -441,4 +429,82 @@
 }
 .memberField > div {
   width: 100%;
+}
+
+.listToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.listToolbar > button {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.listToolbar > [data-slot="input-control"] {
+  flex: 1;
+  min-width: 0;
+  max-width: 300px;
+}
+.accountList {
+  display: grid;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: var(--a13n-canvas);
+  overflow: hidden;
+}
+.accountList > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.allowanceSummary {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.expanded {
+  transform: rotate(90deg);
+}
+.usageDetails {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.usageToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .listToolbar {
+    gap: 12px;
+  }
+  .allowanceSummary {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.legacyUsage {
+  composes: details from "../shell/workbench.module.css";
+  margin-top: 8px;
+}
+.legacyUsage > summary {
+  font-weight: 400;
+  font-size: 14px;
+}
+
+@media (max-width: 400px) {
+  .listToolbar {
+    flex-wrap: wrap;
+  }
+  .listToolbar > [data-slot="input-control"] {
+    flex-basis: 100%;
+    max-width: none;
+  }
 }

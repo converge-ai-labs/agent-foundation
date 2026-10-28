@@ -14,7 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
@@ -48,7 +48,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import TextContent, UserContent
+from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -397,8 +397,8 @@ class _Offers:
         # Whether a model request carried the input: it is in every state exported after that.
         self.requested = False
 
-    def incorporated(self, state: HarnessState) -> list[str]:
-        ids = set(steering_input_ids(state.message_history))
+    def incorporated(self, messages: Sequence[ModelMessage]) -> list[str]:
+        ids = set(steering_input_ids(messages))
         if self.requested:
             ids |= self.initial
         return [entry_id for entry_id in self.open if entry_id in ids]
@@ -723,7 +723,9 @@ class _Attempt:
             if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
-        consumed = self.offers.incorporated(state)
+        messages = state.message_history
+        consumed = self.offers.incorporated(messages)
+        del messages
         usage = self.usage.pending()
         search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(

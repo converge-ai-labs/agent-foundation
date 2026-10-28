@@ -1,17 +1,15 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
   width: 100%;
-  max-width: 680px;
   min-width: 0;
 }
 
-.actions {
+.statusBlock {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 0;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .controls {
@@ -25,12 +23,12 @@
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
 .instructions {
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
@@ -41,18 +39,21 @@
 
 .metadata {
   display: grid;
-  gap: 6px;
-  font-size: 12px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px 24px;
+  padding-block: 12px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .metadata dt {
-  margin-top: 8px;
   color: var(--a13n-secondary);
 }
 
 .metadata dd {
   margin: 0;
   overflow-wrap: anywhere;
+  text-align: right;
 }
 
 @media (max-width: 600px) {

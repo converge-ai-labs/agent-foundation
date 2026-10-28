@@ -1,4 +1,9 @@
-import { ChoiceField } from "a13n-ui";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
+import styles from "./environments.module.css";
+
 import type { Schema } from "../transport/client";
 import {
   BindingSummary,
@@ -43,21 +48,18 @@ export function EnvironmentsEditor({
       item.profile_id === (value.environment_profile_id ?? inheritedProfile),
   );
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <section
-        className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-4"
-        aria-label="Local environment"
+    <div className={styles.editor}>
+      <SettingsSection
+        title="Local"
+        description="The computer running Harness."
       >
-        <div>
-          <h3 className="font-medium">Local · Harness server</h3>
-          <p className="text-sm text-muted-foreground">
-            {roots.length ? directoryCount(roots.length) : "Thread files only"}{" "}
-            on the computer running Harness. All local directories share this
-            mode.
-          </p>
-        </div>
         <ChoiceField
           label="Local mode"
+          description={
+            profile?.mode === "full-control"
+              ? "Runs as the server account without a sandbox."
+              : profile?.description
+          }
           value={value.environment_profile_id ?? ""}
           onValueChange={(environment_profile_id) =>
             onChange({
@@ -84,13 +86,6 @@ export function EnvironmentsEditor({
               : []),
           ]}
         />
-        {profile && (
-          <p className="text-sm text-muted-foreground">
-            {profile.mode === "full-control"
-              ? "Full Control runs as the server account, without a sandbox."
-              : profile.description}
-          </p>
-        )}
         <ProjectFolders
           compact
           roots={roots.map((path) => ({ path }))}
@@ -104,7 +99,7 @@ export function EnvironmentsEditor({
             )
           }
         />
-      </section>
+      </SettingsSection>
       <EnvironmentBindings
         bindings={value.environment_bindings ?? []}
         localRoots={roots}
@@ -135,24 +130,24 @@ export function EnvironmentsSummary({
   );
   const selected = selectedWorkingDirectory(value);
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <section className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3">
+    <div className={styles.summary}>
+      <section className={styles.summaryEnvironment}>
         <p className="font-medium">Local · Harness server</p>
         <p className="text-muted-foreground">
           {profile?.name ?? value.environment_profile_id ?? "Default mode"}
           {value.local_roots?.length
             ? ` · ${directoryCount(value.local_roots.length)}`
-            : " · Thread files only"}
+            : " · Chat files only"}
         </p>
         {(value.local_roots ?? []).map((path, index) => (
-          <p key={path} className="break-all">
+          <p key={path} className={styles.summaryPath}>
             {path}
             {localAlias(index) === selected && (
               <span className="ml-2 text-muted-foreground">Default</span>
             )}
           </p>
         ))}
-        {selected === "thread-files" && <p>Thread files · Default</p>}
+        {selected === "thread-files" && <p>Chat files · Default</p>}
       </section>
       <BindingSummary
         bindings={value.environment_bindings ?? []}

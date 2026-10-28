@@ -129,7 +129,7 @@ class RunState(_Frozen):
     envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
     def to_json_bytes(self) -> bytes:
-        """Encode a complete checkpoint without re-encoding its validated message history."""
+        """Serialize the complete checkpoint, reusing the Harness's encoded history."""
         if type(self) is not RunState or type(self.harness) is not HarnessState:
             return self.model_dump_json().encode()
         harness = self.harness.to_json_bytes()

@@ -2,6 +2,31 @@
 // Its global configuration/render state must not race across messages or themes.
 let queue: Promise<unknown> = Promise.resolve();
 let serial = 0;
+// Mermaid emits width="100%" without a height, which gives an <img> a 300×150
+// default box and shrinks tall diagrams until their labels are unreadable.
+// Pin the layout's own size so the image renders at 1:1 and only scales down
+// to fit the column width.
+export function intrinsicSize(svg: string) {
+  const root = new DOMParser().parseFromString(
+    svg,
+    "image/svg+xml",
+  ).documentElement;
+  const box = root
+    .getAttribute("viewBox")
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (
+    root.nodeName !== "svg" ||
+    box?.length !== 4 ||
+    !box.every(Number.isFinite)
+  )
+    return svg;
+  root.setAttribute("width", String(Math.ceil(box[2])));
+  root.setAttribute("height", String(Math.ceil(box[3])));
+  root.style.removeProperty("max-width");
+  return new XMLSerializer().serializeToString(root);
+}
 export function renderDiagram(source: string, dark: boolean): Promise<string> {
   const render = queue.then(async () => {
     // Diagram-authored configuration and image assets would bypass the workbench's
@@ -36,7 +61,7 @@ export function renderDiagram(source: string, dark: boolean): Promise<string> {
     const { svg } = await mermaid.render(`diagram-${++serial}`, source);
     // An image document cannot execute diagram callbacks or inject styles into
     // the application. Do not bind Mermaid's optional interactive callbacks.
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(intrinsicSize(svg))}`;
   });
   queue = render.catch(() => {});
   return render;

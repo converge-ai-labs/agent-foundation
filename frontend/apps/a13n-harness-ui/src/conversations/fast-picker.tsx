@@ -1,8 +1,7 @@
-import { useId } from "react";
-import { Lightning } from "@phosphor-icons/react";
-import { Button } from "a13n-ui";
-import type { Schema } from "../transport/client";
 import { speedLabel } from "./speed-label";
+import { Button } from "a13n-ui";
+import { Check } from "@phosphor-icons/react";
+import type { Schema } from "../transport/client";
 import styles from "./composer-settings.module.css";
 
 export function FastPicker({
@@ -16,19 +15,9 @@ export function FastPicker({
   disabled?: boolean;
   onChange: (value: Schema<"SubmitRequest">["fast"]) => void;
 }) {
-  const descriptionId = useId();
   const control = model?.fast;
-  const selected =
-    value == null
-      ? control?.state
-      : value === "ultrafast"
-        ? "ultrafast"
-        : value
-          ? "on"
-          : "off";
-  const active = selected === "on";
-  const ultraActive = selected === "ultrafast";
-  const state = speedLabel(selected);
+  const active = value === true;
+  const ultraActive = value === "ultrafast";
   const unavailable =
     value === "ultrafast" ? !control?.ultrafast_supported : !control?.supported;
   const showUltrafast =
@@ -37,63 +26,64 @@ export function FastPicker({
     ultraActive;
   return (
     <section aria-label="Speed" className={styles.speedControl}>
-      <div className={styles.controlHeading}>
-        <span>Speed</span>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Use model speed"
+        title={speedLabel(control?.state)}
+        aria-pressed={value == null}
+        disabled={disabled}
+        onClick={() => onChange(null)}
+      >
+        <span>Default</span>
+        {value == null && <Check aria-hidden />}
+      </Button>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Standard mode"
+        aria-pressed={value === false}
+        disabled={disabled || !control?.supported}
+        onClick={() => onChange(false)}
+      >
+        <span>Standard</span>
+        {value === false && <Check aria-hidden />}
+      </Button>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Fast mode"
+        title={
+          control?.reason ??
+          "Faster responses may cost more and depend on provider capacity."
+        }
+        aria-pressed={active}
+        disabled={disabled || !control?.supported}
+        onClick={() => onChange(true)}
+      >
+        <span>Fast</span>
+        {active && <Check aria-hidden />}
+      </Button>
+      {showUltrafast && (
         <Button
           variant="ghost"
-          size="sm"
-          aria-label="Use model speed"
-          aria-pressed={value == null}
-          disabled={disabled}
-          onClick={() => onChange(null)}
+          className={styles.choice}
+          aria-label="Ultrafast mode"
+          aria-pressed={ultraActive}
+          title={
+            control?.ultrafast_reason ??
+            "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply."
+          }
+          disabled={disabled || !control?.ultrafast_supported}
+          onClick={() => onChange("ultrafast")}
         >
-          {value == null ? "Using model setting" : "Use model setting"}
+          <span>Ultrafast</span>
+          {ultraActive && <Check aria-hidden />}
         </Button>
-      </div>
-      <div className={styles.speedToggles}>
-        <Button
-          variant="outline"
-          size="sm"
-          className={styles.fastToggle}
-          aria-label="Fast mode"
-          aria-describedby={descriptionId}
-          aria-pressed={active}
-          disabled={disabled || !control?.supported}
-          onClick={() => onChange(!active)}
-        >
-          <Lightning aria-hidden weight={active ? "fill" : "regular"} />
-          Fast
-        </Button>
-        {showUltrafast && (
-          <Button
-            variant="outline"
-            size="sm"
-            className={styles.fastToggle}
-            aria-label="Ultrafast mode"
-            aria-describedby={descriptionId}
-            aria-pressed={ultraActive}
-            title={control?.ultrafast_reason ?? undefined}
-            disabled={disabled || !control?.ultrafast_supported}
-            onClick={() => onChange(ultraActive ? false : "ultrafast")}
-          >
-            <Lightning aria-hidden weight={ultraActive ? "fill" : "regular"} />
-            Ultrafast
-          </Button>
-        )}
-        <span className={styles.controlState}>
-          {value != null && unavailable ? "Unavailable selection" : state}
-        </span>
-      </div>
-      <p id={descriptionId} className={styles.hint}>
-        {control?.reason ??
-          (!control?.supported
-            ? "Speed controls are unavailable."
-            : "May increase cost or credit usage. Requested setting, not guaranteed speed.")}
-      </p>
-      {showUltrafast && (
+      )}
+      {!control?.supported && (
         <p className={styles.hint}>
-          {control?.ultrafast_reason ??
-            "Ultrafast requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply; account access is checked by OpenAI."}
+          {control?.reason ?? "Speed controls are unavailable."}
         </p>
       )}
       {value != null && unavailable && (

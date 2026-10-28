@@ -1,3 +1,4 @@
+import { ViewLink } from "./view-link";
 import {
   useContext,
   useEffect,
@@ -7,10 +8,11 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
-import { matchPath, useLocation } from "react-router";
+import { matchPath, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
 import {
+  DotsThree,
   Folder,
   Globe,
   GitDiff,
@@ -22,11 +24,14 @@ import {
   CaretRight,
   ArrowsOutSimple,
   ArrowsInSimple,
-  LinkSimple,
+  SidebarSimple,
+  PencilSimple,
+  SlidersHorizontal,
+  ShareNetwork,
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import {
   FileBuffers,
   basename,
@@ -51,7 +56,26 @@ import { ComposerDrafts } from "../conversations/composer";
 import { conversationTitle } from "../conversations/local-input";
 import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
+import { DebugOnly } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
+
+const PAGE_TITLES: Record<string, string> = {
+  "/": "New chat",
+  "/new": "New chat",
+  "/memory": "Memory",
+  "/usage": "Usage",
+  "/archived": "Archived chats",
+  "/setup": "Set up Harness",
+  "/projects": "Projects",
+  "/settings": "General settings",
+  "/settings/agents": "Agents",
+  "/settings/models": "Models",
+  "/settings/environments": "Environments",
+  "/settings/accounts": "Accounts & API keys",
+  "/settings/connections": "Connections",
+  "/settings/resources": "Configuration files",
+  "/settings/source": "Edit configuration",
+};
 
 export function NativeWorkspace({
   children,
@@ -72,6 +96,7 @@ export function NativeWorkspace({
   const queries = useQueryClient();
   const buffers = useContext(FileBuffers);
   const location = useLocation();
+  const navigate = useNavigate();
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
   const thread = useThread(threadId ?? "");
@@ -126,7 +151,6 @@ export function NativeWorkspace({
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
-  const [paneLink, setPaneLink] = useState("");
   const [pane, setPane] = useState<"files" | "changes" | "browser" | null>(
     null,
   );
@@ -168,7 +192,15 @@ export function NativeWorkspace({
   };
   useEffect(() => {
     const trail = folderTrail.current;
-    if (trail) trail.scrollTop = trail.scrollHeight;
+    if (!trail) return;
+    const revealCurrentFolder = () => {
+      trail.scrollLeft = trail.scrollWidth;
+      trail.dataset.clipped = String(trail.scrollLeft > 0);
+    };
+    revealCurrentFolder();
+    const observer = new ResizeObserver(revealCurrentFolder);
+    observer.observe(trail);
+    return () => observer.disconnect();
   }, [directory, pane, view]);
   useEffect(() => {
     if (projectLoading) return;
@@ -200,7 +232,6 @@ export function NativeWorkspace({
     setFileLine(undefined);
     setTerminalRequest(undefined);
     setView("page");
-    setPaneLink("");
     setTerminalId(saved?.terminalId ?? "");
   }, [projectId, projectRoot, projectLoading]);
   useEffect(() => {
@@ -243,7 +274,7 @@ export function NativeWorkspace({
         }
         if (entry.kind === "other")
           throw new Error(
-            "This is a special native entry, not regular file content. Inspect, move, or delete it through its directory entry actions.",
+            "This isn't a regular file. Use its menu in the file list to inspect, move or delete it.",
           );
       }
       if (controller.signal.aborted) return;
@@ -424,11 +455,15 @@ export function NativeWorkspace({
         thread.data?.thread,
         composers.get(threadId)?.localInputs,
       )
-    : "";
+    : (PAGE_TITLES[location.pathname] ??
+      (matchPath("/projects/:projectId", location.pathname)
+        ? "Project settings"
+        : "Page not found"));
+  const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
-    document.title = title ? `${title} · a13n harness ui` : "a13n harness ui";
+    document.title = `${title} · Harness UI`;
     return () => {
-      document.title = "a13n harness ui";
+      document.title = "Harness UI";
     };
   }, [title]);
   const runState = thread.data?.thread.root_activity?.state;
@@ -465,6 +500,14 @@ export function NativeWorkspace({
     focusCenter();
     refresh();
   };
+  // Phones keep the title readable: CSS swaps the secondary view buttons
+  // for one menu below 640px, so first paint never reflows.
+  const hasViews = Boolean(
+    status.data?.features?.host_files ||
+    status.data?.features?.host_git ||
+    status.data?.features?.host_terminal ||
+    status.data?.features?.browser,
+  );
   const show = (next: "files" | "changes" | "browser") => {
     cancelOpening();
     if (pane === next) {
@@ -500,28 +543,26 @@ export function NativeWorkspace({
       <div
         className={`${styles.workarea} ${isWorkspace && pane ? styles.withPane : ""} ${isWorkspace && terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
       >
-        <header className={styles.workToolbar}>
+        <header
+          className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
+        >
           {navigation}
           {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
-          <h1 className={styles.workspaceTitle}>
-            {threadId
-              ? conversationTitle(
-                  thread.data?.thread,
-                  composers.get(threadId)?.localInputs,
-                )
-              : isWorkspace
-                ? "New conversation"
-                : memoryMode
-                  ? "Memory"
-                  : location.pathname === "/archived"
-                    ? "Archived conversations"
-                    : location.pathname === "/usage"
-                      ? "Usage"
-                      : "Settings"}
-          </h1>
+          <div className={styles.workspaceHeading}>
+            {resolvedProject && (
+              <span className={styles.projectBreadcrumb}>
+                {resolvedProject.name}
+              </span>
+            )}
+            <ToolbarTitle className={styles.workspaceTitle}>
+              {title}
+            </ToolbarTitle>
+          </div>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
-              <EnvironmentMonitor />
+              <DebugOnly>
+                <EnvironmentMonitor />
+              </DebugOnly>
               {threadId && status.data?.features?.browser && (
                 <BrowserActivity
                   key={threadId}
@@ -532,59 +573,80 @@ export function NativeWorkspace({
                   open={() => show("browser")}
                 />
               )}
-              {status.data?.features?.host_files && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Files"
-                  aria-label="Files"
-                  aria-pressed={pane === "files"}
-                  onClick={() => show("files")}
-                >
-                  <Folder weight={pane === "files" ? "duotone" : "regular"} />
-                </Button>
-              )}
-              {status.data?.features?.host_git && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Changes"
-                  aria-label="Changes"
-                  aria-pressed={pane === "changes"}
-                  onClick={() => show("changes")}
-                >
-                  <GitDiff
-                    weight={pane === "changes" ? "duotone" : "regular"}
-                  />
-                </Button>
-              )}
-              {status.data?.features?.browser && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Browser"
-                  aria-label="Browser"
-                  aria-pressed={pane === "browser"}
-                  onClick={() => show("browser")}
-                >
-                  <Globe weight={pane === "browser" ? "duotone" : "regular"} />
-                </Button>
-              )}
-              {status.data?.features?.host_terminal && (
-                <TerminalAction
-                  label="Terminal"
-                  shortcut={terminalShortcutLabels().toggle}
-                  aria-pressed={terminalOpen}
-                  onClick={toggleTerminal}
-                >
-                  <TerminalWindow
-                    weight={terminalOpen ? "duotone" : "regular"}
-                  />
-                </TerminalAction>
+              {hasViews && (
+                <Menu>
+                  <MenuTrigger
+                    render={<Button variant="ghost" size="sm" />}
+                    className={styles.viewsMenu}
+                    aria-label="Workspace tools"
+                    title="Files, changes, browser and terminal"
+                  >
+                    <SidebarSimple />
+                    <span>Workspace</span>
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {status.data?.features?.host_files && (
+                      <MenuItem onClick={() => show("files")}>
+                        <Folder /> Files
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.host_git && (
+                      <MenuItem onClick={() => show("changes")}>
+                        <GitDiff /> Changes
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.browser && (
+                      <MenuItem onClick={() => show("browser")}>
+                        <Globe /> Browser
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.host_terminal && (
+                      <MenuItem onClick={toggleTerminal}>
+                        <TerminalWindow />
+                        {terminalOpen ? "Hide terminal" : "Terminal"}
+                      </MenuItem>
+                    )}
+                  </MenuPopup>
+                </Menu>
               )}
             </div>
           )}
           {profile}
+          {threadId && (
+            <Menu>
+              <MenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label="Chat actions"
+                title="Chat actions"
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                {(
+                  [
+                    ["rename", "Rename", PencilSimple],
+                    ["details", "Chat details", SlidersHorizontal],
+                    ["share", "Share", ShareNetwork],
+                  ] as const
+                ).map(([action, label, Icon]) => (
+                  <MenuItem
+                    key={action}
+                    onClick={() => {
+                      const search = new URLSearchParams(location.search);
+                      search.set("dialog", action);
+                      navigate({
+                        pathname: location.pathname,
+                        search: search.toString(),
+                      });
+                    }}
+                  >
+                    <Icon />
+                    {label}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+          )}
         </header>
         <div className={styles.layout}>
           <div className={styles.center}>
@@ -593,7 +655,7 @@ export function NativeWorkspace({
               tabIndex={-1}
               onFocusCapture={() => setFocusedArea("page")}
               onPointerDown={() => setFocusedArea("page")}
-              className={`${styles.page} a13n-scrollbar ${!threadId && !memoryMode ? styles.documentPage : ""}`}
+              className={`${styles.page} a13n-scrollbar ${isWorkspace ? styles.chatPage : location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
             >
               <OpenHostFile
                 value={
@@ -744,39 +806,34 @@ export function NativeWorkspace({
                   )}
                 </div>
                 <div className={styles.actions}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Share explorer view"
-                    title="Share explorer view"
-                    disabled={!nativeTarget()}
-                    onClick={() => {
+                  <ViewLink
+                    getLink={() => {
                       const target = nativeTarget();
-                      if (target)
-                        setPaneLink(
-                          new URL(
+                      return target
+                        ? new URL(
                             pageLink({ target, root_thread_id: threadId })!,
                             window.location.origin,
-                          ).href,
-                        );
+                          ).href
+                        : undefined;
                     }}
-                  >
-                    <LinkSimple />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Refresh files and changes"
-                    onClick={refresh}
-                  >
-                    <ArrowClockwise />
-                  </Button>
+                  />
+                  {view !== "file" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Refresh files and changes"
+                      onClick={refresh}
+                    >
+                      <ArrowClockwise />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label={
                       expanded ? "Restore drawer width" : "Expand drawer"
                     }
+                    className={styles.expandPane}
                     title={expanded ? "Restore drawer width" : "Expand drawer"}
                     onClick={() => setExpanded(!expanded)}
                   >
@@ -859,21 +916,25 @@ export function NativeWorkspace({
                   )}
                 </nav>
               )}
-              {(error || projects.error || thread.error || opening) && (
+              {(error || projects.error || thread.error) && (
                 <div className={styles.paneFeedback}>
                   <ErrorNotice
                     error={error || projects.error || thread.error}
                   />
-                  {opening && <p role="status">Opening path…</p>}
                 </div>
+              )}
+              {opening && (
+                <span role="status" className={styles.directoryLoading}>
+                  Opening…
+                </span>
               )}
               {!projectLoading &&
                 directory &&
-                (pane === "files" || view === "page") && (
+                ((view === "page" &&
+                  (pane === "files" || localRoots.length > 1)) ||
+                  (pane === "files" &&
+                    (localRoots.length > 1 || directory !== fileRoot))) && (
                   <div className={styles.location}>
-                    {pane === "changes" && (
-                      <strong title={root}>{project?.name}</strong>
-                    )}
                     {localRoots.length > 1 && (
                       <nav
                         className={styles.projectFolders}
@@ -925,6 +986,12 @@ export function NativeWorkspace({
                           ref={folderTrail}
                           className={styles.breadcrumbs}
                           aria-label="Current folder"
+                          onScroll={(event) => {
+                            const trail = event.currentTarget;
+                            trail.dataset.clipped = String(
+                              trail.scrollLeft > 0,
+                            );
+                          }}
                         >
                           <ol>
                             {directoryTrail.map((part, index) => (
@@ -989,13 +1056,6 @@ export function NativeWorkspace({
                   )}
                 </div>
               )}
-              {paneLink && (
-                <TextField
-                  label="Same-instance view link (access key not included)"
-                  value={paneLink}
-                  onChange={() => {}}
-                />
-              )}
 
               {projectLoading ? (
                 <p className={styles.empty} role="status">
@@ -1005,14 +1065,14 @@ export function NativeWorkspace({
                 <p className={styles.empty}>
                   {project
                     ? "This project has no folders configured."
-                    : "Open a conversation in a project to see its files and changes."}
+                    : "Open a chat in a project to see its files and changes."}
                 </p>
               ) : !status.data?.features?.host_files ? (
                 <div className={styles.empty}>
-                  <h3>Native sharing is disabled</h3>
+                  <h3>Computer sharing is off</h3>
                   <p>
-                    The server has not enabled computer sharing. Conversations
-                    remain available; this view cannot enable native access.
+                    Computer sharing is off on the server. Chats still work.
+                    Turn it on in server settings to access files and terminals.
                   </p>
                 </div>
               ) : (

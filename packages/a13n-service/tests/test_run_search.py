@@ -113,10 +113,13 @@ async def test_creation_completion_and_same_run_and_matching(service, scripted_m
     assert await ids("sessions", "南京", q=run["thread_id"]) == [run["session_id"]]
     assert await ids("runs", "南京", status="completed") == []
     vector_updates = []
+    vector_reads = []
 
     def capture(connection, cursor, statement, parameters, context, executemany):
         if statement.startswith("UPDATE runs SET") and "search_vector=" in statement:
             vector_updates.append(statement)
+        if statement.startswith("SELECT") and "runs.search_vector" in statement:
+            vector_reads.append(statement)
 
     engine = service.runtime.storage.engine.sync_engine
     event.listen(engine, "before_cursor_execute", capture)
@@ -126,6 +129,7 @@ async def test_creation_completion_and_same_run_and_matching(service, scripted_m
     finally:
         event.remove(engine, "before_cursor_execute", capture)
     assert len(vector_updates) == 1  # The unchanged model boundary and seal add no extra vector write.
+    assert vector_reads == []  # Checkpoint flushes must not fetch the deferred search vector.
     assert await ids("runs", "南京 finalanswer", status="completed") == [run["id"]]
     tail = await runs_kit.tail(service, run["id"])
     assert tail.search is not None
@@ -147,6 +151,39 @@ async def test_creation_completion_and_same_run_and_matching(service, scripted_m
     assert response.status_code == 201, response.text
     assert await ids("runs", "南京") == [run["id"]]
     assert await ids("sessions", "南京 successorinput") == []
+
+
+@pytest.mark.anyio
+async def test_run_update_returns_stamps_without_loading_search_vector(service, scripted_model, runs_kit) -> None:
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "searchable")
+    storage = service.runtime.storage
+    statements = []
+
+    def capture(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    async with transaction(storage) as session:
+        run = await session.get(RunRow, submitted["run"]["id"])
+        version, updated_at = run.version, run.updated_at
+        run.labels = {"reviewed": "yes"}
+        # Count this transaction only; runtime maintenance uses other pooled connections.
+        connection = (await session.connection()).sync_connection
+        event.listen(connection, "before_cursor_execute", capture)
+        try:
+            await session.flush()
+            assert run.version == version + 1
+            assert run.updated_at > updated_at
+            stamps = run.version, run.updated_at
+        finally:
+            event.remove(connection, "before_cursor_execute", capture)
+    assert len(statements) == 1 and statements[0].startswith("UPDATE runs SET")
+    assert "RETURNING runs.version, runs.updated_at" in statements[0]
+    async with short_session(storage) as session:
+        stored = await session.get(RunRow, submitted["run"]["id"])
+        assert (stored.version, stored.updated_at) == stamps
+    response = await service.client.get(f"{service.api}/runs", params={"text_query": "searchable"})
+    assert [row["id"] for row in response.json()["items"]] == [submitted["run"]["id"]]
 
 
 @pytest.mark.anyio

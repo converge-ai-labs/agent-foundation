@@ -208,10 +208,7 @@ function mount(selected = status) {
         <BrowserRouter>
           <Routes>
             <Route path="/setup" element={<SetupWizard status={selected} />} />
-            <Route
-              path="/threads/:threadId"
-              element={<p>First conversation</p>}
-            />
+            <Route path="/threads/:threadId" element={<p>First chat</p>} />
             <Route path="/" element={<p>Workbench</p>} />
           </Routes>
         </BrowserRouter>
@@ -256,7 +253,7 @@ async function reviewConfiguration() {
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
@@ -274,21 +271,19 @@ it("keeps a connected account ready when reselecting the current connection", as
   expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
 });
 
-it("uses server model choices, saves, reconciles and creates exactly one conversation without sending input", async () => {
+it("uses server model choices, saves, reconciles and creates exactly one chat without sending input", async () => {
   mount();
   await reviewConfiguration();
   expect(
-    screen.getByText(/Automatic memory organization uses your model/),
+    screen.getByText(/Automatic memory updates use model quota/),
   ).toBeTruthy();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
   expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
   expect(
     screen.queryByRole("button", { name: "Review configuration" }),
   ).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
-  await screen.findByText("First conversation");
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
   expect(creationId).toBe(identity);
   expect(
     calls.filter((c) => c.path === "/api/threads" && c.method === "POST"),
@@ -314,10 +309,8 @@ it.each(["_", "-"])(
     expect(readWizardDraft(status.draft_scope!)?.threadId).toBe(identity);
     mount();
     await reviewConfiguration();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save and start chatting" }),
-    );
-    await screen.findByText("First conversation");
+    fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+    await screen.findByText("First chat");
     expect(creationId).toBe(identity);
   },
 );
@@ -338,10 +331,8 @@ it("recovers lost publication and creation acknowledgements through exact reads,
   };
   mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
-  await screen.findByText("First conversation");
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
   expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
   expect(calls.filter((c) => c.path === "/api/threads")).toHaveLength(1);
 });
@@ -357,9 +348,7 @@ it("keeps partial publication pending across reload and never automatically retr
   };
   const view = mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("Not saved");
   expect(readWizardDraft(status.draft_scope!)?.pending?.files).toEqual(files);
   view.unmount();
@@ -386,7 +375,7 @@ it("automatically checks Sandbox after selection, reports failure and never down
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -447,7 +436,7 @@ it("resumes the server's active device login without starting another authorizat
   expect(JSON.stringify(localStorage)).not.toContain("ABCD-1234");
 });
 
-it("does not complete recovery into an existing conversation with different execution authority", async () => {
+it("does not complete recovery into an existing chat with different execution authority", async () => {
   const first = mount();
   await waitFor(() =>
     expect(readWizardDraft(status.draft_scope!)).toBeTruthy(),
@@ -472,12 +461,10 @@ it("does not complete recovery into an existing conversation with different exec
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Check saved setup and open conversation",
+      name: "Resume setup",
     }),
   );
-  await screen.findByText(
-    /first conversation already exists with different choices/,
-  );
+  await screen.findByText(/first chat already uses different settings/);
   expect(window.location.pathname).toBe("/setup");
   expect(readWizardDraft(status.draft_scope!)?.pending).toBeTruthy();
   expect(
@@ -522,7 +509,7 @@ it("offers affinity presets and captures a custom replacement alongside the endp
       ).disabled,
     ).toBe(false),
   );
-  await user.click(await screen.findByText("Advanced connection options"));
+  await user.click(await screen.findByRole("tab", { name: "Model defaults" }));
   const affinity = screen.getByRole("combobox", {
     name: "Gateway session affinity",
   });
@@ -684,7 +671,7 @@ it("shows download, verification and isolation progress; cancels and retries bef
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -694,9 +681,7 @@ it("shows download, verification and isolation progress; cancels and retries bef
     0,
   );
   phase = "verifying";
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry Sandbox preparation" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Retry sandbox" }));
   await waitFor(
     () =>
       expect(
@@ -720,15 +705,13 @@ it("shows download, verification and isolation progress; cancels and retries bef
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
-  await screen.findByText("First conversation");
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
   expect(calls.filter((call) => call.path === "/api/setup/apply")).toHaveLength(
     1,
   );
@@ -773,7 +756,7 @@ it("cancels obsolete Sandbox checks when changing roots or returning to Direct",
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
@@ -806,7 +789,7 @@ it("shows configuration validation failures and recovers after correcting the Pr
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -817,7 +800,7 @@ it("shows configuration validation failures and recovers after correcting the Pr
     expect(
       (
         screen.getByRole("button", {
-          name: "Save and start chatting",
+          name: "Save and start",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),

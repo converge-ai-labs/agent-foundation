@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { useContext, useEffect, type ReactNode } from "react";
@@ -113,7 +114,7 @@ vi.mock("./terminal", () => ({
       );
     }, [visible, projectId, selected, onActive]);
     return (
-      <section hidden={!visible}>
+      <section aria-label="Terminal panel" hidden={!visible}>
         <p>
           Terminal context {projectId} · {directory}
         </p>
@@ -143,6 +144,13 @@ function setup(
   buffers = new Map(),
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   const focus = vi.fn();
   const get = vi.fn(
     async (
@@ -187,7 +195,7 @@ function setup(
                   : url === "/api/threads/{thread_id}"
                     ? {
                         thread: {
-                          title: "Current conversation",
+                          title: "Current chat",
                           configuration: {
                             local_roots:
                               options?.params?.path?.thread_id === "other"
@@ -233,9 +241,7 @@ function setup(
         >
           Open peer repository
         </button>
-        <button onClick={() => navigate("/threads/other")}>
-          Another conversation
-        </button>
+        <button onClick={() => navigate("/threads/other")}>Another chat</button>
         <button
           onClick={() =>
             navigate("/settings/source?path=agents%2Ffixture.yaml")
@@ -268,7 +274,21 @@ function setup(
   );
   return { focus, get };
 }
-it("native deep links, file tabs and diff selection update personal focus without moving the selected conversation", async () => {
+async function workspaceTool(
+  name: "Files" | "Changes" | "Terminal" | "Browser",
+) {
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Workspace tools" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", {
+      name: name === "Terminal" ? /^(Terminal|Hide terminal)$/ : name,
+    }),
+  );
+}
+
+it("native deep links, file tabs and diff selection update personal focus without moving the selected chat", async () => {
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
@@ -294,7 +314,7 @@ it("native deep links, file tabs and diff selection update personal focus withou
   await screen.findByText("Editor /native/first.txt");
   fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+  await workspaceTool("Changes");
   fireEvent.click(screen.getByRole("button", { name: "Select staged diff" }));
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
@@ -305,11 +325,11 @@ it("native deep links, file tabs and diff selection update personal focus withou
     }),
   );
   expect(screen.getByTestId("chat").textContent).toContain("/threads/current");
-  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   expect(screen.getByTestId("chat").textContent).toContain("/threads/other");
 });
-it("opens an assistant Host file link in the current conversation drawer", async () => {
+it("opens an assistant Host file link in the current chat drawer", async () => {
   setup(
     "/threads/current",
     true,
@@ -319,7 +339,7 @@ it("opens an assistant Host file link in the current conversation drawer", async
     ["/native"],
     <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await workspaceTool("Files");
   await screen.findByText("Folder /native");
   fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
   fireEvent.click(screen.getByRole("link", { name: "Open report" }));
@@ -368,7 +388,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
     }),
   );
   expect(screen.getByText("Patch reviewed.txt")).toBeTruthy();
-  expect(screen.queryByText("Opening path…")).toBeNull();
+  expect(screen.queryByText("Opening…")).toBeNull();
 });
 it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
@@ -378,9 +398,9 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
       terminal_id: "terminal-current",
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await workspaceTool("Terminal");
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await workspaceTool("Terminal");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "terminal",
@@ -395,16 +415,14 @@ it("toolbar collapse and confirmed process removal clear terminal page presence"
 
 it("narrow peer navigation reveals the requested native or configuration view, not a hidden view behind Terminal", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Terminal" });
+  await screen.findByRole("button", { name: "Workspace tools" });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
   await screen.findByText("Patch reviewed.txt");
   expect(screen.getByLabelText("File explorer")).toBeTruthy();
-  expect(
-    screen
-      .getByRole("button", { name: "Terminal" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
+  expect(screen.getByLabelText("Terminal panel").hasAttribute("hidden")).toBe(
+    true,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   expect(screen.getByTestId("chat").textContent).toContain("/settings/source");
@@ -430,7 +448,7 @@ it("Settings supersedes a pending file open and returning to Chat cannot be stol
   );
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   expect(screen.queryByLabelText("Workbench views")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
   finish({ data: { kind: "file" } });
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   expect(screen.queryByRole("button", { name: "slow.txt" })).toBeNull();
@@ -447,29 +465,25 @@ it("retains open file tabs through Settings and closing the drawer returns focus
   expect(document.activeElement?.textContent).toContain("Chat remains mounted");
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   expect(screen.queryByLabelText("Open files")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  await workspaceTool("Files");
   fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
   await screen.findByText("Editor /native/first.txt");
 });
 
-it("mobile Chat and conversation navigation reveal the conversation instead of leaving it behind Terminal", async () => {
+it("mobile Chat and chat navigation reveal the chat instead of leaving it behind Terminal", async () => {
   setup("/threads/current?terminal=terminal-current");
-  await screen.findByRole("button", { name: "Terminal" });
+  await screen.findByRole("button", { name: "Workspace tools" });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-  expect(
-    screen
-      .getByRole("button", { name: "Terminal" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
-  expect(
-    screen
-      .getByRole("button", { name: "Terminal" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
+  await workspaceTool("Terminal");
+  expect(screen.getByLabelText("Terminal panel").hasAttribute("hidden")).toBe(
+    true,
+  );
+  await workspaceTool("Terminal");
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+  expect(screen.getByLabelText("Terminal panel").hasAttribute("hidden")).toBe(
+    true,
+  );
 });
 
 it.each(["Chat", "diff"])(
@@ -494,7 +508,7 @@ it.each(["Chat", "diff"])(
         screen.getByRole("button", { name: "Close file explorer" }),
       );
     else {
-      fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+      await workspaceTool("Changes");
       fireEvent.click(
         screen.getByRole("button", { name: "Select staged diff" }),
       );
@@ -555,41 +569,37 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   });
   get.mockImplementationOnce(() => pending);
   fireEvent.click(screen.getByRole("button", { name: "Open diff file" }));
-  await screen.findByText("Opening path…");
+  await screen.findByText("Opening…");
   reject(new Error("The file was deleted"));
   await screen.findByText("The file was deleted");
   expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
-  expect(
-    screen
-      .getByRole("button", { name: "Changes" })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
-  expect(screen.queryByText("Opening path…")).toBeNull();
+  expect(screen.getByLabelText("File explorer")).toBeTruthy();
+  expect(screen.queryByText("Opening…")).toBeNull();
 });
 
 it("Files, Changes and new-terminal context follow Thread roots instead of changed Project roots or remembered folders", async () => {
   localStorage.setItem("a13n-harness-ui.native-directory", "/unrelated");
   setup("/threads/current", true, undefined, "project-one", "project-two");
-  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await workspaceTool("Files");
   await screen.findByText("Folder /native");
   expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   expect(screen.queryByLabelText("Project root")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+  await workspaceTool("Changes");
   await screen.findByText("Repository /native · Diff");
-  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await workspaceTool("Terminal");
   await screen.findByText("Terminal context project-one · /native");
-  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
   await screen.findByText("Repository /other · Diff");
   await screen.findByText("Terminal context project-two · /other");
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  await workspaceTool("Files");
   await screen.findByText("Folder /other");
 });
 
-it("a conversation without a Project does not pick another Project's folder", async () => {
+it("a chat without a Project does not pick another Project's folder", async () => {
   const { get } = setup("/threads/current", true, undefined, null);
-  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await workspaceTool("Files");
   await screen.findByText(
-    "Open a conversation in a project to see its files and changes.",
+    "Open a chat in a project to see its files and changes.",
   );
   expect(screen.queryByText(/Folder \/unrelated/)).toBeNull();
   expect(
@@ -656,7 +666,7 @@ it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
       "project-one",
       [root],
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+    await workspaceTool("Files");
     await screen.findByText(`Folder ${root}`);
     expect(
       screen
@@ -728,11 +738,11 @@ it("a failed parent open keeps the actual location and a late child response can
       }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
-  await screen.findByText("Opening path…");
+  await screen.findByText("Opening…");
   fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
   await screen.findByText("Folder /native");
   finish({ data: { kind: "directory" } });
-  await waitFor(() => expect(screen.queryByText("Opening path…")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Opening…")).toBeNull());
   expect(screen.getByText("Folder /native")).toBeTruthy();
 });
 
@@ -832,11 +842,11 @@ it.each(["/?project=project-one", "/new?project=project-one"])(
   "uses the selected local Project for Files, Changes and Terminal on %s",
   async (path) => {
     setup(path);
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+    await workspaceTool("Files");
     await screen.findByText("Folder /native");
-    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    await workspaceTool("Changes");
     await screen.findByText("Repository /native · Diff");
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    await workspaceTool("Terminal");
     await screen.findByText("Terminal context project-one · /native");
   },
 );
@@ -873,19 +883,19 @@ it.each(["Message", "Shared prompt"])(
 
 it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and create with the current Project root", async () => {
   setup("/threads/current");
-  const toggle = await screen.findByRole("button", {
-    name: "Terminal",
-  });
+  await screen.findByRole("button", { name: "Workspace tools" });
+  const terminalVisible = () =>
+    screen.queryByLabelText("Terminal panel")?.hasAttribute("hidden") === false;
   const chord = { code: "Backquote", key: "`", ctrlKey: true };
   fireEvent.keyDown(window, { ...chord, repeat: true });
   fireEvent.keyDown(window, { ...chord, isComposing: true });
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(terminalVisible()).toBe(false);
   fireEvent.keyDown(window, chord);
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(terminalVisible()).toBe(true);
   fireEvent.keyDown(window, { ...chord, repeat: true });
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(terminalVisible()).toBe(true);
   fireEvent.keyDown(window, chord);
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(terminalVisible()).toBe(false);
   const dialog = document.createElement("div");
   dialog.setAttribute("role", "dialog");
   document.body.append(dialog);
@@ -893,7 +903,7 @@ it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and cr
   expect(screen.queryByText(/New terminal request/)).toBeNull();
   dialog.remove();
   fireEvent.keyDown(window, { ...chord, shiftKey: true });
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(terminalVisible()).toBe(true);
   expect(
     screen.getByText("New terminal request project-one · /native"),
   ).toBeTruthy();
@@ -907,7 +917,7 @@ it.each([false, true])(
   async (sharing) => {
     setup("/threads/current", sharing, undefined, null);
     await screen.findByText("Chat remains mounted /threads/current");
-    if (sharing) await screen.findByRole("button", { name: "Terminal" });
+    if (sharing) await screen.findByRole("button", { name: "Workspace tools" });
     expect(
       fireEvent.keyDown(window, {
         code: "Backquote",
@@ -927,10 +937,7 @@ it.each([false, true])(
 
 it("shows one resizable Browser drawer and restores Files without mounting both", async () => {
   setup("/threads/current");
-  const browser = await screen.findByRole("button", {
-    name: "Browser",
-  });
-  fireEvent.click(browser);
+  await workspaceTool("Browser");
   expect(
     await screen.findByRole("complementary", { name: "Browser panel" }),
   ).toBeTruthy();
@@ -940,7 +947,7 @@ it("shows one resizable Browser drawer and restores Files without mounting both"
   expect(
     screen.getByRole("separator", { name: "Resize supporting panel" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  await workspaceTool("Files");
   expect(
     await screen.findByRole("complementary", { name: "File explorer" }),
   ).toBeTruthy();

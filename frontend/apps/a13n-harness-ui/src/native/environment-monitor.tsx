@@ -10,6 +10,7 @@ import { Button, ModalFrame, SegmentedControl } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
+import { DebugOnly } from "../shell/debug";
 import {
   Trend,
   bytes,
@@ -102,7 +103,7 @@ export function MonitorContent() {
                 disabled={!environments.length}
               >
                 {!environments.length && (
-                  <option value="">No monitored Devices</option>
+                  <option value="">No monitored devices</option>
                 )}
                 {environments.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -145,8 +146,8 @@ export function MonitorContent() {
           )}
           {!environments.some((item) => item.transport === "stdio") && (
             <p className={styles.note}>
-              Monitoring attaches to running Envd daemons only; it never starts
-              a local runtime. Non-Envd providers do not report these metrics.
+              Metrics are available for running envd runtimes. Opening this page
+              won't start a runtime.
             </p>
           )}
         </>
@@ -164,8 +165,8 @@ export function MonitorContent() {
         />
       )}
       <p className={styles.note}>
-        Last hour · App memory only · clears on restart. Missing observations
-        remain gaps; unavailable values are shown as —.
+        Last hour · History clears on restart. Gaps mean missing samples; —
+        means unavailable.
       </p>
     </div>
   );
@@ -220,7 +221,7 @@ function Observation({
     <>
       <div className={styles.identity}>
         <details className={styles.deviceInfo}>
-          <summary>Device information</summary>
+          <summary>Device</summary>
           <p>
             {env.name} · {env.transport} · {env.id}
           </p>
@@ -238,8 +239,7 @@ function Observation({
             </p>
           )}
           <p>
-            System and cgroup metrics describe the Device, not an individual
-            Run.
+            System and cgroup metrics cover the whole device, not a single run.
           </p>
           <p>
             App collection: every {env.collection_interval_seconds ?? 60}s ·
@@ -393,7 +393,7 @@ function Observation({
             )}
           </div>
           <MetricList
-            title="Native memory"
+            title="Runtime memory"
             values={[
               ["Wired", bytes(system?.memory_wired_bytes)],
               ["Compressed", bytes(system?.memory_compressed_bytes)],
@@ -423,7 +423,7 @@ function Observation({
             chartProps={chartProps}
           />
           <details>
-            <summary>Connections and cumulative counters</summary>
+            <summary>Connections and totals</summary>
             <div className={styles.resourceSection}>
               <MetricList
                 title="Sockets"
@@ -458,7 +458,7 @@ function Observation({
             chartProps={chartProps}
           />
           <details>
-            <summary>Cumulative disk counters</summary>
+            <summary>Disk totals</summary>
             <CounterTable sample={sample} kind="disk" />
           </details>
           {filesystems.length > 0 && (
@@ -504,20 +504,19 @@ function Observation({
       {view === "daemon" && (
         <>
           <MetricList
-            title="Envd-owned resources"
+            title="Runtime resources"
             values={[
               ["Sessions", count(sample?.daemon?.sessions)],
               ["Command groups", count(sample?.daemon?.processes)],
               ["File transfers", count(sample?.daemon?.transfers)],
-              ["Carrier connections", count(sample?.daemon?.connections)],
-              ["Retained output", bytes(sample?.daemon?.retained_output_bytes)],
+              ["Connections", count(sample?.daemon?.connections)],
+              ["Output buffer", bytes(sample?.daemon?.retained_output_bytes)],
             ]}
           />
           <p className={styles.note}>
-            Live and detached Sessions, started command groups including
-            residual cleanup, nonterminal transfers, public carrier connections,
-            and actual retained output bytes. Worker observations that time out
-            remain unavailable.
+            Running and detached sessions, command groups still running or
+            cleaning up, active transfers, connections and saved output.
+            Timed-out checks are shown as unavailable.
           </p>
         </>
       )}
@@ -528,28 +527,30 @@ function Observation({
         </p>
       )}
       {sample && (
-        <details>
-          <summary>Latest observation details</summary>
-          <p className={styles.note}>
-            Pressure, limits and cumulative counters retain their native units.
-            Counters are not averaged or summed across Devices.
-          </p>
-          <pre>
-            {JSON.stringify(
-              {
-                system: sample.system,
-                cgroup_v2: sample.cgroup_v2,
-                network: sample.network,
-                disks: sample.disks,
-                connections: sample.connections,
-                daemon: sample.daemon,
-                collection_duration_ms: sample.collection_duration_ms,
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
+        <DebugOnly>
+          <details>
+            <summary>Latest check</summary>
+            <p className={styles.note}>
+              Values use their original units and are shown separately for each
+              device.
+            </p>
+            <pre>
+              {JSON.stringify(
+                {
+                  system: sample.system,
+                  cgroup_v2: sample.cgroup_v2,
+                  network: sample.network,
+                  disks: sample.disks,
+                  connections: sample.connections,
+                  daemon: sample.daemon,
+                  collection_duration_ms: sample.collection_duration_ms,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        </DebugOnly>
       )}
     </>
   );
@@ -653,8 +654,8 @@ function ResourceRates({
         ))}
       </div>
       <p className={styles.note}>
-        Rates for the selected source between App observations; sources are
-        never summed.
+        Rate between samples for the selected source. Other sources aren't
+        added.
       </p>
     </section>
   );
@@ -691,9 +692,7 @@ function CounterTable({
   return (
     <section className={styles.resourceSection}>
       <h3>{network ? "Interface counters" : "Disk counters"}</h3>
-      <p className={styles.note}>
-        Cumulative native counters, not current rates.
-      </p>
+      <p className={styles.note}>Running totals, not current rates.</p>
       {truncated && (
         <p role="status">Collection reached its 64-source limit.</p>
       )}

@@ -7,16 +7,18 @@ export function SettingsSection({
   description,
   children,
   variant = "grouped",
+  className,
 }: {
   title?: ReactNode;
   description?: ReactNode;
   children: ReactNode;
   variant?: "grouped" | "outlined" | "plain";
+  className?: string;
 }) {
   const id = useId();
   return (
     <section
-      className="@container text-sm"
+      className={cn("@container text-sm", className)}
       aria-labelledby={title ? id : undefined}
     >
       {title && (
@@ -49,6 +51,7 @@ export function SettingsSection({
               : "",
         )}
         data-slot="settings-section-content"
+        data-variant={variant}
       >
         {children}
       </div>
@@ -60,12 +63,14 @@ export function SettingsRow({
   description,
   controlId,
   stackOnNarrow = true,
+  className,
   children,
 }: {
   label: string;
   description?: ReactNode;
   controlId?: string;
   stackOnNarrow?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -75,6 +80,7 @@ export function SettingsRow({
         "flex min-w-0 items-center justify-between gap-6 py-4",
         stackOnNarrow &&
           "@max-[420px]:flex-col @max-[420px]:items-stretch @max-[420px]:gap-2.5",
+        className,
       )}
     >
       <div className="min-w-0 wrap-anywhere">

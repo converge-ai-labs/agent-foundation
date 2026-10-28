@@ -172,7 +172,7 @@ export class AppSession {
     this.update(key, {
       operation,
       uncertain: unconfirmedDecision
-        ? "Decision not confirmed. It will not be repeated or changed. Check the result or close this View."
+        ? "Couldn't confirm your choice. Nothing was retried or changed. Check the result or close this view."
         : undefined,
       deciding: false,
     });

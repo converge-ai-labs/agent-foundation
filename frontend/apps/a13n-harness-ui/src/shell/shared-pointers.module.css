@@ -29,14 +29,14 @@
   left: 14px;
   top: 17px;
   max-width: 160px;
-  padding: 3px 7px;
+  padding: 4px 8px;
   border: 1px solid var(--pointer-color);
   border-radius: 0 6px 6px 6px;
   background: color-mix(in srgb, var(--pointer-color) 14%, var(--a13n-canvas));
   color: var(--a13n-text);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

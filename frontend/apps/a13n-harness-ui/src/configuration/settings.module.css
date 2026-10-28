@@ -1,42 +1,59 @@
+.utilityLink {
+  margin-top: 24px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
 .formWidth {
   width: 100%;
-  max-width: 680px;
+}
+.emptySection {
+  margin: 0;
+  padding: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.collectionPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--harness-section-gap);
+  min-width: 0;
+}
+.collection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.toolbar > :first-child:not(:only-child) {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+.toolbar > :last-child:not(:only-child) {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .disclosure {
-  width: 100%;
-  max-width: 680px;
+  composes: details from "../shell/workbench.module.css";
 }
-.disclosure > summary {
-  cursor: pointer;
-  padding: 16px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-  font-size: 14px;
-  font-weight: 500;
-}
-.disclosure > summary:hover {
-  background: var(--a13n-hover);
-}
-.disclosure > summary:focus-visible {
-  outline: 2px solid var(--a13n-signal);
-  outline-offset: 2px;
-}
-.disclosure[open] > summary {
-  margin-bottom: 20px;
-}
-.disclosure > summary small {
-  margin-left: 12px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
-}
-.disclosure > :not(summary) {
-  margin-bottom: 16px;
+.disclosures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .tabs {
   display: flex;
   gap: 24px;
   overflow-x: auto;
+  scrollbar-width: none;
   flex-shrink: 0;
 }
 .tabs a {
@@ -44,7 +61,7 @@
   white-space: nowrap;
   color: var(--a13n-secondary);
   border-bottom: 2px solid transparent;
-  font-size: 13px;
+  font-size: 14px;
 }
 .tabs a[aria-current="page"] {
   color: var(--a13n-text);
@@ -52,16 +69,98 @@
   font-weight: 500;
 }
 .hint {
-  max-width: 680px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
-@container settings-content (max-width: 600px) {
-  .disclosure > summary small {
-    display: block;
-    margin: 6px 0 0 16px;
+@media (max-width: 1000px) {
+  .utilityLink {
+    margin-top: 0;
+  }
+}
+@media (max-width: 600px) {
+  .configurationFiles > header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .configurationFiles > header > :last-child {
+    grid-column: 1;
+    grid-row: 3;
+    justify-content: flex-start;
+    margin-top: 12px;
   }
   .tabs {
-    gap: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 16px;
+    overflow: visible;
+  }
+  .tabs a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding-block: 8px;
+    white-space: normal;
+  }
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.groupDisclosure {
+  composes: details from "../shell/workbench.module.css";
+}
+.groupDisclosure > summary {
+  min-height: var(--harness-control-height, 32px);
+  padding-block: 4px;
+  font-size: 14px;
+  font-weight: 400;
+}
+.groupDisclosure[open] > summary {
+  margin-bottom: 0;
+}
+.groupDisclosure > div {
+  padding: 4px 0 8px;
+}
+.groupDisclosure > div:has(> p) {
+  gap: 8px;
+}
+.groupDisclosure > div > p,
+.groupDisclosure > div > [role="status"] {
+  margin: 0;
+  padding-block: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (pointer: coarse) {
+  .groupDisclosure > summary {
+    min-height: 44px;
+  }
+}
+
+/* Account status, login actions and account management form one task. */
+.accountConnection {
+  padding-bottom: 12px;
+}
+.accountConnection > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 14px;
+  color: var(--a13n-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.groupHint {
+  margin: 0;
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .accountConnection > a {
+    min-height: 44px;
   }
 }

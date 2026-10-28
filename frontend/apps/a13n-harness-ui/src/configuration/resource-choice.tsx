@@ -1,5 +1,6 @@
+import { SettingsRow } from "../shell/settings";
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { FormField, SearchPicker, SettingsRow } from "a13n-ui";
+import { FormField, SearchPicker } from "a13n-ui";
 import styles from "../shell/workbench.module.css";
 
 // Keep unresolved references visible without substituting a different resource.
@@ -10,9 +11,10 @@ export function ResourceChoice({
   options,
   onValueChange,
   description,
-  placeholder = "Choose a resource",
+  placeholder,
   loading = false,
-  row = false,
+  row = true,
+  actions,
 }: {
   label: string;
   value: string;
@@ -22,6 +24,7 @@ export function ResourceChoice({
   placeholder?: string;
   loading?: boolean;
   row?: boolean;
+  actions?: ReactNode;
 }) {
   const id = useId();
   const choices = Array.from(
@@ -38,10 +41,16 @@ export function ResourceChoice({
       id={id}
       label={label}
       placeholder={
-        choices.find((item) => item.value === value)?.label ?? placeholder
+        placeholder ??
+        choices.find((item) => item.value === "")?.label ??
+        "Choose an option"
       }
       emptyMessage={loading ? "Loading resources…" : "No matching resources."}
       value={value}
+      disabled={
+        !unresolved &&
+        !choices.some((choice) => !choice.disabled && choice.value !== value)
+      }
       onValueChange={onValueChange}
       aria-describedby={description ? `${id}-description` : undefined}
       groups={[
@@ -53,7 +62,9 @@ export function ResourceChoice({
                 options: [
                   {
                     value,
-                    label: loading ? value : `${value} (unavailable)`,
+                    label: loading
+                      ? "Loading selection…"
+                      : `${value} (unavailable)`,
                     disabled: true,
                   },
                 ],
@@ -65,7 +76,12 @@ export function ResourceChoice({
   );
   return row ? (
     <SettingsRow label={label} description={description} controlId={id}>
-      <div className={styles.settingControl}>{control}</div>
+      <div
+        className={`${styles.settingControl} ${actions ? styles.settingControlWithActions : ""}`}
+      >
+        {control}
+        {actions}
+      </div>
     </SettingsRow>
   ) : (
     <FormField label={label} description={description}>

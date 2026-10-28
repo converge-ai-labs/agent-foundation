@@ -1357,10 +1357,10 @@ def _replace_context_history(
     messages: list[ModelMessage],
     retained_names: set[str],
 ) -> ModelRequestContext:
-    from a13n_harness.capabilities.codeact import refresh_codeact_descriptions
+    from a13n_harness.capabilities.codeact import refresh_codeact_catalog
 
     replacement = _replace_messages(request, messages)
-    refresh_codeact_descriptions(ctx, replacement, retained_names=retained_names)
+    refresh_codeact_catalog(ctx, replacement, retained_names=retained_names)
     return replacement
 
 

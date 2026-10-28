@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Input } from "a13n-ui";
 import {
   ArrowUpIcon,
   CaretRightIcon,
@@ -32,41 +32,59 @@ export function ProjectFolders({
     onChange(roots.map((root, i) => (i === index ? { ...root, path } : root)));
   return (
     <div className={styles.folders}>
+      {compact && roots.length > 0 && (
+        <p className={styles.label}>Working folders</p>
+      )}
       {!compact && (
         <p className={styles.hint}>
-          Existing absolute directories on the server or container, not this
-          browser's computer. The first folder is the local workspace. These are
-          path references; no files or directories are copied.
+          Choose existing folders on the server or in its container. The first
+          is your workspace. Files stay in place.
         </p>
       )}
       {roots.map((root, index) => (
         <div key={index} className={styles.folder}>
-          <div className={styles.row}>
-            <TextField
-              label={
-                index === 0
-                  ? "Server directory"
-                  : `Additional server directory ${index}`
-              }
-              value={root.path}
-              onChange={(value) => update(index, value)}
-            />
+          <div className={`${styles.row} ${styles.directoryRow}`}>
+            {compact ? (
+              <Input
+                aria-label={
+                  index === 0
+                    ? "Server directory"
+                    : `Additional server directory ${index}`
+                }
+                value={root.path}
+                title={root.path}
+                placeholder="/path/to/project"
+                autoComplete="off"
+                onChange={(event) => update(index, event.target.value)}
+              />
+            ) : (
+              <TextField
+                label={
+                  index === 0
+                    ? "Server directory"
+                    : `Additional server directory ${index}`
+                }
+                value={root.path}
+                onChange={(value) => update(index, value)}
+              />
+            )}
             {status.data?.features?.host_files && (
               <Button
                 type="button"
                 variant="outline"
+                className={styles.browseButton}
                 aria-label={`Browse directory ${index + 1}`}
                 aria-expanded={browsing === index}
                 onClick={() => setBrowsing(browsing === index ? null : index)}
               >
                 <FolderIcon />
-                Browse
+                <span>Browse</span>
               </Button>
             )}
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               disabled={!allowEmpty && roots.length <= 1}
               aria-label={`Remove directory ${index + 1}`}
               onClick={() => {
@@ -101,13 +119,12 @@ export function ProjectFolders({
           onClick={() => onChange([...roots, { path: "" }])}
         >
           <PlusIcon />
-          {roots.length ? "Add another directory" : "Add local directory"}
+          {roots.length ? "Add folder" : "Add local folder"}
         </Button>
       </div>
       {roots.length > 0 && status.data && !status.data.features?.host_files && (
         <small className={styles.hint}>
-          Folder browsing is unavailable while native computer sharing is
-          disabled. You can still enter paths manually.
+          Turn on computer sharing to browse folders, or enter a path manually.
         </small>
       )}
     </div>
@@ -202,7 +219,9 @@ function DirectoryBrowser({
           <ArrowUpIcon />
           Parent folder
         </Button>
-        <span className={styles.path}>{current || path}</span>
+        <span className={styles.path} title={current || path}>
+          {basename(current || path)}
+        </span>
       </div>
       <ErrorNotice
         error={listing.error}
@@ -252,6 +271,7 @@ function DirectoryBrowser({
           type="button"
           size="sm"
           disabled={!current || listing.isFetching || listing.isError}
+          variant="outline"
           onClick={() => current && select(current)}
         >
           Use this directory

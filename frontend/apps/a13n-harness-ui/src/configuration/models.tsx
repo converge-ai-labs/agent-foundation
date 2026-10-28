@@ -1,8 +1,10 @@
-import { useContext, useState } from "react";
+import { ModelIdentity } from "../shell/model-identity";
+import { useContext, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import {
   Button,
+  Skeleton,
   ModalFrame,
   Menu,
   MenuTrigger,
@@ -11,22 +13,15 @@ import {
 } from "a13n-ui";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, PageHeader, SearchField } from "../shell/ui";
+import { SettingsTextField as TextField } from "../shell/settings";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
 import { readDocument, updateDocument } from "./documents";
-import {
-  DotsThree,
-  Cpu,
-  Key,
-  Robot,
-  Plus,
-  Copy,
-  Image,
-  SlidersHorizontal,
-} from "@phosphor-icons/react";
+import { DotsThree, Plus, Copy, Image } from "@phosphor-icons/react";
 import management from "./management.module.css";
+import layout from "./settings.module.css";
 import styles from "../shell/workbench.module.css";
 
 export function ModelsPage() {
@@ -48,20 +43,20 @@ export function ModelsPage() {
       kind: (typeof mediaKinds)[number];
       modelId: string;
     }) => {
-      if (!root?.writable) throw new Error("Root configuration is read only.");
+      if (!root?.writable) throw new Error("Global settings are read-only.");
       const path = root.relative_path;
       const draft = drafts.get(path);
       if (draft && draft.content !== draft.base)
-        throw new Error("Save or discard the root configuration draft first.");
+        throw new Error("Save or discard your global settings changes first.");
       const saved = await result(
         client.GET("/api/configuration/sources/{relative_path}", {
           params: { path: { relative_path: path } },
         }),
       );
-      if (!saved.content) throw new Error("Root configuration is unavailable.");
+      if (!saved.content) throw new Error("Couldn't load global settings.");
       const current = drafts.get(path);
       if (current && current.content !== current.base)
-        throw new Error("Save or discard the root configuration draft first.");
+        throw new Error("Save or discard your global settings changes first.");
       const value =
         selectors.data?.media_understanding?.[kind] === modelId
           ? null
@@ -117,36 +112,44 @@ export function ModelsPage() {
       );
     },
   });
+  const filteredModels = (selectors.data?.models ?? []).filter((model) =>
+    `${model.name} ${model.route} ${model.model_id}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
   return (
-    <>
+    <div className={layout.collectionPage}>
       <PageHeader
         title="Models"
+        description="Choose the models your agents can use."
         actions={
-          <AddModelButton onSaved={() => void queries.invalidateQueries()} />
+          <AddModelButton
+            variant="default"
+            onSaved={() => void queries.invalidateQueries()}
+          />
         }
       />
-      <ErrorNotice
-        error={
-          selectors.error || sources.error || clone.error || setDefault.error
-        }
-      />
-      <div className={management.collectionSearch}>
-        <TextField
-          label="Search models"
-          type="search"
-          value={search}
-          onChange={setSearch}
+      <div className={layout.collection}>
+        <div className={layout.toolbar}>
+          <SearchField
+            label="Search models"
+            value={search}
+            onChange={setSearch}
+          />
+        </div>
+        <ErrorNotice
+          error={
+            selectors.error || sources.error || clone.error || setDefault.error
+          }
         />
-      </div>
-      <DraftLinks kinds={["model"]} search={search} />
-      <div className={management.modelList}>
-        {(selectors.data?.models ?? [])
-          .filter((model) =>
-            `${model.name} ${model.route} ${model.model_id}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-          )
-          .map((model) => {
+        <DraftLinks kinds={["model"]} search={search} />
+        {selectors.isPending && (
+          <div role="status" aria-label="Loading models">
+            <Skeleton className="h-20 w-full" />
+          </div>
+        )}
+        <div className={management.modelList}>
+          {filteredModels.map((model) => {
             const source = sources.data?.sources.find(
               (item) =>
                 item.resource_kind === "model" &&
@@ -158,36 +161,22 @@ export function ModelsPage() {
                 className={`${styles.resourceRow} ${management.modelRow}`}
               >
                 <div className={management.resourceIdentity}>
-                  <span className={management.resourceIcon}>
-                    <Cpu aria-hidden="true" weight="duotone" />
-                  </span>
                   <div className={management.resourceInfo}>
                     {source ? (
                       <Link
+                        className={management.modelLink}
                         to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
                       >
-                        <strong>{model.name}</strong>
+                        <strong>
+                          <ModelIdentity model={model} />
+                        </strong>
                       </Link>
                     ) : (
-                      <strong>{model.name}</strong>
+                      <strong>
+                        <ModelIdentity model={model} />
+                      </strong>
                     )}
                     <small>{model.route}</small>
-                    <div className={management.resourceMeta}>
-                      {source?.content_available && (
-                        <ModelCredentialSummary path={source.relative_path} />
-                      )}
-                      <small className={management.metadata}>
-                        <Robot aria-hidden="true" />
-                        <span>
-                          {selectors.data?.agents
-                            .filter(
-                              (agent) => agent.model_id === model.model_id,
-                            )
-                            .map((agent) => agent.name)
-                            .join(", ") || "No agents using this model"}
-                        </span>
-                      </small>
-                    </div>
                     {mediaKinds.some(
                       (kind) =>
                         selectors.data?.media_understanding?.[kind] ===
@@ -207,7 +196,22 @@ export function ModelsPage() {
                     )}
                   </div>
                 </div>
-                {source && !source.writable && <span>Read only</span>}
+                <div className={management.resourceMeta}>
+                  {source?.content_available && (
+                    <ModelCredentialSummary path={source.relative_path} />
+                  )}
+                  <small className={management.metadata}>
+                    <span>
+                      {selectors.data?.agents
+                        .filter((agent) => agent.model_id === model.model_id)
+                        .map((agent) => agent.name)
+                        .join(", ") || "No agents using this model"}
+                    </span>
+                  </small>
+                </div>
+                {source && !source.writable && (
+                  <span className={styles.tag}>Read only</span>
+                )}
                 <Menu>
                   <MenuTrigger
                     render={
@@ -261,31 +265,32 @@ export function ModelsPage() {
               </div>
             );
           })}
+        </div>
+        {!!selectors.data?.models?.length && !filteredModels.length && (
+          <EmptyList>No matching models.</EmptyList>
+        )}
+        {selectors.data && !selectors.data.models?.length && (
+          <EmptyList>
+            No models yet. Add a subscription or API connection to get started.
+          </EmptyList>
+        )}
       </div>
-      {selectors.data && !selectors.data.models?.length && (
-        <p>
-          No saved Models yet. Add a subscription or API connection to get
-          started.
-        </p>
-      )}
       {root && (
-        <details className={styles.details}>
+        <details className={layout.disclosure}>
           <summary>
-            <span className={management.inlineLabel}>
-              <SlidersHorizontal aria-hidden="true" />
-              Media understanding defaults
-            </span>
+            <span>Media models</span>
+            <small>Used when your main model can't read media.</small>
           </summary>
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="Fallback models"
+            title={null}
             mediaOnly
             embedded
           />
         </details>
       )}
-    </>
+    </div>
   );
 }
 
@@ -312,7 +317,6 @@ function ModelCredentialSummary({ path }: { path: string }) {
   if (auth?.kind !== "api_key") return null;
   return (
     <small className={management.metadata}>
-      <Key aria-hidden="true" />
       <span>
         {auth.env
           ? `Environment · ${auth.env}`
@@ -329,13 +333,27 @@ function ModelCredentialSummary({ path }: { path: string }) {
 }
 
 /** Add a Model without discarding the Agent draft or selecting an unsaved ID. */
-export function AddModelButton({ onSaved }: { onSaved: (id: string) => void }) {
+export function AddModelButton({
+  onSaved,
+  variant = "outline",
+  compact = false,
+}: {
+  onSaved: (id: string) => void;
+  variant?: "default" | "outline";
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        variant={compact ? "ghost" : variant}
+        size={compact ? "icon-sm" : "default"}
+        aria-label="Add model"
+        title={compact ? "Add model" : undefined}
+        onClick={() => setOpen(true)}
+      >
         <Plus aria-hidden="true" />
-        Add model
+        {!compact && "Add model"}
       </Button>
       {open && (
         <AddModelDialog onClose={() => setOpen(false)} onSaved={onSaved} />
@@ -350,6 +368,7 @@ function AddModelDialog({
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
+  const title = useRef<HTMLSpanElement>(null);
   const { client } = useTransport();
   const queries = useQueryClient();
   const [id] = useState(() => `model-${crypto.randomUUID().slice(0, 8)}`);
@@ -373,7 +392,7 @@ function AddModelDialog({
       );
       if (!publication.completed)
         throw new Error(
-          publication.error_message || "Model publication did not complete.",
+          publication.error_message || "Couldn't finish saving the model.",
         );
     },
     onSuccess: async () => {
@@ -388,22 +407,36 @@ function AddModelDialog({
       onOpenChange={(open) => {
         if (!open && !save.isPending) onClose();
       }}
-      title="Add model"
-      closeLabel="Cancel"
+      title={
+        <span ref={title} tabIndex={-1}>
+          Add model
+        </span>
+      }
+      initialFocus={title}
+      disablePointerDismissal
+      size="lg"
+      closeLabel="Close"
       footer={
-        <Button
-          disabled={!recipe || !recipeReady}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          Save model
-        </Button>
+        <>
+          <Button variant="outline" disabled={save.isPending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!recipe || !recipeReady}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            Save
+          </Button>
+        </>
       }
     >
       <div className={styles.stack}>
         <ErrorNotice error={save.error} />
-        <TextField label="Model name" value={name} onChange={setName} />
         <ModelEditor
+          nameField={
+            <TextField label="Model name" value={name} onChange={setName} />
+          }
           value={recipe}
           onChange={setRecipe}
           onRecipeReady={setRecipeReady}

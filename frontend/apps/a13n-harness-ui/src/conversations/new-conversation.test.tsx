@@ -373,7 +373,7 @@ beforeEach(() => {
         });
       if (pathname.endsWith("/submit")) {
         if (failure === "submit-reject")
-          return json({ error: { message: "Conversation busy" } }, 409);
+          return json({ error: { message: "Chat busy" } }, 409);
         if (failure === "submit")
           throw new TypeError("Submission acknowledgement lost");
         return json({ thread_id: id, receipt_id: "receipt-one" });
@@ -459,11 +459,13 @@ function mount(initial = path, sidebar = false) {
 }
 async function fill() {
   await screen.findByRole("heading", {
-    name: "What would you like to build in Example project?",
+    name: "What can I help with?",
   });
   await waitFor(() =>
     expect(
-      screen.getByLabelText(/^Agent: Writer\. Model:/).textContent,
+      screen
+        .getByLabelText(/^Agent: Writer\. Model:/)
+        .getAttribute("aria-label"),
     ).toContain("Writer"),
   );
   expect(
@@ -575,14 +577,12 @@ it("retains an uncertain submission on the New page without a speculative bubble
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
   expect(view.container.querySelector("[data-message-id]")).toBeNull();
   expect(
-    screen.queryByRole("button", { name: "I reviewed the outcome" }),
+    screen.queryByRole("button", { name: "Allow new message" }),
   ).toBeNull();
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
   expect(writes).toHaveLength(2);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Review submission in conversation" }),
-  );
-  await screen.findByRole("button", { name: "Refresh operation and history" });
+  fireEvent.click(screen.getByRole("button", { name: "Review message" }));
+  await screen.findByRole("button", { name: "Refresh chat" });
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
   expect(reads).toContain(`/api/threads/${id}/transcript`);
   expect(drafts.get(id)!.submission.kind).toBe("unknown");
@@ -594,13 +594,11 @@ it("keeps rejected first input on the New page and retries without recreating th
   const view = mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText("Conversation busy");
+  await screen.findByText("Chat busy");
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Project changes are paused");
   expect(
-    screen
-      .getByRole("link", { name: "Open conversation with retained input" })
-      .getAttribute("href"),
+    screen.getByRole("link", { name: "Open saved draft" }).getAttribute("href"),
   ).toBe(`/threads/${id}?compose=1`);
   expect(creations.current!.defaults.project_id).toBe("project-one");
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
@@ -685,6 +683,7 @@ it("distinguishes inherited choices and sends an independent model without chang
     (await screen.findByRole("button", { name: /Agent default/ })).textContent,
   ).toContain("Other model");
   await user.click(screen.getByRole("button", { name: "Primary model" }));
+  await user.click(screen.getByRole("button", { name: "Thinking" }));
   await user.click(screen.getByRole("button", { name: /Quick thinking/ }));
   await user.keyboard("[Escape]");
   await user.click(screen.getByRole("link", { name: "Settings" }));
@@ -714,7 +713,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
 });
 
-it("keeps accepted input and the next prompt visible while the new conversation loads", async () => {
+it("keeps accepted input and the next prompt visible while the new chat loads", async () => {
   let resume!: () => void;
   let resumeHistory!: () => void;
   readPaused = focusPaused = new Promise<void>((resolve) => {
@@ -738,7 +737,7 @@ it("keeps accepted input and the next prompt visible while the new conversation 
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
   expect(input.closest("[inert]")).toBeNull();
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
@@ -750,12 +749,12 @@ it("keeps accepted input and the next prompt visible while the new conversation 
   expect(drafts.get(id)!.status).toBe("Connected");
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
   expect(screen.getByText("Build this")).toBe(input);
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
   await act(async () => resumeHistory());
   expect(await screen.findByRole("textbox", { name: "Shared prompt" })).toBe(
     editor,
   );
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
   expect(document.activeElement).toBe(editor);
   expect(screen.getByText("Build this")).toBe(input);
   expect(screen.queryByText("Start something together.")).toBeNull();
@@ -768,7 +767,7 @@ it("keeps accepted input and the next prompt visible while the new conversation 
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
   expect(editor.textContent).toBe("Follow up");
   expect(document.activeElement).toBe(editor);
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
 });
 
 function reload(initial = path) {
@@ -794,7 +793,7 @@ it("uses one composer across project plus actions, Home and settings without cre
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   expect(editor.textContent).toBe("Build this");
@@ -804,13 +803,13 @@ it("uses one composer across project plus actions, Home and settings without cre
   fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
     "Build this",
   );
   fireEvent.click(screen.getByRole("link", { name: "New without project" }));
-  await screen.findByRole("heading", { name: "What would you like to build?" });
+  await screen.findByRole("heading", { name: "What can I help with?" });
   expect(creations.current!.defaults.project_id).toBeNull();
   expect(values(original.composer.doc).prompt).toBe("Build this");
   expect(writes).toHaveLength(0);
@@ -827,7 +826,7 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
   );
   const original = creations.current!;
   fireEvent.click(
-    screen.getByRole("button", { name: "New conversation in Second project" }),
+    screen.getByRole("button", { name: "New chat in Second project" }),
   );
   await screen.findByText("Project changes are paused");
   expect(screen.getByLabelText("Search").textContent).toBe(
@@ -837,9 +836,7 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
 
   // A failed observation must retain the lock and input, not imply absence.
   readFailure = true;
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check conversation status" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Check chat status" }));
   await screen.findByText("Thread detail unavailable");
   expect(original.attempted).toBe(true);
   expect(writes).toHaveLength(1);
@@ -850,31 +847,29 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
   readPaused = new Promise<void>((resolve) => {
     resume = resolve;
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check conversation status" }),
-  );
-  await screen.findByRole("button", { name: "Checking conversation…" });
+  fireEvent.click(screen.getByRole("button", { name: "Check chat status" }));
+  await screen.findByRole("button", { name: "Checking chat…" });
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   fireEvent.click(
-    screen.getByRole("button", { name: "New conversation in Second project" }),
+    screen.getByRole("button", { name: "New chat in Second project" }),
   );
   expect(original.defaults.project_id).toBe("project-one");
   await act(async () => resume());
   await screen.findByText(
-    "No conversation was found. You can now change projects; your input is retained.",
+    "No chat found. You can change projects now. Your input is saved here.",
   );
   expect(original.attempted).toBe(false);
   expect(
     JSON.parse(localStorage.getItem("a13n-harness-ui.new-draft")!).attempted,
   ).toBe(false);
   fireEvent.click(
-    screen.getByRole("button", { name: "New conversation in Second project" }),
+    screen.getByRole("button", { name: "New chat in Second project" }),
   );
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(creations.current).toBe(original);
   expect(original.defaults.project_id).toBe("project-two");
@@ -882,7 +877,7 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
   expect(writes).toHaveLength(1);
 });
 
-it("checks uncertain creation without input and opens the exact existing conversation without sending", async () => {
+it("checks uncertain creation without input and opens the exact existing chat without sending", async () => {
   failure = "create";
   mount();
   await fill();
@@ -896,7 +891,7 @@ it("checks uncertain creation without input and opens the exact existing convers
   });
   reload(newConversationPath("project-two"));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Check conversation status" }),
+    await screen.findByRole("button", { name: "Check chat status" }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
@@ -922,13 +917,11 @@ it.each([false, true])(
     readPaused = new Promise<void>((resolve) => {
       resume = resolve;
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Check conversation status" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Check chat status" }));
     await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
     fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));
-    await screen.findByRole("button", { name: "Check conversation status" });
+    await screen.findByRole("button", { name: "Check chat status" });
     readMissing = missing;
     await act(async () => resume());
     expect(creations.current!.created).toBe(false);
@@ -950,9 +943,9 @@ it("waits for creation already in flight before checking status after navigation
   fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Check conversation status" }),
+    await screen.findByRole("button", { name: "Check chat status" }),
   );
-  await screen.findByRole("button", { name: "Checking conversation…" });
+  await screen.findByRole("button", { name: "Checking chat…" });
   expect(reads).not.toContain(`/api/threads/${id}`);
   expect(
     (screen.getByRole("button", { name: "Submitting" }) as HTMLButtonElement)
@@ -978,11 +971,11 @@ it("unlocks creation choices on the backend missing-thread response when retryin
   readMissing = true;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText(
-    "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+    "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
   );
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(creations.current!.attempted).toBe(false);
   expect(creations.current!.threadId).toBe(id);
@@ -998,11 +991,11 @@ it("restores text and choices after a full reload and persists deleting the inpu
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   reload("/");
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
     "Build this",
@@ -1026,7 +1019,7 @@ it("creates the selected project only on Send, then starts a fresh singleton aft
   await fill();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   await waitFor(() =>
     expect(
@@ -1059,7 +1052,7 @@ it("retains the exact identity and frozen project when creation is uncertain acr
   );
   reload(newConversationPath("project-two"));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Example project?",
+    name: "What can I help with?",
   });
   expect(creations.current!.attempted).toBe(true);
   expect(creations.current!.threadId).toBe(id);
@@ -1084,15 +1077,13 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
   await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
   reload();
-  await screen.findByText(
-    /The previous input may already have been accepted\. Open the conversation/,
-  );
+  await screen.findByText(/Your message may already be sent\. Open the chat/);
   expect(creations.current!.composer.submission.kind).toBe("unknown");
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByText("Project changes are paused");
   expect(creations.current!.defaults.project_id).toBe("project-one");
   expect(
-    screen.queryByRole("button", { name: "Check conversation status" }),
+    screen.queryByRole("button", { name: "Check chat status" }),
   ).toBeNull();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -1114,11 +1105,11 @@ it("retains staged files across project switches and explicitly requires reattac
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(creations.current!.composer.uploads.size).toBe(1);
   reload("/");
-  await screen.findByText(/Local files are not saved across reloads/);
+  await screen.findByText(/Local attachments are lost on reload/);
   expect(values(creations.current!.composer.doc).prompt).toBe("Build this");
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -1140,7 +1131,7 @@ it("retains accepted input on a saved-page read failure and starts a fresh draft
   expect(creations.current).toBeUndefined();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What would you like to build in Second project?",
+    name: "What can I help with?",
   });
   expect(creations.current!.threadId).not.toBe(id);
   expect(creations.current!.attempted).toBe(false);
@@ -1343,7 +1334,7 @@ it("waits for project, catalog and the selected defaults before exposing the new
     return original(request);
   });
   mount();
-  expect(screen.getByText("Preparing your conversation…")).toBeTruthy();
+  expect(screen.getByText("Preparing your chat…")).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("heading")).toBeNull();
   await act(async () => release.get("/api/projects")!());
@@ -1352,16 +1343,19 @@ it("waits for project, catalog and the selected defaults before exposing the new
   await act(async () => release.get("/api/threads/configuration-preview")!());
   const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(document.activeElement).toBe(editor);
-  expect(screen.getByRole("heading").textContent).toContain("Example project");
+  expect(
+    screen.getByRole("combobox", { name: "Project" }).textContent,
+  ).toContain("Example project");
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(
     screen.getByRole("combobox", { name: "Local mode" }).textContent,
-  ).toContain("Follow conversation local mode");
+  ).toContain("Use chat default");
   expect(
-    screen.getByText(/Full Control runs as the server account/),
+    screen.getByText(/Runs as the server account without a sandbox/),
   ).toBeTruthy();
-  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  expect(screen.queryByText("Preparing your chat…")).toBeNull();
   expect(writes).toHaveLength(0);
 });
 
@@ -1391,9 +1385,9 @@ it("keeps the new draft sendable during background preview refresh and explains 
       .disabled,
   ).toBe(false);
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
-  await screen.findByText("Updating conversation settings…");
+  await screen.findByText("Updating chat settings…");
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
-  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  expect(screen.queryByText("Preparing your chat…")).toBeNull();
   fireEvent.keyDown(editor, { key: "Enter" });
   expect(writes).toHaveLength(0);
   await act(async () => release());
@@ -1419,7 +1413,7 @@ it("reveals setup errors instead of trapping a retained new draft behind loading
   const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(screen.getByText("Choose an available agent")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Continue setup" })).toBeTruthy();
-  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  expect(screen.queryByText("Preparing your chat…")).toBeNull();
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Keep this"));
   fireEvent.keyDown(editor, { key: "Enter" });
   expect(writes).toHaveLength(0);
@@ -1463,7 +1457,7 @@ it("shows cached history before replay and draft sync while keeping Send guarded
   });
   mount(`/threads/${id}?compose=1`);
   expect(screen.getByText("Cached body")).toBeTruthy();
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
   const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Waiting for sync"));
   fireEvent.keyDown(editor, { key: "Enter" });
@@ -1481,7 +1475,7 @@ it("shows cached history before replay and draft sync while keeping Send guarded
   await waitFor(() => expect(writes).toHaveLength(1));
   await waitFor(() => expect(values(drafts.get(id)!.doc).prompt).toBe(""));
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
   expect(screen.getByText("Continue our work")).toBeTruthy();
 });
 
@@ -1490,7 +1484,7 @@ it("shows saved content with a reconnect notice when the initial live connection
   mount(`/threads/${id}`);
   await screen.findByRole("textbox", { name: "Shared prompt" });
   expect(await screen.findByText(/Reconnecting live updates/)).toBeTruthy();
-  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.queryByText("Opening chat…")).toBeNull();
 });
 
 it.each([false, true])(
@@ -1547,7 +1541,7 @@ it.each([false, true])(
     fireEvent.scroll(reader);
     expect(historyRequests).toHaveLength(1);
     expect(top).toBe(saved ? 430 : 2000);
-    expect(screen.queryByText("Opening conversation…")).toBeNull();
+    expect(screen.queryByText("Opening chat…")).toBeNull();
     await act(async () => releaseFocus());
     await screen.findByRole("textbox", { name: "Shared prompt" });
     expect(top).toBe(saved ? 430 : 2000);
@@ -1668,7 +1662,7 @@ it.each([
     }
     if (retry) {
       const retryButton = await screen.findByRole("button", {
-        name: "Retry earlier messages",
+        name: "Retry loading",
       });
       fireEvent.scroll(reader);
       await act(async () => {});
@@ -1687,7 +1681,7 @@ it.each([
       }),
     ).toBeNull();
     const details = await screen.findByRole("button", {
-      name: /Execution details/,
+      name: /Work log/,
     });
     expect(details.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Folded intermediate work")).toBeNull();
@@ -1853,7 +1847,7 @@ it("returns to the latest window when New output is clicked from a historical in
 });
 
 it.each(["new", "existing"])(
-  "selects an environment for Send on a %s conversation without patching defaults",
+  "selects an environment for Send on a %s chat without patching defaults",
   async (kind) => {
     mount(kind === "new" ? path : `/threads/${id}`);
     if (kind === "new") await fill();
@@ -1861,18 +1855,21 @@ it.each(["new", "existing"])(
       await screen.findByRole("button", { name: "Send" });
       act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
     }
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Chat options" }));
     const trigger = await screen.findByRole("button", {
       name: "Environments",
     });
     await waitFor(() => expect(trigger.hasAttribute("disabled")).toBe(false));
-    const user = userEvent.setup();
     await user.click(trigger);
     await user.click(screen.getByRole("combobox", { name: "Local mode" }));
     await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
     expect(drafts.get(id)!.environment?.environment_profile_id).toBeUndefined();
     expect(writes).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Use for next run" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Environments" })).toBeNull(),
+    );
     expect(drafts.get(id)!.environment?.environment_profile_id).toBe(
       "environment-sandbox",
     );
@@ -1918,7 +1915,7 @@ it.each(["desktop", "mobile"])(
       requests.push(
         execution
           ? `execution:${cursor ?? "latest"}`
-          : `conversation:${cursor ?? "latest"}`,
+          : `chat:${cursor ?? "latest"}`,
       );
       if (execution && cursor === "steps" && failSteps) {
         failSteps = false;
@@ -2030,7 +2027,7 @@ it.each(["desktop", "mobile"])(
       name: "Retry loading turn",
     });
     expect(requests).toEqual([
-      "conversation:latest",
+      "chat:latest",
       "execution:latest",
       "execution:steps",
     ]);
@@ -2038,9 +2035,7 @@ it.each(["desktop", "mobile"])(
       screen.getByText("Current answer").closest("[data-execution-reader]"),
     ).toBeNull();
     // A failed complete-turn read cannot reveal a partial execution segment.
-    expect(
-      screen.queryByRole("button", { name: /Execution details/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Work log/ })).toBeNull();
     await act(async () => {
       const draft = drafts.get(id)!;
       draft.localInputs = [
@@ -2059,7 +2054,7 @@ it.each(["desktop", "mobile"])(
     reader.scrollTop = 40;
     fireEvent.scroll(reader);
     await screen.findByText("Previous answer");
-    expect(requests.at(-1)).toBe("conversation:previous-turn");
+    expect(requests.at(-1)).toBe("chat:previous-turn");
     expect(screen.queryByText("Earlier execution work")).toBeNull();
     // One retry completes the turn without exposing transport-page controls.
     fireEvent.click(retry);
@@ -2082,24 +2077,22 @@ it.each(["desktop", "mobile"])(
         name: "Load earlier messages in this turn",
       }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("region", { name: "Execution details" }),
-    ).toBeNull();
+    expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
     expect(requests).toEqual([
-      "conversation:latest",
+      "chat:latest",
       "execution:latest",
       "execution:steps",
-      "conversation:previous-turn",
+      "chat:previous-turn",
       "execution:latest",
       "execution:steps",
     ]);
     const segments = screen.getAllByRole("button", {
-      name: /Execution details/,
+      name: /Work log/,
     });
     expect(segments).toHaveLength(2);
     fireEvent.click(segments[0]);
     const execution = await screen.findByRole("region", {
-      name: "Execution details",
+      name: "Work log",
     });
     expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
     expect(within(execution).queryByText("Recent execution work")).toBeNull();
@@ -2120,15 +2113,13 @@ it.each(["desktop", "mobile"])(
         );
       });
       expect(reader.scrollTop).toBe(inspectionTop);
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to conversation" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     } else fireEvent.click(segments[0]);
     fireEvent.click(segments[0]);
-    expect(
-      await screen.findByRole("region", { name: "Execution details" }),
-    ).toBe(execution);
+    expect(await screen.findByRole("region", { name: "Work log" })).toBe(
+      execution,
+    );
     expect(requests).toHaveLength(6);
   },
 );
@@ -2192,8 +2183,8 @@ it("keeps readable messages and an open execution reader through a multi-page ch
   });
   mount(`/threads/${id}`);
   const message = await screen.findByText("Earlier progress");
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
-  const reader = screen.getByRole("region", { name: "Execution details" });
+  fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
+  const reader = screen.getByRole("region", { name: "Work log" });
   await act(async () => {
     queries.setQueryData(["thread", id, "detail"], {
       ...threadDetail,
@@ -2203,21 +2194,17 @@ it("keeps readable messages and an open execution reader through a multi-page ch
   await waitFor(() => expect(turnPages).toBe(2));
   expect(screen.queryByText("Loading turn…")).toBeNull();
   expect(screen.getByText("Earlier progress")).toBe(message);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
   await act(async () => finish());
   await waitFor(() =>
     expect(queries.getQueryData(["thread", id, "history", "C1"])).toBeTruthy(),
   );
   expect(screen.queryByText("Loading turn…")).toBeNull();
   expect(screen.getByText("Earlier progress")).toBe(message);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
   expect(
     screen
-      .getByRole("button", { name: /Execution details/ })
+      .getByRole("button", { name: /Work log/ })
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(turnPages).toBe(2);
@@ -2277,7 +2264,7 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
     );
     await waitFor(() => expect(agent().textContent).toContain("Reviewer"));
     await waitFor(() =>
-      expect(screen.queryByText("Updating conversation settings…")).toBeNull(),
+      expect(screen.queryByText("Updating chat settings…")).toBeNull(),
     );
     expect((agent() as HTMLButtonElement).disabled).toBe(false);
     expect(queries.getQueryState(["thread", id, "detail"])?.fetchStatus).toBe(
@@ -2372,20 +2359,23 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
   failure = "submit-reject";
   mount();
   await fill();
-  const toggle = screen.getByRole("button", { name: "Coordinator" });
+  await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
   fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
   fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(toggle);
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  if (!screen.queryByRole("switch", { name: "Goal" }))
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   expect(writes).toHaveLength(0);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("dialog", { name: /coordinator/i })).toBeNull();
   const restored = new NewDraftStore();
   expect(restored.get(new Map()).composer.coordinator).toBe(true);
   restored.dispose();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText("Conversation busy");
+  await screen.findByText("Chat busy");
   expect(writes.map((request) => new URL(request.url).pathname)).toEqual([
     "/api/threads",
     `/api/threads/${id}/submit`,
@@ -2398,7 +2388,9 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
     mode: "goal",
     parts: ["Build this"],
   });
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(
+    screen.queryByRole("switch", { name: "Coordinate agents" }),
+  ).toBeNull();
   expect(screen.getByText("Coordinator")).toBeTruthy();
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
   failure = null;
@@ -2410,7 +2402,9 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
 it("retains Coordinator intent across Project changes without falling back to ordinary submission", async () => {
   mount();
   await fill();
-  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  if (!screen.queryByRole("switch", { name: "Coordinate agents" }))
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
   fireEvent.click(screen.getByRole("link", { name: "New without project" }));
   await waitFor(() =>
     expect(
@@ -2419,7 +2413,9 @@ it("retains Coordinator intent across Project changes without falling back to or
     ).toBe(true),
   );
   expect(drafts.get(id)!.coordinator).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  if (!screen.queryByRole("switch", { name: "Coordinate agents" }))
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
   await waitFor(() =>
     expect(
       (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -2433,12 +2429,16 @@ it("restores worker assignment and removes only ownership without losing the aut
   mount(newConversationPath("project-one", ownerId));
   await fill();
   await screen.findByText("Managed by · Project manager");
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(
+    screen.queryByRole("switch", { name: "Coordinate agents" }),
+  ).toBeNull();
   expect(
     (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  if (!screen.queryByRole("switch", { name: "Goal" }))
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   const composer = drafts.get(id)!;
   act(() => {
     composer.modelId = "model-two";
@@ -2458,8 +2458,8 @@ it("restores worker assignment and removes only ownership without losing the aut
   expect(creations.current?.coordinatorThreadId).toBeUndefined();
   expect(
     screen
-      .getByRole("button", { name: "Coordinator" })
-      .getAttribute("aria-pressed"),
+      .getByRole("switch", { name: "Coordinate agents" })
+      .getAttribute("aria-checked"),
   ).toBe("false");
   expect(
     (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
@@ -2473,9 +2473,11 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   mount(newConversationPath("project-one", ownerId));
   await fill();
   await screen.findByText("Managed by · Project manager");
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  if (!screen.queryByRole("switch", { name: "Goal" }))
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText("Conversation busy");
+  await screen.findByText("Chat busy");
   expect(await writes[0].clone().json()).toEqual({
     thread_id: id,
     defaults: { project_id: "project-one" },
@@ -2488,7 +2490,9 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   expect(
     screen.queryByRole("button", { name: "Remove Coordinator assignment" }),
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(
+    screen.queryByRole("switch", { name: "Coordinate agents" }),
+  ).toBeNull();
   expect(screen.getByText("Managed by · Project manager")).toBeTruthy();
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));

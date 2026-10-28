@@ -70,9 +70,12 @@ export function ExecutionDetails({
             ) : (
               <CaretRight aria-hidden="true" />
             )}
-            Execution details
+            Work log
           </span>
           {summary}
+          {!open && (
+            <span className={conversation.executionPreview}>{preview}</span>
+          )}
         </button>
         {visited && children(open)}
       </div>
@@ -91,7 +94,7 @@ export function ExecutionDetails({
     >
       <DialogTrigger className={styles.preview}>
         <span className={styles.previewHeading}>
-          <span>Execution details{summary}</span>
+          <span>Work log{summary}</span>
           <ArrowRight aria-hidden="true" />
         </span>
         <span className={styles.excerpt}>{preview}</span>
@@ -107,16 +110,14 @@ export function ExecutionDetails({
           <header className={styles.header}>
             <DialogClose
               render={<Button variant="ghost" size="icon" />}
-              aria-label="Back to conversation"
+              aria-label="Back to chat"
             >
               <ArrowLeft />
             </DialogClose>
             <div>
-              <DialogTitle className={styles.title}>
-                Execution details
-              </DialogTitle>
+              <DialogTitle className={styles.title}>Work log</DialogTitle>
               <div className={styles.metrics}>
-                {complete ? "Completed" : "Execution history"}
+                {complete ? "Recorded steps" : "Steps so far"}
                 {summary}
               </div>
             </div>

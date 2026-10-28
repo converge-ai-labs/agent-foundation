@@ -99,9 +99,7 @@ it("keeps editor selection in exact patch coordinates and resets it for a replac
   expect(
     screen.getByText("Selected patch lines 5–6 (including headers)"),
   ).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to message" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
   await waitFor(() => expect(post).toHaveBeenCalledOnce());
   expect(post.mock.calls[0]).toEqual([
     "/api/threads/{thread_id}/host-git-captures",
@@ -118,7 +116,5 @@ it("keeps editor selection in exact patch coordinates and resets it for a replac
     },
   ]);
   view.rerender(tree("replacement"));
-  expect(
-    screen.queryByRole("button", { name: "Add selection to message" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Attach selection" })).toBeNull();
 });

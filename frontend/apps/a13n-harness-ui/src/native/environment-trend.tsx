@@ -276,8 +276,8 @@ export function Trend({
         </span>
       </div>
       <span id={helpId} className={styles.srOnly}>
-        Drag to zoom (minimum 2 minutes). Use left and right arrow keys to
-        inspect minutes; Escape clears the cursor.
+        Drag to zoom, down to 2 minutes. Arrow keys move by a minute. Escape
+        clears the selection.
       </span>
     </section>
   );

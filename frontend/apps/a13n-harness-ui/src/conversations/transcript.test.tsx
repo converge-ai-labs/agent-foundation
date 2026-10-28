@@ -13,7 +13,7 @@ it("keeps live prose visible when a stream gap needs a warning", () => {
   expect(screen.queryByRole("status")).toBeNull();
   view.rerender(<LiveOutput blocks={blocks} gap />);
   expect(screen.getByRole("status").textContent).toContain(
-    "Some live content is unavailable",
+    "Some live updates are missing",
   );
 });
 const metadata = {
@@ -215,7 +215,7 @@ it("omits model-only tool attachments without hiding genuine user media", () => 
       }
     />,
   );
-  expect(screen.getByText("User")).toBeTruthy();
+  expect(document.querySelector('[class*="userMessage"]')).toBeTruthy();
   expect(view.container.textContent).toContain("image/png");
   expect(view.container.textContent).not.toContain("payload_omitted");
 });

@@ -84,7 +84,7 @@ export function FileMedia({
         else if (error instanceof ApiError && error.status === 403)
           setError(
             new Error(
-              "File access expired or is unavailable. Retry to obtain new access.",
+              "File access expired or failed. Try again to renew access.",
             ),
           );
         else setError(error);

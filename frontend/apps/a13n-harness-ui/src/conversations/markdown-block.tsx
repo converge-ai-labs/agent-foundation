@@ -13,6 +13,7 @@ import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "./mermaid-render";
 import { SyntaxCode } from "./syntax-code";
 import styles from "./markdown.module.css";
+import { copyText } from "../platform";
 
 export const MarkdownSource = createContext("");
 type Node = { type: string; value?: string; children?: Node[] };
@@ -35,9 +36,11 @@ export function closedFence(source: string) {
 
 function Diagram({
   source,
+  header,
   children,
 }: {
   source: string;
+  header: (actions: ReactNode) => ReactNode;
   children: ReactNode;
 }) {
   const [dark, setDark] = useState(() =>
@@ -83,26 +86,30 @@ function Diagram({
   const current = result?.source === source ? result : undefined;
   return (
     <>
-      <div className={styles.diagramActions}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setOriginal(!original)}
-          aria-pressed={original}
-        >
-          <Code />
-          Source
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!current?.src}
-          onClick={() => setExpanded(true)}
-        >
-          <ArrowsOut />
-          Expand
-        </Button>
-      </div>
+      {header(
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setOriginal(!original)}
+            aria-pressed={original}
+            aria-label="Source"
+          >
+            <Code />
+            <span className={styles.actionLabel}>Source</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!current?.src}
+            onClick={() => setExpanded(true)}
+            aria-label="Expand"
+          >
+            <ArrowsOut />
+            <span className={styles.actionLabel}>Expand</span>
+          </Button>
+        </>,
+      )}
       {!original && current?.src && (
         <div className={styles.diagramCanvas} data-diagram-canvas>
           <img src={current.src} alt="Mermaid diagram" />
@@ -118,7 +125,11 @@ function Diagram({
           {current.error}
         </p>
       )}
-      {(original || !current?.src) && <pre>{children}</pre>}
+      {(original || !current?.src) && (
+        <pre tabIndex={0} role="region" aria-label="Diagram source">
+          {children}
+        </pre>
+      )}
       {expanded && current?.src && (
         <ImagePreview
           src={current.src}
@@ -160,43 +171,61 @@ export function MarkdownPre({
     const timer = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(timer);
   }, [copied]);
-  return (
-    <div className={styles.codeBlock}>
+  // One header row owns every block action; diagrams add Source and Expand
+  // before Copy instead of stacking a second toolbar above the canvas.
+  const header = (actions?: ReactNode) => (
+    <>
       <div className={styles.codeHeader}>
-        <span>{diagram ? "Mermaid" : language || "Code"}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={diagram ? "Copy diagram source" : "Copy code"}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(source);
-              setCopied(true);
-              setCopyError(false);
-            } catch {
-              setCopyError(true);
-            }
-          }}
-        >
-          <Copy />
-          {copied ? "Copied" : "Copy"}
-        </Button>
+        <span className={styles.codeLanguage}>
+          {diagram ? "mermaid" : language || "text"}
+        </span>
+        <div className={styles.codeActions}>
+          {actions}
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={diagram ? "Copy diagram source" : "Copy code"}
+            onClick={async () => {
+              try {
+                await copyText(source);
+                setCopied(true);
+                setCopyError(false);
+              } catch {
+                setCopyError(true);
+              }
+            }}
+          >
+            <Copy />
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
       </div>
       {copyError && (
         <p className={styles.diagramStatus} role="status">
           Could not copy. Select the source to copy it manually.
         </p>
       )}
+    </>
+  );
+  return (
+    <div className={styles.codeBlock}>
       {diagram && complete ? (
-        <Diagram source={source}>{children}</Diagram>
+        <Diagram source={source} header={header}>
+          {children}
+        </Diagram>
       ) : (
         <>
+          {header()}
           {diagram && (
             <p className={styles.diagramStatus}>
               Waiting for the complete diagram…
             </p>
           )}
-          <pre>
+          <pre
+            tabIndex={0}
+            role="region"
+            aria-label={language ? `${language} code` : "Code block"}
+          >
             <SyntaxCode source={source} language={language} />
           </pre>
         </>

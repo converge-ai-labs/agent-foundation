@@ -95,9 +95,9 @@ it("retains the exact answer after unknown delivery and retries only that respon
   const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
   fireEvent.change(input, { target: { value: "Ada" } });
   fireEvent.click(screen.getByRole("button", { name: "Send response" }));
-  await screen.findByText(/Delivery is uncertain/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(input.disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Retry same response" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry response" }));
   await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
   expect(client.POST.mock.calls[0]).toEqual(client.POST.mock.calls[1]);
 });
@@ -112,7 +112,7 @@ it("allows editing a rejected form and does not mislabel validation as unknown d
   fireEvent.click(screen.getByRole("button", { name: "Send response" }));
   await screen.findByText("Invalid form");
   await waitFor(() => expect(input.disabled).toBe(false));
-  expect(screen.queryByText(/Delivery is uncertain/)).toBeNull();
+  expect(screen.queryByText(/Couldn't confirm delivery/)).toBeNull();
 });
 
 it.each([502, 503, 504])(
@@ -126,16 +126,14 @@ it.each([502, 503, 504])(
     fireEvent.change(input, { target: { value: "Ada" } });
     fireEvent.click(screen.getByLabelText("Alpha"));
     fireEvent.click(screen.getByRole("button", { name: "Send response" }));
-    await screen.findByText(/Delivery is uncertain/);
+    await screen.findByText(/Couldn't confirm delivery/);
     expect(input.disabled).toBe(true);
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
     expect(client.POST).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Check request" }));
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(3));
     expect(client.POST).toHaveBeenCalledTimes(1);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Retry same response" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry response" }));
     await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
     expect(client.POST.mock.calls[0]).toEqual(client.POST.mock.calls[1]);
     expect(client.POST.mock.calls[1][1].body).toEqual({
@@ -157,10 +155,8 @@ it.each(["mcp_input_conflict", "mcp_input_stale"])(
     fireEvent.click(screen.getByRole("button", { name: "Send response" }));
     await screen.findByText("Request unavailable");
     expect(input.disabled).toBe(true);
-    expect(screen.queryByText(/Delivery is uncertain/)).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Retry same response" }),
-    ).toBeNull();
+    expect(screen.queryByText(/Couldn't confirm delivery/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry response" })).toBeNull();
     expect(client.POST).toHaveBeenCalledTimes(1);
   },
 );

@@ -93,7 +93,7 @@ export function AppFrame(props: Props) {
       () =>
         fail(
           new Error(
-            "The App did not initialize. Check that the sandbox origin is reachable from this browser.",
+            "The app didn't load. Check that your browser can reach its sandbox address.",
           ),
         ),
       15000,
@@ -157,8 +157,8 @@ export function AppFrame(props: Props) {
     <div>
       {error && (
         <p role="alert">
-          {error} The original tool result remains in the conversation. Close
-          and reopen the View to retry; the tool will not be called again.
+          {error} Close and reopen this view to retry. The saved tool result
+          stays in the chat; the tool won't run again.
         </p>
       )}
       <div ref={container} />

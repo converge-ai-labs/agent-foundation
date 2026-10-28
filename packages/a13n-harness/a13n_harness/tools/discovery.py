@@ -297,7 +297,7 @@ def replacement_tools(ctx: RunContext[AgentContext], names: set[str]) -> dict[st
 def _context_bytes(
     ctx: RunContext[AgentContext], request: ModelRequestContext, messages: list[ModelMessage], names: set[str]
 ) -> int:
-    from a13n_harness.toolsets.codeact import render_codeact_runner_description
+    from a13n_harness.toolsets.codeact import render_codeact_catalog
 
     size = len(
         ModelMessagesTypeAdapter.dump_json(
@@ -321,15 +321,15 @@ def _context_bytes(
         )
     baseline = replacement_tools(ctx, set())
     selected = replacement_tools(ctx, names)
-    for definition in request.model_request_parameters.function_tools:
-        metadata = definition.metadata or {}
-        if metadata.get("a13n.codeact.runner") is True:
-            program = metadata.get("a13n.codeact.program") is True
-            size += max(
-                0,
-                len(render_codeact_runner_description(selected, ctx=ctx, program=program).encode())
-                - len(render_codeact_runner_description(baseline, ctx=ctx, program=program).encode()),
-            )
+    if any(
+        (definition.metadata or {}).get("a13n.codeact.runner") is True
+        for definition in request.model_request_parameters.function_tools
+    ):
+        size += max(
+            0,
+            len(render_codeact_catalog(selected, ctx=ctx).encode())
+            - len(render_codeact_catalog(baseline, ctx=ctx).encode()),
+        )
     return size
 
 

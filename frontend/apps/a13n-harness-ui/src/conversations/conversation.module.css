@@ -6,35 +6,17 @@
   flex: 1;
 }
 .navigation label {
-  font-size: 12px;
-}
-.navigationFilters {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.navigationFilters > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.scopePopup {
-  width: 240px;
-}
-.activeFilter {
-  color: var(--a13n-text);
-  background: var(--a13n-hover);
+  font-size: 14px;
 }
 .navigationHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-inline: 8px 2px;
+  padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   margin-top: 8px;
 }
 .navigationHeading > span {
@@ -44,7 +26,7 @@
 }
 .shortcuts {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .homeLink {
   composes: row from "../shell/navigation-row.module.css";
@@ -52,6 +34,17 @@
 .homeLink.selected {
   background: var(--a13n-selected);
 }
+.newConversationLink {
+  composes: row from "../shell/navigation-row.module.css";
+  font-weight: 400;
+}
+.shortcuts button.homeLink {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .draftsTrigger {
   composes: row from "../shell/navigation-row.module.css";
   width: 100%;
@@ -63,20 +56,20 @@
 }
 .draftsCount {
   margin-inline-start: auto;
-  min-width: 18px;
+  min-width: 16px;
   text-align: center;
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .draftsPopup {
-  width: min(320px, var(--available-width));
+  width: min(280px, var(--available-width));
 }
 .draftsTitle {
-  font-size: 15px;
+  font-size: 14px;
 }
 .draftsDescription {
-  margin-block: 6px 12px;
-  font-size: 12px;
+  margin-block: 8px 12px;
+  font-size: 14px;
 }
 .draftsList {
   list-style: none;
@@ -89,12 +82,12 @@
 .draftShortcut {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 9px 8px;
+  gap: 4px;
+  padding: 8px 8px;
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
 }
 .draftShortcut:hover {
   background: var(--a13n-hover);
@@ -112,7 +105,7 @@
 .draftShortcut > small,
 .draftsEmpty {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .draftsEmpty {
   margin: 0;
@@ -124,13 +117,16 @@
   flex: 1;
   overflow: auto;
   min-height: 80px;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+.threadGroups::-webkit-scrollbar {
+  display: none;
 }
 .initialLoading {
   min-height: 32px;
   padding: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .initialLoading > span {
   animation: revealLoading 0s 180ms both;
@@ -144,7 +140,13 @@
   }
 }
 .projectGroup {
-  margin-bottom: 10px;
+  margin-bottom: 4px;
+}
+.projectPreview {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--a13n-border);
+  box-shadow: var(--shadow-floating);
 }
 .projectSummary {
   width: 280px;
@@ -154,7 +156,7 @@
   padding: 8px 4px;
   text-align: start;
   text-wrap: wrap;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .projectSummary strong,
@@ -166,8 +168,8 @@
   overflow-wrap: anywhere;
 }
 .projectSummary strong {
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 .projectSummary svg {
@@ -176,15 +178,15 @@
   color: var(--a13n-secondary);
 }
 .projectSummaryActivity {
-  padding: 6px 0 0 24px;
+  padding: 8px 0 0 24px;
   color: var(--a13n-secondary);
 }
 .projectPaths {
   display: grid;
   gap: 8px;
   border-top: 1px solid var(--a13n-border);
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
   color: var(--a13n-secondary);
 }
 .groupHeading {
@@ -193,8 +195,9 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 13px;
-  border-radius: 8px;
+  font-size: 14px;
+  border-radius: 6px;
+  margin-bottom: 4px;
 }
 .groupHeading:hover {
   background: var(--a13n-hover);
@@ -202,7 +205,14 @@
 .groupActions {
   display: flex;
   flex-shrink: 0;
-  margin-inline-end: 28px;
+  position: absolute;
+  inset-inline-end: 28px;
+  top: 0;
+}
+.groupActions button,
+.threadActions {
+  width: 24px;
+  height: 32px;
 }
 .groupToggle {
   display: flex;
@@ -210,15 +220,15 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  min-height: 34px;
-  padding: 7px 8px;
+  min-height: 32px;
+  padding: 4px 88px 4px 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: start;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   line-height: 20px;
 }
 .groupToggle > span {
@@ -228,24 +238,24 @@
   font-weight: 500;
 }
 .groupToggle > svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
 .groupChevron {
   position: absolute;
   inset-inline-end: 4px;
-  top: 3px;
+  top: 0;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   color: var(--a13n-secondary);
 }
 .groupChevron > svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   transition: transform 120ms ease;
 }
 .groupToggle:focus-visible {
@@ -256,10 +266,10 @@
 }
 .projectDrag {
   position: absolute;
-  inset-inline-start: 3px;
-  top: 3px;
+  inset-inline-start: 1px;
+  top: 0;
   width: 28px;
-  height: 28px;
+  height: 32px;
   z-index: 1;
   touch-action: none;
   cursor: grab;
@@ -288,8 +298,18 @@
     visibility: hidden;
   }
 }
+@media (hover: hover) and (pointer: fine) {
+  .groupToggle {
+    padding-inline-end: 32px;
+  }
+  .groupHeading:is(:hover, :focus-within, :has([data-popup-open]))
+    .groupToggle {
+    padding-inline-end: 88px;
+  }
+}
 .groupThreads {
-  margin-inline-start: 16px;
+  /* Match the project label after its 16px icon and 8px gap. */
+  margin-inline-start: 24px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -308,14 +328,22 @@
   white-space: nowrap;
 }
 .threadRow {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  min-height: 34px;
-  border-radius: 8px;
+  align-items: center;
+  min-height: 32px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  transition: background-color 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .threadRow {
+    transition: none;
+  }
 }
 /* Keep stars and menus aligned with rows that have a worker disclosure. */
 .threadRow:not(:has(.threadDisclosure)) {
-  padding-inline-end: 28px;
+  padding-inline-end: 32px;
 }
 .threadDisclosure {
   display: flex;
@@ -323,8 +351,8 @@
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
-  height: 28px;
-  margin: 3px 4px 3px 0;
+  height: 32px;
+  margin: 0 4px 0 0;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -332,16 +360,13 @@
   color: var(--a13n-secondary);
   cursor: pointer;
 }
-.threadDisclosure:hover {
-  background: var(--a13n-hover);
-}
 .threadDisclosure:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 .threadDisclosure svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   transition: transform 120ms ease;
 }
 .threadRow:hover,
@@ -353,7 +378,7 @@
 }
 .threadActions {
   flex-shrink: 0;
-  margin-top: 3px;
+  margin-top: 0;
   margin-inline-end: 4px;
   color: var(--a13n-secondary);
   background: transparent;
@@ -362,14 +387,33 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  height: 34px;
-  margin-inline: 3px;
+  height: 32px;
+  margin-inline: 4px;
   color: var(--a13n-tertiary);
 }
 @media (hover: hover) and (pointer: fine) {
   .threadActions,
   .groupActions {
     opacity: 0;
+  }
+  /* With a fine pointer the row menu floats over the title end only while
+     the row is hovered or focused, so idle titles use the full row width. */
+  .threadRow:not(:has(.threadDisclosure)) {
+    padding-inline-end: 0;
+  }
+  .threadActions {
+    position: absolute;
+    top: 0;
+    inset-inline-end: 0;
+  }
+  .threadRow:has(.threadDisclosure) .threadActions {
+    inset-inline-end: 28px;
+  }
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
+    padding-inline-end: 32px;
+  }
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
+    display: none;
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
@@ -381,21 +425,25 @@
   }
 }
 .threadActions:hover,
-.threadActions[data-popup-open] {
+.threadActions[data-popup-open],
+.groupActions button:hover,
+.groupActions button[data-popup-open],
+.projectDrag:hover {
   color: var(--a13n-text);
-  background: var(--accent);
+  background: transparent;
 }
 .threadLink {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  padding: 7px 8px;
-  border-radius: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .threadLink:hover,
@@ -406,43 +454,25 @@
   outline: 1px solid var(--ring);
   outline-offset: -2px;
 }
-.threadIcon {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  color: var(--a13n-secondary);
-}
-.threadIcon > svg {
-  width: 18px;
-  height: 18px;
-}
+.threadStatus,
 .draftMarker {
-  position: absolute;
-  inset-inline-end: -3px;
-  bottom: -3px;
-  display: grid;
-  place-items: center;
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
-  background: var(--a13n-canvas);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 18px;
   color: var(--a13n-secondary);
 }
-.threadRow:has(.selected) .draftMarker {
-  background: var(--a13n-selected);
+.threadStatus > svg {
+  width: 14px;
+  height: 14px;
 }
 .threadLink > span {
   min-width: 0;
 }
 .threadLabel {
   flex: 1;
-}
-.threadLink .attentionState {
-  color: var(--a13n-text-supporting);
-  font-size: 12px;
 }
 .threadLink strong {
   display: block;
@@ -454,44 +484,35 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin-top: 2px;
+  font-size: 14px;
+  margin-top: 4px;
 }
 .threadLink .coordinatorActivity {
-  position: relative;
-  line-height: 16px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.coordinatorActivity > span {
-  display: block;
+  flex-shrink: 0;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.coordinatorActivity > svg {
-  position: absolute;
-  inset-inline-start: -23px;
-  top: 2px;
-  width: 12px;
-  height: 12px;
+  margin: 0;
+  line-height: 20px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .resultDot {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
-  margin-top: 6px;
   border-radius: 50%;
   background: var(--info-foreground);
 }
 .resultCount {
   flex-shrink: 0;
   min-width: 18px;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
   color: var(--info-foreground);
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -519,7 +540,7 @@
 .emptyGroup {
   display: block;
   color: var(--a13n-secondary);
-  padding: 5px 8px;
+  padding: 4px 8px;
 }
 .form {
   display: grid;
@@ -530,9 +551,10 @@
   padding: 12px;
   background: var(--a13n-surface);
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 14px;
 }
 .page {
+  container: conversation-page / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -545,7 +567,7 @@
   right: 8px;
   z-index: 2;
   max-width: calc(100% - 16px);
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: 6px;
   background: var(--a13n-surface);
   pointer-events: none;
@@ -553,12 +575,12 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .toolbar {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -568,58 +590,104 @@
   flex: 1;
   min-height: 100px;
   overflow: auto;
-  padding: 20px 12px 20px 0;
+  padding: 24px 16px 32px;
   overflow-anchor: none;
 }
 .transcript {
-  max-width: 860px;
+  max-width: var(--harness-reading-width);
   margin: 0 auto;
 }
 .entry {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .userInput {
-  margin: 12px 0 24px auto;
+  margin: 8px 0 16px auto;
+  position: relative;
   width: fit-content;
-  min-width: 100px;
-  max-width: 90%;
+  min-width: 64px;
+  max-width: min(85%, 640px);
 }
 .userMessage {
   color: var(--a13n-text);
-  padding: 12px 16px;
+  padding: 12px 12px;
   background: var(--a13n-surface);
-  border-radius: 16px 16px 4px 16px;
+  border-radius: 10px;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
   overflow-wrap: anywhere;
 }
 .assistantMessage {
-  margin: 16px 0;
+  position: relative;
+  margin: 12px 0 16px;
+  padding-inline: 12px;
+  line-height: var(--harness-prose-leading);
 }
 .messageActions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 4px;
+  min-height: 32px;
+  margin-top: 4px;
+  margin-inline-start: -6px;
   color: var(--a13n-secondary);
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
 .userInput > .messageActions {
   justify-content: flex-end;
-  margin-top: 4px;
-  padding-inline: 8px;
+  margin-inline: 0;
+}
+@container conversation-page (max-width: 600px) {
+  .assistantMessage {
+    padding-inline: 8px;
+  }
+  .userInput {
+    max-width: 90%;
+  }
+  .messageActions {
+    opacity: 1;
+  }
+}
+.userInput:hover > .messageActions,
+.userInput:focus-within > .messageActions,
+.assistantMessage:hover .messageActions,
+.assistantMessage:focus-within .messageActions,
+.messageActions:has([data-popup-open], [role="alert"]) {
+  opacity: 1;
+}
+@media (hover: none) {
+  .messageActions {
+    opacity: 1;
+  }
 }
 .copyMessage {
   color: inherit;
 }
-.userInput:hover .copyMessage,
-.userInput:focus-within .copyMessage,
-.assistantMessage:hover .copyMessage,
-.assistantMessage:focus-within .copyMessage {
+.copyMessage:hover {
   color: var(--a13n-text);
 }
 .copyError {
   color: var(--a13n-danger);
-  font-size: 12px;
+  font-size: 14px;
+}
+.userInput > .messageActions:has([role="alert"]),
+.assistantMessage > .messageActions:has([role="alert"]) {
+  flex-wrap: wrap;
+  opacity: 1;
 }
 @media (pointer: coarse) {
+  .groupToggle,
+  .threadLink {
+    min-height: 44px;
+  }
+  .groupActions button,
+  .threadActions,
+  .groupChevron,
+  .projectDrag,
+  .threadDisclosure,
+  .threadStar {
+    height: 44px;
+  }
   .copyMessage {
     width: 44px;
     height: 44px;
@@ -627,14 +695,14 @@
 }
 .userMessage header,
 .assistantMessage header {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   margin-bottom: 8px;
 }
 .threadSource {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 100%;
   color: var(--a13n-secondary);
   text-decoration: none;
@@ -693,8 +761,8 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 0 2px;
-  font-size: 12px;
+  padding: 8px 0 4px;
+  font-size: 14px;
   font-weight: 500;
   transition: color 150ms ease;
 }
@@ -715,7 +783,7 @@
 }
 .inputStatus {
   display: inline;
-  font-size: 11px;
+  font-size: 14px;
   margin-inline-start: 8px;
 }
 .code {
@@ -738,36 +806,70 @@
   margin-top: 12px;
 }
 .reasoning > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: fit-content;
-  margin-bottom: 10px;
+  min-height: 32px;
+  margin: 0 0 8px -8px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
+  list-style: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.reasoning > summary::-webkit-details-marker {
+  display: none;
+}
+.reasoning > summary:hover {
+  background: color-mix(in srgb, var(--a13n-surface) 70%, transparent);
+  color: var(--a13n-text);
+}
+.reasoning[open] > div {
+  font-size: 14px;
+  line-height: 1.6;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--a13n-border);
 }
 .reasoning > summary:focus-visible {
   outline: 1px solid var(--ring);
   outline-offset: 3px;
 }
 .activity {
-  padding: 8px 10px;
   margin: 4px 0;
-  background: color-mix(in srgb, var(--a13n-surface) 45%, transparent);
-  border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .activity summary,
 .rawSource summary {
   cursor: pointer;
 }
 .activity details {
-  margin: 10px 0;
+  margin: 12px 0;
 }
 .activity > summary {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 32px;
+  margin-inline-start: -8px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: var(--a13n-secondary);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.activity > summary:hover {
+  background: color-mix(in srgb, var(--a13n-surface) 70%, transparent);
+  color: var(--a13n-text);
 }
 .activity[open] > summary {
   color: var(--a13n-text);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .activity > summary:focus-visible {
   outline: 1px solid var(--ring);
@@ -776,9 +878,26 @@
 .children {
   margin-top: 12px;
 }
+.childControls {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.childControlActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.childControlActions button {
+  white-space: normal;
+  height: auto;
+  min-height: 32px;
+  text-align: start;
+}
 .children > details {
   background: var(--a13n-surface);
-  padding: 10px 12px;
+  padding: 12px var(--harness-group-inset);
 }
 .children > details > summary {
   color: var(--a13n-text);
@@ -812,10 +931,10 @@
   margin: 0;
 }
 .detailText > button {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .rawSource {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .liveOutput > small {
@@ -823,40 +942,72 @@
 }
 .composer {
   container: composer / inline-size;
+  --composer-font-size: 16px;
+  --composer-content-height: 32px;
   flex-shrink: 0;
-  max-width: 860px;
-  width: 100%;
+  /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
+     each side. */
+  width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto;
-  border: 1px solid var(--a13n-border);
-  border-radius: 20px;
-  padding: 10px 12px;
-  background: var(--a13n-canvas);
 }
-.composer:focus-within {
-  border-color: var(--ring);
+.page > .composer {
+  margin-top: 8px;
+}
+.composerInput {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 32px;
+  align-items: flex-end;
+  gap: 4px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 14px;
+  padding: 8px 8px;
+  background: var(--card);
+  box-shadow: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.composerInput:focus-within {
+  border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent);
+}
+@media (max-width: 640px) {
+  .reading {
+    padding: 16px 12px;
+  }
+  .composerInput {
+    padding: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .messageActions,
+  .composerInput,
+  .activity > summary,
+  .reasoning > summary {
+    transition: none;
+  }
 }
 .composerConnection {
   margin: 4px 4px 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .sendButton {
-  grid-area: send;
   flex-shrink: 0;
   border-radius: 50%;
   box-shadow: none;
 }
 .composerContext {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .executionLoad {
   padding-block: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .executionLoad > button {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 8px;
   background: var(--a13n-surface);
@@ -879,7 +1030,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .goalButton {
   flex-shrink: 0;
@@ -888,23 +1039,23 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 .workerIdentity {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   max-width: 280px;
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--a13n-hover);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .workerIdentity > span {
   overflow: hidden;
@@ -928,10 +1079,11 @@
   max-width: 100%;
 }
 .composerEditor {
+  flex: 1;
   min-width: 0;
 }
 .attachButton {
-  grid-area: attach;
+  align-self: end;
 }
 .composerSync {
   display: flex;
@@ -950,8 +1102,19 @@
 .composerActions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 4px;
+  min-height: 32px;
+}
+.composerInput > button,
+.composerActions > button {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
+.composerInput > button svg,
+.composerActions > button svg {
+  width: 16px;
+  height: 16px;
 }
 .composerChoices {
   display: flex;
@@ -961,43 +1124,85 @@
   min-width: 0;
   gap: 8px;
 }
+.composerInput[data-filled] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.composerInput[data-filled] .composerEditor {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+.composerInput[data-filled] .attachButton {
+  grid-column: 1;
+  grid-row: 2;
+}
+.composerInput[data-filled] .composerActions {
+  grid-column: 2;
+  grid-row: 2;
+  justify-content: flex-end;
+}
+.composerInput[data-filled] .sendButton {
+  grid-column: 3;
+  grid-row: 2;
+}
 @container composer (max-width: 480px) {
   .composerBody {
     --composer-font-size: 16px;
-    --composer-content-height: 56px;
+    --composer-content-height: 32px;
   }
+  /* Phone chrome keeps desktop type: 13px labels and 16px glyphs. */
   .composerHeader {
-    align-items: center;
     gap: 4px;
-    margin-bottom: 6px;
   }
   .composerHeader button {
-    min-height: 44px;
-    padding-inline: 8px;
+    height: 32px;
+    font-size: 14px;
+  }
+  .composerHeader button svg {
+    width: 16px;
+    height: 16px;
   }
   .composerActions {
     gap: 4px;
-    margin-top: 6px;
-  }
-  .composerActions > button {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
   }
 }
-@media (max-width: 600px) {
-  .composer {
-    padding: 8px;
-    border-radius: 16px;
+@container composer (max-width: 600px) {
+  .composerInput {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .composerEditor {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .attachButton {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .composerActions {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  .sendButton {
+    grid-column: 3;
+    grid-row: 2;
   }
 }
-@media (pointer: coarse) {
-  .composerHeader button,
-  .composerActions button {
-    min-height: 44px;
+@media (max-width: 600px), (pointer: coarse) {
+  @container composer (min-width: 601px) {
+    .composerInput:not([data-filled]) {
+      grid-template-columns: 44px minmax(0, 1fr) auto 44px;
+    }
   }
+  .composerInput {
+    column-gap: 0;
+  }
+  .composerActions {
+    gap: 0;
+  }
+  .composerInput > button,
   .composerActions > button {
     min-width: 44px;
+    min-height: 44px;
   }
 }
 .composerStatus {
@@ -1005,8 +1210,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  padding: 6px 0;
-  font-size: 12px;
+  padding: 8px 0;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .composerStatus p {
@@ -1017,15 +1222,15 @@
   color: var(--a13n-text);
 }
 .warning {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--a13n-text);
   background: var(--a13n-surface);
   border-left: 3px solid var(--warning-foreground);
-  padding: 10px 12px;
-  margin: 10px 0;
+  padding: 12px 12px;
+  margin: 12px 0;
 }
 .receipt {
-  font-size: 12px;
+  font-size: 14px;
   padding: 8px 0;
   overflow-wrap: anywhere;
 }
@@ -1038,7 +1243,7 @@
 }
 .empty {
   text-align: center;
-  padding: 48px 20px;
+  padding: 48px 24px;
   color: var(--a13n-secondary);
 }
 .empty h2 {
@@ -1052,6 +1257,16 @@
   margin-bottom: 8px;
   position: relative;
 }
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 16px;
+}
+.detailActions:empty {
+  display: none;
+}
 .detailGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1059,12 +1274,79 @@
 }
 .detailGrid dt {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .detailGrid dd {
   margin: 4px 0 12px;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 14px;
+}
+dl.detailGrid {
+  display: block;
+  margin-block: 12px;
+}
+dl.detailGrid > div {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
+  gap: 24px;
+  padding-block: 8px;
+}
+dl.detailGrid dt {
+  color: var(--a13n-text);
+  font-size: 14px;
+  line-height: 20px;
+}
+dl.detailGrid dd {
+  margin: 0;
+  color: var(--a13n-secondary);
+  text-align: right;
+  line-height: 20px;
+}
+dl.detailGrid > .detailLongRow {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+dl.detailGrid > .detailLongRow dd {
+  text-align: left;
+}
+.inspection {
+  gap: 16px;
+}
+.inspection [data-slot="tabs-list"] {
+  border-bottom: 1px solid var(--a13n-border-soft);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--a13n-elevated);
+  width: 100%;
+  max-width: 100%;
+  gap: 24px;
+}
+.inspection [data-slot="tabs-tab"] {
+  font-size: 14px;
+}
+.inspection [data-slot="tabs-content"] > section + section {
+  margin-top: 24px;
+}
+.inspection section > h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.inspection [data-slot="tabs-content"] > section > p,
+.inspection [data-slot="tabs-content"] > .form > section > p {
+  margin-block: 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.inspection dl.detailGrid {
+  margin-block: 8px 12px;
+}
+.inspection dl.detailGrid > div {
+  padding-block: 4px;
 }
 @media (max-width: 700px) {
   .header {
@@ -1075,11 +1357,8 @@
   .headerActions {
     width: 100%;
   }
-  .userInput {
-    max-width: 95%;
-  }
   .reading {
-    padding-right: 0;
+    padding-inline: 12px;
   }
   .detailGrid {
     grid-template-columns: 1fr;
@@ -1087,10 +1366,10 @@
 }
 
 .decision {
-  margin: 20px 0;
-  padding: 18px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
 }
 .decision h2 {
   font-size: 16px;
@@ -1098,8 +1377,23 @@
   margin-bottom: 8px;
 }
 .decision p {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
+}
+.decision > p {
+  margin: 0 0 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.decision > form {
+  margin-top: 24px;
+}
+.decisionActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .question {
   border: 0;
@@ -1108,24 +1402,37 @@
   margin: 0;
 }
 .question legend {
-  font-size: 13px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.question > p {
+  margin-bottom: 12px;
+  font-size: 16px;
   font-weight: 500;
-  margin-bottom: 8px;
 }
 .answerOption {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-start;
-  padding: 10px 12px;
-  margin: 6px 0;
+  padding: 12px 12px;
+  margin: 8px 0;
   border-radius: 6px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .answerOption input {
   margin-top: 4px;
   flex-shrink: 0;
+  accent-color: var(--a13n-text);
+}
+.answerOption:has(input:checked) {
+  background: var(--a13n-selected);
+}
+.answerOption:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .answerOption strong {
   font-weight: 500;
@@ -1134,6 +1441,8 @@
   display: block;
   color: var(--a13n-secondary);
   margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .responseInputs {
@@ -1144,10 +1453,25 @@
   margin: 0;
   min-width: 0;
 }
+.settingsHint {
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.settingsFields {
+  composes: responseInputs;
+  gap: var(--harness-section-gap);
+}
+.settingsActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 .attachmentCard {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding: 12px;
   margin: 8px 0;
   border: 1px solid var(--a13n-border);
@@ -1159,12 +1483,6 @@
   color: var(--a13n-secondary);
 }
 
-.markdown ul {
-  list-style: disc;
-}
-.markdown ol {
-  list-style: decimal;
-}
 .form h3 {
   font-weight: 500;
   margin-bottom: 8px;
@@ -1174,22 +1492,15 @@
   border-top: 1px solid var(--a13n-border);
 }
 
-.markdown p,
-.markdown li {
-  font-size: 14px;
-  line-height: 1.75;
-}
-
-.sectionHeading,
-.recentToggle {
+.sectionHeading {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 26px;
   margin-block: 4px 0;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
 }
 .sectionHeading small {
@@ -1202,26 +1513,6 @@
   width: 24px;
   height: 24px;
 }
-.recentToggle {
-  width: 100%;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  text-align: start;
-}
-.recentToggle:hover {
-  background: var(--a13n-hover);
-}
-.recentToggle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-.recentToggle > svg {
-  width: 12px;
-  height: 12px;
-  transition: transform 120ms ease;
-}
 .showMore {
   margin: 4px 0 0 8px;
   color: var(--a13n-secondary);
@@ -1233,12 +1524,12 @@
   align-items: center;
   vertical-align: middle;
   max-width: min(280px, 100%);
-  margin: 0 3px;
+  margin: 0 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 9px;
   background: var(--a13n-surface);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
   overflow: hidden;
 }
@@ -1246,13 +1537,13 @@
 .inlineAttachmentRemove {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 0 6px;
+  padding: 0 8px;
   min-width: 0;
 }
 .inlineAttachmentOpen img {
@@ -1270,7 +1561,7 @@
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--a13n-secondary);
-  padding-inline: 7px;
+  padding-inline: 8px;
   flex-shrink: 0;
 }
 .inlineAttachment button:hover {
@@ -1291,20 +1582,20 @@
   display: none;
 }
 .inputText {
-  font-size: 15px;
+  font-size: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.8;
+  line-height: inherit;
 }
 .inputAttachment {
   display: inline-block;
   vertical-align: middle;
   max-width: calc(100% - 8px);
-  margin: 3px 4px;
+  margin: 4px 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: 14px;
 }
 .inputAttachment > details > summary {
   display: flex;
@@ -1313,6 +1604,9 @@
   padding: 4px 8px;
   cursor: pointer;
   list-style: none;
+}
+.inputAttachment > details > summary::before {
+  content: none;
 }
 .inputAttachment > details > summary::-webkit-details-marker {
   display: none;
@@ -1329,7 +1623,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 8px;
   max-width: min(280px, 100%);
   color: var(--a13n-text);
   background: transparent;
@@ -1372,9 +1666,9 @@
 .recoveryNotice {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   margin: 12px 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .recoveryNotice > svg {
@@ -1383,11 +1677,11 @@
 .runActivity {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 24px;
   margin: 8px 0 16px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .runActivity > svg {
   flex-shrink: 0;
@@ -1400,23 +1694,28 @@
 .failureNotice {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  margin-block: 14px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 12px;
-  font-size: 13px;
-  background: var(--muted);
+  gap: 12px;
+  padding: 12px 12px;
+  margin-block: 12px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--a13n-surface);
 }
 .failureNotice > svg {
   flex: 0 0 18px;
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--warning-foreground);
 }
 .failureNotice > div {
   min-width: 0;
 }
+.failureNotice strong {
+  font-weight: 500;
+}
 .failureNotice p {
+  color: var(--a13n-secondary);
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
@@ -1436,8 +1735,8 @@
   border: 1px solid color-mix(in srgb, var(--context-accent) 24%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--context-accent) 7%, var(--a13n-surface));
-  padding: 10px 14px;
-  margin-block: 10px;
+  padding: 12px 16px;
+  margin-block: 12px;
   min-width: 0;
 }
 .contextActivity[data-kind="compaction"] {
@@ -1445,12 +1744,13 @@
 }
 .contextActivity > summary {
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
-.contextActivity > summary::marker {
+.contextActivity > summary::before {
   color: var(--context-accent);
+  opacity: 1;
 }
 .contextActivity[open] > summary {
   margin-bottom: 12px;
@@ -1458,7 +1758,7 @@
 .contextStatus {
   margin-left: 12px;
   color: var(--a13n-text-supporting);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 .contextPreview {
@@ -1485,7 +1785,7 @@
   min-width: 0;
 }
 .childAnswer > header {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   margin-block: 12px;
 }
@@ -1499,12 +1799,21 @@
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  padding-inline-start: 36px;
+  /* Symmetric insets keep the transcript on the composer's axis; the input
+     timeline rail lives in the start inset. */
+  padding-inline: 36px;
+  scrollbar-gutter: stable both-edges;
 }
 .turn {
-  margin-bottom: 28px;
+  margin-bottom: 32px;
   outline: none;
   scroll-margin-top: 16px;
+}
+.turn:has(+ .failureNotice) {
+  margin-bottom: 0;
+}
+.turn:has(+ .failureNotice) .assistantMessage:last-child {
+  margin-bottom: 0;
 }
 .turn:focus-visible {
   outline: 2px solid var(--a13n-border);
@@ -1512,27 +1821,37 @@
   border-radius: 8px;
 }
 .execution {
-  margin-block: 8px 18px;
+  margin: 8px 12px 16px;
 }
 .executionToggle {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 14px;
+  padding: 8px 8px;
   margin-inline-start: -8px;
   cursor: pointer;
+}
+.executionPreview {
+  flex: 1;
+  min-width: 100px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-tertiary);
+  padding-left: 8px;
 }
 .executionTitle {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
 }
 .executionToggle:hover {
@@ -1549,13 +1868,26 @@
 .executionContent {
   position: relative;
   max-height: min(480px, 52dvh);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 8px 12px;
+  padding: 4px 0 4px 12px;
   margin-block-start: 4px;
-  border-radius: 8px;
-  background: var(--a13n-surface);
+  margin-inline-start: 4px;
+  border-inline-start: 1px solid var(--a13n-border);
+}
+/* Inside the work log, reasoning keeps the 32px row rhythm of the tool groups
+   instead of the looser spacing it has between transcript paragraphs. */
+.executionContent .reasoning {
+  margin: 4px 0;
+}
+.executionContent .reasoning > summary {
+  min-height: var(--harness-control-height, 32px);
+  margin-bottom: 4px;
+}
+.executionContent .reasoning[open]:not(:last-child) {
+  margin-bottom: 12px;
 }
 .executionContent:focus-visible {
   outline: 2px solid var(--a13n-focus);
@@ -1572,7 +1904,119 @@
 }
 @container conversation-reader (max-width: 600px) {
   .readerFrame .reading {
-    padding-inline-start: 0;
+    padding-inline: 0;
     padding-block-start: 36px;
+  }
+}
+
+@container conversation-page (max-width: 600px) {
+  .composer {
+    width: 100%;
+  }
+}
+
+.conversationFooter {
+  --conversation-footer-control-height: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-shrink: 0;
+  width: min(var(--harness-reading-width), 100% - 84px);
+  min-height: 24px;
+  margin: 8px auto 0;
+  padding-inline: 8px;
+}
+.conversationFooter > div {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+.conversationFooter button {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  isolation: isolate;
+  height: var(--conversation-footer-control-height);
+  min-height: var(--conversation-footer-control-height);
+  padding: 2px 8px;
+  border-radius: 5px;
+  line-height: 20px;
+}
+.conversationFooter button:is(:hover, [data-popup-open]) {
+  background: transparent;
+  color: var(--a13n-text);
+}
+/* Keep the quiet hover surface compact even when the touch target grows. */
+.conversationFooter button::before {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 12px) 0;
+  z-index: -1;
+  border-radius: 5px;
+  pointer-events: none;
+}
+.conversationFooter button:is(:hover, [data-popup-open])::before {
+  background: var(--a13n-surface);
+}
+.conversationFooter button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.conversationFooter button:focus-visible::before {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .childControlActions button {
+    min-height: 44px;
+  }
+  .conversationFooter {
+    --conversation-footer-control-height: 44px;
+  }
+}
+@container conversation-page (max-width: 600px) {
+  .conversationFooter {
+    width: 100%;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+}
+
+.projectIcon {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+
+.connectionSelections {
+  display: grid;
+  gap: 8px;
+}
+.inspection > [data-slot="tabs-content"] > .form > section > .settingsHint {
+  margin: 0 0 16px;
+}
+
+.settingsActions:not(:has(button)) {
+  display: none;
+}
+
+.inspection .form {
+  gap: var(--harness-section-gap);
+}
+.inspection .form > section + section {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Keep the send glyph and disc compact without shrinking the touch target. */
+@media (max-width: 600px), (pointer: coarse) {
+  .composerInput > .sendButton {
+    background: radial-gradient(
+      circle 16px at center,
+      var(--primary) 99%,
+      transparent 100%
+    );
+    border: 0;
   }
 }

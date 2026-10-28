@@ -136,7 +136,7 @@ it.each(["copilot", "chatgpt"])(
     await user.click(await screen.findByRole("option", { name: label }));
     expect(screen.queryByLabelText("Account name")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText("Choose account source");
+    await screen.findByText("Account source");
     if (provider === "chatgpt")
       expect(screen.getByText("Advanced login options")).toBeTruthy();
     fireEvent.click(

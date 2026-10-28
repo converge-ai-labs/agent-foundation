@@ -1,13 +1,7 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  ModalFrame,
-  SettingsRow,
-  SettingsSection,
-  Skeleton,
-  StatusPill,
-} from "a13n-ui";
+import { Button, ModalFrame, Skeleton, StatusPill } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, PageHeader } from "../shell/ui";
@@ -141,123 +135,130 @@ export function EnvdRuntime() {
           : "Preparing runtime and checking readiness…";
   return (
     <>
-      <SettingsSection
-        title="Local runtime"
-        description={state?.host ?? "Loading Host…"}
-      >
-        <SettingsRow
-          label="envd"
-          description={
-            state?.source === "custom"
-              ? "Custom executable · managed on this Host"
-              : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
-          }
+      <div className={layout.statusBlock}>
+        <SettingsSection
+          variant="grouped"
+          title="Local runtime"
+          description={state?.host ?? "Loading host…"}
         >
-          <StatusPill variant={state?.running_devices ? "success" : "neutral"}>
-            {!state
-              ? "Loading…"
-              : state.running_devices
-                ? `${state.running_devices} running`
-                : state.installed
-                  ? "Installed · stopped"
-                  : updateAvailable
-                    ? "Update required"
-                    : "Not installed"}
-          </StatusPill>
-        </SettingsRow>
-        <div className={layout.actions}>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={blocked}
-            onClick={() => action.mutate("execution")}
+          <SettingsRow
+            label="envd"
+            description={
+              state?.source === "custom"
+                ? "Custom executable · managed on this host"
+                : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
+            }
           >
-            {action.isPending && action.variables === "execution"
-              ? "Preparing…"
-              : state?.running_devices
-                ? "Check"
-                : state?.installed
-                  ? "Start"
-                  : updateAvailable
-                    ? "Update & start"
-                    : "Install & start"}
-          </Button>
-          {!!state?.instances?.length && (
-            <>
+            <div className={layout.controls}>
+              <StatusPill
+                variant={state?.running_devices ? "success" : "neutral"}
+              >
+                {!state
+                  ? "Loading…"
+                  : state.running_devices
+                    ? `${state.running_devices} running`
+                    : state.installed
+                      ? "Installed · stopped"
+                      : updateAvailable
+                        ? "Update required"
+                        : "Not installed"}
+              </StatusPill>
+
               <Button
                 size="sm"
                 variant="outline"
                 disabled={blocked}
-                onClick={() => setConfirmation("restart")}
+                onClick={() => action.mutate("execution")}
               >
-                Restart
+                {action.isPending && action.variables === "execution"
+                  ? "Preparing…"
+                  : state?.running_devices
+                    ? "Check"
+                    : state?.installed
+                      ? "Start"
+                      : updateAvailable
+                        ? "Update & start"
+                        : "Install & start"}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => setConfirmation("stop")}
-              >
-                Stop
-              </Button>
-            </>
-          )}
-          {action.isPending && action.variables !== "stop" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => controller.current?.abort()}
-            >
-              Cancel preparation
-            </Button>
-          )}
-        </div>
-      </SettingsSection>
-      {!state?.installed && state && (
-        <p className={layout.hint}>
-          {updateAvailable
-            ? `Update envd to ${state.required_version} for this Harness UI version.`
-            : "Install envd to check Full Control and Sandbox automatically."}
-        </p>
-      )}
-      {busy && (
-        <p role="status" className={layout.hint}>
-          {progress}
-          {action.variables === "desktop" &&
-            " Approve the permission prompt on the Host; this can take up to two minutes."}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={layout.hint}>
-          {notice}
-        </p>
-      )}
-      <ErrorNotice
-        error={runtime.error || action.error || state?.error}
-        retry={() => void runtime.refetch()}
-      />
-      {state?.restart_required && (
-        <div role="status" className={styles.notice}>
-          <strong>Restart Harness UI to apply saved configuration</strong>
-          <p>
-            Restart the server with the same launch command to load these
-            settings.
+              {!!state?.instances?.length && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={blocked}
+                    onClick={() => setConfirmation("restart")}
+                  >
+                    Restart
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setConfirmation("stop")}
+                  >
+                    Stop
+                  </Button>
+                </>
+              )}
+              {action.isPending && action.variables !== "stop" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => controller.current?.abort()}
+                >
+                  Cancel preparation
+                </Button>
+              )}
+            </div>
+          </SettingsRow>
+        </SettingsSection>
+        {!state?.installed && state && (
+          <p className={layout.hint}>
+            {updateAvailable
+              ? `Update envd to ${state.required_version} for this Harness UI version.`
+              : "Install envd to check Full Control and Sandbox automatically."}
           </p>
-        </div>
-      )}
+        )}
+        {busy && (
+          <p role="status" className={layout.hint}>
+            {progress}
+            {action.variables === "desktop" &&
+              "Approve the permission prompt on this computer. This may take two minutes."}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className={layout.hint}>
+            {notice}
+          </p>
+        )}
+        <ErrorNotice
+          error={runtime.error || action.error || state?.error}
+          retry={() => void runtime.refetch()}
+        />
+        {state?.restart_required && (
+          <div role="status" className={styles.notice}>
+            <strong>Restart Harness UI to apply saved configuration</strong>
+            <p>
+              Restart the server with the same launch command to load these
+              settings.
+            </p>
+          </div>
+        )}
+      </div>
       <SettingsSection
+        variant="grouped"
         title="Capabilities"
         description="Full Control and Sandbox are checked together."
       >
         <SettingsRow
           label="Full Control"
-          description="File and command execution. Checked when you start the runtime."
+          description="File and command access. Checked when the runtime starts."
         >
           {readiness("environment-envd")}
         </SettingsRow>
         <SettingsRow
           label="Sandbox"
-          description="Checked automatically. Each Project also checks its own workspace."
+          description="Checked automatically, including each project's workspace."
         >
           {readiness("environment-sandbox")}
         </SettingsRow>
@@ -265,8 +266,8 @@ export function EnvdRuntime() {
           label="Computer Use"
           description={
             state?.computer_use
-              ? "Screen observation and input require permission on this Host."
-              : "Enable Desktop capability in Configuration, save, then restart Harness UI."
+              ? "Screen observation and input require permission on this host."
+              : "Turn on Desktop capability below, save, and restart Harness UI."
           }
         >
           {state?.computer_use ? (
@@ -287,6 +288,7 @@ export function EnvdRuntime() {
         </SettingsRow>
       </SettingsSection>
       <SettingsSection
+        variant="grouped"
         title="Version & updates"
         description="The envd version selected by this Harness UI installation."
       >
@@ -294,7 +296,7 @@ export function EnvdRuntime() {
           label="Required version"
           description={
             state?.source === "custom"
-              ? "Custom executables are updated on the Host. Restart the runtime after replacing the file."
+              ? "Update the executable on this server, then restart the runtime."
               : state?.installed
                 ? "Reinstall this version and restart envd."
                 : "Downloaded when you install or update envd."
@@ -337,8 +339,8 @@ export function EnvdRuntime() {
         }
         description={
           confirmation === "stop"
-            ? "Interrupts local envd commands in all conversations. Workspace files are kept."
-            : "Closes local envd Sessions in all conversations, then checks Full Control and Sandbox. Workspace files are kept."
+            ? "Interrupts local envd commands in all chats. Workspace files are kept."
+            : "Closes local envd sessions in all chats, then checks Full Control and Sandbox. Files are kept."
         }
         closeLabel="Close confirmation"
         footer={
@@ -386,7 +388,7 @@ function RuntimeDetails() {
   const { data: state } = useEnvdStatus();
   return (
     <details className={styles.details}>
-      <summary>Installation & instance details</summary>
+      <summary>Installation details</summary>
       <dl className={layout.metadata}>
         <dt>Verified managed release</dt>
         <dd>{state?.verified_version ?? "Not verified"}</dd>

@@ -260,7 +260,7 @@ it("reveals a native player's revision conflict and refreshes metadata before re
 it("does not fetch oversized files and leaves the original link available", async () => {
   const f = fixture("/tmp/photo.png", MAX_MEDIA_BYTES + 1);
   render(f.tree());
-  await screen.findByText(/Preview supports files up to 10 MiB/);
+  await screen.findByText(/preview limit is 10 MiB/);
   expect(f.fetch).not.toHaveBeenCalled();
   expect(f.post).not.toHaveBeenCalled();
   expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();

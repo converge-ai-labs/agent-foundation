@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder } from "@phosphor-icons/react";
+import { Folder } from "@phosphor-icons/react";
 import { Button, SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -85,8 +85,8 @@ export async function ensureConversation(
       const found = await checkConversation(transport, threadId, draft);
       throw new Error(
         found
-          ? "This conversation already exists. Open it to review its settings before sending your retained input."
-          : "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+          ? "This chat already exists. Open it and check its settings before sending your saved input."
+          : "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
       );
     }
     draft.attempted = true;
@@ -107,7 +107,7 @@ export async function ensureConversation(
       );
       if (created.thread_id !== threadId)
         throw new Error(
-          "The conversation acknowledgement was incomplete. Send again to check its identity.",
+          "Couldn't confirm the chat was created. Send again to check.",
         );
       draft.created = true;
     } catch (error) {
@@ -347,26 +347,12 @@ function NewConversation({
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Preparing your conversation…"
+      label="Preparing your chat…"
       onContinue={() => setShowAvailable(true)}
     >
-      <section className={styles.page} aria-label="New conversation">
-        <div className={styles.welcome}>
-          <Robot aria-hidden="true" />
-          <h1>
-            What would you like to build
-            {project ? (
-              <>
-                {" "}
-                in <span>{project.name}</span>
-              </>
-            ) : (
-              ""
-            )}
-            ?
-          </h1>
-        </div>
+      <section className={styles.page} aria-label="New chat">
         <div className={styles.inputArea}>
+          <h1 className={styles.welcome}>What can I help with?</h1>
           <ConversationTranscript
             entries={[]}
             blocks={[]}
@@ -374,7 +360,7 @@ function NewConversation({
             threadId={threadId}
           />
           <fieldset className={styles.context} disabled={choicesDisabled}>
-            <legend className={styles.srOnly}>Conversation settings</legend>
+            <legend className={styles.srOnly}>Chat settings</legend>
             <div className={styles.location}>
               <Folder aria-hidden="true" />
               <SearchPicker
@@ -415,12 +401,12 @@ function NewConversation({
                 <strong>Project changes are paused</strong>
                 <p>
                   {preparing
-                    ? "Finishing your first message. Wait for this attempt to finish before changing projects."
+                    ? "Sending your first message. Wait until it finishes before changing projects."
                     : unknownSubmission
-                      ? "The previous message may already have been accepted. Open the conversation to review its outcome. Your input is retained."
+                      ? "Open the chat to check delivery before changing projects."
                       : draft.created
-                        ? "This draft belongs to an existing conversation. Open it to continue with your retained input."
-                        : "Conversation creation could not be confirmed. Check its status before changing projects. Your input is retained."}
+                        ? "This draft belongs to an existing chat. Open it to continue."
+                        : "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here."}
                 </p>
               </div>
               {!preparing &&
@@ -428,7 +414,7 @@ function NewConversation({
                   <Link
                     to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
                   >
-                    Open conversation with retained input
+                    Open saved draft
                   </Link>
                 ) : (
                   <Button
@@ -437,9 +423,7 @@ function NewConversation({
                     disabled={review.isPending}
                     onClick={() => review.mutate()}
                   >
-                    {review.isPending
-                      ? "Checking conversation…"
-                      : "Check conversation status"}
+                    {review.isPending ? "Checking chat…" : "Check chat status"}
                   </Button>
                 ))}
               <ErrorNotice error={review.error} />
@@ -447,8 +431,8 @@ function NewConversation({
           )}
           {!choicesDisabled && review.isSuccess && !review.data && (
             <p className={styles.recoveryStatus} role="status">
-              No conversation was found. You can now change projects; your input
-              is retained.
+              No chat found. You can change projects now. Your input is saved
+              here.
             </p>
           )}
           <Composer
@@ -485,11 +469,11 @@ function NewConversation({
               review.isPending
                 ? "Checking the previous creation attempt…"
                 : !ownerAvailable
-                  ? "The Coordinator must be available in this Project. Retry or remove the assignment."
+                  ? "The coordinator must be available in this project. Retry or remove the assignment."
                   : preview.isPending
-                    ? "Updating conversation settings…"
+                    ? "Updating chat settings…"
                     : preview.error
-                      ? "Review conversation settings before sending."
+                      ? "Review chat settings before sending."
                       : undefined
             }
             profile={profile}
@@ -547,10 +531,8 @@ function NewConversation({
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),
           ) && (
             <p role="alert">
-              Some attachments are unavailable. Local files are not saved across
-              reloads, and uploaded files belong to their original conversation.
-              Remove unavailable attachments and attach the files again before
-              sending.
+              Reattach missing files before sending. Local attachments are lost
+              on reload; uploaded files stay with their original chat.
             </p>
           )}
           <ErrorNotice

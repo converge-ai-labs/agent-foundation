@@ -177,7 +177,7 @@ it("abbreviates large totals while keeping exact counts and costs accessible", a
   );
   mount();
   await screen.findByRole("button", { name: "Example project" });
-  expect(screen.getByText("11.93B").getAttribute("title")).toBe(
+  expect(screen.getAllByText("11.93B")[0].getAttribute("title")).toBe(
     "11,931,980,116",
   );
   expect(screen.getAllByText("123.36K")[0].getAttribute("aria-label")).toBe(
@@ -189,4 +189,57 @@ it("abbreviates large totals while keeping exact counts and costs accessible", a
   expect(
     screen.getByRole("button", { name: "2026-09-07 · 11,931,980,116 tokens" }),
   ).toBeTruthy();
+});
+
+it("reveals additional filters and token details without refetching or losing URL scope", async () => {
+  const fetcher = vi.fn(async () => json(payload));
+  vi.stubGlobal("fetch", fetcher);
+  mount("range=30&project_id=p");
+  await screen.findByRole("button", { name: "Example project" });
+  expect(screen.queryByRole("combobox", { name: "Chat" })).toBeNull();
+  expect(screen.queryByRole("columnheader", { name: "Cache read" })).toBeNull();
+  const reads = fetcher.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+  expect(screen.getByRole("combobox", { name: "Chat" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Token details" }));
+  expect(screen.getByRole("columnheader", { name: "Cache read" })).toBeTruthy();
+  expect(screen.getByTestId("location").textContent).toContain("project_id=p");
+  expect(fetcher.mock.calls.length).toBe(reads);
+});
+
+it("keeps daily bars in one tab stop while arrow keys and Home/End move between days", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      json({
+        ...payload,
+        daily: [
+          { day: "2026-09-06", totals },
+          { day: "2026-09-07", totals },
+          { day: "2026-09-08", totals },
+        ],
+      }),
+    ),
+  );
+  mount();
+  const last = await screen.findByRole("button", {
+    name: "2026-09-08 · 120 tokens",
+  });
+  const first = screen.getByRole("button", { name: "2026-09-06 · 120 tokens" });
+  const middle = screen.getByRole("button", {
+    name: "2026-09-07 · 120 tokens",
+  });
+  expect(
+    [first, middle, last].filter((button) => button.tabIndex === 0),
+  ).toEqual([last]);
+  last.focus();
+  fireEvent.keyDown(last, { key: "Home" });
+  expect(document.activeElement).toBe(first);
+  expect(
+    [first, middle, last].filter((button) => button.tabIndex === 0),
+  ).toEqual([first]);
+  fireEvent.keyDown(first, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(middle);
+  fireEvent.keyDown(middle, { key: "End" });
+  expect(document.activeElement).toBe(last);
 });

@@ -171,9 +171,9 @@ it.each([false, true])(
         queries.getQueryData(["thread", "one", "history", "C0"]),
       ).toBeTruthy(),
     );
-    const toggle = screen.getByRole("button", { name: /Execution details/ });
+    const toggle = screen.getByRole("button", { name: /Work log/ });
     fireEvent.click(toggle);
-    const reader = screen.getByRole("region", { name: "Execution details" });
+    const reader = screen.getByRole("region", { name: "Work log" });
     const prompt = screen.getByText("Prompt");
     const reasoning = screen.getByText("Plan");
     const answer = screen.getByText("Visible reply");
@@ -184,9 +184,7 @@ it.each([false, true])(
       expect(screen.getByText("Plan")).toBe(reasoning);
       expect(screen.getByText("Visible reply")).toBe(answer);
       expect(readingAnchor(answer)).toBe(anchor);
-      expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-        reader,
-      );
+      expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
       expect(toggle.isConnected).toBe(true);
       expect(toggle.getAttribute("aria-expanded")).toBe("true");
     };
@@ -262,7 +260,7 @@ it("does not remount an unchanged saved part when a sibling changes, but replace
     />,
   );
   const answer = screen.getByText("Visible reply");
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
   const reasoning = screen.getByText("Reasoning").closest("details")!;
   view.rerender(
     <ConversationTranscript

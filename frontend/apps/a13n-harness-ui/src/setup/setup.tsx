@@ -1,10 +1,11 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useSetup, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel } from "../shell/ui";
+import { ErrorNotice, PageHeader } from "../shell/ui";
 import { SetupWizard } from "./wizard";
 import { readWizardDraft } from "./wizard-state";
 import styles from "../shell/workbench.module.css";
@@ -35,7 +36,7 @@ export function Preflight({
         loading={preflight.isPending}
         onClick={() => preflight.mutate()}
       >
-        Check environment readiness
+        Check environments
       </Button>
       <ErrorNotice error={preflight.error} />
       {preflight.data && (
@@ -67,66 +68,102 @@ export function SetupPage() {
   )
     return <SetupWizard key={setup.data.draft_scope} status={setup.data} />;
   const status = setup.data;
+  const defaultAgent =
+    status?.agents[status.default_agent ?? ""] || status?.default_agent;
   return (
     <>
-      <PageHeader title="Setup & readiness" />
+      <PageHeader
+        title="Setup & readiness"
+        description="Check what you need to start chatting."
+        actions={<Button render={<Link to="/" />}>Open workspace</Button>}
+      />
       {status?.diagnostic && (
         <div role="alert" className={styles.notice}>
           {status.diagnostic}
         </div>
       )}
-      <Panel title="Configuration">
-        <p>
-          {status?.needed
-            ? "Your configuration is incomplete. Choose a default Agent or repair the existing resource files."
-            : "Default agent configured."}
-        </p>
-        <p>
-          Default Agent:{" "}
-          {status?.agents[status.default_agent ?? ""] ||
-            status?.default_agent ||
-            "Not selected"}
-        </p>
-        <div className={styles.actions}>
-          <Button variant="outline" render={<Link to="/settings" />}>
+      <SettingsSection variant="grouped" title="Configuration">
+        <SettingsRow
+          label="Default agent"
+          description={
+            status?.needed
+              ? "Setup is incomplete. Choose a default agent or fix its configuration."
+              : (defaultAgent ?? "Not selected")
+          }
+        >
+          <Button variant="outline" size="sm" render={<Link to="/settings" />}>
             Review defaults
           </Button>
-          <Button variant="outline" render={<Link to="/settings/agents" />}>
-            Repair agent connection
-          </Button>
-          <Button variant="outline" render={<Link to="/settings/resources" />}>
-            Inspect configuration files
-          </Button>
-        </div>
-      </Panel>
-      <Panel title="Model accounts">
-        <p>
-          Credentials are shared on this server. Account status does not verify
-          model access.
-        </p>
-        <Button variant="outline" render={<Link to="/settings/accounts" />}>
-          Manage accounts & API keys
-        </Button>
-      </Panel>
-      <Panel title="Execution environment">
-        <p>
-          {status?.environment_profile === "environment-native"
-            ? "Full Control runs as your Host account; it is not a sandbox."
-            : status?.environment_profile}
-        </p>
-        <div className={styles.actions}>
-          <Button variant="outline" render={<Link to="/settings/runtime" />}>
-            Open Runtime
-          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label="Agent connections"
+          description="Fix an agent whose model or account is missing."
+        >
           <Button
             variant="outline"
+            size="sm"
+            render={<Link to="/settings/agents" />}
+          >
+            Fix connection
+          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label="Configuration files"
+          description="Edit the configuration files behind these settings."
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            render={<Link to="/settings/resources" />}
+          >
+            Open configuration
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection variant="grouped" title="Model accounts">
+        <SettingsRow
+          label="Accounts & API keys"
+          description="Accounts are shared on this server. Being signed in doesn't guarantee model access."
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            render={<Link to="/settings/accounts" />}
+          >
+            Manage accounts
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection variant="grouped" title="Execution environment">
+        <SettingsRow
+          label="Local runtime"
+          description={
+            status?.environment_profile === "environment-native"
+              ? "Full Control runs as your host account. It is not a sandbox."
+              : status?.environment_profile
+          }
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            render={<Link to="/settings/runtime" />}
+          >
+            Open local runtime
+          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label="Execution defaults"
+          description="The environment new chats start in."
+        >
+          <Button
+            variant="outline"
+            size="sm"
             render={<Link to="/settings/environments" />}
           >
-            Review execution defaults
+            Review execution
           </Button>
-        </div>
-      </Panel>
-      <Button render={<Link to="/" />}>Open workbench</Button>
+        </SettingsRow>
+      </SettingsSection>
     </>
   );
 }

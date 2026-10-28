@@ -25,6 +25,7 @@ export function ModalFrame({
   title,
   description,
   closeLabel,
+  initialFocus,
   finalFocus,
   keepVisibleWhenNested = false,
   size = "md",
@@ -37,6 +38,7 @@ export function ModalFrame({
   ...props
 }: Omit<ComponentProps<typeof Dialog>, "children"> & {
   trigger?: ReactElement;
+  initialFocus?: ComponentProps<typeof DialogPopup>["initialFocus"];
   finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
   /** Keep the form visible underneath a nested confirmation or error dialog. */
   keepVisibleWhenNested?: boolean;
@@ -83,6 +85,7 @@ export function ModalFrame({
         title={title}
         description={description}
         closeLabel={closeLabel}
+        initialFocus={initialFocus}
         finalFocus={finalFocus}
         keepVisibleWhenNested={keepVisibleWhenNested}
         size={size}
@@ -102,6 +105,7 @@ const ModalSurface = memo(
     title,
     description,
     closeLabel,
+    initialFocus,
     finalFocus,
     keepVisibleWhenNested,
     size,
@@ -113,6 +117,7 @@ const ModalSurface = memo(
     title: ReactNode;
     description?: ReactNode;
     closeLabel: string;
+    initialFocus?: ComponentProps<typeof DialogPopup>["initialFocus"];
     finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
     keepVisibleWhenNested: boolean;
     size: "md" | "lg" | "xl";
@@ -133,6 +138,7 @@ const ModalSurface = memo(
           size === "lg" && "sm:max-w-[40rem]",
           size === "xl" && "sm:max-w-[55rem]",
         )}
+        initialFocus={initialFocus}
         finalFocus={finalFocus}
         placement={placement}
         closeProps={{ "aria-label": closeLabel }}

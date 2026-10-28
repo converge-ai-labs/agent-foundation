@@ -101,8 +101,7 @@ function CompleteChildOutput({
       <MessageText text={text} />
       {output.hasNextPage && (
         <small>
-          Showing part of the saved result. Load the remaining text to review
-          the complete source.
+          Showing part of the saved result. Load more to read it all.
         </small>
       )}
       <ErrorNotice error={output.error} />

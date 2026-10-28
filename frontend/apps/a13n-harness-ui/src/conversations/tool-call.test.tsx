@@ -16,6 +16,7 @@ import {
 } from "./tool-presentation";
 import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
+import { DebugProvider } from "../shell/debug";
 afterEach(cleanup);
 
 it("pairs loaded calls with results once, retaining page-edge results and repeated call IDs", () => {
@@ -188,7 +189,7 @@ it("labels historical replacement as input and offers explicit host lookup outsi
   expect(hostLookupPath("C:\\work\\a.py")).toBe("C:\\work\\a.py");
 });
 
-it("renders tool calls inline and exposes bounded shell output with raw fallback", () => {
+it("keeps shell output readable and exposes recorded payloads only in Debug", () => {
   const { container } = render(
     <LiveOutput
       gap={false}
@@ -209,6 +210,7 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
         { id: "three", kind: "assistant", text: "After" },
       ]}
     />,
+    { wrapper: DebugProvider },
   );
   const html = container.innerHTML;
   expect(html.indexOf("Before")).toBeLessThan(
@@ -223,8 +225,34 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
   ).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Arguments & result" }),
+  ).toBeNull();
+  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
   fireEvent.click(screen.getByRole("button", { name: "Arguments & result" }));
   expect(screen.getByRole("button", { name: "Raw" })).toBeTruthy();
+  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+  expect(screen.queryByRole("button", { name: "Raw" })).toBeNull();
+  expect(screen.getByText("warning")).toBeTruthy();
+});
+
+it("keeps structured tool content visible without enabling Debug", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "lookup",
+        name: "lookup",
+        resultParts: [
+          { type: "text", text: "The requested document is ready." },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /lookup/ }));
+  expect(screen.getByText("The requested document is ready.")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Arguments & result" }),
+  ).toBeNull();
 });
 
 it("preserves retry requests as a distinct saved tool status", () => {
@@ -553,7 +581,7 @@ it("shows screenshot retention failure without marking a successful observation 
   );
   fireEvent.click(screen.getByRole("button", { name: /Observe desktop/ }));
   expect(screen.getByRole("status").textContent).toContain(
-    "display copy could not be retained",
+    "no preview was saved",
   );
   expect(screen.queryByText("Failed")).toBeNull();
 });

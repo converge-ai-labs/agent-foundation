@@ -120,6 +120,19 @@ function ApprovalInput({
     const next = response(value);
     if (next) onSubmit?.(next);
   }
+  const reasonField = (
+    <FormField label="Reason (optional)">
+      <Textarea
+        rows={2}
+        value={reason}
+        onChange={(event) => {
+          setReason(event.target.value);
+          if (onSubmit) onChange(undefined);
+          else update(choice, argumentsText, event.target.value);
+        }}
+      />
+    </FormField>
+  );
   return (
     <section
       className={styles.request}
@@ -136,26 +149,19 @@ function ApprovalInput({
             ...(canApprove
               ? [{ value: "approve", label: "Approve once" }]
               : []),
-            ...(canEdit
-              ? [{ value: "override", label: "Approve with edited arguments" }]
-              : []),
+            ...(canEdit ? [{ value: "override", label: "Approve edits" }] : []),
             { value: "deny", label: "Deny" },
           ]}
         />
       )}
-      {(onSubmit || choice === "deny") && (
-        <FormField label="Reason (optional)">
-          <Textarea
-            rows={2}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value);
-              if (onSubmit) onChange(undefined);
-              else update(choice, argumentsText, event.target.value);
-            }}
-          />
-        </FormField>
-      )}
+      {onSubmit ? (
+        <details className={styles.denialReason}>
+          <summary>Add a reason for denying</summary>
+          {reasonField}
+        </details>
+      ) : choice === "deny" ? (
+        reasonField
+      ) : null}
       {choice === "override" && (
         <JsonEditor
           label="Replacement arguments (JSON object)"
@@ -174,9 +180,7 @@ function ApprovalInput({
             disabled={!canApprove || (choice === "override" && !!error)}
             onClick={() => send(choice === "override" ? "override" : "approve")}
           >
-            {choice === "override"
-              ? "Approve with edited arguments"
-              : "Approve once"}
+            {choice === "override" ? "Approve edits" : "Approve once"}
           </Button>
           <Button type="button" variant="outline" onClick={() => send("deny")}>
             Deny
@@ -187,16 +191,14 @@ function ApprovalInput({
               variant="ghost"
               onClick={() => update(choice === "override" ? "" : "override")}
             >
-              {choice === "override"
-                ? "Keep original arguments"
-                : "Edit arguments"}
+              {choice === "override" ? "Keep original" : "Edit arguments"}
             </Button>
           )}
         </div>
       )}
       <p className={styles.hint}>
-        Approval applies only to this request. Deny with a reason to ask the
-        Agent for a different action.
+        Approval is for this request only. To ask for a different action, deny
+        it and add a reason.
       </p>
     </section>
   );
@@ -243,10 +245,7 @@ function ExternalInput({
       aria-label={`External result for ${request.tool_name}`}
     >
       <DecisionEvidence request={request} />
-      <p>
-        Provide the actual tool result. This does not execute the tool in your
-        browser.
-      </p>
+      <p>Enter the tool's result. The tool won't run in your browser.</p>
       <ChoiceField
         label="External result"
         value={choice}

@@ -53,7 +53,7 @@ export function environmentSummary(value: EnvironmentSelection) {
   if (!bindings.length)
     return roots.length
       ? `Local · ${directoryCount(roots.length)}`
-      : "Local · Thread files";
+      : "Local · Chat files";
   const count = deviceEnvironments(bindings).length + (roots.length ? 1 : 0);
   return `${count} environment${count === 1 ? "" : "s"} · ${directoryCount(directories)}`;
 }
@@ -74,7 +74,7 @@ export function workingDirectories(
       value: localAlias(index),
       label: `Local · ${path || "Empty directory"}`,
     })),
-    { value: "thread-files", label: "Local · Thread files" },
+    { value: "thread-files", label: "Local · Chat files" },
     ...bindings.map((binding) => ({
       value: binding.alias,
       label:

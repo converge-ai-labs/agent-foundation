@@ -51,6 +51,8 @@ description: 连接提供方、选择已保存 Model，并区分请求、连接�
 
 活动操作保留捕获值。Markdown 子级继承父级实际 Model；独立配置的子级和辅助 Model 保留自己的选择。观测费用是估算，不是订阅账单。见[选择与恢复](everyday-use.md#everyday-interaction)和[用量控制](everyday-use.md#tasks-usage-and-terminal-feedback)。
 
+TUI 和 WebUI 都会自动向每个 Agent 提供当前 Thread ID 和提供方模型名。Agent 无需查询配置或询问你，就能确认所用 Model 或为工作署名。这里使用当前 Run 实际解析的 Model，不使用本地资源 ID 或下一轮选择。子 Agent 收到各自的模型名。
+
 ## Codex Model 示例
 
 此例向已有配置添加一个 Codex 订阅 Model。

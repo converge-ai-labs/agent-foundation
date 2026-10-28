@@ -1,19 +1,31 @@
+import { ModelIcon } from "../shell/model-identity";
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import type { ReactNode } from "react";
+import layout from "./settings.module.css";
 import { useEffect, useRef, useState } from "react";
-import {
-  Key,
-  SlidersHorizontal,
-  ArrowCounterClockwise,
-} from "@phosphor-icons/react";
+import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
+import {
+  Button,
+  FormField,
+  Input,
+  SearchPicker,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+} from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { ProviderAccount } from "../setup/accounts";
 import { useSubscriptions } from "../setup/subscriptions";
 import { readDocument, updateDocument } from "./documents";
+import { ResourceChoice } from "./resource-choice";
 import styles from "../shell/workbench.module.css";
 
 type Recipe = Schema<"ModelRecipe">;
@@ -114,19 +126,20 @@ function CredentialField({
   return (
     <fieldset disabled={save.isPending} className={styles.stack}>
       {!expanded ? (
-        <div className={management.credentialSummary}>
-          <span className={management.inlineLabel}>
-            <Key aria-hidden="true" />
-            {selected === "env" && value?.kind === "api_key"
+        <SettingsRow
+          label="API key"
+          description={
+            selected === "env" && value?.kind === "api_key"
               ? `Environment · ${value.env}`
               : keys.data?.some((key) => key.credential_ref === selected)
                 ? "Stored API key"
-                : "API key reference"}
-          </span>
+                : "API key reference"
+          }
+        >
           <Button variant="ghost" onClick={() => setExpanded(true)}>
             Change credential
           </Button>
-        </div>
+        </SettingsRow>
       ) : (
         <>
           <ChoiceField
@@ -155,39 +168,47 @@ function CredentialField({
           ) : (
             !selected && (
               <>
-                <FormField
+                <SettingsRow
                   label="Provider API key"
-                  description="Shared server credential. Saved separately from the model."
+                  description="Shared by this server. Saved separately from the model."
                 >
                   <Input
+                    aria-label="Provider API key"
                     type="password"
                     autoComplete="new-password"
                     value={secret}
                     onChange={(event) => setSecret(event.target.value)}
                   />
-                </FormField>
-                <Button
-                  variant="outline"
-                  loading={save.isPending}
-                  disabled={!secret.trim()}
-                  onClick={() => save.mutate()}
-                >
-                  Save API key
-                </Button>
-                {keys.data?.some((key) => key.credential_ref === reference) && (
+                </SettingsRow>
+                <div className={management.groupActions}>
                   <Button
                     variant="outline"
-                    onClick={() => {
-                      setSecret("");
-                      onChange({ kind: "api_key", credential_ref: reference });
-                      setReference(
-                        `key-${crypto.randomUUID().replaceAll("-", "")}`,
-                      );
-                    }}
+                    loading={save.isPending}
+                    disabled={!secret.trim()}
+                    onClick={() => save.mutate()}
                   >
-                    Use saved key from this attempt
+                    Save API key
                   </Button>
-                )}
+                  {keys.data?.some(
+                    (key) => key.credential_ref === reference,
+                  ) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSecret("");
+                        onChange({
+                          kind: "api_key",
+                          credential_ref: reference,
+                        });
+                        setReference(
+                          `key-${crypto.randomUUID().replaceAll("-", "")}`,
+                        );
+                      }}
+                    >
+                      Use saved key
+                    </Button>
+                  )}
+                </div>
               </>
             )
           )}
@@ -200,6 +221,7 @@ function CredentialField({
 
 /** Shared draft editor. Preparing a connection never publishes configuration. */
 type ModelEditorProps = {
+  nameField?: ReactNode;
   value: Recipe | null;
   onChange: (recipe: Recipe, suggestedName?: string) => void;
   onReady?: (ready: boolean) => void;
@@ -226,6 +248,7 @@ export function ModelEditor(props: ModelEditorProps) {
 }
 
 function LoadedModelEditor({
+  nameField,
   choices,
   value,
   onChange,
@@ -524,437 +547,474 @@ function LoadedModelEditor({
       label: modelSearch.trim(),
       description: "Use custom model ID",
     });
+  const defaultsSummary = [
+    selectedPreset?.label ?? "Custom settings",
+    contextBudget
+      ? `${contextBudget.toLocaleString()} context`
+      : "Model default context",
+    value?.settings?.max_tokens
+      ? `${Number(value?.settings.max_tokens).toLocaleString()} output`
+      : null,
+    value?.settings?.openai_service_tier === "priority"
+      ? "Priority speed"
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <div className={styles.stack}>
+    <div className={management.modelEditor}>
       <ErrorNotice error={options.error || prepare.error} />
-      <ChoiceField
-        label="Model connection"
-        value={connection}
-        options={
-          choices.connections?.map((item) => ({
-            value: item.id,
-            label: item.label,
-          })) ?? []
-        }
-        onValueChange={(id) => {
-          if (id === connection) return;
-          const next = choices.connections!.find((item) => item.id === id)!;
-          setConnection(id);
-          setModelId(next.default_model);
-          setBaseUrl(next.base_url ?? "");
-          setAuthentication(undefined);
-          setAccountReady(false);
-        }}
-      />
-      {selected &&
-        (api ? (
-          <CredentialField
-            key={connection}
-            connection={selected}
-            value={authentication}
-            onChange={setAuth}
-          />
-        ) : nativeProvider && selected.account ? (
-          <>
-            <ErrorNotice error={subscriptions.error} />
-            <ChoiceField
-              label="Account group"
-              value={selectedGroup ?? ""}
-              onValueChange={(group) =>
-                setAuth({
-                  kind:
-                    nativeProvider === "codex"
-                      ? "codex_subscription"
-                      : "grok_subscription",
-                  ...(group ? { group } : {}),
-                })
+      <Tabs defaultValue="connection" className={management.modelTabs}>
+        <TabsList variant="underline" aria-label="Model settings">
+          <TabsTab value="connection">Connection</TabsTab>
+          <TabsTab value="defaults" disabled={!selected || !matches || !value}>
+            Model defaults
+          </TabsTab>
+        </TabsList>
+        <TabsPanel
+          value="connection"
+          keepMounted
+          className={management.modelPanel}
+        >
+          <SettingsSection>
+            {nameField}
+            <ResourceChoice
+              label="Model connection"
+              placeholder="Search connections…"
+              description={
+                !selected
+                  ? "This connection is managed in Advanced configuration."
+                  : undefined
               }
-              options={[
-                {
-                  value: "",
-                  label: "Provider default group",
-                  hint:
-                    !nativeGroup &&
-                    subscriptions.data?.adoption[nativeProvider]?.group_created
-                      ? "Default group is missing. Select or create a group."
-                      : undefined,
-                },
-                ...(subscriptions.data?.groups
-                  .filter((item) => item.provider === nativeProvider)
-                  .map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                    hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "Weighted balance" : "Ordered consumption"}`,
-                  })) ?? []),
-              ]}
+              value={connection}
+              options={
+                choices.connections?.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                })) ?? []
+              }
+              onValueChange={(id) => {
+                if (id === connection) return;
+                const next = choices.connections!.find(
+                  (item) => item.id === id,
+                )!;
+                setConnection(id);
+                setModelId(next.default_model);
+                setBaseUrl(next.base_url ?? "");
+                setAuthentication(undefined);
+                setAccountReady(false);
+              }}
             />
-            {(!nativeGroup &&
-              !subscriptions.data?.adoption[nativeProvider]?.group_created) ||
-            nativeGroup?.accounts?.some(
-              (member) => member.account === `acct-${nativeProvider}-default`,
-            ) ? (
-              <ProviderAccount
-                key={connection}
-                connection={selected.account}
-                inline
-                onReady={setAccountReady}
-                onIdentity={setAccountIdentity}
+            <SettingsRow label="Model">
+              <SearchPicker
+                label="Model"
+                placeholder="Find a model"
+                emptyMessage="Search or enter a custom model ID."
+                onSearchChange={setModelSearch}
+                value={effectiveId}
+                onValueChange={setModelId}
+                groups={[
+                  {
+                    label: api
+                      ? "Recommendations & public directory"
+                      : "Subscription models",
+                    options: [...candidates.values()].map((item) => ({
+                      ...item,
+                      icon: <ModelIcon name={item.value} />,
+                    })),
+                  },
+                ]}
               />
-            ) : (
-              <p>
-                {groupReady
-                  ? "Group has a connected account."
-                  : "This group needs a connected member account."}
-              </p>
+            </SettingsRow>
+
+            {api && (catalog.isPending || catalog.error) && (
+              <small role="status">
+                {catalog.isPending
+                  ? "Loading model directory…"
+                  : "Couldn't load the model list. Enter a model ID or choose a suggested model."}
+              </small>
             )}
-            <Link
-              to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
-            >
-              Manage accounts and groups
-            </Link>
-          </>
-        ) : selected.account ? (
-          <ProviderAccount
-            key={connection}
-            connection={selected.account}
-            inline
-            onReady={setAccountReady}
-            onIdentity={setAccountIdentity}
-          />
-        ) : null)}
-      {selected?.account?.model_discovery && (
-        <>
-          <Button
-            disabled={!accountReady}
-            loading={discovery.isPending}
-            onClick={() => discovery.mutate()}
-          >
-            Fetch account models
-          </Button>
-          <small>
-            Explicitly queries this account's catalog. Only Chat Completions
-            models are shown; access is still subject to your plan and
-            organization policy.
-          </small>
-          <ErrorNotice error={discovery.error} />
-          {currentDiscovery?.length === 0 && (
-            <p role="status">
-              No compatible models returned. You can still enter a model ID
-              manually.
+            {selected?.supports_base_url && (
+              <TextField
+                label="Base URL"
+                value={effectiveUrl}
+                onChange={setBaseUrl}
+                description="Optional API address. Leave out credentials, query parameters and URL fragments."
+              />
+            )}
+          </SettingsSection>
+          {selected && (api || selected.account) && (
+            <SettingsSection title="Authentication">
+              {selected &&
+                (api ? (
+                  <CredentialField
+                    key={connection}
+                    connection={selected}
+                    value={authentication}
+                    onChange={setAuth}
+                  />
+                ) : nativeProvider && selected.account ? (
+                  <div className={layout.accountConnection}>
+                    <ErrorNotice error={subscriptions.error} />
+                    <ChoiceField
+                      label="Account group"
+                      value={selectedGroup ?? ""}
+                      onValueChange={(group) =>
+                        setAuth({
+                          kind:
+                            nativeProvider === "codex"
+                              ? "codex_subscription"
+                              : "grok_subscription",
+                          ...(group ? { group } : {}),
+                        })
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label: "Default group",
+                          hint:
+                            !nativeGroup &&
+                            subscriptions.data?.adoption[nativeProvider]
+                              ?.group_created
+                              ? "Default group is missing. Select or create a group."
+                              : undefined,
+                        },
+                        ...(subscriptions.data?.groups
+                          .filter((item) => item.provider === nativeProvider)
+                          .map((item) => ({
+                            value: item.id,
+                            label: item.name,
+                            hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "By weight" : "In order"}`,
+                          })) ?? []),
+                      ]}
+                    />
+                    {(!nativeGroup &&
+                      !subscriptions.data?.adoption[nativeProvider]
+                        ?.group_created) ||
+                    nativeGroup?.accounts?.some(
+                      (member) =>
+                        member.account === `acct-${nativeProvider}-default`,
+                    ) ? (
+                      <ProviderAccount
+                        key={connection}
+                        connection={selected.account}
+                        inline
+                        onReady={setAccountReady}
+                        onIdentity={setAccountIdentity}
+                      />
+                    ) : (
+                      <p>
+                        {groupReady
+                          ? "Group has a connected account."
+                          : "This group needs a connected member account."}
+                      </p>
+                    )}
+                    <Link
+                      to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
+                    >
+                      Manage accounts
+                    </Link>
+                  </div>
+                ) : selected.account ? (
+                  <ProviderAccount
+                    key={connection}
+                    connection={selected.account}
+                    inline
+                    onReady={setAccountReady}
+                    onIdentity={setAccountIdentity}
+                  />
+                ) : null)}
+              {selected?.account?.model_discovery && (
+                <>
+                  <Button
+                    disabled={!accountReady}
+                    loading={discovery.isPending}
+                    onClick={() => discovery.mutate()}
+                  >
+                    Load models
+                  </Button>
+                  <small>
+                    Loads this account's Chat Completions models. Availability
+                    depends on your plan and organization settings.
+                  </small>
+                  <ErrorNotice error={discovery.error} />
+                  {currentDiscovery?.length === 0 && (
+                    <p role="status">
+                      No compatible models found. You can enter a model ID
+                      instead.
+                    </p>
+                  )}
+                </>
+              )}
+            </SettingsSection>
+          )}
+          {!matches && prepare.isPending && (
+            <small role="status">Preparing model…</small>
+          )}
+          {!matches && prepare.isError && (
+            <Button variant="outline" onClick={() => prepare.mutate(false)}>
+              Retry
+            </Button>
+          )}
+          {selected && matches && value && (
+            <p className={management.defaultsSummary}>
+              <strong>Defaults</strong>
+              {defaultsSummary}
             </p>
           )}
-        </>
-      )}
-      {!selected && (
-        <p>This connection is managed in Advanced configuration.</p>
-      )}
-      <FormField label="Model">
-        <SearchPicker
-          label="Model"
-          placeholder="Find a model"
-          emptyMessage="Search or enter a custom model ID."
-          onSearchChange={setModelSearch}
-          value={effectiveId}
-          onValueChange={setModelId}
-          groups={[
-            {
-              label: api
-                ? "Recommendations & public directory"
-                : "Subscription models",
-              options: [...candidates.values()],
-            },
-          ]}
-        />
-      </FormField>
-
-      {api && (catalog.isPending || catalog.error) && (
-        <small role="status">
-          {catalog.isPending
-            ? "Loading model directory…"
-            : "Directory unavailable. Enter a model ID or choose a bundled recommendation."}
-        </small>
-      )}
-      {selected?.supports_base_url && (
-        <TextField
-          label="Base URL"
-          value={effectiveUrl}
-          onChange={setBaseUrl}
-          description="Optional API endpoint override. No credentials, query string or fragment."
-        />
-      )}
-      {!matches && prepare.isPending && (
-        <small role="status">Preparing model…</small>
-      )}
-      {!matches && prepare.isError && (
-        <Button variant="outline" onClick={() => prepare.mutate(false)}>
-          Retry
-        </Button>
-      )}
-      {selected && matches && value && (
-        <>
-          <details className={styles.details}>
-            <summary>
-              <span className={management.inlineLabel}>
-                <SlidersHorizontal aria-hidden="true" />
-                Model defaults
-              </span>
-            </summary>
-            <div className={styles.stack}>
-              <small>
-                {[
-                  selectedPreset?.label ?? "Custom settings",
-                  contextBudget
-                    ? `${contextBudget.toLocaleString()} context`
-                    : "Native context",
-                  value.settings?.max_tokens
-                    ? `${Number(value.settings.max_tokens).toLocaleString()} output`
-                    : null,
-                  value.settings?.openai_service_tier === "priority"
-                    ? "Priority speed"
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </small>
-              {!api && !authReady && (
-                <small>Connect an account before running this model.</small>
-              )}
-              <ChoiceField
-                label="Settings preset"
-                value={selectedPreset?.value ?? ""}
-                options={[
-                  ...(!selectedPreset
-                    ? [{ value: "", label: "Custom settings" }]
-                    : []),
-                  ...presets.map((item, index) => ({
-                    value: item.value,
-                    label: `${item.label}${index === 0 ? " (default)" : ""}`,
-                  })),
-                ]}
-                onValueChange={(preset) => {
-                  const settings = options.data?.presets.find(
-                    (item) => item.value === preset,
-                  )?.settings;
-                  if (settings) {
-                    const next = { ...value.settings };
-                    for (const choice of options.data?.presets ?? [])
-                      for (const key of Object.keys(choice.settings))
-                        delete next[key];
-                    update({ settings: { ...next, ...settings } });
-                  }
-                }}
-              />
-              {(options.data?.reasoning_mode?.supported ||
-                value.settings?.openai_reasoning_mode != null) && (
+        </TabsPanel>
+        <TabsPanel
+          value="defaults"
+          keepMounted
+          className={management.modelPanel}
+        >
+          {selected && matches && value && (
+            <>
+              <SettingsSection>
+                {!api && !authReady && (
+                  <p className={layout.groupHint}>
+                    Connect an account before running this model.
+                  </p>
+                )}
                 <ChoiceField
-                  label="Reasoning mode"
-                  value={String(value.settings?.openai_reasoning_mode ?? "")}
-                  description={
-                    options.data?.reasoning_mode?.reason ??
-                    "Saved Model default, independent of thinking effort. Pro access, usage and latency depend on the provider."
-                  }
+                  label="Settings preset"
+                  value={selectedPreset?.value ?? ""}
                   options={[
-                    { value: "", label: "Provider default" },
-                    {
-                      value: "standard",
-                      label: "Standard",
-                      disabled: !options.data?.reasoning_mode?.supported,
-                    },
-                    {
-                      value: "pro",
-                      label: "Pro",
-                      disabled: !options.data?.reasoning_mode?.supported,
-                    },
-                    ...(![undefined, null, "standard", "pro"].includes(
-                      value.settings?.openai_reasoning_mode as
-                        string | null | undefined,
-                    )
-                      ? [
-                          {
-                            value: String(
-                              value.settings?.openai_reasoning_mode,
-                            ),
-                            label: `Current: ${value.settings?.openai_reasoning_mode}`,
-                            disabled: true,
-                          },
-                        ]
+                    ...(!selectedPreset
+                      ? [{ value: "", label: "Custom settings" }]
                       : []),
-                  ]}
-                  onValueChange={(mode) => {
-                    const settings = { ...value.settings };
-                    if (mode) settings.openai_reasoning_mode = mode;
-                    else delete settings.openai_reasoning_mode;
-                    update({ settings });
-                  }}
-                />
-              )}
-              {options.data?.supports_service_tier && (
-                <ChoiceField
-                  label="Service speed"
-                  value={String(value.settings?.openai_service_tier ?? "auto")}
-                  options={[
-                    { value: "auto", label: "Standard" },
-                    { value: "priority", label: "Fast · priority usage" },
-                    ...(![undefined, "auto", "priority"].includes(
-                      value.settings?.openai_service_tier as string | undefined,
-                    )
-                      ? [
-                          {
-                            value: String(value.settings?.openai_service_tier),
-                            label: `Current: ${value.settings?.openai_service_tier}`,
-                          },
-                        ]
-                      : []),
-                  ]}
-                  onValueChange={(tier) =>
-                    update({
-                      settings: {
-                        ...value.settings,
-                        openai_service_tier: tier,
-                      },
-                    })
-                  }
-                />
-              )}
-              {
-                <ChoiceField
-                  label="Context budget"
-                  value={
-                    customContext ||
-                    (contextBudget != null &&
-                      !contextChoices.some(
-                        (choice) => choice.value === contextBudget,
-                      ))
-                      ? "custom"
-                      : contextBudget == null
-                        ? ""
-                        : String(contextBudget)
-                  }
-                  options={[
-                    { value: "", label: "Native default" },
-                    { value: "custom", label: "Custom budget" },
-                    ...contextChoices.map((choice) => ({
-                      value: String(choice.value),
-                      label: `${choice.label} · ${choice.value.toLocaleString()} tokens`,
+                    ...presets.map((item, index) => ({
+                      value: item.value,
+                      label: `${item.label}${index === 0 ? " (default)" : ""}`,
                     })),
                   ]}
-                  onValueChange={(context) => {
-                    setCustomContext(context === "custom");
-                    if (context === "custom") return;
-                    update({
-                      model_characteristics: {
-                        ...value.model_characteristics,
-                        context_window_tokens: context ? Number(context) : null,
-                      },
-                    });
+                  onValueChange={(preset) => {
+                    const settings = options.data?.presets.find(
+                      (item) => item.value === preset,
+                    )?.settings;
+                    if (settings) {
+                      const next = { ...value.settings };
+                      for (const choice of options.data?.presets ?? [])
+                        for (const key of Object.keys(choice.settings))
+                          delete next[key];
+                      update({ settings: { ...next, ...settings } });
+                    }
                   }}
                 />
-              }
-              {(customContext ||
-                (contextBudget != null &&
-                  !contextChoices.some(
-                    (choice) => choice.value === contextBudget,
-                  ))) && (
-                <TextField
-                  label="Working context budget"
-                  type="number"
-                  value={String(
-                    value.model_characteristics?.context_window_tokens ?? "",
-                  )}
-                  onChange={(input) =>
-                    update({
-                      model_characteristics: {
-                        ...value.model_characteristics,
-                        context_window_tokens: input ? Number(input) : null,
+                {(options.data?.reasoning_mode?.supported ||
+                  value.settings?.openai_reasoning_mode != null) && (
+                  <ChoiceField
+                    label="Reasoning mode"
+                    value={String(value.settings?.openai_reasoning_mode ?? "")}
+                    description={
+                      options.data?.reasoning_mode?.reason ??
+                      "Separate from reasoning effort. Pro access and usage depend on your provider."
+                    }
+                    options={[
+                      { value: "", label: "Provider default" },
+                      {
+                        value: "standard",
+                        label: "Standard",
+                        disabled: !options.data?.reasoning_mode?.supported,
                       },
-                    })
-                  }
-                  description={
-                    options.data?.known_context_window
-                      ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
-                      : "Leave blank for the native default."
-                  }
-                />
-              )}
-            </div>
-          </details>
-          <details className={styles.details}>
-            <summary>
-              <span className={management.inlineLabel}>
-                <SlidersHorizontal aria-hidden="true" />
-                Advanced connection options
-              </span>
-            </summary>
-            <div className={styles.stack}>
-              {selected?.supports_session_affinity && (
-                <ChoiceField
-                  label="Gateway session affinity"
-                  value={
-                    customAffinity ||
-                    (affinityHeader &&
-                      !choices.session_affinity_presets?.some(
-                        (preset) => preset.header === affinityHeader,
-                      ))
-                      ? "custom"
-                      : affinityHeader
-                  }
-                  options={[
-                    { value: "", label: "None" },
-                    { value: "custom", label: "Custom header" },
-                    ...(choices.session_affinity_presets ?? []).map(
-                      (preset) => ({
-                        value: preset.header,
-                        label: preset.label,
-                      }),
-                    ),
-                  ]}
-                  onValueChange={(header) => {
-                    setCustomAffinity(header === "custom");
-                    if (header === "custom") return;
-                    const config = { ...value.model_configuration };
-                    if (header) config.session_affinity_header = header;
-                    else delete config.session_affinity_header;
-                    update({ model_configuration: config });
-                  }}
-                />
-              )}
-              {selected?.supports_session_affinity &&
-                (customAffinity ||
-                  (affinityHeader &&
-                    !choices.session_affinity_presets?.some(
-                      (preset) => preset.header === affinityHeader,
+                      {
+                        value: "pro",
+                        label: "Pro",
+                        disabled: !options.data?.reasoning_mode?.supported,
+                      },
+                      ...(![undefined, null, "standard", "pro"].includes(
+                        value.settings?.openai_reasoning_mode as
+                          string | null | undefined,
+                      )
+                        ? [
+                            {
+                              value: String(
+                                value.settings?.openai_reasoning_mode,
+                              ),
+                              label: `Current: ${value.settings?.openai_reasoning_mode}`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onValueChange={(mode) => {
+                      const settings = { ...value.settings };
+                      if (mode) settings.openai_reasoning_mode = mode;
+                      else delete settings.openai_reasoning_mode;
+                      update({ settings });
+                    }}
+                  />
+                )}
+                {options.data?.supports_service_tier && (
+                  <ChoiceField
+                    label="Service speed"
+                    value={String(
+                      value.settings?.openai_service_tier ?? "auto",
+                    )}
+                    options={[
+                      { value: "auto", label: "Standard" },
+                      { value: "priority", label: "Fast · priority usage" },
+                      ...(![undefined, "auto", "priority"].includes(
+                        value.settings?.openai_service_tier as
+                          string | undefined,
+                      )
+                        ? [
+                            {
+                              value: String(
+                                value.settings?.openai_service_tier,
+                              ),
+                              label: `Current: ${value.settings?.openai_service_tier}`,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onValueChange={(tier) =>
+                      update({
+                        settings: {
+                          ...value.settings,
+                          openai_service_tier: tier,
+                        },
+                      })
+                    }
+                  />
+                )}
+                {
+                  <ChoiceField
+                    label="Context budget"
+                    value={
+                      customContext ||
+                      (contextBudget != null &&
+                        !contextChoices.some(
+                          (choice) => choice.value === contextBudget,
+                        ))
+                        ? "custom"
+                        : contextBudget == null
+                          ? ""
+                          : String(contextBudget)
+                    }
+                    options={[
+                      { value: "", label: "Native default" },
+                      { value: "custom", label: "Custom budget" },
+                      ...contextChoices.map((choice) => ({
+                        value: String(choice.value),
+                        label: `${choice.label} · ${choice.value.toLocaleString()} tokens`,
+                      })),
+                    ]}
+                    onValueChange={(context) => {
+                      setCustomContext(context === "custom");
+                      if (context === "custom") return;
+                      update({
+                        model_characteristics: {
+                          ...value.model_characteristics,
+                          context_window_tokens: context
+                            ? Number(context)
+                            : null,
+                        },
+                      });
+                    }}
+                  />
+                }
+                {(customContext ||
+                  (contextBudget != null &&
+                    !contextChoices.some(
+                      (choice) => choice.value === contextBudget,
                     ))) && (
                   <TextField
-                    label="Session affinity header"
+                    label="Working context budget"
+                    type="number"
                     value={String(
-                      value.model_configuration?.session_affinity_header ?? "",
+                      value.model_characteristics?.context_window_tokens ?? "",
                     )}
-                    onChange={(header) => {
+                    onChange={(input) =>
+                      update({
+                        model_characteristics: {
+                          ...value.model_characteristics,
+                          context_window_tokens: input ? Number(input) : null,
+                        },
+                      })
+                    }
+                    description={
+                      options.data?.known_context_window
+                        ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
+                        : "Leave blank to use the model's default."
+                    }
+                  />
+                )}
+              </SettingsSection>
+              {selected.supports_session_affinity && (
+                <SettingsSection title="Gateway">
+                  <ChoiceField
+                    label="Gateway session affinity"
+                    value={
+                      customAffinity ||
+                      (affinityHeader &&
+                        !choices.session_affinity_presets?.some(
+                          (preset) => preset.header === affinityHeader,
+                        ))
+                        ? "custom"
+                        : affinityHeader
+                    }
+                    options={[
+                      { value: "", label: "None" },
+                      { value: "custom", label: "Custom header" },
+                      ...(choices.session_affinity_presets ?? []).map(
+                        (preset) => ({
+                          value: preset.header,
+                          label: preset.label,
+                        }),
+                      ),
+                    ]}
+                    onValueChange={(header) => {
+                      setCustomAffinity(header === "custom");
+                      if (header === "custom") return;
                       const config = { ...value.model_configuration };
                       if (header) config.session_affinity_header = header;
                       else delete config.session_affinity_header;
                       update({ model_configuration: config });
                     }}
-                    description="Optional header for compatible gateways. Subscriptions use native affinity."
                   />
-                )}
-              <Button
-                variant="outline"
-                loading={prepare.isPending}
-                onClick={() => prepare.mutate(true)}
-              >
-                <ArrowCounterClockwise aria-hidden="true" />
-                Restore recommended defaults
-              </Button>
-            </div>
-          </details>
-        </>
-      )}
+                  {(customAffinity ||
+                    (affinityHeader &&
+                      !choices.session_affinity_presets?.some(
+                        (preset) => preset.header === affinityHeader,
+                      ))) && (
+                    <TextField
+                      label="Session affinity header"
+                      value={String(
+                        value.model_configuration?.session_affinity_header ??
+                          "",
+                      )}
+                      onChange={(header) => {
+                        const config = { ...value.model_configuration };
+                        if (header) config.session_affinity_header = header;
+                        else delete config.session_affinity_header;
+                        update({ model_configuration: config });
+                      }}
+                      description="Optional session header for compatible gateways. Subscription connections manage sessions automatically."
+                    />
+                  )}
+                </SettingsSection>
+              )}
+              <div>
+                <Button
+                  variant="ghost"
+                  loading={prepare.isPending}
+                  onClick={() => prepare.mutate(true)}
+                >
+                  <ArrowCounterClockwise aria-hidden="true" />
+                  Reset defaults
+                </Button>
+              </div>
+            </>
+          )}
+        </TabsPanel>
+      </Tabs>
     </div>
   );
 }
 
 export function ModelFields({
+  nameField,
   source,
   onChange,
   onReady,
@@ -962,6 +1022,7 @@ export function ModelFields({
   source: string;
   onChange: (source: string) => void;
   onReady?: (ready: boolean) => void;
+  nameField?: ReactNode;
 }) {
   const raw = readDocument(source)?.toJS();
   const characteristics = raw?.model_characteristics
@@ -988,6 +1049,7 @@ export function ModelFields({
       : null;
   return (
     <ModelEditor
+      nameField={nameField}
       value={value}
       onRecipeReady={onReady}
       onChange={(recipe, suggestedName) => {

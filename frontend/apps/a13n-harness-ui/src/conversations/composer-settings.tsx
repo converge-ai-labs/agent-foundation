@@ -14,6 +14,9 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
   Popover,
   PopoverPopup,
   PopoverTitle,
@@ -21,10 +24,11 @@ import {
   type SearchPicker,
 } from "a13n-ui";
 import {
+  Question,
   CaretLeft,
   CaretRight,
   Check,
-  SlidersHorizontal,
+  CaretDown,
   X,
 } from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
@@ -33,11 +37,13 @@ type SearchOption = ComponentProps<
   typeof SearchPicker
 >["groups"][number]["options"][number];
 
-type Page = "root" | "model" | "agent" | "reasoning";
+type Page = "root" | "model" | "agent" | "thinking" | "speed" | "reasoning";
 const titles: Record<Page, string> = {
   root: "Agent & Model",
   model: "Select model",
   agent: "Select agent",
+  thinking: "Thinking",
+  speed: "Speed",
   reasoning: "Reasoning mode",
 };
 const SettingsContext = createContext<{
@@ -49,13 +55,14 @@ export const useComposerSettings = () => useContext(SettingsContext);
 export function ComposerSettings({
   children,
   className,
+  label,
 }: {
   children: ReactNode;
   className?: string;
+  label?: ReactNode;
 }) {
   const rootTitle = "Agent & Model";
-  const label = "Agent & Model settings";
-  const navigationLabel = label;
+  const navigationLabel = "Agent & Model settings";
   const [open, setOpen] = useState(false);
   const [page, navigate] = useState<Page>("root");
   const [mobile, setMobile] = useState(
@@ -78,9 +85,20 @@ export function ComposerSettings({
     }
   };
   const Title = mobile ? DialogTitle : PopoverTitle;
+  const showHeader = mobile || page !== "root";
+  const help =
+    page === "thinking"
+      ? "Higher thinking levels spend more time and tokens on a response. Available levels depend on the selected model. Default uses the model’s saved setting."
+      : page === "speed"
+        ? "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates."
+        : undefined;
   const content = (
     <SettingsContext value={{ page, navigate }}>
-      <div className={styles.header} ref={heading} tabIndex={-1}>
+      <div
+        className={showHeader ? styles.header : styles.srOnly}
+        ref={heading}
+        tabIndex={-1}
+      >
         {page !== "root" && (
           <Button
             variant="ghost"
@@ -95,24 +113,47 @@ export function ComposerSettings({
         <Title className={styles.title}>
           {page === "root" ? rootTitle : titles[page]}
         </Title>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Close ${navigationLabel}`}
-          title={`Close ${navigationLabel}`}
-          onClick={() => changeOpen(false)}
-        >
-          <X />
-        </Button>
+        {help && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  tooltip={false}
+                  aria-label={`About ${titles[page].toLowerCase()}`}
+                />
+              }
+            >
+              <Question />
+            </TooltipTrigger>
+            <TooltipPopup>{help}</TooltipPopup>
+          </Tooltip>
+        )}
+        {mobile && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Close ${navigationLabel}`}
+            title={`Close ${navigationLabel}`}
+            onClick={() => changeOpen(false)}
+          >
+            <X />
+          </Button>
+        )}
       </div>
       <div className={styles.body}>{children}</div>
     </SettingsContext>
   );
   const trigger = (
-    <Button variant="ghost" size="icon-sm" className={className} />
+    <Button
+      variant="ghost"
+      size="sm"
+      className={`${styles.modelTrigger} ${className ?? ""}`}
+    />
   );
   const triggerProps = {
-    "aria-label": label,
+    "aria-label": navigationLabel,
     title: rootTitle,
     // Do not bring the mobile keyboard back when the panel closes.
     onClick: () => {
@@ -123,7 +164,8 @@ export function ComposerSettings({
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        <span>{label ?? "Model"}</span>
+        <CaretDown aria-hidden="true" />
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -136,7 +178,8 @@ export function ComposerSettings({
   ) : (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        <span>{label ?? "Model"}</span>
+        <CaretDown aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}
@@ -152,7 +195,7 @@ export function SettingsRow({
   onClick,
 }: {
   label: string;
-  value?: string;
+  value?: ReactNode;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -208,13 +251,19 @@ export function SettingsChoices({
           variant="ghost"
           className={styles.choice}
           disabled={disabled || item.disabled}
+          title={item.description}
           aria-pressed={value === item.value}
           onClick={() => onChange(item.value)}
         >
-          <span>
-            {item.label}
-            {item.badge && <small>{item.badge}</small>}
-            {item.description && <small>{item.description}</small>}
+          <span className={styles.choiceLabel}>
+            {item.icon}
+            <span className={styles.choiceText}>
+              <span>
+                <span>{item.label}</span>
+                {item.badge && <small>{item.badge}</small>}
+              </span>
+              {item.description && <small>{item.description}</small>}
+            </span>
           </span>
           {value === item.value && <Check aria-hidden />}
         </Button>

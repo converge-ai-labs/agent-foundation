@@ -94,7 +94,7 @@ it("handles prompt failure without reusing the event, then accepts a fresh offer
 
 it("discloses platform guidance, server dependency and insecure origins without a dead install button", () => {
   mount();
-  expect(screen.getByText(/server must still be running/)).toBeTruthy();
+  expect(screen.getByText(/server must stay running/)).toBeTruthy();
   expect(screen.getByText(/On iPhone or iPad/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Install app" })).toBeNull();
   cleanup();

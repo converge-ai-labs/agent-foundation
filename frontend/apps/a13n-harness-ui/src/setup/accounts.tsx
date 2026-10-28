@@ -1,16 +1,22 @@
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
 import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
 import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
 import { CredentialKeys } from "./credential-keys";
 import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
+import { copyText } from "../platform";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -248,7 +254,7 @@ export function ProviderAccount({
   async function copyCode() {
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopiedCode(code);
       setCopyFailed(false);
     } catch {
@@ -256,6 +262,26 @@ export function ProviderAccount({
       setCopyFailed(true);
     }
   }
+  const accountActions = (
+    <div className={styles.actions}>
+      <Button
+        variant="outline"
+        loading={start.isPending}
+        disabled={!!activeLogin.data?.session_id || !loginMethods.length}
+        onClick={() => start.mutate(false)}
+      >
+        {account.data?.usable ? "Reconnect account" : "Connect account"}
+      </Button>
+      <Button variant="ghost" onClick={() => void account.refetch()}>
+        Refresh status
+      </Button>
+      {account.data?.availability === "available" && (
+        <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
+          Log out account
+        </Button>
+      )}
+    </div>
+  );
   const content = (
     <>
       <ErrorNotice
@@ -272,35 +298,42 @@ export function ProviderAccount({
       />
       {!active && (
         <>
-          <p className={accountStyles.accountStatus}>
-            {account.isPending
-              ? "Checking account…"
-              : account.data?.usable
-                ? "Connected"
-                : ready
-                  ? "Account available · refreshes on first use"
-                  : "Not connected"}
-            {account.data?.availability === "available" &&
-              ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
-          </p>
-          {account.data?.account_id && (
-            <p>
-              Account: {account.data.account_id} ·{" "}
-              {account.data.shared_with_cli
-                ? `Shared with ${label} CLI`
-                : "Host account"}
-            </p>
-          )}
-          {account.data?.expires_at && (
-            <p className={accountStyles.help}>
-              Session expires{" "}
-              {new Date(account.data.expires_at).toLocaleString()}
-              {account.data.required_action === "refresh"
-                ? " · refreshes on first use"
-                : ""}
-            </p>
-          )}
-          {account.data?.message && <p role="status">{account.data.message}</p>}
+          <div className={accountStyles.accountHeader}>
+            <div className={accountStyles.identity}>
+              <p className={accountStyles.accountStatus}>
+                {account.isPending
+                  ? "Checking account…"
+                  : account.data?.usable
+                    ? "Connected"
+                    : ready
+                      ? "Account available · refreshes on first use"
+                      : "Not connected"}
+                {account.data?.availability === "available" &&
+                  ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
+              </p>
+              {account.data?.account_id && (
+                <p>
+                  Account: {account.data.account_id} ·{" "}
+                  {account.data.shared_with_cli
+                    ? `Shared with ${label} CLI`
+                    : "Host account"}
+                </p>
+              )}
+              {account.data?.expires_at && (
+                <p className={accountStyles.help}>
+                  Session expires{" "}
+                  {new Date(account.data.expires_at).toLocaleString()}
+                  {account.data.required_action === "refresh"
+                    ? " · refreshes on first use"
+                    : ""}
+                </p>
+              )}
+              {account.data?.message && (
+                <p role="status">{account.data.message}</p>
+              )}
+            </div>
+            {accountActions}
+          </div>
           {!inline && provider === "copilot" && (
             <CopilotAllowance
               key={identity}
@@ -311,10 +344,10 @@ export function ProviderAccount({
           {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
-              <summary>Choose account source</summary>
+              <summary>Account source</summary>
               <p>
-                A selection replaces this server's binding. Missing credentials
-                never fall back to another account.
+                Choosing an account replaces this server's selection. If its
+                credentials are missing, no other account is used.
               </p>
               <div className={styles.actions}>
                 {sources.data?.map((candidate) => (
@@ -336,14 +369,11 @@ export function ProviderAccount({
                   variant="outline"
                   onClick={() => void sources.refetch()}
                 >
-                  Find saved accounts
+                  Find accounts
                 </Button>
               </div>
               {!sources.isPending && !sources.data?.length && (
-                <p>
-                  No supported saved accounts found. Connect an account to use
-                  native device login.
-                </p>
+                <p>No saved accounts found. Connect an account to sign in.</p>
               )}
             </details>
           )}
@@ -351,9 +381,14 @@ export function ProviderAccount({
             {loginMethods.length > 1 && (
               <details className={accountStyles.advanced}>
                 <summary>Advanced login options</summary>
-                <div className={styles.stack}>
+                <SettingsSection>
                   <ChoiceField
                     label="Login method"
+                    description={
+                      method === "browser"
+                        ? "The browser must reach this server. For remote servers, use a device code or paste the full ChatGPT callback URL."
+                        : undefined
+                    }
                     value={method}
                     options={loginMethods.map((method) => ({
                       value: method,
@@ -370,15 +405,7 @@ export function ProviderAccount({
                       )
                     }
                   />
-                  {method === "browser" && (
-                    <p className={accountStyles.help}>
-                      The callback must reach the server's loopback listener.
-                      For a remote host or container, paste the complete
-                      callback URL for ChatGPT, or use device login where
-                      supported.
-                    </p>
-                  )}
-                </div>
+                </SettingsSection>
               </details>
             )}
             {activeLogin.data?.provider &&
@@ -388,26 +415,6 @@ export function ProviderAccount({
                   that connection to finish or cancel it.
                 </p>
               )}
-            <div className={styles.actions}>
-              <Button
-                variant={ready ? "outline" : "default"}
-                loading={start.isPending}
-                disabled={
-                  !!activeLogin.data?.session_id || !loginMethods.length
-                }
-                onClick={() => start.mutate(false)}
-              >
-                {account.data?.usable ? "Reconnect account" : "Connect account"}
-              </Button>
-              <Button variant="outline" onClick={() => void account.refetch()}>
-                Refresh status
-              </Button>
-              {account.data?.availability === "available" && (
-                <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
-                  Log out account
-                </Button>
-              )}
-            </div>
           </div>
         </>
       )}
@@ -456,8 +463,7 @@ export function ProviderAccount({
                   </div>
                   {copyFailed && (
                     <p role="status">
-                      Could not copy automatically. Select and copy the code
-                      above.
+                      Couldn't copy. Select the code above and copy it manually.
                     </p>
                   )}
                 </li>
@@ -477,11 +483,11 @@ export function ProviderAccount({
                 className={accountStyles.advanced}
                 open={method === "manual_callback" || undefined}
               >
-                <summary>Callback cannot reach this server?</summary>
+                <summary>Callback can't reach this server?</summary>
                 <div className={styles.stack}>
                   <p>
                     {login.data.message ??
-                      "After authorizing, copy the complete URL from the browser address bar, even if the browser shows a connection error. It contains a one-time code; do not share it."}
+                      "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code."}
                   </p>
                   <FormField label="Complete callback URL">
                     <Input
@@ -542,12 +548,24 @@ export function ProviderAccount({
         open={switchOpen}
         onOpenChange={setSwitchOpen}
         title="Allow account switching?"
-        description="The next login may replace this provider's saved account on the server for everyone using it."
-        closeLabel="Cancel"
+        description="Signing in may replace this provider's account for everyone on this server."
+        closeLabel="Close"
         footer={
-          <Button loading={start.isPending} onClick={() => start.mutate(true)}>
-            Allow switch and log in
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={start.isPending}
+              onClick={() => setSwitchOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={start.isPending}
+              onClick={() => start.mutate(true)}
+            >
+              Switch and log in
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={start.error} />
@@ -558,22 +576,31 @@ export function ProviderAccount({
         title={`Log out of ${provider}?`}
         description={
           provider === "chatgpt"
-            ? "Clear the selected Host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
+            ? "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in."
             : nativeAccountId
-              ? "Clear this managed account’s credentials. The original CLI login and other managed accounts remain unchanged."
+              ? "Sign out of this saved account? The original CLI login and other accounts are kept."
               : account.data?.source_id?.startsWith("native:")
-                ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
-                : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+                ? "Sign everyone out of this account on this server. Other accounts, models and agents are kept. GitHub authorization stays active."
+                : "Sign out of this local account, including the official CLI and other servers sharing it. Other accounts, models, agents and this browser login are kept. Provider authorization stays active."
         }
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            Log out
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={logout.isPending}
+              onClick={() => setLogoutOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={logout.isPending}
+              onClick={() => logout.mutate()}
+            >
+              Log out
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={logout.error} />
@@ -581,7 +608,7 @@ export function ProviderAccount({
     </>
   );
   return inline ? (
-    <div className={styles.stack}>{content}</div>
+    <div className={accountStyles.inlineAccount}>{content}</div>
   ) : (
     <Panel title={`${label} account`}>{content}</Panel>
   );
@@ -600,7 +627,7 @@ export function AccountsPage() {
     <div className={accountStyles.page}>
       <PageHeader
         title="Accounts & API keys"
-        description="Manage subscription access, account routing, and saved model credentials."
+        description="Connect the accounts and API keys your models use."
       />
       <nav
         className={`${accountStyles.tabs} a13n-scrollbar`}

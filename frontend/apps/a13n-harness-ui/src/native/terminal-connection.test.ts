@@ -137,7 +137,7 @@ it("decodes split UTF-8, batches output and advances only after parser completio
   expect(text()).toBe("界fresh");
   callbacks.shift()!();
   expect(session.cursor).toBe(505);
-  expect(session.state.message).toContain("Output gap");
+  expect(session.state.message).toContain("Some output is missing");
   session.dispose();
 });
 
@@ -146,7 +146,7 @@ it("bounds unparsed output and resumes from the parsed cursor without silently d
   emit(frame(new Uint8Array(OUTPUT_LIMIT)));
   emit(frame(new Uint8Array([65]), OUTPUT_LIMIT));
   expect(socket.close).toHaveBeenCalledTimes(1);
-  expect(session.state.message).toContain("could not keep up");
+  expect(session.state.message).toContain("view fell behind");
   session.connect("https://example.invalid", "secret");
   expect(Socket.all).toHaveLength(1);
   await vi.advanceTimersByTimeAsync(16);
@@ -164,7 +164,7 @@ it("uncertain control, rejected commands, congestion and auth failures remove au
   emit(frame());
   session.control();
   await vi.advanceTimersByTimeAsync(10000);
-  expect(session.state.message).toContain("uncertain");
+  expect(session.state.message).toContain("Couldn't confirm");
   expect(socket.send).toHaveBeenCalledTimes(1);
   session.connect("https://example.invalid", "secret");
   Socket.all[1].onclose({ code: 4401 });
@@ -180,6 +180,6 @@ it("rejects oversized paste without sending a prefix and disconnects a congested
   socket.bufferedAmount = 65537;
   expect(session.input("must not queue")).toBe(false);
   expect(session.controls).toBe(false);
-  expect(session.state.message).toContain("partial");
+  expect(session.state.message).toContain("Some input may have arrived");
   session.dispose();
 });

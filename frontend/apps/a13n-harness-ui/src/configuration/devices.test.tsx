@@ -133,7 +133,7 @@ it("approves the matching Device and independently revokes its online registrati
   await user.click(screen.getByRole("button", { name: "Revoke" }));
   const dialog = await screen.findByRole("dialog");
   expect(
-    within(dialog).getByText(/Runs using it lose their connection/),
+    within(dialog).getByText(/Active runs will lose access/),
   ).not.toBeNull();
   await user.click(
     within(dialog).getByRole("button", { name: "Revoke connection" }),
@@ -150,14 +150,14 @@ it("rejects an unrecognized request without adding a Device", async () => {
   mount();
   await user.click(await screen.findByRole("button", { name: "Reject" }));
   await waitFor(() => expect(screen.queryByText("ABCD-1234")).toBeNull());
-  expect(screen.getByText("No Devices connected yet.")).not.toBeNull();
+  expect(screen.getByText("No devices connected yet.")).not.toBeNull();
   expect(requests).not.toContain("POST /api/device-pairings/pair-one/approve");
 });
 
 it("generates the connect command from the browser origin without a status request", async () => {
   const user = userEvent.setup();
   mount();
-  await user.click(screen.getByRole("button", { name: "Connect Device" }));
+  await user.click(screen.getByRole("button", { name: "Connect device" }));
   const dialog = await screen.findByRole("dialog");
   expect(
     within(dialog).getByText(
@@ -165,10 +165,10 @@ it("generates the connect command from the browser origin without a status reque
     ),
   ).not.toBeNull();
   expect(
-    within(dialog).getByText(/localhost refers to the Device itself/),
+    within(dialog).getByText(/Localhost means the device itself/),
   ).not.toBeNull();
   expect(
-    within(dialog).getByText(/Saved identity and credentials are reused/),
+    within(dialog).getByText(/Saved credentials are reused/),
   ).not.toBeNull();
   expect(requests).not.toContain("GET /api/status");
 });
@@ -203,11 +203,15 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     "Remote work",
   );
   await user.click(screen.getByRole("button", { name: "Add environment" }));
-  await user.click(screen.getByRole("button", { name: "Connect new Device" }));
+  expect(
+    screen.getByRole("combobox", { name: "Device" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(screen.getByText("No devices connected")).not.toBeNull();
+  await user.click(screen.getByRole("button", { name: "Connect new device" }));
   let wizard = await screen.findByRole("dialog", { name: "Connect a Device" });
   expect(await within(wizard).findByText("ABCD-1234")).not.toBeNull();
   await user.click(
-    within(wizard).getByRole("checkbox", { name: /Enable shell execution/ }),
+    within(wizard).getByRole("switch", { name: /Enable shell execution/ }),
   );
   expect(
     within(wizard).getByText(
@@ -249,9 +253,7 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     ).toBeNull(),
   );
   expect(savedContent).toBeUndefined();
-  await user.click(
-    screen.getByRole("combobox", { name: "Default working directory" }),
-  );
+  await user.click(screen.getByRole("combobox", { name: "Default folder" }));
   await user.click(
     await screen.findByRole("option", { name: "My workstation · /work" }),
   );
@@ -276,12 +278,12 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
 it("closing a pending wizard does not reject, and closing an approved wizard does not revoke", async () => {
   const user = userEvent.setup();
   mount();
-  await user.click(screen.getByRole("button", { name: "Connect Device" }));
+  await user.click(screen.getByRole("button", { name: "Connect device" }));
   let wizard = await screen.findByRole("dialog", { name: "Connect a Device" });
   await user.click(within(wizard).getByRole("button", { name: "Close" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(requests).not.toContain("POST /api/device-pairings/pair-one/reject");
-  await user.click(screen.getByRole("button", { name: "Connect Device" }));
+  await user.click(screen.getByRole("button", { name: "Connect device" }));
   wizard = await screen.findByRole("dialog", { name: "Connect a Device" });
   await user.click(
     await within(wizard).findByRole("button", { name: "Approve Device" }),

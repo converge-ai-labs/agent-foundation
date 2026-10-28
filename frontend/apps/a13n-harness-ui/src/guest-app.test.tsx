@@ -150,9 +150,7 @@ afterEach(() => {
 
 it("opens a thread guest directly without owner queries or a draft socket", async () => {
   render(<BrowserApp />);
-  await screen.findByText(
-    "View-only link · You’re following this Thread live.",
-  );
+  await screen.findByText("View-only link · Following this chat live.");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
@@ -191,11 +189,9 @@ it("keeps Project navigation inside the sharing basename", async () => {
   render(<BrowserApp />);
   const link = await screen.findByRole("link", { name: /Design together/ });
   expect(link.getAttribute("href")).toBe("/share/share-one/threads/thread-one");
-  expect(screen.queryByRole("button", { name: "New Thread" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
   fireEvent.click(link);
-  await screen.findByText(
-    "View-only link · You’re following this Thread live.",
-  );
+  await screen.findByText("View-only link · Following this chat live.");
   expect(window.location.pathname).toBe("/share/share-one/threads/thread-one");
 });
 
@@ -245,7 +241,7 @@ it("recovers uncertain Project creation by reading its exact identity without an
   });
   render(<BrowserApp />);
   fireEvent.click(
-    (await screen.findAllByRole("button", { name: "New Thread" }))[0],
+    (await screen.findAllByRole("button", { name: "New chat" }))[0],
   );
   await screen.findByRole("textbox", { name: "Shared prompt" });
   expect(window.location.pathname).toBe(

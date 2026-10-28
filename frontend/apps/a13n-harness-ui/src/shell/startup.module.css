@@ -1,56 +1,51 @@
-.shell {
-  display: flex;
-  height: 100dvh;
-  background: var(--a13n-canvas);
-  color: var(--a13n-text);
+/* Geometry comes from the Workbench sidebar; this file only adds the
+   skeleton rows and the centered connection state. */
+.rows {
+  display: grid;
+  gap: 4px;
 }
-.sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  padding: 16px 20px;
-  background: var(--a13n-surface);
-  border-right: 1px solid var(--a13n-border);
-}
-.brand {
+.row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 32px;
-  font-size: 20px;
+  height: 28px;
+  padding: 0 8px;
 }
-.placeholder {
-  height: 12px;
-  width: 75%;
-  margin: 24px 0;
+.bar {
+  height: 8px;
   border-radius: 4px;
-  background: var(--a13n-elevated);
-}
-.placeholder:nth-child(3) {
-  width: 55%;
+  background: var(--a13n-selected);
 }
 .content {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-}
-.header {
-  min-height: 56px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--a13n-border);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--a13n-text);
 }
 .status {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  gap: 8px;
+  max-width: 420px;
+  margin: auto;
   padding: 24px;
+  text-align: center;
+  text-wrap: balance;
+}
+.status h1 {
+  margin: 0;
+  font-size: var(--a13n-text-lg);
+  font-weight: 500;
+  line-height: 22px;
+}
+.status p {
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: 14px;
+  line-height: 20px;
+}
+.status button {
+  margin-top: 8px;
 }
 @media (max-width: 760px) {
   .sidebar {

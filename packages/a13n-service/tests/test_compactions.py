@@ -124,10 +124,36 @@ async def test_archive_fences_late_publication(service, scripted_model, runs_kit
 
 
 async def test_generation_outlives_seal_and_cancelled_waiter_with_late_usage(service, scripted_model, runs_kit, caplog):
+    from pydantic_ai.messages import InstructionDeltaPart, ModelMessagesTypeAdapter, ModelSettingsDeltaPart
+
     lease = await setup(service, scripted_model, runs_kit)
+    model_url = f"{service.api}/models/scripted"
+    current = await service.client.get(model_url)
+    updated = await service.client.patch(
+        model_url,
+        json={"config": {"model_name": "gpt-5", "model_api": "openai.chat_completions"}},
+        headers={"if-match": current.headers["etag"]},
+    )
+    assert updated.status_code == 200, updated.text
     plan = await _plan(service.runtime, lease)
     attempt = _Attempt(service.runtime, lease, AttemptControl(), plan)
     input = frozen(lease, model_id=plan.agent.model.key)
+    messages = input.request_messages
+    messages.insert(
+        -1,
+        ModelRequest(
+            parts=[
+                InstructionDeltaPart(id="capability:a13n.codeact:catalog", content="def lookup(): ..."),
+                ModelSettingsDeltaPart(settings={"thinking": "low"}),
+            ]
+        ),
+    )
+    input = input.model_copy(
+        update={
+            "request_json": ModelMessagesTypeAdapter.dump_json(messages).decode(),
+            "settings_json": json.dumps({"thinking": "high"}),
+        }
+    )
     operator = CompactionRun(
         service.runtime.compactions,
         lease,
@@ -144,7 +170,7 @@ async def test_generation_outlives_seal_and_cancelled_waiter_with_late_usage(ser
     scripted_model.say("Detached summary", gate=gate)
     operation = await operator.submit(input)
     assert operation.status == "running"
-    await scripted_model.request()
+    request = await scripted_model.request()
     waiter = asyncio.create_task(operator.wait(lease.thread_id, input.basis.operation_id))
     waiter.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -155,6 +181,9 @@ async def test_generation_outlives_seal_and_cancelled_waiter_with_late_usage(ser
         operation = await operator.wait(lease.thread_id, input.basis.operation_id)
     assert operation.status == "ready", [record.__dict__.get("exception_details") for record in caplog.records]
     assert operation.result.summary == "Detached summary"
+    assert request["reasoning_effort"] == "high"
+    assert "def lookup(): ..." in json.dumps(request["messages"])
+    assert input.request_messages[-2].parts[-1] == ModelSettingsDeltaPart(settings={"thinking": "low"})
     async with transaction(service.runtime.storage) as session:
         run = await session.get_one(RunRow, lease.run_id)
         records = list(

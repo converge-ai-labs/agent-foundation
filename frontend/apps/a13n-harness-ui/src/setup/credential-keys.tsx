@@ -1,3 +1,8 @@
+import {
+  SettingsTextField as TextField,
+  SettingsRow,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import {
   useMutation,
@@ -7,12 +12,13 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { parseDocument } from "yaml";
-import { Button, Input, ModalFrame } from "a13n-ui";
-import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
+import { Button, ModalFrame } from "a13n-ui";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice, SearchField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
+import layout from "../configuration/settings.module.css";
 
 export function CredentialKeys({
   connections,
@@ -147,14 +153,19 @@ export function CredentialKeys({
     keys.data?.some((key) => key.credential_ref === reference.trim());
   return (
     <section className={styles.section} aria-label="Saved API keys">
-      <header className={styles.heading}>
-        <div>
-          <h2>Saved API keys</h2>
-          <p>
-            Keys for Models and Devices, grouped by Model provider or Device
-            use. Key values stay on the server.
-          </p>
-        </div>
+      <p className={styles.help}>
+        Keys for models and devices on this server. These aren't your browser
+        login key.
+      </p>
+      <div className={styles.listToolbar}>
+        {!!keys.data?.length && (
+          <SearchField
+            label="Search API keys"
+            placeholder="Search keys, models or devices…"
+            value={filter}
+            onChange={setFilter}
+          />
+        )}
         <Button
           onClick={() => {
             setReference("");
@@ -165,20 +176,13 @@ export function CredentialKeys({
         >
           <PlusIcon /> Add API key
         </Button>
-      </header>
+      </div>
       <ErrorNotice
         error={
           keys.error ||
           sources.error ||
           resources.find((resource) => resource.error)?.error
         }
-      />
-      <Input
-        aria-label="Filter API keys"
-        placeholder="Find a key, Model, or Device…"
-        value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        className={styles.search}
       />
       {saved && <p role="status">{saved}</p>}
       {keys.isPending && <p role="status">Loading keys…</p>}
@@ -191,7 +195,6 @@ export function CredentialKeys({
             aria-label={`${provider} keys`}
           >
             <header className={styles.providerHeading}>
-              <KeyIcon size={20} />
               <h3>{provider}</h3>
               <span>
                 {items.length} {items.length === 1 ? "key" : "keys"}
@@ -207,7 +210,7 @@ export function CredentialKeys({
                         ? "Used by"
                         : unresolved
                           ? "Model and Device links are not fully available."
-                          : "Select this saved key in a Model’s or Device’s authentication settings."}
+                          : "Choose this key when setting up a model or device."}
                     </span>
                     <div className={styles.modelLinks}>
                       {key.resources.map((resource) => (
@@ -249,16 +252,12 @@ export function CredentialKeys({
           </section>
         ))}
       {!keys.isPending && !keys.error && !grouped.size && (
-        <p className={styles.empty}>
+        <p className={layout.emptySection}>
           {filter
             ? "No keys match your search."
-            : "No saved keys yet. Add an API key, then select it in a Model or Device."}
+            : "No API keys yet. Add one to use with a model or device."}
         </p>
       )}
-      <p className={styles.help}>
-        These credentials are shared by Models and Devices, separate from your
-        browser’s instance access key.
-      </p>
       <ModalFrame
         open={!!editing}
         onOpenChange={(open) => {
@@ -270,19 +269,31 @@ export function CredentialKeys({
         title={editing === "new" ? "Add API key" : "Replace API key"}
         description={
           editing === "new"
-            ? "Save a reusable key, then link it from a Model or Device."
-            : "Linked Models and Devices will use the replacement when they next load this credential."
+            ? "Save a key to use with models and devices."
+            : "Linked models and devices will use the new key next time they load it."
         }
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            type="submit"
-            form="save-credential-key"
-            loading={save.isPending}
-            disabled={!secret.trim() || !reference.trim() || !!duplicate}
-          >
-            Save key
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={save.isPending}
+              onClick={() => {
+                setEditing(null);
+                setSecret("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="save-credential-key"
+              loading={save.isPending}
+              disabled={!secret.trim() || !reference.trim() || !!duplicate}
+            >
+              Save key
+            </Button>
+          </>
         }
       >
         <form
@@ -295,26 +306,30 @@ export function CredentialKeys({
           }}
         >
           <ErrorNotice error={save.error} />
-          {editing === "new" ? (
+          <SettingsSection>
+            {editing === "new" ? (
+              <TextField
+                label="Saved key name"
+                value={reference}
+                onChange={setReference}
+              />
+            ) : (
+              <SettingsRow label="Saved key name">
+                <span>{reference}</span>
+              </SettingsRow>
+            )}
             <TextField
-              label="Saved key name"
-              value={reference}
-              onChange={setReference}
+              label="API key"
+              type="password"
+              value={secret}
+              onChange={setSecret}
             />
-          ) : (
-            <strong>{reference}</strong>
-          )}
+          </SettingsSection>
           {duplicate && (
             <p role="alert">
               This name is already saved. Use Replace key to update it.
             </p>
           )}
-          <TextField
-            label="API key"
-            type="password"
-            value={secret}
-            onChange={setSecret}
-          />
         </form>
       </ModalFrame>
       <ModalFrame
@@ -323,16 +338,25 @@ export function CredentialKeys({
           if (!open && !remove.isPending) setDeleting(null);
         }}
         title="Remove saved key?"
-        description="Models and Devices referencing this credential will need a replacement key to authenticate."
-        closeLabel="Cancel"
+        description="Linked models and devices will need another key to connect."
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => deleting && remove.mutate(deleting)}
-          >
-            Remove key
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={remove.isPending}
+              onClick={() => setDeleting(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => deleting && remove.mutate(deleting)}
+            >
+              Remove key
+            </Button>
+          </>
         }
       >
         <p>{deleting}</p>

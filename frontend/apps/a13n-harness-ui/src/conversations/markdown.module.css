@@ -1,7 +1,7 @@
 .markdown {
   min-width: 0;
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
   overflow-wrap: anywhere;
 }
 .markdown > :first-child {
@@ -16,8 +16,16 @@
   line-height: inherit;
   color: inherit;
 }
+/* Only resolved media earns a frame. Loading stays invisible and an
+   unavailable preview is one quiet line under the link, never a box. */
 .linkedPreview {
-  margin: 12px 0 18px;
+  margin: 0;
+}
+.linkedPreview[data-state="error"] {
+  margin: 4px 0 12px;
+}
+.linkedPreview[data-state="ready"] {
+  margin: 12px 0 16px;
   max-width: 640px;
   padding: 12px;
   border: 1px solid var(--a13n-border);
@@ -28,16 +36,36 @@
 .linkedPreview video {
   max-height: 360px;
 }
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .markdown ul,
 .markdown ol {
   padding-left: 24px;
   margin-block: 12px;
 }
+.markdown ul {
+  list-style: disc;
+}
+.markdown ul ul {
+  list-style: circle;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li::marker {
+  color: var(--a13n-secondary);
+}
 .markdown li {
   margin: 4px 0;
 }
 .markdown li > p {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .markdown h1,
 .markdown h2,
@@ -47,49 +75,53 @@
 .markdown h6 {
   font-weight: 500;
   line-height: 1.4;
-  margin: 24px 0 12px;
+  margin: 16px 0 8px;
   color: var(--a13n-text);
 }
 .markdown h1 {
-  font-size: 23px;
-}
-.markdown h2 {
   font-size: 20px;
 }
+.markdown h2 {
+  font-size: 16px;
+}
 .markdown h3 {
-  font-size: 17px;
+  font-size: 16px;
 }
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  font-size: 15px;
+  font-size: 14px;
 }
 .markdown code {
   font-family: var(--a13n-mono);
   font-size: 0.86em;
 }
 .markdown :not(pre) > code {
-  padding: 2px 5px;
+  padding: 4px 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--a13n-secondary) 9%, transparent);
 }
 .markdown pre {
   margin: 0;
-  padding: 14px 16px;
+  padding: 12px 16px;
   max-height: 440px;
   overflow: auto;
   white-space: pre;
   overflow-wrap: normal;
   font-family: var(--a13n-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12px;
+  line-height: 1.6;
   tab-size: 2;
+}
+.markdown pre:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
 }
 .markdown pre code {
   font-size: inherit;
 }
 .codeBlock {
-  margin: 16px 0;
+  margin: 12px 0;
   min-width: 0;
   overflow: hidden;
   background: var(--a13n-surface);
@@ -101,46 +133,68 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 38px;
-  padding: 2px 8px 2px 16px;
+  min-height: 32px;
+  padding: 4px 8px 4px 16px;
   border-bottom: 1px solid var(--a13n-border);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
-.codeHeader button,
-.diagramActions button {
+/* Header controls share the compact 32px height; coarse pointers
+   keep the shared 44px hit area. */
+.codeHeader button {
+  height: 32px;
   color: var(--a13n-secondary);
+  font-size: 14px;
   font-weight: 400;
 }
-.diagramActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 6px 8px 0;
+.codeHeader button:hover {
+  color: var(--a13n-text);
 }
+.codeLanguage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--a13n-mono);
+}
+.codeHeader button[aria-pressed="true"] {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.codeActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+/* Diagrams render at their own 1:1 size and only scale down to the column
+   width; a tall flowchart scrolls inside the frame rather than shrinking its
+   labels. Expand shows the whole diagram. */
 .diagramCanvas {
   display: flex;
   justify-content: center;
-  padding: 16px 24px 24px;
+  padding: 24px 24px 24px;
   overflow: auto;
-  max-height: 480px;
+  max-height: 560px;
+  scrollbar-width: thin;
 }
 .diagramCanvas img {
   display: block;
+  flex: none;
   max-width: 100%;
   height: auto;
-  object-fit: contain;
+  align-self: flex-start;
 }
 .markdown .diagramStatus {
   margin: 0;
-  padding: 10px 16px;
+  padding: 12px 16px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .tableScroll {
   max-width: 100%;
   overflow: auto;
-  margin: 18px 0;
+  margin: 16px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
   scrollbar-width: thin;
@@ -151,16 +205,17 @@
 }
 .markdown table {
   width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
 .markdown th,
 .markdown td {
-  padding: 10px 14px;
+  padding: 8px 12px;
   vertical-align: top;
-  min-width: 100px;
 }
 .markdown th {
   text-align: left;
@@ -198,18 +253,24 @@
   margin: 24px 0;
 }
 .markdown input[type="checkbox"] {
-  margin-right: 6px;
+  margin-right: 8px;
   accent-color: var(--a13n-secondary);
 }
 @media (max-width: 600px) {
-  .markdown {
-    font-size: 14px;
-  }
   .markdown th,
   .markdown td {
-    padding: 8px 10px;
+    padding: 8px 12px;
   }
   .diagramCanvas {
     padding: 12px;
+  }
+  /* Diagram actions fold to icons so the header stays one row; Copy keeps
+     its label for the Copied confirmation. */
+  .actionLabel {
+    display: none;
+  }
+  .codeHeader button:has(.actionLabel) {
+    width: 28px;
+    padding: 0;
   }
 }

@@ -25,11 +25,11 @@
   margin-right: 4px;
 }
 .workers {
-  margin-inline-start: 20px;
+  margin-inline-start: 24px;
   padding-bottom: 8px;
 }
 .workers > small {
   display: block;
-  padding: 6px 10px;
+  padding: 8px 12px;
   color: var(--a13n-secondary);
 }

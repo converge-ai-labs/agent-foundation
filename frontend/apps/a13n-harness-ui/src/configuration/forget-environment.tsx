@@ -51,8 +51,8 @@ export function ForgetEnvironment({
         }
       }}
       title={`Forget ${name}?`}
-      closeLabel="Cancel"
-      description="Remove this local connection or profile configuration, even if its target no longer exists. Remote files, Devices, active Runs and captured history are not deleted."
+      closeLabel="Close"
+      description="Remove this saved connection or profile. Remote files, devices, active runs and history are kept."
       trigger={
         <Button
           type="button"
@@ -78,20 +78,19 @@ export function ForgetEnvironment({
             loading={remove.isPending}
             onClick={() => remove.mutate()}
           >
-            Forget configuration
+            Forget
           </Button>
         </>
       }
     >
       <p>
-        Update any <Link to="/settings">General defaults</Link> or Project
-        defaults that reference this resource first. Existing conversations keep
-        their selections; remove or replace those selections before the next
-        Run.
+        Remove this from <Link to="/settings">General settings</Link> and
+        project defaults first. Update any existing chats that still use it
+        before their next run.
       </p>
       {references.length > 0 && (
         <div>
-          <p>Referenced by these Projects:</p>
+          <p>Used by these projects:</p>
           <ul>
             {references.map((project) => {
               const source = sources.data?.sources.find((item) =>

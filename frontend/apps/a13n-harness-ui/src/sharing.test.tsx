@@ -115,7 +115,7 @@ function renderSharing({ failCreate = false } = {}) {
 
 it("creates only on request, copies the issued link, saves permission and revokes", async () => {
   const { writes, clipboard, user } = renderSharing();
-  await screen.findByText("Active links · 0");
+  await screen.findByText("Manage links · 0");
   expect(writes).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Create link" }));
   const link = await screen.findByRole("textbox", { name: "Sharing link" });
@@ -133,23 +133,23 @@ it("creates only on request, copies the issued link, saves permission and revoke
       },
     },
   ]);
-  expect(screen.queryByRole("combobox", { name: "Share" })).toBeNull();
-  expect(
-    screen.queryByRole("combobox", { name: "Link permission" }),
-  ).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Include" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Link access" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
   await screen.findByRole("button", { name: "Copied" });
   expect(clipboard).toHaveBeenCalledWith((link as HTMLInputElement).value);
-  fireEvent.click(screen.getByText("Active links · 1"));
+  fireEvent.click(screen.getByText("Manage links · 1"));
   await user.click(screen.getByRole("combobox", { name: "Permission" }));
-  await user.click(await screen.findByRole("option", { name: "Can prompt" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Send messages" }),
+  );
   expect(writes).toHaveLength(1);
-  await screen.findByText(/Save only for people you trust/);
+  await screen.findByText(/Share only with people you trust/);
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(
       within(screen.getByRole("region", { name: "Link sharing" })).getByText(
-        "Can prompt",
+        "Send messages",
       ),
     ).toBeTruthy(),
   );
@@ -158,7 +158,7 @@ it("creates only on request, copies the issued link, saves permission and revoke
     body: { permission: "prompt" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-  await screen.findByText("Active links · 0");
+  await screen.findByText("Manage links · 0");
   expect(screen.queryByRole("textbox", { name: "Sharing link" })).toBeNull();
   expect(writes[2].method).toBe("DELETE");
   await user.click(screen.getByRole("button", { name: "Create link" }));
@@ -169,22 +169,24 @@ it("creates only on request, copies the issued link, saves permission and revoke
 
 it("sets Project access and expiry, preserves the link on copy failure and resets for another link", async () => {
   const { writes, clipboard, user } = renderSharing();
-  await screen.findByText("Active links · 0");
-  await user.click(screen.getByRole("combobox", { name: "Share" }));
+  await screen.findByText("Manage links · 0");
+  await user.click(screen.getByRole("combobox", { name: "Include" }));
   await user.click(
     await screen.findByRole("option", {
-      name: "Project · Design studio",
+      name: "All chats in Design studio",
     }),
   );
-  await user.click(screen.getByRole("combobox", { name: "Link permission" }));
-  await user.click(await screen.findByRole("option", { name: "Can prompt" }));
+  await user.click(screen.getByRole("combobox", { name: "Link access" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Send messages" }),
+  );
   expect(
     screen.getByText(
-      /prompts use the Agent’s tools and Environment permissions/,
+      /People can send messages using your agent’s tools and access/,
     ),
   ).toBeTruthy();
-  expect(screen.getByText(/Guests can also create Threads/)).toBeTruthy();
-  await user.click(screen.getByRole("combobox", { name: "Expires in" }));
+  expect(screen.getByText(/They can also start new chats/)).toBeTruthy();
+  await user.click(screen.getByRole("combobox", { name: "Expires after" }));
   await user.click(await screen.findByRole("option", { name: "7 days" }));
   expect(writes).toEqual([]);
   await user.click(screen.getByRole("button", { name: "Create link" }));
@@ -207,19 +209,19 @@ it("sets Project access and expiry, preserves the link on copy failure and reset
   await user.click(screen.getByRole("button", { name: "Copy link" }));
   await screen.findByRole("button", { name: "Copied" });
   expect(writes).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Create another link" }));
+  await user.click(screen.getByRole("button", { name: "New link" }));
   expect(screen.queryByRole("textbox", { name: "Sharing link" })).toBeNull();
   expect(screen.queryByText(/copy it manually/)).toBeNull();
-  expect(screen.getByRole("combobox", { name: "Share" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Include" })).toBeTruthy();
   expect(writes).toHaveLength(1);
 });
 
 it("keeps grant management available after an unknown creation outcome without retrying", async () => {
   const { writes, user } = renderSharing({ failCreate: true });
-  await screen.findByText("Active links · 0");
+  await screen.findByText("Manage links · 0");
   await user.click(screen.getByRole("button", { name: "Create link" }));
-  await screen.findByText(/the link may have been created/);
-  expect(screen.getByText("Active links · 0")).toBeTruthy();
+  await screen.findByText(/The link may already exist/);
+  expect(screen.getByText("Manage links · 0")).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Sharing link" })).toBeNull();
   expect(writes).toHaveLength(1);
 });

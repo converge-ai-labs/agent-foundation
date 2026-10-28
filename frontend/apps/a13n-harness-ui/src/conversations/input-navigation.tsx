@@ -119,7 +119,7 @@ export function InputNavigation({
     setActive(id);
     onSelect(id);
   };
-  if (!items.length && !query.isError) return null;
+  if (items.length < 2 && !query.hasNextPage && !query.isError) return null;
   const moreLabel = query.isFetchingNextPage
     ? "Loading more inputs"
     : query.isError
@@ -175,7 +175,7 @@ export function InputNavigation({
                     !item.output_preview ? styles.emptyOutput : undefined
                   }
                 >
-                  {item.output_preview || "No saved output yet"}
+                  {item.output_preview || "No saved output"}
                 </p>
               </div>
             </TooltipPopup>
@@ -224,7 +224,7 @@ export function InputNavigation({
                   <span className={styles.menuPreview}>
                     <span>{item.preview}</span>
                     <span className={styles.menuOutput}>
-                      Output: {item.output_preview || "No saved output yet"}
+                      Output: {item.output_preview || "No saved output"}
                     </span>
                   </span>
                 </button>

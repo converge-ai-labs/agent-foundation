@@ -262,7 +262,7 @@ it("navigates to a created Thread inline even when run admission failed, without
             />
           }
         />
-        <Route path="/threads/:threadId" element={<p>Worker conversation</p>} />
+        <Route path="/threads/:threadId" element={<p>Worker chat</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -270,7 +270,7 @@ it("navigates to a created Thread inline even when run admission failed, without
   expect(link.closest("button")).toBeNull();
   expect(screen.queryByText("Model unavailable")).toBeNull();
   fireEvent.click(link);
-  expect(screen.getByText("Worker conversation")).toBeTruthy();
+  expect(screen.getByText("Worker chat")).toBeTruthy();
 });
 
 it.each(["run_thread", "steer_thread", "send_thread_message"])(
@@ -294,9 +294,7 @@ it.each(["run_thread", "steer_thread", "send_thread_message"])(
       </MemoryRouter>,
     );
     expect(
-      screen
-        .getByRole("link", { name: "Open conversation" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Open chat" }).getAttribute("href"),
     ).toBe("/threads/thread%20%2F%20target");
     expect(screen.queryByText(/completed/i)).toBeNull();
     expect(
@@ -337,7 +335,7 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
       />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Find conversations/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Find chats/ }));
   expect(
     screen.getByRole("link", { name: "Research" }).getAttribute("href"),
   ).toBe("/threads/thread-one");
@@ -402,7 +400,7 @@ it("retains saved applied diffs and explicit omission without reconstructing req
   );
   expect(screen.getByText("-observed before")).toBeTruthy();
   expect(screen.getByText("+observed after")).toBeTruthy();
-  expect(screen.getByText(/This older record did not retain/)).toBeTruthy();
+  expect(screen.getByText(/This older edit has no saved diff/)).toBeTruthy();
   expect(screen.queryByText("Requested replacement")).toBeNull();
 });
 
@@ -466,7 +464,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   ];
   const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
   const group = screen.getByRole("button", {
-    name: /Tool executions · 2 operations/,
+    name: /Tool calls · 2 operations/,
   });
   expect(group.textContent).toContain("1 waiting");
   fireEvent.click(group);
@@ -483,7 +481,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   );
   expect(
     screen
-      .getByRole("button", { name: /Tool executions/ })
+      .getByRole("button", { name: /Tool calls/ })
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.queryByText("1 waiting")).toBeNull();
@@ -512,7 +510,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
   expect(saved).toHaveLength(2);
   expect(activitySummary(saved)).toMatchObject({
-    title: "Tool executions · 2 operations",
+    title: "Tool calls · 2 operations",
     status: "Running at last check",
   });
 });
@@ -646,7 +644,7 @@ it("renders saved Shell retrieval failures and output with exact receipt provena
     label: "Retrieve tool result",
   });
   render(<ToolActivity tools={[result]} />);
-  fireEvent.click(screen.getByRole("button", { name: /Tool executions/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Tool calls/ }));
   expect(screen.getByText("test failed")).toBeTruthy();
   expect(screen.getByText(/Exit 7/)).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();

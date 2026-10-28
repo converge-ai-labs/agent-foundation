@@ -1,4 +1,5 @@
 import {
+  cloneElement,
   createContext,
   useContext,
   useEffect,
@@ -10,7 +11,7 @@ import {
 import { modelControlRequest } from "./model-controls";
 import { useAppContextSelection } from "../mcp-apps/context-selection";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame, Switch } from "a13n-ui";
 import {
   Plus,
   ArrowUp,
@@ -40,6 +41,7 @@ import { ComposerEditor } from "./composer-editor";
 import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
 import { ClearContext } from "./clear-context";
+import { TaskOptions } from "./task-options";
 import { useStopOperation } from "./stop-operation";
 import {
   loadThreadSkills,
@@ -121,7 +123,7 @@ export function waitForSynchronization(
       else resolve();
     };
     const abort = () =>
-      finish(new Error("Preparation cancelled. Your input is retained."));
+      finish(new Error("Cancelled. Your input is still saved here."));
     const unsubscribe = draft.subscribe(() => {
       if (draft.synchronized) finish();
       else if (draft.error || draft.replacement)
@@ -136,7 +138,7 @@ export function waitForSynchronization(
       () =>
         finish(
           new Error(
-            "Could not synchronize yet. Your input is retained; send again when connected.",
+            "Couldn't sync. Your input is saved here. Send again when connected.",
           ),
         ),
       15000,
@@ -259,7 +261,7 @@ export async function submitDraft(
         );
       if (!accepted.accepted)
         throw new ApiError(
-          "This operation did not accept the instruction. Your input is retained.",
+          "The run didn't accept your message. Your input is still saved here.",
           409,
         );
       acceptedReceipt = receipt;
@@ -288,7 +290,7 @@ export async function submitDraft(
         action,
         receipt,
         message:
-          "The acknowledgement was lost. This input may already have been accepted and removed from the shared draft. Inspect the operation and history before deciding what to send next.",
+          "Couldn't confirm delivery. Your message may already be sent and removed from the shared draft. Check the chat before sending again.",
       };
     }
   } finally {
@@ -548,7 +550,9 @@ export function Composer({
     // A shared draft can become empty during preparation. Abort unsubmitted
     // preparation without pretending to undo any request already admitted.
     preparation.current?.abort(
-      new Error("Submission preparation stopped. Your input is retained."),
+      new Error(
+        "Stopped preparing the message. Your input is still saved here.",
+      ),
     );
     return cancellation.stop();
   };
@@ -594,12 +598,11 @@ export function Composer({
           ? "Waiting for attachments…"
           : "Resolve unavailable attachments before sending."
         : coordinatorBlocked && !busy
-          ? "Select an available Project and an idle conversation to enable Coordinator."
+          ? "Choose a project and an idle chat to coordinate agents."
           : !ready
             ? "Waiting for the shared draft connection…"
             : !busy && !canRun
-              ? (unavailableReason ??
-                "Refresh conversation status before sending.")
+              ? (unavailableReason ?? "Refresh chat status before sending.")
               : busy && !canSteer
                 ? "This operation cannot accept another message yet."
                 : undefined
@@ -727,7 +730,7 @@ export function Composer({
         setError(
           failure instanceof Error
             ? failure.message
-            : "Could not prepare the conversation. Your input is retained.",
+            : "Couldn't prepare the chat. Your input is still saved here.",
         );
     } finally {
       preparation.current = null;
@@ -851,9 +854,7 @@ export function Composer({
         } catch {
           /* Binary content is never injected into HTML. */
         }
-      } else
-        text =
-          "This attachment is too large for inline preview. Download to inspect it.";
+      } else text = "Too large to preview. Download the file to view it.";
       if (controller.signal.aborted) return;
       setPreview({
         name: attachment?.name ?? id,
@@ -875,7 +876,7 @@ export function Composer({
       size="sm"
       className={styles.goalButton}
       aria-pressed={draft.mode === "goal"}
-      title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit. Applies to your next submission, not steering."
+      title="Keep working until the goal is done or the follow-up limit is reached."
       disabled={!canRun || busy || preparing || pending || unknown}
       onClick={() => {
         draft.mode = draft.mode === "goal" ? "normal" : "goal";
@@ -907,7 +908,7 @@ export function Composer({
           variant="ghost"
           size="icon-sm"
           aria-label="Remove Coordinator assignment"
-          title="Create an independent conversation instead"
+          title="Create an independent chat instead"
           disabled={owner.locked || preparing || pending || unknown}
           onClick={owner.onRemove}
         >
@@ -922,7 +923,7 @@ export function Composer({
     (coordinatorActive ? (
       <span
         className={styles.coordinatorIdentity}
-        title="This conversation is a Coordinator. Its role cannot be reversed."
+        title="This chat is a coordinator. This can't be undone."
       >
         <CoordinatorIcon size={16} /> Coordinator
       </span>
@@ -934,13 +935,13 @@ export function Composer({
         aria-pressed={draft.coordinator}
         title={
           coordinator.available
-            ? "Become a Coordinator when you send. The role cannot be reversed after creation or conversion."
-            : "Requires an available Project and an idle conversation without pending decisions."
+            ? "Plan and delegate work to agents. Stays on after your first message."
+            : "Choose a project, finish active work and answer pending requests first."
         }
         disabled={coordinatorDisabled}
         onClick={toggleCoordinator}
       >
-        <CoordinatorIcon size={16} /> Coordinator
+        <CoordinatorIcon size={16} /> Coordinate agents
       </Button>
     ));
   return (
@@ -962,17 +963,15 @@ export function Composer({
       {draft.replacement && (
         <div role="alert" className={styles.warning}>
           <p>
-            The server's shared draft changed. Your previous text is still here.
-            Rejoining never submits it.
+            The shared draft changed. Keep your input or discard it to rejoin.
+            Neither option sends a message.
           </p>
           <Button variant="outline" onClick={() => draft.joinReplacement(true)}>
-            Add local input to the new draft
+            Keep my input
           </Button>
           <ConfirmAction
             key={draft.replacement.draft_id}
-            trigger={
-              <Button variant="ghost">Discard old input and rejoin</Button>
-            }
+            trigger={<Button variant="ghost">Discard and rejoin</Button>}
             title="Discard old input?"
             description="Discard this tab's old input and join the new shared draft?"
             confirmLabel="Discard and rejoin"
@@ -984,149 +983,43 @@ export function Composer({
       {draft.coordinatorUncertain && (
         <div className={styles.warning} role="alert">
           <p>
-            Coordinator conversion may have succeeded. Check its status before
-            sending; your input is retained.
+            Coordination may already be on. Check its status before sending.
+            Your input is saved here.
           </p>
           <Button
             variant="outline"
             loading={coordinatorStatus.isPending}
             onClick={() => coordinatorStatus.mutate()}
           >
-            Check Coordinator status
+            Check status
           </Button>
         </div>
       )}
       <div className={styles.composerBody}>
-        <div className={styles.composerHeader}>
-          {!transport.shareId && goalToggle}
-          {ownerControl || coordinatorControl}
-          <div className={styles.composerEnvironment}>{leadingControls}</div>
-        </div>
-        <div inert={preparing} className={styles.composerEditor}>
-          <ComposerEditor
-            autoFocus={autoFocus}
-            local={local}
-            skillContext={skillContext}
-            loadSkills={
-              transport.shareId
-                ? undefined
-                : async () => {
-                    try {
-                      return await loadSkills();
-                    } catch (failure) {
-                      setError(
-                        failure instanceof Error
-                          ? `Could not load skills: ${failure.message}`
-                          : "Could not load skills. Type $ again to retry.",
-                      );
-                      throw failure;
-                    }
-                  }
-            }
-            draft={draft}
-            profile={profile}
-            presence={(value) => {
-              editorPresence.current = { draft, value };
-              connection.current?.presence(value);
-            }}
-            submit={() => void submit(busy ? "steer" : "send")}
-            editor={editor}
-            attachments={{
-              transport,
-              threadId,
-              metadata: new Map(
-                attachments.flatMap((item) =>
-                  item.data
-                    ? [[item.data.attachment_id, item.data] as const]
-                    : [],
-                ),
-              ),
-              preview: (id, attachment) => void showAttachment(id, attachment),
-              upload: (files, at) => void uploadFiles(files, at),
-              retry: (key) => {
-                const item = draft.uploads.get(key);
-                if (
-                  !local &&
-                  (item?.status === "failed" || item?.status === "staged")
-                )
-                  void uploadOne(key, item.file);
-                else if (!item)
-                  setError(
-                    "This upload is unavailable in this tab. Remove it and attach the file again.",
-                  );
-              },
-            }}
-          />
-        </div>
-        {blockedReason && (
-          <p role="status" className={styles.composerConnection}>
-            {blockedReason}
-          </p>
-        )}
-        {cancellation.request && (
-          <div className={styles.composerStatus}>
-            <p
-              role={
-                cancellation.observationFailed ||
-                ["uncertain", "rejected"].includes(cancellation.request.phase)
-                  ? "alert"
-                  : "status"
-              }
-            >
-              {cancellation.request.message}
-              {cancellation.observationFailed &&
-                " Current status is unavailable; stopping is not yet confirmed."}
-            </p>
-            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
-              Refresh stop status
-            </Button>
+        {(draft.mode === "goal" ||
+          ownerControl ||
+          coordinatorActive ||
+          draft.coordinator) && (
+          <div className={styles.composerHeader}>
+            {!transport.shareId &&
+              draft.mode === "goal" &&
+              cloneElement(goalToggle, {
+                "aria-label": "Turn off keep working",
+              })}
+            {ownerControl ||
+              (coordinatorActive
+                ? coordinatorControl
+                : draft.coordinator && coordinatorControl
+                  ? cloneElement(coordinatorControl, {
+                      "aria-label": "Turn off agent coordination",
+                    })
+                  : null)}
           </div>
         )}
-        {(error || draft.error) && (
-          <p role="alert" className={styles.warning}>
-            {error || draft.error}
-          </p>
-        )}
-        {(draft.submission.kind === "rejected" || unknown) && (
-          <div role="alert" className={styles.warning}>
-            <p>{"message" in draft.submission && draft.submission.message}</p>
-            {unknown &&
-              "receipt" in draft.submission &&
-              draft.submission.receipt && (
-                <details>
-                  <summary>Submission details</summary>
-                  <small>Operation: {draft.submission.receipt}</small>
-                </details>
-              )}
-            {unknown && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={onReviewOutcome ?? reconcile}
-                >
-                  {onReviewOutcome
-                    ? "Review submission in conversation"
-                    : "Refresh operation and history"}
-                </Button>
-                {!onReviewOutcome && (
-                  <ConfirmAction
-                    trigger={
-                      <Button variant="ghost">I reviewed the outcome</Button>
-                    }
-                    title="Enable a new submission?"
-                    description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
-                    confirmLabel="Enable submission"
-                    onConfirm={() => {
-                      draft.submission = { kind: "idle" };
-                      draft.notify();
-                    }}
-                  />
-                )}
-              </>
-            )}
-          </div>
-        )}
-        <div className={styles.composerActions}>
+        <div
+          className={styles.composerInput}
+          data-filled={hasInput || undefined}
+        >
           <input
             ref={upload}
             type="file"
@@ -1148,38 +1041,136 @@ export function Composer({
           >
             <Plus />
           </Button>
-          <span className={styles.composerSync}>
-            {showSyncStatus && draft.status === "Connected" && (
-              <span
-                role="status"
-                aria-label="Syncing edits…"
-                title="Syncing edits…"
-              >
-                <CircleNotch
-                  className={styles.threadRunning}
-                  aria-hidden="true"
-                />
-              </span>
-            )}
-          </span>
-          {!transport.shareId && (
-            <ClearContext
-              threadId={threadId}
-              continuationId={continuationId}
-              disabled={
-                local ||
-                !canClearContext ||
-                busy ||
-                preparing ||
-                pending ||
-                unknown
+          <div inert={preparing} className={styles.composerEditor}>
+            <ComposerEditor
+              autoFocus={autoFocus}
+              local={local}
+              skillContext={skillContext}
+              loadSkills={
+                transport.shareId
+                  ? undefined
+                  : async () => {
+                      try {
+                        return await loadSkills();
+                      } catch (failure) {
+                        setError(
+                          failure instanceof Error
+                            ? `Could not load skills: ${failure.message}`
+                            : "Could not load skills. Type $ again to retry.",
+                        );
+                        throw failure;
+                      }
+                    }
               }
-              onPendingChange={setClearing}
-              onCleared={() => setContextCleared(true)}
-              reconcile={reconcile}
+              draft={draft}
+              profile={profile}
+              presence={(value) => {
+                editorPresence.current = { draft, value };
+                connection.current?.presence(value);
+              }}
+              submit={() => void submit(busy ? "steer" : "send")}
+              editor={editor}
+              attachments={{
+                transport,
+                threadId,
+                metadata: new Map(
+                  attachments.flatMap((item) =>
+                    item.data
+                      ? [[item.data.attachment_id, item.data] as const]
+                      : [],
+                  ),
+                ),
+                preview: (id, attachment) =>
+                  void showAttachment(id, attachment),
+                upload: (files, at) => void uploadFiles(files, at),
+                retry: (key) => {
+                  const item = draft.uploads.get(key);
+                  if (
+                    !local &&
+                    (item?.status === "failed" || item?.status === "staged")
+                  )
+                    void uploadOne(key, item.file);
+                  else if (!item)
+                    setError(
+                      "This upload is unavailable in this tab. Remove it and attach the file again.",
+                    );
+                },
+              }}
             />
-          )}
-          <div className={styles.composerChoices}>{controls?.()}</div>
+          </div>
+          <div className={styles.composerActions}>
+            <span className={styles.composerSync}>
+              {showSyncStatus && draft.status === "Connected" && (
+                <span
+                  role="status"
+                  aria-label="Syncing edits…"
+                  title="Syncing edits…"
+                >
+                  <CircleNotch
+                    className={styles.threadRunning}
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+            </span>
+            {!transport.shareId && (
+              <TaskOptions
+                coordinatorEnabled={draft.coordinator}
+                goal={
+                  <Switch
+                    aria-label="Goal"
+                    title={goalToggle.props.title}
+                    checked={draft.mode === "goal"}
+                    disabled={
+                      !canRun || busy || preparing || pending || unknown
+                    }
+                    onCheckedChange={(enabled) => {
+                      draft.mode = enabled ? "goal" : "normal";
+                      draft.notify();
+                    }}
+                  />
+                }
+                coordinator={
+                  !owner && !coordinatorActive && coordinator ? (
+                    <Switch
+                      aria-label="Coordinate agents"
+                      title={
+                        coordinatorControl
+                          ? coordinatorControl.props.title
+                          : undefined
+                      }
+                      checked={draft.coordinator}
+                      disabled={coordinatorDisabled}
+                      onCheckedChange={(enabled) => {
+                        draft.coordinator = enabled;
+                        draft.notify();
+                      }}
+                    />
+                  ) : undefined
+                }
+                environment={leadingControls}
+                context={
+                  !local && (
+                    <ClearContext
+                      threadId={threadId}
+                      continuationId={continuationId}
+                      disabled={
+                        !canClearContext ||
+                        busy ||
+                        preparing ||
+                        pending ||
+                        unknown
+                      }
+                      onPendingChange={setClearing}
+                      onCleared={() => setContextCleared(true)}
+                      reconcile={reconcile}
+                    />
+                  )
+                }
+              />
+            )}
+            <div className={styles.composerChoices}>{controls?.()}</div>
+          </div>
           <Button
             ref={sendButton}
             size="icon"
@@ -1213,6 +1204,70 @@ export function Composer({
             {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
           </Button>
         </div>
+        {blockedReason && (
+          <p role="status" className={styles.composerConnection}>
+            {blockedReason}
+          </p>
+        )}
+        {cancellation.request && (
+          <div className={styles.composerStatus}>
+            <p
+              role={
+                cancellation.observationFailed ||
+                ["uncertain", "rejected"].includes(cancellation.request.phase)
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {cancellation.request.message}
+              {cancellation.observationFailed &&
+                " Current status is unavailable; stopping is not yet confirmed."}
+            </p>
+            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
+              Check stop status
+            </Button>
+          </div>
+        )}
+        {(error || draft.error) && (
+          <p role="alert" className={styles.warning}>
+            {error || draft.error}
+          </p>
+        )}
+        {(draft.submission.kind === "rejected" || unknown) && (
+          <div role="alert" className={styles.warning}>
+            <p>{"message" in draft.submission && draft.submission.message}</p>
+            {unknown &&
+              "receipt" in draft.submission &&
+              draft.submission.receipt && (
+                <details>
+                  <summary>Message details</summary>
+                  <small>Operation: {draft.submission.receipt}</small>
+                </details>
+              )}
+            {unknown && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={onReviewOutcome ?? reconcile}
+                >
+                  {onReviewOutcome ? "Review message" : "Refresh chat"}
+                </Button>
+                {!onReviewOutcome && (
+                  <ConfirmAction
+                    trigger={<Button variant="ghost">Allow new message</Button>}
+                    title="Enable a new submission?"
+                    description="Your message may already be sent. Check the chat before allowing another message."
+                    confirmLabel="Enable submission"
+                    onConfirm={() => {
+                      draft.submission = { kind: "idle" };
+                      draft.notify();
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
       {preview?.image && preview.url && (
         <ImagePreview
@@ -1230,13 +1285,13 @@ export function Composer({
           }
         }}
         title={preview?.name ?? "Attachment"}
-        description="These are the retained bytes selected for input, not the current file on the server."
+        description="This is the attached snapshot. The original file may have changed."
         closeLabel="Close"
       >
         {preview?.source && (
           <div className={styles.summary}>
             {"path" in preview.source && (
-              <p>Server native capture · {preview.source.path}</p>
+              <p>Server snapshot · {preview.source.path}</p>
             )}
             {"repository_path" in preview.source && (
               <p>
@@ -1245,14 +1300,14 @@ export function Composer({
               </p>
             )}
             <details>
-              <summary>Captured source identity</summary>
+              <summary>Source</summary>
               <pre className={styles.code}>
                 {JSON.stringify(preview.source, null, 2)}
               </pre>
             </details>
             <p>
-              These are immutable captured bytes, not a fresh read of the
-              source. Sending retains this content with its source metadata.
+              This is a saved snapshot. Sending keeps it and its source details
+              in the chat, even if the original changes.
             </p>
           </div>
         )}

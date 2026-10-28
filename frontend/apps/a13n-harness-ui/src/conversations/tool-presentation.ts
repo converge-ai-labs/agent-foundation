@@ -266,14 +266,14 @@ export function describeTool(tool: ToolView) {
         : text(args.url);
       break;
     case "list_threads":
-      label = "Find conversations";
+      label = "Find chats";
       kind = "thread";
       summary = text(args.query) || text(args.project_id) || "All projects";
       break;
     case "get_thread":
-      label = "Inspect conversation";
+      label = "Inspect chat";
       kind = "thread";
-      summary = text(args.thread_id) || "Current conversation";
+      summary = text(args.thread_id) || "Current chat";
       break;
     case "list_projects":
     case "list_agents":
@@ -288,12 +288,12 @@ export function describeTool(tool: ToolView) {
       summary = text(args.project_id);
       break;
     case "create_thread":
-      label = "Start conversation";
+      label = "Start chat";
       kind = "thread";
       summary = text(args.title) || text(args.prompt);
       break;
     case "run_thread":
-      label = "Continue conversation";
+      label = "Continue chat";
       kind = "thread";
       summary = text(args.prompt);
       break;
@@ -303,7 +303,7 @@ export function describeTool(tool: ToolView) {
       summary = text(args.message);
       break;
     case "send_thread_message":
-      label = "Message conversation";
+      label = "Message chat";
       kind = "thread";
       summary = text(args.message);
       break;
@@ -742,7 +742,7 @@ export function activitySummary(tools: ToolView[]) {
   );
   let title: string;
   if (kind === "executions")
-    title = `Tool executions · ${count(tools.length, "operation")}`;
+    title = `Tool calls · ${count(tools.length, "operation")}`;
   else if (kind === "work" || kind === "subagents")
     title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
   else if (kind === "edit")

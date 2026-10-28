@@ -1,5 +1,6 @@
+import { SettingsRow } from "../shell/settings";
 import { useId, useState } from "react";
-import { Checkbox, ChoiceField, FormField, Input, SettingsRow } from "a13n-ui";
+import { Checkbox, ChoiceField, FormField, Input } from "a13n-ui";
 import styles from "../shell/workbench.module.css";
 
 // Absence inherits; an empty list explicitly selects nothing. Choosing Custom
@@ -90,7 +91,7 @@ export function SelectionField({
           )}
           <div className={`${styles.selectionList} a13n-scrollbar`}>
             {!choices.length && (
-              <p>No configured choices. Create a resource first.</p>
+              <p>No options yet. Add a configuration first.</p>
             )}
             {!!choices.length && !visible.length && (
               <p>No matching resources.</p>

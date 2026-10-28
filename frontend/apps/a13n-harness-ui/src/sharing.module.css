@@ -1,84 +1,142 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .panel p {
   margin: 0;
 }
-.hint {
+[data-slot="dialog-popup"]:has(.panel) {
+  max-width: 400px;
+}
+[data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-header"] {
+  padding: 16px 44px 12px 16px;
+}
+[data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-title"] {
+  font-size: 16px;
+  font-weight: 500;
+}
+[data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-panel"] {
+  padding: 0 16px 16px;
+}
+[data-slot="dialog-popup"]:has(.panel) > [data-slot="dialog-close"] {
+  top: 12px;
+  right: 10px;
+}
+.linkOptions {
+  display: grid;
+  gap: 4px;
+}
+.linkOption {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 36px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.linkOption > svg {
+  width: 14px;
+  height: 14px;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 1.6;
 }
-.scope {
-  display: grid;
-  gap: 6px;
+.linkChoice {
+  min-width: 0;
+  width: auto;
+  max-width: 200px;
 }
-.linkSettings {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--a13n-surface);
+.linkChoice [data-slot="select-trigger"] {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-inline: 8px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  font-weight: 400;
 }
-.permissionRow {
+.linkChoice [data-slot="select-value"] {
+  text-align: right;
+}
+.linkChoice [data-slot="select-trigger"]:hover {
+  background: var(--a13n-hover);
+}
+.linkChoice [data-slot="select-trigger"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.linkChoice [data-slot="read-only-value"],
+.expiration {
+  text-align: right;
+  padding-inline: 8px;
+  color: var(--a13n-secondary);
+}
+.linkChoice [data-slot="read-only-value"] > span {
+  justify-content: flex-end;
+}
+.optionHint {
+  grid-column: 2 / -1;
+  padding-block: 4px 8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.linkFooter {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.linkFooter > button:last-child {
+  box-shadow: none;
+}
+.manageButton {
+  gap: 4px;
+  margin-left: -8px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  font-weight: 400;
+}
+.manageButton > svg {
+  transition: transform 150ms ease;
+}
+.manageButton[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.hint {
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.6;
 }
 .permissionControl {
   width: auto;
   min-width: 0;
   flex-shrink: 0;
 }
-.linkAudience {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.linkIcon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-}
 .authority {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .linkResult {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
-.actions,
 .secondaryActions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.actions > button {
-  flex-shrink: 0;
+.textAction {
+  composes: textAction from "./shell/workbench.module.css";
 }
-.secondaryActions a {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-}
-.secondaryActions a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.manage summary {
-  cursor: pointer;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  padding: 4px 0;
+.manage {
+  border-top: 1px solid var(--a13n-border);
+  padding-top: 12px;
 }
 .grant {
   display: flex;
@@ -93,11 +151,11 @@
 }
 .grant strong {
   font-weight: 500;
-  font-size: 12px;
+  font-size: 14px;
 }
 .grant p {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   margin-top: 4px;
 }
 .guest {
@@ -108,8 +166,8 @@
   background: var(--a13n-canvas);
 }
 .header {
-  min-height: 72px;
-  padding: 14px 28px;
+  min-height: 56px;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -134,8 +192,8 @@
   min-width: 0;
 }
 .identity h1 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -143,22 +201,16 @@
 }
 .identity p {
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin: 3px 0 0;
+  font-size: 14px;
+  margin: 4px 0 0;
 }
 .access {
   display: flex;
-  gap: 14px;
+  flex-shrink: 0;
+  gap: 12px;
   align-items: center;
   color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.badge {
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-  padding: 5px 9px;
-  border-radius: 6px;
-  white-space: nowrap;
+  font-size: 14px;
 }
 .body {
   display: flex;
@@ -166,24 +218,24 @@
   min-height: 0;
 }
 .sidebar {
-  width: 260px;
+  width: 240px;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  background: var(--a13n-surface);
-  border-radius: 0 12px 0 0;
+  gap: 12px;
+  background: var(--sidebar);
 }
 .sidebarTop {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding-left: 8px;
 }
 .sidebarTop h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .threadList {
@@ -192,24 +244,32 @@
   flex-direction: column;
   gap: 4px;
 }
+.threadList > .hint {
+  padding: 0 8px;
+}
+/* Shared conversations use the main sidebar's navigation row geometry. */
 .thread,
 .activeThread {
-  display: grid;
-  gap: 5px;
-  text-decoration: none;
-  padding: 11px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-.thread:hover {
-  background: var(--a13n-hover);
+  composes: row from "./shell/navigation-row.module.css";
+  justify-content: space-between;
 }
 .activeThread {
   background: var(--a13n-selected);
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.thread span,
+.activeThread span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .thread small,
 .activeThread small {
-  font-size: 11px;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--a13n-secondary);
 }
 .conversation {
@@ -217,19 +277,20 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 .welcome {
   margin: auto;
-  padding: 40px;
+  padding: 48px;
   max-width: 460px;
   text-align: center;
 }
 .welcome h2,
 .unavailable h1 {
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
   letter-spacing: -0.02em;
-  margin: 20px 0 10px;
+  margin: 24px 0 12px;
 }
 .welcome p,
 .unavailable p {
@@ -257,14 +318,25 @@
 }
 @media (max-width: 700px) {
   .header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    padding: 12px 16px;
+    padding: 8px 12px;
     gap: 8px;
   }
+  .identity {
+    gap: 8px;
+  }
+  .mark {
+    display: none;
+  }
+  .identity h1 {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+  }
   .access {
-    gap: 10px;
-    padding-left: 44px;
+    gap: 8px;
   }
   .conversation {
     padding: 0 12px;
@@ -286,16 +358,38 @@
   .mobileToggle {
     display: inline-flex;
   }
-  .linkSettings {
-    padding: 12px;
-  }
-  .permissionRow {
-    gap: 8px;
-  }
-  .linkAudience {
-    gap: 8px;
-  }
   .secondaryActions {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .linkOption {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    column-gap: 8px;
+    min-height: 44px;
+  }
+  .linkChoice {
+    max-width: 160px;
+  }
+  .linkChoice [data-slot="select-trigger"] {
+    min-height: 44px;
+  }
+  .linkFooter > button {
+    min-height: 44px;
+  }
+  .permissionControl button {
+    min-width: 0;
+  }
+}
+
+/* Phones keep the header title readable: Share collapses to its icon. */
+@media (max-width: 639px) {
+  .shareButton {
+    width: 32px;
+    padding: 0;
+  }
+  .shareLabel {
+    display: none;
   }
 }

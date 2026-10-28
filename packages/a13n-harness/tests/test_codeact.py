@@ -159,6 +159,7 @@ async def test_codeact_preserves_run_state_across_native_model_recovery() -> Non
 async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> None:
     calls: list[int] = []
     descriptions: list[str] = []
+    catalogs: list[str] = []
     observed_returns: list[Any] = []
 
     def double(value: int) -> int:
@@ -179,6 +180,7 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
         descriptions.append(runner.description or "")
+        catalogs.append(info.instructions or "")
         returns = _tool_returns(messages, "run_code")
         if returns:
             observed_returns[:] = [part.content for part in returns]
@@ -213,7 +215,10 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     assert stream.result.output_or_raise() == "done"
     assert calls == [4]
     assert observed_returns == [8, 9, 3, 4]
-    assert all("double" in description and "hidden" not in description for description in descriptions)
+    assert len(set(descriptions)) == 1
+    assert all("async def double" not in description for description in descriptions)
+    assert all("async def double" in catalog and "hidden" not in catalog for catalog in catalogs)
+    assert all(catalog.count("CodeAct callable host tools:") == 1 for catalog in catalogs)
     payload_types = [
         item.event.payload["type"]
         for item in events
@@ -279,7 +284,9 @@ async def test_codeact_deferred_tools_follow_discovery_and_loading(tmp_path: Pat
         nonlocal requests
         definitions = {tool.name: tool for tool in info.function_tools}
         for name in ("run_code", "run_program"):
-            assert ("async def double" in (definitions[name].description or "")) is (requests >= 2)
+            assert "async def double" not in (definitions[name].description or "")
+        visible = (info.instructions or "") + str(messages)
+        assert ("async def double" in visible) is (requests >= 2)
         index = requests
         requests += 1
         if index == len(calls):

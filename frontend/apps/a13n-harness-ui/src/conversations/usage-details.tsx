@@ -1,7 +1,11 @@
+import { HelpTip } from "../shell/help-tip";
+import { ModelIdentity } from "../shell/model-identity";
 import { Fragment, useState } from "react";
 import { Button } from "a13n-ui";
+import { ArrowRight } from "@phosphor-icons/react";
 import { modelCost, tokenCounts, type ThreadUsage } from "./usage";
 import styles from "./composer-status.module.css";
+import { DebugOnly } from "../shell/debug";
 
 export function ContextDetails({
   used,
@@ -13,15 +17,41 @@ export function ContextDetails({
   const limit = capacity != null && capacity > 0 ? capacity : undefined;
   const remaining =
     used != null && limit != null ? Math.max(0, limit - used) : undefined;
+  const percent =
+    used != null && limit != null ? (used / limit) * 100 : undefined;
   return (
     <>
-      <dl className={styles.numbers}>
+      {percent != null && (
+        <div className={styles.contextCapacity}>
+          <span>{Math.round(percent)}% used</span>
+          <div
+            className={styles.contextMeter}
+            role="meter"
+            aria-label="Context used"
+            aria-valuemin={0}
+            aria-valuemax={limit}
+            aria-valuenow={Math.min(used!, limit!)}
+            aria-valuetext={`${used!.toLocaleString()} of ${limit!.toLocaleString()} tokens`}
+            data-full={percent >= 90 || undefined}
+          >
+            <span style={{ width: `${Math.min(100, percent)}%` }} />
+          </div>
+        </div>
+      )}
+      <dl
+        className={`${styles.numbers} ${styles.contextNumbers}`}
+        data-unknown-limit={limit == null || undefined}
+      >
         <dt>Used tokens</dt>
         <dd>{used?.toLocaleString() ?? "Unknown"}</dd>
-        <dt>Context window</dt>
-        <dd>{limit?.toLocaleString() ?? "Unknown"}</dd>
-        <dt>Remaining tokens</dt>
-        <dd>{remaining?.toLocaleString() ?? "Unknown"}</dd>
+        {limit != null && (
+          <>
+            <dt>Context window</dt>
+            <dd>{limit.toLocaleString()}</dd>
+            <dt>Remaining tokens</dt>
+            <dd>{remaining?.toLocaleString() ?? "Unknown"}</dd>
+          </>
+        )}
         {used != null && limit != null && used > limit && (
           <>
             <dt>Over capacity</dt>
@@ -29,7 +59,9 @@ export function ContextDetails({
           </>
         )}
       </dl>
-      <p className={styles.scope}>Latest root request, not cumulative usage.</p>
+      {limit == null && (
+        <p className={styles.scope}>Context limit unavailable.</p>
+      )}
     </>
   );
 }
@@ -42,10 +74,13 @@ function CostValue({ totals }: { totals: Totals }) {
     <>
       <strong>{modelCost(totals)}</strong>
       {totals.unknown_model_costs > 0 && (
-        <small className={styles.scope}>
-          {totals.unknown_model_costs.toLocaleString()} unknown-cost{" "}
-          {totals.unknown_model_costs === 1 ? "response" : "responses"}
-        </small>
+        <HelpTip label="About estimated cost">
+          {totals.unknown_model_costs.toLocaleString()}{" "}
+          {totals.unknown_model_costs === 1 ? "response has" : "responses have"}{" "}
+          no recorded price and{" "}
+          {totals.unknown_model_costs === 1 ? "is" : "are"} excluded from this
+          estimate.
+        </HelpTip>
       )}
     </>
   );
@@ -86,11 +121,14 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
   if (!usage?.first_observed_at)
     return (
       <p className={styles.scope}>
-        No recorded usage yet. Historical coverage is unavailable, not zero.
+        No usage recorded yet. Earlier usage may be missing.
       </p>
     );
   const totals = usage[scope];
   const tokens = tokenCounts(totals);
+  const input = tokens.get("input_tokens") ?? 0;
+  const output = tokens.get("output_tokens") ?? 0;
+  const total = input + output;
   const scopes = usage.model_scopes ?? [];
   const models: (readonly [string, Totals])[] = scopes.length
     ? scopes
@@ -120,7 +158,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
         {(
           [
             ["combined", "All"],
-            ["root", "Root"],
+            ["root", "This chat"],
             ["descendants", "Subagents"],
           ] as const
         ).map(([value, label]) => (
@@ -135,90 +173,125 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           </Button>
         ))}
       </div>
-      <p className={styles.scope}>
-        Recorded conversation usage · auxiliary models included
-      </p>
-      <a href={`/usage?thread_id=${encodeURIComponent(usage.thread_id)}`}>
-        Open analytics
-      </a>
-      <dl className={styles.numbers}>
-        <dt>Total tokens</dt>
-        <dd>
-          {totals.model_requests
-            ? (
-                (tokens.get("input_tokens") ?? 0) +
-                (tokens.get("output_tokens") ?? 0)
-              ).toLocaleString()
-            : "—"}
-        </dd>
-        <dt>Model cost · USD</dt>
-        <dd>
-          <CostValue totals={totals} />
-        </dd>
-      </dl>
-      <TokenRows totals={totals} />
-      <h3 className={styles.sectionTitle}>By model</h3>
-      {!models.length && (
-        <p className={styles.scope}>
-          {totals.model_requests
-            ? "Model attribution is unavailable for this scope in older data."
-            : "No recorded model responses in this scope."}
-        </p>
+      {totals.model_requests > 0 && (
+        <dl className={styles.usageOverview}>
+          <dt>Total tokens</dt>
+          <dd>{totals.model_requests ? total.toLocaleString() : "—"}</dd>
+          <dt>Model cost · USD</dt>
+          <dd>
+            <CostValue totals={totals} />
+          </dd>
+        </dl>
       )}
-      <ul className={styles.models}>
-        {models.map(([name, value]) => {
-          const groups = (usage.groups ?? []).filter(
-            (group) =>
-              group.model === name &&
-              (scope === "combined" ||
-                group.descendant === (scope === "descendants")),
-          );
-          return (
-            <li key={name}>
-              <div className={styles.modelHeader}>
-                <span className={styles.modelName}>{name}</span>
-                <div className={styles.modelCost}>
-                  <CostValue totals={value} />
-                </div>
-              </div>
-              <TokenRows totals={value} />
-              {groups.length > 0 && (
-                <details className={styles.attribution}>
-                  <summary>Agents and sources</summary>
-                  {groups.map((group) => (
-                    <div
-                      className={styles.sourceGroup}
-                      key={`${group.agent_instance_id}:${group.descendant}:${group.source}`}
-                    >
-                      <div>
-                        {group.descendant ? "Subagent" : "Root"} ·{" "}
-                        {group.source === "agent"
-                          ? "Agent requests"
-                          : group.source === "files.media_understanding"
-                            ? "Media understanding · view"
-                            : group.source || "Unattributed"}
-                      </div>
-                      <small className={styles.scope}>
-                        {group.agent_instance_id || "Unknown agent"}
-                      </small>
-                      <div>
-                        {group.totals.model_requests.toLocaleString()} requests
-                        · <CostValue totals={group.totals} />
-                      </div>
-                      <TokenRows totals={group.totals} />
-                    </div>
-                  ))}
-                </details>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {!!usage.other_groups?.model_requests && (
-        <p className={styles.scope}>
-          Some agent/source details are omitted. All contributions remain
-          included in the model and scope totals.
-        </p>
+      {total > 0 && (
+        <div className={styles.tokenDistribution}>
+          <div className={styles.tokenBar} aria-hidden="true">
+            <span style={{ width: `${(input / total) * 100}%` }} />
+          </div>
+          <div className={styles.tokenLegend}>
+            <span>
+              <i />
+              Input <strong>{input.toLocaleString()}</strong>
+            </span>
+            <span>
+              <i />
+              Output <strong>{output.toLocaleString()}</strong>
+            </span>
+          </div>
+        </div>
+      )}
+      {totals.model_requests > 0 ? (
+        <>
+          <details className={styles.breakdown}>
+            <summary>
+              Token breakdown{" "}
+              <span>
+                {totals.model_requests.toLocaleString()}{" "}
+                {totals.model_requests === 1 ? "request" : "requests"}
+              </span>
+            </summary>
+            <TokenRows totals={totals} />
+          </details>
+          <details className={styles.breakdown}>
+            <summary>
+              By model <span>{models.length}</span>
+            </summary>
+            {!models.length && (
+              <p className={styles.scope}>
+                Older records don't show which models were used here.
+              </p>
+            )}
+            <ul className={styles.models}>
+              {models.map(([name, value]) => {
+                const groups = (usage.groups ?? []).filter(
+                  (group) =>
+                    group.model === name &&
+                    (scope === "combined" ||
+                      group.descendant === (scope === "descendants")),
+                );
+                return (
+                  <li key={name}>
+                    <details className={styles.modelDetails}>
+                      <summary className={styles.modelHeader}>
+                        <span className={styles.modelName} title={name}>
+                          <ModelIdentity name={name} />
+                        </span>
+                        <span className={styles.modelCost}>
+                          {modelCost(value)}
+                        </span>
+                      </summary>
+                      <TokenRows totals={value} />
+                      {value.unknown_model_costs > 0 && (
+                        <p className={styles.scope}>
+                          {value.unknown_model_costs} responses have no recorded
+                          price.
+                        </p>
+                      )}
+                      {groups.length > 0 && (
+                        <details className={styles.attribution}>
+                          <summary>Agents and sources</summary>
+                          {groups.map((group) => (
+                            <div
+                              className={styles.sourceGroup}
+                              key={`${group.agent_instance_id}:${group.descendant}:${group.source}`}
+                            >
+                              <div>
+                                {group.descendant ? "Subagent" : "Root"} ·{" "}
+                                {group.source === "agent"
+                                  ? "Agent requests"
+                                  : group.source === "files.media_understanding"
+                                    ? "Media understanding · view"
+                                    : group.source || "Unattributed"}
+                              </div>
+                              <DebugOnly>
+                                <small className={styles.scope}>
+                                  {group.agent_instance_id || "Unknown agent"}
+                                </small>
+                              </DebugOnly>
+                              <div>
+                                {group.totals.model_requests.toLocaleString()}{" "}
+                                requests · <CostValue totals={group.totals} />
+                              </div>
+                              <TokenRows totals={group.totals} />
+                            </div>
+                          ))}
+                        </details>
+                      )}
+                    </details>
+                  </li>
+                );
+              })}
+            </ul>
+            {!!usage.other_groups?.model_requests && (
+              <p className={styles.scope}>
+                Some breakdown details are hidden. Their usage is still included
+                in the totals.
+              </p>
+            )}
+          </details>
+        </>
+      ) : (
+        <p className={styles.emptyScope}>No usage in this scope yet.</p>
       )}
       {totals.provider_receipts > 0 && (
         <details className={styles.attribution}>
@@ -249,14 +322,26 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
           )}
         </details>
       )}
-      <p className={styles.scope}>
-        Cache/audio counters are included in input/output, not additional
-        tokens. Agent and source details are breakdowns, not extra usage.
-      </p>
-      <p className={styles.scope}>
-        Model estimates, not a provider invoice. + marks a partial known
-        subtotal. Missing historical prices are not backfilled.
-      </p>
+      <details className={styles.breakdown}>
+        <summary>About these numbers</summary>
+        <p className={styles.scope}>
+          Includes auxiliary models and recorded usage in this chat.
+        </p>
+        <p className={styles.scope}>
+          Cache and audio tokens are already included in input and output. Agent
+          and source totals are breakdowns of the same usage.
+        </p>
+        <p className={styles.scope}>
+          Estimated cost, not a bill. + means some prices are missing. Older
+          missing prices stay unknown.
+        </p>
+      </details>
+      <a
+        className={styles.analyticsLink}
+        href={`/usage?thread_id=${encodeURIComponent(usage.thread_id)}`}
+      >
+        Open analytics <ArrowRight aria-hidden size={14} />
+      </a>
     </div>
   );
 }

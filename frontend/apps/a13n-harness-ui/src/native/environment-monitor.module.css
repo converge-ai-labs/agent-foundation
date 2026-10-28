@@ -4,7 +4,7 @@
   min-width: 0;
 }
 .monitor h3 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   margin: 0;
 }
@@ -19,7 +19,7 @@
 }
 .toolbar label {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   flex: 1;
 }
@@ -30,7 +30,7 @@
 .chartToolbar select {
   max-width: 100%;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--a13n-input-border);
   border-radius: 8px;
   background: var(--a13n-elevated);
@@ -43,7 +43,7 @@
 .axis,
 .timeAxis,
 .readout {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .note {
@@ -57,14 +57,14 @@
 }
 .identity > div {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 .freshness {
   text-align: right;
   flex-shrink: 0;
 }
 .freshness strong {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 .gauges {
@@ -75,14 +75,14 @@
 .gauges > div {
   background: var(--a13n-surface);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 4px 12px;
 }
 .gauges span {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .gauges small {
@@ -110,11 +110,11 @@
 }
 .chartToolbar select {
   width: auto;
-  font-size: 12px;
+  font-size: 14px;
 }
 .liveState,
 .chartHint {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .chartHint {
@@ -133,7 +133,7 @@
   display: grid;
   place-items: center;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   pointer-events: none;
 }
 .trendHeading {
@@ -141,12 +141,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .trendHeading > span {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .averageKey,
 .peakKey {
@@ -154,7 +154,7 @@
   width: 16px;
   height: 2px;
   background: var(--a13n-signal);
-  margin-right: 6px;
+  margin-right: 8px;
 }
 .peakKey {
   background: var(--a13n-secondary);
@@ -236,7 +236,7 @@
 .readout {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 18px;
+  gap: 8px 16px;
   margin-top: 12px;
   padding-left: 65px;
   min-height: 18px;
@@ -250,19 +250,19 @@
   color: var(--a13n-text);
 }
 .filesystems {
-  margin-top: 10px;
+  margin-top: 12px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .filesystems > div {
   display: grid;
   gap: 8px;
-  padding: 10px;
+  padding: 12px;
   background: var(--a13n-surface);
   border-radius: 8px;
 }
 .monitor details {
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .monitor summary {
@@ -281,8 +281,15 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .toolbar > label:first-child {
+    flex-basis: 100%;
+  }
   .toolbar .refreshControl {
-    flex: 0 0 100px;
+    flex: 1;
+  }
+  .toolbar select,
+  .chartToolbar select {
+    min-height: 44px;
   }
   .chartHint {
     flex-direction: column;
@@ -318,7 +325,7 @@
   .trendHeading {
     align-items: start;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
   }
   .filesystems > div {
     flex-direction: column;
@@ -327,7 +334,7 @@
 
 .resourceSection {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   min-width: 0;
 }
 .metricList {
@@ -335,18 +342,18 @@
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 16px 24px;
   margin: 0;
-  padding: 18px;
+  padding: 16px;
   background: var(--a13n-surface);
   border-radius: 12px;
 }
 .metricList dt {
   color: var(--a13n-secondary);
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: 14px;
+  margin-bottom: 8px;
 }
 .metricList dd {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -356,12 +363,12 @@
 .counterTable table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .counterTable th,
 .counterTable td {
-  padding: 12px 10px;
+  padding: 12px 12px;
   text-align: right;
   border-bottom: 1px solid var(--a13n-border-soft);
   white-space: nowrap;
@@ -390,7 +397,7 @@
 .chartGrid .trendHeading {
   align-items: flex-start;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .chartGrid .timeAxis > span:nth-child(even) {
   display: none;
@@ -412,7 +419,7 @@
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 8px 12px;
   overflow-wrap: anywhere;
 }
 .filesystems meter {

@@ -53,7 +53,7 @@ export async function enablePush(
 ): Promise<void> {
   if (!supportsPush())
     throw new Error(
-      "Background notifications require a supported browser on HTTPS. On iPhone or iPad, add Harness UI to the Home Screen first.",
+      "Use a supported browser with HTTPS for background alerts. On iPhone or iPad, add Harness to your Home Screen first.",
     );
   // Request directly from the user's gesture, before network or worker awaits.
   const permission =
@@ -104,7 +104,7 @@ export async function enablePush(
             ? `${error.name}: ${error.message}`
             : String(error);
         const guidance = /push service|AbortError/i.test(detail)
-          ? "Check this device's push service and network access; on Android Chrome, check Google Play services and any VPN or firewall."
+          ? "Check your network and notification service. On Android, also check Google Play services, your VPN and firewall."
           : "Check this site's notification permission and browser push support.";
         throw new Error(
           `Browser push registration failed before a subscription could be saved to Harness UI. ${guidance} Browser detail: ${detail}`,

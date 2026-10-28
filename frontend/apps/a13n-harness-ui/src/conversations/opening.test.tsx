@@ -21,7 +21,7 @@ function Page({ observed }: { observed: boolean }) {
   return (
     <ConversationOpening
       ready={ready}
-      label="Opening conversation…"
+      label="Opening chat…"
       onContinue={() => setShowAvailable(true)}
     >
       <input aria-label="Draft" defaultValue="Retained input" />
@@ -35,7 +35,7 @@ it("mounts preparation behind one loading surface, then keeps content and focus 
   expect(input.value).toBe("Retained input");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(input.closest("[inert]")).not.toBeNull();
-  expect(screen.getByRole("status").textContent).toBe("Opening conversation…");
+  expect(screen.getByRole("status").textContent).toBe("Opening chat…");
   view.rerender(<Page observed />);
   expect(screen.getByRole("textbox")).toBe(input);
   expect(input.closest("[inert]")).toBeNull();
@@ -51,9 +51,7 @@ it("offers an explicit way to inspect a stalled initial connection without resub
   render(<Page observed={false} />);
   expect(screen.queryByRole("button")).toBeNull();
   act(() => vi.advanceTimersByTime(6000));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show available conversation" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
   expect(screen.queryByRole("status")).toBeNull();
   expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
     "Retained input",

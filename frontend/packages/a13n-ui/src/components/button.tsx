@@ -9,7 +9,7 @@ import { Spinner } from "./spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 export const buttonVariants = cva(
-  "relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border font-medium text-base outline-none transition-[color,background-color,border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-loading:select-none data-loading:text-transparent sm:text-sm [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
+  "relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border font-medium text-base outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out active:not-disabled:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-loading:select-none data-loading:text-transparent sm:text-sm [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -90,6 +90,11 @@ export function Button({
     "aria-busy": loading || undefined,
     "data-loading": loading ? "" : undefined,
     "data-slot": "button",
+    // Composition can replace data-slot (for example DialogTrigger). Keep the
+    // visual control identity available to application density styles.
+    "data-a13n-button": "",
+    "data-size": size ?? "default",
+    "data-variant": variant ?? "default",
     disabled: isDisabled,
     type: typeValue,
   };

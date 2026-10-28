@@ -3,13 +3,13 @@ import {
   ArrowElbowDownLeft,
   CaretDown,
   Check,
-  CircleNotch,
   Target,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
 import {
   Button,
+  LogoAnimation,
   Popover,
   PopoverClose,
   PopoverTrigger,
@@ -42,8 +42,7 @@ const phases: Record<
   suspended: {
     label: "Needs input",
     title: "Your response is needed",
-    detail:
-      "Respond to the pending request in the conversation to continue this Goal.",
+    detail: "Respond to the pending request in the chat to continue this Goal.",
   },
   verified: {
     label: "Verified",
@@ -70,8 +69,7 @@ const phases: Record<
   error: {
     label: "Not verified",
     title: "Completion not verified",
-    detail:
-      "Execution ended with an error. Review the error in the conversation.",
+    detail: "Execution ended with an error. Review the error in the chat.",
   },
   unverified_stop: {
     label: "Not verified",
@@ -116,9 +114,8 @@ export function GoalStatus({
     !executing && status !== "suspended" && status !== "verified";
   const phase = phases[status];
   const label = preparing ? "Preparing" : phase.label;
-  const Icon = moving
-    ? CircleNotch
-    : status === "verified"
+  const Icon =
+    status === "verified"
       ? Check
       : incomplete || status === "suspended"
         ? WarningCircle
@@ -137,10 +134,7 @@ export function GoalStatus({
         aria-label={`Inspect Goal: ${label}${status === "checking" && !preparing && iteration > 0 ? ` ${iteration}` : ""}`}
         data-tone={tone}
       >
-        <Icon
-          className={moving ? styles.running : undefined}
-          aria-hidden="true"
-        />
+        {moving ? <LogoAnimation size={16} /> : <Icon aria-hidden="true" />}
         <span className={styles.name}>Goal</span>
         <span className={styles.phase} role="status" aria-live="polite">
           <span aria-hidden="true">· </span>

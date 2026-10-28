@@ -109,7 +109,7 @@ function Attachment({
           </small>
           {attachment.source && (
             <details>
-              <summary>Captured source and revision</summary>
+              <summary>Source and revision</summary>
               <pre className={styles.code}>
                 {JSON.stringify(attachment.source, null, 2)}
               </pre>
@@ -151,7 +151,7 @@ function Attachment({
             </Button>
           )}
           <details className={styles.rawSource}>
-            <summary>Model-visible attachment content</summary>
+            <summary>What the model sees</summary>
             {related.map((item, offset) => (
               <pre key={offset} className={styles.code}>
                 {item.text || JSON.stringify(item.value, null, 2)}
@@ -330,36 +330,36 @@ export function InputContent({
       <div
         className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
       >
-        <header>
-          {source && guest ? (
-            <span className={styles.threadSource}>
-              From thread · {source.title || source.id}
-            </span>
-          ) : source ? (
-            <Link
-              className={styles.threadSource}
-              to={`/threads/${encodeURIComponent(source.id)}`}
-              title={
-                source.title ? `${source.title} · ${source.id}` : source.id
-              }
-              aria-label={`From thread ${source.title || source.id}`}
-            >
-              <Chats size={16} aria-hidden="true" />
-              <span className={styles.threadSourceLabel}>From thread</span>
-              <span className={styles.threadSourceName}>
-                {source.title || source.id}
+        {(source || status) && (
+          <header>
+            {source && guest ? (
+              <span className={styles.threadSource}>
+                From thread · {source.title || source.id}
               </span>
-              <ArrowUpRight size={12} aria-hidden="true" />
-            </Link>
-          ) : (
-            "User"
-          )}
-          {status && (
-            <span role="status" className={styles.inputStatus}>
-              {status}
-            </span>
-          )}
-        </header>
+            ) : source ? (
+              <Link
+                className={styles.threadSource}
+                to={`/threads/${encodeURIComponent(source.id)}`}
+                title={
+                  source.title ? `${source.title} · ${source.id}` : source.id
+                }
+                aria-label={`From thread ${source.title || source.id}`}
+              >
+                <Chats size={16} aria-hidden="true" />
+                <span className={styles.threadSourceLabel}>From thread</span>
+                <span className={styles.threadSourceName}>
+                  {source.title || source.id}
+                </span>
+                <ArrowUpRight size={12} aria-hidden="true" />
+              </Link>
+            ) : null}
+            {status && (
+              <span role="status" className={styles.inputStatus}>
+                {status}
+              </span>
+            )}
+          </header>
+        )}
         {source ? (
           <div id={contentId} hidden={!expanded}>
             {content}
@@ -371,7 +371,7 @@ export function InputContent({
           <button
             type="button"
             className={styles.threadMessageToggle}
-            aria-label="Thread message details"
+            aria-label="Message details"
             aria-expanded={expanded}
             aria-controls={contentId}
             onClick={() => setExpanded(!expanded)}

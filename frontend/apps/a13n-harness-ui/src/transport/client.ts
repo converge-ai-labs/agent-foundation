@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 import { Realtime } from "./realtime";
 import type { components, paths } from "../api.generated";
+import { apiOrigin } from "../platform";
 
 export type Schema<K extends keyof components["schemas"]> =
   components["schemas"][K];
@@ -56,10 +57,10 @@ export function createTransport(
   shareId?: string,
 ) {
   const apiUrl = (path: string) => {
-    const url = new URL(path, window.location.origin);
+    const url = new URL(path, apiOrigin());
     if (
       shareId &&
-      url.origin === window.location.origin &&
+      url.origin === apiOrigin() &&
       url.pathname.startsWith("/api/") &&
       !url.pathname.startsWith("/api/shared/")
     )
@@ -88,9 +89,7 @@ export function createTransport(
   const authenticatedFetch: typeof fetch = async (input, init) => {
     lifetime.signal.throwIfAborted();
     let request = new Request(
-      input instanceof Request
-        ? input
-        : new URL(input.toString(), window.location.origin),
+      input instanceof Request ? input : new URL(input.toString(), apiOrigin()),
       init,
     );
     if (shareId) {
@@ -131,7 +130,7 @@ export function createTransport(
   };
   return {
     client: createClient<paths>({
-      baseUrl: window.location.origin,
+      baseUrl: apiOrigin(),
       fetch: authenticatedFetch,
     }),
     fetch: authenticatedFetch,

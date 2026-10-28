@@ -6,6 +6,7 @@ import {
   reasoningModeLabel,
 } from "./reasoning-mode-picker";
 import { FastPicker } from "./fast-picker";
+import { speedLabel } from "./speed-label";
 import styles from "./composer-settings.module.css";
 
 export type ModelControlValues = Pick<
@@ -47,6 +48,24 @@ export function ModelControlPanel({
     onControlsChange({ ...controls, ...next });
     settings.navigate("root");
   };
+  if (settings.page === "thinking")
+    return (
+      <ThinkingPicker
+        model={model}
+        value={controls.thinking}
+        disabled={disabled}
+        onChange={(thinking) => choose({ thinking })}
+      />
+    );
+  if (settings.page === "speed")
+    return (
+      <FastPicker
+        model={model}
+        value={controls.fast}
+        disabled={disabled}
+        onChange={(fast) => choose({ fast })}
+      />
+    );
   if (settings.page === "reasoning")
     return (
       <ReasoningModePicker
@@ -59,11 +78,17 @@ export function ModelControlPanel({
   if (settings.page !== "root") return null;
   return (
     <div className={styles.modelControls}>
-      <ThinkingPicker
-        model={model}
-        value={controls.thinking}
+      <SettingsRow
+        label="Thinking"
+        value={
+          controls.thinking == null
+            ? "Default"
+            : (model?.thinking?.options.find(
+                (item) => item.value === controls.thinking,
+              )?.label ?? "Unavailable selection")
+        }
         disabled={disabled}
-        onChange={(thinking) => onControlsChange({ ...controls, thinking })}
+        onClick={() => settings.navigate("thinking")}
       />
       {showReasoning && (
         <SettingsRow
@@ -80,11 +105,21 @@ export function ModelControlPanel({
           onClick={() => settings.navigate("reasoning")}
         />
       )}
-      <FastPicker
-        model={model}
-        value={controls.fast}
+      <SettingsRow
+        label="Speed"
+        value={
+          controls.fast == null
+            ? "Default"
+            : speedLabel(
+                controls.fast === "ultrafast"
+                  ? "ultrafast"
+                  : controls.fast
+                    ? "on"
+                    : "off",
+              )
+        }
         disabled={disabled}
-        onChange={(fast) => onControlsChange({ ...controls, fast })}
+        onClick={() => settings.navigate("speed")}
       />
     </div>
   );

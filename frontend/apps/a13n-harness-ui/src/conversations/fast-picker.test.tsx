@@ -15,7 +15,7 @@ const model: Schema<"ModelSummary"> = {
 };
 
 it.each(["default", "off"] as const)(
-  "shows inherited %s as Standard without writing an explicit override",
+  "keeps inherited %s separate from an explicit Standard override",
   async (state) => {
     const user = userEvent.setup();
     const change = vi.fn();
@@ -101,9 +101,14 @@ it("switches exclusively between inherited Ultrafast, Fast and Standard, then re
   const fast = screen.getByRole("button", { name: "Fast mode" });
   const ultra = screen.getByRole("button", { name: "Ultrafast mode" });
   expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
-  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
   expect(fast.getAttribute("aria-pressed")).toBe("false");
-  expect(screen.getByText(/Pro \$500/)).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Use model speed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.getByTitle(/Pro \$500/)).toBeTruthy();
   await user.click(fast);
   expect(fast.getAttribute("aria-pressed")).toBe("true");
   expect(ultra.getAttribute("aria-pressed")).toBe("false");
@@ -113,11 +118,22 @@ it("switches exclusively between inherited Ultrafast, Fast and Standard, then re
   expect(ultra.getAttribute("aria-pressed")).toBe("true");
   expect(fast.getAttribute("aria-pressed")).toBe("false");
   await user.click(ultra);
-  expect(screen.getByText("Standard")).toBeTruthy();
+  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Standard mode" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Standard mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(ultra.getAttribute("aria-pressed")).toBe("false");
   await user.click(screen.getByRole("button", { name: "Use model speed" }));
   expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
-  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  expect(
+    screen
+      .getByRole("button", { name: "Use model speed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });
 
 it("disables an unsupported Ultrafast selection without misrepresenting it as Fast", async () => {
@@ -155,7 +171,7 @@ it("disables an unsupported Ultrafast selection without misrepresenting it as Fa
       .getByRole("button", { name: "Fast mode" })
       .getAttribute("aria-pressed"),
   ).toBe("false");
-  expect(screen.getByText(reason)).toBeTruthy();
+  expect(screen.getByTitle(reason)).toBeTruthy();
   expect(
     screen.getByText("Unavailable selection — use the model setting."),
   ).toBeTruthy();

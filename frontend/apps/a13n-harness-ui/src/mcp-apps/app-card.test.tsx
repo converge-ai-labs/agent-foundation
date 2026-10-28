@@ -137,6 +137,25 @@ it("opens history only on request and closing a view sends no server close or to
   expect(POST).toHaveBeenCalledTimes(1);
 });
 
+it("retries a failed presentation without activating server interactions", async () => {
+  const { POST, wrapper } = setup();
+  POST.mockRejectedValueOnce(new Error("Presentation unavailable"));
+  render(<AppCard reference={reference} />, { wrapper });
+  fireEvent.click(screen.getByRole("button", { name: "Open App" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Presentation unavailable",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByTitle("counter");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(POST).toHaveBeenCalledTimes(2);
+  expect(
+    POST.mock.calls.every(
+      ([path]) => path === "/api/threads/{thread_id}/apps/open",
+    ),
+  ).toBe(true);
+});
+
 it("keeps one live App frame outside execution details when the original becomes saved", async () => {
   const { POST, wrapper } = setup();
   const input: Schema<"TranscriptEntry"> = {
@@ -183,7 +202,7 @@ it("keeps one live App frame outside execution details when the original becomes
     { wrapper },
   );
   const frame = await screen.findByTitle("counter");
-  expect(frame.closest('[aria-label="Execution details"]')).toBeNull();
+  expect(frame.closest('[aria-label="Work log"]')).toBeNull();
   view.rerender(
     <ConversationTranscript
       {...props}
@@ -238,12 +257,10 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
       root_thread_id: reference.thread_id,
     },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await waitFor(() =>
     expect(
-      screen.queryByRole("button", { name: "Activate interactions" }),
+      screen.queryByRole("button", { name: "Enable controls" }),
     ).toBeNull(),
   );
   PUT.mockResolvedValue({
@@ -257,7 +274,7 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
     name: "Include in my next messages",
   });
   expect((selection as HTMLInputElement).checked).toBe(false);
-  expect(screen.getByText("Inspect App context").closest("iframe")).toBeNull();
+  expect(screen.getByText("Show app context").closest("iframe")).toBeNull();
   fireEvent.click(selection);
   expect((selection as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Discard context" }));
@@ -271,7 +288,7 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
   expect(screen.getByTitle("counter")).toBe(frame);
 });
 
-it("contains malformed original payload errors without crashing the conversation", async () => {
+it("contains malformed original payload errors without crashing the chat", async () => {
   const { wrapper } = setup({
     ...presentation,
     snapshot: { ...presentation.snapshot, result: { content: "invalid" } },
@@ -294,9 +311,7 @@ it("activates without replacing the frame and shows exact one-time approval outs
     root_thread_id: reference.thread_id,
   };
   POST.mockResolvedValueOnce({ data: view });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await screen.findByText(/Server interactions active/);
   expect(screen.getByTitle("counter")).toBe(frame);
   let operation: Schema<"AppOperation">;
@@ -353,9 +368,7 @@ it("requires a trusted one-time confirmation for a child App handoff without rep
       route: ["researcher"],
     },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Activate interactions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable controls" }));
   await screen.findByText(/Server interactions active/);
   POST.mockClear();
   fireEvent.click(screen.getByText("Propose App message"));
@@ -385,7 +398,7 @@ it("requires a trusted one-time confirmation for a child App handoff without rep
     }),
   );
   fireEvent.click(screen.getByText("Send once"));
-  await screen.findByText(/Accepted by the conversation/);
+  await screen.findByText(/Accepted by the chat/);
   expect(POST).toHaveBeenCalledExactlyOnceWith(
     "/api/threads/{thread_id}/apps/{view_id}/messages",
     expect.objectContaining({

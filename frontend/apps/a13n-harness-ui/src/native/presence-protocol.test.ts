@@ -18,7 +18,7 @@ afterAll(async () => {
 const wait = (assertion: () => void) =>
   vi.waitFor(assertion, { timeout: 10000, interval: 30 });
 
-it("real per-tab presence distinguishes native and conversation pages, background attention and deliberate peer links", async () => {
+it("real per-tab presence distinguishes native and chat pages, background attention and deliberate peer links", async () => {
   const thread = await result(
     transport.client.POST("/api/threads", { body: {} }),
   );

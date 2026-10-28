@@ -15,28 +15,33 @@ import {
 import {
   Button,
   Logo,
-  Wordmark,
-  ChoiceField,
+  Input,
   ModalFrame,
   Sheet,
   SheetPopup,
   SheetTitle,
-  Tooltip,
-  TooltipTrigger,
-  TooltipPopup,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuSeparator,
+  MenuCheckboxItem,
 } from "a13n-ui";
 import {
   Archive,
   ChartBar,
   Waveform,
   Brain,
-  House,
   SidebarSimple,
   Moon,
+  SignOut,
   Sun,
   List,
   Users,
   Gear,
+  Compass,
+  CaretUpDown,
+  Bug,
 } from "@phosphor-icons/react";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
@@ -51,11 +56,17 @@ import {
   AgentsPage,
   EnvironmentsPage,
 } from "../configuration/settings";
+import { SettingsNavigation } from "../configuration/settings-navigation";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { ErrorNotice, Panel, TextField } from "./ui";
+import { ErrorNotice } from "./ui";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsRow,
+  SettingsSection,
+} from "./settings";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
-import { ParticipantAvatars } from "./participant-avatars";
+import { ParticipantAvatars, ParticipantAvatar } from "./participant-avatars";
 import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
@@ -68,6 +79,7 @@ import { ResultsProvider, useResults } from "../conversations/results";
 import { LiveThreadsProvider } from "../conversations/live-threads";
 import { UnsentProvider } from "../conversations/unsent";
 
+import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 import { NotificationSettings } from "./notifications";
@@ -116,6 +128,7 @@ function WorkbenchContent({
   unauthorized: () => void;
 }) {
   const results = useResults();
+  const debug = useDebug();
   const setup = useSetup();
   const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
@@ -141,6 +154,7 @@ function WorkbenchContent({
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [displayName, setDisplayName] = useState(profile.display_name);
   const openPeople = () => {
+    setMenu(false);
     setDisplayName(profile.display_name);
     setPeopleOpen(true);
   };
@@ -155,11 +169,22 @@ function WorkbenchContent({
   );
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
+  const settingsMode = /^\/(settings|setup)(\/|$)/.test(location.pathname);
+  const lastChat = useRef("/");
   const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
   const selectedThread = useThread(selectedThreadId ?? "");
   const memoryMode =
     location.pathname === "/memory" ||
     !!selectedThread.data?.thread.memory_scope;
+  if (
+    !settingsMode &&
+    !memoryMode &&
+    (location.pathname === "/" ||
+      location.pathname === "/new" ||
+      (selectedThread.data && location.pathname.startsWith("/threads/")))
+  ) {
+    lastChat.current = `${location.pathname}${location.search}`;
+  }
   const memoryEnabled = !!status.app?.memory_organization?.memory_enabled;
   // Decide first-use routing before mounting the conversation, whose own
   // effect normalizes the empty root URL to a draft route.
@@ -185,95 +210,117 @@ function WorkbenchContent({
   }, [sidebarCollapsed]);
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
-    ...(memoryMode && memoryEnabled
-      ? [{ to: "/", label: "Home", icon: House }]
-      : []),
     ...(voiceSettings.data?.enabled
       ? [{ to: "/live", label: "Live", icon: Waveform }]
       : []),
-    { to: "/archived", label: "Archived", icon: Archive },
-    ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
-    { to: "/settings", label: "Settings", icon: Gear },
   ];
-  const themeToggle = (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label={
-        theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
-      }
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-    >
-      {theme === "dark" ? <Sun /> : <Moon />}
-    </Button>
-  );
-  const usageEntry = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            render={<Link to="/usage" />}
-          />
-        }
-        aria-label="Usage"
-        aria-current={location.pathname === "/usage" ? "page" : undefined}
-        className={
-          location.pathname === "/usage" ? styles.usageSelected : undefined
-        }
-      >
-        <ChartBar />
-      </TooltipTrigger>
-      <TooltipPopup>Usage</TooltipPopup>
-    </Tooltip>
-  );
   const navigation = (
     <>
-      {memoryMode && memoryEnabled ? (
-        <MemoryNavigation
-          projectId={
-            selectedThread.data?.thread.memory_scope
-              ? selectedThread.data.thread.configuration.project_id
-              : undefined
-          }
-        />
-      ) : (
-        <ConversationNavigation />
-      )}
-      <nav aria-label="Workbench shortcuts" className={styles.supportingNav}>
-        {links.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === "/"}
-            className={({ isActive }) =>
-              isActive ? styles.activeNav : styles.navLink
+      <div hidden={settingsMode} className={styles.navigationBody}>
+        {memoryMode && memoryEnabled ? (
+          <MemoryNavigation
+            backTo={lastChat.current}
+            projectId={
+              selectedThread.data?.thread.memory_scope
+                ? selectedThread.data.thread.configuration.project_id
+                : undefined
             }
+          />
+        ) : (
+          <ConversationNavigation />
+        )}
+        {links.length > 0 && (
+          <nav
+            aria-label="Workbench shortcuts"
+            className={styles.supportingNav}
           >
-            <Icon size={18} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
+            {links.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  isActive ? styles.activeNav : styles.navLink
+                }
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
+      </div>
+      {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
       <div className={styles.sidebarFooter}>
-        <div className={styles.actions}>
-          <Button variant="ghost" onClick={openPeople}>
-            <Users />
-            <span>
-              {disconnected
-                ? "People"
-                : `${live.presence?.participants.length ?? 0} online`}
+        <Menu>
+          <MenuTrigger
+            className={styles.workspaceMenu}
+            aria-label="Workspace menu"
+          >
+            <span
+              className={styles.profileAvatar}
+              style={{ backgroundColor: profile.color }}
+              aria-hidden="true"
+            >
+              {Array.from(profile.display_name)[0]?.toUpperCase()}
             </span>
-          </Button>
-          {themeToggle}
-          <Button variant="ghost" onClick={forget}>
-            Log out
-          </Button>
-        </div>
-        <small>
-          {live.summary} · Version <span>{status.version}</span>
-        </small>
+            <span className={styles.workspacePerson}>
+              <strong>{profile.display_name}</strong>
+              <small>{disconnected ? "Reconnecting…" : "Your workspace"}</small>
+            </span>
+            <CaretUpDown size={16} aria-hidden="true" />
+          </MenuTrigger>
+          <MenuPopup side="top" align="start" className={styles.workspacePopup}>
+            <MenuItem render={<Link to="/settings" />}>
+              <Gear />
+              Settings
+            </MenuItem>
+            {memoryEnabled && (
+              <MenuItem render={<Link to="/memory" />}>
+                <Brain />
+                Memory
+              </MenuItem>
+            )}
+            <MenuSeparator />
+            <MenuItem onClick={openPeople}>
+              <Users />
+              People & profile
+            </MenuItem>
+            <MenuItem render={<Link to="/usage" />}>
+              <ChartBar />
+              Usage
+            </MenuItem>
+            <MenuItem render={<Link to="/archived" />}>
+              <Archive />
+              Archived chats
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun /> : <Moon />}
+              {theme === "dark" ? "Light appearance" : "Dark appearance"}
+            </MenuItem>
+            <MenuCheckboxItem
+              checked={debug.enabled}
+              onCheckedChange={debug.setEnabled}
+              variant="switch"
+            >
+              <span className={styles.debugMenuLabel}>
+                <Bug />
+                Debug mode
+              </span>
+            </MenuCheckboxItem>
+            <MenuSeparator />
+            <MenuItem onClick={forget}>
+              <SignOut />
+              Log out
+            </MenuItem>
+            <span className={styles.version}>
+              Harness UI · {status.version}
+            </span>
+          </MenuPopup>
+        </Menu>
       </div>
     </>
   );
@@ -294,11 +341,10 @@ function WorkbenchContent({
       >
         <header className={styles.sidebarHeader}>
           <Link to="/" className={styles.brand} aria-label="Harness UI home">
-            <Logo alt="" width={28} height={28} />
-            <Wordmark />
+            <Logo alt="" width={20} height={20} />
+            <span>Harness</span>
           </Link>
           <div className={styles.headerActions}>
-            {usageEntry}
             <Button
               ref={collapseButton}
               variant="ghost"
@@ -336,13 +382,12 @@ function WorkbenchContent({
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>
-            {usageEntry}
           </header>
           {navigation}
         </SheetPopup>
       </Sheet>
       <div className={styles.workspace}>
-        <main id="main-content" className={styles.main}>
+        <main id="main-content" tabIndex={-1} className={styles.main}>
           {disconnected && <ConnectionNotice retry={live.retrySummary} />}
           {(results.storageError || results.lookupError) && (
             <div role="alert" className={styles.notice}>
@@ -352,14 +397,14 @@ function WorkbenchContent({
                 size="sm"
                 onClick={() => void results.tracker?.refresh()}
               >
-                Retry new-result tracking
+                Retry updates
               </Button>
             </div>
           )}
           {status.access === "dangerous_bypass" && (
             <div className={styles.notice}>
-              Instance authentication is disabled by the server's explicit
-              dangerous bypass setting.
+              Server login is disabled. Anyone who can reach this server can use
+              it.
             </div>
           )}
           {status.app?.candidate_error_message && (
@@ -367,8 +412,8 @@ function WorkbenchContent({
               <strong>Configuration could not be updated</strong>
               <p>{status.app.candidate_error_message}</p>
               <p>
-                Your previous settings are still active. Open Settings to
-                inspect the saved configuration and correct the changes.
+                Your previous settings are still in use. Open Settings to review
+                and fix the changes.
               </p>
             </div>
           )}
@@ -394,25 +439,17 @@ function WorkbenchContent({
                   ownId={live.presence?.participant_id}
                   threadTitle="this page"
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={styles.profileButton}
-                  title={`${profile.display_name} · Edit collaboration name`}
-                  aria-label={`Your collaboration name: ${profile.display_name}`}
-                  onClick={openPeople}
-                >
-                  <span
-                    className={styles.profileAvatar}
-                    style={{ backgroundColor: profile.color }}
-                    aria-hidden="true"
+                {debug.enabled && (
+                  <button
+                    type="button"
+                    className={styles.debugIndicator}
+                    onClick={() => debug.setEnabled(false)}
+                    title="Turn off Debug mode"
                   >
-                    {Array.from(profile.display_name)[0]?.toUpperCase()}
-                  </span>
-                  <span className={styles.profileName}>
-                    {profile.display_name}
-                  </span>
-                </Button>
+                    <Bug size={14} />
+                    Debug
+                  </button>
+                )}
               </>
             }
             navigation={
@@ -544,10 +581,14 @@ function WorkbenchContent({
               <Route
                 path="*"
                 element={
-                  <Panel title="Page unavailable">
-                    <p>This page is not available in this build.</p>
-                    <Link to="/">Return to the workbench</Link>
-                  </Panel>
+                  <div className={styles.notFound}>
+                    <Compass size={32} aria-hidden="true" />
+                    <h2>Page not found</h2>
+                    <p>This address doesn't match a page in Harness UI.</p>
+                    <Button variant="outline" render={<Link to="/" />}>
+                      Go to home
+                    </Button>
+                  </div>
                 }
               />
             </Routes>
@@ -561,99 +602,117 @@ function WorkbenchContent({
         closeLabel="Close"
       >
         <div className={styles.stack}>
-          <form
-            className={styles.profileForm}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (
-                !displayName.trim() ||
-                Array.from(displayName.trim()).length > 80
-              )
-                return;
-              updateProfile({ ...profile, display_name: displayName.trim() });
-              setPeopleOpen(false);
-            }}
-          >
-            <TextField
-              label="Your display name"
-              value={displayName}
-              onChange={setDisplayName}
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={
-                !displayName.trim() ||
-                Array.from(displayName.trim()).length > 80
-              }
+          <SettingsSection title="Your profile">
+            <form
+              className={styles.profileForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  !displayName.trim() ||
+                  Array.from(displayName.trim()).length > 80
+                )
+                  return;
+                updateProfile({ ...profile, display_name: displayName.trim() });
+                setPeopleOpen(false);
+              }}
             >
-              Save name
-            </Button>
-          </form>
-          <ChoiceField
-            label="Your color"
-            value={profile.color}
-            onValueChange={(color) => updateProfile({ ...profile, color })}
-            options={profileColors}
-          />
-          <p>Presence: {live.presenceState}</p>
-          <details>
-            <summary>Instance information</summary>
+              <SettingsRow label="Name" controlId="workspace-display-name">
+                <div className={styles.profileNameControl}>
+                  <Input
+                    aria-label="Your display name"
+                    id="workspace-display-name"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                  />
+                  <Button
+                    aria-label="Save name"
+                    type="submit"
+                    variant="outline"
+                    disabled={
+                      !displayName.trim() ||
+                      Array.from(displayName.trim()).length > 80
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
+              </SettingsRow>
+            </form>
+            <ChoiceField
+              label="Color"
+              value={profile.color}
+              onValueChange={(color) => updateProfile({ ...profile, color })}
+              options={profileColors}
+            />
+            <SettingsRow label="Presence">
+              <span>{live.presenceState}</span>
+            </SettingsRow>
+          </SettingsSection>
+          <details className={styles.details}>
+            <summary>About this instance</summary>
             <p>
               Version {status.version} · {status.app?.state ?? "Connected"}
             </p>
             <p>
               {status.features?.host_files
-                ? "Native computer sharing is enabled on the server."
-                : "Native sharing is disabled by this server. Start without --no-share-computer to enable it."}
+                ? "Computer sharing is on for this server."
+                : "Computer sharing is off. Restart the server without --no-share-computer to turn it on."}
             </p>
             {status.features?.host_files && !status.features?.host_git && (
               <p>Git is unavailable on this server. Files remains available.</p>
             )}
             {status.features?.host_files && !status.features?.host_terminal && (
               <p>
-                Native PTY is unavailable on this server; it requires POSIX
-                support.
+                Terminals aren't supported on this server. POSIX support is
+                required.
               </p>
             )}
           </details>
-          {live.presence?.participants.map((participant) => (
-            <div
-              className={styles.resourceRow}
-              key={participant.participant_id}
-            >
-              <strong>
-                {participant.display_name || "Anonymous"}
-                {participant.participant_id === live.presence?.participant_id
-                  ? " (you)"
-                  : ""}
-              </strong>
-              <span>{participant.foreground ? "Active tab" : "Away"}</span>
-              <small>
-                {live.presence?.same_page_participant_ids?.includes(
+          <SettingsSection title="People">
+            {live.presence?.participants.map((participant) => {
+              const own =
+                participant.participant_id === live.presence?.participant_id;
+              const samePage =
+                live.presence?.same_page_participant_ids?.includes(
                   participant.participant_id,
-                )
-                  ? "Same page"
-                  : participant.availability}
-              </small>
-              {participant.focus && (
-                <small>{participant.focus.target.kind}</small>
-              )}
-              {participant.focus &&
-                participant.availability === "available" &&
-                pageLink(participant.focus, sources.data?.sources) && (
-                  <Link
-                    to={pageLink(participant.focus, sources.data?.sources)!}
-                    onClick={() => setPeopleOpen(false)}
-                  >
-                    Open page
-                  </Link>
-                )}
-              {participant.unavailable_reason && (
-                <small>{participant.unavailable_reason}</small>
-              )}
-            </div>
-          ))}
+                );
+              const href =
+                participant.focus && participant.availability === "available"
+                  ? pageLink(participant.focus, sources.data?.sources)
+                  : undefined;
+              return (
+                <div
+                  className={styles.personRow}
+                  key={participant.participant_id}
+                >
+                  <ParticipantAvatar participant={participant} />
+                  <div className={styles.personInfo}>
+                    <strong>
+                      {participant.display_name || "Anonymous"}
+                      {own && <span className={styles.personYou}> · You</span>}
+                    </strong>
+                    <span>
+                      {participant.foreground ? "Active" : "Away"}
+                      {samePage ? " · This page" : ""}
+                    </span>
+                    {participant.unavailable_reason && (
+                      <span>{participant.unavailable_reason}</span>
+                    )}
+                  </div>
+                  {href && !own && !samePage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      render={<Link to={href} />}
+                      onClick={() => setPeopleOpen(false)}
+                    >
+                      Open page
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </SettingsSection>
         </div>
       </ModalFrame>
     </div>

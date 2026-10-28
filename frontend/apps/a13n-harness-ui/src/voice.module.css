@@ -6,24 +6,32 @@
   flex-direction: column;
 }
 .header {
-  display: flex;
+  /* Equal side tracks keep the title on the true page center whatever the
+     widths of the back link and the settings link. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 28px 40px;
-  gap: 20px;
+  padding: 32px 48px;
+  gap: 24px;
+}
+.header > :last-child {
+  justify-self: end;
+}
+.header > :first-child {
+  justify-self: start;
 }
 .header a,
 .header span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .header a {
   color: var(--a13n-secondary);
 }
 .header span {
-  font-weight: 600;
+  font-weight: 500;
 }
 .header a:hover,
 .hint a,
@@ -37,27 +45,14 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 40px 24px 24px;
-}
-.eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  font-weight: 500;
-  color: var(--a13n-tertiary);
-  margin-bottom: 24px;
+  padding: 48px 24px 24px;
 }
 .center h1 {
-  font-size: clamp(24px, 3.5vw, 40px);
+  font-size: 20px;
   font-weight: 500;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
   line-height: 1.25;
   margin: 0;
-}
-.center[data-running="true"] h1 {
-  font-size: 24px;
-}
-.center[data-running="true"] .eyebrow {
-  margin-bottom: 16px;
 }
 .intro {
   font-size: 14px;
@@ -65,53 +60,17 @@
   margin-top: 16px;
 }
 .controlArea {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 240px;
-  height: 240px;
-  margin: 28px 0 8px;
-}
-.halo {
-  position: absolute;
-  width: 204px;
-  height: 204px;
-  border-radius: 50%;
-  background: var(--a13n-surface);
+  margin: 24px 0 16px;
 }
 .control {
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 124px;
-  height: 124px;
-  border-radius: 50%;
-  border: none;
-  color: var(--a13n-canvas);
-  background: var(--a13n-text);
-  cursor: pointer;
-  transition: transform 0.18s;
-}
-.control:hover {
-  transform: scale(1.04);
-}
-.control:focus-visible {
-  outline: 3px solid var(--a13n-signal);
-  outline-offset: 6px;
-}
-.control:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-}
-.controlArea[data-active="true"] .halo {
-  animation: breathe 3s ease-in-out infinite;
+  min-height: 44px;
+  padding-inline: 16px;
 }
 .status {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   margin: 0;
 }
@@ -125,24 +84,24 @@
   background: #059669;
 }
 .hint {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .error {
-  font-size: 13px;
+  font-size: 14px;
   max-width: 520px;
   margin-top: 16px;
 }
 .caption {
   width: min(100%, 580px);
   min-height: 56px;
-  max-height: 196px;
+  max-height: min(420px, 45dvh);
   overflow: auto;
   overflow-wrap: anywhere;
-  margin-top: 28px;
+  margin-top: 32px;
   text-align: left;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--a13n-text);
 }
@@ -154,7 +113,7 @@
 }
 .speaker {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
 }
 .workspaceVoice {
@@ -172,35 +131,35 @@
   background: var(--a13n-elevated);
   box-shadow: var(--a13n-shadow);
   color: var(--a13n-text);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .thread {
-  font-size: 12px;
+  font-size: 14px;
   margin-top: 16px;
   color: var(--a13n-secondary);
 }
 .footer {
-  padding: 20px 24px 28px;
+  padding: 24px 24px 32px;
   text-align: center;
   color: var(--a13n-tertiary);
-  font-size: 11px;
-  line-height: 1.8;
+  font-size: 14px;
+  line-height: 1.6;
 }
 .indicator {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: 14px;
 }
 .indicator a {
-  padding: 4px 6px;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .indicator[data-active="true"] a::before {
   content: "";
@@ -209,28 +168,14 @@
   border-radius: 50%;
   background: #059669;
 }
-@keyframes breathe {
-  50% {
-    transform: scale(1.12);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .controlArea[data-active="true"] .halo {
-    animation: none;
-  }
-}
 @media (max-width: 600px) {
   .controlLabel {
     display: none;
   }
   .header {
-    padding: 20px;
+    padding: 16px;
   }
   .center {
-    padding-top: 28px;
-  }
-  .controlArea {
-    margin-top: 16px;
-    height: 210px;
+    padding-top: 32px;
   }
 }

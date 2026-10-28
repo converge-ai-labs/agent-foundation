@@ -1,5 +1,6 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
-import { FoldersIcon } from "@phosphor-icons/react";
+import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
 import { ModelOptions } from "./model-picker";
@@ -17,6 +18,7 @@ import {
   useComposerSettings,
 } from "./composer-settings";
 import { ModelControlPanel, type ModelControlProps } from "./model-controls";
+import { useTaskOptionsDialog } from "./task-options";
 
 export function RunEnvironments({
   catalog,
@@ -33,6 +35,7 @@ export function RunEnvironments({
   disabled: boolean;
 }) {
   const [editing, setEditing] = useState<Schema<"EnvironmentSelectionPatch">>();
+  useTaskOptionsDialog(editing !== undefined);
   const roots = value?.local_roots ?? configuration?.local_roots ?? [];
   const bindings =
     value?.environment_bindings ?? configuration?.environment_bindings ?? [];
@@ -60,25 +63,33 @@ export function RunEnvironments({
       <Button
         type="button"
         variant="ghost"
+        aria-label="Use chat defaults"
+        className={panelStyles.resetAction}
         disabled={disabled}
         onClick={() => {
           onChange(undefined);
           closeEditor();
         }}
       >
-        Use conversation defaults
+        Reset to defaults
       </Button>
-      <Button
-        type="button"
-        disabled={disabled || invalid || !editing}
-        onClick={() => {
-          if (!editing || disabled) return;
-          onChange(editing);
-          closeEditor();
-        }}
-      >
-        Use for next Run
-      </Button>
+      <div className={panelStyles.confirmActions}>
+        <Button type="button" variant="outline" onClick={closeEditor}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          aria-label="Use for next run"
+          disabled={disabled || invalid || !editing}
+          onClick={() => {
+            if (!editing || disabled) return;
+            onChange(editing);
+            closeEditor();
+          }}
+        >
+          Apply
+        </Button>
+      </div>
     </>
   );
   const content = editing && (
@@ -86,7 +97,7 @@ export function RunEnvironments({
       value={editing}
       profiles={catalog?.environments}
       inheritedProfile={configuration?.environment_profile_id}
-      inheritLabel="Follow conversation local mode"
+      inheritLabel="Use chat default"
       onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
@@ -99,11 +110,17 @@ export function RunEnvironments({
         disabled={disabled || !configuration}
         aria-label="Environments"
         title={summary}
-        className={panelStyles.environmentButton}
+        className={panelStyles.optionAction}
         onClick={beginEditing}
       >
-        <FoldersIcon aria-hidden="true" />
-        <span className={panelStyles.environmentLabel}>{summary}</span>
+        <Desktop aria-hidden />
+        <span className={panelStyles.optionCopy}>
+          <span>Environment</span>
+          <small className={panelStyles.environmentLabel}>
+            {bindings.length ? `${bindings.length} remote` : "Local"}
+          </small>
+        </span>
+        <CaretRight aria-hidden="true" size={14} />
       </Button>
       <ModalFrame
         open={editing !== undefined}
@@ -111,8 +128,9 @@ export function RunEnvironments({
           if (!open) setEditing(undefined);
         }}
         title="Environments"
-        closeLabel="Cancel"
-        description="Choose environments and their working directories for subsequent Runs in this tab. Conversation defaults and the active Run stay unchanged."
+        size="lg"
+        closeLabel="Close"
+        description="Applies to upcoming runs in this tab."
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>
@@ -151,8 +169,6 @@ export function ThreadRunChoices(props: RunChoiceProps) {
   const model = catalog?.models?.find(
     (item) => item.model_id === selectedModelId,
   );
-  const agentName =
-    agent?.name ?? (agentId ? `${agentId} (unavailable)` : "Default agent");
   const modelName =
     model?.name ??
     (selectedModelId
@@ -174,17 +190,14 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     previousSelection.current = selectionKey;
   }, [selectionKey, onControlsChange]);
   return (
-    <div className={panelStyles.identity}>
-      <span
-        className={panelStyles.summary}
-        title={`${agentName} · ${modelName}`}
-        aria-label={`Agent: ${agentName}. Model: ${modelName}`}
+    <div
+      className={panelStyles.identity}
+      aria-label={`Agent: ${agent?.name ?? "Default agent"}. Model: ${modelName}`}
+      title={`${agent?.name ?? "Default agent"} · ${modelName}`}
+    >
+      <ComposerSettings
+        label={<ModelIdentity model={model} name={modelName} />}
       >
-        <span>{agentName}</span>
-        <span aria-hidden>·</span>
-        <span>{modelName}</span>
-      </span>
-      <ComposerSettings>
         <AgentModelChoices {...props} />
       </ComposerSettings>
     </div>
@@ -285,8 +298,13 @@ function AgentModelChoices({
           <SettingsRow
             label="Model"
             value={
-              model?.name ??
-              `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+              <ModelIdentity
+                model={model}
+                name={
+                  model?.name ??
+                  `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+                }
+              />
             }
             disabled={disabled || !catalog}
             onClick={() => settings.navigate("model")}
