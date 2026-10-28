@@ -96,6 +96,9 @@
   font-size: 13px;
 }
 @media (max-width: 600px) {
+  .search input {
+    font-size: 16px;
+  }
   .search {
     min-height: 56px;
     padding-inline: 12px 6px;

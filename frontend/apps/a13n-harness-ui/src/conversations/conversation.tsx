@@ -176,6 +176,8 @@ function ConversationContent({
     if (!open) closeDialog();
   };
   const [title, setTitle] = useState("");
+  const [inspectionActions, setInspectionActions] =
+    useState<HTMLDivElement | null>(null);
   const inspection = !guest && dialog === "details";
   const setInspection = (open: boolean) => {
     if (!open) closeDialog();
@@ -1082,13 +1084,20 @@ function ConversationContent({
           title="Chat details"
           closeLabel="Close dialog"
           footer={
-            <Button variant="outline" onClick={() => setInspection(false)}>
-              Close
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setInspection(false)}>
+                Close
+              </Button>
+              <div
+                ref={setInspectionActions}
+                className={styles.settingsActions}
+              />
+            </>
           }
           size="lg"
         >
           <ConversationDetails
+            actionsContainer={inspectionActions}
             threadId={threadId}
             receipt={receipt}
             continuation={detail.data?.continuation_id}

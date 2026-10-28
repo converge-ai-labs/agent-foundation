@@ -1,0 +1,43 @@
+.list {
+  border-block: 1px solid var(--a13n-border-soft);
+}
+.project {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  text-decoration: none;
+}
+.project + .project {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.project:hover {
+  background: var(--a13n-hover);
+}
+.project:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.project > svg {
+  color: var(--a13n-secondary);
+}
+.project > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.project strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.project span,
+.project small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}

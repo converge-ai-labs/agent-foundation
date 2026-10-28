@@ -1,7 +1,7 @@
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-field-gap);
   min-width: 0;
 }
 .environment {
@@ -86,10 +86,6 @@
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-.defaultDirectory {
-  padding-top: 16px;
-  border-top: 1px solid var(--a13n-border);
 }
 .defaultDirectory [data-slot="select-trigger"] {
   width: 100%;

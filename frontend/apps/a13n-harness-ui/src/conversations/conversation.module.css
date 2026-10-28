@@ -1296,6 +1296,7 @@ dl.detailGrid > .detailLongRow dd {
   gap: 16px;
 }
 .inspection [data-slot="tabs-list"] {
+  border-bottom: 1px solid var(--a13n-border-soft);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -1312,7 +1313,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .inspection section > h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 20px;
 }
@@ -1435,7 +1436,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .settingsFields {
   composes: responseInputs;
-  gap: 12px;
+  gap: var(--harness-section-gap);
 }
 .settingsActions {
   display: flex;
@@ -1956,4 +1957,24 @@ dl.detailGrid > .detailLongRow dd {
 .projectIcon {
   flex-shrink: 0;
   color: var(--a13n-secondary);
+}
+
+.connectionSelections {
+  display: grid;
+  gap: 8px;
+}
+.inspection > [data-slot="tabs-content"] > .form > section > .settingsHint {
+  margin: 0 0 16px;
+}
+
+.settingsActions:not(:has(button)) {
+  display: none;
+}
+
+.inspection .form {
+  gap: var(--harness-section-gap);
+}
+.inspection .form > section + section {
+  border-top: 0;
+  padding-top: 0;
 }

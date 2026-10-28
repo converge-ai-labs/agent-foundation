@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-section-gap);
   width: 100%;
   min-width: 0;
 }
@@ -16,7 +16,7 @@
 
 .sectionHeader > h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 20px;
   font-weight: 500;
 }

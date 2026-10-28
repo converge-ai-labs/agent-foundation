@@ -8,9 +8,7 @@
 }
 .emptySection {
   margin: 0;
-  padding: 16px 12px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
+  padding: 0;
   color: var(--a13n-secondary);
   font-size: 13px;
   line-height: 20px;
@@ -18,7 +16,7 @@
 .collectionPage {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-section-gap);
   min-width: 0;
 }
 .collection {
@@ -81,7 +79,7 @@
 }
 @media (max-width: 600px) {
   .tabs {
-    gap: 20px;
+    gap: 24px;
   }
 }
 

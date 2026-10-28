@@ -5,6 +5,9 @@
   --text-sm--line-height: 1.25rem;
   --a13n-text-body: 13px;
   --harness-reading-width: 720px;
+  --harness-section-gap: 24px;
+  --harness-field-gap: 16px;
+  --harness-group-inset: 12px;
   --harness-prose-size: 14px;
   --harness-prose-leading: 1.6;
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
@@ -70,23 +73,23 @@
 }
 
 /* App-wide defaults stay below local component rules in specificity. */
-:where([data-slot="button"]) {
+:where(:is([data-slot="button"], [data-a13n-button])) {
   border-radius: 6px;
   font-weight: 400;
 }
-:where([data-slot="button"][data-size="default"]) {
+:where(:is([data-slot="button"], [data-a13n-button])[data-size="default"]) {
   height: var(--harness-control-height);
   padding-inline: 10px;
 }
 :where(
-  [data-slot="button"][data-variant="default"],
-  [data-slot="button"][data-variant="destructive"]
+  :is([data-slot="button"], [data-a13n-button])[data-variant="default"],
+  :is([data-slot="button"], [data-a13n-button])[data-variant="destructive"]
 ) {
   font-weight: 500;
 }
 :where(
-  [data-slot="button"]:not(:focus-visible),
-  [data-slot="button"]:not(:focus-visible)::before
+  :is([data-slot="button"], [data-a13n-button]):not(:focus-visible),
+  :is([data-slot="button"], [data-a13n-button]):not(:focus-visible)::before
 ) {
   box-shadow: none;
 }
@@ -126,6 +129,25 @@
 /* MenuPopup's scroll container already supplies the menu inset. */
 :where([data-slot="menu-popup"]) {
   padding: 0;
+}
+
+/* Anchor the underline to its tab so responsive reflow cannot leave it at
+   coordinates measured for a wider dialog. */
+[data-slot="tabs-list"][data-variant="underline"]
+  > [data-slot="tab-indicator"] {
+  display: none;
+}
+[data-slot="tabs-list"][data-variant="underline"]
+  > [data-slot="tabs-tab"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: transparent;
+}
+[data-slot="tabs-list"][data-variant="underline"]
+  > [data-slot="tabs-tab"][aria-selected="true"]::after {
+  background: currentColor;
 }
 
 [data-a13n-modal][data-size="md"] {
@@ -168,7 +190,7 @@
   height: 24px;
 }
 
-[data-slot="button"],
+:is([data-slot="button"], [data-a13n-button]),
 [data-slot="select-trigger"],
 [data-slot="combobox-trigger"],
 [data-slot="input-control"],

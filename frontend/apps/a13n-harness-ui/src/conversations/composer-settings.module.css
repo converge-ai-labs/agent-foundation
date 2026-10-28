@@ -313,3 +313,16 @@
     min-height: 44px;
   }
 }
+
+@media (max-width: 639px) {
+  .sheet .header {
+    padding: 8px 16px 4px;
+  }
+  .sheet .title {
+    font-size: 15px;
+    line-height: 20px;
+  }
+  .sheet .body {
+    padding: 4px 8px 8px;
+  }
+}

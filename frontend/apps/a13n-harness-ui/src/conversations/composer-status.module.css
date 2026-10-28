@@ -96,7 +96,7 @@ button.metric {
 }
 .usageOverview .scope {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: normal;
 }
 .tokenDistribution {
@@ -118,14 +118,14 @@ button.metric {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 7px;
+  margin-top: 8px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .tokenLegend > span {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .tokenLegend i {
   width: 5px;
@@ -141,7 +141,7 @@ button.metric {
   font-weight: 500;
 }
 .emptyScope {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
@@ -207,8 +207,8 @@ button.metric {
 .numbers {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px 16px;
-  margin: 10px 0;
+  gap: 4px 16px;
+  margin: 12px 0;
 }
 .numbers dt {
   color: var(--a13n-secondary);
@@ -223,7 +223,7 @@ button.metric {
   margin-block: 16px 12px;
 }
 .contextNumbers[data-unknown-limit] dd {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
@@ -280,7 +280,7 @@ button.metric {
   display: flex;
   gap: 2px;
   padding: 2px;
-  margin-top: 10px;
+  margin-top: 12px;
   background: var(--a13n-surface);
   border-radius: 6px;
 }

@@ -39,12 +39,14 @@ export function ConversationDetails({
   reconcile,
   readOnly = false,
   management,
+  actionsContainer,
 }: {
   threadId: string;
   receipt?: string | null;
   continuation?: string | null;
   readOnly?: boolean;
   management?: ReactNode;
+  actionsContainer?: HTMLElement | null;
   reconcile: () => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -108,6 +110,7 @@ export function ConversationDetails({
       </TabsPanel>
       <TabsPanel value="configuration">
         <ConversationConfiguration
+          actionsContainer={actionsContainer}
           threadId={threadId}
           reconcile={reconcile}
           readOnly={readOnly}
@@ -577,11 +580,8 @@ function ContextDetails({ threadId }: { threadId: string }) {
           context.error
         }
       />
-      <details
-        className={layout.details}
-        open={!!tasks.data?.tasks?.length || undefined}
-      >
-        <summary>
+      <section>
+        <h3>
           <span>
             Tasks{" "}
             <span className={styles.settingsHint}>
@@ -595,7 +595,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
                     : `${tasks.data.tasks?.length ?? 0}`}
             </span>
           </span>
-        </summary>
+        </h3>
         <p className={styles.settingsHint}>
           {workCaption(work.tasks.data, work.stale, tasks.isFetching)}
         </p>
@@ -608,9 +608,9 @@ function ContextDetails({ threadId }: { threadId: string }) {
         ) : (
           <TaskList page={tasks.data} />
         )}
-      </details>
-      <details className={layout.details}>
-        <summary>
+      </section>
+      <section>
+        <h3>
           <span>
             Notes{" "}
             <span className={styles.settingsHint}>
@@ -624,7 +624,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
                     : `${notes.data.notes?.length ?? 0}`}
             </span>
           </span>
-        </summary>
+        </h3>
         <p className={styles.settingsHint}>
           {workCaption(work.notes.data, work.stale, notes.isFetching)}
         </p>
@@ -637,7 +637,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
         ) : (
           <NoteList page={notes.data} />
         )}
-      </details>
+      </section>
       <section>
         <h3>Usage</h3>
         {usage.isPending ? (

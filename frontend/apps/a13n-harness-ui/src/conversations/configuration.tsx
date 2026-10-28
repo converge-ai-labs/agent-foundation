@@ -1,5 +1,6 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyThreadMutation } from "./thread-updates";
@@ -100,9 +101,11 @@ export function ConversationConfiguration({
   threadId,
   reconcile,
   readOnly = false,
+  actionsContainer,
 }: {
   threadId: string;
   readOnly?: boolean;
+  actionsContainer?: HTMLElement | null;
   reconcile: () => void;
 }) {
   const { client } = useTransport();
@@ -186,9 +189,8 @@ export function ConversationConfiguration({
             </section>
           ) : (
             <section>
-              <h3>Next run settings</h3>
-              <p>
-                Applies to your next run. Shared resources refresh when it
+              <p className={styles.settingsHint}>
+                Changes apply to your next run. Shared resources refresh when it
                 starts.
               </p>
               <DebugData
@@ -203,6 +205,7 @@ export function ConversationConfiguration({
                   key={threadId}
                   threadId={threadId}
                   embedded
+                  actionsContainer={actionsContainer}
                   configuration={data.next_run.configuration}
                 />
               )}
@@ -338,10 +341,12 @@ export function ThreadSelections({
   threadId,
   configuration: current,
   embedded = false,
+  actionsContainer,
 }: {
   threadId: string;
   configuration: Schema<"ThreadConfiguration">;
   embedded?: boolean;
+  actionsContainer?: HTMLElement | null;
 }) {
   const transport = useTransport();
   const { client } = transport;
@@ -388,9 +393,42 @@ export function ThreadSelections({
       refreshActivity(queries, transport, threadId);
     },
   });
+  const actions = (
+    <div className={styles.settingsActions}>
+      {!!Object.keys(patch).length && (
+        <Button
+          variant="ghost"
+          aria-label="Discard selection edits"
+          disabled={mutation.isPending}
+          onClick={() => {
+            updatePatch({});
+            setBase(null);
+            mutation.reset();
+          }}
+        >
+          Discard
+        </Button>
+      )}
+
+      {(!embedded || !!Object.keys(patch).length) && (
+        <Button
+          loading={mutation.isPending}
+          disabled={
+            !Object.keys(patch).length ||
+            mutation.isError ||
+            stale ||
+            invalidEnvironments({ ...configuration, ...patch })
+          }
+          onClick={() => mutation.mutate()}
+        >
+          Save for next run
+        </Button>
+      )}
+    </div>
+  );
   const fields = (
     <fieldset className={styles.settingsFields} disabled={mutation.isPending}>
-      <SettingsSection>
+      <SettingsSection title="Agent & model">
         <ChoiceField
           label="Project"
           value={
@@ -442,25 +480,19 @@ export function ThreadSelections({
           Moving a chat to a Project keeps its settings.
         </p>
       )}
-      <details className={layout.details} open={!embedded || undefined}>
-        <summary>Environments</summary>
-        <SettingsSection>
-          <div className={layout.fieldGroup}>
-            <EnvironmentsEditor
-              value={{ ...configuration, ...patch }}
-              profiles={selectors.data?.environments}
-              inheritedProfile={configuration.environment_profile_id}
-              inheritLabel="Keep chat local mode"
-              onChange={(environments) =>
-                setPatch({ ...patch, ...environments })
-              }
-            />
-          </div>
-        </SettingsSection>
-      </details>
-      <details className={layout.details} open={!embedded || undefined}>
-        <summary>Connections</summary>
-        <SettingsSection>
+      <SettingsSection title="Environments">
+        <div className={layout.fieldGroup}>
+          <EnvironmentsEditor
+            value={{ ...configuration, ...patch }}
+            profiles={selectors.data?.environments}
+            inheritedProfile={configuration.environment_profile_id}
+            inheritLabel="Keep chat local mode"
+            onChange={(environments) => setPatch({ ...patch, ...environments })}
+          />
+        </div>
+      </SettingsSection>
+      <section className={styles.connectionSelections}>
+        <SettingsSection title="Connections">
           {(
             [
               {
@@ -520,7 +552,7 @@ export function ThreadSelections({
         <Link className={layout.hint} to="/settings/connections">
           Manage connections
         </Link>
-      </details>
+      </section>
       <ErrorNotice
         error={mutation.error || selectors.error || projects.error}
       />
@@ -544,34 +576,7 @@ export function ThreadSelections({
           </Button>
         </div>
       )}
-      <div className={styles.settingsActions}>
-        {!!Object.keys(patch).length && (
-          <Button
-            variant="ghost"
-            disabled={mutation.isPending}
-            onClick={() => {
-              updatePatch({});
-              setBase(null);
-              mutation.reset();
-            }}
-          >
-            Discard selection edits
-          </Button>
-        )}
-
-        <Button
-          loading={mutation.isPending}
-          disabled={
-            !Object.keys(patch).length ||
-            mutation.isError ||
-            stale ||
-            invalidEnvironments({ ...configuration, ...patch })
-          }
-          onClick={() => mutation.mutate()}
-        >
-          Save for next run
-        </Button>
-      </div>
+      {actionsContainer ? createPortal(actions, actionsContainer) : actions}
     </fieldset>
   );
   return embedded ? (

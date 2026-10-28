@@ -558,9 +558,12 @@
   min-width: 0;
 }
 .empty {
-  padding: 18px 4px;
+  padding: 16px 4px;
   display: grid;
   gap: 12px;
+}
+.pane > .empty {
+  padding-inline: 12px;
 }
 .buffers {
   display: flex;

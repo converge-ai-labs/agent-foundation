@@ -96,7 +96,7 @@
 }
 .settings {
   display: grid;
-  gap: 16px;
+  gap: 8px;
   width: 100%;
 }
 /* A row's current state sits beside its action, like a select's value. */

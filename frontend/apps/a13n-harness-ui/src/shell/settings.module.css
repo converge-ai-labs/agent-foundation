@@ -3,7 +3,7 @@
 }
 .section > :first-child > h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 20px;
   font-weight: 500;
 }
@@ -15,7 +15,7 @@
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
   border-radius: 8px;
-  padding-inline: 12px;
+  padding-inline: var(--harness-group-inset);
 }
 .row {
   display: grid;
@@ -97,7 +97,7 @@
 @media (max-width: 600px) {
   .section
     > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
-    padding-inline: 14px;
+    padding-inline: var(--harness-group-inset);
   }
   .row {
     min-height: 44px;
@@ -117,5 +117,54 @@
     grid-column: 2;
     grid-row: 1;
     max-width: 100%;
+  }
+}
+
+/* Long action labels must not steal the explanation's reading width. */
+@media (max-width: 600px) {
+  .row:has(> :last-child > a[data-slot="button"]) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding-block: 12px;
+  }
+  .row:has(> :last-child > a[data-slot="button"]) > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+}
+
+/* Supporting copy describes the whole field; on phones it needs the row's
+   width rather than the narrow label column beside a control. */
+@media (max-width: 600px) {
+  .row > :first-child {
+    display: contents;
+  }
+  .row [data-slot="settings-row-label"] {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+  .row > :first-child > p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 0 4px;
+  }
+  .row:has(> :last-child > a[data-slot="button"]) > :last-child {
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 600px) {
+  .row [data-slot="select-trigger"] {
+    height: auto;
+    padding-block: 6px;
+  }
+  .row [data-slot="select-value"] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

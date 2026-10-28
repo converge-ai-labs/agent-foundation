@@ -656,8 +656,8 @@ export function ResourceFields({
             ? field("Server URL", ["transport", "url"])
             : field("Command", ["transport", "command"])}
           <p className={styles.sectionNote}>
-            Arguments and environment/header references belong in advanced YAML.
-            Saved MCP source cannot be read back through this API.
+            Set arguments, environment variables and headers in Advanced
+            configuration. Keep a copy: saved connection details are hidden.
           </p>
         </SettingsSection>
       )}

@@ -158,6 +158,80 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   });
 });
 
+it("keeps embedded selection actions in the dialog footer and removes them after saving", async () => {
+  const footer = document.createElement("div");
+  document.body.append(footer);
+  const PATCH = vi.fn().mockResolvedValue({
+    data: {
+      thread_id: "one",
+      metadata_version: 1,
+      configuration: {
+        ...configuration,
+        version: 2,
+        mcp_server_ids: ["mcp-one"],
+      },
+    },
+  });
+  const wrapper = harness({
+    PATCH,
+    GET: vi.fn(async (path) => ({
+      data:
+        path === "/api/projects"
+          ? []
+          : {
+              agents: [],
+              environments: [],
+              mcp_servers: [{ resource_id: "mcp-one", name: "Tools" }],
+            },
+    })),
+  });
+  const view = render(
+    <ThreadSelections
+      threadId="one"
+      configuration={configuration}
+      embedded
+      actionsContainer={footer}
+    />,
+    { wrapper },
+  );
+  try {
+    const checkbox = await screen.findByRole("checkbox", { name: "Tools" });
+    expect(
+      screen.queryByRole("button", { name: "Save for next run" }),
+    ).toBeNull();
+    fireEvent.click(checkbox);
+    expect(
+      footer.contains(
+        screen.getByRole("button", { name: "Save for next run" }),
+      ),
+    ).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard selection edits" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Save for next run" }),
+    ).toBeNull();
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
+    expect(PATCH.mock.calls[0][1].body).toEqual({
+      expected_version: 1,
+      patch: { mcp_server_ids: ["mcp-one"] },
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Save for next run" }),
+      ).toBeNull(),
+    );
+    view.unmount();
+    expect(footer.childElementCount).toBe(0);
+  } finally {
+    view.unmount();
+    footer.remove();
+  }
+});
+
 const batch = {
   thread_id: "one",
   continuation_id: "C1",

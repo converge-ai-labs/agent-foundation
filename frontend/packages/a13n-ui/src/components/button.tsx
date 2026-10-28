@@ -90,6 +90,9 @@ export function Button({
     "aria-busy": loading || undefined,
     "data-loading": loading ? "" : undefined,
     "data-slot": "button",
+    // Composition can replace data-slot (for example DialogTrigger). Keep the
+    // visual control identity available to application density styles.
+    "data-a13n-button": "",
     "data-size": size ?? "default",
     "data-variant": variant ?? "default",
     disabled: isDisabled,

@@ -206,8 +206,8 @@
 .main :where(p) {
   margin: 0;
   color: var(--a13n-text-supporting);
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: inherit;
+  line-height: 1.6;
 }
 .main code {
   overflow-wrap: anywhere;
@@ -321,40 +321,6 @@
 .heroStats span {
   color: var(--a13n-secondary);
   font-size: 12px;
-}
-.cardGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.projectCard {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 12px;
-  background: var(--a13n-elevated);
-  text-decoration: none;
-  transition: border-color 0.15s;
-}
-.projectCard:hover {
-  border-color: var(--a13n-secondary);
-}
-.projectCard strong {
-  font-size: 14px;
-  font-weight: 500;
-  margin-top: 4px;
-}
-.projectCard small,
-.projectCard span {
-  font-size: 12px;
-  color: var(--a13n-secondary);
-}
-.projectCard code {
-  max-width: 100%;
 }
 .resourceList {
   display: flex;
@@ -731,9 +697,6 @@ a.resourceRow:hover {
   padding-right: 32px;
 }
 @media (max-width: 1100px) {
-  .cardGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .twoColumns {
     grid-template-columns: 1fr;
   }
@@ -750,7 +713,6 @@ a.resourceRow:hover {
   .mobileMenu {
     display: inline-flex;
   }
-  .cardGrid,
   .formGrid {
     grid-template-columns: 1fr;
   }
@@ -839,7 +801,7 @@ a.resourceRow:hover {
 .settingsContent {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-section-gap);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -862,7 +824,7 @@ a.resourceRow:hover {
 }
 .settingsContent .pageHeader > div > h2 {
   min-height: 24px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 20px;
 }
 .settingsContent .pageHeader p {
@@ -895,7 +857,7 @@ a.resourceRow:hover {
 .sourceDocument {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-section-gap);
   width: 100%;
   max-width: 680px;
   min-width: 0;
@@ -972,7 +934,7 @@ a.resourceRow:hover {
 .configurationForm {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--harness-section-gap);
   min-width: 0;
 }
 /* Field groups use spacing to separate their controls. */
@@ -1139,4 +1101,11 @@ a.resourceRow:hover {
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .settingsContent {
+    padding: 24px 20px 32px;
+    scrollbar-gutter: auto;
+  }
 }

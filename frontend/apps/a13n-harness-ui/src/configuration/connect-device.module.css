@@ -1,6 +1,6 @@
 .steps {
   display: grid;
-  gap: 16px;
+  gap: var(--harness-section-gap);
   min-width: 0;
 }
 .step {
@@ -9,7 +9,7 @@
   min-width: 0;
 }
 .step h3 {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 20px;
 }
