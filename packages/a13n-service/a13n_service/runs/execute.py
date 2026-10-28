@@ -45,6 +45,7 @@ from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_harness.state import HistoryValidation
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -396,11 +397,12 @@ class _Offers:
         # Whether a model request carried the input: it is in every state exported after that.
         self.requested = False
 
-    def incorporated(self, state: HarnessState) -> list[str]:
-        ids = set(steering_input_ids(state.message_history))
+    def incorporated(self, state: HarnessState) -> tuple[list[str], HistoryValidation | None]:
+        messages, validation = state.read_message_history()
+        ids = set(steering_input_ids(messages))
         if self.requested:
             ids |= self.initial
-        return [entry_id for entry_id in self.open if entry_id in ids]
+        return [entry_id for entry_id in self.open if entry_id in ids], validation
 
     def consumed(self, entry_ids: list[str]) -> None:
         for entry_id in entry_ids:
@@ -722,7 +724,7 @@ class _Attempt:
             if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
-        consumed = self.offers.incorporated(state)
+        consumed, history_validation = self.offers.incorporated(state)
         usage = self.usage.pending()
         search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(
@@ -745,6 +747,7 @@ class _Attempt:
             snapshot,
             contents=self.contents,
             control=self.control,
+            history_validation=history_validation,
         )
         display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker

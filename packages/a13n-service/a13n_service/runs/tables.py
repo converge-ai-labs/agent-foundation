@@ -600,10 +600,9 @@ class RunRow(Stamped, Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     attempts: Mapped[int] = mapped_column(server_default=text("0"))
     max_attempts: Mapped[int]
-    # Internal derived data: list/get queries must not fetch the vector.
-    search_vector: Mapped[str] = mapped_column(
-        TSVECTOR, server_default=text("''::tsvector"), deferred=True, deferred_raiseload=True
-    )
+    # Internal derived data: list/get queries must not fetch the vector. Keep the default client-side so
+    # Stamped.eager_defaults does not fetch this deferred column after unrelated updates.
+    search_vector: Mapped[str] = mapped_column(TSVECTOR, default="", deferred=True, deferred_raiseload=True)
     # Typed pointers to the latest committed state and display tail objects; only fenced commits move them.
     checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     tail: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))

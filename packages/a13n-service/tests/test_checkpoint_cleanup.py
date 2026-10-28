@@ -290,16 +290,25 @@ async def test_checkpoint_bytes_publish_load_and_detect_corruption(runtime, tena
         await checkpoints.load_state(runtime.objects, pointer)
 
 
-async def test_invalid_history_is_rejected_before_checkpoint_objects_are_written(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("reuse_validation", [False, True])
+async def test_invalid_history_is_rejected_before_checkpoint_objects_are_written(
+    runtime, tenant, reuse_validation
+) -> None:  # type: ignore[no-untyped-def]
     from pydantic_core import PydanticSerializationError
 
     lease = Lease(
         "run_invalid", "rat_test", "thr_test", tenant.organization_id, tenant.workspace_id, 1, "worker", "token"
     )
-    harness = HarnessState.new().model_copy(update={"message_history_json": b"[1]"})
+    original = HarnessState.new()
+    _, validation = original.read_message_history()
+    harness = original.model_copy(update={"message_history_json": b"[1]"})
     with pytest.raises(PydanticSerializationError):
         await checkpoints.publish_checkpoint(
-            runtime, lease, RunState(harness=harness, seq=1, attempt=1), Snapshot([], Tail())
+            runtime,
+            lease,
+            RunState(harness=harness, seq=1, attempt=1),
+            Snapshot([], Tail()),
+            history_validation=validation if reuse_validation else None,
         )
     assert await runtime.objects.keys(checkpoints.run_prefix(tenant.organization_id, lease.run_id), limit=10) == []
 

@@ -24,7 +24,7 @@ import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
 from a13n_harness.environment.session_recovery import EnvdSessionState
-from a13n_harness.state import StoredKind
+from a13n_harness.state import HistoryValidation, StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,11 +128,11 @@ class RunState(_Frozen):
     # Private same-Run attachment hints, never inherited by a successor Run.
     envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
-    def to_json_bytes(self) -> bytes:
+    def to_json_bytes(self, *, history_validation: HistoryValidation | None = None) -> bytes:
         """Encode a complete checkpoint without re-encoding its validated message history."""
         if type(self) is not RunState or type(self.harness) is not HarnessState:
             return self.model_dump_json().encode()
-        harness = self.harness.to_json_bytes()
+        harness = self.harness.to_json_bytes(history_validation=history_validation)
         envelope = self.model_dump_json(exclude={"harness"}).encode()
         return b"".join((envelope[:-1], b',"harness":', harness, b"}"))
 
@@ -365,12 +365,13 @@ async def publish_checkpoint(
     *,
     contents: Contents | None = None,
     control: AttemptControl | None = None,
+    history_validation: HistoryValidation | None = None,
 ) -> tuple[StatePointer, DisplayWrite]:
     """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
     written, *display = await _all(
         [
-            _publish(runtime, lease, "state", state.to_json_bytes()),
+            _publish(runtime, lease, "state", state.to_json_bytes(history_validation=history_validation)),
             *_display_writes(runtime, lease, snapshot),
         ]
     )
