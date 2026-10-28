@@ -141,6 +141,13 @@ function setup(
   buffers = new Map(),
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   const focus = vi.fn();
   const get = vi.fn(
     async (

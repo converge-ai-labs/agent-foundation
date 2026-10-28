@@ -490,6 +490,12 @@
 .shortcuts kbd:not(:first-child) {
   margin-left: 8px;
 }
+.operationHint {
+  margin: 8px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
 .path {
   font-size: 14px;
   overflow-wrap: anywhere;
@@ -661,12 +667,20 @@
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 999px) {
+  .expandPane {
+    display: none;
+  }
   .withPane .center {
     display: none;
   }
   .pane {
     flex: 1;
     border-left: 0;
+  }
+}
+@media (max-width: 760px), (pointer: coarse) {
+  .shortcuts {
+    display: none;
   }
 }
 @media (max-width: 760px) {

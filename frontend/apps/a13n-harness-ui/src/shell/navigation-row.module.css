@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  min-height: 32px;
+  min-height: var(--harness-control-height, 32px);
   min-width: 0;
   padding: 4px 8px;
   border: 0;

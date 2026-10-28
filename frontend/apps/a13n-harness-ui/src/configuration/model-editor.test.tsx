@@ -210,7 +210,7 @@ async function openDefaults(user: ReturnType<typeof userEvent.setup>) {
   const tab = await screen.findByRole("tab", { name: "Model defaults" });
   await waitFor(() => expect(tab.hasAttribute("disabled")).toBe(false));
   await user.click(tab);
-  await screen.findByRole("heading", { name: "Model defaults" });
+  await screen.findByRole("tabpanel", { name: "Model defaults" });
 }
 async function chooseModel(id: string) {
   const user = userEvent.setup();

@@ -838,6 +838,11 @@ a.resourceRow:hover {
 .search {
   width: min(100%, 320px);
 }
+@media (max-width: 639px) {
+  .search {
+    width: 100%;
+  }
+}
 .emptyList {
   margin: 0;
   padding: 16px 12px;

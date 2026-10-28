@@ -767,10 +767,7 @@ function LoadedModelEditor({
         >
           {selected && matches && value && (
             <>
-              <SettingsSection
-                title="Model defaults"
-                description={defaultsSummary}
-              >
+              <SettingsSection>
                 {!api && !authReady && (
                   <p className={layout.groupHint}>
                     Connect an account before running this model.

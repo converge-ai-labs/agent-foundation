@@ -101,8 +101,8 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
-  min-height: 36px;
-  padding-block: 8px;
+  min-height: var(--harness-control-height, 32px);
+  padding-block: 4px;
   font-size: 14px;
   font-weight: 400;
 }

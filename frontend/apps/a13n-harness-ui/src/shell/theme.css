@@ -72,6 +72,16 @@
   border-radius: 8px;
 }
 
+/* A compact setting value is an anchor, not the reading width of its menu. */
+@media (max-width: 600px) {
+  [data-slot="select-popup"] {
+    min-width: min(280px, calc(100vw - 24px));
+  }
+  [data-slot="select-popup"] [data-slot="select-list"] {
+    min-width: 100%;
+  }
+}
+
 /* App-wide defaults stay below local component rules in specificity. */
 :where(:is([data-slot="button"], [data-a13n-button])) {
   border-radius: 6px;
@@ -208,6 +218,7 @@
 [data-slot="select-trigger"],
 [data-slot="combobox-trigger"],
 [data-slot="input-control"],
+[data-slot="field-label"],
 [data-slot="select-button"],
 [data-slot="toggle"] {
   font-size: 14px;

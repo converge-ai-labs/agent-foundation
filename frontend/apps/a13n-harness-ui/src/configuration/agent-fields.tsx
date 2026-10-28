@@ -13,6 +13,7 @@ import { useRootConfiguration } from "./root-configuration";
 import { useQuery } from "@tanstack/react-query";
 import { Button, FormField, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
+import { capabilityLabel } from "./capability-label";
 import { AgentNativeTools, nativeToolKind } from "./native-tools";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
@@ -164,11 +165,11 @@ export function AgentFields({
                   <div className={management.capability} key={index}>
                     <div className={management.capabilityHeader}>
                       <span className={management.inlineLabel}>
-                        {item.capability.replaceAll("_", " ")}
+                        {capabilityLabel(item.capability)}
                       </span>
                       <Button
                         variant="ghost"
-                        aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${item.capability}`}
+                        aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${capabilityLabel(item.capability)}`}
                         onClick={() => remove("capabilities", index)}
                       >
                         {[
@@ -221,7 +222,10 @@ export function AgentFields({
                         (selected) => selected.capability === item.key,
                       ),
                   )
-                  .map((item) => ({ value: item.key, label: item.key })),
+                  .map((item) => ({
+                    value: item.key,
+                    label: capabilityLabel(item.key),
+                  })),
               ]}
             />
           </div>

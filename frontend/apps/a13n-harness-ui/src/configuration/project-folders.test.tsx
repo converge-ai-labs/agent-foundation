@@ -123,7 +123,7 @@ it("browses a level at a time, paginates with a revision, follows links, and sel
   await screen.findByRole("button", { name: /link/ });
   expect(reads.at(-1)?.searchParams.get("revision")).toBe("directory-v1");
   fireEvent.click(screen.getByRole("button", { name: /link/ }));
-  await screen.findByText("/actual");
+  await screen.findByTitle("/actual");
   fireEvent.click(screen.getByRole("button", { name: "Use this directory" }));
   expect(
     screen.queryByRole("region", { name: "Browse server directories" }),

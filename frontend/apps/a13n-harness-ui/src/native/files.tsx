@@ -24,10 +24,17 @@ import {
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, SearchField, TextField } from "../shell/ui";
-import { SettingsSection } from "../shell/settings";
 import layout from "../shell/workbench.module.css";
 import { DebugId } from "../shell/debug";
-import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
+import {
+  basename,
+  parentPath,
+  separator,
+  joinPath,
+  gitPath,
+  FileBuffers,
+  withinRoot,
+} from "./buffer";
 import { gitChangeLabel, useGitStatus } from "./changes";
 import styles from "./native.module.css";
 import { copyText } from "../platform";
@@ -82,7 +89,16 @@ export function Files({
     enabled: !!directory,
     refetchOnMount: "always",
   });
-  const entries = listing.data?.pages.flatMap((page) => page.entries) ?? [];
+  const entries = (
+    listing.data?.pages.flatMap((page) => page.entries) ?? []
+  ).sort(
+    (a, b) =>
+      Number(b.kind === "directory") - Number(a.kind === "directory") ||
+      basename(a.path).localeCompare(basename(b.path), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+  );
   const repo = git.status.data?.pages[0]?.repository;
   const dirty = [...buffers.entries()].filter(
     ([path, buffer]) =>
@@ -364,7 +380,7 @@ export function Files({
           operation?.kind === "delete"
             ? "Delete file or folder"
             : operation?.kind === "move"
-              ? "Rename or move file or folder"
+              ? "Rename or move"
               : operation?.kind === "replace"
                 ? "Replace file from upload"
                 : operation?.kind === "upload"
@@ -410,16 +426,29 @@ export function FileOperation({
   cancel?: () => void;
 }) {
   const { client, fetch } = useTransport();
-  const [destination, setDestination] = useState(
-    "entry" in operation ? operation.entry.path : joinPath(directory, ""),
+  const [name, setName] = useState(
+    "entry" in operation ? basename(operation.entry.path) : "",
   );
+  const [folder, setFolder] = useState(
+    "entry" in operation ? parentPath(operation.entry.path) : directory,
+  );
+  const destination =
+    "entry" in operation && operation.kind !== "move"
+      ? operation.entry.path
+      : joinPath(folder, name);
+  const invalidName =
+    !name.trim() ||
+    name === "." ||
+    name === ".." ||
+    name.includes(separator(folder)) ||
+    (separator(folder) === "\\" && name.includes("/"));
   const [upload, setUpload] = useState<File | null>(null);
   const [recursive, setRecursive] = useState(false);
   const [pending, setPending] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const submit = async () => {
-    if (pending || attempted) return;
+    if (pending || attempted || invalidName || !folder.trim()) return;
     setPending(true);
     setError(null);
     setAttempted(true);
@@ -484,7 +513,7 @@ export function FileOperation({
         void submit();
       }}
     >
-      {"entry" in operation && (
+      {"entry" in operation && operation.kind !== "move" && (
         <div className={styles.path}>
           {operation.entry.path}
           <DebugId label="Observed revision" value={operation.entry.revision} />
@@ -512,15 +541,22 @@ export function FileOperation({
           If the file has changed, replacement is blocked.
         </p>
       ) : (
-        <SettingsSection>
-          <div className={layout.fieldGroup}>
-            <TextField
-              label="Absolute destination path"
-              value={destination}
-              onChange={setDestination}
-            />
-          </div>
-        </SettingsSection>
+        <>
+          <TextField label="Name" value={name} onChange={setName} />
+          <details className={layout.details}>
+            <summary>Folder · {basename(folder)}</summary>
+            <div>
+              <TextField
+                label="Destination folder"
+                value={folder}
+                onChange={setFolder}
+              />
+              <p className={styles.operationHint}>
+                Use an absolute server path to move to another folder.
+              </p>
+            </div>
+          </details>
+        </>
       )}
       {(operation.kind === "upload" || operation.kind === "replace") && (
         <label className={styles.stack}>
@@ -530,16 +566,15 @@ export function FileOperation({
             onChange={(event) => {
               const file = event.target.files?.[0];
               setUpload(file ?? null);
-              if (file && operation.kind === "upload")
-                setDestination(joinPath(directory, file.name));
+              if (file && operation.kind === "upload") setName(file.name);
             }}
           />
         </label>
       )}
       {operation.kind !== "delete" && operation.kind !== "replace" && (
         <p>
-          Choose a new path. To overwrite an existing file, use Replace from its
-          menu.
+          Existing files are never overwritten. Use Replace from the file menu
+          instead.
         </p>
       )}
       {operation.kind === "delete" && recursive && (
@@ -572,7 +607,10 @@ export function FileOperation({
           loading={pending}
           disabled={
             attempted ||
-            !destination ||
+            invalidName ||
+            !folder.trim() ||
+            (operation.kind === "move" &&
+              destination === operation.entry.path) ||
             ((operation.kind === "upload" || operation.kind === "replace") &&
               (!upload || upload.size > 10 * 1024 * 1024))
           }
@@ -580,7 +618,7 @@ export function FileOperation({
           {operation.kind === "delete"
             ? "Confirm delete"
             : operation.kind === "move"
-              ? "Move entry"
+              ? "Save changes"
               : operation.kind === "replace"
                 ? "Confirm replacement"
                 : operation.kind === "upload"

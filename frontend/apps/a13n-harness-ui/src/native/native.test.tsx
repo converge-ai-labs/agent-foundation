@@ -142,7 +142,7 @@ it("opens file actions by keyboard and preserves files when the editor is dismis
   await user.click(
     await screen.findByRole("menuitem", { name: "Rename or move" }),
   );
-  await screen.findByRole("dialog", { name: "Rename or move file or folder" });
+  await screen.findByRole("dialog", { name: "Rename or move" });
   expect(f.post).not.toHaveBeenCalled();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -482,6 +482,48 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
   expect(screen.queryByText("Add selection to message")).toBeNull();
 });
+
+it.each(["/code", "C:\\code"])(
+  "renames and moves within %s using the inspected revision",
+  async (directory) => {
+    const f = fixture();
+    const sep = directory.startsWith("C:") ? "\\" : "/";
+    const entry = { ...file.entry, path: `${directory}${sep}file.txt` };
+    f.post.mockResolvedValue({ data: {} });
+    const done = vi.fn();
+    render(
+      <FileOperation
+        operation={{ kind: "move", entry }}
+        directory={directory}
+        refresh={vi.fn()}
+        done={done}
+      />,
+      { wrapper: f.Wrapper },
+    );
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "renamed.txt" },
+    });
+    fireEvent.click(screen.getByText("Folder · code"));
+    fireEvent.change(screen.getByLabelText("Destination folder"), {
+      target: { value: `${directory}${sep}archive` },
+    });
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(done).toHaveBeenCalledWith(
+        `${directory}${sep}archive${sep}renamed.txt`,
+      ),
+    );
+    expect(f.post).toHaveBeenCalledWith("/api/host/files/move", {
+      body: {
+        path: entry.path,
+        destination: `${directory}${sep}archive${sep}renamed.txt`,
+        expected_revision: "first",
+      },
+    });
+  },
+);
 
 it("raw replacement uses the inspected revision and does not replay an unknown write", async () => {
   const f = fixture();

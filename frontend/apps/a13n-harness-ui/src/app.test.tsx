@@ -972,7 +972,7 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   const user = userEvent.setup();
   await user.click(await screen.findByText("Installed capabilities"));
   const catalog = screen.getByText("Installed capabilities").parentElement!;
-  expect(await within(catalog).findByText("available")).toBeTruthy();
+  expect(await within(catalog).findByText("Available")).toBeTruthy();
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
   expect(within(catalog).getByText("example-capabilities")).toBeTruthy();
@@ -1004,11 +1004,11 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   await user.click(
     await screen.findByRole("combobox", { name: "Add capability" }),
   );
-  expect(screen.queryByRole("option", { name: "ambiguous" })).toBeNull();
-  await user.click(await screen.findByRole("option", { name: "available" }));
+  expect(screen.queryByRole("option", { name: "Ambiguous" })).toBeNull();
+  await user.click(await screen.findByRole("option", { name: "Available" }));
   expect(saved).toBe("");
   expect(
-    screen.getByRole("button", { name: "Remove capability available" }),
+    screen.getByRole("button", { name: "Remove capability Available" }),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(saved).toContain("capability: available"));

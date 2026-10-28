@@ -220,7 +220,9 @@ function DirectoryBrowser({
           <ArrowUpIcon />
           Parent folder
         </Button>
-        <span className={styles.path}>{current || path}</span>
+        <span className={styles.path} title={current || path}>
+          {basename(current || path)}
+        </span>
       </div>
       <ErrorNotice
         error={listing.error}
@@ -270,6 +272,7 @@ function DirectoryBrowser({
           type="button"
           size="sm"
           disabled={!current || listing.isFetching || listing.isError}
+          variant="outline"
           onClick={() => current && select(current)}
         >
           Use this directory

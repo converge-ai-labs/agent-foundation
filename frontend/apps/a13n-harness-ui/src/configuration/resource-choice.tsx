@@ -47,6 +47,10 @@ export function ResourceChoice({
       }
       emptyMessage={loading ? "Loading resources…" : "No matching resources."}
       value={value}
+      disabled={
+        !unresolved &&
+        !choices.some((choice) => !choice.disabled && choice.value !== value)
+      }
       onValueChange={onValueChange}
       aria-describedby={description ? `${id}-description` : undefined}
       groups={[

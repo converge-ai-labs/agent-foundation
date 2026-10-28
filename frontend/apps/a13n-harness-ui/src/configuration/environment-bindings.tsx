@@ -404,7 +404,15 @@ function DeviceEnvironmentEditor({
       <SettingsSection>
         <ChoiceField
           label="Device"
-          placeholder="Choose a Device"
+          placeholder={
+            availableDevices.length ? "Choose a device" : "No devices connected"
+          }
+          disabled={!availableDevices.length && !deviceId}
+          description={
+            !availableDevices.length && !deviceId
+              ? "Connect a device to add a remote environment."
+              : undefined
+          }
           value={deviceId}
           onValueChange={selectDevice}
           options={[
@@ -438,7 +446,7 @@ function DeviceEnvironmentEditor({
       </SettingsSection>
       <div>
         <ConnectDevice
-          label="Connect new Device"
+          label="Connect new device"
           onConnected={(device) => {
             setConnected(device);
             selectDevice(device.id);

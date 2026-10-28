@@ -44,7 +44,7 @@ import { SyntaxCode, codeLanguage } from "./syntax-code";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { RetainedImagePreview } from "./image-preview";
 import { copyText } from "../platform";
-import { DebugData, DebugId } from "../shell/debug";
+import { DebugData, DebugId, DebugOnly } from "../shell/debug";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -287,7 +287,6 @@ function ToolData({ tool }: { tool: ToolView }) {
           />
         )
       )}
-      {tool.resultParts && <AguiContent parts={tool.resultParts} />}
       {tool.resultOmitted ? (
         <p>Result omitted by the server.</p>
       ) : (
@@ -318,6 +317,7 @@ function ToolDetails({
   data?: boolean;
 }) {
   const info = describeTool(tool);
+  const textResult = parsed(tool.result);
   const replacements =
     tool.name === "multi_edit" && Array.isArray(info.args.edits)
       ? info.args.edits.filter(record)
@@ -351,6 +351,11 @@ function ToolDetails({
         </p>
       )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
+      {tool.resultParts && <AguiContent parts={tool.resultParts} />}
+      {!tool.resultParts &&
+        typeof textResult === "string" &&
+        textResult &&
+        !info.errorText && <CodeContent title="Output" value={textResult} />}
       <CollaborationDetails tool={tool} />
       {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (
         <ToolImages tool={tool} />
@@ -447,9 +452,11 @@ function ToolDetails({
         <CodeContent title="Code" value={info.args.code} language="python" />
       )}
       {data && (
-        <DisclosureSection title="Arguments & result">
-          <ToolData tool={tool} />
-        </DisclosureSection>
+        <DebugOnly>
+          <DisclosureSection title="Arguments & result">
+            <ToolData tool={tool} />
+          </DisclosureSection>
+        </DebugOnly>
       )}
     </div>
   );
@@ -475,23 +482,27 @@ function ToolOperation({ tool }: { tool: ToolView }) {
           <small className={styles.phase}>{detail.phase}</small>
         )}
         <ToolActions tool={tool} />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className={styles.dataToggle}
-          aria-label="Arguments & result"
-          title="Arguments & result"
-          aria-expanded={data}
-          aria-controls={data ? panel : undefined}
-          onClick={() => setData((open) => !open)}
-        >
-          <BracketsCurly />
-        </Button>
+        <DebugOnly>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className={styles.dataToggle}
+            aria-label="Arguments & result"
+            title="Arguments & result"
+            aria-expanded={data}
+            aria-controls={data ? panel : undefined}
+            onClick={() => setData((open) => !open)}
+          >
+            <BracketsCurly />
+          </Button>
+        </DebugOnly>
       </header>
       {data && (
-        <div id={panel} className={styles.operationData}>
-          <ToolData tool={tool} />
-        </div>
+        <DebugOnly>
+          <div id={panel} className={styles.operationData}>
+            <ToolData tool={tool} />
+          </div>
+        </DebugOnly>
       )}
       <ToolDetails tool={tool} data={false} />
     </section>

@@ -18,6 +18,12 @@
   border-radius: 8px;
   padding: 4px var(--harness-group-inset);
 }
+.section
+  > [data-slot="settings-section-content"]:not([data-variant="plain"])
+  [data-slot="textarea-control"] {
+  background: var(--card);
+  border-color: var(--input);
+}
 .row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) fit-content(60%);
@@ -160,6 +166,14 @@
   .row [data-slot="select-trigger"] {
     height: auto;
     padding-block: 8px;
+  }
+  .row [data-slot="combobox-trigger"] {
+    height: auto;
+    padding-block: 8px;
+  }
+  .row [data-slot="combobox-trigger"] .truncate {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .row [data-slot="select-value"] {
     display: -webkit-box;

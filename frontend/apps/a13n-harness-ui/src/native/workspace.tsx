@@ -189,8 +189,14 @@ export function NativeWorkspace({
   useEffect(() => {
     const trail = folderTrail.current;
     if (!trail) return;
-    trail.scrollLeft = trail.scrollWidth;
-    trail.dataset.clipped = String(trail.scrollLeft > 0);
+    const revealCurrentFolder = () => {
+      trail.scrollLeft = trail.scrollWidth;
+      trail.dataset.clipped = String(trail.scrollLeft > 0);
+    };
+    revealCurrentFolder();
+    const observer = new ResizeObserver(revealCurrentFolder);
+    observer.observe(trail);
+    return () => observer.disconnect();
   }, [directory, pane, view]);
   useEffect(() => {
     if (projectLoading) return;
@@ -774,6 +780,7 @@ export function NativeWorkspace({
                     aria-label={
                       expanded ? "Restore drawer width" : "Expand drawer"
                     }
+                    className={styles.expandPane}
                     title={expanded ? "Restore drawer width" : "Expand drawer"}
                     onClick={() => setExpanded(!expanded)}
                   >

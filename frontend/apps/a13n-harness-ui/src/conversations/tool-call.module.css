@@ -2,7 +2,7 @@
    Details open beneath the title text, without a second rail: the Run details
    rule already carries the hierarchy. */
 .tool {
-  --tool-row: 32px;
+  --tool-row: var(--harness-control-height, 32px);
   /* Chevron, icon and their gaps: details start under the title text. */
   --tool-inset: 38px;
   min-width: 0;

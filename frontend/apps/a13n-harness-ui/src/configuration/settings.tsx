@@ -1,4 +1,5 @@
 import { SettingsRow, SettingsSection } from "../shell/settings";
+import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
 import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -353,7 +354,7 @@ export function InstalledCatalog({
         ? "environment providers"
         : "plugins";
   const items = available?.filter((item) =>
-    `${item.key} ${item.distribution_name ?? ""}`
+    `${item.key} ${item.kind === "capability" ? capabilityLabel(item.key) : ""} ${item.distribution_name ?? ""}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -378,7 +379,11 @@ export function InstalledCatalog({
         {items?.map((item) => (
           <div className={styles.resourceRow} key={`${item.kind}:${item.key}`}>
             <div>
-              <strong>{item.key}</strong>
+              <strong>
+                {item.kind === "capability"
+                  ? capabilityLabel(item.key)
+                  : item.key}
+              </strong>
               <small>
                 {item.distribution_name ??
                   (item.source === "pydantic" ? "Built-in" : item.source)}

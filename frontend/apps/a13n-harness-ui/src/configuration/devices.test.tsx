@@ -203,7 +203,11 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     "Remote work",
   );
   await user.click(screen.getByRole("button", { name: "Add environment" }));
-  await user.click(screen.getByRole("button", { name: "Connect new Device" }));
+  expect(
+    screen.getByRole("combobox", { name: "Device" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(screen.getByText("No devices connected")).not.toBeNull();
+  await user.click(screen.getByRole("button", { name: "Connect new device" }));
   let wizard = await screen.findByRole("dialog", { name: "Connect a Device" });
   expect(await within(wizard).findByText("ABCD-1234")).not.toBeNull();
   await user.click(

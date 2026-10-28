@@ -1859,7 +1859,7 @@ dl.detailGrid > .detailLongRow dd {
   margin: 4px 0;
 }
 .executionContent .reasoning > summary {
-  min-height: 32px;
+  min-height: var(--harness-control-height, 32px);
   margin-bottom: 4px;
 }
 .executionContent .reasoning[open]:not(:last-child) {

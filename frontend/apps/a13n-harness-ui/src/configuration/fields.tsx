@@ -1,7 +1,7 @@
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
@@ -98,6 +98,9 @@ export function ResourceFields({
       value: model.model_id,
       label: model.name,
     })) ?? [];
+  const codexModels = (selectors.data?.models ?? [])
+    .filter((model) => model.route.startsWith("openai-codex:"))
+    .map((model) => ({ value: model.model_id, label: model.name }));
   const agentOptions =
     selectors.data?.agents.map((agent) => ({
       value: agent.agent_id,
@@ -489,19 +492,37 @@ export function ResourceFields({
                 >
                   <summary>Voice settings</summary>
                   <div>
-                    {scalar(
-                      "Codex model",
-                      ["live", "model"],
-                      (selectors.data?.models ?? [])
-                        .filter((model) =>
-                          model.route.startsWith("openai-codex:"),
-                        )
-                        .map((model) => ({
-                          value: model.model_id,
-                          label: model.name,
-                        })),
-                      "Choose a Codex model",
-                    )}
+                    <ResourceChoice
+                      label="Codex model"
+                      value={text(["live", "model"])}
+                      loading={selectors.isPending || sources.isPending}
+                      onValueChange={(value) =>
+                        set(["live", "model"], value || undefined)
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label: codexModels.length
+                            ? "Choose a Codex model"
+                            : "Not configured",
+                        },
+                        ...codexModels,
+                      ]}
+                      description={
+                        !selectors.isPending && !codexModels.length ? (
+                          <>
+                            Add a Codex subscription model in{" "}
+                            <Link
+                              className="underline underline-offset-2"
+                              to="/settings/models"
+                            >
+                              Models
+                            </Link>{" "}
+                            to use live voice.
+                          </>
+                        ) : undefined
+                      }
+                    />
                     <SettingsRow label="Voice">
                       <ChoiceField
                         label="Voice"

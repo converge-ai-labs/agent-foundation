@@ -312,9 +312,9 @@ it.each(["failed", "denied", "interrupted"] as const)(
     fireEvent.click(
       screen.getByRole("button", { name: "Questions & details" }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Arguments & result" }),
-    );
+    expect(
+      screen.queryByRole("button", { name: "Arguments & result" }),
+    ).toBeNull();
     expect(await screen.findByText(/Response window ended/)).toBeTruthy();
   },
 );
