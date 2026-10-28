@@ -27,6 +27,7 @@ from pydantic import Field
 
 from a13n_harness_ui.browser_capture import WindowPreview, window_ids
 from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
+from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.browser_macos import MacDesktop, open_capture_settings
 from a13n_harness_ui.browser_setup import BrowserPlatform, BrowserSetup, host_platform, inspect_browser
 from a13n_harness_ui.browser_vnc import VncConnection
@@ -149,6 +150,7 @@ class HostBrowsers:
         self.no_sandbox = no_sandbox
         self.root = root / "profile"
         self.available, self.authorize = available, authorize
+        self.handback = BrowserHandback()
         self.bindings: dict[str, Binding] = {}
         self.human_tabs: dict[str, tuple[str, str]] = {}
         self.runtime: Chromium | None = None
@@ -314,6 +316,7 @@ class HostBrowsers:
             raise
 
     def failed(self, reason: str) -> None:
+        self.handback.stop()
         self.runtime_failed = True
         self.startup_error = reason
         self.generation += 1
@@ -552,8 +555,8 @@ class HostBrowsers:
                 elif item.scope:
                     await item.scope.close()
                 item = self.bindings[thread_id] = Binding(viewport=item.viewport)
-            if self.human_thread and self.human_thread != thread_id:
-                raise failure("Hand back browser control before opening another page.", "human_control")
+            if self.human_thread:
+                raise failure("Hand back browser control before opening a page.", "human_control")
             try:
                 await self.launch()
                 assert self.runtime is not None
@@ -692,29 +695,32 @@ class HostBrowsers:
                         await item.scope.attach(target, select=False)
                 self.human_tabs.clear()
             if previous:
-                await self.sync_selected_tab(previous)
-                await self.release_keys(previous)
+                for thread, item in self.bindings.items():
+                    if item.status == "ready" and item.scope:
+                        await self.sync_selected_tab(thread)
+                        await self.release_keys(thread)
         except BaseException:
             self.failed("Browser handback failed. Start the browser again.")
             raise
         finally:
             self.human_thread = ""
             self.released.set()
+        self.handback.released()
 
     async def control(self, thread_id: str, binding: str, *, human: bool) -> BrowserControl:
         await self.authorize(thread_id)
         async with self.control_lock:
             item = self.checked(thread_id, binding)
             if human:
-                reconnecting = self.human_thread == thread_id
-                if self.human_thread and (not reconnecting or isinstance(self.desktop, MacDesktop)):
-                    raise failure("Browser is already under human control.", "control_conflict")
+                reconnecting = bool(self.human_thread)
                 # Explicit transfer or recovery replaces the previous controller
                 # without briefly releasing the automation barrier.
                 if item.status != "ready":
                     raise failure("Start the browser before taking control.", "not_ready")
-                self.human_thread = thread_id
+                if not reconnecting:
+                    self.human_thread = thread_id
                 self.released.clear()
+                self.handback.takeover()
                 # Existing per-target operations settle; newly admitted ones see
                 # the barrier. Ordinary Agent work has no browser-wide queue.
                 drain = asyncio.gather(
@@ -735,6 +741,9 @@ class HostBrowsers:
                     await self.revoke()
                     if item.page is not None:
                         await self.focus(item.page)
+                    # Keep the previous Thread as the target owner until its
+                    # native input is settled and the new window is focused.
+                    self.human_thread = thread_id
                     self.control_token = secrets.token_urlsafe(24)
                     if self.runtime:
                         for page in self.runtime.pages.values():
@@ -756,8 +765,6 @@ class HostBrowsers:
                         self.failed("Browser takeover cleanup failed. Start the browser again.")
                     raise
             else:
-                if self.human_thread and self.human_thread != thread_id:
-                    raise failure("Hand back control in its owning Thread.", "control_conflict")
                 await self.release()
             return BrowserControl(state=self.state(thread_id), control_token=self.control_token)
 
@@ -994,7 +1001,7 @@ class HostBrowserBackend:
             # Finish creation's admission before waiting for lifecycle locks:
             # Stop/takeover must still retire/drain an in-flight tab creation.
             async with self.browsers.control_lock, self.browsers.lifecycle:
-                self.browsers.checked(self.thread_id, self.binding)
+                item = self.browsers.checked(self.thread_id, self.binding)
                 if self.browsers.human_thread:
                     # Creation completed before takeover. Return that result
                     # without changing the human-controlled desktop.

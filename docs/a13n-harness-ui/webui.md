@@ -324,7 +324,9 @@ On Linux, the managed browser uses basic password storage to avoid waiting for a
 
 ### Start and control the browser
 
-Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation.
+Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation. You can hand back from another conversation, including one with no open tabs. Taking control from another conversation transfers input and focuses its window while all Agent browser tools stay paused.
+
+An Agent that attempts a browser tool during takeover receives an immediate blocked result and a registered handback notice. It can finish independent work or end its turn instead of polling. Handback notifies only these conversations, including those whose turn has ended, so the Agent can observe afresh and continue relevant work. Pending approvals still require your decision. Stop, archive, and clearing context cancel pending notices. Notices are kept only while this server and browser runtime remain running; a previous Goal is not resumed.
 
 To change devices, open the same Thread in another browser and choose **Take control here**. The previous controller loses input while the Agent stays paused; opening the Thread alone remains read-only. After a disconnection, choose **Reconnect control** to reconnect while keeping the Agent paused, or **Hand back to Agent** to resume automation.
 
@@ -347,7 +349,7 @@ On Linux with supported resizing, take control and choose a Viewport preset for 
 | Close last conversation tab                      | Binding stays enabled; Agent navigation or Open browser can create another   |
 | Exit Chromium or lose a required display process | Shared runtime and all windows stop                                          |
 
-Reset or recovery after failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing tabs during human control leaves the Agent paused until handback.
+Reset or recovery after failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing individual tabs during human control leaves automation paused until handback. **Close conversation tabs** also releases human control when that conversation is the controller.
 
 Linux human controllers can see and operate other windows on the shared private desktop. macOS preview is limited to one window, while website logins, saved passwords, and preferences still share the Chromium profile across conversations. Browser authority and networking belong to the Host, outside Sandbox isolation. Linux uses noVNC; its source/license notice is served at `/assets/LICENSE.noVNC`, with other bundled notices at `/third-party-licenses.txt`.
 

@@ -154,6 +154,8 @@ Auxiliary model requests used by tools belong to the tool phase. Tool-phase hand
 
 The admission deadline ends at acceptance, before asynchronous event delivery. It does not bound completed handoff or model incorporation, and the returned enqueue identity acknowledges acceptance only. Strict immediate steering (`best_effort=False`, the default) never falls back to ordinary queued steering. Accepted input remains pending until canonical history proves incorporation. Export and graceful interrupt-save retain pending input through existing state-publication boundaries; immediate steering adds no unconditional checkpoint write. At a terminal boundary, pending input either continues the current Run or follows the Host's next-Run policy. Explicit cancellation ends the conversation Run. Hosts separately cancel retained executions and control automatic wake after Stop.
 
+A Host may supply a synchronous `before_accept` guard to ordinary or immediate steering. Harness invokes it under the native mailbox lock, after readiness waits and before enqueue. A raised exception leaves the input unaccepted. This lets process-local lifecycle notices recheck their source authority at the acceptance boundary.
+
 ### Best-Effort Immediate Steering
 
 `steer(..., immediate=True, best_effort=True)` accepts ordinary queued input when an unsupported call is active or no `ToolExecutionRuntime` is bound. It does not wait for an unsupported call to finish. When immediate handoff is available, it preserves the same phase-specific behavior as strict immediate steering. Acceptance and handoff selection form one non-yielding transition under the mailbox lock, with one enqueue and no catch-and-resubmit fallback. Input ordering and pending-input retention remain unchanged.

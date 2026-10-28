@@ -44,6 +44,7 @@ function show({
   resizeAvailable = true,
   status = "ready",
   control = "agent",
+  pageCount = 1,
   threadId = "thread-a",
   fullControl = true,
   setup = {
@@ -63,7 +64,7 @@ function show({
     platform,
     session_id: status === "disabled" ? "" : "binding-a",
     status,
-    page_count: status === "ready" ? 1 : 0,
+    page_count: status === "ready" ? pageCount : 0,
     control,
     url: "https://example.com",
     viewport: "desktop",
@@ -218,6 +219,72 @@ it("never passes the previous conversation's control token to another stream", a
   view.switchThread();
   await screen.findByText("thread-b:readonly");
 });
+
+it.each(["linux", "macos"])(
+  "hands back globally after switching Threads on %s",
+  async (platform) => {
+    const view = show({ platform });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: platform === "macos" ? "Pause automation" : "Take control",
+      }),
+    );
+    await screen.findByRole("button", {
+      name: platform === "macos" ? "Resume automation" : "Hand back to Agent",
+    });
+    view.switchThread();
+    await screen.findByText("thread-b:readonly");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: platform === "macos" ? "Resume automation" : "Hand back to Agent",
+      }),
+    );
+    await screen.findByRole("button", {
+      name: platform === "macos" ? "Pause automation" : "Take control",
+    });
+    expect(view.client.POST).toHaveBeenLastCalledWith(
+      "/api/threads/{thread_id}/browser/handback",
+      {
+        params: { path: { thread_id: "thread-b" } },
+        body: { session_id: "binding-a" },
+      },
+    );
+  },
+);
+
+it("transfers global control after switching Threads without a handback", async () => {
+  const view = show();
+  fireEvent.click(await screen.findByRole("button", { name: "Take control" }));
+  await screen.findByText("thread-a:controller-a");
+  view.switchThread();
+  await screen.findByText("thread-b:readonly");
+  fireEvent.click(screen.getByRole("button", { name: "Take control here" }));
+  await screen.findByText("thread-b:controller-a");
+  expect(view.client.POST).toHaveBeenLastCalledWith(
+    "/api/threads/{thread_id}/browser/take-control",
+    {
+      params: { path: { thread_id: "thread-b" } },
+      body: { session_id: "binding-a" },
+    },
+  );
+  expect(view.client.POST).toHaveBeenCalledTimes(2);
+});
+
+it.each(["linux", "macos"])(
+  "keeps global handback available without local pages on %s",
+  async (platform) => {
+    const { client } = show({ platform, pageCount: 0, control: "human" });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: platform === "macos" ? "Resume automation" : "Hand back to Agent",
+      }),
+    );
+    await screen.findByRole("button", { name: "Open browser" });
+    expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+      "/api/threads/{thread_id}/browser/handback",
+    ]);
+  },
+);
 
 it("keeps local zoom available without control and exposes scoped lifecycle buttons", async () => {
   const { client } = show();

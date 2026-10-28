@@ -201,6 +201,8 @@ The initial response is check `0`; the default budget allows 10 additional check
 
 The Agent signals completion with `[GOAL_COMPLETE]` on its own line. After summarization or compaction it must audit the original objective again. **Verified is the Agent's own completion claim, not an independent review.** Exhaustion, cancellation, errors, and an unverified stop remain distinct outcomes.
 
+When an external event, unavailable access, or a user decision blocks remaining progress, the Agent can explain the blocker and end with `[GOAL_BLOCKED]` on its own line. **Blocked** ends Goal mode without success or more automatic checks. A browser handback notice can continue the conversation in normal mode; it does not restore the ended Goal or its budget.
+
 Set root `max_goal_iterations` to change the budget for new Goals; zero or a negative value disables follow-up checks. A suspended Goal keeps its captured budget. Resuming a conversation alone does not restart unfinished work. Send ordinary input for normal behavior, or `/goal` for a new objective and budget. WebUI exposes the same policy through its [Goal controls](webui.md).
 
 ### Local host commands

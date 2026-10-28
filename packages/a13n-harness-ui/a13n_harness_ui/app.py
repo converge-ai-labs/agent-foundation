@@ -433,6 +433,8 @@ class HarnessUiApp:
         compaction: BackgroundCompaction | None = None,
     ) -> None:
         self._browsers = browsers
+        if browsers is not None:
+            browsers.handback.deliver = self._deliver_browser_handback
         self._compaction = compaction
         self._settings = settings
         self._mcp_apps = mcp_apps
@@ -1665,6 +1667,8 @@ class HarnessUiApp:
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
                 self._tool_executions.clear_state(thread_id)
+                if self._browsers is not None:
+                    self._browsers.handback.suppress(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
@@ -1679,6 +1683,8 @@ class HarnessUiApp:
             if mutation.patch.archived is True:
                 async with self._root_runs.require_inactive(thread_id):
                     await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+                    if self._browsers is not None:
+                        self._browsers.handback.suppress(thread_id)
                 await self._retire_mcp_owners()
             else:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
@@ -2364,6 +2370,41 @@ class HarnessUiApp:
         await self._root_runs.submit_prompt(thread_id=thread_id, prompt=content)
         return True
 
+    async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
+        if self._state is not AppState.ready or not current():
+            return False
+        detail = await self._projections.detail(thread_id)
+        if (
+            detail.thread.archived
+            or detail.thread.memory_scope is not None
+            or detail.thread.parent_thread_id is not None
+            or detail.deferred_requests
+        ):
+            return False
+
+        def before_accept() -> None:
+            # Check at native enqueue or idle admission, after all preparation waits.
+            if self._state is not AppState.ready or not current():
+                raise RunCoordinationError("Browser handback notice is no longer current.", code="browser_notice_stale")
+
+        async def authorize() -> None:
+            before_accept()
+
+        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="browser.handback")),)
+        operation = await self._root_runs.active(thread_id)
+        if operation is not None:
+            result = await self._root_runs.steer(
+                receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
+            )
+            return result.accepted
+        try:
+            await self._root_runs.submit_prompt(
+                thread_id=thread_id, prompt=content, authorize=authorize, reject_deferred=True
+            )
+        except RunCoordinationError:
+            return False
+        return True
+
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
         async with self._operation():
             return await self._root_runs.get(receipt_id)
@@ -2425,6 +2466,8 @@ class HarnessUiApp:
             )
             if result.accepted:
                 self._tool_executions.user_input(operation.receipt.thread_id)
+                if self._browsers is not None:
+                    self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
             return result
 
@@ -3210,6 +3253,8 @@ class HarnessUiApp:
             self._state = AppState.stopping
             idle = self._operations_idle
         self._tool_executions.stop()
+        if self._browsers is not None:
+            self._browsers.handback.stop()
         self._memory_organizer.stop()
         if self._voice is not None:
             await self._voice.stop()
@@ -3605,6 +3650,7 @@ async def open_harness_ui_app(
             root_runs = RootRunCoordinator(
                 root_executor,
                 tool_executions=tool_executions,
+                browser_handback=browsers.handback,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,

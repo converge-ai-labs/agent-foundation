@@ -22,7 +22,12 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, ModelRequest, TextContent, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
-from a13n_harness_ui.goal_prompts import goal_check_prompt, has_completion_marker, post_restore_audit_prompt
+from a13n_harness_ui.goal_prompts import (
+    goal_check_prompt,
+    has_blocked_marker,
+    has_completion_marker,
+    post_restore_audit_prompt,
+)
 
 GOAL_CAPABILITY_ID = "a13n.harness-ui.goal"
 GOAL_STATE_VERSION = "1"
@@ -33,6 +38,7 @@ GoalStatus = Literal[
     "auditing",
     "suspended",
     "verified",
+    "blocked",
     "max_iterations",
     "cancelled",
     "error",
@@ -99,6 +105,17 @@ class GoalCapability(AbstractCapability[AgentContext]):
         self._input_base = goal.input_tokens if goal is not None else 0
         self._output_base = goal.output_tokens if goal is not None else 0
 
+    def get_instructions(self) -> str | None:
+        if self.goal is None or not self.goal.active:
+            return None
+        return (
+            "Goal mode is active. Complete independent work before stopping for an external blocker. "
+            "If remaining progress requires unavailable access, an external event, or a user decision, "
+            "briefly explain the blocker and end with [GOAL_BLOCKED] on its own line. "
+            "This ends Goal mode without claiming success. When a tool registers a callback, "
+            "end the turn instead of polling or retrying while waiting."
+        )
+
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
         if self._active_run_id is not None:
             return await handler()
@@ -154,7 +171,10 @@ class GoalCapability(AbstractCapability[AgentContext]):
         ):
             return output
         marker = has_completion_marker(output)
-        if marker and not goal.needs_restore_audit:
+        if has_blocked_marker(output):
+            self._completion_candidate = False
+            self.goal = goal.model_copy(update={"status": "blocked"})
+        elif marker and not goal.needs_restore_audit:
             self._completion_candidate = True
             self.goal = goal.model_copy(update={"status": "checking"})
         else:

@@ -4916,7 +4916,7 @@ export interface components {
              * @default working
              * @enum {string}
              */
-            status?: "working" | "checking" | "auditing" | "suspended" | "verified" | "max_iterations" | "cancelled" | "error" | "unverified_stop";
+            status?: "working" | "checking" | "auditing" | "suspended" | "verified" | "blocked" | "max_iterations" | "cancelled" | "error" | "unverified_stop";
             /**
              * Needs Restore Audit
              * @default false

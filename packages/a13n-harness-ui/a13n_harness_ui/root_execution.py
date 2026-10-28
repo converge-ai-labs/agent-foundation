@@ -473,7 +473,12 @@ class RootRunExecutor:
                     RootCheckpointCapability(save_checkpoint),
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
-                        (BrowserUseCapability(self._browsers.backend(thread_id, admission.browser_binding)),)
+                        (
+                            BrowserUseCapability(
+                                self._browsers.backend(thread_id, admission.browser_binding),
+                                on_human_control=partial(self._browsers.handback.blocked, thread_id),
+                            ),
+                        )
                         if self._browsers is not None and admission.browser_binding is not None
                         else ()
                     ),

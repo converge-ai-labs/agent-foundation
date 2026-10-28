@@ -51,6 +51,12 @@ const phases: Record<
     detail:
       "The Agent reported that the objective was met after its checks. This is same-Agent verification.",
   },
+  blocked: {
+    label: "Blocked",
+    title: "Blocked before verification",
+    detail:
+      "The Agent ended Goal mode because further progress requires an external event, access, or your decision. A registered notification can continue the conversation in normal mode.",
+  },
   max_iterations: {
     label: "Not verified",
     title: "Completion not verified",

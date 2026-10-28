@@ -22,6 +22,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
@@ -129,10 +130,12 @@ class RootRunCoordinator:
         restart_coordinator: GracefulRestart | None = None,
         on_input_admitted: Callable[[str | None], None] | None = None,
         tool_executions: ToolExecutions | None = None,
+        browser_handback: BrowserHandback | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
         self._tool_executions = tool_executions
+        self._browser_handback = browser_handback
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
@@ -168,6 +171,8 @@ class RootRunCoordinator:
             self._task_group = task_group
             if self._tool_executions is not None:
                 self._tool_executions.start(task_group)
+            if self._browser_handback is not None:
+                self._browser_handback.start(task_group)
             self._accepting = True
 
     async def stop_admission(self) -> None:
@@ -287,6 +292,7 @@ class RootRunCoordinator:
         touch: bool = False,
         goal: GoalView | None = None,
         human_input: bool = False,
+        reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
@@ -300,6 +306,7 @@ class RootRunCoordinator:
             touch=touch,
             goal=goal,
             human_input=human_input,
+            reject_deferred=reject_deferred,
             authorize=authorize,
         )
 
@@ -359,6 +366,7 @@ class RootRunCoordinator:
         goal: GoalView | None = None,
         human_input: bool = False,
         organization: MemoryOrganizationRun | None = None,
+        reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
@@ -425,6 +433,10 @@ class RootRunCoordinator:
                 # waits. Nothing suspends between this guard and registration.
                 if authorize is not None:
                     await authorize()
+                if reject_deferred and admission.response is not None:
+                    raise RunCoordinationError(
+                        "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
+                    )
                 operation.composition = admission.published.reference
                 if (
                     pending is not None
@@ -437,6 +449,8 @@ class RootRunCoordinator:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
+                if human_input and self._browser_handback is not None:
+                    self._browser_handback.user_input(thread_id)
                 self._task_group.start_soon(self._run_operation, operation, admission)
                 if prompt is not None and self._on_input_admitted is not None and organization is None:
                     try:
@@ -533,6 +547,7 @@ class RootRunCoordinator:
         immediate: bool = False,
         touch: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
+        before_accept: Callable[[], None] | None = None,
     ) -> RootControlResult:
         message = detach_input(message)
         operation = self._operations.get(receipt_id)
@@ -550,7 +565,9 @@ class RootRunCoordinator:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(prepared, immediate=immediate, best_effort=True)
+            enqueue_id = await stream.steer(
+                prepared, immediate=immediate, best_effort=True, before_accept=before_accept
+            )
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
@@ -574,6 +591,8 @@ class RootRunCoordinator:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if self._tool_executions is not None:
             self._tool_executions.suppress(operation.receipt.thread_id)
+        if self._browser_handback is not None:
+            self._browser_handback.suppress(operation.receipt.thread_id)
         operation.cancel_requested = True
         if self._restart is not None:
             self._restart.active.pop(operation.receipt.thread_id, None)
@@ -748,6 +767,8 @@ class RootRunCoordinator:
             operation.done.set()
             if self._tool_executions is not None:
                 self._tool_executions.retry(thread_id)
+            if self._browser_handback is not None:
+                self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
             try:
@@ -853,6 +874,8 @@ class RootRunCoordinator:
             stream.cancel()
         elif self._tool_executions is not None:
             self._tool_executions.retry(operation.receipt.thread_id)
+        if not operation.cancel_requested and self._browser_handback is not None:
+            self._browser_handback.retry(operation.receipt.thread_id)
 
     async def _main_account_changed(self, operation: _RootOperation, value: MainAccountSelection) -> None:
         previous = operation.main_account

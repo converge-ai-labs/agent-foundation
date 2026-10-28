@@ -165,9 +165,11 @@ Trusted Agent reconstruction enables the existing [Harness model-attempt recover
 
 Root submission accepts `mode: "normal" | "goal"`, defaulting to `normal`. Goal is a per-submission continuation policy, not a sticky Thread setting, separate Agent, child verifier, or second execution loop. A Goal requires nonempty authored text. Its objective is captured from visible authored text before surface hints, attachment conversion, or other model-context transformations; attachment descriptions and hidden guidance are not the objective.
 
-The initial root response is iteration zero. At each complete outer text-output boundary, the same Agent checks its work against the original objective. Without a completion marker, the policy enqueues a hidden native follow-up and increments the iteration once. Additional checks share the root receipt, native input queue, tools, cancellation, usage limits, and execution context. Nested helpers and children do not trigger Goal checks. Steering remains native input and does not itself consume a Goal iteration.
+The initial root response is iteration zero. At each complete outer text-output boundary, the same Agent checks its work against the original objective. Without a completion or blocked marker, the policy enqueues a hidden native follow-up and increments the iteration once. Additional checks share the root receipt, native input queue, tools, cancellation, usage limits, and execution context. Nested helpers and children do not trigger Goal checks. Steering remains native input and does not itself consume a Goal iteration.
 
 Completion requires a case-sensitive `[GOAL_COMPLETE]` line after stripping that line's surrounding whitespace. A fenced standalone line matches; an inline mention does not. The original output, including the marker, remains unchanged. A marker is only a completion candidate until the native loop finishes: any subsequent model request, including queued steering, invalidates it and must pass the check again. `verified` means this Agent satisfied the completion protocol, not independent certification of correctness or successful publication of the continuation.
+
+A case-sensitive standalone `[GOAL_BLOCKED]` line ends Goal mode with `blocked`, without success or another automatic check. It uses the same whitespace and standalone-line rules as the completion marker and takes precedence when both occur. The Agent explains an external blocker after completing independent work. This terminal outcome applies even at iteration zero, with exhausted budget, or with a pending restore audit. Later ordinary input or a browser handback notice does not resume the ended Goal or its budget.
 
 Successful summarize handoff or compaction sets a pending restore audit using the [Harness context-restoration notification](../a13n-harness/09-context-and-memory.md#context-restoration-notification). The first marker while this flag is set requests a stricter audit against the original objective rather than completing. Enqueuing that audit clears the pending flag and consumes one ordinary Goal iteration. Another context replacement sets it again. Restore audits have no separate budget and cannot bypass exhaustion.
 
@@ -182,12 +184,13 @@ Detached root-operation and Thread-detail projections expose an optional `goal` 
 | `auditing`        | Performing the stricter post-restoration audit                                            |
 | `suspended`       | Waiting at a native deferred boundary                                                     |
 | `verified`        | Native execution ended with an accepted completion marker                                 |
+| `blocked`         | An external blocker ended Goal mode without verified completion                           |
 | `max_iterations`  | No further Goal check is allowed; completion is unverified                                |
 | `cancelled`       | Execution was cancelled before verified completion                                        |
 | `error`           | Execution failed before verified completion                                               |
 | `unverified_stop` | Execution stopped without verified completion or saved active state has no live authority |
 
-Goal outcome, native execution status, and continuation publication remain independent. A successful native Run can end at `max_iterations`; surfaces must not present it as a completed Goal. Live state is process-local. Saved state and recovery projection follow [Goal continuation state](03-local-storage-and-recovery.md#goal-continuation-state).
+Goal outcome, native execution status, and continuation publication remain independent. A successful native Run can end at `blocked` or `max_iterations`; surfaces must not present it as a completed Goal. Live state is process-local. Saved state and recovery projection follow [Goal continuation state](03-local-storage-and-recovery.md#goal-continuation-state).
 
 ### Long-text Input Files
 

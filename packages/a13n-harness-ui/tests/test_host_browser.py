@@ -181,11 +181,10 @@ async def test_reconnect_control_renews_authority_without_resuming_agent(browser
     await browsers.disconnect(writer)
     assert browsers.controller is replacement
     assert browsers.control_token == third.control_token
-    with pytest.raises(HarnessUiError, match="already under human control"):
-        await browsers.control("thread-b", browsers.state("thread-b").session_id, human=True)
 
 
-async def test_transfer_settles_old_controller_before_issuing_authority(browsers):
+@pytest.mark.parametrize("destination", ["thread-a", "thread-b"])
+async def test_transfer_settles_old_controller_before_issuing_authority(browsers, destination):
     identity = browsers.state("thread-a").session_id
     first = await browsers.control("thread-a", identity, human=True)
     ticket = await browsers.access(
@@ -201,15 +200,18 @@ async def test_transfer_settles_old_controller_before_issuing_authority(browsers
     writer = Mock(wait_closed=AsyncMock(side_effect=wait_closed))
     browsers.controller = writer
     browsers.connections[writer] = "thread-a"
-    transfer = asyncio.create_task(browsers.control("thread-a", identity, human=True))
+    transfer = asyncio.create_task(browsers.control(destination, browsers.state(destination).session_id, human=True))
     await asyncio.wait_for(closing.wait(), 1)
     assert not transfer.done() and not browsers.control_token
     assert browsers.controller is None and not browsers.released.is_set()
+    assert browsers.human_thread == "thread-a"
     assert all(item.scope._paused for item in browsers.bindings.values())
     with pytest.raises(HarnessUiError, match="expired"):
         await browsers.connect("thread-a", ticket.ticket)
     settled.set()
     second = await asyncio.wait_for(transfer, 1)
+    assert browsers.human_thread == destination
+    browsers.focus.assert_awaited_with(browsers.bindings[destination].page)
     assert second.control_token and second.control_token != first.control_token
     with pytest.raises(HarnessUiError, match="revoked"):
         await browsers.access("thread-a", BrowserAccessRequest(session_id=identity, control_token=first.control_token))
@@ -239,6 +241,42 @@ async def test_failed_control_reconnect_preserves_pause(browsers):
     assert all(item.scope._paused for item in browsers.bindings.values())
     browsers.focus.side_effect = None
     await browsers.control("thread-a", identity, human=False)
+    assert browsers.released.is_set()
+
+
+@pytest.mark.parametrize("mac", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+async def test_global_handback_from_another_thread(browsers, mac, empty):
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    if mac:
+        browsers.desktop = MacDesktop()
+    first = browsers.state("thread-a").session_id
+    other = browsers.bindings["thread-b"]
+    if empty:
+        await other.scope.close()
+        other.scope = CdpBrowserBackend(browsers.runtime)
+    await browsers.control("thread-a", first, human=True)
+    assert all(browsers.state(thread).control == "human" for thread in browsers.bindings)
+    pending = asyncio.create_task(browsers.backend("thread-a", first).wait_for_handback())
+    result = await browsers.control("thread-b", other.identity, human=False)
+    await asyncio.wait_for(pending, 1)
+    assert result.state.control == "agent" and not result.control_token
+    assert browsers.released.is_set()
+    assert all(not item.scope._paused for item in browsers.bindings.values())
+    assert all(page.requires_observation for page in browsers.runtime.pages.values())
+    browsers.authorize.assert_awaited_with("thread-b")
+
+
+async def test_failed_cross_thread_transfer_preserves_global_pause(browsers):
+    await browsers.control("thread-a", browsers.state("thread-a").session_id, human=True)
+    browsers.focus.side_effect = RuntimeError("Focus failed")
+    with pytest.raises(RuntimeError, match="Focus failed"):
+        await browsers.control("thread-b", browsers.state("thread-b").session_id, human=True)
+    assert browsers.human_thread == "thread-a" and not browsers.released.is_set()
+    assert not browsers.control_token
+    assert all(item.scope._paused for item in browsers.bindings.values())
+    await browsers.control("thread-b", browsers.state("thread-b").session_id, human=False)
     assert browsers.released.is_set()
 
 
@@ -474,7 +512,8 @@ async def test_tab_operations_reject_cross_thread_targets(browsers):
 
 
 @pytest.mark.parametrize("close_original", [False, True])
-async def test_handback_admits_exact_human_tabs_without_stealing_other_scopes(browsers, close_original):
+@pytest.mark.parametrize("transfer", [False, True])
+async def test_handback_admits_exact_human_tabs_without_stealing_other_scopes(browsers, close_original, transfer):
     binding = browsers.bindings["thread-a"]
     runtime = browsers.runtime
     original = binding.page
@@ -492,7 +531,14 @@ async def test_handback_admits_exact_human_tabs_without_stealing_other_scopes(br
     if close_original:
         runtime._destroyed({"targetId": original.target}, None)
         assert binding.status == "ready"
-    await browsers.control("thread-a", binding.identity, human=False)
+    if transfer:
+        await browsers.control("thread-b", browsers.state("thread-b").session_id, human=True)
+        later = Page("manual-b", "manual-b-session")
+        runtime.pages[later.target] = later
+        runtime._created({"targetInfo": {"type": "page", "targetId": later.target}}, None)
+    await browsers.control("thread-b", browsers.state("thread-b").session_id, human=False)
+    if transfer:
+        assert browsers.owners[later.target] == "thread-b"
     assert browsers.owners[manual.target] == "thread-a"
     assert browsers.owners[popup.target] == "thread-b"
     assert unowned.target not in browsers.owners
@@ -1023,3 +1069,43 @@ async def test_auto_admission_during_takeover_retains_handback_barrier(browsers)
         await backend.tabs("new")
     await browsers.control("thread-a", browsers.state("thread-a").session_id, human=False)
     assert await backend.tabs("list") == ()
+
+
+async def test_handback_notifies_only_tool_blocked_threads_after_native_release(browsers):
+    from functools import partial
+
+    from a13n_harness.capabilities import BrowserUseCapability
+    from anyio import create_task_group, wait_all_tasks_blocked
+
+    a = browsers.bindings["thread-a"]
+    b = browsers.bindings["thread-b"]
+    delivered = []
+
+    async def deliver(thread, prompt, current):
+        assert current() and not browsers.human_thread
+        assert browsers.released.is_set()
+        assert not browsers.control_token
+        assert b.page.requires_observation
+        delivered.append(thread)
+        return True
+
+    browsers.handback.deliver = deliver
+    async with create_task_group() as group:
+        browsers.handback.start(group)
+        await browsers.control("thread-a", a.identity, human=True)
+        tools = (
+            BrowserUseCapability(
+                browsers.backend("thread-b", b.identity),
+                on_human_control=partial(browsers.handback.blocked, "thread-b"),
+            )
+            .get_toolset()
+            .tools
+        )
+        for tool in ("browser_observe", "browser_screenshot"):
+            result = await tools[tool].function_schema.call({}, None)
+            assert "notification is registered" in result
+        assert not delivered
+        await browsers.control("thread-b", b.identity, human=False)
+        await wait_all_tasks_blocked()
+        assert delivered == ["thread-b"]
+        browsers.handback.stop()

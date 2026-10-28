@@ -390,6 +390,24 @@ export function BrowserPanel({
             actions={actions}
           />
         </>
+      ) : human && session?.session_id ? (
+        <div className={styles.empty}>
+          <Pause size={28} />
+          <strong>Browser automation paused</strong>
+          <p>Hand back to resume browser tools in all conversations.</p>
+          <Button
+            aria-label={mac ? "Resume automation" : "Hand back to Agent"}
+            disabled={busy}
+            onClick={() => void command("handback")}
+          >
+            {mac ? <Play /> : <HandArrowUp />}
+            {pending === "handback"
+              ? "Handing back…"
+              : mac
+                ? "Resume automation"
+                : "Hand back"}
+          </Button>
+        </div>
       ) : needsHelp ? (
         <BrowserSetup
           setup={preparation.data}

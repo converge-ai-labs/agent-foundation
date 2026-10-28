@@ -137,6 +137,50 @@ async def wait_input_paint(reader, writer, point):
                     return
 
 
+async def test_global_control_moves_between_threads(tmp_path, site, browser_configuration, request):
+    browsers = HostBrowsers(
+        root=tmp_path / "browser",
+        available=True,
+        authorize=AsyncMock(),
+        configuration=browser_configuration,
+        no_sandbox=request.config.getoption("--browser-no-sandbox"),
+    )
+    try:
+        states, backends, pages = {}, {}, {}
+        for thread in ("a", "b"):
+            states[thread] = await browsers.enable(thread)
+            backends[thread] = browsers.backend(thread, states[thread].session_id)
+            await backends[thread].navigate(site)
+            pages[thread] = browsers.bindings[thread].page
+            await browsers.runtime.evaluate(pages[thread], "document.querySelector('input').focus()")
+        runtime = browsers.runtime
+        first = await browsers.control("a", states["a"].session_id, human=True)
+        _, writer_a, _ = await rfb(browsers, "a", states["a"].session_id, first.control_token)
+        key(writer_a, ord("a"))
+        await writer_a.drain()
+        await wait_value(runtime, pages["a"], "document.querySelector('input').value", "a")
+        old_controller = browsers.controller
+        second = await browsers.control("b", states["b"].session_id, human=True)
+        assert writer_a.is_closing() and not browsers.released.is_set()
+        for backend in backends.values():
+            with pytest.raises(HarnessUiError, match="user controls"):
+                await backend.observe()
+        _, writer_b, _ = await rfb(browsers, "b", states["b"].session_id, second.control_token)
+        await browsers.disconnect(old_controller)
+        key(writer_b, ord("b"))
+        await writer_b.drain()
+        await wait_value(runtime, pages["b"], "document.querySelector('input').value", "b")
+        assert await runtime.evaluate(pages["a"], "document.querySelector('input').value") == "a"
+        # The original Thread can release the new Thread's global takeover.
+        await browsers.control("a", states["a"].session_id, human=False)
+        assert writer_b.is_closing() and browsers.released.is_set()
+        for thread, backend in backends.items():
+            assert browsers.state(thread).control == "agent"
+            assert "Message" in (await backend.observe()).text
+    finally:
+        await browsers.close()
+
+
 async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, browser_configuration, request):
     browsers = HostBrowsers(
         root=tmp_path / "browser",

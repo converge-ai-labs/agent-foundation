@@ -14498,6 +14498,7 @@
               "auditing",
               "suspended",
               "verified",
+              "blocked",
               "max_iterations",
               "cancelled",
               "error",

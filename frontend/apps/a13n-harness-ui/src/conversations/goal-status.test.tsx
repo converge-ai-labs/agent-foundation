@@ -13,6 +13,7 @@ it.each([
   ["auditing", "Reviewing"],
   ["suspended", "Needs input"],
   ["verified", "Verified"],
+  ["blocked", "Blocked"],
   ["max_iterations", "Not verified"],
   ["cancelled", "Not verified"],
   ["error", "Not verified"],
@@ -44,9 +45,13 @@ it.each([
     if (status !== "auditing")
       expect(screen.getByText(/A fresh review is required/)).toBeTruthy();
     if (
-      ["max_iterations", "cancelled", "error", "unverified_stop"].includes(
-        status,
-      )
+      [
+        "blocked",
+        "max_iterations",
+        "cancelled",
+        "error",
+        "unverified_stop",
+      ].includes(status)
     ) {
       expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(
         /not verified|before verification|without verification/,
