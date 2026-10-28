@@ -3,13 +3,13 @@ import {
   ArrowElbowDownLeft,
   CaretDown,
   Check,
-  CircleNotch,
   Target,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
 import {
   Button,
+  LogoAnimation,
   Popover,
   PopoverClose,
   PopoverTrigger,
@@ -108,9 +108,8 @@ export function GoalStatus({
     !executing && status !== "suspended" && status !== "verified";
   const phase = phases[status];
   const label = preparing ? "Preparing" : phase.label;
-  const Icon = moving
-    ? CircleNotch
-    : status === "verified"
+  const Icon =
+    status === "verified"
       ? Check
       : incomplete || status === "suspended"
         ? WarningCircle
@@ -129,10 +128,7 @@ export function GoalStatus({
         aria-label={`Inspect Goal: ${label}${status === "checking" && !preparing && iteration > 0 ? ` ${iteration}` : ""}`}
         data-tone={tone}
       >
-        <Icon
-          className={moving ? styles.running : undefined}
-          aria-hidden="true"
-        />
+        {moving ? <LogoAnimation size={16} /> : <Icon aria-hidden="true" />}
         <span className={styles.name}>Goal</span>
         <span className={styles.phase} role="status" aria-live="polite">
           <span aria-hidden="true">· </span>

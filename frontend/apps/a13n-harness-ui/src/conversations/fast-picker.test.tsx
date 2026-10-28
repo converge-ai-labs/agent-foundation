@@ -108,7 +108,7 @@ it("switches exclusively between inherited Ultrafast, Fast and Standard, then re
       .getByRole("button", { name: "Use model speed" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
-  expect(screen.getByText(/Pro \$500/)).toBeTruthy();
+  expect(screen.getByTitle(/Pro \$500/)).toBeTruthy();
   await user.click(fast);
   expect(fast.getAttribute("aria-pressed")).toBe("true");
   expect(ultra.getAttribute("aria-pressed")).toBe("false");
@@ -171,7 +171,7 @@ it("disables an unsupported Ultrafast selection without misrepresenting it as Fa
       .getByRole("button", { name: "Fast mode" })
       .getAttribute("aria-pressed"),
   ).toBe("false");
-  expect(screen.getByText(reason)).toBeTruthy();
+  expect(screen.getByTitle(reason)).toBeTruthy();
   expect(
     screen.getByText("Unavailable selection — use the model setting."),
   ).toBeTruthy();

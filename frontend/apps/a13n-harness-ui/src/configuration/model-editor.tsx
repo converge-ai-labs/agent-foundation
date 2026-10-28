@@ -1,3 +1,4 @@
+import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
@@ -617,7 +618,10 @@ function LoadedModelEditor({
                     label: api
                       ? "Recommendations & public directory"
                       : "Subscription models",
-                    options: [...candidates.values()],
+                    options: [...candidates.values()].map((item) => ({
+                      ...item,
+                      icon: <ModelIcon name={item.value} />,
+                    })),
                   },
                 ]}
               />

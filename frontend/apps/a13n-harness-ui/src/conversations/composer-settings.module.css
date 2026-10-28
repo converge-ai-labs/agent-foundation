@@ -1,5 +1,5 @@
 .popup {
-  width: min(280px, calc(100vw - 24px));
+  width: min(264px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 8px 4px;
+  padding: 4px 8px;
   outline: none;
 }
 .title {
@@ -22,8 +22,8 @@
   font-weight: 500;
 }
 .header > button {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 .body {
   min-width: 0;
@@ -323,6 +323,48 @@
     line-height: 20px;
   }
   .sheet .body {
-    padding: 4px 8px 8px;
+    padding: 4px;
   }
+}
+
+.choice[aria-pressed="true"],
+.levels > button[data-state="on"] {
+  background: transparent;
+  color: var(--a13n-text);
+}
+.choice,
+.levels > button {
+  min-height: var(--harness-menu-row);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.levels {
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.choiceLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.choiceText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+.choiceText > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

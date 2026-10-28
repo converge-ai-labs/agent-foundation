@@ -1,5 +1,9 @@
 import { useContext, useRef, useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Button,
   Checkbox,
@@ -15,6 +19,13 @@ import {
 } from "a13n-ui";
 import {
   Folder,
+  FilePlus,
+  FolderPlus,
+  UploadSimple,
+  Copy,
+  TerminalWindow,
+  PencilSimple,
+  Trash,
   File,
   Link as LinkIcon,
   DotsThree,
@@ -75,6 +86,7 @@ export function Files({
   const listing = useInfiniteQuery({
     queryKey: ["native", "directory", directory],
     initialPageParam: { offset: 0 } as DirectoryCursor,
+    placeholderData: keepPreviousData,
     queryFn: ({ pageParam, signal }) =>
       result(
         client.GET("/api/host/files", {
@@ -145,16 +157,16 @@ export function Files({
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={() => setOperation({ kind: "new-file" })}>
-                  New file
+                  <FilePlus /> New file
                 </MenuItem>
                 <MenuItem
                   onClick={() => setOperation({ kind: "new-directory" })}
                 >
-                  New folder
+                  <FolderPlus /> New folder
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem onClick={() => setOperation({ kind: "upload" })}>
-                  Upload files
+                  <UploadSimple /> Upload files
                 </MenuItem>
               </MenuPopup>
             </Menu>
@@ -172,11 +184,11 @@ export function Files({
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={() => copyPath(directory)}>
-                  Copy folder path
+                  <Copy /> Copy folder path
                 </MenuItem>
                 {openTerminal && (
                   <MenuItem onClick={() => openTerminal(directory)}>
-                    Open terminal here
+                    <TerminalWindow /> Open terminal here
                   </MenuItem>
                 )}
                 {git.feature && (
@@ -213,7 +225,9 @@ export function Files({
             }
           />
           {listing.isFetching && (
-            <small role="status">Reading directory…</small>
+            <small role="status" className={styles.directoryLoading}>
+              Reading directory…
+            </small>
           )}
           {git.feature && (git.discovery.error || git.status.error) && (
             <small>
@@ -227,13 +241,19 @@ export function Files({
               more.
             </small>
           )}
-          {listing.data?.pages[0]?.resolved_path !== directory &&
+          {!listing.isPlaceholderData &&
+            listing.data?.pages[0]?.resolved_path !== directory &&
             listing.data && (
               <small>
                 Resolved directory: {listing.data.pages[0]!.resolved_path}
               </small>
             )}
-          <div className={styles.fileList} aria-label="Directory entries">
+          <div
+            className={styles.fileList}
+            aria-label="Directory entries"
+            aria-busy={listing.isFetching}
+            inert={listing.isPlaceholderData}
+          >
             {entries
               .filter((entry) =>
                 basename(entry.path)
@@ -310,11 +330,11 @@ export function Files({
                             </MenuGroupLabel>
                           )}
                           <MenuItem onClick={() => copyPath(entry.path)}>
-                            Copy path
+                            <Copy /> Copy path
                           </MenuItem>
                           {openTerminal && entry.kind === "directory" && (
                             <MenuItem onClick={() => openTerminal(entry.path)}>
-                              Open terminal here
+                              <TerminalWindow /> Open terminal here
                             </MenuItem>
                           )}
                           <MenuItem
@@ -322,7 +342,7 @@ export function Files({
                               setOperation({ kind: "move", entry })
                             }
                           >
-                            Rename or move
+                            <PencilSimple /> Rename or move
                           </MenuItem>
                           {entry.kind === "file" && (
                             <MenuItem
@@ -330,7 +350,7 @@ export function Files({
                                 setOperation({ kind: "replace", entry })
                               }
                             >
-                              Upload replacement
+                              <UploadSimple /> Upload replacement
                             </MenuItem>
                           )}
                           <MenuSeparator />
@@ -340,7 +360,7 @@ export function Files({
                               setOperation({ kind: "delete", entry })
                             }
                           >
-                            Delete
+                            <Trash /> Delete
                           </MenuItem>
                         </MenuGroup>
                       </MenuPopup>

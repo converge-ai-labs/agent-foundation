@@ -1,5 +1,5 @@
 import { HardDrivesIcon } from "@phosphor-icons/react";
-import { BrandIcon, brands, resolveBrand, Skeleton } from "a13n-ui";
+import { BrandIcon, modelBrand, Skeleton } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -8,29 +8,7 @@ import { InlineLoading } from "../../shared/feedback";
 import { ProviderIcon } from "../../shared/identity";
 import { workspaceModelsQuery, workspaceProvidersQuery } from "./api";
 
-const identities = Object.keys(brands).sort((a, b) => b.length - a.length);
-
-/** Prefer the model family over the gateway hosting it. */
-export function modelBrand(
-  upstream: string,
-  provider?: string,
-): string | undefined {
-  const parts = upstream.trim().toLowerCase().split(/[/.]/).reverse();
-  for (const part of parts) {
-    if (resolveBrand({ identity: part, alias: part })) return part;
-    const family = identities.find(
-      (identity) =>
-        part.startsWith(identity) &&
-        /^[\d._:-]/.test(part.slice(identity.length)),
-    );
-    if (family) return family;
-    if (/^glm[-\d]/.test(part)) return "zhipu";
-    if (/^(doubao[-.]|seed[-\d])/.test(part)) return "doubao";
-    if (/^(gpt[-\d]|o[134](?:[-.]|$))/.test(part)) return "openai";
-    if (/^llama(?:[-\d]|$)/.test(part)) return "meta";
-  }
-  return provider;
-}
+export { modelBrand } from "a13n-ui";
 
 type ProviderIdentity = Pick<Schema["Provider"], "type" | "config">;
 

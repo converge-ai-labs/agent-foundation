@@ -430,8 +430,8 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
   fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
-  const goal = screen.getByRole("switch", { name: "Keep working" });
-  await userEvent.click(screen.getByText("Keep working"));
+  const goal = screen.getByRole("switch", { name: "Goal" });
+  await userEvent.click(screen.getByText("Goal"));
   expect(goal.getAttribute("aria-checked")).toBe("true");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));

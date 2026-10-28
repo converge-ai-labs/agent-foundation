@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
 import { Check } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
@@ -18,16 +17,10 @@ export function ThinkingPicker({
   disabled?: boolean;
   onChange: (value: Selection) => void;
 }) {
-  const descriptionId = useId();
   const control = model?.thinking;
   const options = control?.options ?? [];
   const explicit = options.filter((item) => item.value !== null);
   const inherited = options.find((item) => item.value === null);
-  const sharedDescription =
-    explicit.length > 1 &&
-    explicit.every((item) => item.description === explicit[0]?.description)
-      ? explicit[0]?.description
-      : undefined;
   const selected = options.find((item) => item.value === (value ?? null));
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
@@ -39,19 +32,19 @@ export function ThinkingPicker({
         aria-label="Use default thinking"
         aria-pressed={value == null}
         disabled={disabled || !!inherited?.disabled_reason}
-        title={inherited?.disabled_reason ?? inherited?.description}
+        title={
+          inherited?.disabled_reason ??
+          control?.default_summary ??
+          inherited?.description
+        }
         onClick={() => onChange(null)}
       >
-        <span>
-          Model default
-          <small>{control?.default_summary ?? inherited?.description}</small>
-        </span>
+        <span>Default</span>
         {value == null && <Check aria-hidden />}
       </Button>
       {explicit.length > 0 && (
         <ToggleGroup
           aria-label="Thinking level"
-          aria-describedby={descriptionId}
           className={styles.levels}
           orientation="vertical"
           value={value == null ? [] : [JSON.stringify(value)]}
@@ -74,23 +67,15 @@ export function ThinkingPicker({
               disabled={!!item.disabled_reason}
               title={item.disabled_reason ?? item.description}
             >
-              <span>
-                {item.label}
-                {(item.disabled_reason || !sharedDescription) && (
-                  <small>{item.disabled_reason ?? item.description}</small>
-                )}
-              </span>
+              <span>{item.label}</span>
               {item.value === value && <Check aria-hidden />}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       )}
-      {(unavailable || sharedDescription) && (
-        <p id={descriptionId} className={styles.hint}>
-          {unavailable
-            ? (selected?.disabled_reason ??
-              "Unavailable selection — use default.")
-            : sharedDescription}
+      {unavailable && (
+        <p role="alert" className={styles.hint}>
+          {selected?.disabled_reason ?? "Unavailable selection — use default."}
         </p>
       )}
       {(!control || control.reason) && (

@@ -58,9 +58,9 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
         }
       }}
     >
-      <DialogTrigger className={navigation.homeLink}>
+      <DialogTrigger className={navigation.homeLink} aria-label="Search chats">
         <MagnifyingGlass size={18} aria-hidden="true" />
-        <span>Search chats</span>
+        <span>Search</span>
       </DialogTrigger>
       <DialogPopup
         placement="top"

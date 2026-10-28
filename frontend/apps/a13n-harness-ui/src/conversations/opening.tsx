@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
-import { Button, Spinner } from "a13n-ui";
+import { Button, LogoAnimation } from "a13n-ui";
 import styles from "./opening.module.css";
 
 // Only the first observation gates presentation. Refreshes must not hide the
@@ -42,7 +42,7 @@ export function ConversationOpening({
       {!ready && (
         <div className={styles.loading}>
           <div role="status" className={styles.status}>
-            <Spinner aria-hidden="true" />
+            <LogoAnimation size={20} />
             <span>{label}</span>
           </div>
           {slow && (

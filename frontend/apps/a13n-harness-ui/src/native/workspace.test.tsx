@@ -382,7 +382,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
     }),
   );
   expect(screen.getByText("Patch reviewed.txt")).toBeTruthy();
-  expect(screen.queryByText("Opening path…")).toBeNull();
+  expect(screen.queryByText("Opening…")).toBeNull();
 });
 it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
@@ -563,12 +563,12 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   });
   get.mockImplementationOnce(() => pending);
   fireEvent.click(screen.getByRole("button", { name: "Open diff file" }));
-  await screen.findByText("Opening path…");
+  await screen.findByText("Opening…");
   reject(new Error("The file was deleted"));
   await screen.findByText("The file was deleted");
   expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
   expect(screen.getByLabelText("File explorer")).toBeTruthy();
-  expect(screen.queryByText("Opening path…")).toBeNull();
+  expect(screen.queryByText("Opening…")).toBeNull();
 });
 
 it("Files, Changes and new-terminal context follow Thread roots instead of changed Project roots or remembered folders", async () => {
@@ -732,11 +732,11 @@ it("a failed parent open keeps the actual location and a late child response can
       }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
-  await screen.findByText("Opening path…");
+  await screen.findByText("Opening…");
   fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
   await screen.findByText("Folder /native");
   finish({ data: { kind: "directory" } });
-  await waitFor(() => expect(screen.queryByText("Opening path…")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Opening…")).toBeNull());
   expect(screen.getByText("Folder /native")).toBeTruthy();
 });
 

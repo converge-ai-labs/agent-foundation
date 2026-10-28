@@ -1704,9 +1704,7 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
   await user.click(
     screen.getByRole("button", { name: "Actions for Test project" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Rename project" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   fireEvent.change(
     await screen.findByRole("textbox", { name: "Project name" }),
     { target: { value: "Renamed" } },

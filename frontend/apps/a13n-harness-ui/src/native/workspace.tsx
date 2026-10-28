@@ -1,3 +1,4 @@
+import { ViewLink } from "./view-link";
 import {
   useContext,
   useEffect,
@@ -22,7 +23,6 @@ import {
   CaretRight,
   ArrowsOutSimple,
   ArrowsInSimple,
-  LinkSimple,
   SidebarSimple,
   PencilSimple,
   SlidersHorizontal,
@@ -30,7 +30,7 @@ import {
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import {
   FileBuffers,
   basename,
@@ -148,7 +148,6 @@ export function NativeWorkspace({
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
-  const [paneLink, setPaneLink] = useState("");
   const [pane, setPane] = useState<"files" | "changes" | null>(null);
   const [directory, setDirectory] = useState("");
   const [root, setRoot] = useState("");
@@ -228,7 +227,6 @@ export function NativeWorkspace({
     setFileLine(undefined);
     setTerminalRequest(undefined);
     setView("page");
-    setPaneLink("");
     setTerminalId(saved?.terminalId ?? "");
   }, [projectId, projectRoot, projectLoading]);
   useEffect(() => {
@@ -745,25 +743,17 @@ export function NativeWorkspace({
                   )}
                 </div>
                 <div className={styles.actions}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Share explorer view"
-                    title="Share explorer view"
-                    disabled={!nativeTarget()}
-                    onClick={() => {
+                  <ViewLink
+                    getLink={() => {
                       const target = nativeTarget();
-                      if (target)
-                        setPaneLink(
-                          new URL(
+                      return target
+                        ? new URL(
                             pageLink({ target, root_thread_id: threadId })!,
                             window.location.origin,
-                          ).href,
-                        );
+                          ).href
+                        : undefined;
                     }}
-                  >
-                    <LinkSimple />
-                  </Button>
+                  />
                   {view !== "file" && (
                     <Button
                       variant="ghost"
@@ -863,13 +853,17 @@ export function NativeWorkspace({
                   )}
                 </nav>
               )}
-              {(error || projects.error || thread.error || opening) && (
+              {(error || projects.error || thread.error) && (
                 <div className={styles.paneFeedback}>
                   <ErrorNotice
                     error={error || projects.error || thread.error}
                   />
-                  {opening && <p role="status">Opening path…</p>}
                 </div>
+              )}
+              {opening && (
+                <span role="status" className={styles.directoryLoading}>
+                  Opening…
+                </span>
               )}
               {!projectLoading &&
                 directory &&
@@ -998,13 +992,6 @@ export function NativeWorkspace({
                     />
                   )}
                 </div>
-              )}
-              {paneLink && (
-                <TextField
-                  label="Same-instance view link (access key not included)"
-                  value={paneLink}
-                  onChange={() => {}}
-                />
               )}
 
               {projectLoading ? (

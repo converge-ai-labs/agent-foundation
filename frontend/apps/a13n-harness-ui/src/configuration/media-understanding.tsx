@@ -1,3 +1,4 @@
+import { ModelIcon } from "../shell/model-identity";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { ChoiceField } from "a13n-ui";
 import { useSelectors } from "../transport/context";
@@ -46,7 +47,11 @@ export function MediaUnderstandingFields({
               },
               ...(selectors.data?.models ?? [])
                 .filter((model) => model.media_capabilities?.includes(kind))
-                .map((model) => ({ value: model.model_id, label: model.name })),
+                .map((model) => ({
+                  value: model.model_id,
+                  label: model.name,
+                  icon: <ModelIcon model={model} />,
+                })),
             ]}
           />
         </SettingsRow>

@@ -327,9 +327,10 @@
 .resourceList {
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: var(--a13n-surface);
+  padding: 4px;
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   overflow: hidden;
 }
 .resourceList:empty {
@@ -339,7 +340,9 @@
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 16px 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: 4px;
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
   font-size: 14px;
@@ -348,9 +351,6 @@
 }
 .resourceRow:last-child {
   border-bottom: none;
-}
-a.resourceRow:hover {
-  background: var(--a13n-hover);
 }
 .resourceRow > :first-child {
   flex: 1;
@@ -362,6 +362,9 @@ a.resourceRow:hover {
   margin-top: 4px;
   font-size: 14px;
   line-height: 20px;
+}
+.resourceRow small:empty {
+  display: none;
 }
 .resourceRow strong {
   font-weight: 500;
@@ -738,8 +741,8 @@ a.resourceRow:hover {
   }
   .resourceRow {
     flex-wrap: wrap;
-    padding: 16px 0;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 4px 8px;
   }
   .resourceRow > :first-child {
     flex-basis: 100%;

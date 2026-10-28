@@ -785,3 +785,35 @@
   padding: 8px 12px;
   flex-shrink: 0;
 }
+
+.directoryLoading {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  padding: 4px 8px;
+  background: var(--a13n-bg);
+  border-radius: 6px;
+  z-index: 1;
+}
+
+.viewLink {
+  width: min(360px, calc(100vw - 24px));
+}
+.viewLink p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--a13n-secondary);
+  margin: 8px 0 16px;
+}
+.linkField {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.linkField > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.linkField > button {
+  flex-shrink: 0;
+}

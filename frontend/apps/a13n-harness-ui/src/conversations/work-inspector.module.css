@@ -37,48 +37,83 @@
   flex-shrink: 0;
 }
 .popup {
-  width: min(480px, calc(100vw - 24px));
-  max-height: min(640px, calc(100dvh - 40px));
+  width: min(800px, calc(100vw - 32px));
+  max-width: 800px;
+  padding: 0;
+  gap: 0;
   overflow: hidden;
   font-size: 14px;
   line-height: 1.6;
 }
-.popup > [data-slot="popover-viewport"] {
-  max-height: min(640px, calc(100dvh - 40px), var(--available-height));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.activityLayout {
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+  min-height: min(440px, 60dvh);
 }
 .heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 4px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
 .heading h2 {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 500;
 }
 .tabs {
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 4px 0 8px;
-}
-.tabs::-webkit-scrollbar {
-  display: none;
+  padding: 16px 12px;
+  background: var(--a13n-surface);
 }
 .tabs button {
-  flex-shrink: 0;
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 36px;
+  gap: 8px;
+}
+.tabs .count {
+  margin-left: auto;
 }
 .tabs button[aria-pressed="true"] {
   color: var(--a13n-text);
-  background: var(--a13n-surface);
+  background: var(--a13n-selected);
+  font-weight: 500;
 }
 .inspectorBody {
-  min-height: 48px;
-  padding: 4px 4px;
+  min-height: 0;
+  max-height: min(560px, 65dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+@media (max-width: 600px) {
+  .activityLayout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-content: start;
+    padding: 8px;
+  }
+  .tabs button {
+    min-height: 44px;
+    padding: 8px;
+    font-size: 14px;
+    gap: 4px;
+  }
+  .tabs button svg {
+    width: 14px;
+  }
+  .inspectorBody {
+    padding: 16px;
+    max-height: 50dvh;
+  }
 }
 .caption {
   overflow-wrap: anywhere;
@@ -246,4 +281,14 @@
   .strip {
     width: 100%;
   }
+}
+
+.heading h2 {
+  flex: 1;
+}
+
+.inspectorBody:has(> p:only-child) {
+  display: grid;
+  place-content: center;
+  color: var(--a13n-secondary);
 }

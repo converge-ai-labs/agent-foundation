@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -359,7 +360,11 @@ export function UsagePage() {
                             onClick={() => narrow(group)}
                             title={`Filter to ${group.label}`}
                           >
-                            {group.label}
+                            {filters.group_by === "model" ? (
+                              <ModelIdentity name={group.label} />
+                            ) : (
+                              group.label
+                            )}
                           </button>
                           {group.thread_id && (
                             <Link

@@ -14,6 +14,9 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
   Popover,
   PopoverPopup,
   PopoverTitle,
@@ -21,6 +24,7 @@ import {
   type SearchPicker,
 } from "a13n-ui";
 import {
+  Question,
   CaretLeft,
   CaretRight,
   Check,
@@ -82,6 +86,12 @@ export function ComposerSettings({
   };
   const Title = mobile ? DialogTitle : PopoverTitle;
   const showHeader = mobile || page !== "root";
+  const help =
+    page === "thinking"
+      ? "Higher thinking levels spend more time and tokens on a response. Available levels depend on the selected model. Default uses the model’s saved setting."
+      : page === "speed"
+        ? "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates."
+        : undefined;
   const content = (
     <SettingsContext value={{ page, navigate }}>
       <div
@@ -103,7 +113,24 @@ export function ComposerSettings({
         <Title className={styles.title}>
           {page === "root" ? rootTitle : titles[page]}
         </Title>
-        {showHeader && (
+        {help && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  tooltip={false}
+                  aria-label={`About ${titles[page].toLowerCase()}`}
+                />
+              }
+            >
+              <Question />
+            </TooltipTrigger>
+            <TooltipPopup>{help}</TooltipPopup>
+          </Tooltip>
+        )}
+        {mobile && (
           <Button
             variant="ghost"
             size="icon-sm"
@@ -168,7 +195,7 @@ export function SettingsRow({
   onClick,
 }: {
   label: string;
-  value?: string;
+  value?: ReactNode;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -224,13 +251,19 @@ export function SettingsChoices({
           variant="ghost"
           className={styles.choice}
           disabled={disabled || item.disabled}
+          title={item.description}
           aria-pressed={value === item.value}
           onClick={() => onChange(item.value)}
         >
-          <span>
-            {item.label}
-            {item.badge && <small>{item.badge}</small>}
-            {item.description && <small>{item.description}</small>}
+          <span className={styles.choiceLabel}>
+            {item.icon}
+            <span className={styles.choiceText}>
+              <span>
+                {item.label}
+                {item.badge && <small>{item.badge}</small>}
+              </span>
+              {item.description && <small>{item.description}</small>}
+            </span>
           </span>
           {value === item.value && <Check aria-hidden />}
         </Button>

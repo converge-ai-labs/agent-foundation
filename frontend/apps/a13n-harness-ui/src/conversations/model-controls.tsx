@@ -82,7 +82,7 @@ export function ModelControlPanel({
         label="Thinking"
         value={
           controls.thinking == null
-            ? "Model default"
+            ? "Default"
             : (model?.thinking?.options.find(
                 (item) => item.value === controls.thinking,
               )?.label ?? "Unavailable selection")
@@ -109,7 +109,7 @@ export function ModelControlPanel({
         label="Speed"
         value={
           controls.fast == null
-            ? "Model default"
+            ? "Default"
             : speedLabel(
                 controls.fast === "ultrafast"
                   ? "ultrafast"

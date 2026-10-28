@@ -1,19 +1,20 @@
 .list {
-  border-block: 1px solid var(--a13n-border-soft);
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
 }
 .project {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) 14px;
   align-items: center;
   gap: 12px;
-  padding: 16px 0;
+  padding: 8px 12px;
+  min-height: 48px;
+  border-radius: 4px;
   text-decoration: none;
 }
 .project + .project {
   border-top: 1px solid var(--a13n-border-soft);
-}
-.project:hover {
-  background: var(--a13n-hover);
 }
 .project:focus-visible {
   outline: 2px solid var(--ring);

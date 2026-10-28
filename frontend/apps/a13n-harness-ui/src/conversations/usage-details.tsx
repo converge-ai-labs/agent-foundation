@@ -1,3 +1,5 @@
+import { HelpTip } from "../shell/help-tip";
+import { ModelIdentity } from "../shell/model-identity";
 import { Fragment, useState } from "react";
 import { Button } from "a13n-ui";
 import { ArrowRight } from "@phosphor-icons/react";
@@ -77,10 +79,13 @@ function CostValue({ totals }: { totals: Totals }) {
     <>
       <strong>{modelCost(totals)}</strong>
       {totals.unknown_model_costs > 0 && (
-        <small className={styles.scope}>
-          {totals.unknown_model_costs.toLocaleString()} unknown-cost{" "}
-          {totals.unknown_model_costs === 1 ? "response" : "responses"}
-        </small>
+        <HelpTip label="About estimated cost">
+          {totals.unknown_model_costs.toLocaleString()}{" "}
+          {totals.unknown_model_costs === 1 ? "response has" : "responses have"}{" "}
+          no recorded price and{" "}
+          {totals.unknown_model_costs === 1 ? "is" : "are"} excluded from this
+          estimate.
+        </HelpTip>
       )}
     </>
   );
@@ -229,7 +234,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                     <details className={styles.modelDetails}>
                       <summary className={styles.modelHeader}>
                         <span className={styles.modelName} title={name}>
-                          {name}
+                          <ModelIdentity name={name} />
                         </span>
                         <span className={styles.modelCost}>
                           {modelCost(value)}

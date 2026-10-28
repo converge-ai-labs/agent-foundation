@@ -43,7 +43,6 @@ export function ReasoningModePicker({
           {
             value: "default",
             label: "Default",
-            description: reasoningModeLabel(control?.state),
           },
           {
             value: "standard",

@@ -116,8 +116,9 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--a13n-surface);
   border: 0;
   overflow: hidden;
 }
@@ -129,15 +130,13 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  padding-block: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
 }
 .modelLink::after {
   content: "";
   position: absolute;
   inset: 0;
-}
-.modelRow:has(.modelLink):hover {
-  background: var(--a13n-hover);
 }
 .modelRow > button {
   position: relative;

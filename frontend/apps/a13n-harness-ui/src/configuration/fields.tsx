@@ -1,3 +1,4 @@
+import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
@@ -91,10 +92,15 @@ export function ResourceFields({
     selectors.data?.models?.map((model) => ({
       value: model.model_id,
       label: model.name,
+      icon: <ModelIcon model={model} />,
     })) ?? [];
   const codexModels = (selectors.data?.models ?? [])
     .filter((model) => model.route.startsWith("openai-codex:"))
-    .map((model) => ({ value: model.model_id, label: model.name }));
+    .map((model) => ({
+      value: model.model_id,
+      label: model.name,
+      icon: <ModelIcon model={model} />,
+    }));
   const agentOptions =
     selectors.data?.agents.map((agent) => ({
       value: agent.agent_id,

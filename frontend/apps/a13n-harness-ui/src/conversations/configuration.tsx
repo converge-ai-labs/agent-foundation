@@ -1,3 +1,4 @@
+import { ModelIcon, ModelIdentity } from "../shell/model-identity";
 import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -54,11 +55,20 @@ function ConfigurationSummary({
       <div>
         <dt>Default model</dt>
         <dd>
-          {catalog?.models?.find(
-            (model) => model.model_id === configuration.default_model_id,
-          )?.name ??
-            configuration.default_model_id ??
-            "Follow Agent model"}
+          {configuration.default_model_id ? (
+            <ModelIdentity
+              model={catalog?.models?.find(
+                (model) => model.model_id === configuration.default_model_id,
+              )}
+              name={
+                catalog?.models?.find(
+                  (model) => model.model_id === configuration.default_model_id,
+                )?.name ?? configuration.default_model_id
+              }
+            />
+          ) : (
+            "Follow agent model"
+          )}
         </dd>
       </div>
       <div className={styles.detailLongRow}>
@@ -471,6 +481,7 @@ export function ThreadSelections({
             ...(selectors.data?.models ?? []).map((model) => ({
               value: model.model_id,
               label: model.name,
+              icon: <ModelIcon model={model} />,
             })),
           ]}
         />

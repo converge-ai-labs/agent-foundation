@@ -58,11 +58,11 @@ export function TaskOptions({
       <div className={styles.optionList}>
         <label
           className={styles.optionRow}
-          aria-label="Keep working"
+          aria-label="Goal"
           title="Keep working until the goal is done or the follow-up limit is reached."
         >
           <Target aria-hidden />
-          <span>Keep working</span>
+          <span>Goal</span>
           {goal}
         </label>
         {coordinator && (

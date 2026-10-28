@@ -13,6 +13,9 @@ import {
 } from "a13n-ui";
 import {
   Plus,
+  ChartBar,
+  ShareNetwork,
+  ArrowCounterClockwise,
   Folder,
   CaretRight,
   DotsThree,
@@ -93,9 +96,8 @@ export function ConversationNavigation() {
     <div className={styles.navigation}>
       <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
         <NavLink to="/" end className={styles.newConversationLink}>
-          <PencilSimpleIcon size={18} aria-hidden="true" />
-          <span>New chat</span>
-          <Plus size={14} />
+          <Plus size={18} aria-hidden="true" />
+          <span>New</span>
         </NavLink>
         <ChatSearch onOpen={order.cancel} />
         <DraftNavigation />
@@ -506,7 +508,8 @@ function ProjectGroup({
                     )
                   }
                 >
-                  View usage
+                  <ChartBar />
+                  Usage
                 </MenuItem>
                 {unreadCount > 0 && (
                   <MenuItem
@@ -521,11 +524,12 @@ function ProjectGroup({
                 {group.projectId && (
                   <>
                     <MenuItem onClick={() => setSharing(true)}>
-                      Share Project
+                      <ShareNetwork />
+                      Share
                     </MenuItem>
                     <MenuItem onClick={rename}>
                       <PencilSimpleIcon />
-                      Rename project
+                      Rename
                     </MenuItem>
                     <MenuItem
                       onClick={() =>
@@ -535,14 +539,14 @@ function ProjectGroup({
                       }
                     >
                       <Gear />
-                      Project settings
+                      Settings
                     </MenuItem>
                     <MenuItem
                       disabled={order.ids.indexOf(group.id) === 0}
                       onClick={() => order.moveBy(group.id, -1)}
                     >
                       <ArrowUp />
-                      Move project up
+                      Move up
                     </MenuItem>
                     <MenuItem
                       disabled={
@@ -551,9 +555,12 @@ function ProjectGroup({
                       onClick={() => order.moveBy(group.id, 1)}
                     >
                       <ArrowDown />
-                      Move project down
+                      Move down
                     </MenuItem>
-                    <MenuItem onClick={order.reset}>Reset order</MenuItem>
+                    <MenuItem onClick={order.reset}>
+                      <ArrowCounterClockwise />
+                      Reset order
+                    </MenuItem>
                   </>
                 )}
               </MenuPopup>

@@ -114,16 +114,3 @@
   color: var(--a13n-secondary);
   font-size: 14px;
 }
-.running {
-  animation: spin 1.2s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .running {
-    animation: none;
-  }
-}

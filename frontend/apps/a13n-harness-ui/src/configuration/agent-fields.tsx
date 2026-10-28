@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import {
   SettingsRow,
@@ -235,9 +236,28 @@ export function AgentFields({
             key={index}
             label={item.agent ? agentName(item.agent) : item.markdown!}
             description={
-              item.agent
-                ? `Agent · ${selectors.data?.models?.find((model) => model.model_id === selectors.data?.agents.find((agent) => agent.agent_id === item.agent)?.model_id)?.name ?? "No model selected"}`
-                : "Markdown · inherits this Agent's model"
+              item.agent ? (
+                <ModelIdentity
+                  model={selectors.data?.models?.find(
+                    (model) =>
+                      model.model_id ===
+                      selectors.data?.agents.find(
+                        (agent) => agent.agent_id === item.agent,
+                      )?.model_id,
+                  )}
+                  name={
+                    selectors.data?.models?.find(
+                      (model) =>
+                        model.model_id ===
+                        selectors.data?.agents.find(
+                          (agent) => agent.agent_id === item.agent,
+                        )?.model_id,
+                    )?.name ?? "No model selected"
+                  }
+                />
+              ) : (
+                "Markdown · inherits this Agent's model"
+              )
             }
           >
             <Button

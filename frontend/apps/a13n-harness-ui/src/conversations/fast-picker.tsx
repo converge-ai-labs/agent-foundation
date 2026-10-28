@@ -1,8 +1,7 @@
-import { useId } from "react";
+import { speedLabel } from "./speed-label";
 import { Button } from "a13n-ui";
 import { Check } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
-import { speedLabel } from "./speed-label";
 import styles from "./composer-settings.module.css";
 
 export function FastPicker({
@@ -16,7 +15,6 @@ export function FastPicker({
   disabled?: boolean;
   onChange: (value: Schema<"SubmitRequest">["fast"]) => void;
 }) {
-  const descriptionId = useId();
   const control = model?.fast;
   const active = value === true;
   const ultraActive = value === "ultrafast";
@@ -32,14 +30,12 @@ export function FastPicker({
         variant="ghost"
         className={styles.choice}
         aria-label="Use model speed"
+        title={speedLabel(control?.state)}
         aria-pressed={value == null}
         disabled={disabled}
         onClick={() => onChange(null)}
       >
-        <span>
-          Model default
-          <small>Model setting: {speedLabel(control?.state)}</small>
-        </span>
+        <span>Default</span>
         {value == null && <Check aria-hidden />}
       </Button>
       <Button
@@ -57,7 +53,10 @@ export function FastPicker({
         variant="ghost"
         className={styles.choice}
         aria-label="Fast mode"
-        aria-describedby={descriptionId}
+        title={
+          control?.reason ??
+          "Faster responses may cost more and depend on provider capacity."
+        }
         aria-pressed={active}
         disabled={disabled || !control?.supported}
         onClick={() => onChange(true)}
@@ -70,9 +69,11 @@ export function FastPicker({
           variant="ghost"
           className={styles.choice}
           aria-label="Ultrafast mode"
-          aria-describedby={descriptionId}
           aria-pressed={ultraActive}
-          title={control?.ultrafast_reason ?? undefined}
+          title={
+            control?.ultrafast_reason ??
+            "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply."
+          }
           disabled={disabled || !control?.ultrafast_supported}
           onClick={() => onChange("ultrafast")}
         >
@@ -80,16 +81,9 @@ export function FastPicker({
           {ultraActive && <Check aria-hidden />}
         </Button>
       )}
-      <p id={descriptionId} className={styles.hint}>
-        {control?.reason ??
-          (!control?.supported
-            ? "Speed controls are unavailable."
-            : "May use more credits or cost more. Speed isn't guaranteed.")}
-      </p>
-      {showUltrafast && (
+      {!control?.supported && (
         <p className={styles.hint}>
-          {control?.ultrafast_reason ??
-            "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply. OpenAI checks account access."}
+          {control?.reason ?? "Speed controls are unavailable."}
         </p>
       )}
       {value != null && unavailable && (

@@ -2366,9 +2366,9 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(toggle);
-  if (!screen.queryByRole("switch", { name: "Keep working" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
-  fireEvent.click(screen.getByRole("switch", { name: "Keep working" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   expect(writes).toHaveLength(0);
   expect(screen.queryByRole("dialog", { name: /coordinator/i })).toBeNull();
   const restored = new NewDraftStore();
@@ -2436,9 +2436,9 @@ it("restores worker assignment and removes only ownership without losing the aut
     (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  if (!screen.queryByRole("switch", { name: "Keep working" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
-  fireEvent.click(screen.getByRole("switch", { name: "Keep working" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   const composer = drafts.get(id)!;
   act(() => {
     composer.modelId = "model-two";
@@ -2473,9 +2473,9 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   mount(newConversationPath("project-one", ownerId));
   await fill();
   await screen.findByText("Managed by · Project manager");
-  if (!screen.queryByRole("switch", { name: "Keep working" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
-  fireEvent.click(screen.getByRole("switch", { name: "Keep working" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Chat busy");
   expect(await writes[0].clone().json()).toEqual({

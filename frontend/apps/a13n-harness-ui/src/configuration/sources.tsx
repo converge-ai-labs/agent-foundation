@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -256,24 +257,41 @@ export function SourcesPage({
                   {kinds ? displayName(source) : source.relative_path}
                 </strong>
                 <small>
-                  {kinds?.length === 1 && kinds[0] === "agent"
-                    ? source.resource_ids
-                        .map((id) => {
-                          const model = selectors.data?.agents.find(
-                            (agent) => agent.agent_id === id,
-                          )?.model_id;
-                          return model
-                            ? (names.get(model) ?? model)
-                            : "No model selected";
-                        })
-                        .join(", ")
-                    : kinds
-                      ? source.resource_ids.join(", ") === displayName(source)
-                        ? ""
-                        : source.resource_ids.join(", ")
-                      : displayName(source) === source.relative_path
-                        ? ""
-                        : displayName(source)}
+                  {kinds?.length === 1 && kinds[0] === "agent" ? (
+                    source.resource_ids.map((id) => {
+                      const model = selectors.data?.agents.find(
+                        (agent) => agent.agent_id === id,
+                      )?.model_id;
+                      return model ? (
+                        <ModelIdentity
+                          key={id}
+                          model={selectors.data?.models?.find(
+                            (item) => item.model_id === model,
+                          )}
+                          name={names.get(model) ?? model}
+                        />
+                      ) : (
+                        "No model selected"
+                      );
+                    })
+                  ) : kinds ? (
+                    source.resource_ids.join(", ") === displayName(source) ? (
+                      ""
+                    ) : (
+                      source.resource_ids.join(", ")
+                    )
+                  ) : displayName(source) === source.relative_path ? (
+                    ""
+                  ) : source.resource_kind === "model" ? (
+                    <ModelIdentity
+                      model={selectors.data?.models?.find((model) =>
+                        source.resource_ids.includes(model.model_id),
+                      )}
+                      name={displayName(source)}
+                    />
+                  ) : (
+                    displayName(source)
+                  )}
                 </small>
               </div>
               {source.resource_kind === "agent" &&

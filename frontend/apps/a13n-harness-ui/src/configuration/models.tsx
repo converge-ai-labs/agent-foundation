@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { useContext, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
@@ -166,10 +167,14 @@ export function ModelsPage() {
                         className={management.modelLink}
                         to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
                       >
-                        <strong>{model.name}</strong>
+                        <strong>
+                          <ModelIdentity model={model} />
+                        </strong>
                       </Link>
                     ) : (
-                      <strong>{model.name}</strong>
+                      <strong>
+                        <ModelIdentity model={model} />
+                      </strong>
                     )}
                     <small>{model.route}</small>
                     {mediaKinds.some(

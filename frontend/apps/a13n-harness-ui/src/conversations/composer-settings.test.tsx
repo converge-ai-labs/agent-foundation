@@ -280,9 +280,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     ).disabled,
   ).toBe(true);
   expect(
-    screen
-      .getByRole("switch", { name: "Keep working" })
-      .getAttribute("aria-disabled"),
+    screen.getByRole("switch", { name: "Goal" }).getAttribute("aria-disabled"),
   ).toBe("true");
 });
 

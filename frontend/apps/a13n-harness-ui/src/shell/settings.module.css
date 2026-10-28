@@ -90,7 +90,8 @@
   border-color: var(--ring);
 }
 .row button[data-slot="combobox-trigger"] {
-  width: 220px;
+  width: auto;
+  max-width: 260px;
 }
 .textInput {
   width: 260px;
@@ -197,4 +198,15 @@
   background: transparent;
   border: 0;
   border-radius: 0;
+}
+
+/* A selected identity stays together even when the field reserves a wide column. */
+.row button[role="combobox"] > span:first-child {
+  width: auto;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+.row button[role="combobox"] > span:first-child > span {
+  width: auto;
+  flex: 0 1 auto;
 }

@@ -884,7 +884,7 @@ export function Composer({
       }}
     >
       <Target aria-hidden weight={draft.mode === "goal" ? "fill" : "regular"} />
-      Keep working
+      Goal
     </Button>
   );
   const coordinatorDisabled =
@@ -1118,7 +1118,7 @@ export function Composer({
                 coordinatorEnabled={draft.coordinator}
                 goal={
                   <Switch
-                    aria-label="Keep working"
+                    aria-label="Goal"
                     title={goalToggle.props.title}
                     checked={draft.mode === "goal"}
                     disabled={

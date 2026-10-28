@@ -280,13 +280,14 @@ export function ThreadRow({
             )}
             {(
               [
-                ["rename", "Rename chat", PencilSimple],
-                ["share", "Share chat", ShareNetwork],
-                ["details", "Chat details", SlidersHorizontal],
+                ["rename", "Rename chat", "Rename", PencilSimple],
+                ["share", "Share chat", "Share", ShareNetwork],
+                ["details", "Chat details", "Details", SlidersHorizontal],
               ] as const
-            ).map(([action, label, Icon]) => (
+            ).map(([action, label, caption, Icon]) => (
               <MenuItem
                 key={action}
+                aria-label={label}
                 onClick={() =>
                   navigate(
                     `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
@@ -294,7 +295,7 @@ export function ThreadRow({
                 }
               >
                 <Icon />
-                {label}
+                {caption}
               </MenuItem>
             ))}
             {row.thread.role === "ordinary" &&

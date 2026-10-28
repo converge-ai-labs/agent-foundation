@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
@@ -192,7 +193,9 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       aria-label={`Agent: ${agent?.name ?? "Default agent"}. Model: ${modelName}`}
       title={`${agent?.name ?? "Default agent"} · ${modelName}`}
     >
-      <ComposerSettings label={modelName}>
+      <ComposerSettings
+        label={<ModelIdentity model={model} name={modelName} />}
+      >
         <AgentModelChoices {...props} />
       </ComposerSettings>
     </div>
@@ -293,8 +296,13 @@ function AgentModelChoices({
           <SettingsRow
             label="Model"
             value={
-              model?.name ??
-              `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+              <ModelIdentity
+                model={model}
+                name={
+                  model?.name ??
+                  `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+                }
+              />
             }
             disabled={disabled || !catalog}
             onClick={() => settings.navigate("model")}

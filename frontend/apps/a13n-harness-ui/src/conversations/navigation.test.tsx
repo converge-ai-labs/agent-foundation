@@ -746,7 +746,7 @@ it("preserves status labels, title tooltips and independent action menus from th
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Actions for One" }));
   expect(
-    await screen.findByRole("menuitem", { name: "Project settings" }),
+    await screen.findByRole("menuitem", { name: "Settings" }),
   ).toBeTruthy();
   await user.keyboard("{Escape}");
   expect(
@@ -901,9 +901,7 @@ it("opens project rename directly from the secondary menu without expanding or n
   await user.click(
     await screen.findByRole("button", { name: "Actions for One" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Rename project" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   await screen.findByRole("dialog", { name: "Rename project" });
   expect(
     screen

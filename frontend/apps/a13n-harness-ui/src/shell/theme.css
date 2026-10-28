@@ -7,7 +7,7 @@
   --harness-reading-width: 720px;
   --harness-section-gap: 32px;
   --harness-field-gap: 16px;
-  --harness-group-inset: 12px;
+  --harness-group-inset: 16px;
   --harness-prose-size: 16px;
   --harness-prose-leading: 1.6;
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
@@ -36,9 +36,11 @@
   --harness-menu-row: 32px;
   --harness-control-height: 32px;
   --elevation-overlay:
-    0 0 0 1px rgb(0 0 0 / 8%), 0 6px 20px -6px rgb(0 0 0 / 18%);
+    0 0 0 1px rgb(0 0 0 / 5%), 0 4px 8px -4px rgb(0 0 0 / 12%),
+    0 16px 40px -8px rgb(0 0 0 / 20%);
   --elevation-floating:
-    0 0 0 1px rgb(0 0 0 / 8%), 0 12px 40px -12px rgb(0 0 0 / 22%);
+    0 0 0 1px rgb(0 0 0 / 5%), 0 8px 24px -8px rgb(0 0 0 / 16%),
+    0 24px 64px -12px rgb(0 0 0 / 24%);
 }
 
 :root.dark {
@@ -70,7 +72,8 @@
 [data-slot="select-popup"],
 [data-slot="combobox-popup"] {
   max-width: calc(100vw - 24px);
-  border-radius: 8px;
+  border-radius: 12px;
+  box-shadow: var(--elevation-overlay);
 }
 
 /* A compact setting value is an anchor, not the reading width of its menu. */

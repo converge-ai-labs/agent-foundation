@@ -35,7 +35,7 @@ button.metric {
   color: var(--warning-foreground);
 }
 .popup {
-  width: min(344px, calc(100vw - 24px));
+  width: min(360px, calc(100vw - 24px));
   font-size: 14px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
@@ -361,4 +361,28 @@ button.metric {
   .popupHeader button {
     min-width: 44px;
   }
+}
+
+.usageOverview dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.scopeSelector {
+  background: transparent;
+  padding: 0;
+  gap: 8px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  border-radius: 0;
+}
+.scopeSelector button {
+  border-radius: 0;
+  padding: 8px 4px;
+  color: var(--a13n-secondary);
+}
+.scopeSelector button[aria-pressed="true"],
+:global(.dark) .scopeSelector button[aria-pressed="true"] {
+  background: transparent;
+  box-shadow: inset 0 -2px var(--a13n-text);
+  color: var(--a13n-text);
 }
