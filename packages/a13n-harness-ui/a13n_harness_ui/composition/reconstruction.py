@@ -62,6 +62,7 @@ from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnectio
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
 from .auxiliary import capability_configuration
@@ -350,7 +351,7 @@ class AgentReconstructor:
                 usage_limits=UsageLimits(request_limit=12),
             ),
             output_type=str,
-            capabilities=(*root_capabilities, memory),
+            capabilities=(*root_capabilities, memory, CurrentAgentContextCapability()),
         )
         executable = HarnessBuilder(
             configured_plugins_enabled=False,
@@ -387,7 +388,7 @@ class AgentReconstructor:
 
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
-        capabilities: list[AbstractCapability[Any]] = []
+        capabilities: list[AbstractCapability[Any]] = [CurrentAgentContextCapability()]
         local_sources: dict[str, AbstractCapability[Any]] = {}
         for recipe, item in zip(node.capabilities, selected, strict=True):
             capability = item.capability

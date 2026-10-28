@@ -27,6 +27,7 @@ from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import LOCAL_ENVD_ADAPTER_KEY, LOCAL_ENVD_PROVIDER_KEY, HarnessUiExtensionCatalog
+from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ObjectKind, open_local_store
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -523,6 +524,7 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
         leaves = []
         executable._agent.root_capability.apply(leaves.append)
         assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
+        assert sum(isinstance(capability, CurrentAgentContextCapability) for capability in leaves) == 1
     # Builder defaults are execution behavior, not authored capture selections.
     assert "a13n.model.self-healing" not in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.definition_id == "a13n-harness-ui:agent:agent-assistant"
