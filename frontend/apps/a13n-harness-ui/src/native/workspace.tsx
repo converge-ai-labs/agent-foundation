@@ -163,8 +163,11 @@ export function NativeWorkspace({
   const narrow = useMediaQuery("(max-width: 999px)");
   const [narrowSidebar, setNarrowSidebar] = useState(false);
   const singleView =
-    !sidebarCollapsed && (tabLayout || (narrow && !narrowSidebar));
-  const supportingExpanded = !sidebarCollapsed && (!singleView || nativeActive);
+    hasSupportingViews &&
+    !sidebarCollapsed &&
+    (tabLayout || (narrow && !narrowSidebar));
+  const supportingExpanded =
+    hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);
   const layoutTransition = useRef<ViewTransition | null>(null);
   const layoutRevision = useRef(0);
   const animateLayout = (
@@ -314,7 +317,7 @@ export function NativeWorkspace({
     >(),
   );
   const openingRequest = useRef<AbortController | null>(null);
-  const appliedProject = useRef<string | null>(null);
+  const [appliedProject, setAppliedProject] = useState<string | null>(null);
   const fileRoot =
     localRoots.includes(root) && withinRoot(directory, root)
       ? root
@@ -343,9 +346,9 @@ export function NativeWorkspace({
   useEffect(() => {
     if (projectLoading) return;
     const context = `${projectId ?? ""}:${projectRoot}`;
-    if (appliedProject.current === context) return;
-    if (appliedProject.current) {
-      projectViews.current.set(appliedProject.current, {
+    if (appliedProject === context) return;
+    if (appliedProject) {
+      projectViews.current.set(appliedProject, {
         root,
         directory,
         path,
@@ -356,7 +359,7 @@ export function NativeWorkspace({
         projectViews.current.delete(projectViews.current.keys().next().value!);
     }
     const saved = projectViews.current.get(context);
-    appliedProject.current = context;
+    setAppliedProject(context);
     openingRequest.current?.abort();
     setOpening(false);
     setError(null);
@@ -524,7 +527,13 @@ export function NativeWorkspace({
     }
   };
   useEffect(() => {
-    if (!isWorkspace || projectLoading) return;
+    // Project restoration must commit before a link captures its root and active tab.
+    if (
+      !isWorkspace ||
+      projectLoading ||
+      appliedProject !== `${projectId ?? ""}:${projectRoot}`
+    )
+      return;
     const link = nativeLink(location.search);
     if (link.pane && link.path && status.data?.features?.host_files) {
       setSidebarCollapsed(false);
@@ -557,6 +566,7 @@ export function NativeWorkspace({
   }, [
     isWorkspace,
     projectLoading,
+    appliedProject,
     projectId,
     projectRoot,
     location.pathname,
@@ -983,7 +993,7 @@ export function NativeWorkspace({
             setResizing(false);
           }}
         >
-          {isWorkspace && (
+          {isWorkspace && hasSupportingViews && (
             <nav
               className={styles.workspaceTabs}
               aria-label="Workbench views"
@@ -1114,43 +1124,35 @@ export function NativeWorkspace({
               </OpenHostFile>
             </div>
           </div>
-          {isWorkspace &&
-            !pane &&
-            !sidebarCollapsed &&
-            (!singleView || nativeActive) && (
-              <section
-                className={`${styles.pane} ${styles.newTabPage}`}
-                id={`${workspaceId}-native`}
-                role="tabpanel"
-                aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              >
-                <div className={styles.newTabChoices}>
-                  <h2>Open a new tab</h2>
-                  <p>Choose what you want to work with.</p>
-                  {viewChoices.map(
-                    ({ key, label, description, icon: Icon }) => (
-                      <Button
-                        key={key}
-                        variant="ghost"
-                        aria-label={label}
-                        disabled={projectLoading}
-                        onClick={() => show(key)}
-                      >
-                        <Icon />
-                        <span>
-                          <strong>{label}</strong>
-                          <small>{description}</small>
-                        </span>
-                        <CaretRight />
-                      </Button>
-                    ),
-                  )}
-                  {!viewChoices.length && (
-                    <p>No supporting views are enabled on this server.</p>
-                  )}
-                </div>
-              </section>
-            )}
+          {isWorkspace && !pane && supportingExpanded && (
+            <section
+              className={`${styles.pane} ${styles.newTabPage}`}
+              id={`${workspaceId}-native`}
+              role="tabpanel"
+              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+            >
+              <div className={styles.newTabChoices}>
+                <h2>Open a new tab</h2>
+                <p>Choose what you want to work with.</p>
+                {viewChoices.map(({ key, label, description, icon: Icon }) => (
+                  <Button
+                    key={key}
+                    variant="ghost"
+                    aria-label={label}
+                    disabled={projectLoading}
+                    onClick={() => show(key)}
+                  >
+                    <Icon />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{description}</small>
+                    </span>
+                    <CaretRight />
+                  </Button>
+                ))}
+              </div>
+            </section>
+          )}
           {splitLayout && (
             <div
               className={styles.resizeHandle}
@@ -1195,7 +1197,7 @@ export function NativeWorkspace({
               id={`${workspaceId}-native`}
               role="tabpanel"
               aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={sidebarCollapsed || (singleView && !nativeActive)}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}
@@ -1208,7 +1210,7 @@ export function NativeWorkspace({
                   Opening…
                 </span>
               )}
-              {!sidebarCollapsed && (!singleView || nativeActive) && (
+              {supportingExpanded && (
                 <BrowserPanel
                   key={threadId ?? "new"}
                   threadId={threadId}
@@ -1225,7 +1227,7 @@ export function NativeWorkspace({
               id={`${workspaceId}-native`}
               role="tabpanel"
               aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={sidebarCollapsed || (singleView && !nativeActive)}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}

@@ -281,7 +281,7 @@ function setup(
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  return { focus, get };
+  return { focus, get, queries };
 }
 async function chooseView(name: "Files" | "Changes" | "Browser" | "Terminal") {
   await waitFor(() =>
@@ -498,6 +498,95 @@ it("a native deep link cannot bypass disabled sharing or trigger metadata reques
     false,
   );
   expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
+});
+
+it.each(["sidebar", "tabs"])(
+  "disabled supporting views leave Chat unobstructed with the %s preference",
+  async (layout) => {
+    localStorage.setItem("a13n-harness-ui.native-layout", layout);
+    setup("/threads/current", false);
+    await screen.findByText("Current project");
+    expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Workbench views" }),
+    ).toBeNull();
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /supporting panel/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("separator", { name: "Resize supporting panel" }),
+    ).toBeNull();
+  },
+);
+
+it("disabling supporting views reveals Chat even when a resource tab was active", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
+  const { queries } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+  );
+  await screen.findByText("Editor /native/first.txt");
+  expect(screen.getByTestId("chat").closest("[hidden]")).not.toBeNull();
+  act(() => {
+    queries.setQueryData(["status"], {
+      features: {
+        host_files: false,
+        host_git: false,
+        host_terminal: false,
+        browser: false,
+      },
+    });
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull(),
+  );
+  expect(screen.queryByRole("tabpanel")).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Workbench views" }),
+  ).toBeNull();
+});
+
+it("cross-project file links use the destination root and preserve its restored tabs", async () => {
+  function CrossProjectLink() {
+    const navigate = useNavigate();
+    return (
+      <button
+        onClick={() =>
+          navigate(
+            "/threads/other?native=files&native_path=%2Fother%2Ffirst.txt",
+          )
+        }
+      >
+        Cross project file
+      </button>
+    );
+  }
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-two",
+    ["/native"],
+    <CrossProjectLink />,
+  );
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Cross project file" }));
+  await screen.findByText("Editor /other/first.txt");
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  await chooseView("Changes");
+  expect(screen.getByText(/Repository .* · Diff/).textContent).toBe(
+    "Repository /other · Diff ",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Cross project file" }));
+  await screen.findByText("Editor /other/first.txt");
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  await chooseView("Changes");
+  expect(screen.getByText(/Repository .* · Diff/).textContent).toBe(
+    "Repository /other · Diff ",
+  );
 });
 
 it("a peer diff supersedes a pending file read rather than mixing repository identities", async () => {
