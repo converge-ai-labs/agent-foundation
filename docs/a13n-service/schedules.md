@@ -17,6 +17,8 @@ For a daily morning report, open **Schedules → Create schedule** in Console:
 4. Create the schedule; it starts paused. Select **Run once**, then **View output** to inspect the agent's result and handle any approval or input request.
 5. After the test finishes, select **Enable**. Check the next trigger time and inspect the first automatic result.
 
+After saving, open the detail page to check the target agent, selected revision and fixed session. Read every saved text or JSON input part in order, separately from the description. The session link opens execution history, or an empty session before the first trigger. If editing is unavailable, the page explains whether the schedule is archived or completed, you are not its creator, or your workspace permissions are insufficient.
+
 Cron expressions have five fields. During daylight-saving changes, a missing local time does not fire; a repeated local time maps to two instants, each subject to the overlap rule below. Preview verifies the chosen calendar; execution still depends on service scanning and run admission.
 
 Only the creator can edit, enable or manually dispatch a schedule. Another member with `write` can pause or archive it. Archival preserves history and is permanent. To change the execution identity, create a new schedule as that identity.

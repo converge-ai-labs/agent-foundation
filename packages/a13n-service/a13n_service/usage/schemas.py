@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, timedelta
 from decimal import Decimal
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -15,6 +16,9 @@ class UsageWindow(BaseModel):
 
     start: AwareDatetime
     end: AwareDatetime
+    principal_id: ObjectId | None = Field(
+        default=None, description="Filter by Run execution identity; requires workspace admin."
+    )
 
     @field_validator("start", "end")
     @classmethod
@@ -88,6 +92,20 @@ class ModelUsageGroup(BaseModel):
 
 class AgentUsagePage(BaseModel):
     items: list[AgentUsage]
+    next_cursor: str | None
+
+
+class MemberUsage(BaseModel):
+    principal_id: str
+    name: str
+    kind: Literal["user", "service_account"]
+    status: Literal["active", "disabled"]
+    usage: ModelMetrics
+    runs: RunMetrics
+
+
+class MemberUsagePage(BaseModel):
+    items: list[MemberUsage]
     next_cursor: str | None
 
 

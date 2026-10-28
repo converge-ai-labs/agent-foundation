@@ -716,23 +716,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/threads/{thread_id}/browser/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Enable Browser */
-        post: operations["enable_browser_api_threads__thread_id__browser_enable_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/threads/{thread_id}/browser/start": {
         parameters: {
             query?: never;
@@ -784,7 +767,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/threads/{thread_id}/browser/stop": {
+    "/api/threads/{thread_id}/browser/close": {
         parameters: {
             query?: never;
             header?: never;
@@ -793,8 +776,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stop Browser */
-        post: operations["stop_browser_api_threads__thread_id__browser_stop_post"];
+        /** Close Browser Pages */
+        post: operations["close_browser_pages_api_threads__thread_id__browser_close_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3330,7 +3313,12 @@ export interface components {
              * @default disabled
              * @enum {string}
              */
-            status?: "disabled" | "enabled" | "ready" | "stopped" | "failed";
+            status?: "disabled" | "starting" | "enabled" | "ready" | "stopped" | "failed";
+            /**
+             * Page Count
+             * @default 0
+             */
+            page_count?: number;
             /**
              * Control
              * @default agent
@@ -8867,9 +8855,15 @@ export interface components {
         };
         /**
          * BrowserConfiguration
-         * @description Host executable bindings captured at App startup; never install dependencies.
+         * @description Host browser policy captured at App startup; never install dependencies.
          */
         BrowserConfiguration: {
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode?: "auto" | "disabled";
             /** Executable */
             executable?: string | null;
             /** Vnc Executable */
@@ -10724,37 +10718,6 @@ export interface operations {
             };
         };
     };
-    enable_browser_api_threads__thread_id__browser_enable_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BrowserState"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     start_browser_api_threads__thread_id__browser_start_post: {
         parameters: {
             query?: never;
@@ -10764,11 +10727,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BrowserCommand"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -10860,7 +10819,7 @@ export interface operations {
             };
         };
     };
-    stop_browser_api_threads__thread_id__browser_stop_post: {
+    close_browser_pages_api_threads__thread_id__browser_close_post: {
         parameters: {
             query?: never;
             header?: never;

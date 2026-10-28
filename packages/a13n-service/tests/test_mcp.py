@@ -49,7 +49,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            expected_version=created["headers"]["etag"],
             request_body={},
         )
         assert unchanged["status"] == 200 and unchanged["body"]["guide"] == "custom"
@@ -59,7 +59,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": unchanged["headers"]["etag"]},
+            expected_version=unchanged["headers"]["etag"],
             request_body={"guide": None},
         )
         assert cleared["status"] == 200 and cleared["body"]["guide"] is None
@@ -69,7 +69,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            expected_version=created["headers"]["etag"],
             request_body={"guide": "stale"},
         )
         assert stale["status"] == 412 and stale["body"]["error"]["code"] == "precondition_failed"
@@ -77,7 +77,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         listing = await call(http, service, "GET", "/memories", limit=1)
         assert listing["body"]["items"][0]["id"] == memory_id
         deleted = await call(
-            http, service, "DELETE", "/memories/{memory_id}", **args, **{"If-Match": cleared["headers"]["etag"]}
+            http, service, "DELETE", "/memories/{memory_id}", **args, expected_version=cleared["headers"]["etag"]
         )
         assert deleted["status"] == 204 and deleted["body"] is None
     async with short_session(service.runtime.storage) as session:
@@ -257,6 +257,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert ("/api/v1/usage", "get") in selected
     assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
     assert ("/api/v1/usage/context", "get") in selected
+    for path in ("overview", "agents", "models", "members"):
+        assert (f"/api/v1/usage/{path}", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
         ("/api/v1/sessions", "get"),

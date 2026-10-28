@@ -356,6 +356,9 @@
     color-mix(in srgb, var(--a13n-canvas) 0%, transparent)
   );
 }
+.dock[hidden] {
+  display: none;
+}
 .dockNotice {
   display: flex;
   align-items: center;
@@ -433,20 +436,6 @@
 /* A Thread keeps one bottom dock while Run observations are replaced. */
 .observation {
   min-width: 0;
-}
-.switchStatus {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 6px 12px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-canvas);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-}
-.switchStatus p {
-  margin: 0;
 }
 .dockRun {
   max-height: 45dvh;

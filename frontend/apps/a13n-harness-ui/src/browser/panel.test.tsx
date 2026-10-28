@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,15 +19,20 @@ vi.mock("./desktop", () => ({
     controlToken,
     scale,
     actions,
+    busy,
+    onReconnectControl,
   }: {
     threadId: string;
     controlToken: string;
     scale: string;
     actions?: React.ReactNode;
+    busy: boolean;
+    onReconnectControl: () => void;
   }) => (
     <>
       {actions}
-      <div data-testid="stream" data-scale={scale}>
+      <button onClick={onReconnectControl}>Reconnect control</button>
+      <div data-testid="stream" data-scale={scale} data-busy={busy}>
         {threadId}:{controlToken || "readonly"}
       </div>
     </>
@@ -37,6 +43,7 @@ function show({
   platform = "linux",
   resizeAvailable = true,
   status = "ready",
+  control = "agent",
   threadId = "thread-a",
   fullControl = true,
   setup = {
@@ -56,7 +63,8 @@ function show({
     platform,
     session_id: status === "disabled" ? "" : "binding-a",
     status,
-    control: "agent",
+    page_count: status === "ready" ? 1 : 0,
+    control,
     url: "https://example.com",
     viewport: "desktop",
     resize_available: resizeAvailable,
@@ -70,8 +78,6 @@ function show({
       data: url.endsWith("/setup") ? setup : state,
     })),
     POST: vi.fn(async (url: string, options: { body?: { preset: string } }) => {
-      if (url.endsWith("enable"))
-        state = { ...state, status: "enabled", session_id: "binding-enabled" };
       if (url.endsWith("take-control")) {
         state = { ...state, control: "human" };
         return { data: { state, control_token: "controller-a" } };
@@ -80,17 +86,17 @@ function show({
         state = { ...state, control: "agent" };
         return { data: { state, control_token: "" } };
       }
-      if (url.endsWith("stop"))
+      if (url.endsWith("close"))
         state = {
           ...state,
-          status: "stopped",
+          page_count: 0,
           control: "agent",
-          session_id: "binding-stopped",
         };
       if (url.endsWith("reset"))
         state = {
           ...state,
           status: "ready",
+          page_count: 1,
           control: "agent",
           session_id: "binding-reset",
         };
@@ -98,6 +104,7 @@ function show({
         state = {
           ...state,
           status: "ready",
+          page_count: 1,
           control: "agent",
           session_id: "binding-started",
         };
@@ -123,40 +130,37 @@ function show({
     </QueryClientProvider>
   );
   const result = render(view(threadId));
-  return { client, switchThread: () => result.rerender(view("thread-b")) };
+  return {
+    client,
+    queries,
+    switchThread: () => result.rerender(view("thread-b")),
+  };
 }
-async function toggleBrowser() {
-  const toggle = screen.getByRole("switch", { name: "Enable browser" });
-  await waitFor(() =>
-    expect(toggle.getAttribute("aria-disabled")).not.toBe("true"),
-  );
-  fireEvent.click(toggle);
+async function openBrowser() {
+  fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
 }
-it("starts a new browser with one toggle and restarts without enabling again", async () => {
-  const { client } = show({ status: "disabled" });
-  await toggleBrowser();
+it("opens and closes conversation tabs without an enable switch", async () => {
+  const { client } = show({ status: "enabled" });
+  await openBrowser();
   await screen.findByTestId("stream");
-  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
-    "/api/threads/{thread_id}/browser/enable",
-    "/api/threads/{thread_id}/browser/start",
-  ]);
-  expect(client.POST).toHaveBeenLastCalledWith(
-    "/api/threads/{thread_id}/browser/start",
-    expect.objectContaining({ body: { session_id: "binding-enabled" } }),
+  expect(screen.queryByRole("switch")).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Browser options" }),
   );
-  await toggleBrowser();
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Close conversation tabs" }),
+  );
   await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByTestId("stream");
   expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
-    "/api/threads/{thread_id}/browser/enable",
     "/api/threads/{thread_id}/browser/start",
-    "/api/threads/{thread_id}/browser/stop",
+    "/api/threads/{thread_id}/browser/close",
     "/api/threads/{thread_id}/browser/start",
   ]);
   expect(client.POST).toHaveBeenLastCalledWith(
     "/api/threads/{thread_id}/browser/start",
-    expect.objectContaining({ body: { session_id: "binding-stopped" } }),
+    { params: { path: { thread_id: "thread-a" } } },
   );
 });
 it("uses one page stream for read-only and explicit control, then clears authority on handback", async () => {
@@ -173,6 +177,39 @@ it("uses one page stream for read-only and explicit control, then clears authori
   await screen.findByRole("button", { name: "Take control" });
   expect(screen.getByTestId("stream").textContent).toBe("thread-a:readonly");
 });
+it("transfers control here with one explicit command and keeps handback available", async () => {
+  const { client } = show({ control: "human" });
+  const transfer = await screen.findByRole("button", {
+    name: "Take control here",
+  });
+  expect(screen.getByTestId("stream").textContent).toBe("thread-a:readonly");
+  expect(
+    screen.getByRole("button", { name: "Hand back to Agent" }),
+  ).toBeTruthy();
+  expect(client.POST).not.toHaveBeenCalled();
+  fireEvent.click(transfer);
+  await waitFor(() =>
+    expect(screen.getByTestId("stream").textContent).toBe(
+      "thread-a:controller-a",
+    ),
+  );
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/take-control",
+  ]);
+  expect(
+    screen.queryByRole("button", { name: "Take control here" }),
+  ).toBeNull();
+});
+it("can hand back from a fresh viewer without acquiring control", async () => {
+  const { client } = show({ control: "human" });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Hand back to Agent" }),
+  );
+  await screen.findByRole("button", { name: "Take control" });
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/handback",
+  ]);
+});
 it("never passes the previous conversation's control token to another stream", async () => {
   const view = show();
   await screen.findByTestId("stream");
@@ -187,11 +224,7 @@ it("keeps local zoom available without control and exposes scoped lifecycle butt
   const user = userEvent.setup();
   await screen.findByTestId("stream");
   expect(screen.getByRole("button", { name: "Reset browser" })).toBeTruthy();
-  expect(
-    screen
-      .getByRole("switch", { name: "Enable browser" })
-      .getAttribute("aria-checked"),
-  ).toBe("true");
+  expect(screen.queryByRole("switch")).toBeNull();
   expect(screen.queryByLabelText("Page address")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Browser options" }));
   expect(
@@ -217,15 +250,17 @@ it("binds viewport changes to current control", async () => {
   fireEvent.click(
     await screen.findByRole("menuitemradio", { name: "Phone (390 × 844)" }),
   );
-  expect(client.POST).toHaveBeenCalledWith(
-    expect.stringContaining("/viewport"),
-    expect.objectContaining({
-      body: {
-        session_id: "binding-a",
-        control_token: "controller-a",
-        preset: "phone",
-      },
-    }),
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.stringContaining("/viewport"),
+      expect.objectContaining({
+        body: {
+          session_id: "binding-a",
+          control_token: "controller-a",
+          preset: "phone",
+        },
+      }),
+    ),
   );
 });
 
@@ -262,7 +297,12 @@ it("resets and stops only the current conversation and clears its control author
       body: { session_id: "binding-a" },
     }),
   );
-  await toggleBrowser();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Browser options" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Close conversation tabs" }),
+  );
   await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
 });
 
@@ -283,7 +323,7 @@ it("keeps the permission explanation for an existing non-Full-Control conversati
 });
 it("only checks components after a failed attempt and retries the full startup", async () => {
   const { client } = show({
-    status: "disabled",
+    status: "enabled",
     setup: {
       ready: false,
       supported: true,
@@ -314,18 +354,18 @@ it("only checks components after a failed attempt and retries the full startup",
   await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
   expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
   client.POST.mockRejectedValueOnce(new Error("Missing VNC"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Install TigerVNC.");
   expect(screen.queryByText("/usr/bin/chromium")).toBeNull();
   expect(screen.queryByText("Optional window manager")).toBeNull();
-  expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+  expect(screen.queryByRole("switch")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByTestId("stream");
   expect(screen.queryByLabelText("Browser troubleshooting")).toBeNull();
 });
 it("shows unsupported platforms without dependency installation or settings detours", async () => {
   const { client } = show({
-    status: "disabled",
+    status: "enabled",
     setup: {
       ready: false,
       supported: false,
@@ -335,7 +375,7 @@ it("shows unsupported platforms without dependency installation or settings deto
     },
   });
   client.POST.mockRejectedValueOnce(new Error("Unsupported platform"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Linux or macOS Host required");
   expect(
     screen.queryByRole("list", { name: "Browser requirements" }),
@@ -346,9 +386,9 @@ it("shows unsupported platforms without dependency installation or settings deto
   expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 });
 it("keeps runtime failures visible when component checks succeed", async () => {
-  const { client } = show({ status: "disabled" });
+  const { client } = show({ status: "enabled" });
   client.POST.mockRejectedValueOnce(new Error("Profile is in use"));
-  await toggleBrowser();
+  await openBrowser();
   await screen.findByText("Profile is in use");
   expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
 });
@@ -369,4 +409,54 @@ it("pauses Mac automation for local operation and resumes it without remote take
     "/api/threads/{thread_id}/browser/handback",
     expect.objectContaining({ body: { session_id: "binding-a" } }),
   );
+});
+
+it("unblocks input from the takeover response without waiting for another state request", async () => {
+  const { client } = show();
+  await screen.findByTestId("stream");
+  client.GET.mockImplementation(() => new Promise(() => {}));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  await waitFor(() =>
+    expect(screen.getByTestId("stream").getAttribute("data-busy")).toBe(
+      "false",
+    ),
+  );
+  expect(screen.getByTestId("stream").textContent).toBe(
+    "thread-a:controller-a",
+  );
+});
+
+it("ignores a stale poll response and keeps the newly acquired authority", async () => {
+  const { client, queries } = show();
+  await screen.findByTestId("stream");
+  const old = queries.getQueryData(["browser", "thread-a"]);
+  let finish!: (value: { data: typeof old }) => void;
+  client.GET.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve as typeof finish;
+      }),
+  );
+  void queries.invalidateQueries({ queryKey: ["browser", "thread-a"] });
+  await waitFor(() => expect(finish).toBeDefined());
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  await act(async () => finish({ data: old }));
+  expect(screen.getByTestId("stream").textContent).toBe(
+    "thread-a:controller-a",
+  );
+});
+
+it("renews control directly on explicit reconnect without a handback gap", async () => {
+  const { client } = show();
+  await screen.findByTestId("stream");
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect control" }));
+  await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/take-control",
+    "/api/threads/{thread_id}/browser/take-control",
+  ]);
 });

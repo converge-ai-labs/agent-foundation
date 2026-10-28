@@ -51,7 +51,7 @@ Practice with a standalone memory you can edit:
 
 1. Discover the tools for reading and updating memories.
 2. Read the memory by ID. Save `body.id` and the exact quoted value in `headers.etag`.
-3. Call its update tool with the ID, that ETag as `If-Match`, and the change under `request_body`.
+3. Call its update tool with the ID, that ETag as `expected_version`, and the change under `request_body`.
 4. Read the memory again and confirm the saved guide.
 
 For example, these update arguments restore inheritance of the deployment's default guide. Replace both placeholders with values from the read response:
@@ -59,16 +59,18 @@ For example, these update arguments restore inheritance of the deployment's defa
 ```json
 {
   "memory_id": "mem_REPLACE_WITH_RETURNED_ID",
-  "If-Match": "\"mem_REPLACE_WITH_RETURNED_ID:1\"",
+  "expected_version": "mem_REPLACE_WITH_RETURNED_ID:1",
   "request_body": {"guide": null}
 }
 ```
 
-Path, query and declared header arguments retain the HTTP operation's schema. JSON bodies are nested under `request_body`; omission, an empty object and explicit `null` keep their distinct meanings.
+Path and query arguments keep their HTTP names. Header arguments use lowercase snake_case: `Idempotency-Key` becomes `idempotency_key`. The `If-Match` precondition uses `expected_version`, accepting `{id}:{version}` (`{key}:{version}` for a model) with or without quotes. HTTP header spellings are no longer accepted as tool arguments; an unknown argument produces an error listing accepted names.
+
+JSON bodies are nested under `request_body`; omission, an empty object and explicit `null` keep their distinct meanings. A body accepting only an empty object, such as a schedule `enable` command, can be omitted; omission sends `{}`.
 
 API tool results contain `status`, `headers` and the unchanged JSON `body`. Headers include lowercase `etag`, `x-request-id` and `retry-after` when present; an empty `204` response has `body: null`. Pagination stays in `body`. HTTP failures become tool errors with the same Service error envelope.
 
-A missing `If-Match` returns `428`; a stale one returns `412`. Read the changed resource and reconcile your edit before trying again. MCP neither retries writes nor creates idempotency keys. After a lost response, inspect the resource to determine whether the write took effect.
+A missing `expected_version` returns `428`; a stale one returns `412`. Read the changed resource and reconcile your edit before trying again. MCP neither retries writes nor creates idempotency keys. After a lost response, inspect the resource to determine whether the write took effect.
 
 ## Inspect a failed run
 

@@ -30,9 +30,15 @@ class CdpBrowserBackend:
     """
 
     def __init__(
-        self, browser: Chromium, page: Page | None = None, *, check_access: Callable[[], None] | None = None
+        self,
+        browser: Chromium,
+        page: Page | None = None,
+        *,
+        check_access: Callable[[], None] | None = None,
+        new_window: bool = False,
     ) -> None:
         self.browser = browser
+        self.new_window = new_window
         self.check_access = check_access
         self._targets: dict[str, None] = {}
         self._download_targets: set[str] = set()
@@ -286,7 +292,7 @@ class CdpBrowserBackend:
                 if self._selected is None:
                     # Recreate a lost owned window, but preserve Chromium's
                     # default tab placement for a scope that has never owned a tab.
-                    page = await self.browser.create(new_window=bool(self._download_targets))
+                    page = await self.browser.create(new_window=self.new_window or bool(self._download_targets))
                 else:
                     source = await self._selected_page()
                     async with source.lock:

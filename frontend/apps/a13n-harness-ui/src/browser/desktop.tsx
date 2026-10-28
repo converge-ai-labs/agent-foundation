@@ -15,12 +15,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "a13n-ui";
-import {
-  ArrowClockwise,
-  Camera,
-  HandArrowDown,
-  HandArrowUp,
-} from "@phosphor-icons/react";
+import { ArrowClockwise, Camera, HandArrowDown } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { bindClipboard, waitForClipboardWrites } from "./clipboard";
@@ -81,6 +76,8 @@ export function Desktop({
   session,
   controlToken,
   busy,
+  activity = "",
+  onReconnectControl,
   scale = "fit",
   actions,
 }: {
@@ -88,6 +85,8 @@ export function Desktop({
   session: Schema<"BrowserState">;
   controlToken: string;
   busy: boolean;
+  activity?: string;
+  onReconnectControl?: () => void;
   scale?: BrowserScale;
   actions?: ReactNode;
 }) {
@@ -112,15 +111,26 @@ export function Desktop({
   const host = useRef<HTMLDivElement>(null);
   const snapshot = useRef<HTMLCanvasElement>(null);
   const rfb = useRef<import("@novnc/novnc").default | null>(null);
-  const [status, setStatus] = useState("Connecting…");
+  const [connectionState, setConnectionState] = useState({
+    key: "",
+    status: "Connecting…",
+    retry: false,
+  });
   const [clipboardError, setClipboardError] = useState("");
   const clipboard = useRef<ReturnType<typeof bindClipboard> | null>(null);
   const textInput = useRef<ReturnType<typeof bindTextInput> | null>(null);
   const inputAllowed = useRef(false);
   const [reconnect, setReconnect] = useState(0);
-  const [canReconnect, setCanReconnect] = useState(false);
   const [canControl, setCanControl] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [readyConnection, setReadyConnection] = useState("");
+  const connectionKey = JSON.stringify([
+    threadId,
+    session.session_id,
+    session.control,
+    controlToken,
+    reconnect,
+  ]);
+  const connected = readyConnection === connectionKey;
   const [showControlHint, setShowControlHint] = useState(false);
   const [size, setSize] = useState({ width: 1280, height: 800 });
   const hintTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,19 +147,34 @@ export function Desktop({
   );
   const nativePreview = session.platform === "macos";
   const zoom = scale === "fit" ? 1 : Number(scale) / 100;
-  const interactive = canControl && !busy && !capture;
+  const interactive =
+    connected &&
+    canControl &&
+    !!controlToken &&
+    session.control === "human" &&
+    !busy &&
+    !capture;
+  const initialStatus =
+    controlToken && !nativePreview ? "Connecting control…" : "Connecting…";
+  const currentConnection = connectionState.key === connectionKey;
+  const canReconnect = currentConnection && connectionState.retry;
+  const message =
+    activity || (currentConnection ? connectionState.status : initialStatus);
   inputAllowed.current = interactive && !!controlToken;
   useEffect(() => {
-    if (canControl && !busy && !editing.current) {
+    if (connected && canControl && controlToken && !busy && !editing.current) {
       textInput.current?.focus();
       clipboard.current?.sync();
     }
-  }, [canControl, busy]);
+  }, [connected, canControl, controlToken, busy]);
   useEffect(() => {
     if (rfb.current) rfb.current.viewOnly = !interactive;
   }, [interactive]);
   useEffect(() => {
     let disposed = false;
+    let failed = false;
+    const admission = new AbortController();
+    let connection: import("@novnc/novnc").default | undefined;
     let stopPreview: (() => void) | undefined;
     let previewCanvas: HTMLCanvasElement | undefined;
     let bridge: ReturnType<typeof bindClipboard> | undefined;
@@ -187,9 +212,33 @@ export function Desktop({
         // A connection that never rendered has no frame to retain.
       }
     };
-    setStatus(snapshot.current?.hidden === false ? "" : "Connecting…");
-    setConnected(false);
-    setCanReconnect(false);
+    const fail = (message: string) => {
+      if (disposed || failed) return;
+      failed = true;
+      clearTimeout(timeout);
+      admission.abort();
+      retain();
+      cancelAnimationFrame(frame);
+      inputAllowed.current = false;
+      bridge?.stop();
+      keyboard?.stop();
+      input?.stop();
+      connection?.disconnect();
+      stopPreview?.();
+      setConnectionState({ key: connectionKey, status: message, retry: true });
+      setReadyConnection("");
+      setCanControl(false);
+    };
+    const timeout = setTimeout(
+      () => fail("Connection timed out. Reconnect to try again."),
+      15000,
+    );
+    setConnectionState({
+      key: connectionKey,
+      status: initialStatus,
+      retry: false,
+    });
+    setReadyConnection("");
     setCanControl(false);
     setShowControlHint(false);
     setClipboardError("");
@@ -198,13 +247,14 @@ export function Desktop({
         const access = await result(
           client.POST("/api/threads/{thread_id}/browser/access", {
             params: { path: { thread_id: threadId } },
+            signal: admission.signal,
             body: {
               session_id: session.session_id!,
               control_token: controlToken,
             },
           }),
         );
-        if (disposed) return;
+        if (disposed || failed) return;
         const url = new URL(
           `/api/threads/${encodeURIComponent(threadId)}/browser/connect`,
           window.location.origin,
@@ -219,42 +269,46 @@ export function Desktop({
             url.toString(),
             previewCanvas,
             () => {
-              if (disposed) return;
-              setStatus("");
-              setConnected(true);
+              if (disposed || failed) return;
+              clearTimeout(timeout);
+              setConnectionState({
+                key: connectionKey,
+                status: "",
+                retry: false,
+              });
+              setReadyConnection(connectionKey);
             },
-            () => {
-              if (disposed) return;
-              setConnected(false);
-              setCanReconnect(true);
-              setStatus(
+            () =>
+              fail(
                 "Window preview unavailable. Unlock the Mac, keep the browser window visible, and check Screen Recording permission, then reconnect. If the window closed, reset the browser. Automation can continue without preview.",
-              );
-            },
+              ),
           );
           return;
         }
         const { default: RFB } = await import("@novnc/novnc");
-        if (disposed) return;
-        const connection = new RFB(host.current!, url.toString(), {
+        if (disposed || failed) return;
+        connection = new RFB(host.current!, url.toString(), {
           credentials: { password: access.password },
         });
         rfb.current = connection;
-        connection.viewOnly = !access.control || editing.current;
+        connection.viewOnly = true;
         connection.scaleViewport = true;
         connection.addEventListener("connect", () => {
-          if (!disposed) {
+          if (!disposed && !failed) {
             setShowControlHint(false);
-            setStatus("");
+            setConnectionState({
+              key: connectionKey,
+              status: "Waiting for the first frame…",
+              retry: false,
+            });
             const reveal = () => {
-              if (disposed) return;
+              if (disposed || failed) return;
               const saved = snapshot.current;
               const canvas = host.current?.querySelector("canvas");
               // Keep the last frame until noVNC paints the replacement connection.
               if (
-                saved &&
-                !saved.hidden &&
-                canvas &&
+                !canvas?.width ||
+                !canvas.height ||
                 canvas.getContext("2d")?.getImageData(0, 0, 1, 1).data[3] !==
                   255
               ) {
@@ -265,7 +319,13 @@ export function Desktop({
                 saved.hidden = true;
                 saved.width = saved.height = 0;
               }
-              setConnected(true);
+              clearTimeout(timeout);
+              setConnectionState({
+                key: connectionKey,
+                status: "",
+                retry: false,
+              });
+              setReadyConnection(connectionKey);
               setCanControl(access.control);
             };
             reveal();
@@ -275,20 +335,20 @@ export function Desktop({
               input = bindTextInput({
                 root: host.current!,
                 active,
-                connection,
+                connection: connection!,
                 commit: (text) => bridge?.pasteText(text),
               });
               textInput.current = input;
               keyboard = bindKeyboard({
                 root: host.current!,
                 active,
-                connection,
+                connection: connection!,
                 targetMac: session.platform === "macos",
               });
               bridge = bindClipboard({
                 root: host.current!,
                 active,
-                connection,
+                connection: connection!,
                 shortcut: keyboard.shortcut,
                 notice: setClipboardError,
               });
@@ -297,44 +357,19 @@ export function Desktop({
             }
           }
         });
-        connection.addEventListener("disconnect", () => {
-          if (!disposed) {
-            retain();
-            cancelAnimationFrame(frame);
-            setStatus("Disconnected");
-            bridge?.stop();
-            keyboard?.stop();
-            input?.stop();
-            inputAllowed.current = false;
-            setCanReconnect(true);
-            setConnected(false);
-            setCanControl(false);
-          }
-        });
-        connection.addEventListener("securityfailure", () => {
-          if (!disposed) {
-            retain();
-            cancelAnimationFrame(frame);
-            setStatus("Connection rejected");
-            bridge?.stop();
-            keyboard?.stop();
-            input?.stop();
-            inputAllowed.current = false;
-            setCanReconnect(true);
-            setConnected(false);
-            setCanControl(false);
-          }
-        });
+        connection.addEventListener("disconnect", () => fail("Disconnected"));
+        connection.addEventListener("securityfailure", () =>
+          fail("Connection rejected"),
+        );
       } catch (cause) {
-        if (!disposed) {
-          setStatus(cause instanceof Error ? cause.message : String(cause));
-          setCanReconnect(true);
-        }
+        fail(cause instanceof Error ? cause.message : String(cause));
       }
     })();
     return () => {
       retain();
       disposed = true;
+      clearTimeout(timeout);
+      admission.abort();
       stopPreview?.();
       previewCanvas?.remove();
       observer.disconnect();
@@ -356,6 +391,9 @@ export function Desktop({
     session.control,
     controlToken,
     reconnect,
+    connectionKey,
+    nativePreview,
+    initialStatus,
   ]);
   const captureFrame = () => {
     try {
@@ -397,6 +435,14 @@ export function Desktop({
   return (
     <>
       <div className={styles.toolbar}>
+        <span className={styles.connectionState} role="status">
+          {message ||
+            (interactive
+              ? "You have control"
+              : session.control === "human"
+                ? "Automation paused"
+                : "Watching")}
+        </span>
         <Button
           ref={captureButton}
           size="icon"
@@ -468,7 +514,7 @@ export function Desktop({
             }}
           />
         )}
-        {!nativePreview && showControlHint && !interactive && (
+        {!nativePreview && showControlHint && !interactive && !message && (
           <div className={styles.controlOverlay}>
             <div className={styles.controlHint} role="status">
               <HandArrowDown size={28} aria-hidden="true" />
@@ -482,9 +528,8 @@ export function Desktop({
                   "Wait for the connection or reconnect."
                 ) : session.control === "human" ? (
                   <>
-                    Click <HandArrowUp aria-label="Hand back to Agent" /> to
-                    hand back, then <HandArrowDown aria-label="Take control" />{" "}
-                    to take control here.
+                    Click <HandArrowDown aria-label="Take control here" /> to
+                    move control to this browser. Agent tools stay paused.
                   </>
                 ) : (
                   <>
@@ -496,19 +541,33 @@ export function Desktop({
             </div>
           </div>
         )}
-        {!!status && (
+        {!!message && (
           <div className={styles.streamStatus}>
             <div className={styles.controlHint}>
-              <strong role="status">{status}</strong>
+              <strong>{message}</strong>
+              {activity === "Taking control…" && (
+                <span>Waiting for current browser operations to finish.</span>
+              )}
+              {!activity && controlToken && !nativePreview && (
+                <span>
+                  Automation stays paused. You can hand back at any time.
+                </span>
+              )}
               {nativePreview && canReconnect && <MacCaptureSettings />}
-              {canReconnect && (
+              {canReconnect && !busy && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setReconnect((value) => value + 1)}
+                  onClick={() => {
+                    if (controlToken && !nativePreview && onReconnectControl)
+                      onReconnectControl();
+                    else setReconnect((value) => value + 1);
+                  }}
                 >
                   <ArrowClockwise />
-                  Reconnect
+                  {controlToken && !nativePreview
+                    ? "Reconnect control"
+                    : "Reconnect"}
                 </Button>
               )}
             </div>

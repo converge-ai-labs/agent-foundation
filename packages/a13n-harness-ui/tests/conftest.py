@@ -52,6 +52,21 @@ def no_background_subscription_requests(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(SubscriptionUsage, "_read_provider", unavailable)
 
 
+@pytest.fixture(autouse=True)
+def no_automatic_host_browser(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native browser scenarios opt in themselves; ordinary App tests never launch Host programs."""
+    if request.node.path.stem in {"test_host_browser_linux", "test_host_browser_macos"}:
+        return
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.browser import BrowserError
+    from a13n_harness_ui import browser
+
+    monkeypatch.setattr(
+        browser, "require_browser", AsyncMock(side_effect=BrowserError("Host components are unavailable in unit tests"))
+    )
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

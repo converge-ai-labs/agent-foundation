@@ -144,6 +144,21 @@
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
 }
+.expandableDescription {
+  flex-basis: 100%;
+  min-width: 0;
+  max-width: 72ch;
+}
+.identity[data-expandable-description="true"] {
+  align-items: flex-start;
+}
+.expandableDescription .subtitleText {
+  white-space: pre-wrap;
+}
+.subtitleText[data-expanded="true"] {
+  display: block;
+  -webkit-line-clamp: unset;
+}
 .tabs {
   composes: tabStrip from "../shared.module.css";
   margin-top: 24px;

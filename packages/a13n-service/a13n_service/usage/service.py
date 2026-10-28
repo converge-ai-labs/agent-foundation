@@ -23,6 +23,7 @@ from sqlalchemy import (
     tuple_,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session
@@ -32,11 +33,14 @@ from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.tables import RunRow, UsageRecordRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.tables import PrincipalRow
 from a13n_service.usage.schemas import (
     AgentUsage,
     AgentUsagePage,
     BreakdownQuery,
     DailyUsage,
+    MemberUsage,
+    MemberUsagePage,
     ModelMetrics,
     ModelRequestMetrics,
     ModelUsage,
@@ -69,15 +73,24 @@ def _model_totals() -> Select:
 
 
 def _model_query(workspace_id: str, window: UsageWindow) -> Select:
-    return _model_totals().where(
+    statement = _model_totals().where(
         UsageRecordRow.workspace_id == workspace_id,
         UsageRecordRow.ingested_at >= window.start,
         UsageRecordRow.ingested_at < window.end,
     )
 
+    if window.principal_id is not None:
+        statement = statement.where(
+            select(RunRow.id)
+            .where(RunRow.id == UsageRecordRow.run_id, RunRow.principal_id == window.principal_id)
+            .correlate(UsageRecordRow)
+            .exists()
+        )
+    return statement
+
 
 def _run_query(workspace_id: str, window: UsageWindow) -> Select:
-    return select(
+    statement = select(
         func.count().label("runs"),
         func.avg(func.extract("epoch", RunRow.sealed_at - RunRow.started_at)).label("average_duration_seconds"),
     ).where(
@@ -85,6 +98,10 @@ def _run_query(workspace_id: str, window: UsageWindow) -> Select:
         RunRow.started_at >= window.start,
         RunRow.started_at < window.end,
     )
+
+    if window.principal_id is not None:
+        statement = statement.where(RunRow.principal_id == window.principal_id)
+    return statement
 
 
 def _metrics(row: RowMapping) -> ModelMetrics:
@@ -108,7 +125,9 @@ def _runs(row: RowMapping) -> RunMetrics:
 
 async def overview(storage: Storage, actor: Principal, workspace_id: str, query: OverviewQuery) -> UsageOverview:
     async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
+        scope = await workspace_scope(
+            session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
+        )
         # One statement computes totals and daily buckets from the same observations.
         day = func.date(func.timezone(query.timezone, UsageRecordRow.ingested_at))
         statement = _model_query(scope.workspace_id, query).add_columns(day.label("day"))
@@ -151,6 +170,8 @@ async def _page(
     """Known cost descending, identity ascending; -1 sorts unknown cost after known zero."""
     order_cost = func.coalesce(cost, -1)
     owner = cursors.query_owner(workspace_id, query.start, query.end)
+    if query.principal_id is not None:
+        owner = cursors.query_owner(owner, query.principal_id)
     if query.cursor is not None:
         position = cursors.decode(query.cursor, kind, owner)
         try:
@@ -182,37 +203,43 @@ async def _page(
     return page, next_cursor
 
 
+def _group_totals(workspace_id: str, query: BreakdownQuery, identity: InstrumentedAttribute[str]) -> Select:
+    usage = (
+        _model_query(workspace_id, query)
+        .join(RunRow, RunRow.id == UsageRecordRow.run_id)
+        .add_columns(identity.label("identity_id"))
+        .group_by(identity)
+        .subquery()
+    )
+    runs = _run_query(workspace_id, query).add_columns(identity.label("identity_id")).group_by(identity).subquery()
+    # Preserve Run-only identities and late consumption from Runs outside the window.
+    key = func.coalesce(usage.c.identity_id, runs.c.identity_id)
+    cost = case((func.coalesce(usage.c.requests, 0) == 0, 0), else_=usage.c.cost)
+    return select(
+        key.label("identity_id"),
+        usage.c.requests,
+        usage.c.input_tokens,
+        usage.c.output_tokens,
+        usage.c.cache_read_tokens,
+        cost.label("cost"),
+        usage.c.unpriced_requests,
+        runs.c.runs,
+        runs.c.average_duration_seconds,
+    ).select_from(usage.join(runs, usage.c.identity_id == runs.c.identity_id, full=True))
+
+
 async def agents(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> AgentUsagePage:
     async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        usage = (
-            _model_query(scope.workspace_id, query)
-            .join(RunRow, RunRow.id == UsageRecordRow.run_id)
-            .add_columns(RunRow.agent_id)
-            .group_by(RunRow.agent_id)
-            .subquery()
+        scope = await workspace_scope(
+            session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
         )
-        runs = _run_query(scope.workspace_id, query).add_columns(RunRow.agent_id).group_by(RunRow.agent_id).subquery()
-        # Include agents whose Runs have no model observations and late consumption from older Runs.
-        key = func.coalesce(usage.c.agent_id, runs.c.agent_id)
-        cost = case((func.coalesce(usage.c.requests, 0) == 0, 0), else_=usage.c.cost)
-        statement = (
-            select(
-                AgentRow.id.label("agent_id"),
-                AgentRow.name,
-                usage.c.requests,
-                usage.c.input_tokens,
-                usage.c.output_tokens,
-                usage.c.cache_read_tokens,
-                cost.label("cost"),
-                usage.c.unpriced_requests,
-                runs.c.runs,
-                runs.c.average_duration_seconds,
-            )
-            .select_from(usage.join(runs, usage.c.agent_id == runs.c.agent_id, full=True))
-            .join(AgentRow, AgentRow.id == key)
+        totals = _group_totals(scope.workspace_id, query, RunRow.agent_id).subquery()
+        statement = select(totals, AgentRow.id.label("agent_id"), AgentRow.name).join(
+            AgentRow, AgentRow.id == totals.c.identity_id
         )
-        rows, cursor = await _page(session, statement, cost, key, scope.workspace_id, query, "usage-agents")
+        rows, cursor = await _page(
+            session, statement, totals.c.cost, totals.c.identity_id, scope.workspace_id, query, "usage-agents"
+        )
     return AgentUsagePage(
         items=[
             AgentUsage(agent_id=row["agent_id"], name=row["name"], usage=_metrics(row), runs=_runs(row)) for row in rows
@@ -221,9 +248,38 @@ async def agents(storage: Storage, actor: Principal, workspace_id: str, query: B
     )
 
 
+async def members(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> MemberUsagePage:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "admin")
+        totals = _group_totals(scope.workspace_id, query, RunRow.principal_id).subquery()
+        # Join only identities with facts in this workspace, never the global principal directory.
+        statement = select(totals, PrincipalRow.name, PrincipalRow.kind, PrincipalRow.status).join(
+            PrincipalRow, PrincipalRow.id == totals.c.identity_id
+        )
+        rows, cursor = await _page(
+            session, statement, totals.c.cost, totals.c.identity_id, scope.workspace_id, query, "usage-members"
+        )
+    return MemberUsagePage(
+        items=[
+            MemberUsage(
+                principal_id=row["identity_id"],
+                name=row["name"],
+                kind=row["kind"],
+                status=row["status"],
+                usage=_metrics(row),
+                runs=_runs(row),
+            )
+            for row in rows
+        ],
+        next_cursor=cursor,
+    )
+
+
 async def models(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> ModelUsagePage:
     async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
+        scope = await workspace_scope(
+            session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
+        )
         usage = (
             _model_query(scope.workspace_id, query)
             .add_columns(UsageRecordRow.model_id)

@@ -12,6 +12,7 @@ import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
 import {
   sourceText,
+  parsed,
   type AppliedEdit,
   type ToolView,
 } from "./tool-presentation";
@@ -116,6 +117,8 @@ export class FocusDisplay {
   snapshot?: Schema<"ThreadFocusSnapshot">;
   cursor?: string;
   runId?: string;
+  // Live-only notification, retained across reconnect snapshots for once-per-Run reveal.
+  browserActivityRunId?: string;
   baseContinuation?: string | null;
   blocks = new Map<string, DisplayBlock>();
   private items = new Map<string, DisplayItem>();
@@ -249,6 +252,19 @@ export class FocusDisplay {
         return;
       }
       this.foldRoot(frame.event);
+      const item = frame.event.item && this.items.get(frame.event.item.id);
+      const args = parsed(item?.content.arguments);
+      if (
+        item?.kind === "tool_call" &&
+        !item.content.provider &&
+        !item.content.subagentRunId &&
+        (item.content.toolCallName === "browser_navigate" ||
+          (item.content.toolCallName === "browser_tabs" &&
+            object(args) &&
+            (args.action === "new" || args.action === "select"))) &&
+        item.content.outcome === "success"
+      )
+        this.browserActivityRunId = frame.event.run_id;
     }
   }
   private foldRoot(event: Schema<"LiveEvent">) {

@@ -101,7 +101,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             },
         )
         assert preview["status"] == 200 and len(preview["body"]["items"]) == (1 if kind == "once" else 2)
-        create_args = {"Idempotency-Key": "schedule-create", "request_body": body}
+        create_args = {"idempotency_key": "schedule-create", "request_body": body}
         created = await call(http, service, "POST", "/schedules", **create_args)
         assert created["status"] == 201, created
         schedule = created["body"]
@@ -135,7 +135,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "PATCH",
             "/schedules/{schedule_id}",
             **args,
-            **{"If-Match": read["headers"]["etag"]},
+            expected_version=read["headers"]["etag"],
             request_body={"name": "Renamed"},
         )
         assert changed["status"] == 200 and changed["body"]["name"] == "Renamed"
@@ -145,7 +145,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/enable",
             **args,
-            **{"If-Match": read["headers"]["etag"]},
+            expected_version=read["headers"]["etag"],
             request_body={},
         )
         assert stale["status"] == 412
@@ -155,7 +155,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/enable",
             **args,
-            **{"If-Match": changed["headers"]["etag"]},
+            expected_version=changed["headers"]["etag"],
             request_body={},
         )
         assert enabled["status"] == 200 and enabled["body"]["state"] == "enabled"
@@ -167,14 +167,14 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
             "POST",
             "/schedules/{schedule_id}/pause",
             **args,
-            **{"If-Match": enabled["headers"]["etag"]},
+            expected_version=enabled["headers"]["etag"],
             request_body={},
         )
         assert paused["status"] == 200 and paused["body"]["state"] == "paused"
         dispatch_args = {
             **args,
-            "If-Match": paused["headers"]["etag"],
-            "Idempotency-Key": "schedule-dispatch",
+            "expected_version": paused["headers"]["etag"],
+            "idempotency_key": "schedule-dispatch",
             "request_body": {},
         }
         triggered = await call(http, service, "POST", "/schedules/{schedule_id}/dispatch", **dispatch_args)
@@ -197,7 +197,7 @@ async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, 
         assert occurrence["body"]["snapshot"]["invocation"] == schedule["invocation"]
         assert occurrence["body"]["execution"]["initial_run"] is None
         archived = await call(
-            http, service, "DELETE", "/schedules/{schedule_id}", **args, **{"If-Match": paused["headers"]["etag"]}
+            http, service, "DELETE", "/schedules/{schedule_id}", **args, expected_version=paused["headers"]["etag"]
         )
         assert archived["status"] == 204 and archived["body"] is None
         replay = await call(http, service, "POST", "/schedules/{schedule_id}/dispatch", **dispatch_args)
@@ -220,7 +220,7 @@ async def test_schedule_tools_cannot_expand_run_permissions(service, scripted_mo
             service,
             "POST",
             "/schedules",
-            **{"Idempotency-Key": "forbidden"},
+            idempotency_key="forbidden",
             request_body=configuration(agent["id"]),
         )
         assert result["status"] == 403
@@ -253,7 +253,7 @@ async def test_composer_reviews_durable_schedule_and_preserves_authority(
         call_id="preview",
     )
     scripted_model.call(
-        "create_schedule", {"Idempotency-Key": "reviewed-schedule", "request_body": body}, call_id="create"
+        "create_schedule", {"idempotency_key": "reviewed-schedule", "request_body": body}, call_id="create"
     )
     async with transaction(service.runtime.storage) as session:
         await set_role(session, service, "builder")

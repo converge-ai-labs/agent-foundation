@@ -59,7 +59,8 @@ VIEWPORT_BY_PRESET = {viewport.preset: viewport for viewport in VIEWPORTS}
 class BrowserState(SurfaceModel):
     platform: BrowserPlatform = Field(default_factory=host_platform)
     session_id: str = ""
-    status: Literal["disabled", "enabled", "ready", "stopped", "failed"] = "disabled"
+    status: Literal["disabled", "starting", "enabled", "ready", "stopped", "failed"] = "disabled"
+    page_count: int = 0
     control: Literal["agent", "human"] = "agent"
     url: str = ""
     error: str | None = None
@@ -152,6 +153,8 @@ class HostBrowsers:
         self.human_tabs: dict[str, tuple[str, str]] = {}
         self.runtime: Chromium | None = None
         self.runtime_failed = False
+        self.prepared = False
+        self.startup_error: str | None = None
         self.keepalive: str | None = None
         self.desktop: VncDesktop | MacDesktop | None = None
         self.native_windows: dict[int, int] = {}
@@ -181,16 +184,68 @@ class HostBrowsers:
     def state(self, thread_id: str) -> BrowserState:
         item = self.bindings.get(thread_id)
         if item is None:
-            return BrowserState()
+            if not self.available or self.configuration.mode == "disabled":
+                return BrowserState()
+            return BrowserState(
+                status="failed" if self.startup_error else "enabled" if self.runtime else "starting",
+                error=self.startup_error,
+            )
         return BrowserState(
             session_id=item.identity,
             status=item.status,
+            page_count=len(item.scope.targets) if item.scope else 0,
             control="human" if self.human_thread else "agent",
             url=item.page.url if item.page else "",
             error=item.error,
             viewport=item.viewport,
             resize_available=bool(self.desktop and self.desktop.resize_available),
         )
+
+    async def prepare(self, *, retry: bool = False) -> None:
+        """Prepare the shared process without allocating conversation pages."""
+        if not self.available or self.configuration.mode == "disabled":
+            return
+        async with self.control_lock, self.lifecycle:
+            if self.prepared and not retry:
+                return
+            self.prepared = True
+            self.startup_error = None
+            try:
+                await self.launch()
+            except Exception as exc:
+                self.failed(str(exc))
+
+    async def admit(self, thread_id: str) -> str | None:
+        """Capture an empty scope for an eligible Run; preparation failure is optional."""
+        if not self.available or self.configuration.mode == "disabled":
+            return None
+        await self.authorize(thread_id)
+        await self.prepare()
+        if self.runtime is None or self.runtime_failed:
+            return None
+        item = self.bindings.get(thread_id)
+        if item is None or item.status in {"stopped", "failed"}:
+            item = self.bindings[thread_id] = Binding(status="ready")
+
+            def check_access() -> None:
+                self.checked(thread_id, item.identity)
+
+            item.scope = CdpBrowserBackend(self.runtime, new_window=True, check_access=check_access)
+        return item.identity
+
+    async def open(self, thread_id: str) -> BrowserState:
+        await self.authorize(thread_id)
+        if self.configuration.mode == "disabled":
+            raise failure("Browser is disabled in settings.", "disabled")
+        await self.prepare(retry=True)
+        binding = await self.admit(thread_id)
+        if binding is None:
+            raise failure(self.startup_error or "Hand back browser control before opening a page.", "not_ready")
+        item = self.checked(thread_id, binding)
+        if item.status == "ready" and item.page is None:
+            await self.backend(thread_id, binding).tabs("new")
+            return self.state(thread_id)
+        return await self.start(thread_id, binding)
 
     def binding(self, thread_id: str) -> str | None:
         item = self.bindings.get(thread_id)
@@ -260,6 +315,7 @@ class HostBrowsers:
 
     def failed(self, reason: str) -> None:
         self.runtime_failed = True
+        self.startup_error = reason
         self.generation += 1
         self.controller = None
         for item in self.bindings.values():
@@ -312,6 +368,10 @@ class HostBrowsers:
             "--no-default-browser-check",
             "about:blank",
         ]
+        if preparation.platform == "linux":
+            # The private desktop cannot unlock the Host's login keyring.
+            # Basic storage keeps cookie initialization from waiting on it.
+            arguments.append("--password-store=basic")
         if self.no_sandbox:
             arguments.append("--no-sandbox")
         self.process = await asyncio.create_subprocess_exec(
@@ -376,6 +436,21 @@ class HostBrowsers:
         except (ImportError, OSError):
             # An unknown baseline cannot establish a newly created window.
             return None
+
+    async def bind_preview(self, item: Binding, before: set[int] | None) -> None:
+        if not isinstance(self.desktop, MacDesktop) or before is None:
+            return
+        # A preview must belong to the exact newly created native window.
+        for _ in range(40):
+            after = self.preview_windows()
+            if after is None:
+                break
+            candidates = after - before
+            if candidates:
+                if len(candidates) == 1:
+                    item.preview_window = candidates.pop()
+                break
+            await asyncio.sleep(0.05)
 
     async def native_window(self, page: Page) -> int:
         assert self.runtime and self.desktop
@@ -489,24 +564,15 @@ class HostBrowsers:
                     def check_access() -> None:
                         self.checked(thread_id, item.identity)
 
-                    item.scope = CdpBrowserBackend(self.runtime, page, check_access=check_access)
+                    if item.scope is None:
+                        item.scope = CdpBrowserBackend(self.runtime, page, check_access=check_access)
+                    else:
+                        await item.scope.attach(page.target)
                     if self.desktop and not self.desktop.resize_available:
                         item.viewport = "desktop"
                     await self.layout(page, item)
                     await self.focus(page)
-                    if isinstance(self.desktop, MacDesktop) and before is not None:
-                        # Bind once at Host-created window admission. Ambiguity
-                        # disables preview; never select another existing window.
-                        for _ in range(40):
-                            after = self.preview_windows()
-                            if after is None:
-                                break
-                            candidates = after - before
-                            if candidates:
-                                if len(candidates) == 1:
-                                    item.preview_window = candidates.pop()
-                                break
-                            await asyncio.sleep(0.05)
+                    await self.bind_preview(item, before)
                 item.status = "ready"
             except Exception as exc:
                 item.status, item.error = "failed", str(exc)
@@ -525,6 +591,25 @@ class HostBrowsers:
             if item.scope:
                 await item.scope.close()
             self.bindings[thread_id] = Binding(status="stopped", viewport=item.viewport)
+            return self.state(thread_id)
+
+    async def close_pages(self, thread_id: str, binding: str) -> BrowserState:
+        """Drain and close this Thread's pages without revoking its Run binding."""
+        await self.authorize(thread_id)
+        async with self.control_lock, self.lifecycle:
+            item = self.checked(thread_id, binding)
+            self.revoke_viewers(thread_id)
+            if self.human_thread == thread_id:
+                await self.release()
+            if item.scope:
+                await item.scope.close()
+            if self.runtime is not None and not self.runtime_failed:
+
+                def check_access() -> None:
+                    self.checked(thread_id, binding)
+
+                item.scope = CdpBrowserBackend(self.runtime, new_window=True, check_access=check_access)
+                item.preview_window = None
             return self.state(thread_id)
 
     async def reset(self, thread_id: str, binding: str) -> BrowserState:
@@ -621,8 +706,11 @@ class HostBrowsers:
         async with self.control_lock:
             item = self.checked(thread_id, binding)
             if human:
-                if self.human_thread:
+                reconnecting = self.human_thread == thread_id
+                if self.human_thread and (not reconnecting or isinstance(self.desktop, MacDesktop)):
                     raise failure("Browser is already under human control.", "control_conflict")
+                # Explicit transfer or recovery replaces the previous controller
+                # without briefly releasing the automation barrier.
                 if item.status != "ready":
                     raise failure("Start the browser before taking control.", "not_ready")
                 self.human_thread = thread_id
@@ -660,7 +748,10 @@ class HostBrowsers:
                         if any(isinstance(result, BaseException) for result in results):
                             self.failed("Browser takeover failed. Start the browser again.")
                         if not self.runtime_failed:
-                            await self.release()
+                            if reconnecting:
+                                await self.revoke()
+                            else:
+                                await self.release()
                     except BaseException:
                         self.failed("Browser takeover cleanup failed. Start the browser again.")
                     raise
@@ -876,7 +967,12 @@ class HostBrowserBackend:
         action: Literal["goto", "back", "forward", "reload"] = "goto",
         timeout: float = 25,
     ) -> str:
-        await self.browsers.start(self.thread_id, self.binding)
+        item = self.browsers.checked(self.thread_id, self.binding)
+        if item.status == "ready" and item.page is None and action == "goto":
+            await self.tabs("new")
+            await self.observe()
+        else:
+            await self.browsers.start(self.thread_id, self.binding)
         async with self.operation() as scope:
             return await scope.navigate(url, action=action, timeout=timeout)
 
@@ -891,6 +987,7 @@ class HostBrowserBackend:
     async def tabs(self, action: BrowserTabAction, *, target: str = "", url: str = "") -> tuple[BrowserTab, ...]:
         async with self.operation() as scope:
             empty = action == "new" and not await scope.tabs("list")
+            before = self.browsers.preview_windows() if empty else None
             tabs = await scope.tabs(action, target=target, url=url)
             page = scope.page if empty else None
         if page is not None:
@@ -908,6 +1005,7 @@ class HostBrowserBackend:
                         raise BrowserError("New tab closed before layout. List tabs before continuing.")
                     async with page.lock:
                         await self.browsers.layout(page, item)
+                        await self.browsers.bind_preview(item, before)
         return tabs
 
     async def dialog(self, action: Literal["inspect", "accept", "dismiss"], *, text: str = "") -> str:

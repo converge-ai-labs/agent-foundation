@@ -260,17 +260,17 @@ Agent 的 `/threads/{root_thread_id}?native=files&native_path={URL-encoded absol
 
 ## 使用 Host 浏览器
 
-**Browser** 让 Agent 在服务器上使用 Chromium，你可以观看原生窗口。Linux 显示共享的专用桌面，macOS 只显示当前对话拥有的浏览器窗口。先让普通聊天可用，再准备此可选功能。它需要 Linux 或 macOS Host、计算机共享和 Full Control 对话。Windows 浏览器可以查看支持的 Host，但 Windows 不能承载此桌面。
+**Browser** 让 Agent 在服务器上使用 Chromium，你可以观看原生窗口。Linux 显示共享的专用桌面，macOS 只显示当前对话拥有的浏览器窗口。浏览器需要 Linux 或 macOS Host、计算机共享和 Full Control Run。Windows 浏览器可以查看支持的 Host，但 Windows 不能承载此桌面。
 
 ### 首次设置
 
-1. 在服务器[安装 Host 组件](#install-host-components)，不是在显示 WebUI 的设备上安装。
-2. 发送消息创建对话。空闲后打开 **Conversation details → Configuration → Change next Run selections**，将 **Local mode** 设为 **Full Control** 并保存。然后打开 **Browser**，开启 **Enable browser**。
-3. Harness UI 自动发现兼容的已安装组件并打开该对话窗口。启动失败时解决显示的必需组件，再点击 **Try again**。
-4. 发送新任务让 Agent 浏览。已启用的 Full Control Run 自动获得浏览器工具。
+1. 在服务器[安装 Host 组件](#install-host-components)，不是在显示 WebUI 的设备上安装。启动 WebUI 时保持计算机共享开启。
+2. 使用默认的 `browser.mode: auto` 启动 WebUI。Harness UI 自动探测已安装组件并准备共享浏览器。启动失败时，打开 **Browser**，解决显示的必需组件，再点击 **Try again**。
+3. 开始 **Full Control** 对话，让 Agent 浏览。工具自动可用，首次导航或创建标签页时打开对话窗口。也可在 Run 运行期间选择 **Browser → Open browser** 手动打开。
+4. 首次实时浏览会展示查看器，不移动键盘焦点。已打开 Files/Changes 或使用窄屏时，选择 **View browser**。关闭查看器保留浏览器运行，同一 Run 不再自动展示。
 5. Linux 上登录或手动修正时，选择 **Take control**，完成后 **Hand back to Agent**。macOS 上选择 **Pause automation**，在 Mac 本机操作浏览器，再选择 **Resume automation**。
 
-Browser 抽屉使用对话保存的本地模式；只在输入框临时覆盖为 Full Control 不会解锁抽屉。执行浏览任务的 Run 也要保持 Full Control。启用 Browser 无需保存可执行文件配置或重启服务器。只有覆盖可执行文件路径才需要 **Advanced browser settings**。Files、Shell 和普通聊天不会启动 Chromium 或显示会话。
+浏览器无需对话级开关或手动添加 Capability。**Advanced browser settings** 提供全局 Auto/Disabled 模式和程序路径覆盖；修改后保存并重启。普通聊天、Files 和 Shell 不创建对话浏览器页面。
 
 ### 安装 Host 组件
 
@@ -294,7 +294,7 @@ sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 **macOS：**
 
 1. 安装 Chrome、Chromium 或 Edge，以已登录桌面的用户运行 Harness UI。
-2. 启用 Browser 即可使用自动化；Chromium 是唯一必需的浏览器组件。
+2. 选择 **Browser → Open browser** 打开窗口；Chromium 是唯一必需的浏览器组件。
 3. 要在 macOS 14 或更高版本使用可选预览，给运行 Harness UI 的应用授予屏幕录制权限。**Open Mac Screen Recording settings** 打开 Host 设置，由你在那里授权。
 4. 保持 Mac 解锁且浏览器窗口可见。授权或解锁后选择 **Reconnect**；如 macOS 要求重启 Host 应用，按提示操作。
 
@@ -320,9 +320,15 @@ macOS 设置显示可选的 **Window preview**，不提供 VNC 程序选择器�
 
 共享 profile 位于 `<data_root>/browsers/profile`，默认是 `~/.a13n-harness-ui/data/browsers/profile`，没有独立位置设置。各对话和 Project 共用一个 Chromium 实例及 profile，并有各自窗口/Agent 标签页。不导入个人 profile，也不移动或合并已有 profile 目录。
 
+Linux 受管浏览器使用基础密码存储，避免等待锁定的桌面钥匙环。保存的密码和 Cookie **不受操作系统钥匙环保护**；请像保护凭据一样保护 profile 及备份。系统钥匙环和 macOS 凭据存储不变。升级后重启 Harness UI 应用此行为；profile 会保留，但原先依赖钥匙环加密登录数据的网站可能需要重新登录。
+
 ### 启动与控制浏览器
 
-初始只读观看。Linux 上的 **Take control** 暂停所有对话的浏览器工具和页面采集，并聚焦当前对话窗口。一次只有一个查看者控制输入。**Hand back to Agent** 撤销人类输入，并要求重新观察页面。控制者断线后 Agent 继续暂停，直到认证用户交还。
+初始只读观看。Linux 上的 **Take control** 暂停所有对话的浏览器工具和页面采集，并聚焦当前对话窗口。一次只有一个查看者控制输入。**Hand back to Agent** 撤销人类输入，并要求重新观察页面。
+
+要更换设备，在另一个浏览器打开同一 Thread，选择 **Take control here**。原控制端失去输入权限，Agent 全程保持暂停；仅打开 Thread 仍为只读。控制端断线后，选择 **Reconnect control** 可在保持 Agent 暂停的同时重连，或选择 **Hand back to Agent** 恢复自动化。
+
+工具栏先显示 **Taking control…**，等待当前操作结束，再显示 **Connecting control…** 和 **Waiting for the first frame…**。出现 **You have control** 后再输入或点击。连接期间可能保留旧画面并显示等待提示；连接超时可重试，等待或失败期间也可交还控制。
 
 macOS 上，在 Mac 本机操作真实浏览器前，先选择 **Pause automation**。这同样会暂停各对话的浏览器工具和页面采集。完成后选择 **Resume automation**；Agent 必须先观察更新后的页面，再继续操作。关闭查看器不会解除暂停。WebUI 预览始终只读。
 
@@ -330,18 +336,18 @@ Linux 上输入前点击远端桌面。本地输入法在你的设备上组合�
 
 Linux 人工控制期间，聚焦桌面的文本剪贴板同步最多 65,536 字符，需要 HTTPS 或 localhost 及浏览器剪贴板权限。客户端 Command 快捷键映射为 Linux Ctrl 快捷键。交还、断线或关闭查看器停止同步。远端桥接只传文字，不传图片/文件；文件对话框使用 Host 文件。
 
-Linux 支持尺寸调整时，接管后选择 Viewport 预设检查响应式布局。尺寸表示页面 CSS 视口，其他查看者也看到相同大小。调整保持登录且不重载，不模拟手机操作系统、user agent 或触摸设备。Stop/Start 和 Reset 保留选择直到服务器重启。
+Linux 支持尺寸调整时，接管后选择 Viewport 预设检查响应式布局。尺寸表示页面 CSS 视口，其他查看者也看到相同大小。调整保持登录且不重载，不模拟手机操作系统、user agent 或触摸设备。Close conversation tabs 和 Reset 保留选择直到服务器重启。
 
-| 操作                             | 保留状态                                 |
-| -------------------------------- | ---------------------------------------- |
-| 关闭抽屉、切换对话、结束 Run     | 浏览器继续运行                           |
-| 关闭 **Enable browser**          | 关闭当前对话窗口，保留共享运行时/profile |
-| **Reset browser**                | 在可见位置重建当前对话窗口               |
-| **Reconnect**                    | 重连查看器，不重启 Chromium              |
-| 关闭对话最后一个标签页           | 绑定仍启用；Agent 导航或 Reset 可新建    |
-| 退出 Chromium 或必需显示进程退出 | 停止共享运行时和全部窗口                 |
+| 操作                                          | 保留状态                                         |
+| --------------------------------------------- | ------------------------------------------------ |
+| 关闭抽屉、切换对话、结束 Run                  | 浏览器继续运行                                   |
+| **Browser options → Close conversation tabs** | 关闭当前窗口，保留 Run 绑定；同一 Run 可再次打开 |
+| **Reset browser**                             | 在可见位置重建当前对话窗口                       |
+| **Reconnect**                                 | 重连查看器，不重启 Chromium                      |
+| 关闭对话最后一个标签页                        | 绑定仍启用；Agent 导航或 Open browser 可新建     |
+| 退出 Chromium 或必需显示进程退出              | 停止共享运行时和全部窗口                         |
 
-Reset/重启创建新的只读会话。发送新提示让受影响对话使用替代窗口；不重放旧动作，等待中的工具会失败而非无限暂停。单对话 Reset 保留其他对话窗口。崩溃可能丢失未保存页面数据。服务器重启后重新启用 Browser。
+Reset 或故障恢复创建新的只读会话。共享运行时停止后，选择 **Try again** 重试。发送新提示让受影响对话使用替代窗口；不重放旧动作，等待中的工具会失败而非无限暂停。单对话 Reset 保留其他对话窗口。崩溃可能丢失未保存页面数据。服务器重启后，Auto 模式重新准备共享浏览器。人工控制期间关闭标签页后，Agent 仍暂停，直到交还。
 
 Linux 人工控制者可以查看和操作共享专用桌面的其他窗口。macOS 预览只显示一个窗口，但各对话仍通过 Chromium profile 共享网站登录状态、保存的密码及偏好。浏览器权限和网络属于 Host，不受 Sandbox 隔离。Linux 查看器使用 noVNC，源码/许可证说明位于 `/assets/LICENSE.noVNC`，其他打包依赖说明位于 `/third-party-licenses.txt`。
 

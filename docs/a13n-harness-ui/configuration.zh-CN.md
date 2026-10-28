@@ -282,7 +282,9 @@ envd:
 
 ### Host 浏览器
 
-保留 `browser.executable` 和 `browser.vnc_executable` 的默认值 `null`，启用 Browser 旁栏时便会自动选择已安装的兼容程序。自动选择无须保存配置或重启。Harness UI 负责探测程序；缺少的 Host 组件需要你自行安装。
+`browser.mode` 默认 `auto`：WebUI 启动时准备共享浏览器，并为符合条件的 Full Control Run 自动提供工具。Agent 实际浏览或你选择 **Open browser** 时才创建对话页面。要关闭此功能，将模式设为 `disabled`。修改模式后保存并重启 Harness UI。
+
+保留 `browser.executable` 和 `browser.vnc_executable` 的默认值 `null`，启动时便会自动选择已安装的兼容程序。自动选择无须保存配置或重启。Harness UI 负责探测程序；缺少的 Host 组件需要你自行安装。
 
 如需指定程序，在 **Settings → General → Host browser** 中选择，或将下面的示例合并到根 YAML。将绝对路径替换为实际安装路径。`vnc_executable` 仅适用于 Linux：
 
@@ -294,7 +296,7 @@ browser:
 
 修改覆盖项后保存并重启 Harness UI。选择 **Automatic** 可清除覆盖。显式路径无效时会阻止启动，不会回退到其他程序。
 
-浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。macOS 自动化需安装 Chromium。可选的只读预览需要 macOS 14 或更高版本，并给运行 Harness UI 的应用授予屏幕录制权限。预览只显示当前对话拥有的浏览器窗口。**Open Mac Screen Recording settings** 打开 Host 设置，由你在那里授权。缺少预览权限时仍可自动化。macOS 不使用 VNC 密码，也不提供远程输入。
+浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及 Auto 模式下的 Full Control Run。macOS 自动化需安装 Chromium。可选的只读预览需要 macOS 14 或更高版本，并给运行 Harness UI 的应用授予屏幕录制权限。预览只显示当前对话拥有的浏览器窗口。**Open Mac Screen Recording settings** 打开 Host 设置，由你在那里授权。缺少预览权限时仍可自动化。macOS 不使用 VNC 密码，也不提供远程输入。
 
 所有 Project 共用一个浏览器实例/Profile，位于 `<data_root>/browsers/profile`，无单独 Profile 路径设置。按[首次浏览器设置](webui.md#first-time-setup)完成 Host 准备和首次导航。保持 Chromium 沙箱开启；明确需要关闭它的部署可使用[显式沙箱选项](command-reference.md#webui)。
 

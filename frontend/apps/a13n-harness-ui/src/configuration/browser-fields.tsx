@@ -100,8 +100,25 @@ export function BrowserFields({
           )}
         </span>
       }
-      description="Installed components are selected automatically. Executable overrides require saving and restarting Harness UI."
+      description="Installed components are selected automatically. Changes require saving and restarting Harness UI."
     >
+      <ChoiceField
+        label="Browser mode"
+        value={text("mode") || "auto"}
+        onValueChange={(value) => set("mode", value)}
+        options={[
+          {
+            value: "auto",
+            label: "Auto",
+            hint: "Prepare one shared browser and let Agents open pages as needed.",
+          },
+          {
+            value: "disabled",
+            label: "Disabled",
+            hint: "Do not start the Host browser or provide browser tools.",
+          },
+        ]}
+      />
       <div className={styles.configuration}>
         {setup?.supported === false ? (
           <p className="text-xs text-muted-foreground" role="status">

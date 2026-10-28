@@ -49,7 +49,7 @@ Prepare the Host for your platform:
 - **Linux:** install Chrome, Chromium, or Edge and a compatible VNC server. For a container deployment, install them inside the container. TigerVNC supplies both the display and VNC server. Run as a non-root user with Chromium's sandbox enabled.
 - **macOS:** install a compatible browser and run Harness UI as the logged-in desktop user. Optional read-only preview needs macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window, including the address bar. Use **Pause automation** before operating the browser locally on the Mac, then **Resume automation**. No VNC service or password is needed.
 
-Open the conversation's Browser drawer and enable the browser. Harness UI automatically selects compatible installed programs; use **Settings → General → Host browser** only to override that selection. Follow the [browser setup procedure](webui.md#first-time-setup) for platform steps and a first navigation. Harness UI already includes the browser automation dependencies. Keep computer sharing enabled: `--no-share-computer` also disables the Host browser.
+The default Auto mode prepares the shared browser when WebUI starts. Ask a Full Control Run to browse, or choose **Browser → Open browser**. Harness UI automatically selects compatible installed programs; use **Settings → General → Host browser** to change the Auto/Disabled mode or override program selection. Follow the [browser setup procedure](webui.md#first-time-setup) for platform steps and a first navigation. Harness UI already includes the browser automation dependencies. Keep computer sharing enabled: `--no-share-computer` also disables the Host browser.
 
 ## Upgrade
 

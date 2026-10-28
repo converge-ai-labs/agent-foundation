@@ -282,7 +282,9 @@ Restart to apply. Saving does not download, launch, or request OS permissions. `
 
 ### Host browser
 
-Leave `browser.executable` and `browser.vnc_executable` at their default `null` values to select compatible installed programs automatically when you enable the Browser drawer. Automatic selection needs no configuration save or restart. Harness UI detects programs; you install any missing Host components.
+`browser.mode` defaults to `auto`: WebUI prepares the shared browser at startup and automatically provides tools to eligible Full Control Runs. Conversation pages open when the Agent browses or you choose **Open browser**. Set the mode to `disabled` to opt out. Save and restart Harness UI after changing the mode.
+
+Leave `browser.executable` and `browser.vnc_executable` at their default `null` values to select compatible installed programs automatically at startup. Automatic selection needs no configuration save or restart. Harness UI detects programs; you install any missing Host components.
 
 To choose specific programs, use **Settings → General → Host browser** or merge this example into the root YAML. Replace the absolute paths with your installed programs. `vnc_executable` applies only to Linux:
 
@@ -294,7 +296,7 @@ browser:
 
 Save changed overrides and restart Harness UI. Choose **Automatic** to clear an override. An invalid explicit path blocks startup rather than falling back to another program.
 
-Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation. On macOS, install Chromium for automation. Optional read-only preview needs macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there. Missing preview permission leaves automation available. macOS uses no VNC password or remote input.
+Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run with Auto mode. On macOS, install Chromium for automation. Optional read-only preview needs macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there. Missing preview permission leaves automation available. macOS uses no VNC password or remote input.
 
 All Projects share one browser instance/profile at `<data_root>/browsers/profile`; there is no separate profile-path setting. Follow [first-time browser setup](webui.md#first-time-setup) for Host preparation and a first navigation. Keep Chromium's sandbox enabled; the [explicit sandbox option](command-reference.md#webui) is available for deployments that require disabling it.
 

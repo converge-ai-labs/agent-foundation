@@ -51,7 +51,7 @@ description: 连接外部客户端，通过 MCP 更新工作空间资源并排�
 
 1. 发现读取和更新记忆的工具。
 2. 按 ID 读取记忆。保存 `body.id` 和 `headers.etag` 的完整值，包括引号。
-3. 调用更新工具，传入 ID、以 `If-Match` 携带该 ETag，并把修改放在 `request_body` 下。
+3. 调用更新工具，传入 ID、以 `expected_version` 携带该 ETag，并把修改放在 `request_body` 下。
 4. 再读一次记忆，确认指南已保存。
 
 例如，以下更新参数会恢复继承部署的默认指南。请将两个占位值替换为读取响应中的实际值：
@@ -59,16 +59,18 @@ description: 连接外部客户端，通过 MCP 更新工作空间资源并排�
 ```json
 {
   "memory_id": "mem_REPLACE_WITH_RETURNED_ID",
-  "If-Match": "\"mem_REPLACE_WITH_RETURNED_ID:1\"",
+  "expected_version": "mem_REPLACE_WITH_RETURNED_ID:1",
   "request_body": {"guide": null}
 }
 ```
 
-路径、查询和已声明请求头参数保留 HTTP 操作的 schema。JSON 请求体嵌套在 `request_body` 下；省略字段、空对象和显式 `null` 各有含义。
+路径和查询参数保留 HTTP 名称。请求头参数使用小写 snake_case，例如 `Idempotency-Key` 对应 `idempotency_key`。`If-Match` 前置条件使用 `expected_version`，接受带或不带引号的 `{id}:{version}`（模型为 `{key}:{version}`）。旧的 HTTP 请求头拼写不再作为工具参数接受；未知参数会报错并列出可用名称。
+
+JSON 请求体嵌套在 `request_body` 下；省略字段、空对象和显式 `null` 各有含义。仅接受空对象的请求体（例如计划的 `enable` 命令）可以省略，此时发送 `{}`。
 
 API 工具结果包含 `status`、`headers` 和未经改写的 JSON `body`。原响应有对应请求头时，返回小写的 `etag`、`x-request-id` 和 `retry-after`；空 `204` 响应的 `body` 为 `null`。分页信息保留在 `body` 中。HTTP 失败会转为工具错误，保留相同的 Service 错误封装。
 
-缺少 `If-Match` 返回 `428`，过期值返回 `412`。重新读取资源，协调修改后再尝试。MCP 不自动重试写入，也不生成幂等键。响应丢失后，先检查资源，确定写入是否已生效。
+缺少 `expected_version` 返回 `428`，过期值返回 `412`。重新读取资源，协调修改后再尝试。MCP 不自动重试写入，也不生成幂等键。响应丢失后，先检查资源，确定写入是否已生效。
 
 ## 检查失败的运行
 

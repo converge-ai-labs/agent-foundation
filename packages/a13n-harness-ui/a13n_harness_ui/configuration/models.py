@@ -357,8 +357,9 @@ class EnvdConfiguration(StrictModel):
 
 
 class BrowserConfiguration(ConfigurationModel):
-    """Host executable bindings captured at App startup; never install dependencies."""
+    """Host browser policy captured at App startup; never install dependencies."""
 
+    mode: Literal["auto", "disabled"] = "auto"
     executable: str | None = Field(default=None, min_length=1, max_length=4096)
     vnc_executable: str | None = Field(default=None, min_length=1, max_length=4096)
 

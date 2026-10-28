@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChartBarIcon } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
+import { ArrowRightIcon, ChartBarIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -17,30 +18,45 @@ import { ModelKeyIcon } from "../models/model-icon";
 import { duration, percent } from "./values";
 import styles from "./usage.module.css";
 
-type UsageRow = Schema["AgentUsage"] | Schema["ModelUsageGroup"];
+export type UsageGroup = "agents" | "models" | "members";
+type UsageRow =
+  Schema["AgentUsage"] | Schema["ModelUsageGroup"] | Schema["MemberUsage"];
 export function Breakdown({
   window,
   group,
+  principalId,
+  onMemberSelect,
 }: {
   window: { start: string; end: string };
-  group: "agents" | "models";
+  group: UsageGroup;
+  principalId?: string;
+  onMemberSelect?: (member: Schema["MemberUsage"]) => void;
 }) {
   const { t, i18n } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
-  const page = useCursor({ ...window, group });
+  const page = useCursor({ ...window, group, principalId });
   const query = useQuery({
-    queryKey: ["usage", workspace.id, group, window, page.cursor],
+    queryKey: ["usage", workspace.id, group, window, principalId, page.cursor],
     queryFn: async ({ signal }) =>
       data(
         await client
           .workspace(workspace.id)
           .GET(
-            group === "agents"
-              ? "/api/v1/usage/agents"
-              : "/api/v1/usage/models",
+            group === "members"
+              ? "/api/v1/usage/members"
+              : group === "agents"
+                ? "/api/v1/usage/agents"
+                : "/api/v1/usage/models",
             {
-              params: { query: { ...window, cursor: page.cursor, limit: 50 } },
+              params: {
+                query: {
+                  ...window,
+                  principal_id: principalId,
+                  cursor: page.cursor,
+                  limit: 50,
+                },
+              },
               signal,
             },
           ),
@@ -64,11 +80,21 @@ export function Breakdown({
   const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
   const items = query.data.items.map((item) => ({
     ...item,
-    key: "agent_id" in item ? item.agent_id : (item.model ?? "unattributed"),
+    key:
+      "principal_id" in item
+        ? item.principal_id
+        : "agent_id" in item
+          ? item.agent_id
+          : (item.model ?? "unattributed"),
   }));
   const columns: ResourceColumn<UsageRow>[] = [
     {
-      label: group === "agents" ? t("Agent") : t("Model"),
+      label:
+        group === "members"
+          ? t("Member")
+          : group === "agents"
+            ? t("Agent")
+            : t("Model"),
       tone: "primary",
       render: (item) =>
         "model" in item ? (
@@ -84,6 +110,12 @@ export function Breakdown({
         ) : (
           <div className={styles.identity}>
             <strong title={item.name}>{item.name}</strong>
+            {"principal_id" in item && (
+              <span>
+                {t(item.kind === "user" ? "User" : "Service account")}
+                {item.status === "disabled" ? ` · ${t("Disabled")}` : ""}
+              </span>
+            )}
           </div>
         ),
     },
@@ -140,7 +172,7 @@ export function Breakdown({
       ),
     },
   ];
-  if (group === "agents")
+  if (group !== "models")
     columns.push(
       {
         label: t("Runs"),
@@ -161,12 +193,35 @@ export function Breakdown({
             : null,
       },
     );
+  if (group === "members")
+    columns.push({
+      label: t("Actions"),
+      align: "right",
+      render: (item) =>
+        "principal_id" in item ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onMemberSelect?.(item)}
+          >
+            {t("View usage")}
+            <ArrowRightIcon aria-hidden="true" size={14} />
+          </Button>
+        ) : null,
+    });
   return (
     <>
       <ResourceTable
         items={items}
         columns={columns}
         caption={t("Usage breakdown")}
+        onRowActivate={
+          group === "members"
+            ? (item) => {
+                if ("principal_id" in item) onMemberSelect?.(item);
+              }
+            : undefined
+        }
       />
       <Pagination page={page} next={query.data.next_cursor} />
     </>

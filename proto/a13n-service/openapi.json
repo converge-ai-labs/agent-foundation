@@ -9988,6 +9988,78 @@
         "title": "MemberPage",
         "type": "object"
       },
+      "MemberUsage": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "service_account"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/RunMetrics"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ModelMetrics"
+          }
+        },
+        "required": [
+          "principal_id",
+          "name",
+          "kind",
+          "status",
+          "usage",
+          "runs"
+        ],
+        "title": "MemberUsage",
+        "type": "object"
+      },
+      "MemberUsagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemberUsage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "MemberUsagePage",
+        "type": "object"
+      },
       "Memory": {
         "properties": {
           "always_load": {
@@ -24499,7 +24571,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24600,7 +24673,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24691,7 +24765,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -24853,7 +24928,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25167,7 +25243,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25653,7 +25730,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25744,7 +25822,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -25998,7 +26077,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27052,7 +27132,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27154,7 +27235,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27250,7 +27332,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -27927,7 +28010,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -28075,7 +28159,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29382,7 +29467,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29525,7 +29611,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -29708,7 +29795,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30022,7 +30110,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30170,7 +30259,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30655,7 +30745,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -30935,7 +31026,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31085,7 +31177,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31390,7 +31483,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31640,7 +31734,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -31727,7 +31822,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32351,7 +32447,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32636,7 +32733,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -32938,7 +33036,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33081,7 +33180,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33363,7 +33463,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33469,7 +33570,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -33630,7 +33732,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34431,7 +34534,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34671,7 +34775,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -34815,7 +34920,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -35168,7 +35274,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -35311,7 +35418,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -35941,7 +36049,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36084,7 +36193,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36458,7 +36568,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -36601,7 +36712,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -37190,7 +37302,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -37338,7 +37451,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -38099,7 +38213,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -38309,7 +38424,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38702,7 +38818,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -38823,7 +38940,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -39050,7 +39168,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -39125,7 +39244,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -39952,7 +40072,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42486,7 +42607,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42637,7 +42759,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42750,7 +42873,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -42851,7 +42975,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -43247,7 +43372,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -43793,7 +43919,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44564,7 +44691,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44666,7 +44794,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -44855,7 +44984,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45208,7 +45338,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45299,7 +45430,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45544,7 +45676,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -45687,7 +45820,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46313,7 +46447,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46409,7 +46544,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46560,7 +46696,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46666,7 +46803,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -46753,7 +46891,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47112,7 +47251,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47218,7 +47358,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47499,7 +47640,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47659,7 +47801,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47764,7 +47907,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -47850,7 +47994,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -50474,6 +50619,26 @@
             }
           },
           {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -50552,7 +50717,8 @@
         "summary": "Usage Agents",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/context": {
@@ -50675,6 +50841,133 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/usage/members": {
+      "get": {
+        "operationId": "list_usage_members",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "End",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberUsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Usage Members",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/usage/models": {
       "get": {
         "operationId": "usage_models",
@@ -50697,6 +50990,26 @@
               "format": "date-time",
               "title": "End",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
             }
           },
           {
@@ -50778,7 +51091,8 @@
         "summary": "Usage Models",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/overview": {
@@ -50803,6 +51117,26 @@
               "format": "date-time",
               "title": "End",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
             }
           },
           {
@@ -50866,7 +51200,8 @@
         "summary": "Usage Overview",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/usage/records/{record_id}/metrics": {
@@ -51163,7 +51498,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -51298,7 +51634,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -51354,7 +51691,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -51613,7 +51951,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52044,7 +52383,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -52192,7 +52532,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           },
           {
@@ -52470,7 +52811,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52546,7 +52888,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -52929,7 +53272,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53050,7 +53394,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53277,7 +53622,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53352,7 +53698,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53517,7 +53864,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53721,7 +54069,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],
@@ -53847,7 +54196,8 @@
                 }
               ],
               "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
-              "title": "If-Match"
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
             }
           }
         ],

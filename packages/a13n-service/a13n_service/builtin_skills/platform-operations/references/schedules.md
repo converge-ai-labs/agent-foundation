@@ -14,9 +14,9 @@ Creation needs both `write` and `run`. Only the creator may edit, enable or manu
 
 ## Versions and retries
 
-Read `get_schedule` before editing, enabling, pausing, archiving or manually dispatching, and send its ETag as `If-Match`. Keep the exact target, request body and original version in the reviewed call. A stale version requires rereading and a new review of changed arguments, not silently substituting a fresh ETag.
+Read `get_schedule` before editing, enabling, pausing, archiving or manually dispatching, and send its ETag as `expected_version`. Keep the exact target, request body and original version in the reviewed call. A stale version requires rereading and a new review of changed arguments, not silently substituting a fresh ETag.
 
-Supply `Idempotency-Key` for creation and manual dispatch. Retain the same key for the same intended operation and body when recovering from a lost response; do not create a fresh key and risk duplicate work. Inspect current state first when the outcome is unknown. A different body with the same key is a conflict. A dispatch replay returns the original occurrence, even after it finishes. Supply the required empty `request_body: {}` for enable, pause and dispatch.
+Supply `idempotency_key` for creation and manual dispatch. Retain the same key for the same intended operation and body when recovering from a lost response; do not create a fresh key and risk duplicate work. Inspect current state first when the outcome is unknown. A different body with the same key is a conflict. A dispatch replay returns the original occurrence, even after it finishes.
 
 Completed one-time Schedules cannot be edited, enabled or manually dispatched; create a new Schedule to run again. Archived Schedules cannot be restored. `schedule_busy` means an earlier occurrence is still pending or has unfinished work; inspect it before attempting another dispatch.
 

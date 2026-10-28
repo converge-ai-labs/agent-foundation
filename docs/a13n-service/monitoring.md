@@ -132,3 +132,13 @@ Interpret the numbers together:
 - **Time:** usage is grouped by ingestion time, runs by start time. Average run time covers started runs that have sealed, from start to seal including intervening execution waits. A waiting run seals before human approval; a resumed successor counts as a separate run.
 
 Late usage can update earlier totals. Console groups days in the browser's timezone; use the same timezone and time range when comparing an API report with the chart.
+
+Workspace administrators can inspect usage by member:
+
+1. Select a user or service account in the **Member** picker beside the time range. The overview, daily trend and agent/model breakdowns update together.
+2. Choose **By member** in the breakdown to compare accounts, then **View usage** on a row to inspect that account.
+3. Choose **Clear member filter** to return to workspace totals.
+
+`GET /api/v1/usage/members` returns the paginated member breakdown. Overview, agent, model and member endpoints accept an optional `principal_id`. Member queries and any identity-filtered query require workspace `admin`; unfiltered overview, agent and model queries require `read`. Missing or foreign identities return empty usage without exposing their profile.
+
+Usage belongs to the run's execution identity. Requests through a shared bot account remain grouped under that account, not external chat users. Disabled or removed members retain their historical usage; displayed names and status use current values.

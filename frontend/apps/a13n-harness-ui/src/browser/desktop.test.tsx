@@ -31,7 +31,8 @@ vi.mock("./annotation-editor", () => ({
 const preview = vi.hoisted(() => ({ connect: vi.fn() }));
 vi.mock("./window-preview", () => ({ connectWindowPreview: preview.connect }));
 
-const { connections } = vi.hoisted(() => ({
+const { connections, controls } = vi.hoisted(() => ({
+  controls: { autoConnect: true, painted: true },
   connections: [] as (EventTarget & {
     viewOnly: boolean;
     disconnect: ReturnType<typeof vi.fn>;
@@ -60,14 +61,16 @@ vi.mock("@novnc/novnc", () => ({
       this.canvas.height = 600;
       root.appendChild(this.canvas);
       connections.push(this);
-      setTimeout(() => this.dispatchEvent(new Event("connect")), 0);
+      if (controls.autoConnect)
+        setTimeout(() => this.dispatchEvent(new Event("connect")), 0);
     }
   },
 }));
 beforeEach(() => {
+  controls.autoConnect = controls.painted = true;
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     putImageData: vi.fn(),
-    getImageData: () => ({ data: [0, 0, 0, 255] }),
+    getImageData: () => ({ data: [0, 0, 0, controls.painted ? 255 : 0] }),
   } as unknown as CanvasRenderingContext2D);
 });
 afterEach(() => {
@@ -80,9 +83,13 @@ afterEach(() => {
 async function show(
   returnToChat = vi.fn(),
   platform: "linux" | "macos" = "linux",
+  onReconnectControl = vi.fn(),
 ) {
   const post = vi.fn(
-    async (_url: string, options: { body: { control_token: string } }) => ({
+    async (
+      _url: string,
+      options: { body: { control_token: string }; signal?: AbortSignal },
+    ) => ({
       data: {
         protocol: platform === "macos" ? "jpeg" : "vnc",
         ticket: "fixture-ticket",
@@ -93,7 +100,11 @@ async function show(
   );
   // The transport identity must remain stable across ordinary local updates.
   const client = { POST: post };
-  const renderView = (token = "", scale: BrowserScale = "fit") => (
+  const renderView = (
+    token = "",
+    scale: BrowserScale = "fit",
+    busy = false,
+  ) => (
     <TransportContext value={{ client } as unknown as Transport}>
       <ReturnToChat value={returnToChat}>
         <Desktop
@@ -105,18 +116,22 @@ async function show(
             control: token ? "human" : "agent",
           }}
           controlToken={token}
-          busy={false}
+          busy={busy}
+          onReconnectControl={onReconnectControl}
           scale={scale}
         />
       </ReturnToChat>
     </TransportContext>
   );
   const rendered = render(renderView());
-  await waitFor(() => expect(screen.queryByText("Connecting…")).toBeNull());
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("Watching"),
+  );
   return {
     post,
-    update: (token = "", scale: BrowserScale = "fit") =>
-      rendered.rerender(renderView(token, scale)),
+    update: (token = "", scale: BrowserScale = "fit", busy = false) =>
+      rendered.rerender(renderView(token, scale, busy)),
+    unmount: rendered.unmount,
   };
 }
 
@@ -159,7 +174,9 @@ it.each([
   expect(screen.getByRole("status").textContent).toBe(message);
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   await waitFor(() => expect(connections).toHaveLength(2));
-  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("Watching"),
+  );
   expect(view.post).toHaveBeenCalledTimes(2);
   expect(view.post).toHaveBeenLastCalledWith(
     expect.stringContaining("/access"),
@@ -214,9 +231,6 @@ it("focuses the local IME input on takeover and removes it on handback", async (
 });
 
 it("captures a read-only framebuffer without acquiring control or reconnecting", async () => {
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-    putImageData: vi.fn(),
-  } as unknown as CanvasRenderingContext2D);
   const view = await show();
   const capture = screen.getByRole("button", {
     name: "Capture and annotate screenshot",
@@ -233,7 +247,7 @@ it("captures a read-only framebuffer without acquiring control or reconnecting",
 it("suspends controller input while editing and returns to chat after copy", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     putImageData: vi.fn(),
-    getImageData: () => ({ data: [0, 0, 0, 255] }),
+    getImageData: () => ({ data: [0, 0, 0, controls.painted ? 255 : 0] }),
   } as unknown as CanvasRenderingContext2D);
   const returnToChat = vi.fn();
   const view = await show(returnToChat);
@@ -252,8 +266,10 @@ it("suspends controller input while editing and returns to chat after copy", asy
   fireEvent.keyDown(input, { key: "a", code: "KeyA" });
   await Promise.resolve();
   expect(connections[1].sendKey).not.toHaveBeenCalled();
+  const focus = vi.spyOn(input, "focus");
   fireEvent.click(screen.getByRole("button", { name: "Copy screenshot" }));
   await waitFor(() => expect(returnToChat).toHaveBeenCalledOnce());
+  expect(focus).not.toHaveBeenCalled();
   expect(connections[1].viewOnly).toBe(false);
   expect(connections).toHaveLength(2);
   expect(connections[1].disconnect).not.toHaveBeenCalled();
@@ -306,3 +322,144 @@ it("keeps Mac preview read-only during pause, supports capture and clears it on 
   await waitFor(() => expect(stops).toHaveLength(3));
   expect(view.post).toHaveBeenCalledTimes(3);
 });
+
+it("keeps a retained picture visibly pending and blocks input until the new frame arrives", async () => {
+  const view = await show();
+  controls.painted = false;
+  view.update("controller-a");
+  await waitFor(() => expect(connections).toHaveLength(2));
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe(
+      "Waiting for the first frame…",
+    ),
+  );
+  expect(
+    document
+      .querySelector('[data-browser-frame="retained"]')
+      ?.hasAttribute("hidden"),
+  ).toBe(false);
+  expect(
+    document.querySelector("[data-browser-screen]")?.hasAttribute("inert"),
+  ).toBe(true);
+  expect(connections[1].viewOnly).toBe(true);
+  controls.painted = true;
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("You have control"),
+  );
+  expect(connections[1].viewOnly).toBe(false);
+  expect(
+    document
+      .querySelector('[data-browser-frame="retained"]')
+      ?.hasAttribute("hidden"),
+  ).toBe(true);
+});
+
+it("does not enable native input while a lifecycle command is pending", async () => {
+  const view = await show();
+  view.update("controller-a", "fit", true);
+  await waitFor(() => expect(connections).toHaveLength(2));
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("Automation paused"),
+  );
+  expect(connections[1].viewOnly).toBe(true);
+  view.update("controller-a");
+  await waitFor(() => expect(connections[1].viewOnly).toBe(false));
+});
+
+it.each(["handshake", "first frame"])(
+  "bounds a stalled %s and ignores late connect events",
+  async (phase) => {
+    const retry = vi.fn();
+    const view = await show(vi.fn(), "linux", retry);
+    controls.autoConnect = false;
+    controls.painted = phase !== "first frame";
+    view.update("controller-a");
+    await waitFor(() => expect(connections).toHaveLength(2));
+    if (phase === "first frame")
+      act(() => connections[1].dispatchEvent(new Event("connect")));
+    vi.useFakeTimers();
+    // Start another attempt with fake time so the connection deadline is deterministic.
+    view.update("controller-b");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const connection = connections.at(-1)!;
+    if (phase === "first frame")
+      act(() => connection.dispatchEvent(new Event("connect")));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(screen.getByRole("status").textContent).toContain(
+      "Connection timed out",
+    );
+    expect(connection.disconnect).toHaveBeenCalled();
+    controls.painted = true;
+    act(() => connection.dispatchEvent(new Event("connect")));
+    expect(connection.viewOnly).toBe(true);
+    expect(
+      document.querySelector("[data-browser-screen]")?.hasAttribute("inert"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect control" }));
+    expect(retry).toHaveBeenCalledOnce();
+  },
+);
+
+it("requests renewed control after controller loss instead of reusing revoked credentials", async () => {
+  const retry = vi.fn();
+  const view = await show(vi.fn(), "linux", retry);
+  view.update("controller-a");
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("You have control"),
+  );
+  act(() => connections[1].dispatchEvent(new Event("disconnect")));
+  const attempts = view.post.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect control" }));
+  expect(retry).toHaveBeenCalledOnce();
+  expect(view.post).toHaveBeenCalledTimes(attempts);
+  expect(
+    document.querySelector("[data-browser-screen]")?.hasAttribute("inert"),
+  ).toBe(true);
+  view.update("controller-b");
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe("You have control"),
+  );
+});
+
+it.each(["timeout", "handback", "unmount"])(
+  "aborts pending admission on %s and ignores a late access response",
+  async (end) => {
+    const view = await show();
+    let resolve!: (value: Awaited<ReturnType<typeof view.post>>) => void;
+    view.post.mockReturnValueOnce(new Promise((done) => (resolve = done)));
+    vi.useFakeTimers();
+    view.update("controller-a");
+    const signal = view.post.mock.calls.at(-1)![1].signal!;
+    expect(signal.aborted).toBe(false);
+    if (end === "timeout") {
+      await act(async () => vi.advanceTimersByTimeAsync(15000));
+      expect(screen.getByRole("status").textContent).toContain(
+        "Connection timed out",
+      );
+    } else if (end === "handback") {
+      view.update();
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+    } else {
+      view.unmount();
+    }
+    expect(signal.aborted).toBe(true);
+    const count = connections.length;
+    await act(async () => {
+      resolve({
+        data: {
+          protocol: "vnc",
+          ticket: "late-ticket",
+          password: "late-password",
+          control: true,
+        },
+      });
+      await Promise.resolve();
+    });
+    expect(connections).toHaveLength(count);
+    expect(connections.every((connection) => connection.viewOnly)).toBe(true);
+  },
+);

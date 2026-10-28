@@ -49,7 +49,7 @@ WebUI 在你的浏览器中打开。可选的 **Browser** 旁栏会在 Linux 或
 - **Linux**：安装 Chrome、Chromium 或 Edge，以及兼容的 VNC 服务。容器部署需要将这些程序安装在容器内。TigerVNC 同时提供显示和 VNC 服务。以非 root 用户运行，并保持 Chromium 沙箱开启。
 - **macOS**：安装兼容浏览器，以已登录桌面的用户运行 Harness UI。可选的只读预览需要 macOS 14 或更高版本，并给运行 Harness UI 的应用授予屏幕录制权限。预览只显示当前对话拥有的浏览器窗口，包括地址栏。在 Mac 本机操作浏览器前选择 **Pause automation**，完成后选择 **Resume automation**。无需 VNC 服务或密码。
 
-打开对话的 Browser 旁栏并启用浏览器。Harness UI 会自动选择已安装的兼容程序；只有需要覆盖自动选择时，才使用 **Settings → General → Host browser**。[浏览器设置流程](webui.md#first-time-setup)介绍各平台步骤和首次导航。Harness UI 已包含浏览器自动化依赖。需要保持电脑共享开启：`--no-share-computer` 也会关闭 Host 浏览器。
+默认 Auto 模式在 WebUI 启动时准备共享浏览器。让 Full Control Run 浏览，或选择 **Browser → Open browser**。Harness UI 自动选择已安装的兼容程序；需要修改 Auto/Disabled 模式或覆盖程序选择时，使用 **Settings → General → Host browser**。[浏览器设置流程](webui.md#first-time-setup)介绍各平台步骤和首次导航。Harness UI 已包含浏览器自动化依赖。需要保持电脑共享开启：`--no-share-computer` 也会关闭 Host 浏览器。
 
 ## 升级
 

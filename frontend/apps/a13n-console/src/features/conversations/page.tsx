@@ -252,7 +252,7 @@ export function NewConversation() {
 export function SessionLayout() {
   const { t } = useTranslation();
   const { sessionId = "", threadId, runId } = useParams();
-  const { basePath, workspace } = useWorkspace();
+  const { workspace } = useWorkspace();
   const { search } = useLocation();
   const client = useClient(),
     cache = useQueryClient();
@@ -264,16 +264,12 @@ export function SessionLayout() {
       sessionId,
       chat ? { origin: ["new"], limit: 2 } : { limit: 1 },
     ),
-    enabled: !!session.data && !threadId && !session.data.schedule_id,
+    enabled: !!session.data && !threadId,
   });
   const fallback = useQuery({
     ...queries.threads(sessionId, { limit: 1 }),
     enabled:
-      !!session.data &&
-      !session.data.schedule_id &&
-      !threadId &&
-      chat &&
-      roots.data?.items.length === 0,
+      !!session.data && !threadId && chat && roots.data?.items.length === 0,
   });
   const first =
     chat && roots.data?.items.length !== 1 ? undefined : roots.data?.items[0];
@@ -301,13 +297,6 @@ export function SessionLayout() {
         );
     }
   }, [client, cache, workspace.id, targetThread, selectedRun]);
-  if (session.data?.schedule_id && !threadId)
-    return (
-      <Navigate
-        to={`${basePath}/schedules/${session.data.schedule_id}`}
-        replace
-      />
-    );
   return (
     <SessionAuthorsProvider
       key={`${workspace.id}:${sessionId}`}

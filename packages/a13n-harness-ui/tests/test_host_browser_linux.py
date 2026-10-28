@@ -152,6 +152,9 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         runtime = browsers.runtime
         page = browsers.bindings["thread-a"].page
         assert runtime and page and browsers.desktop
+        assert "Sign in" in (await backend.observe()).text
+        assert "Sign in" in await backend.read("text")
+        assert (await backend.screenshot()).data.startswith(b"\xff\xd8")
         if browsers.desktop.desktop.window_manager:
             async with asyncio.timeout(5):
                 while (await runtime.window(page))["bounds"]["windowState"] != "maximized":
@@ -211,6 +214,25 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         key(writable, ord("a"))
         await writable.drain()
         await wait_value(runtime, page, "document.querySelector('input').value", "a")
+        with pytest.raises(HarnessUiError, match="user controls"):
+            await backend.observe()
+        # Transfer an active controller without releasing the automation pause.
+        old_controller = browsers.controller
+        assert old_controller is not None
+        renewed = await browsers.control("thread-a", state.session_id, human=True)
+        assert writable.is_closing()
+        assert not browsers.released.is_set()
+        await browsers.disconnect(old_controller)
+        assert browsers.control_token == renewed.control_token
+        assert renewed.control_token != control.control_token
+        with pytest.raises(HarnessUiError, match="revoked"):
+            await browsers.access(
+                "thread-a", BrowserAccessRequest(session_id=state.session_id, control_token=control.control_token)
+            )
+        _, writable, _ = await rfb(browsers, "thread-a", state.session_id, renewed.control_token)
+        key(writable, ord("b"))
+        await writable.drain()
+        await wait_value(runtime, page, "document.querySelector('input').value", "ab")
         with pytest.raises(HarnessUiError, match="user controls"):
             await backend.observe()
         await browsers.control("thread-a", state.session_id, human=False)
@@ -635,3 +657,40 @@ async def test_saved_password_autofill_after_restart_without_model_secret_values
         )
     finally:
         await host.close()
+
+
+async def test_auto_preparation_empty_scopes_and_same_run_reopen(tmp_path, site, browser_configuration, request):
+    browsers = HostBrowsers(
+        root=tmp_path / "auto-browser",
+        available=True,
+        authorize=AsyncMock(),
+        configuration=browser_configuration,
+        no_sandbox=request.config.getoption("--browser-no-sandbox"),
+    )
+    try:
+        await browsers.prepare()
+        assert browsers.runtime is not None and not browsers.startup_error
+        process = browsers.process
+        assert not browsers.owners and not browsers.bindings
+        first = await browsers.admit("thread-a")
+        second = await browsers.admit("thread-b")
+        assert first and second and first != second
+        assert not browsers.owners
+        backend = browsers.backend("thread-a", first)
+        await backend.navigate(site)
+        page_a = browsers.bindings["thread-a"].page
+        await browsers.backend("thread-b", second).tabs("new", url=site)
+        page_b = browsers.bindings["thread-b"].page
+        assert page_a and page_b
+        assert (await browsers.runtime.window(page_a))["windowId"] != (await browsers.runtime.window(page_b))[
+            "windowId"
+        ]
+        await browsers.close_pages("thread-a", first)
+        assert browsers.state("thread-a").page_count == 0
+        assert browsers.bindings["thread-b"].page is page_b
+        await backend.navigate(site)
+        assert "Sign in" in (await backend.observe()).text
+        assert browsers.state("thread-a").session_id == first
+        assert browsers.process is process
+    finally:
+        await browsers.close()

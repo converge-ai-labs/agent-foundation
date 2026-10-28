@@ -43,6 +43,7 @@ import { TerminalPanel, type TerminalRequest } from "./terminal";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { BrowserPanel } from "../browser/panel";
+import { BrowserActivity } from "../browser/activity";
 import { usePanelSize } from "./panel-size";
 import { ReturnToChat } from "./capture";
 import { useThread } from "../conversations/queries";
@@ -521,6 +522,16 @@ export function NativeWorkspace({
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
               <EnvironmentMonitor />
+              {threadId && status.data?.features?.browser && (
+                <BrowserActivity
+                  key={threadId}
+                  threadId={threadId}
+                  occupied={pane !== null || view !== "page"}
+                  visible={pane === "browser"}
+                  reveal={() => setPane("browser")}
+                  open={() => show("browser")}
+                />
+              )}
               {status.data?.features?.host_files && (
                 <Button
                   variant="ghost"

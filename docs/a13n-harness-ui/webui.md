@@ -260,17 +260,17 @@ Exited sessions remain inspectable until closed. After uncertain creation or clo
 
 ## Browse on the Host
 
-**Browser** lets the Agent browse with Chromium on the server while you watch its native window. Linux shows a shared private desktop; macOS shows only the conversation's owned browser window. Prepare this optional feature after ordinary chat works. It requires a Linux or macOS Host, computer sharing, and a Full Control conversation. Windows browsers can view a supported Host; Windows cannot host this desktop.
+**Browser** lets the Agent browse with Chromium on the server while you watch its native window. Linux shows a shared private desktop; macOS shows only the conversation's owned browser window. Browsing requires a Linux or macOS Host, computer sharing, and a Full Control Run. Windows browsers can view a supported Host; Windows cannot host this desktop.
 
 ### First-time setup
 
-1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI.
-2. Send a message to create a conversation. Once it is idle, open **Conversation details → Configuration → Change next Run selections**, set **Local mode** to **Full Control**, and save. Then open **Browser** and turn on **Enable browser**.
-3. Harness UI discovers compatible installed components and opens the conversation's window. If startup fails, resolve the displayed required components and choose **Try again**.
-4. Send a new task asking the Agent to browse. Enabled Full Control Runs receive browser tools automatically.
+1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI. Leave computer sharing enabled when starting WebUI.
+2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. If startup fails, open **Browser**, resolve the displayed required components, and choose **Try again**.
+3. Start a **Full Control** conversation and ask the Agent to browse. Tools are available automatically; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
+4. First live browser use reveals the viewer without moving keyboard focus. If Files/Changes is open or the screen is narrow, choose **View browser**. Closing the viewer keeps the browser running and prevents another automatic reveal in that Run.
 5. For login or manual correction on Linux, choose **Take control**, finish the action, then **Hand back to Agent**. On macOS, choose **Pause automation**, operate the browser locally on the Mac, then **Resume automation**.
 
-The Browser drawer uses the conversation's saved local mode; choosing a temporary Full Control override in the composer does not unlock it. Keep the browsing Run in Full Control too. Enabling Browser needs no executable configuration save or server restart. Use **Advanced browser settings** only for executable overrides. Files, Shell, and ordinary chat do not start Chromium or a display session.
+Browsing needs no per-conversation switch or manual Capability entry. Use **Advanced browser settings** for the global Auto/Disabled mode and executable overrides; save and restart after changing them. Ordinary chat, Files and Shell do not allocate conversation browser pages.
 
 ### Install Host components
 
@@ -294,7 +294,7 @@ Run as non-root with Chromium's sandbox enabled. Root requires an explicit `--br
 **macOS:**
 
 1. Install Chrome, Chromium, or Edge and run Harness UI as the logged-in desktop user.
-2. Enable Browser to use automation. Chromium is the only required browser component.
+2. Choose **Browser → Open browser** to open a window; Chromium is the only required browser component.
 3. For optional preview on macOS 14 or later, grant Screen Recording permission to the application running Harness UI. **Open Mac Screen Recording settings** opens the Host settings; you grant permission there.
 4. Keep the Mac unlocked and the browser window visible. After granting permission or unlocking, choose **Reconnect**. Restart the Host application if macOS asks you to.
 
@@ -320,9 +320,15 @@ On macOS, settings show optional **Window preview** instead of a VNC executable 
 
 The shared profile lives at `<data_root>/browsers/profile`, normally `~/.a13n-harness-ui/data/browsers/profile`. It has no separate location setting. Conversations and Projects share one Chromium instance and profile, with separate windows/Agent tabs. Personal profiles are not imported, and existing profile directories are not moved or merged.
 
+On Linux, the managed browser uses basic password storage to avoid waiting for a locked desktop keyring. Saved passwords and cookies are **not protected by the OS keyring**; protect the profile and its backups as credentials. The system keyring and macOS credential storage are unchanged. Restart Harness UI after upgrading to apply this behavior. The profile is retained, but sites whose login data used keyring encryption may require another sign-in.
+
 ### Start and control the browser
 
-Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation. A disconnected controller leaves Agent access paused until an authenticated user hands back.
+Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation.
+
+To change devices, open the same Thread in another browser and choose **Take control here**. The previous controller loses input while the Agent stays paused; opening the Thread alone remains read-only. After a disconnection, choose **Reconnect control** to reconnect while keeping the Agent paused, or **Hand back to Agent** to resume automation.
+
+The toolbar shows **Taking control…** while current operations finish, then **Connecting control…** and **Waiting for the first frame…**. Wait for **You have control** before typing or clicking. Connection can retain the previous picture with a pending message; a timeout offers retry, and you can hand back while connection is pending or failed.
 
 On macOS, choose **Pause automation** before interacting with the real browser locally on the Mac. This also pauses browser tools and page collection across conversations. Choose **Resume automation** when done; the Agent must observe the updated page before continuing. Closing the viewer leaves automation paused. The WebUI preview remains read-only throughout.
 
@@ -330,18 +336,18 @@ On Linux, click the remote desktop before typing. Local input methods compose on
 
 During Linux human control, focused desktop text clipboards synchronize up to 65,536 characters. HTTPS or localhost and browser clipboard permission are required. Client Command shortcuts map to Linux Ctrl shortcuts. Handback, disconnection, and closing the viewer stop synchronization. The remote bridge transfers text, not images/files; file dialogs use Host files.
 
-On Linux with supported resizing, take control and choose a Viewport preset for responsive layout checks. The dimensions describe the page's CSS viewport; other viewers see the same size. Resizing preserves login and avoids reload. It does not emulate a mobile OS, user agent, or touch device. Stop/Start and Reset retain the selection until server restart.
+On Linux with supported resizing, take control and choose a Viewport preset for responsive layout checks. The dimensions describe the page's CSS viewport; other viewers see the same size. Resizing preserves login and avoids reload. It does not emulate a mobile OS, user agent, or touch device. Close conversation tabs and Reset retain the selection until server restart.
 
-| Action                                           | What remains                                                        |
-| ------------------------------------------------ | ------------------------------------------------------------------- |
-| Close drawer, switch conversation, finish Run    | Browser continues running                                           |
-| Turn off **Enable browser**                      | This conversation's windows close; shared runtime/profile remain    |
-| **Reset browser**                                | Recreate this conversation's window at a visible position           |
-| **Reconnect**                                    | Reconnect the viewer without restarting Chromium                    |
-| Close last conversation tab                      | Binding stays enabled; Agent navigation or Reset can create another |
-| Exit Chromium or lose a required display process | Shared runtime and all windows stop                                 |
+| Action                                           | What remains                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Close drawer, switch conversation, finish Run    | Browser continues running                                                    |
+| **Browser options → Close conversation tabs**    | Close current windows; keep the Run binding so the same Run can reopen pages |
+| **Reset browser**                                | Recreate this conversation's window at a visible position                    |
+| **Reconnect**                                    | Reconnect the viewer without restarting Chromium                             |
+| Close last conversation tab                      | Binding stays enabled; Agent navigation or Open browser can create another   |
+| Exit Chromium or lose a required display process | Shared runtime and all windows stop                                          |
 
-Reset/restart creates a new read-only session. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, enable Browser again.
+Reset or recovery after failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing tabs during human control leaves the Agent paused until handback.
 
 Linux human controllers can see and operate other windows on the shared private desktop. macOS preview is limited to one window, while website logins, saved passwords, and preferences still share the Chromium profile across conversations. Browser authority and networking belong to the Host, outside Sandbox isolation. Linux uses noVNC; its source/license notice is served at `/assets/LICENSE.noVNC`, with other bundled notices at `/third-party-licenses.txt`.
 

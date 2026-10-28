@@ -63,7 +63,24 @@ async def test_run_environment_override_is_captured_without_changing_thread(tmp_
             assert saved.environment_profile.profile_id == expected
 
 
-async def test_sandbox_run_does_not_inherit_enabled_host_browser(tmp_path, monkeypatch):
+@pytest.fixture
+def browser_runtime(monkeypatch):
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness.capabilities.browser.cdp import Chromium
+    from a13n_harness_ui.browser import HostBrowsers
+
+    runtime = Chromium(Mock())
+    runtime.close = AsyncMock()
+
+    async def launch(host):
+        host.runtime = runtime
+
+    monkeypatch.setattr(HostBrowsers, "launch", launch)
+    return runtime
+
+
+async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, browser_runtime):
     capabilities = []
 
     class Reconstructor(_CompletedReconstructor):
@@ -80,7 +97,8 @@ async def test_sandbox_run_does_not_inherit_enabled_host_browser(tmp_path, monke
         app._root_runs._executor._agents = Reconstructor()
         thread = await app.create_thread()
         host = app.browsers()
-        binding = host.bindings[thread.thread_id] = Binding()
+        binding = await host.admit(thread.thread_id)
+        assert binding is not None
         captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
         for profile, expected_browser in [("environment-sandbox", False), (None, True)]:
             receipt = await app.submit_thread(
@@ -92,7 +110,7 @@ async def test_sandbox_run_does_not_inherit_enabled_host_browser(tmp_path, monke
             assert captures[-1].environment_profile.profile_id == (profile or "environment-native")
             assert bool(capabilities[-1]) is expected_browser
             assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
-            assert host.binding(thread.thread_id) == binding.identity
+            assert host.binding(thread.thread_id) == binding
 
 
 @pytest.mark.parametrize("profile", ["missing-profile", "environment-sandbox"])
@@ -287,11 +305,13 @@ async def test_management_state_is_published_before_execution_and_after_partial_
 
 
 @pytest.mark.parametrize("sandbox_default", [False, True])
-async def test_captured_full_control_browser_survives_next_run_default_changes(tmp_path, sandbox_default):
+async def test_captured_full_control_browser_survives_next_run_default_changes(
+    tmp_path, sandbox_default, browser_runtime
+):
     import asyncio
-    from unittest.mock import AsyncMock, Mock
+    from unittest.mock import AsyncMock
 
-    from a13n_harness.capabilities.browser.cdp import Chromium, Page
+    from a13n_harness.capabilities.browser.cdp import Page
     from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 
     from .test_app import _reconstructed
@@ -325,11 +345,10 @@ async def test_captured_full_control_browser_survives_next_run_default_changes(t
             )
         )
         host = app.browsers()
-        runtime = host.runtime = Chromium(Mock())
+        runtime = browser_runtime
         page = Page("tab", "session")
         runtime.pages[page.target] = page
         runtime.send = AsyncMock(return_value={"targetInfos": [{"type": "page", "targetId": "tab"}]})
-        runtime.close = AsyncMock()
         host.bindings[thread.thread_id] = Binding(status="ready", scope=CdpBrowserBackend(runtime, page))
         receipt = await app.submit_thread(
             thread_id=thread.thread_id,
