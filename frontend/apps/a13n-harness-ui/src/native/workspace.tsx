@@ -33,8 +33,6 @@ import {
   ArrowLeft,
   ArrowUp,
   CaretRight,
-  ArrowsOutSimple,
-  ArrowsInSimple,
   SidebarSimple,
   PencilSimple,
   SlidersHorizontal,
@@ -166,6 +164,7 @@ export function NativeWorkspace({
   const [narrowSidebar, setNarrowSidebar] = useState(false);
   const singleView =
     !sidebarCollapsed && (tabLayout || (narrow && !narrowSidebar));
+  const supportingExpanded = !sidebarCollapsed && (!singleView || nativeActive);
   const layoutTransition = useRef<ViewTransition | null>(null);
   const layoutRevision = useRef(0);
   const animateLayout = (
@@ -189,23 +188,20 @@ export function NativeWorkspace({
     // Skipping snapshots does not cancel an older transition's update callback.
     void transition.ready.catch(() => {});
   };
-  const toggleLayout = () => {
+  const toggleSupportingPanel = () => {
     animateLayout(
       () => {
-        setSidebarCollapsed(false);
-        if (sidebarCollapsed) {
-          setTabLayout(false);
-          setNarrowSidebar(narrow);
+        setTabLayout(false);
+        setNarrowSidebar(narrow);
+        setSidebarCollapsed(supportingExpanded);
+        if (supportingExpanded) focusCenter();
+        else {
+          applyTab(activeTab);
           setNativeActive(true);
-          return;
+          requestAnimationFrame(() => paneElement.current?.focus());
         }
-        setTabLayout(!singleView);
-        setNarrowSidebar(narrow && singleView);
-        if (singleView) {
-          setNativeActive(true);
-        } else setNativeActive(focusedArea !== "page");
       },
-      sidebarCollapsed ? "panel-open" : undefined,
+      supportingExpanded ? "panel-close" : "panel-open",
     );
   };
   const workspaceId = useId();
@@ -900,35 +896,6 @@ export function NativeWorkspace({
               open={() => show("browser")}
             />
           )}
-          {isWorkspace && hasSupportingViews && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={
-                sidebarCollapsed
-                  ? "Open supporting panel"
-                  : singleView
-                    ? "Use side-by-side layout"
-                    : "Use tab layout"
-              }
-              title={
-                sidebarCollapsed
-                  ? "Open supporting panel"
-                  : singleView
-                    ? "Use side-by-side layout"
-                    : "Use tab layout"
-              }
-              onClick={() => toggleLayout()}
-            >
-              {sidebarCollapsed ? (
-                <SidebarSimple />
-              ) : singleView ? (
-                <ArrowsInSimple />
-              ) : (
-                <ArrowsOutSimple />
-              )}
-            </Button>
-          )}
           {profile}
           {threadId && (
             <Menu>
@@ -964,6 +931,26 @@ export function NativeWorkspace({
                 ))}
               </MenuPopup>
             </Menu>
+          )}
+          {isWorkspace && hasSupportingViews && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={
+                supportingExpanded
+                  ? "Close supporting panel"
+                  : "Open supporting panel"
+              }
+              title={
+                supportingExpanded
+                  ? "Close supporting panel"
+                  : "Open supporting panel"
+              }
+              aria-expanded={supportingExpanded}
+              onClick={toggleSupportingPanel}
+            >
+              <SidebarSimple />
+            </Button>
           )}
         </header>
         <div

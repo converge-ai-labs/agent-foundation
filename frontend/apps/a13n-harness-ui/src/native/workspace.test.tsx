@@ -299,6 +299,24 @@ async function chooseView(name: "Files" | "Changes" | "Browser" | "Terminal") {
   fireEvent.click(await screen.findByRole("button", { name }));
 }
 
+function expandSupportingPanel() {
+  for (let i = 0; i < 25; i++) {
+    const splitter = screen.queryByRole("separator", {
+      name: "Resize supporting panel",
+    });
+    if (!splitter) break;
+    fireEvent.keyDown(splitter, { key: "ArrowLeft" });
+  }
+}
+function restoreSideBySide() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open supporting panel" }),
+  );
+}
+
 it("adds files through the new-tab picker in one strip and closes views without discarding private buffers", async () => {
   const dirty = { dirty: true, text: "Keep this private edit" };
   const buffers = new Map([["/native/first.txt", dirty]]);
@@ -612,9 +630,7 @@ it("switches layouts and tabs without remounting the conversation or rereading t
   expect(
     get.mock.calls.filter(([url]) => url === "/api/host/files/metadata"),
   ).toHaveLength(reads);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Use side-by-side layout" }),
-  );
+  restoreSideBySide();
   expect(screen.getByRole("tablist", { name: "Workspace views" })).toBeTruthy();
   expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
   expect(
@@ -629,7 +645,7 @@ it("switches layouts and tabs without remounting the conversation or rereading t
   expect(
     screen.queryByRole("button", { name: "Open panel as tab" }),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  expandSupportingPanel();
   expect(
     screen.getByRole("tab", { name: "first.txt", selected: true }),
   ).toBeTruthy();
@@ -840,12 +856,12 @@ it("uses tabs in narrow windows without replacing the saved desktop layout", asy
     screen.getByRole("tab", { name: "Files", selected: true }),
   ).toBeTruthy();
   expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("sidebar");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Use side-by-side layout" }),
-  );
+  restoreSideBySide();
   expect(screen.getByRole("tablist", { name: "Workspace views" })).toBeTruthy();
   expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Use tab layout" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
 });
 
 it("retains resource tabs through Settings and direct Chat interaction updates focus", async () => {
@@ -1484,8 +1500,9 @@ it("browser activity suggests the existing Browser without replacing a new tab",
   setup("/threads/current");
   await chooseView("Browser");
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  expandSupportingPanel();
   live.display.browserActivityRunId = "run-new";
-  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  fireEvent.click(screen.getByRole("tab", { name: "New tab" }));
   const suggestion = await screen.findByRole("button", {
     name: "View browser",
   });
@@ -1515,7 +1532,7 @@ it("keeps Terminal in the shared pane across layout switches and retains its vie
   expect(
     screen.queryByRole("separator", { name: "Resize terminal" }),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Use tab layout" }));
+  expandSupportingPanel();
   expect(screen.getByLabelText("Terminal panel")).toBe(viewer);
   expect(screen.getByRole("tab", { name: "Terminal" })).toBe(terminalTab);
   fireEvent.click(screen.getByRole("button", { name: "New tab" }));
@@ -1556,4 +1573,34 @@ it("snapping the Terminal pane to full-width retains terminal focus and its sess
       terminal_id: "terminal-current",
     }),
   );
+});
+
+it("the sidebar toggle maximizes Chat and restores the selected resource beside it", async () => {
+  const { focus } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+  );
+  const editor = await screen.findByText("Editor /native/first.txt");
+  expandSupportingPanel();
+  const close = screen.getByRole("button", { name: "Close supporting panel" });
+  expect(close.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(close);
+  await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
+  expect(screen.queryByRole("tabpanel", { name: "first.txt" })).toBeNull();
+  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+  const open = screen.getByRole("button", { name: "Open supporting panel" });
+  expect(open.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(open);
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  expect(
+    screen.getByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeTruthy();
+  expandSupportingPanel();
+  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open supporting panel" }),
+  );
+  expect(
+    screen.getByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeTruthy();
+  expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
 });
