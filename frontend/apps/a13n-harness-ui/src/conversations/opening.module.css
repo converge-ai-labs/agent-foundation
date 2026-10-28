@@ -23,12 +23,12 @@
   padding: 24px;
   color: var(--a13n-secondary);
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
 }
 .status {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .status > svg {
   width: 18px;

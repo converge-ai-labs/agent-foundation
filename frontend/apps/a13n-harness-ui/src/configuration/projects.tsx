@@ -35,7 +35,8 @@ export function ProjectsPage() {
     <div className={collectionStyles.collectionPage}>
       <PageHeader
         title="Projects"
-        description="Group chats and choose their shared directories and defaults."
+        description="Keep related chats, folders and defaults together."
+        actions={<NewResourceButton kind="project" label="Add project" />}
       />
       <div className={collectionStyles.collection}>
         <div className={collectionStyles.toolbar}>
@@ -44,7 +45,6 @@ export function ProjectsPage() {
             value={search}
             onChange={setSearch}
           />
-          <NewResourceButton kind="project" label="Add project" />
         </div>
         <ErrorNotice
           error={projects.error}

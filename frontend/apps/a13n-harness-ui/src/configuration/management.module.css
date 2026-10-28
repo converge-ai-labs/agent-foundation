@@ -14,7 +14,7 @@
 }
 .subsectionTitle {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .subsectionTitle > svg,
@@ -29,18 +29,18 @@
   min-height: 96px;
   padding: 0;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 21px;
 }
 .instructions > textarea {
   min-height: 104px;
-  padding: 10px 12px;
+  padding: 12px 12px;
   field-sizing: content;
 }
 .modelEditor {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   min-width: 0;
 }
 .groupActions {
@@ -48,7 +48,7 @@
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
-  padding-block: 0 18px;
+  padding-block: 0 16px;
 }
 .capabilities {
   display: flex;
@@ -82,7 +82,7 @@
 }
 .resourceInfo {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 .resourceInfo small,
@@ -91,7 +91,7 @@
 }
 .resourceInfo > a,
 .resourceInfo > strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 .resourceMeta {
   display: flex;
@@ -105,9 +105,9 @@
 .resourceMeta small.metadata {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .metadata > svg {
@@ -116,9 +116,9 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
-  background: var(--a13n-canvas);
-  border: 1px solid var(--a13n-border);
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   overflow: hidden;
 }
 .modelList:empty {
@@ -129,7 +129,7 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  padding-block: 10px;
+  padding-block: 12px;
 }
 .modelLink::after {
   content: "";
@@ -171,4 +171,27 @@
     grid-column: 2;
     grid-row: 1;
   }
+}
+
+.modelTabs {
+  gap: 24px;
+  min-width: 0;
+}
+.modelPanel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+.defaultsSummary {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.defaultsSummary strong {
+  color: var(--a13n-text);
+  font-weight: 500;
 }

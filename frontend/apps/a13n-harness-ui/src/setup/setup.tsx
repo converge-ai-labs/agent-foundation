@@ -82,7 +82,7 @@ export function SetupPage() {
           {status.diagnostic}
         </div>
       )}
-      <SettingsSection variant="outlined" title="Configuration">
+      <SettingsSection variant="grouped" title="Configuration">
         <SettingsRow
           label="Default agent"
           description={
@@ -120,7 +120,7 @@ export function SetupPage() {
           </Button>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="outlined" title="Model accounts">
+      <SettingsSection variant="grouped" title="Model accounts">
         <SettingsRow
           label="Accounts & API keys"
           description="Credentials are shared on this server. Account status does not verify model access."
@@ -134,7 +134,7 @@ export function SetupPage() {
           </Button>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="outlined" title="Execution environment">
+      <SettingsSection variant="grouped" title="Execution environment">
         <SettingsRow
           label="Local runtime"
           description={

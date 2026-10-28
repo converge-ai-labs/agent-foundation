@@ -6,9 +6,9 @@
   min-height: var(--harness-menu-row);
   justify-content: space-between;
   text-align: left;
-  padding: 5px 8px;
+  padding: 4px 8px;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   white-space: normal;
 }
@@ -19,13 +19,13 @@
 .modelOption small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 14px;
+  margin-top: 4px;
 }
 .hint {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -38,7 +38,7 @@
 }
 .divider {
   border-top: 1px solid var(--a13n-border-soft);
-  margin: 6px 8px;
+  margin: 8px 8px;
 }
 @media (pointer: coarse) {
   .search {

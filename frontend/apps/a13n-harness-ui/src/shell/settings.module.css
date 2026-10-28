@@ -3,28 +3,29 @@
 }
 .section > :first-child > h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 20px;
   font-weight: 500;
+  color: var(--a13n-secondary);
 }
 .section > :first-child:has(> h3) > p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
   border-radius: 8px;
-  padding-inline: var(--harness-group-inset);
+  padding: 4px var(--harness-group-inset);
 }
 .row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) fit-content(60%);
   align-items: center;
-  min-height: 36px;
-  gap: 2px 16px;
-  padding-block: 4px;
-  font-size: 13px;
+  min-height: 48px;
+  gap: 4px 16px;
+  padding-block: 8px;
+  font-size: 14px;
   line-height: 20px;
 }
 .row > :first-child {
@@ -37,10 +38,10 @@
   font-weight: 400;
 }
 .row > :first-child > p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .row > :last-child {
   grid-column: 2;
@@ -64,7 +65,7 @@
 .row [data-slot="input-control"],
 .row [data-slot="select-trigger"],
 .row [data-slot="combobox-trigger"] {
-  font-size: 13px;
+  font-size: 14px;
 }
 .row [data-slot="select-value"] {
   text-align: right;
@@ -102,12 +103,12 @@
   .row {
     min-height: 44px;
     gap: 4px 12px;
-    padding-block: 4px;
+    padding-block: 8px;
   }
   .row:has([data-slot="input-control"]) {
     display: grid;
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    gap: 6px 16px;
+    gap: 8px 16px;
   }
   .row:has([data-slot="input-control"]) > :first-child {
     grid-column: 1;
@@ -125,7 +126,7 @@
   .row:has(> :last-child > a[data-slot="button"]) {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
-    padding-block: 12px;
+    padding-block: 8px;
   }
   .row:has(> :last-child > a[data-slot="button"]) > :last-child {
     grid-column: 1;
@@ -158,7 +159,7 @@
 @media (max-width: 600px) {
   .row [data-slot="select-trigger"] {
     height: auto;
-    padding-block: 6px;
+    padding-block: 8px;
   }
   .row [data-slot="select-value"] {
     display: -webkit-box;
@@ -167,4 +168,19 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
+}
+
+.section
+  > [data-slot="settings-section-content"][data-variant="plain"]
+  > [data-slot="settings-row"]
+  + [data-slot="settings-row"] {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+
+/* A disclosure inside a settings group reuses its parent's surface. */
+.section .section > [data-slot="settings-section-content"] {
+  padding-inline: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }

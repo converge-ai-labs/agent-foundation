@@ -28,7 +28,7 @@
   min-width: 0;
 }
 .project strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 20px;
 }
@@ -38,6 +38,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }

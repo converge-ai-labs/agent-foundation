@@ -16,14 +16,14 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-height: 36px;
   padding: 4px 8px 4px 16px;
   padding-bottom: max(4px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--a13n-border);
   background: var(--a13n-surface);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   animation: bar-in 160ms ease-out;
 }
 @keyframes bar-in {
@@ -51,8 +51,8 @@
 .permissionToast h2 {
   flex-shrink: 0;
   margin: 0;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
 }
 .permissionToast p {
@@ -74,7 +74,7 @@
   padding: 4px 8px;
   border-radius: 6px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   text-decoration: none;
   transition:
     color 120ms ease,
@@ -85,9 +85,9 @@
   background: var(--a13n-hover, rgb(127 127 127 / 10%));
 }
 .reminderClose {
-  width: 28px;
-  height: 28px;
-  padding: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 8px;
 }
 /* Toast and bar actions carry a full label on wide screens and a single
    verb on phones, so the message keeps the room. */
@@ -109,13 +109,13 @@
 }
 .status {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
 }
 .message {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .details {
   composes: details from "./workbench.module.css";
@@ -123,7 +123,7 @@
 .details p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 @media (max-width: 639px) {
@@ -133,12 +133,11 @@
   .mobileLabel {
     display: inline;
   }
-  .permissionToast p:not([role="alert"]),
-  .actions a {
+  .permissionToast p:not([role="alert"]) {
     display: none;
   }
   .actions button {
-    font-size: 13px;
+    font-size: 14px;
   }
   .reminderClose {
     width: 32px;

@@ -58,7 +58,9 @@ export function ResourceChoice({
                 options: [
                   {
                     value,
-                    label: loading ? value : `${value} (unavailable)`,
+                    label: loading
+                      ? "Loading selection…"
+                      : `${value} (unavailable)`,
                     disabled: true,
                   },
                 ],

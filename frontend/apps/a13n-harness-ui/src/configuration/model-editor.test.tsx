@@ -206,6 +206,12 @@ function mount(initial = original, onReady = vi.fn()) {
     </MemoryRouter>,
   );
 }
+async function openDefaults(user: ReturnType<typeof userEvent.setup>) {
+  const tab = await screen.findByRole("tab", { name: "Model defaults" });
+  await waitFor(() => expect(tab.hasAttribute("disabled")).toBe(false));
+  await user.click(tab);
+  await screen.findByRole("heading", { name: "Model defaults" });
+}
 async function chooseModel(id: string) {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Model" }));
@@ -228,7 +234,7 @@ it.each([false, true])(
       : original;
     mount(initial);
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "Model defaults" });
+    await openDefaults(user);
     await user.click(
       await screen.findByRole("combobox", { name: "Context budget" }),
     );
@@ -246,12 +252,18 @@ it.each([false, true])(
     expect(source()).toContain("# Local budget");
     expect(source()).toContain("# Keep custom setting");
     expect(parse(source()).settings).toEqual(parse(original).settings);
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await openDefaults(user);
+    expect(
+      (screen.getByLabelText("Working context budget") as HTMLInputElement)
+        .value,
+    ).toBe("64000");
   },
 );
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "Model defaults" });
+  await openDefaults(user);
   const preset = await screen.findByRole("combobox", {
     name: "Settings preset",
   });
@@ -319,7 +331,7 @@ it("edits the permanent reasoning mode without clobbering effort, and removes on
       "  thinking: high\n  openai_reasoning_mode: pro\n  openai_reasoning_summary: detailed",
     ),
   );
-  await screen.findByRole("heading", { name: "Model defaults" });
+  await openDefaults(user);
   await user.click(
     await screen.findByRole("combobox", { name: "Reasoning mode" }),
   );

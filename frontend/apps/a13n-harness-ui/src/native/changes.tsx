@@ -21,11 +21,34 @@ import {
 import { result, type Schema } from "../transport/client";
 import { useStatus, useTransport } from "../transport/context";
 import { ErrorNotice, SearchField } from "../shell/ui";
+import { DebugOnly } from "../shell/debug";
 import { PatchEditor } from "./patch-editor";
 import { gitPath } from "./buffer";
 import styles from "./native.module.css";
 
 type Page = { offset: number; expected_revision?: string };
+export function gitChangeLabel(change: Schema<"GitChange">) {
+  if (change.kind === "conflicted") return "Conflict";
+  if (change.kind === "untracked") return "New";
+  if (change.kind === "ignored") return "Ignored";
+  const labels: Record<string, string> = {
+    M: "Modified",
+    A: "Added",
+    D: "Deleted",
+    R: "Renamed",
+    C: "Copied",
+    T: "Type changed",
+  };
+  return (
+    [
+      ...new Set(
+        [change.index_status, change.worktree_status]
+          .map((status) => labels[status])
+          .filter(Boolean),
+      ),
+    ].join(" · ") || "Changed"
+  );
+}
 export function useGitStatus(path: string, includeIgnored: boolean) {
   const { client } = useTransport();
   const feature = useStatus().data?.features?.host_git;
@@ -186,12 +209,12 @@ export function Changes({
             </summary>
             <div>
               <p>Worktree: {repository.root}</p>
-              <p>HEAD: {repository.head_oid ?? "Empty tree (no commits)"}</p>
-              <p>Git directory: {repository.git_dir}</p>
-              <p>Common directory: {repository.common_dir}</p>
-              <p>
-                This is shared checkout state, not changes attributed to a Run.
-              </p>
+              <DebugOnly>
+                <p>HEAD: {repository.head_oid ?? "Empty tree (no commits)"}</p>
+                <p>Git directory: {repository.git_dir}</p>
+                <p>Common directory: {repository.common_dir}</p>
+              </DebugOnly>
+              <p>Changes include all work in this checkout.</p>
             </div>
           </details>
           <div className={styles.directoryToolbar}>
@@ -437,16 +460,18 @@ export function DiffView({
                 : "No changes on this comparison axis."}
             </p>
           )}
-          <details className={styles.metadata}>
-            <summary>Comparison version</summary>
-            <p>Repository: {value.repository.root}</p>
-            <p>
-              HEAD: {value.repository.head_oid ?? "Empty tree (unborn HEAD)"}
-            </p>
-            <p>Index: {value.index_revision}</p>
-            <p>Diff revision: {value.revision}</p>
-            <p>Git directory: {value.repository.git_dir}</p>
-          </details>
+          <DebugOnly>
+            <details className={styles.metadata}>
+              <summary>Comparison version</summary>
+              <p>Repository: {value.repository.root}</p>
+              <p>
+                HEAD: {value.repository.head_oid ?? "Empty tree (unborn HEAD)"}
+              </p>
+              <p>Index: {value.index_revision}</p>
+              <p>Diff revision: {value.revision}</p>
+              <p>Git directory: {value.repository.git_dir}</p>
+            </details>
+          </DebugOnly>
         </>
       )}
     </section>

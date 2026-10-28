@@ -196,12 +196,35 @@ it("keeps attention notices without permission or when desktop reminders are dis
   expect(
     await screen.findByText("Which project should I update?"),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Turn off reminders" }));
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
   permission = "granted";
   vi.mocked(document.hasFocus).mockReturnValue(false);
   event = notice("receipt-3", "failed");
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
+});
+it("dismisses setup without disabling notifications and remembers the dismissal", () => {
+  const view = mount();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Dismiss notification setup" }),
+  );
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  expect(
+    screen
+      .getByRole("switch", { name: "Enable browser notifications" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  view.unmount();
+  mount();
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  const toggle = screen.getByRole("switch", {
+    name: "Enable browser notifications",
+  });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  expect(screen.getByLabelText("Notification permission")).toBeTruthy();
 });
 it("reflects permission revocation and another tab disabling reminders", () => {
   permission = "granted";

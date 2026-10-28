@@ -230,7 +230,7 @@ export function AgentFields({
       {connections && (
         <SettingsSection title="Connections">{connections}</SettingsSection>
       )}
-      <SettingsSection variant="outlined" title="Delegation">
+      <SettingsSection variant="grouped" title="Delegation">
         {children.map((item, index) => (
           <SettingsRow
             key={index}

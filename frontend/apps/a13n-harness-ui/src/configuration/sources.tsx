@@ -216,10 +216,10 @@ export function SourcesPage({
         title={title}
         level={headingLevel}
         description={description}
-        actions={headingLevel === 2 ? addAction : undefined}
+        actions={addAction}
       />
       <div className={layout.collection}>
-        {(headingLevel === 1 || !!listed?.length) && (
+        {!!listed?.length && (
           <div className={layout.toolbar}>
             {!!listed?.length && (
               <SearchField
@@ -227,9 +227,6 @@ export function SourcesPage({
                 value={search}
                 onChange={setSearch}
               />
-            )}
-            {headingLevel === 1 && (
-              <div className={styles.actions}>{addAction}</div>
             )}
           </div>
         )}

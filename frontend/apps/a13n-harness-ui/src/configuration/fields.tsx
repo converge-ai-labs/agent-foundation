@@ -187,7 +187,7 @@ export function ResourceFields({
   );
   if (connectionsOnly)
     return (
-      <SettingsSection variant="outlined" description="Used for new chats.">
+      <SettingsSection variant="grouped" description="Used for new chats.">
         <ErrorNotice error={selectors.error || sources.error} />
         {referenceLists(["defaults"])}
       </SettingsSection>
@@ -212,7 +212,7 @@ export function ResourceFields({
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection variant="outlined" title="General">
+          <SettingsSection variant="grouped" title="General">
             {field("Name", ["name"])}
             <ResourceChoice
               label="Model"
@@ -252,7 +252,7 @@ export function ResourceFields({
       {kind === "project" && (
         <>
           <SettingsSection
-            variant="outlined"
+            variant="grouped"
             title="Chat defaults"
             description="Used by new chats. Existing chats keep their settings."
           >
@@ -260,7 +260,7 @@ export function ResourceFields({
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
-            variant="outlined"
+            variant="grouped"
             title="Environments"
             description="Used by new chats, or when you apply Project defaults."
           >
@@ -362,7 +362,7 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
-            <SettingsSection variant="outlined" title="Chats">
+            <SettingsSection variant="grouped" title="Chats">
               {scalar("Default agent", ["defaults", "agent"], agentOptions)}
               <SettingsRow
                 label="Sidekick"
@@ -398,7 +398,7 @@ export function ResourceFields({
                 </details>
               )}
             </SettingsSection>
-            <SettingsSection variant="outlined" title="Memory">
+            <SettingsSection variant="grouped" title="Memory">
               <SettingsRow
                 label="File memory"
                 controlId="memory-enabled"
@@ -468,7 +468,7 @@ export function ResourceFields({
               )}
             </SettingsSection>
             <section id="live">
-              <SettingsSection variant="outlined" title="Live voice">
+              <SettingsSection variant="grouped" title="Live voice">
                 <SettingsRow
                   label="Live"
                   controlId="live-enabled"
@@ -585,7 +585,7 @@ export function ResourceFields({
         "environment_profile",
       ].includes(kind) && (
         <SettingsSection
-          variant="outlined"
+          variant="grouped"
           title={
             kind === "environment_profile"
               ? "Environment connection"
@@ -635,7 +635,7 @@ export function ResourceFields({
         </SettingsSection>
       )}
       {kind === "mcp_server" && (
-        <SettingsSection variant="outlined" title="Server connection">
+        <SettingsSection variant="grouped" title="Server connection">
           <ChoiceField
             label="Transport"
             value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}

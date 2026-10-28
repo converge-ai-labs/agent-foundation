@@ -1,13 +1,13 @@
 .trigger {
   flex-shrink: 0;
   height: 30px;
-  padding: 2px;
+  padding: 4px;
   border-radius: 999px;
 }
 .avatars {
   display: flex;
   align-items: center;
-  padding-inline-end: 2px;
+  padding-inline-end: 4px;
 }
 .avatar {
   display: inline-flex;
@@ -52,7 +52,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .title > span {
@@ -61,7 +61,7 @@
 .people {
   list-style: none;
   padding: 0;
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   display: grid;
   gap: 12px;
   max-height: 280px;
@@ -70,31 +70,31 @@
 .people > li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .people .avatar {
   width: 30px;
   height: 30px;
-  font-size: 11px;
+  font-size: 14px;
 }
 .identity {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 .name {
-  font-size: 13px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .you,
 .identity small {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .identity small {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .statusDot {
   width: 5px;

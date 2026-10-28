@@ -24,17 +24,17 @@
 .picker {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .picker > span {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 20px;
 }
 .page [data-slot="field-label"] {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .picker > button {
   width: 100%;
@@ -49,7 +49,7 @@
   min-height: 18px;
   margin: 12px 0 24px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .results {
   display: grid;
@@ -66,7 +66,7 @@
 }
 .summary dt {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 8px;
 }
 .summary dd {
@@ -80,7 +80,7 @@
   display: block;
   margin-top: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .trend {
   padding-block: 8px;
@@ -94,7 +94,7 @@
   margin-bottom: 16px;
 }
 .sectionHeader h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   margin: 0;
 }
@@ -109,12 +109,12 @@
 }
 .chartReadout {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .chartScale {
   color: var(--a13n-tertiary);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 12px;
 }
 .chartScroll {
@@ -124,7 +124,7 @@
   display: flex;
   align-items: end;
   height: 144px;
-  gap: 3px;
+  gap: 4px;
 }
 .barTarget {
   display: flex;
@@ -153,7 +153,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   margin-top: 12px;
 }
 .breakdown {
@@ -170,12 +170,12 @@
 }
 .table th,
 .table td {
-  padding: 10px;
+  padding: 12px;
   text-align: right;
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .table thead th {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -224,7 +224,7 @@
   gap: 12px;
   margin-top: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .pagination > div {
   display: flex;
@@ -237,7 +237,7 @@
 }
 .note {
   composes: details from "../shell/workbench.module.css";
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.65;
   color: var(--a13n-secondary);
   max-width: 960px;
@@ -245,11 +245,11 @@
 .note > summary {
   min-height: 36px;
   padding-block: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .page .note p {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .barTarget:focus-visible,
@@ -268,7 +268,22 @@
     grid-column: 1 / -1;
   }
   .summary {
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 16px;
+  }
+  .summary > div:first-child {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+  }
+  .summary > div:first-child dt {
+    margin: 0;
+  }
+  .summary > div:first-child small {
+    grid-column: 1 / -1;
+    margin: 0;
   }
   .chartReadout {
     width: 100%;

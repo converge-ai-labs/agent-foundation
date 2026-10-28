@@ -1,7 +1,7 @@
 .navigation {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -10,9 +10,9 @@
   composes: backToChats from "./shell/workbench.module.css";
 }
 .navigation h2 {
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 20px;
   font-weight: 500;
   color: var(--a13n-secondary);
@@ -36,7 +36,7 @@
 }
 .hint {
   margin: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .workspace {
@@ -50,7 +50,7 @@
 }
 .pageHeading {
   display: grid;
-  gap: 20px;
+  gap: 24px;
   width: min(
     var(--harness-reading-width),
     calc(100% - clamp(40px, 10vw, 128px))
@@ -60,7 +60,7 @@
   flex-shrink: 0;
 }
 .pageHeading [data-slot="tabs-tab"] {
-  font-size: 13px;
+  font-size: 14px;
 }
 .history,
 .filesPanel {
@@ -87,7 +87,7 @@
   margin-inline: auto;
   padding-block: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .historyToolbar > button {
   flex-shrink: 0;
@@ -97,7 +97,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 24px clamp(20px, 5vw, 64px) 32px;
+  padding: 24px clamp(24px, 5vw, 64px) 32px;
   overflow: auto;
 }
 .files > * {
@@ -116,7 +116,7 @@
   margin-bottom: 16px;
   margin-inline: auto;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .picker {
   width: min(100%, 320px);
@@ -130,7 +130,7 @@
 .loading {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .empty {
   display: flex;
@@ -141,9 +141,9 @@
   flex: 1;
   min-height: 220px;
   margin: 0;
-  padding: 40px 24px;
+  padding: 48px 24px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .empty > svg {
@@ -151,7 +151,7 @@
 }
 .empty h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--a13n-text);
 }
@@ -168,7 +168,7 @@
     padding-top: 24px;
   }
   .fileToolbar {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
   .historyToolbar {
     align-items: flex-start;

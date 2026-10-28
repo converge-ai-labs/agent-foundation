@@ -40,7 +40,7 @@ export function SettingsLayout() {
 function DebugModeSetting() {
   const debug = useDebug();
   return (
-    <SettingsSection variant="outlined" title="Developer">
+    <SettingsSection variant="grouped" title="Developer">
       <SettingsRow
         label="Debug mode"
         stackOnNarrow={false}

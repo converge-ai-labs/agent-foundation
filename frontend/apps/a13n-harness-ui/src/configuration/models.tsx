@@ -120,7 +120,13 @@ export function ModelsPage() {
     <div className={layout.collectionPage}>
       <PageHeader
         title="Models"
-        description="Provider models your agents run on, with their credentials."
+        description="Choose the models your agents can use."
+        actions={
+          <AddModelButton
+            variant="default"
+            onSaved={() => void queries.invalidateQueries()}
+          />
+        }
       />
       <div className={layout.collection}>
         <div className={layout.toolbar}>
@@ -128,10 +134,6 @@ export function ModelsPage() {
             label="Search models"
             value={search}
             onChange={setSearch}
-          />
-          <AddModelButton
-            variant="default"
-            onSaved={() => void queries.invalidateQueries()}
           />
         </div>
         <ErrorNotice

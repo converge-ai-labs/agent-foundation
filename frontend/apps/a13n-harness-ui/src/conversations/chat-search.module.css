@@ -8,7 +8,7 @@
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 6px 8px 6px 14px;
+  padding: 8px 8px 8px 16px;
   color: var(--a13n-secondary);
 }
 .search > svg {
@@ -20,7 +20,7 @@
   border: 0;
   box-shadow: none;
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
 }
 .search > [data-slot="input-control"] {
   flex: 1;
@@ -39,10 +39,10 @@
 }
 .filter {
   width: 260px;
-  padding: 6px;
+  padding: 8px;
 }
 .scope {
-  padding: 0 14px 8px;
+  padding: 0 16px 8px;
 }
 .scope button {
   display: inline-flex;
@@ -52,20 +52,20 @@
   padding: 4px 8px;
   border-radius: 5px;
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .results {
   max-height: min(420px, 55dvh);
   overflow: auto;
-  padding: 6px;
+  padding: 8px;
   border-top: 1px solid var(--a13n-border);
 }
 .result {
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 6px 8px;
+  padding: 8px 8px;
   border-radius: 6px;
 }
 .result:hover,
@@ -82,18 +82,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .result small {
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .empty {
-  padding: 16px 14px;
+  padding: 16px 16px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 @media (max-width: 600px) {
   .search input {
@@ -101,7 +101,7 @@
   }
   .search {
     min-height: 56px;
-    padding-inline: 12px 6px;
+    padding-inline: 12px 8px;
     gap: 4px;
   }
 }

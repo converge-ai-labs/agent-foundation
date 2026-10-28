@@ -36,7 +36,7 @@ export function Panel({
   children: ReactNode;
 }) {
   return (
-    <SettingsSection variant="outlined" title={title}>
+    <SettingsSection title={title}>
       <div className={styles.panelContent}>{children}</div>
     </SettingsSection>
   );

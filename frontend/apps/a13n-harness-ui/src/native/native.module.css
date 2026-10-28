@@ -9,18 +9,18 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   min-height: 40px;
   flex-shrink: 0;
   border-bottom: 0;
 }
-/* Toolbar controls share one 28px height; touch devices keep
+/* Toolbar controls share one 32px height; touch devices keep
    a centered 44px hit area from Button. */
 .workToolbar button {
-  height: 28px;
+  height: 32px;
 }
 .workToolbar button[data-size^="icon"] {
-  width: 28px;
+  width: 32px;
 }
 .workToolbar [aria-pressed="true"] {
   background: var(--a13n-surface);
@@ -29,7 +29,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -45,7 +45,7 @@
    "More views" menu below 640px. */
 .panelTools .viewsMenu {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   color: var(--a13n-secondary);
 }
 .workspaceHeading {
@@ -69,7 +69,7 @@
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -146,7 +146,7 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  padding: 28px clamp(20px, 5vw, 64px) 48px;
+  padding: 32px clamp(24px, 5vw, 64px) 48px;
 }
 /* The drawer keeps one 12px content inset on every row: header and tab
    controls sit 4px in so their ghost padding lands on the same line, and
@@ -187,16 +187,16 @@
   flex-basis: 70%;
 }
 .pane > .paneHeader {
-  padding: 5px 4px;
+  padding: 4px 4px;
   min-height: 40px;
   border-bottom: 1px solid var(--a13n-border);
   flex-shrink: 0;
 }
 .pane > .paneHeader button {
-  height: 28px;
+  height: 32px;
 }
 .pane > .paneHeader button[data-size^="icon"] {
-  width: 28px;
+  width: 32px;
 }
 .pane > .paneHeader > .panelTools > strong {
   padding-inline: 8px;
@@ -206,7 +206,7 @@
   margin: 0 12px;
 }
 .pane .editorPage {
-  padding: 12px 6px 12px 12px;
+  padding: 12px 8px 12px 12px;
 }
 .terminalDock {
   display: contents;
@@ -219,7 +219,7 @@
   flex-wrap: wrap;
 }
 .paneHeader strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .paneHeader small {
@@ -227,19 +227,19 @@
 }
 .pane small {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .pane strong {
   font-weight: 500;
 }
 .pane h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   margin: 0;
 }
 .pane .authority {
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.5;
   margin: 8px 0 12px;
 }
@@ -299,7 +299,7 @@
 .breadcrumbs ol {
   display: flex;
   flex-wrap: nowrap;
-  gap: 2px;
+  gap: 4px;
   padding: 0;
   margin: 0;
   list-style: none;
@@ -320,8 +320,8 @@
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  padding-inline: 6px;
+  font-size: 14px;
+  padding-inline: 8px;
 }
 .breadcrumbs button span {
   overflow: hidden;
@@ -357,7 +357,7 @@
 .viewControls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   order: -1;
   margin-right: auto;
 }
@@ -365,7 +365,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .fileList {
@@ -385,7 +385,7 @@
 .fileRow {
   display: flex;
   align-items: center;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   border-radius: 6px;
 }
 .fileLink,
@@ -397,9 +397,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 32px;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   min-width: 0;
   width: 100%;
@@ -407,7 +407,7 @@
   border-radius: 6px;
 }
 .changeRow {
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 @media (pointer: coarse) {
   .fileLink,
@@ -428,7 +428,7 @@
 .changeRow small {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .fileActions {
   flex-shrink: 0;
@@ -462,7 +462,7 @@
   gap: 8px;
   min-width: 0;
   min-height: 20px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .fileHeader strong {
   min-width: 0;
@@ -484,14 +484,14 @@
 .shortcuts {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
 }
 .shortcuts kbd:not(:first-child) {
-  margin-left: 6px;
+  margin-left: 8px;
 }
 .path {
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
 }
@@ -506,7 +506,7 @@
 }
 .markdownPreview {
   min-width: 0;
-  padding: 8px 4px 20px;
+  padding: 8px 4px 24px;
 }
 .file > :not(.editor, .markdownPreview) {
   flex-shrink: 0;
@@ -517,12 +517,12 @@
   border-radius: 6px;
   display: grid;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .notice details,
 .metadata,
 .repo details {
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .metadata p {
@@ -571,7 +571,7 @@
   gap: 4px;
   flex-wrap: wrap;
   background: var(--a13n-surface);
-  padding: 6px;
+  padding: 8px;
   border-radius: 6px;
 }
 .buffers > small {
@@ -579,14 +579,14 @@
   padding: 4px;
 }
 .repo {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .repo > summary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
+  gap: 8px;
+  min-height: 32px;
   list-style: none;
 }
 .repo > summary > span {
@@ -600,7 +600,7 @@
   overflow-wrap: anywhere;
 }
 .repo p {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
 }
 .changes {
   display: flex;
@@ -615,12 +615,12 @@
 .changeGroup > summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 32px;
-  padding: 6px 0;
+  padding: 8px 0;
   list-style: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -650,14 +650,14 @@
   margin: 0;
   padding: 12px 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .changeNavigation {
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 999px) {
@@ -685,7 +685,7 @@
 
 .location > summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -695,12 +695,12 @@
 .locationFields {
   display: grid;
   gap: 12px;
-  padding: 6px 0 10px;
+  padding: 8px 0 12px;
 }
 
 .fileTabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   overflow-x: auto;
   flex-shrink: 0;
   padding: 4px;
@@ -729,13 +729,13 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .diffSummary > nav {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-left: auto;
 }
 .addedCount {

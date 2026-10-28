@@ -18,20 +18,20 @@
 .heading p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .migration p {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .rows {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .accountCard {
   min-width: 0;
-  padding: 10px 12px;
+  padding: 12px 12px;
 }
 .accountHeader,
 .accountIdentity,
@@ -57,23 +57,23 @@
 }
 .accountMeta {
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .cardActions {
   flex-shrink: 0;
-  gap: 2px;
+  gap: 4px;
   color: var(--a13n-secondary);
 }
 .plan {
-  padding: 1px 6px;
+  padding: 1px 8px;
   border-radius: 4px;
   background: var(--a13n-elevated);
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   text-transform: capitalize;
 }
 .status {
-  gap: 5px;
+  gap: 4px;
 }
 .status::before {
   content: "";
@@ -98,7 +98,7 @@
   align-content: start;
   justify-items: start;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -107,12 +107,12 @@
 }
 .balanceValue {
   color: var(--a13n-text);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .summaryItem {
-  gap: 6px;
+  gap: 8px;
 }
 .summaryItem svg {
   flex-shrink: 0;
@@ -129,18 +129,18 @@
 }
 .identity {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 .identity strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .identity > span,
 .usage,
 .members {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .actions,
@@ -162,7 +162,7 @@
 }
 .quotaGroup {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 .quotaLabel {
   color: var(--a13n-text);
@@ -175,12 +175,12 @@
 }
 .quotaDetail {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .meter {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .meterHeading {
@@ -191,7 +191,7 @@
 }
 .meterHeading strong {
   color: var(--a13n-text);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
 }
 .meterHeading > span:first-child {
@@ -228,12 +228,12 @@
 }
 .members > span {
   background: var(--a13n-elevated);
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 6px;
 }
 .voucherList {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -254,7 +254,7 @@
   display: grid;
   flex: 1;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
   overflow-wrap: anywhere;
 }
 .voucherDetails strong {
@@ -264,12 +264,12 @@
 .voucherDetails p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .voucherDetails > span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .form {
   display: grid;
@@ -281,7 +281,7 @@
 .member {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .member > span:not(.memberNumber) {
@@ -303,21 +303,21 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .providerHeading h3,
 .groupFields h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .providerHeading > span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .groupDetail {
   display: grid;
-  gap: 20px;
+  gap: 24px;
 }
 .back {
   justify-self: start;
@@ -327,7 +327,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 20px;
+  gap: 24px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -337,9 +337,9 @@
   min-width: 0;
 }
 .memberField > div > div > p {
-  padding-block: 18px 0;
+  padding-block: 16px 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .member {
   padding: 12px;
@@ -361,7 +361,7 @@
 }
 .help {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   line-height: 1.6;
 }
@@ -369,7 +369,7 @@
   display: flex;
   gap: 8px 16px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: 14px;
 }
 .modelLinks a {
   color: var(--a13n-text);
@@ -458,7 +458,7 @@
   border-top: 1px solid var(--a13n-border-soft);
 }
 .allowanceSummary {
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .expanded {
@@ -475,7 +475,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 @media (max-width: 600px) {
@@ -496,5 +496,5 @@
 }
 .legacyUsage > summary {
   font-weight: 400;
-  font-size: 12px;
+  font-size: 14px;
 }

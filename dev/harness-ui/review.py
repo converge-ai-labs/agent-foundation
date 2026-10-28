@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -59,13 +60,49 @@ The changes are ready to review. I would keep the retry behavior explicit so a f
 """
 
 
+def seed_workspace(workspace: Path) -> None:
+    """Create a fictional repository with readable files and reviewable changes."""
+    workspace.mkdir(exist_ok=True)
+    files = {
+        "README.md": "# Atlas\n\nA fictional storefront for interface review.\n",
+        "checkout.ts": "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n",
+        "docs/release-notes.md": "# Release notes\n\nCheckout reliability improvements.\n",
+        "src/components/checkout/validation.ts": "export const validAddress = (address: string) => address.trim().length > 0;\n",
+    }
+    for name, content in files.items():
+        target = workspace / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    environment = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Design review",
+        "GIT_AUTHOR_EMAIL": "review@example.invalid",
+        "GIT_COMMITTER_NAME": "Design review",
+        "GIT_COMMITTER_EMAIL": "review@example.invalid",
+    }
+    for args in (
+        ["init", "-q"],
+        ["add", "."],
+        ["-c", "commit.gpgsign=false", "commit", "-qm", "Seed fictional storefront"],
+    ):
+        subprocess.run(["git", *args], cwd=workspace, env=environment, check=True)
+    (workspace / "checkout.ts").write_text(
+        "let pending = false;\n\nexport async function placeOrder(order) {\n"
+        "  if (pending) return;\n  pending = true;\n  try {\n"
+        "    await checkout.submit(order, { idempotencyKey: order.id });\n"
+        "  } finally {\n    pending = false;\n  }\n}\n"
+    )
+    (workspace / "docs/release-notes.md").write_text(
+        "# Release notes\n\n## Checkout\n\n- Ignore duplicate submissions.\n- Keep the form after a network error.\n"
+    )
+    (workspace / "src/components/checkout/retry-policy-with-a-deliberately-long-file-name.ts").write_text(
+        "export const retryPolicy = { maxAttempts: 3, preserveInput: true };\n"
+    )
+
+
 def configuration(root: Path) -> Path:
     workspace = root / "workspace"
-    workspace.mkdir()
-    (workspace / "README.md").write_text("# Atlas\n\nA fictional storefront for interface review.\n")
-    (workspace / "checkout.ts").write_text(
-        "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
-    )
+    seed_workspace(workspace)
     docs = {
         "a13n-harness-ui.yaml": {
             "schema_version": "1",

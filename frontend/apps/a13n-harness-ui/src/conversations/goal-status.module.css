@@ -21,7 +21,7 @@
   width: min(320px, calc(100vw - 24px));
   max-height: min(600px, calc(100dvh - 40px));
   overflow: hidden;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .popup > [data-slot="popover-viewport"] {
@@ -37,7 +37,7 @@
   margin-bottom: 12px;
 }
 .heading h2 {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -48,7 +48,7 @@
   color: var(--a13n-text);
 }
 .outcome p {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--a13n-secondary);
 }
 .objective {
@@ -57,13 +57,13 @@
 .objective button {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+  gap: 8px;
+  padding: 4px 0;
   background: none;
   border: 0;
   color: var(--a13n-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 .objective button:hover {
@@ -82,7 +82,7 @@
   transform: rotate(180deg);
 }
 .objective p {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -96,7 +96,7 @@
   display: grid;
   gap: 4px;
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .metrics > div {
@@ -112,7 +112,7 @@
 .reuse {
   margin: 16px 0 0 -8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .running {
   animation: spin 1.2s linear infinite;

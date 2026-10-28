@@ -1,10 +1,10 @@
 .preview {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
   min-height: 44px;
   margin-block: 8px 12px;
-  padding: 6px;
+  padding: 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -21,7 +21,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .previewHeading > svg {
   flex-shrink: 0;
@@ -33,8 +33,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .fullscreen[data-slot="dialog-popup"] {
   position: fixed;
@@ -67,11 +67,11 @@
   flex-shrink: 0;
 }
 .title[data-slot="dialog-title"] {
-  font-size: 15px;
+  font-size: 16px;
 }
 .metrics {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .fullscreen > [data-execution-reader] {

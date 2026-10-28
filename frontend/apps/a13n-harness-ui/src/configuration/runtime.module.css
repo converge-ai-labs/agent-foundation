@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   width: 100%;
   min-width: 0;
 }
@@ -23,12 +23,12 @@
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
 .instructions {
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
@@ -40,9 +40,9 @@
 .metadata {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  gap: 10px 20px;
+  gap: 12px 24px;
   padding-block: 12px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 

@@ -262,6 +262,26 @@ export function ProviderAccount({
       setCopyFailed(true);
     }
   }
+  const accountActions = (
+    <div className={styles.actions}>
+      <Button
+        variant="outline"
+        loading={start.isPending}
+        disabled={!!activeLogin.data?.session_id || !loginMethods.length}
+        onClick={() => start.mutate(false)}
+      >
+        {account.data?.usable ? "Reconnect account" : "Connect account"}
+      </Button>
+      <Button variant="ghost" onClick={() => void account.refetch()}>
+        Refresh status
+      </Button>
+      {account.data?.availability === "available" && (
+        <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
+          Log out account
+        </Button>
+      )}
+    </div>
+  );
   const content = (
     <>
       <ErrorNotice
@@ -278,38 +298,41 @@ export function ProviderAccount({
       />
       {!active && (
         <>
-          <div className={accountStyles.identity}>
-            <p className={accountStyles.accountStatus}>
-              {account.isPending
-                ? "Checking account…"
-                : account.data?.usable
-                  ? "Connected"
-                  : ready
-                    ? "Account available · refreshes on first use"
-                    : "Not connected"}
-              {account.data?.availability === "available" &&
-                ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
-            </p>
-            {account.data?.account_id && (
-              <p>
-                Account: {account.data.account_id} ·{" "}
-                {account.data.shared_with_cli
-                  ? `Shared with ${label} CLI`
-                  : "Host account"}
+          <div className={accountStyles.accountHeader}>
+            <div className={accountStyles.identity}>
+              <p className={accountStyles.accountStatus}>
+                {account.isPending
+                  ? "Checking account…"
+                  : account.data?.usable
+                    ? "Connected"
+                    : ready
+                      ? "Account available · refreshes on first use"
+                      : "Not connected"}
+                {account.data?.availability === "available" &&
+                  ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
               </p>
-            )}
-            {account.data?.expires_at && (
-              <p className={accountStyles.help}>
-                Session expires{" "}
-                {new Date(account.data.expires_at).toLocaleString()}
-                {account.data.required_action === "refresh"
-                  ? " · refreshes on first use"
-                  : ""}
-              </p>
-            )}
-            {account.data?.message && (
-              <p role="status">{account.data.message}</p>
-            )}
+              {account.data?.account_id && (
+                <p>
+                  Account: {account.data.account_id} ·{" "}
+                  {account.data.shared_with_cli
+                    ? `Shared with ${label} CLI`
+                    : "Host account"}
+                </p>
+              )}
+              {account.data?.expires_at && (
+                <p className={accountStyles.help}>
+                  Session expires{" "}
+                  {new Date(account.data.expires_at).toLocaleString()}
+                  {account.data.required_action === "refresh"
+                    ? " · refreshes on first use"
+                    : ""}
+                </p>
+              )}
+              {account.data?.message && (
+                <p role="status">{account.data.message}</p>
+              )}
+            </div>
+            {accountActions}
           </div>
           {!inline && provider === "copilot" && (
             <CopilotAllowance
@@ -395,26 +418,6 @@ export function ProviderAccount({
                   that connection to finish or cancel it.
                 </p>
               )}
-            <div className={styles.actions}>
-              <Button
-                variant={ready ? "outline" : "default"}
-                loading={start.isPending}
-                disabled={
-                  !!activeLogin.data?.session_id || !loginMethods.length
-                }
-                onClick={() => start.mutate(false)}
-              >
-                {account.data?.usable ? "Reconnect account" : "Connect account"}
-              </Button>
-              <Button variant="ghost" onClick={() => void account.refetch()}>
-                Refresh status
-              </Button>
-              {account.data?.availability === "available" && (
-                <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
-                  Log out account
-                </Button>
-              )}
-            </div>
           </div>
         </>
       )}

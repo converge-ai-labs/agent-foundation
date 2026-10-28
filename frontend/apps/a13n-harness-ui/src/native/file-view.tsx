@@ -11,6 +11,7 @@ import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SourceEditor } from "../configuration/editor";
 import { ErrorNotice } from "../shell/ui";
+import { DebugOnly } from "../shell/debug";
 import { ConfirmAction } from "../shell/confirm-action";
 import { MessageText } from "../conversations/message-text";
 import {
@@ -492,7 +493,11 @@ export function FileView({
         {buffer.base.resolved_path !== path && (
           <p>Resolved path: {buffer.base.resolved_path}</p>
         )}
-        <p>Server native filesystem · revision {buffer.base.entry.revision}</p>
+        <DebugOnly>
+          <p>
+            Server native filesystem · revision {buffer.base.entry.revision}
+          </p>
+        </DebugOnly>
       </details>
     </section>
   );

@@ -24,7 +24,7 @@ export function SettingsSection(
 ) {
   return (
     <SharedSettingsSection
-      variant="outlined"
+      variant="grouped"
       {...props}
       className={[styles.section, props.className].filter(Boolean).join(" ")}
     />

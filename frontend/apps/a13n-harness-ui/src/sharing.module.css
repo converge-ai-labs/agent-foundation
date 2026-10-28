@@ -9,10 +9,10 @@
   max-width: 400px;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-header"] {
-  padding: 16px 44px 10px 16px;
+  padding: 16px 44px 12px 16px;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-title"] {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-panel"] {
@@ -24,15 +24,15 @@
 }
 .linkOptions {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .linkOption {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 2px 10px;
+  gap: 4px 12px;
   min-height: 36px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .linkOption > svg {
@@ -50,7 +50,7 @@
   min-width: 0;
   max-width: 100%;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   padding-inline: 8px;
   background: transparent;
   border-color: transparent;
@@ -77,10 +77,10 @@
 }
 .optionHint {
   grid-column: 2 / -1;
-  padding-block: 2px 8px;
+  padding-block: 4px 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .linkFooter {
   display: flex;
@@ -94,10 +94,10 @@
   box-shadow: none;
 }
 .manageButton {
-  gap: 5px;
+  gap: 4px;
   margin-left: -8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 .manageButton > svg {
@@ -108,7 +108,7 @@
 }
 .hint {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .permissionControl {
@@ -118,12 +118,12 @@
 }
 .authority {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .linkResult {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .secondaryActions {
   display: flex;
@@ -151,11 +151,11 @@
 }
 .grant strong {
   font-weight: 500;
-  font-size: 12px;
+  font-size: 14px;
 }
 .grant p {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   margin-top: 4px;
 }
 .guest {
@@ -167,7 +167,7 @@
 }
 .header {
   min-height: 56px;
-  padding: 10px 20px;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -192,7 +192,7 @@
   min-width: 0;
 }
 .identity h1 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   margin: 0;
   white-space: nowrap;
@@ -201,8 +201,8 @@
 }
 .identity p {
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin: 3px 0 0;
+  font-size: 14px;
+  margin: 4px 0 0;
 }
 .access {
   display: flex;
@@ -210,7 +210,7 @@
   gap: 12px;
   align-items: center;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .badge {
   composes: tag from "./shell/workbench.module.css";
@@ -223,7 +223,7 @@
 .sidebar {
   width: 240px;
   flex-shrink: 0;
-  padding: 10px 8px;
+  padding: 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -238,14 +238,14 @@
 }
 .sidebarTop h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .threadList {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .threadList > .hint {
   padding: 0 8px;
@@ -271,7 +271,7 @@
 .thread small,
 .activeThread small {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   color: var(--a13n-secondary);
 }
@@ -284,7 +284,7 @@
 }
 .welcome {
   margin: auto;
-  padding: 40px;
+  padding: 48px;
   max-width: 460px;
   text-align: center;
 }
@@ -293,7 +293,7 @@
   font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.02em;
-  margin: 20px 0 10px;
+  margin: 24px 0 12px;
 }
 .welcome p,
 .unavailable p {

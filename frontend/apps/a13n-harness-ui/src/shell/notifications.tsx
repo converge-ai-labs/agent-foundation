@@ -31,6 +31,7 @@ type Permission = NotificationPermission | "unavailable" | "install-required";
 type Background = "disabled" | "checking" | "enabled" | "error";
 type SummaryEvent = Schema<"SummaryInvalidation">;
 const ENABLED = "notifications.enabled";
+const PROMPT_DISMISSED = "notifications.prompt-dismissed";
 export function notificationPermission(): Permission {
   if (!window.isSecureContext) return "unavailable";
   const appleMobile =
@@ -75,6 +76,13 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [enabled, updateEnabled] = useState(
     () => readPreference(ENABLED, "true") !== "false",
   );
+  const [promptDismissed, setPromptDismissed] = useState(
+    () => readPreference(PROMPT_DISMISSED, "false") === "true",
+  );
+  const dismissPrompt = () => {
+    writePreference(PROMPT_DISMISSED, "true");
+    setPromptDismissed(true);
+  };
   const [permission, setPermission] = useState(notificationPermission);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState("");
@@ -182,6 +190,10 @@ function NotificationState({ children }: { children: ReactNode }) {
     current.current.enabled = value;
     writePreference(ENABLED, String(value));
     updateEnabled(value);
+    if (value) {
+      writePreference(PROMPT_DISMISSED, "false");
+      setPromptDismissed(false);
+    }
     setPermission(notificationPermission());
     setError("");
     setTestStatus("");
@@ -335,13 +347,14 @@ function NotificationState({ children }: { children: ReactNode }) {
       <div className={styles.frame} ref={frame}>
         {children}
         {enabled &&
+          !promptDismissed &&
           !settings &&
           !requesting &&
           background !== "checking" &&
           (permission !== "granted" ||
             (supportsPush() &&
               (background === "disabled" || background === "error"))) && (
-            <PermissionToast />
+            <PermissionToast onDismiss={dismissPrompt} />
           )}
       </div>
     </NotificationsContext>
@@ -374,7 +387,7 @@ function PermissionDescription({ permission }: { permission: Permission }) {
     </>
   );
 }
-function PermissionToast() {
+function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
   const notifications = useNotifications()!;
   const requestLabel =
     notifications.permission === "granted"
@@ -425,9 +438,9 @@ function PermissionToast() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => notifications.setEnabled(false)}
-            aria-label="Turn off reminders"
-            title="Turn off reminders"
+            onClick={onDismiss}
+            aria-label="Dismiss notification setup"
+            title="Dismiss notification setup"
             className={styles.reminderClose}
           >
             <X aria-hidden />
@@ -459,7 +472,7 @@ export function NotificationSettings({
         />
       )}
       <SettingsSection
-        variant="outlined"
+        variant="grouped"
         title={embedded ? "Notifications" : undefined}
       >
         <SettingsRow

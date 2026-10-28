@@ -22,10 +22,10 @@
   margin: 0;
 }
 .linkedPreview[data-state="error"] {
-  margin: 2px 0 10px;
+  margin: 4px 0 12px;
 }
 .linkedPreview[data-state="ready"] {
-  margin: 12px 0 18px;
+  margin: 12px 0 16px;
   max-width: 640px;
   padding: 12px;
   border: 1px solid var(--a13n-border);
@@ -46,8 +46,8 @@
 }
 .markdown ul,
 .markdown ol {
-  padding-left: 22px;
-  margin-block: 10px;
+  padding-left: 24px;
+  margin-block: 12px;
 }
 .markdown ul {
   list-style: disc;
@@ -62,10 +62,10 @@
   color: var(--a13n-secondary);
 }
 .markdown li {
-  margin: 3px 0;
+  margin: 4px 0;
 }
 .markdown li > p {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .markdown h1,
 .markdown h2,
@@ -75,17 +75,17 @@
 .markdown h6 {
   font-weight: 500;
   line-height: 1.4;
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
   color: var(--a13n-text);
 }
 .markdown h1 {
   font-size: 20px;
 }
 .markdown h2 {
-  font-size: 17px;
+  font-size: 16px;
 }
 .markdown h3 {
-  font-size: 15px;
+  font-size: 16px;
 }
 .markdown h4,
 .markdown h5,
@@ -97,13 +97,13 @@
   font-size: 0.86em;
 }
 .markdown :not(pre) > code {
-  padding: 2px 5px;
+  padding: 4px 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--a13n-secondary) 9%, transparent);
 }
 .markdown pre {
   margin: 0;
-  padding: 12px 14px;
+  padding: 12px 16px;
   max-height: 440px;
   overflow: auto;
   white-space: pre;
@@ -130,17 +130,17 @@
   justify-content: space-between;
   gap: 12px;
   min-height: 32px;
-  padding: 2px 6px 2px 14px;
+  padding: 4px 8px 4px 16px;
   border-bottom: 1px solid var(--a13n-border);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 /* Header controls stay 28px with 13px labels at every width; coarse pointers
    keep the shared 44px hit area. */
 .codeHeader button {
   height: 28px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
 }
 .codeHeader button:hover {
@@ -161,7 +161,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 /* Diagrams render at their own 1:1 size and only scale down to the column
    width; a tall flowchart scrolls inside the frame rather than shrinking its
@@ -169,7 +169,7 @@
 .diagramCanvas {
   display: flex;
   justify-content: center;
-  padding: 20px 24px 24px;
+  padding: 24px 24px 24px;
   overflow: auto;
   max-height: 560px;
   scrollbar-width: thin;
@@ -183,14 +183,14 @@
 }
 .markdown .diagramStatus {
   margin: 0;
-  padding: 10px 16px;
+  padding: 12px 16px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .tableScroll {
   max-width: 100%;
   overflow: auto;
-  margin: 14px 0;
+  margin: 16px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
   scrollbar-width: thin;
@@ -204,7 +204,7 @@
   overflow-wrap: normal;
   word-break: normal;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
@@ -249,13 +249,13 @@
   margin: 24px 0;
 }
 .markdown input[type="checkbox"] {
-  margin-right: 6px;
+  margin-right: 8px;
   accent-color: var(--a13n-secondary);
 }
 @media (max-width: 600px) {
   .markdown th,
   .markdown td {
-    padding: 8px 10px;
+    padding: 8px 12px;
   }
   .diagramCanvas {
     padding: 12px;

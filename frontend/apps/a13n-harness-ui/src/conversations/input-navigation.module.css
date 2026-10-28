@@ -10,7 +10,7 @@
   z-index: 2;
   display: flex;
   flex-direction: column;
-  padding-block: 6px;
+  padding-block: 8px;
   overscroll-behavior: contain;
 }
 .tick {
@@ -81,7 +81,7 @@
   overflow-wrap: anywhere;
 }
 .output {
-  margin-top: 10px;
+  margin-top: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--a13n-border);
 }
@@ -110,13 +110,13 @@
 .menu nav {
   max-height: 50dvh;
   overflow-y: auto;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .menu nav button {
   display: flex;
   gap: 12px;
   width: 100%;
-  padding: 10px 8px;
+  padding: 12px 8px;
   background: transparent;
   border: 0;
   border-radius: 6px;
@@ -143,7 +143,7 @@
 }
 .menuOutput {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 @container conversation-reader (max-width: 600px) {
   .rail {

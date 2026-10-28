@@ -2,7 +2,7 @@
    skeleton rows and the centered connection state. */
 .rows {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .row {
   display: flex;
@@ -41,7 +41,7 @@
 .status p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .status button {

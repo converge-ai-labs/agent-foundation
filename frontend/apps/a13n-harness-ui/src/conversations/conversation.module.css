@@ -6,16 +6,16 @@
   flex: 1;
 }
 .navigation label {
-  font-size: 12px;
+  font-size: 14px;
 }
 .navigationHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-inline: 8px 2px;
+  padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
   margin-top: 8px;
 }
@@ -26,7 +26,7 @@
 }
 .shortcuts {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .homeLink {
   composes: row from "../shell/navigation-row.module.css";
@@ -63,18 +63,18 @@
   margin-inline-start: auto;
   min-width: 16px;
   text-align: center;
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .draftsPopup {
   width: min(280px, var(--available-width));
 }
 .draftsTitle {
-  font-size: 13px;
+  font-size: 14px;
 }
 .draftsDescription {
-  margin-block: 6px 12px;
-  font-size: 12px;
+  margin-block: 8px 12px;
+  font-size: 14px;
 }
 .draftsList {
   list-style: none;
@@ -87,12 +87,12 @@
 .draftShortcut {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 8px 8px;
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
 }
 .draftShortcut:hover {
   background: var(--a13n-hover);
@@ -110,7 +110,7 @@
 .draftShortcut > small,
 .draftsEmpty {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .draftsEmpty {
   margin: 0;
@@ -131,7 +131,7 @@
   min-height: 32px;
   padding: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .initialLoading > span {
   animation: revealLoading 0s 180ms both;
@@ -161,7 +161,7 @@
   padding: 8px 4px;
   text-align: start;
   text-wrap: wrap;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .projectSummary strong,
@@ -173,8 +173,8 @@
   overflow-wrap: anywhere;
 }
 .projectSummary strong {
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 .projectSummary svg {
@@ -183,15 +183,15 @@
   color: var(--a13n-secondary);
 }
 .projectSummaryActivity {
-  padding: 6px 0 0 24px;
+  padding: 8px 0 0 24px;
   color: var(--a13n-secondary);
 }
 .projectPaths {
   display: grid;
   gap: 8px;
   border-top: 1px solid var(--a13n-border);
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
   color: var(--a13n-secondary);
 }
 .groupHeading {
@@ -200,9 +200,9 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 12px;
+  font-size: 14px;
   border-radius: 6px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .groupHeading:hover {
   background: var(--a13n-hover);
@@ -217,16 +217,16 @@
 .groupActions button,
 .threadActions {
   width: 24px;
-  height: 24px;
+  height: 32px;
 }
 .groupToggle {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  min-height: 24px;
-  padding: 3px 88px 3px 8px;
+  min-height: 32px;
+  padding: 4px 88px 4px 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -234,7 +234,7 @@
   text-align: start;
   cursor: pointer;
   border-radius: 6px;
-  line-height: 18px;
+  line-height: 20px;
 }
 .groupToggle > span {
   overflow: hidden;
@@ -243,8 +243,8 @@
   font-weight: 500;
 }
 .groupToggle > svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
@@ -255,12 +255,12 @@
   display: grid;
   place-items: center;
   width: 24px;
-  height: 24px;
+  height: 32px;
   color: var(--a13n-secondary);
 }
 .groupChevron > svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   transition: transform 120ms ease;
 }
 .groupToggle:focus-visible {
@@ -274,7 +274,7 @@
   inset-inline-start: 1px;
   top: 0;
   width: 28px;
-  height: 24px;
+  height: 32px;
   z-index: 1;
   touch-action: none;
   cursor: grab;
@@ -313,8 +313,8 @@
   }
 }
 .groupThreads {
-  /* Match the project label after its 14px icon and 7px gap. */
-  margin-inline-start: 21px;
+  /* Match the project label after its 16px icon and 8px gap. */
+  margin-inline-start: 24px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -336,8 +336,8 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 24px;
-  margin-bottom: 2px;
+  min-height: 32px;
+  margin-bottom: 4px;
   border-radius: 6px;
   transition: background-color 120ms ease-out;
 }
@@ -348,7 +348,7 @@
 }
 /* Keep stars and menus aligned with rows that have a worker disclosure. */
 .threadRow:not(:has(.threadDisclosure)) {
-  padding-inline-end: 28px;
+  padding-inline-end: 32px;
 }
 .threadDisclosure {
   display: flex;
@@ -356,7 +356,7 @@
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
-  height: 24px;
+  height: 32px;
   margin: 0 4px 0 0;
   padding: 0;
   border: 0;
@@ -370,8 +370,8 @@
   outline-offset: -2px;
 }
 .threadDisclosure svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   transition: transform 120ms ease;
 }
 .threadRow:hover,
@@ -392,8 +392,8 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  height: 24px;
-  margin-inline: 3px;
+  height: 32px;
+  margin-inline: 4px;
   color: var(--a13n-tertiary);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -415,7 +415,7 @@
     inset-inline-end: 28px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
-    padding-inline-end: 28px;
+    padding-inline-end: 32px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
     display: none;
@@ -442,14 +442,14 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 3px 8px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
   border-radius: 6px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .threadLink:hover,
 .selected {
@@ -489,8 +489,8 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin-top: 2px;
+  font-size: 14px;
+  margin-top: 4px;
 }
 .threadLink .coordinatorActivity {
   flex-shrink: 0;
@@ -500,7 +500,7 @@
   white-space: nowrap;
   margin: 0;
   line-height: 20px;
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .resultDot {
@@ -513,11 +513,11 @@
 .resultCount {
   flex-shrink: 0;
   min-width: 18px;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
   color: var(--info-foreground);
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -545,7 +545,7 @@
 .emptyGroup {
   display: block;
   color: var(--a13n-secondary);
-  padding: 5px 8px;
+  padding: 4px 8px;
 }
 .form {
   display: grid;
@@ -556,7 +556,7 @@
   padding: 12px;
   background: var(--a13n-surface);
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 14px;
 }
 .page {
   container: conversation-page / inline-size;
@@ -572,7 +572,7 @@
   right: 8px;
   z-index: 2;
   max-width: calc(100% - 16px);
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: 6px;
   background: var(--a13n-surface);
   pointer-events: none;
@@ -580,12 +580,12 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .toolbar {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -595,7 +595,7 @@
   flex: 1;
   min-height: 100px;
   overflow: auto;
-  padding: 20px 16px 28px;
+  padding: 24px 16px 32px;
   overflow-anchor: none;
 }
 .transcript {
@@ -606,7 +606,7 @@
   margin-bottom: 4px;
 }
 .userInput {
-  margin: 8px 0 14px auto;
+  margin: 8px 0 16px auto;
   position: relative;
   width: fit-content;
   min-width: 64px;
@@ -614,7 +614,7 @@
 }
 .userMessage {
   color: var(--a13n-text);
-  padding: 10px 12px;
+  padding: 12px 12px;
   background: var(--a13n-surface);
   border-radius: 10px;
   font-size: var(--harness-prose-size);
@@ -623,14 +623,14 @@
 }
 .assistantMessage {
   position: relative;
-  margin: 10px 0 16px;
+  margin: 12px 0 16px;
   padding-inline: 12px;
   line-height: var(--harness-prose-leading);
 }
 .messageActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-height: 28px;
   margin-top: 4px;
   margin-inline-start: -6px;
@@ -644,7 +644,7 @@
 }
 @container conversation-page (max-width: 600px) {
   .assistantMessage {
-    padding-inline: 6px;
+    padding-inline: 8px;
   }
   .userInput {
     max-width: 90%;
@@ -673,7 +673,7 @@
 }
 .copyError {
   color: var(--a13n-danger);
-  font-size: 12px;
+  font-size: 14px;
 }
 .userInput > .messageActions:has([role="alert"]),
 .assistantMessage > .messageActions:has([role="alert"]) {
@@ -700,14 +700,14 @@
 }
 .userMessage header,
 .assistantMessage header {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   margin-bottom: 8px;
 }
 .threadSource {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 100%;
   color: var(--a13n-secondary);
   text-decoration: none;
@@ -766,8 +766,8 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 0 2px;
-  font-size: 12px;
+  padding: 8px 0 4px;
+  font-size: 14px;
   font-weight: 500;
   transition: color 150ms ease;
 }
@@ -788,7 +788,7 @@
 }
 .inputStatus {
   display: inline;
-  font-size: 11px;
+  font-size: 14px;
   margin-inline-start: 8px;
 }
 .code {
@@ -813,14 +813,14 @@
 .reasoning > summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: fit-content;
   min-height: 28px;
-  margin: 0 0 6px -8px;
+  margin: 0 0 8px -8px;
   padding: 0 8px;
   border-radius: 8px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   list-style: none;
   transition:
@@ -835,9 +835,9 @@
   color: var(--a13n-text);
 }
 .reasoning[open] > div {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
-  padding-inline-start: 14px;
+  padding-inline-start: 16px;
   border-inline-start: 1px solid var(--a13n-border);
 }
 .reasoning > summary:focus-visible {
@@ -845,15 +845,15 @@
   outline-offset: 3px;
 }
 .activity {
-  margin: 2px 0;
-  font-size: 13px;
+  margin: 4px 0;
+  font-size: 14px;
 }
 .activity summary,
 .rawSource summary {
   cursor: pointer;
 }
 .activity details {
-  margin: 10px 0;
+  margin: 12px 0;
 }
 .activity > summary {
   display: flex;
@@ -874,7 +874,7 @@
 }
 .activity[open] > summary {
   color: var(--a13n-text);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .activity > summary:focus-visible {
   outline: 1px solid var(--ring);
@@ -885,7 +885,7 @@
 }
 .children > details {
   background: var(--a13n-surface);
-  padding: 10px 12px;
+  padding: 12px 12px;
 }
 .children > details > summary {
   color: var(--a13n-text);
@@ -919,10 +919,10 @@
   margin: 0;
 }
 .detailText > button {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .rawSource {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .liveOutput > small {
@@ -930,8 +930,8 @@
 }
 .composer {
   container: composer / inline-size;
-  --composer-font-size: 14px;
-  --composer-content-height: 28px;
+  --composer-font-size: 16px;
+  --composer-content-height: 32px;
   flex-shrink: 0;
   /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
      each side. */
@@ -943,12 +943,12 @@
 }
 .composerInput {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto 28px;
+  grid-template-columns: 32px minmax(0, 1fr) auto 32px;
   align-items: flex-end;
   gap: 4px;
   border: 1px solid var(--a13n-input-border);
   border-radius: 14px;
-  padding: 6px 8px;
+  padding: 8px 8px;
   background: var(--card);
   box-shadow: none;
   transition:
@@ -964,7 +964,7 @@
     padding: 16px 12px;
   }
   .composerInput {
-    padding: 6px;
+    padding: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -977,7 +977,7 @@
 }
 .composerConnection {
   margin: 4px 4px 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .sendButton {
@@ -986,16 +986,16 @@
   box-shadow: none;
 }
 .composerContext {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .executionLoad {
   padding-block: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .executionLoad > button {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 8px;
   background: var(--a13n-surface);
@@ -1018,7 +1018,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .goalButton {
   flex-shrink: 0;
@@ -1027,23 +1027,23 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 .workerIdentity {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   max-width: 280px;
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--a13n-hover);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .workerIdentity > span {
   overflow: hidden;
@@ -1091,13 +1091,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
+  min-height: 32px;
 }
 .composerInput > button,
 .composerActions > button {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
 }
 .composerInput > button svg,
 .composerActions > button svg {
@@ -1143,7 +1143,7 @@
   }
   .composerHeader button {
     height: 32px;
-    font-size: 13px;
+    font-size: 14px;
   }
   .composerHeader button svg {
     width: 16px;
@@ -1192,8 +1192,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  padding: 6px 0;
-  font-size: 12px;
+  padding: 8px 0;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .composerStatus p {
@@ -1204,15 +1204,15 @@
   color: var(--a13n-text);
 }
 .warning {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--a13n-text);
   background: var(--a13n-surface);
   border-left: 3px solid var(--warning-foreground);
-  padding: 10px 12px;
-  margin: 10px 0;
+  padding: 12px 12px;
+  margin: 12px 0;
 }
 .receipt {
-  font-size: 12px;
+  font-size: 14px;
   padding: 8px 0;
   overflow-wrap: anywhere;
 }
@@ -1225,7 +1225,7 @@
 }
 .empty {
   text-align: center;
-  padding: 48px 20px;
+  padding: 48px 24px;
   color: var(--a13n-secondary);
 }
 .empty h2 {
@@ -1256,12 +1256,12 @@
 }
 .detailGrid dt {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .detailGrid dd {
   margin: 4px 0 12px;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 14px;
 }
 dl.detailGrid {
   display: block;
@@ -1271,12 +1271,12 @@ dl.detailGrid > div {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   align-items: start;
-  gap: 20px;
-  padding-block: 6px;
+  gap: 24px;
+  padding-block: 8px;
 }
 dl.detailGrid dt {
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 dl.detailGrid dd {
@@ -1303,17 +1303,17 @@ dl.detailGrid > .detailLongRow dd {
   background: var(--a13n-elevated);
   width: 100%;
   max-width: 100%;
-  gap: 20px;
+  gap: 24px;
 }
 .inspection [data-slot="tabs-tab"] {
-  font-size: 13px;
+  font-size: 14px;
 }
 .inspection [data-slot="tabs-content"] > section + section {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 .inspection section > h3 {
   margin: 0 0 8px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 20px;
 }
@@ -1321,14 +1321,14 @@ dl.detailGrid > .detailLongRow dd {
 .inspection [data-slot="tabs-content"] > .form > section > p {
   margin-block: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .inspection dl.detailGrid {
   margin-block: 8px 12px;
 }
 .inspection dl.detailGrid > div {
-  padding-block: 5px;
+  padding-block: 4px;
 }
 @media (max-width: 700px) {
   .header {
@@ -1354,19 +1354,19 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 10px;
 }
 .decision h2 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   margin-bottom: 8px;
 }
 .decision p {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .decision > p {
   margin: 0 0 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .decision > form {
   margin-top: 16px;
@@ -1379,23 +1379,23 @@ dl.detailGrid > .detailLongRow dd {
 }
 .question legend {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 4px;
 }
 .question > p {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   font-size: 14px;
   font-weight: 500;
 }
 .answerOption {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-start;
-  padding: 10px 12px;
-  margin: 6px 0;
+  padding: 12px 12px;
+  margin: 8px 0;
   border-radius: 6px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .answerOption input {
@@ -1416,9 +1416,9 @@ dl.detailGrid > .detailLongRow dd {
 .answerOption small {
   display: block;
   color: var(--a13n-secondary);
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 18px;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .responseInputs {
@@ -1431,8 +1431,8 @@ dl.detailGrid > .detailLongRow dd {
 }
 .settingsHint {
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .settingsFields {
   composes: responseInputs;
@@ -1447,7 +1447,7 @@ dl.detailGrid > .detailLongRow dd {
 
 .attachmentCard {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding: 12px;
   margin: 8px 0;
   border: 1px solid var(--a13n-border);
@@ -1471,12 +1471,12 @@ dl.detailGrid > .detailLongRow dd {
 .sectionHeading {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 26px;
   margin-block: 4px 0;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
 }
 .sectionHeading small {
@@ -1500,12 +1500,12 @@ dl.detailGrid > .detailLongRow dd {
   align-items: center;
   vertical-align: middle;
   max-width: min(280px, 100%);
-  margin: 0 3px;
+  margin: 0 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 9px;
   background: var(--a13n-surface);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
   overflow: hidden;
 }
@@ -1513,13 +1513,13 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentRemove {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 0 6px;
+  padding: 0 8px;
   min-width: 0;
 }
 .inlineAttachmentOpen img {
@@ -1537,7 +1537,7 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--a13n-secondary);
-  padding-inline: 7px;
+  padding-inline: 8px;
   flex-shrink: 0;
 }
 .inlineAttachment button:hover {
@@ -1567,11 +1567,11 @@ dl.detailGrid > .detailLongRow dd {
   display: inline-block;
   vertical-align: middle;
   max-width: calc(100% - 8px);
-  margin: 3px 4px;
+  margin: 4px 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: 14px;
 }
 .inputAttachment > details > summary {
   display: flex;
@@ -1599,7 +1599,7 @@ dl.detailGrid > .detailLongRow dd {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 8px;
   max-width: min(280px, 100%);
   color: var(--a13n-text);
   background: transparent;
@@ -1642,9 +1642,9 @@ dl.detailGrid > .detailLongRow dd {
 .recoveryNotice {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   margin: 12px 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .recoveryNotice > svg {
@@ -1653,11 +1653,11 @@ dl.detailGrid > .detailLongRow dd {
 .runActivity {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 24px;
   margin: 8px 0 16px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .runActivity > svg {
   flex-shrink: 0;
@@ -1670,18 +1670,18 @@ dl.detailGrid > .detailLongRow dd {
 .failureNotice {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 12px 12px;
   margin-block: 12px;
   border: 0;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   background: var(--a13n-surface);
 }
 .failureNotice > svg {
   flex: 0 0 18px;
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--warning-foreground);
 }
 .failureNotice > div {
@@ -1711,8 +1711,8 @@ dl.detailGrid > .detailLongRow dd {
   border: 1px solid color-mix(in srgb, var(--context-accent) 24%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--context-accent) 7%, var(--a13n-surface));
-  padding: 10px 14px;
-  margin-block: 10px;
+  padding: 12px 16px;
+  margin-block: 12px;
   min-width: 0;
 }
 .contextActivity[data-kind="compaction"] {
@@ -1720,7 +1720,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .contextActivity > summary {
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -1734,7 +1734,7 @@ dl.detailGrid > .detailLongRow dd {
 .contextStatus {
   margin-left: 12px;
   color: var(--a13n-text-supporting);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 .contextPreview {
@@ -1761,7 +1761,7 @@ dl.detailGrid > .detailLongRow dd {
   min-width: 0;
 }
 .childAnswer > header {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   margin-block: 12px;
 }
@@ -1781,7 +1781,7 @@ dl.detailGrid > .detailLongRow dd {
   scrollbar-gutter: stable both-edges;
 }
 .turn {
-  margin-bottom: 28px;
+  margin-bottom: 32px;
   outline: none;
   scroll-margin-top: 16px;
 }
@@ -1797,19 +1797,19 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .execution {
-  margin: 6px 12px 14px;
+  margin: 8px 12px 16px;
 }
 .executionToggle {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 14px;
+  padding: 8px 8px;
   margin-inline-start: -8px;
   cursor: pointer;
 }
@@ -1827,7 +1827,7 @@ dl.detailGrid > .detailLongRow dd {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
 }
 .executionToggle:hover {
@@ -1848,19 +1848,19 @@ dl.detailGrid > .detailLongRow dd {
   overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 2px 0 2px 12px;
+  padding: 4px 0 4px 12px;
   margin-block-start: 4px;
-  margin-inline-start: 5px;
+  margin-inline-start: 4px;
   border-inline-start: 1px solid var(--a13n-border);
 }
 /* Inside the work log, reasoning keeps the 32px row rhythm of the tool groups
    instead of the looser spacing it has between transcript paragraphs. */
 .executionContent .reasoning {
-  margin: 2px 0;
+  margin: 4px 0;
 }
 .executionContent .reasoning > summary {
   min-height: 32px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .executionContent .reasoning[open]:not(:last-child) {
   margin-bottom: 12px;
@@ -1899,7 +1899,7 @@ dl.detailGrid > .detailLongRow dd {
   flex-shrink: 0;
   width: min(var(--harness-reading-width), 100% - 84px);
   min-height: 24px;
-  margin: 6px auto 0;
+  margin: 8px auto 0;
   padding-inline: 8px;
 }
 .conversationFooter > div {
@@ -1912,9 +1912,9 @@ dl.detailGrid > .detailLongRow dd {
   isolation: isolate;
   height: 24px;
   min-height: 24px;
-  padding: 2px 8px;
+  padding: 4px 8px;
   border-radius: 5px;
-  line-height: 18px;
+  line-height: 20px;
 }
 .conversationFooter button:is(:hover, [data-popup-open]) {
   background: transparent;

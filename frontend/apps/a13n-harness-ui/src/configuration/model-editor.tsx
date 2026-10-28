@@ -8,7 +8,16 @@ import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, SearchPicker } from "a13n-ui";
+import {
+  Button,
+  FormField,
+  Input,
+  SearchPicker,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+} from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -537,123 +546,172 @@ function LoadedModelEditor({
       label: modelSearch.trim(),
       description: "Use custom model ID",
     });
+  const defaultsSummary = [
+    selectedPreset?.label ?? "Custom settings",
+    contextBudget
+      ? `${contextBudget.toLocaleString()} context`
+      : "Native context",
+    value?.settings?.max_tokens
+      ? `${Number(value?.settings.max_tokens).toLocaleString()} output`
+      : null,
+    value?.settings?.openai_service_tier === "priority"
+      ? "Priority speed"
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className={management.modelEditor}>
       <ErrorNotice error={options.error || prepare.error} />
-      <SettingsSection title="Connection">
-        {nameField}
-        <ResourceChoice
-          label="Model connection"
-          placeholder="Search connections…"
-          description={
-            !selected
-              ? "This connection is managed in Advanced configuration."
-              : undefined
-          }
-          value={connection}
-          options={
-            choices.connections?.map((item) => ({
-              value: item.id,
-              label: item.label,
-            })) ?? []
-          }
-          onValueChange={(id) => {
-            if (id === connection) return;
-            const next = choices.connections!.find((item) => item.id === id)!;
-            setConnection(id);
-            setModelId(next.default_model);
-            setBaseUrl(next.base_url ?? "");
-            setAuthentication(undefined);
-            setAccountReady(false);
-          }}
-        />
-        <SettingsRow label="Model">
-          <SearchPicker
-            label="Model"
-            placeholder="Find a model"
-            emptyMessage="Search or enter a custom model ID."
-            onSearchChange={setModelSearch}
-            value={effectiveId}
-            onValueChange={setModelId}
-            groups={[
-              {
-                label: api
-                  ? "Recommendations & public directory"
-                  : "Subscription models",
-                options: [...candidates.values()],
-              },
-            ]}
-          />
-        </SettingsRow>
-
-        {api && (catalog.isPending || catalog.error) && (
-          <small role="status">
-            {catalog.isPending
-              ? "Loading model directory…"
-              : "Directory unavailable. Enter a model ID or choose a bundled recommendation."}
-          </small>
-        )}
-        {selected?.supports_base_url && (
-          <TextField
-            label="Base URL"
-            value={effectiveUrl}
-            onChange={setBaseUrl}
-            description="Optional API endpoint override. No credentials, query string or fragment."
-          />
-        )}
-      </SettingsSection>
-      {selected && (api || selected.account) && (
-        <SettingsSection title="Authentication">
-          {selected &&
-            (api ? (
-              <CredentialField
-                key={connection}
-                connection={selected}
-                value={authentication}
-                onChange={setAuth}
+      <Tabs defaultValue="connection" className={management.modelTabs}>
+        <TabsList variant="underline" aria-label="Model settings">
+          <TabsTab value="connection">Connection</TabsTab>
+          <TabsTab value="defaults" disabled={!selected || !matches || !value}>
+            Model defaults
+          </TabsTab>
+        </TabsList>
+        <TabsPanel
+          value="connection"
+          keepMounted
+          className={management.modelPanel}
+        >
+          <SettingsSection>
+            {nameField}
+            <ResourceChoice
+              label="Model connection"
+              placeholder="Search connections…"
+              description={
+                !selected
+                  ? "This connection is managed in Advanced configuration."
+                  : undefined
+              }
+              value={connection}
+              options={
+                choices.connections?.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                })) ?? []
+              }
+              onValueChange={(id) => {
+                if (id === connection) return;
+                const next = choices.connections!.find(
+                  (item) => item.id === id,
+                )!;
+                setConnection(id);
+                setModelId(next.default_model);
+                setBaseUrl(next.base_url ?? "");
+                setAuthentication(undefined);
+                setAccountReady(false);
+              }}
+            />
+            <SettingsRow label="Model">
+              <SearchPicker
+                label="Model"
+                placeholder="Find a model"
+                emptyMessage="Search or enter a custom model ID."
+                onSearchChange={setModelSearch}
+                value={effectiveId}
+                onValueChange={setModelId}
+                groups={[
+                  {
+                    label: api
+                      ? "Recommendations & public directory"
+                      : "Subscription models",
+                    options: [...candidates.values()],
+                  },
+                ]}
               />
-            ) : nativeProvider && selected.account ? (
-              <div className={layout.accountConnection}>
-                <ErrorNotice error={subscriptions.error} />
-                <ChoiceField
-                  label="Account group"
-                  value={selectedGroup ?? ""}
-                  onValueChange={(group) =>
-                    setAuth({
-                      kind:
-                        nativeProvider === "codex"
-                          ? "codex_subscription"
-                          : "grok_subscription",
-                      ...(group ? { group } : {}),
-                    })
-                  }
-                  options={[
-                    {
-                      value: "",
-                      label: "Provider default group",
-                      hint:
-                        !nativeGroup &&
-                        subscriptions.data?.adoption[nativeProvider]
-                          ?.group_created
-                          ? "Default group is missing. Select or create a group."
-                          : undefined,
-                    },
-                    ...(subscriptions.data?.groups
-                      .filter((item) => item.provider === nativeProvider)
-                      .map((item) => ({
-                        value: item.id,
-                        label: item.name,
-                        hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "Weighted balance" : "Ordered consumption"}`,
-                      })) ?? []),
-                  ]}
-                />
-                {(!nativeGroup &&
-                  !subscriptions.data?.adoption[nativeProvider]
-                    ?.group_created) ||
-                nativeGroup?.accounts?.some(
-                  (member) =>
-                    member.account === `acct-${nativeProvider}-default`,
-                ) ? (
+            </SettingsRow>
+
+            {api && (catalog.isPending || catalog.error) && (
+              <small role="status">
+                {catalog.isPending
+                  ? "Loading model directory…"
+                  : "Directory unavailable. Enter a model ID or choose a bundled recommendation."}
+              </small>
+            )}
+            {selected?.supports_base_url && (
+              <TextField
+                label="Base URL"
+                value={effectiveUrl}
+                onChange={setBaseUrl}
+                description="Optional API endpoint override. No credentials, query string or fragment."
+              />
+            )}
+          </SettingsSection>
+          {selected && (api || selected.account) && (
+            <SettingsSection title="Authentication">
+              {selected &&
+                (api ? (
+                  <CredentialField
+                    key={connection}
+                    connection={selected}
+                    value={authentication}
+                    onChange={setAuth}
+                  />
+                ) : nativeProvider && selected.account ? (
+                  <div className={layout.accountConnection}>
+                    <ErrorNotice error={subscriptions.error} />
+                    <ChoiceField
+                      label="Account group"
+                      value={selectedGroup ?? ""}
+                      onValueChange={(group) =>
+                        setAuth({
+                          kind:
+                            nativeProvider === "codex"
+                              ? "codex_subscription"
+                              : "grok_subscription",
+                          ...(group ? { group } : {}),
+                        })
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label: "Provider default group",
+                          hint:
+                            !nativeGroup &&
+                            subscriptions.data?.adoption[nativeProvider]
+                              ?.group_created
+                              ? "Default group is missing. Select or create a group."
+                              : undefined,
+                        },
+                        ...(subscriptions.data?.groups
+                          .filter((item) => item.provider === nativeProvider)
+                          .map((item) => ({
+                            value: item.id,
+                            label: item.name,
+                            hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "Weighted balance" : "Ordered consumption"}`,
+                          })) ?? []),
+                      ]}
+                    />
+                    {(!nativeGroup &&
+                      !subscriptions.data?.adoption[nativeProvider]
+                        ?.group_created) ||
+                    nativeGroup?.accounts?.some(
+                      (member) =>
+                        member.account === `acct-${nativeProvider}-default`,
+                    ) ? (
+                      <ProviderAccount
+                        key={connection}
+                        connection={selected.account}
+                        inline
+                        onReady={setAccountReady}
+                        onIdentity={setAccountIdentity}
+                      />
+                    ) : (
+                      <p>
+                        {groupReady
+                          ? "Group has a connected account."
+                          : "This group needs a connected member account."}
+                      </p>
+                    )}
+                    <Link
+                      to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
+                    >
+                      Manage accounts and groups
+                    </Link>
+                  </div>
+                ) : selected.account ? (
                   <ProviderAccount
                     key={connection}
                     connection={selected.account}
@@ -661,246 +719,230 @@ function LoadedModelEditor({
                     onReady={setAccountReady}
                     onIdentity={setAccountIdentity}
                   />
-                ) : (
-                  <p>
-                    {groupReady
-                      ? "Group has a connected account."
-                      : "This group needs a connected member account."}
+                ) : null)}
+              {selected?.account?.model_discovery && (
+                <>
+                  <Button
+                    disabled={!accountReady}
+                    loading={discovery.isPending}
+                    onClick={() => discovery.mutate()}
+                  >
+                    Fetch account models
+                  </Button>
+                  <small>
+                    Explicitly queries this account's catalog. Only Chat
+                    Completions models are shown; access is still subject to
+                    your plan and organization policy.
+                  </small>
+                  <ErrorNotice error={discovery.error} />
+                  {currentDiscovery?.length === 0 && (
+                    <p role="status">
+                      No compatible models returned. You can still enter a model
+                      ID manually.
+                    </p>
+                  )}
+                </>
+              )}
+            </SettingsSection>
+          )}
+          {!matches && prepare.isPending && (
+            <small role="status">Preparing model…</small>
+          )}
+          {!matches && prepare.isError && (
+            <Button variant="outline" onClick={() => prepare.mutate(false)}>
+              Retry
+            </Button>
+          )}
+          {selected && matches && value && (
+            <p className={management.defaultsSummary}>
+              <strong>Defaults</strong>
+              {defaultsSummary}
+            </p>
+          )}
+        </TabsPanel>
+        <TabsPanel
+          value="defaults"
+          keepMounted
+          className={management.modelPanel}
+        >
+          {selected && matches && value && (
+            <>
+              <SettingsSection
+                title="Model defaults"
+                description={defaultsSummary}
+              >
+                {!api && !authReady && (
+                  <p className={layout.groupHint}>
+                    Connect an account before running this model.
                   </p>
                 )}
-                <Link
-                  to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
-                >
-                  Manage accounts and groups
-                </Link>
-              </div>
-            ) : selected.account ? (
-              <ProviderAccount
-                key={connection}
-                connection={selected.account}
-                inline
-                onReady={setAccountReady}
-                onIdentity={setAccountIdentity}
-              />
-            ) : null)}
-          {selected?.account?.model_discovery && (
-            <>
-              <Button
-                disabled={!accountReady}
-                loading={discovery.isPending}
-                onClick={() => discovery.mutate()}
-              >
-                Fetch account models
-              </Button>
-              <small>
-                Explicitly queries this account's catalog. Only Chat Completions
-                models are shown; access is still subject to your plan and
-                organization policy.
-              </small>
-              <ErrorNotice error={discovery.error} />
-              {currentDiscovery?.length === 0 && (
-                <p role="status">
-                  No compatible models returned. You can still enter a model ID
-                  manually.
-                </p>
-              )}
-            </>
-          )}
-        </SettingsSection>
-      )}
-      {!matches && prepare.isPending && (
-        <small role="status">Preparing model…</small>
-      )}
-      {!matches && prepare.isError && (
-        <Button variant="outline" onClick={() => prepare.mutate(false)}>
-          Retry
-        </Button>
-      )}
-      {selected && matches && value && (
-        <>
-          <SettingsSection
-            title="Model defaults"
-            description={[
-              selectedPreset?.label ?? "Custom settings",
-              contextBudget
-                ? `${contextBudget.toLocaleString()} context`
-                : "Native context",
-              value.settings?.max_tokens
-                ? `${Number(value.settings.max_tokens).toLocaleString()} output`
-                : null,
-              value.settings?.openai_service_tier === "priority"
-                ? "Priority speed"
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          >
-            {!api && !authReady && (
-              <p className={layout.groupHint}>
-                Connect an account before running this model.
-              </p>
-            )}
-            <ChoiceField
-              label="Settings preset"
-              value={selectedPreset?.value ?? ""}
-              options={[
-                ...(!selectedPreset
-                  ? [{ value: "", label: "Custom settings" }]
-                  : []),
-                ...presets.map((item, index) => ({
-                  value: item.value,
-                  label: `${item.label}${index === 0 ? " (default)" : ""}`,
-                })),
-              ]}
-              onValueChange={(preset) => {
-                const settings = options.data?.presets.find(
-                  (item) => item.value === preset,
-                )?.settings;
-                if (settings) {
-                  const next = { ...value.settings };
-                  for (const choice of options.data?.presets ?? [])
-                    for (const key of Object.keys(choice.settings))
-                      delete next[key];
-                  update({ settings: { ...next, ...settings } });
-                }
-              }}
-            />
-            {(options.data?.reasoning_mode?.supported ||
-              value.settings?.openai_reasoning_mode != null) && (
-              <ChoiceField
-                label="Reasoning mode"
-                value={String(value.settings?.openai_reasoning_mode ?? "")}
-                description={
-                  options.data?.reasoning_mode?.reason ??
-                  "Saved Model default, independent of thinking effort. Pro access, usage and latency depend on the provider."
-                }
-                options={[
-                  { value: "", label: "Provider default" },
-                  {
-                    value: "standard",
-                    label: "Standard",
-                    disabled: !options.data?.reasoning_mode?.supported,
-                  },
-                  {
-                    value: "pro",
-                    label: "Pro",
-                    disabled: !options.data?.reasoning_mode?.supported,
-                  },
-                  ...(![undefined, null, "standard", "pro"].includes(
-                    value.settings?.openai_reasoning_mode as
-                      string | null | undefined,
-                  )
-                    ? [
-                        {
-                          value: String(value.settings?.openai_reasoning_mode),
-                          label: `Current: ${value.settings?.openai_reasoning_mode}`,
-                          disabled: true,
+                <ChoiceField
+                  label="Settings preset"
+                  value={selectedPreset?.value ?? ""}
+                  options={[
+                    ...(!selectedPreset
+                      ? [{ value: "", label: "Custom settings" }]
+                      : []),
+                    ...presets.map((item, index) => ({
+                      value: item.value,
+                      label: `${item.label}${index === 0 ? " (default)" : ""}`,
+                    })),
+                  ]}
+                  onValueChange={(preset) => {
+                    const settings = options.data?.presets.find(
+                      (item) => item.value === preset,
+                    )?.settings;
+                    if (settings) {
+                      const next = { ...value.settings };
+                      for (const choice of options.data?.presets ?? [])
+                        for (const key of Object.keys(choice.settings))
+                          delete next[key];
+                      update({ settings: { ...next, ...settings } });
+                    }
+                  }}
+                />
+                {(options.data?.reasoning_mode?.supported ||
+                  value.settings?.openai_reasoning_mode != null) && (
+                  <ChoiceField
+                    label="Reasoning mode"
+                    value={String(value.settings?.openai_reasoning_mode ?? "")}
+                    description={
+                      options.data?.reasoning_mode?.reason ??
+                      "Independent of thinking effort. Pro availability and usage depend on your provider."
+                    }
+                    options={[
+                      { value: "", label: "Provider default" },
+                      {
+                        value: "standard",
+                        label: "Standard",
+                        disabled: !options.data?.reasoning_mode?.supported,
+                      },
+                      {
+                        value: "pro",
+                        label: "Pro",
+                        disabled: !options.data?.reasoning_mode?.supported,
+                      },
+                      ...(![undefined, null, "standard", "pro"].includes(
+                        value.settings?.openai_reasoning_mode as
+                          string | null | undefined,
+                      )
+                        ? [
+                            {
+                              value: String(
+                                value.settings?.openai_reasoning_mode,
+                              ),
+                              label: `Current: ${value.settings?.openai_reasoning_mode}`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onValueChange={(mode) => {
+                      const settings = { ...value.settings };
+                      if (mode) settings.openai_reasoning_mode = mode;
+                      else delete settings.openai_reasoning_mode;
+                      update({ settings });
+                    }}
+                  />
+                )}
+                {options.data?.supports_service_tier && (
+                  <ChoiceField
+                    label="Service speed"
+                    value={String(
+                      value.settings?.openai_service_tier ?? "auto",
+                    )}
+                    options={[
+                      { value: "auto", label: "Standard" },
+                      { value: "priority", label: "Fast · priority usage" },
+                      ...(![undefined, "auto", "priority"].includes(
+                        value.settings?.openai_service_tier as
+                          string | undefined,
+                      )
+                        ? [
+                            {
+                              value: String(
+                                value.settings?.openai_service_tier,
+                              ),
+                              label: `Current: ${value.settings?.openai_service_tier}`,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onValueChange={(tier) =>
+                      update({
+                        settings: {
+                          ...value.settings,
+                          openai_service_tier: tier,
                         },
-                      ]
-                    : []),
-                ]}
-                onValueChange={(mode) => {
-                  const settings = { ...value.settings };
-                  if (mode) settings.openai_reasoning_mode = mode;
-                  else delete settings.openai_reasoning_mode;
-                  update({ settings });
-                }}
-              />
-            )}
-            {options.data?.supports_service_tier && (
-              <ChoiceField
-                label="Service speed"
-                value={String(value.settings?.openai_service_tier ?? "auto")}
-                options={[
-                  { value: "auto", label: "Standard" },
-                  { value: "priority", label: "Fast · priority usage" },
-                  ...(![undefined, "auto", "priority"].includes(
-                    value.settings?.openai_service_tier as string | undefined,
-                  )
-                    ? [
-                        {
-                          value: String(value.settings?.openai_service_tier),
-                          label: `Current: ${value.settings?.openai_service_tier}`,
+                      })
+                    }
+                  />
+                )}
+                {
+                  <ChoiceField
+                    label="Context budget"
+                    value={
+                      customContext ||
+                      (contextBudget != null &&
+                        !contextChoices.some(
+                          (choice) => choice.value === contextBudget,
+                        ))
+                        ? "custom"
+                        : contextBudget == null
+                          ? ""
+                          : String(contextBudget)
+                    }
+                    options={[
+                      { value: "", label: "Native default" },
+                      { value: "custom", label: "Custom budget" },
+                      ...contextChoices.map((choice) => ({
+                        value: String(choice.value),
+                        label: `${choice.label} · ${choice.value.toLocaleString()} tokens`,
+                      })),
+                    ]}
+                    onValueChange={(context) => {
+                      setCustomContext(context === "custom");
+                      if (context === "custom") return;
+                      update({
+                        model_characteristics: {
+                          ...value.model_characteristics,
+                          context_window_tokens: context
+                            ? Number(context)
+                            : null,
                         },
-                      ]
-                    : []),
-                ]}
-                onValueChange={(tier) =>
-                  update({
-                    settings: {
-                      ...value.settings,
-                      openai_service_tier: tier,
-                    },
-                  })
+                      });
+                    }}
+                  />
                 }
-              />
-            )}
-            {
-              <ChoiceField
-                label="Context budget"
-                value={
-                  customContext ||
+                {(customContext ||
                   (contextBudget != null &&
                     !contextChoices.some(
                       (choice) => choice.value === contextBudget,
-                    ))
-                    ? "custom"
-                    : contextBudget == null
-                      ? ""
-                      : String(contextBudget)
-                }
-                options={[
-                  { value: "", label: "Native default" },
-                  { value: "custom", label: "Custom budget" },
-                  ...contextChoices.map((choice) => ({
-                    value: String(choice.value),
-                    label: `${choice.label} · ${choice.value.toLocaleString()} tokens`,
-                  })),
-                ]}
-                onValueChange={(context) => {
-                  setCustomContext(context === "custom");
-                  if (context === "custom") return;
-                  update({
-                    model_characteristics: {
-                      ...value.model_characteristics,
-                      context_window_tokens: context ? Number(context) : null,
-                    },
-                  });
-                }}
-              />
-            }
-            {(customContext ||
-              (contextBudget != null &&
-                !contextChoices.some(
-                  (choice) => choice.value === contextBudget,
-                ))) && (
-              <TextField
-                label="Working context budget"
-                type="number"
-                value={String(
-                  value.model_characteristics?.context_window_tokens ?? "",
+                    ))) && (
+                  <TextField
+                    label="Working context budget"
+                    type="number"
+                    value={String(
+                      value.model_characteristics?.context_window_tokens ?? "",
+                    )}
+                    onChange={(input) =>
+                      update({
+                        model_characteristics: {
+                          ...value.model_characteristics,
+                          context_window_tokens: input ? Number(input) : null,
+                        },
+                      })
+                    }
+                    description={
+                      options.data?.known_context_window
+                        ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
+                        : "Leave blank for the native default."
+                    }
+                  />
                 )}
-                onChange={(input) =>
-                  update({
-                    model_characteristics: {
-                      ...value.model_characteristics,
-                      context_window_tokens: input ? Number(input) : null,
-                    },
-                  })
-                }
-                description={
-                  options.data?.known_context_window
-                    ? `Bundled limit: ${options.data.known_context_window.toLocaleString()} tokens.`
-                    : "Leave blank for the native default."
-                }
-              />
-            )}
-          </SettingsSection>
-          <SettingsSection title="Advanced">
-            <details className={layout.groupDisclosure}>
-              <summary>Connection options</summary>
-              <div className={styles.stack}>
-                {selected?.supports_session_affinity && (
+              </SettingsSection>
+              {selected.supports_session_affinity && (
+                <SettingsSection title="Gateway">
                   <ChoiceField
                     label="Gateway session affinity"
                     value={
@@ -931,9 +973,7 @@ function LoadedModelEditor({
                       update({ model_configuration: config });
                     }}
                   />
-                )}
-                {selected?.supports_session_affinity &&
-                  (customAffinity ||
+                  {(customAffinity ||
                     (affinityHeader &&
                       !choices.session_affinity_presets?.some(
                         (preset) => preset.header === affinityHeader,
@@ -953,8 +993,11 @@ function LoadedModelEditor({
                       description="Optional header for compatible gateways. Subscriptions use native affinity."
                     />
                   )}
+                </SettingsSection>
+              )}
+              <div>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   loading={prepare.isPending}
                   onClick={() => prepare.mutate(true)}
                 >
@@ -962,10 +1005,10 @@ function LoadedModelEditor({
                   Restore recommended defaults
                 </Button>
               </div>
-            </details>
-          </SettingsSection>
-        </>
-      )}
+            </>
+          )}
+        </TabsPanel>
+      </Tabs>
     </div>
   );
 }

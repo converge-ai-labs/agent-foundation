@@ -5,13 +5,13 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 240px;
+  width: 232px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  padding: 10px 8px;
+  padding: 12px 8px;
   background: var(--sidebar);
   border-right: 0;
 }
@@ -29,7 +29,7 @@
 }
 .supportingNav {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   margin-top: 12px;
 }
 .sidebarHeader {
@@ -38,12 +38,12 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 36px;
-  padding: 0 2px 8px 6px;
+  padding: 0 4px 8px 8px;
 }
 /* Desktop shells draw their own titlebar: keep the header draggable and
    leave room for macOS window controls. */
 :global(html[data-desktop]) .sidebarHeader {
-  padding-top: 28px;
+  padding-top: 32px;
   app-region: drag;
 }
 :global(html[data-desktop]) .sidebarHeader :is(a, button) {
@@ -83,7 +83,7 @@
   font-weight: 500;
 }
 .sidebarCaption {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
   padding: 0 12px 12px;
@@ -101,7 +101,7 @@
   max-width: 180px;
   min-width: 0;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
 }
 .colorSwatch {
   width: 12px;
@@ -118,7 +118,7 @@
   flex-shrink: 0;
   border-radius: 50%;
   color: white;
-  font-size: 11px;
+  font-size: 14px;
 }
 .profileName {
   overflow: hidden;
@@ -151,13 +151,13 @@
   margin-top: auto;
   padding-top: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 /* The footer shares the navigation icon and label columns. */
 .sidebarFooter small {
   display: block;
   padding: 0 8px 0 34px;
-  line-height: 16px;
+  line-height: 20px;
 }
 .peopleButton {
   composes: row from "./navigation-row.module.css";
@@ -172,7 +172,7 @@
 .footerIcons {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 .workspace {
   flex: 1;
@@ -198,7 +198,7 @@
   overflow-wrap: anywhere;
 }
 .main :where(h2) {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 1.4;
   margin: 0 0 16px;
@@ -231,7 +231,9 @@
   align-items: center;
   grid-column: 1;
   grid-row: 1;
-  min-height: 32px;
+  min-width: 0;
+  min-height: var(--harness-control-height);
+  overflow-wrap: anywhere;
   margin: 0;
 }
 .pageHeader p {
@@ -239,7 +241,7 @@
   grid-row: 2;
   max-width: 660px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .pageHeader > .actions {
@@ -256,7 +258,7 @@
 .panel {
   min-width: 0;
   background: var(--a13n-surface);
-  padding: 20px;
+  padding: 24px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -294,7 +296,7 @@
   background: var(--a13n-surface);
 }
 .hero h2 {
-  font-size: 22px;
+  font-size: 20px;
   letter-spacing: -0.025em;
   margin: 12px 0;
 }
@@ -302,7 +304,7 @@
   max-width: 480px;
 }
 .eyebrow {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
@@ -315,19 +317,19 @@
   align-items: baseline;
 }
 .heroStats strong {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 500;
 }
 .heroStats span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .resourceList {
   display: flex;
   flex-direction: column;
-  background: var(--a13n-canvas);
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 .resourceList:empty {
@@ -337,10 +339,10 @@
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 16px 0;
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   overflow-wrap: anywhere;
 }
@@ -357,9 +359,9 @@ a.resourceRow:hover {
 .resourceRow small {
   color: var(--a13n-secondary);
   display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 18px;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .resourceRow strong {
   font-weight: 500;
@@ -368,7 +370,7 @@ a.resourceRow:hover {
 .kind {
   flex-shrink: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 .tag {
@@ -381,7 +383,7 @@ a.resourceRow:hover {
   border-radius: 999px;
   background: var(--a13n-canvas);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1;
   white-space: nowrap;
 }
@@ -395,7 +397,7 @@ a.resourceRow:hover {
   border-left: 3px solid var(--a13n-accent);
   border-radius: 8px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .connectionNotice,
@@ -403,11 +405,11 @@ a.resourceRow:hover {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px 12px;
   background: var(--a13n-surface);
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -455,14 +457,14 @@ a.resourceRow:hover {
   column-gap: 4px;
   max-width: 640px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   overflow-wrap: anywhere;
 }
 .errorInline .errorMessage {
   flex: 0 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .errorInline .errorMessage > svg {
   margin-top: 0;
@@ -470,7 +472,7 @@ a.resourceRow:hover {
 .errorInline > button {
   flex-shrink: 0;
   height: 24px;
-  padding-inline: 6px;
+  padding-inline: 8px;
   color: var(--a13n-text-supporting);
 }
 /* Secondary actions are text actions whose labels sit flush with the panel
@@ -487,7 +489,7 @@ a.resourceRow:hover {
   background: none;
   color: var(--a13n-text);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   text-decoration: none;
   cursor: pointer;
 }
@@ -517,7 +519,7 @@ a.resourceRow:hover {
   padding: 8px 0;
   list-style: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 20px;
   user-select: none;
@@ -567,15 +569,15 @@ a.resourceRow:hover {
   grid-row: 2;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 18px;
+  line-height: 20px;
 }
 :where(.details) > :not(summary):not(:last-child) {
   margin-bottom: 8px;
 }
 :where(.details) pre {
-  font-size: 12px;
+  font-size: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -584,7 +586,7 @@ a.resourceRow:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .checks {
   display: flex;
@@ -614,7 +616,7 @@ a.resourceRow:hover {
   border-bottom: 0;
 }
 .definitionList dt {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .definitionList dd {
@@ -623,19 +625,19 @@ a.resourceRow:hover {
 .definitionList small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .back {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
   text-decoration: none;
   align-self: flex-start;
 }
 .muted {
   color: var(--a13n-secondary) !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
 }
 .access {
   min-height: 100dvh;
@@ -649,9 +651,9 @@ a.resourceRow:hover {
   background: var(--a13n-elevated);
   border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  padding: 28px;
+  padding: 32px;
   display: grid;
-  gap: 20px;
+  gap: 24px;
 }
 .accessCard h1 {
   font-size: 20px;
@@ -660,7 +662,7 @@ a.resourceRow:hover {
 }
 .accessCard p {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .accessCard .accessError {
   color: var(--a13n-danger);
@@ -719,24 +721,24 @@ a.resourceRow:hover {
   .hero {
     padding: 24px;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
   }
   .hero h2 {
-    font-size: 24px;
+    font-size: 20px;
   }
   .heroStats {
     display: flex;
     gap: 12px;
   }
   .heroStats strong {
-    font-size: 22px;
+    font-size: 20px;
   }
   .panel {
     padding: 16px;
   }
   .resourceRow {
     flex-wrap: wrap;
-    padding: 12px 16px;
+    padding: 16px 0;
     gap: 8px;
   }
   .resourceRow > :first-child {
@@ -767,14 +769,14 @@ a.resourceRow:hover {
 .settingsNavigationTitle {
   padding: 0 8px;
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--a13n-secondary);
 }
 .settingsNav {
   display: grid;
   align-content: start;
-  gap: 2px;
+  gap: 4px;
   min-height: 0;
   overflow: auto;
 }
@@ -806,7 +808,7 @@ a.resourceRow:hover {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 24px clamp(24px, 5vw, 64px) 40px;
+  padding: 24px clamp(24px, 5vw, 64px) 48px;
   scrollbar-gutter: stable both-edges;
 }
 .settingsContent > * {
@@ -814,21 +816,21 @@ a.resourceRow:hover {
   /* One reading measure for every settings page: headers, lists, cards
      and disclosures share the same right edge. */
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   margin-inline: auto;
 }
 .settingsContent .pageHeader > div > h1 {
-  min-height: 24px;
-  font-size: 18px;
+  min-height: var(--harness-control-height);
+  font-size: 20px;
   line-height: 24px;
 }
 .settingsContent .pageHeader > div > h2 {
   min-height: 24px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 20px;
 }
 .settingsContent .pageHeader p {
-  font-size: 13px;
+  font-size: 14px;
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;
@@ -841,7 +843,7 @@ a.resourceRow:hover {
   padding: 16px 12px;
   border-radius: 8px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   text-align: center;
 }
@@ -859,7 +861,7 @@ a.resourceRow:hover {
   flex-direction: column;
   gap: var(--harness-section-gap);
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   min-width: 0;
 }
 .sourceHeader > .pageHeader {
@@ -888,12 +890,12 @@ a.resourceRow:hover {
 }
 .sourceCode > header > h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .sourceCode > header > p {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .sourceHeader {
@@ -929,7 +931,7 @@ a.resourceRow:hover {
   flex-direction: column;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .configurationForm {
   display: flex;
@@ -947,8 +949,8 @@ a.resourceRow:hover {
 .sectionNote {
   padding-block: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .sectionNote > :is(h3, p) {
   font: inherit;
@@ -975,10 +977,10 @@ a.resourceRow:hover {
 .selectionOption {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
@@ -1017,7 +1019,7 @@ a.resourceRow:hover {
   border-radius: 4px;
   background: var(--a13n-surface);
   font: inherit;
-  font-size: 0.92em;
+  font-size: inherit;
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -1027,7 +1029,7 @@ a.resourceRow:hover {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -1053,18 +1055,18 @@ a.resourceRow:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
 }
 .workspaceMenu .profileAvatar {
   width: 20px;
   height: 20px;
-  font-size: 10px;
+  font-size: 14px;
 }
 .sidebarFooter .workspacePerson small {
   padding: 0;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .workspacePopup {
@@ -1072,9 +1074,9 @@ a.resourceRow:hover {
 }
 .version {
   display: block;
-  padding: 10px 8px 4px;
+  padding: 12px 8px 4px;
   color: var(--a13n-tertiary);
-  font-size: 11px;
+  font-size: 14px;
 }
 .debugMenuLabel,
 .debugIndicator {
@@ -1088,24 +1090,24 @@ a.resourceRow:hover {
   padding: 4px 8px;
   border: 0;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 14px;
   cursor: pointer;
 }
 
 .pageHeader > div > h1 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
 }
 
 .configurationFields {
   display: grid;
-  gap: 20px;
+  gap: 24px;
   min-width: 0;
 }
 
 @media (max-width: 600px) {
   .settingsContent {
-    padding: 24px 20px 32px;
+    padding: 24px 24px 32px;
     scrollbar-gutter: auto;
   }
 }

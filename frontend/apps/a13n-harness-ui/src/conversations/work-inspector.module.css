@@ -2,36 +2,36 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
   /* Same column as the composer (see conversation.module.css). */
   width: min(var(--harness-reading-width), 100% - 84px);
-  margin: 0 auto 6px;
+  margin: 0 auto 8px;
   /* Controls start on the composer content inset (border + padding). */
-  padding-inline: 13px;
+  padding-inline: 12px;
   color: var(--a13n-secondary);
   min-width: 0;
 }
 .strip button {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .count {
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--a13n-secondary);
 }
 .active {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
   flex: 1 1 160px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 14px;
 }
 .active > svg {
   flex-shrink: 0;
@@ -40,7 +40,7 @@
   width: min(480px, calc(100vw - 24px));
   max-height: min(640px, calc(100dvh - 40px));
   overflow: hidden;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .popup > [data-slot="popover-viewport"] {
@@ -56,12 +56,12 @@
   margin-bottom: 4px;
 }
 .heading h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
   padding: 4px 0 8px;
@@ -78,12 +78,12 @@
 }
 .inspectorBody {
   min-height: 48px;
-  padding: 4px 2px;
+  padding: 4px 4px;
 }
 .caption {
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   margin: 0 0 8px;
 }
 .tasks {
@@ -94,14 +94,14 @@
 .tasks li {
   display: flex;
   align-items: start;
-  gap: 10px;
-  padding: 6px 0;
+  gap: 12px;
+  padding: 8px 0;
 }
 .tasks li + li {
   border-top: 1px solid var(--a13n-border);
 }
 .tasks li > svg {
-  margin-top: 10px;
+  margin-top: 12px;
   flex-shrink: 0;
 }
 .tasks details {
@@ -118,7 +118,7 @@
 .tasks dl {
   display: grid;
   gap: 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .tasks dl > div {
   display: flex;
@@ -134,7 +134,7 @@
   overflow-wrap: anywhere;
 }
 .processSummary code {
-  font-size: 12px;
+  font-size: 14px;
 }
 .tasks summary:focus-visible,
 .notes summary:focus-visible {
@@ -159,7 +159,7 @@
   overflow-wrap: anywhere;
 }
 .notes details > div {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
 }
 .notes details > div > :first-child {
   margin-top: 0;

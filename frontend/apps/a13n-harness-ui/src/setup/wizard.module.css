@@ -6,7 +6,7 @@
 }
 .steps {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   list-style: none;
   padding: 0;
   margin: 16px 0 0;
@@ -16,7 +16,7 @@
   align-items: center;
   gap: 8px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .steps li > span {
   display: grid;
@@ -42,20 +42,20 @@
 }
 .content h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 22px;
   outline: none;
 }
 .content h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .content p {
   margin: 0;
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .fields {
@@ -135,7 +135,7 @@
 }
 .connections span,
 .environments span {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-text-supporting);
   line-height: 1.5;
 }
@@ -149,14 +149,14 @@
   margin: 8px 0 0;
 }
 .advanced details {
-  padding: 6px 0;
-  font-size: 13px;
+  padding: 8px 0;
+  font-size: 14px;
 }
 .summary {
   display: grid;
   gap: 8px;
   padding: 16px 0 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .summary span,
 .stepCount {
@@ -170,10 +170,10 @@
 .runtimeStatus {
   display: grid;
   gap: 8px;
-  padding: 14px 16px;
+  padding: 16px 16px;
   border-radius: 10px;
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: 14px;
 }
 .runtimeStatus strong {
   font-weight: 500;
@@ -213,7 +213,7 @@
   flex-basis: 100%;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
 }
 .footer {
   flex-wrap: wrap;
@@ -223,10 +223,10 @@
 .footer > div {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .stepCount {
-  font-size: 12px;
+  font-size: 14px;
   margin-right: 8px;
 }
 @media (max-width: 600px) {
@@ -241,19 +241,19 @@
     border-radius: 0;
   }
   .steps {
-    gap: 14px;
+    gap: 16px;
   }
   .steps li {
-    gap: 6px;
+    gap: 8px;
   }
   .connections {
     gap: 8px;
   }
   .connections button {
-    padding: 12px 10px;
+    padding: 12px 12px;
   }
   .connections span {
-    font-size: 11px;
+    font-size: 14px;
   }
   .environments {
     grid-template-columns: 1fr;

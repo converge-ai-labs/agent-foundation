@@ -1,5 +1,5 @@
 /* Inputs, buttons and selectors share the narrow-screen control height.
-   Text entry remains 16px to avoid focus zoom; compact labels stay 13px.
+   Text entry remains 16px to avoid focus zoom; compact labels stay 14px.
    Coarse pointers retain the primitives' enlarged hit areas. */
 @media (max-width: 639px) {
   :is([data-slot="button"], [data-a13n-button]),
@@ -11,7 +11,7 @@
   [data-slot="label"],
   [data-slot="field-label"] {
     font-size: var(--text-sm);
-    line-height: 1rem;
+    line-height: var(--text-sm--line-height);
   }
   :is([data-slot="button"], [data-a13n-button])[class~="sm:h-8"] {
     height: var(--harness-control-height);
@@ -28,7 +28,7 @@
     height: var(--harness-control-height);
   }
   [data-slot="select-trigger"] {
-    min-height: 2rem;
+    min-height: var(--harness-control-height);
   }
   :is([data-slot="button"], [data-a13n-button]) svg:not([class*="size-"]),
   [data-slot="select-trigger"] svg:not([class*="size-"]) {

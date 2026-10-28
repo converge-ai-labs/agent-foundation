@@ -9,14 +9,14 @@
   min-width: 0;
 }
 .step h3 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 20px;
 }
 .steps p {
   color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .step > button {
   justify-self: start;
@@ -25,9 +25,9 @@
   margin: 0;
   border-radius: 6px;
   background: var(--a13n-surface);
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 18px;
+  padding: 12px 12px;
+  font-size: 14px;
+  line-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

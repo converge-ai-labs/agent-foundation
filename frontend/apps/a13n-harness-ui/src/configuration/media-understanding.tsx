@@ -17,7 +17,7 @@ export function MediaUnderstandingFields({
   const selectors = useSelectors();
   const document = readDocument(source);
   return (
-    <SettingsSection variant="outlined">
+    <SettingsSection variant="grouped">
       {mediaKinds.map((kind) => (
         <SettingsRow key={kind} label={mediaLabels[kind]}>
           <ChoiceField

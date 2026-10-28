@@ -28,7 +28,7 @@ import { SettingsSection } from "../shell/settings";
 import layout from "../shell/workbench.module.css";
 import { DebugId } from "../shell/debug";
 import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
-import { useGitStatus } from "./changes";
+import { gitChangeLabel, useGitStatus } from "./changes";
 import styles from "./native.module.css";
 import { copyText } from "../platform";
 
@@ -259,10 +259,12 @@ export function Files({
                       <span>{basename(entry.path)}</span>
                       <small>
                         {change
-                          ? `${change.index_status}${change.worktree_status}`
+                          ? gitChangeLabel(change)
                           : entry.kind === "file"
                             ? `${entry.size.toLocaleString()} B`
-                            : entry.kind}
+                            : entry.kind === "symlink"
+                              ? "Link"
+                              : null}
                       </small>
                       {entry.kind === "directory" && (
                         <CaretRight size={14} aria-hidden="true" />
