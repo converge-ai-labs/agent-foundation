@@ -158,23 +158,54 @@ async def test_archive_and_project_constraints_do_not_change_roles(tmp_path: Pat
             await app.promote_coordinator(projectless.thread_id)
 
 
-async def test_sidekick_disabled_does_not_gate_promotion_or_role_capture(tmp_path: Path) -> None:
+@pytest.mark.parametrize("sidekick_enabled", [False, True])
+@pytest.mark.parametrize("auto_followup", [False, True])
+async def test_coordinator_instructions_follow_role_not_optional_settings(
+    tmp_path: Path, sidekick_enabled: bool, auto_followup: bool
+) -> None:
     from a13n_harness_ui.thread_capability import ThreadCollaborationCapability
 
     root = coordinator_configuration(tmp_path)
-    document = yaml.safe_load(root.read_text())
-    document["webui"]["sidekick"] = None
-    root.write_text(yaml.safe_dump(document))
+    if not sidekick_enabled:
+        document = yaml.safe_load(root.read_text())
+        document["webui"]["sidekick"] = None
+        root.write_text(yaml.safe_dump(document))
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         lead = await create_coordinator(app)
+        await app.set_auto_followup(lead.thread_id, auto_followup)
         ordinary = await app.create_thread()
-        for thread, expected in ((lead, "coordinator"), (lead, "coordinator"), (ordinary, "ordinary")):
+        worker = await app.create_thread(coordinator_thread_id=lead.thread_id)
+        for thread, expected in (
+            (lead, "coordinator"),
+            (lead, "coordinator"),
+            (ordinary, "ordinary"),
+            (worker, "worker"),
+        ):
             captured = await app._root_runs._executor.capture(thread_id=thread.thread_id, prompt="Work")
             assert captured.published.value.role == expected
             capability = ThreadCollaborationCapability(
                 controller=controller(app), source_thread_id=thread.thread_id, composition=captured.published.value
             )
-            assert ("You are a Coordinator" in capability.get_instructions()) == (expected == "coordinator")
+            instructions = capability.get_instructions()
+            coordinator = expected == "coordinator"
+            for clause in (
+                "You are a Coordinator",
+                "Delegate substantive investigation, implementation, and testing to your owned worker Threads by default",
+                "if the user asks you to perform work yourself, execute it directly without delegation",
+                "or asking them to confirm that choice again",
+                "Handle simple questions, lightweight checks, and review directly",
+                "Keep tightly coupled implementation on one continuing worker mainline",
+                "not as a substitute for worker Threads that own substantive execution",
+            ):
+                assert (clause in instructions) == coordinator
+            if coordinator:
+                assert "Create a separate Thread only" not in instructions
+                assert "authorized Project work when useful" not in instructions
+            elif expected == "ordinary" and sidekick_enabled:
+                assert "Create a separate Thread only" in instructions
+            elif expected == "worker":
+                assert "You are a managed worker" in instructions
+                assert "Do not create another root" in instructions
 
 
 async def test_http_promotion_and_followup_are_authenticated_thread_operations(tmp_path: Path) -> None:

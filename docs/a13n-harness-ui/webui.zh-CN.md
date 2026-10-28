@@ -383,6 +383,8 @@ PNG 尺寸取决于原图像素裁剪，不受预览缩放或屏幕密度影响�
 3. 展开 Coordinator 侧栏行，检查 worker 及其独立历史。
 4. 直接分配工作时，在操作菜单选择 **New worker**，在该 worker 对话发送任务。
 
+Coordinator 默认把实质性的调查、实现和测试委派给 worker，自己侧重与你交流、规划、协调和审查结果。简单问题、轻量检查和审查仍在 Coordinator 对话中完成。紧密关联的工作可以持续交给同一个 worker；委派不要求并行执行。如果你要求 Coordinator 亲自执行，它会遵循你的选择，不委派，也不要求你再次确认这一选择。这是 Agent 指令，不是工具权限限制。
+
 每个 Project 可有多个 Coordinator。角色永久保留，包括之后发送失败的情况。已有对话空闲、未归档、绑定 Project 且无待决策时可用 **Make Coordinator**。转换保留 URL/历史/设置。Worker 不能升级，旧对话和 Sidekick 不会被收编。
 
 Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name** 固定 owner 和 Project。创建前移除此标签可变为独立草稿，不丢文字、附件或选择；创建后固定。创建结果不确定时先检查再重试。Worker 位于 owner 下，搜索标为 **Coordinator worker**。
