@@ -228,7 +228,8 @@ def _deterministic(error: Exception) -> Outcome | None:
 def _harness_failure_message(message: str, details: Mapping[str, JsonValue]) -> str:
     """Keep the Harness's safe HTTP status without exposing an upstream body or exception message."""
     status = details.get("status_code")
-    if details.get("exception_type") == "ModelHTTPError" and type(status) is int and 400 <= status <= 599:
+    # Harness records status_code for ModelHTTPError and its provider-specific subclasses.
+    if type(status) is int and 400 <= status <= 599:
         return f"{message} Model provider returned HTTP {status}."
     return message
 
