@@ -143,7 +143,14 @@ async def test_builder_heals_small_video_on_exact_provider_error_without_changin
         for item in request_input_content(message)
         if isinstance(item.value, BinaryContent) or item.value in ("before", "after")
     ]
-    assert canonical == content_items(input) and input == snapshot
+    expected = [
+        ContentItem(
+            item.value,
+            item.metadata.model_copy(update={"a13n.input-provenance": {"kind": "task", "run_id": result.run_id}}),
+        )
+        for item in content_items(input)
+    ]
+    assert canonical == expected and input == snapshot
 
 
 @pytest.mark.parametrize(
@@ -546,7 +553,10 @@ async def test_google_wire_inline_video_payload_repair_preserves_canonical_annot
         for item in request_input_content(message)
         if isinstance(item.value, BinaryContent)
     ]
-    assert saved == [ContentItem(native, annotation)] and native.vendor_metadata is None
+    expected_annotation = annotation.model_copy(
+        update={"a13n.input-provenance": {"kind": "task", "run_id": result.run_id}}
+    )
+    assert saved == [ContentItem(native, expected_annotation)] and native.vendor_metadata is None
 
 
 @pytest.mark.parametrize("trigger", ["inline", "rejected-url"])

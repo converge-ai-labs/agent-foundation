@@ -816,6 +816,13 @@ async def test_default_builder_split_images_retry_oversized_payload_without_chan
     assert len(seen) == 2 and result.usage.requests == 2
     assert [image.identifier for image in _images(seen[0])] == ["attachment-segment-1", "attachment-segment-2"]
     assert _images(seen[1]) == []
+    expected = [
+        ContentItem(
+            item.value,
+            item.metadata.model_copy(update={"a13n.input-provenance": {"kind": "task", "run_id": result.run_id}}),
+        )
+        for item in expected
+    ]
     for attempt, messages in enumerate(seen):
         items = [
             item for message in messages if isinstance(message, ModelRequest) for item in request_input_content(message)
