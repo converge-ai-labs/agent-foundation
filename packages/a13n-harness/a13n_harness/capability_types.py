@@ -32,10 +32,12 @@ def _validate_capability_id(
 
 
 def first_party_declarative_capability_types() -> tuple[type[AbstractCapability[AgentContext]], ...]:
-    """Return Harness-owned Capability types accepted from AgentSpec."""
+    """Return Harness-supported Capability types accepted from AgentSpec."""
+    from pydantic_ai_harness import DetectLoops
+
     from a13n_harness.tools.permissions import ToolPermissionsCapability
 
-    return (ToolPermissionsCapability,)
+    return (ToolPermissionsCapability, DetectLoops)
 
 
 @dataclass(frozen=True, slots=True)

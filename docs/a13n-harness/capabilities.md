@@ -99,6 +99,24 @@ Use `AgentSpec.capabilities` when the feature selection must be stored as data. 
 
 For most Harness features, start with concrete Python composition. Use [Shell Command Review](#shell-command-review) for a built-in declarative example.
 
+### Detect repeated-action loops
+
+Select the upstream `pydantic_ai_harness.DetectLoops` Capability explicitly. Harness supports its native `DetectLoops` serialization name without a custom type catalog:
+
+```python
+from a13n_harness import AgentSpec
+
+spec = AgentSpec(capabilities=[{"DetectLoops": {"action": "nudge"}}])
+```
+
+Pass this spec to `HarnessBuilder.build()`. For code-first composition, import `DetectLoops` from `pydantic_ai_harness` and pass an instance in `capabilities` instead. Selecting neither leaves detection off.
+
+The native defaults inspect a window of 10 tool calls: repeated calls trigger at 5, identical results at 3, alternating calls at 3 A-B cycles, and repeated text-only responses at 3. `action="nudge"` asks the Model to change approach; `action="error"` ends execution with a failed result instead of retrying the loop as a transport failure. Code-first callers can also provide a native callback.
+
+Expected polling can repeat without being stuck. Raise the relevant thresholds and window, or set `repeated_call_threshold` and `repeated_result_threshold` to `None` for such workloads. JSON/YAML uses `null`. A nudge is guidance, not a hard execution budget; retain `UsageLimits` for a hard bound.
+
+Detection counts responses in the current native Model attempt. Continuation and recovery attempts start fresh; counts are not persisted in `HarnessState`. Compaction within that attempt does not reset recorded progress. With CodeAct, the detector sees Model calls to the runner, not individual host calls inside its Python program.
+
 ### Authorize a custom declarative type
 
 To select the example's class from data, replace its `executable = ...` block with the following. Keep the class, `instruction`, `model`, and `main()` from the complete program.

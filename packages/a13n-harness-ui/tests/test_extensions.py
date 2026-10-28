@@ -13,6 +13,26 @@ from a13n_harness_ui.extensions import catalog as catalog_module
 from pydantic import Field
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai_harness import DetectLoops
+
+
+@pytest.mark.parametrize("action", ["nudge", "error"])
+def test_catalog_constructs_native_detect_loops(action: str) -> None:
+    catalog = HarnessUiExtensionCatalog()
+    selected = catalog.capabilities((("DetectLoops", {"action": action, "repeated_result_threshold": None}),))
+    assert len(selected) == 1
+    capability = selected[0].capability
+    assert type(capability) is DetectLoops
+    assert capability.action == action
+    assert capability.repeated_result_threshold is None
+    assert any(item.key == "DetectLoops" and item.configurable for item in catalog.references)
+
+
+@pytest.mark.parametrize("configuration", [{"window": 1}, {"unknown": True}])
+def test_catalog_reports_invalid_detect_loops_configuration(configuration: dict[str, Any]) -> None:
+    with pytest.raises(CompositionError) as error:
+        HarnessUiExtensionCatalog().capabilities((("DetectLoops", configuration),))
+    assert error.value.code == "capability_configuration_invalid"
 
 
 @dataclass

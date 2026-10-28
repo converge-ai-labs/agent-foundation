@@ -42,6 +42,12 @@ A type is denied from every unlisted source. Supplying `RunBindings.web`, `docum
 
 Bare Pydantic `CapabilityFunc` values are not accepted in `AgentDefinition`, plugin contributions, or `RunBindings`. Pydantic resolves such a function once per native Agent run, while one logical Harness run can contain several native recovery attempts. Support requires a future Harness-bound form that resolves once per logical run, validates the complete result tree, memoizes it, and reuses the exact result across every attempt. Concrete `AbstractCapability` instances are the current contract.
 
+## Opt-in Native Loop Detection
+
+Harness supports upstream `pydantic_ai_harness.DetectLoops` as a definition Capability and as `AgentSpec.capabilities` data under its native `DetectLoops` name. Availability does not enable it by default. Native constructor configuration, pattern detection, ordering, nudges, and code-first callbacks remain upstream-owned.
+
+Detection observes Model responses and their tool results within one native attempt. Compaction inside that attempt preserves the detector's recorded progress; continuation and model-recovery attempts start fresh, without restoring detector counters from `HarnessState`. CodeAct runner calls are observable, while host calls inside a runner program are not separate Model-level calls. Expected polling requires suitable thresholds or disabled checks. Nudges provide guidance; usage limits remain the hard budget. The native error action ends with the ordinary failed Agent-run result and does not trigger transport recovery.
+
 ## Application Dependencies
 
 Harness fixes the native dependency type to `AgentContext` and exposes no second application `deps_type` or generic application-service slot on `RunBindings`. Existing typed feature bindings remain the current-run override surface for their owning features; `metadata` and passive context publications are not live-service containers. `RunBindings.capabilities` retains the source restrictions above and is not an arbitrary tool or dependency injection point.

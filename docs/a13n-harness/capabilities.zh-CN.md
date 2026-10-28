@@ -99,6 +99,24 @@ flowchart TD
 
 多数 Harness 功能先用具体 Python 实例组合即可。内置声明式示例见 [Shell 命令审查](#shell-command-review)。
 
+### 检测重复动作循环
+
+显式选择上游 `pydantic_ai_harness.DetectLoops` Capability。Harness 直接支持原生序列化名称 `DetectLoops`，无需自定义类型目录：
+
+```python
+from a13n_harness import AgentSpec
+
+spec = AgentSpec(capabilities=[{"DetectLoops": {"action": "nudge"}}])
+```
+
+将此 spec 传给 `HarnessBuilder.build()`。代码优先组合也可以从 `pydantic_ai_harness` 导入 `DetectLoops`，将实例放入 `capabilities`。未选择时保持关闭。
+
+原生默认值使用最近 10 次工具调用的窗口：相同调用重复 5 次、相同结果重复 3 次、交替调用形成 3 个 A-B 周期，或纯文本回复重复 3 次时触发。`action="nudge"` 提醒 Model 改变方法；`action="error"` 以失败结果结束执行，不把循环当作传输失败重试。代码优先调用者也可以提供原生回调。
+
+正常轮询也可能重复。此类任务应提高对应阈值和窗口，或将 `repeated_call_threshold` 与 `repeated_result_threshold` 设为 `None`；JSON/YAML 使用 `null`。提醒不是硬执行预算，仍应使用 `UsageLimits` 设置硬上限。
+
+检测只累计当前原生 Model attempt 的响应。继续会话和恢复重试都会重新计数，计数不持久化到 `HarnessState`。同一 attempt 内的压缩不会重置计数。使用 CodeAct 时，检测器看到的是 Model 对 runner 的调用，不是 Python 程序内部的每一次 host 工具调用。
+
 ### 授权自定义声明式类型
 
 要从数据中选择示例的类，将 `executable = ...` 部分替换为以下代码。保留完整程序中的类、`instruction`、`model` 和 `main()`。
