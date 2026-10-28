@@ -112,7 +112,7 @@ flowchart TD
     class Usage,Threshold,Summary,Restore,Project,Request a13n
 ```
 
-总结请求使用同一 Agent 和完整历史。总结替换旧历史后，按顺序重放当前用户输入与已交付的 steering，包括媒体。压缩发出 `CompactionSummaryEvent`，返回状态中保存替换后的历史。压缩会调用模型，应将该请求纳入预算。
+总结请求使用同一 Agent 和完整历史。总结替换旧历史后，按顺序重放当前用户输入与已交付的 steering，包括媒体。压缩发出 `CompactionSummaryEvent`，返回状态中保存替换后的历史。总结遇到瞬时故障时按指数退避重试，包含首次请求在内最多尝试三次。每次尝试使用完整历史的新副本，共享 Run 的用量限制。压缩会为待发送的普通请求保留额度；预算中应计入最多三次总结请求。取消和永久性故障不重试。
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
@@ -158,7 +158,7 @@ def background_compaction(operator: CompactionOperator) -> CompactionCapability:
 
 在 operator 中实现 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(input, request)` 执行总结协议与有界瞬态重试。回调接收 `CompactionInput`，通过 `request_messages`、`settings` 和 `parameters` 获取新的可变副本，使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
 
-Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。达到压缩触发线时，Harness 仅在容量已验证充足时启动后台，否则直接同步压缩，不提交新的后台操作。如果已有操作正在运行，容量未知或不足时就等待该操作。后台失败（包括跨 Run 前中断）且仍需压缩时，转为同步压缩。降级成功将旧操作标记为 skipped，Host 在检查点提交后才清理它。降级失败保留原历史，仅在容量已验证充足时继续；同一 Run 不会反复重试该失败。所有摘要调用仍遵循当前用量限制和准入规则。若替换后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
+Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。达到压缩触发线时，Harness 仅在容量已验证充足时启动后台，否则直接同步压缩，不提交新的后台操作。如果已有操作正在运行，容量未知或不足时就等待该操作。后台失败（包括跨 Run 前中断）且仍需压缩时，转为同步压缩。降级成功将旧操作标记为 skipped，Host 在检查点提交后才清理它。降级失败保留原历史，仅在容量已验证充足时继续；同一 Run 针对该失败操作最多启动一轮有界重试。如果无法继续，`compaction_capacity_unavailable` 会报告总结尝试次数和异常类型，或说明剩余请求预算不足。错误保留原始异常链，消息中不包含提供方响应正文。所有摘要调用仍遵循当前用量限制和准入规则。若替换后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
 
 结果在两个 Run 之间就绪时，将其与最新选定的检查点一起传给普通 Run：
 
