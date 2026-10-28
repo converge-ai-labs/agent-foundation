@@ -11,6 +11,11 @@
   padding: 0;
   margin: 16px 0 0;
 }
+.title {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+}
 .steps li {
   display: flex;
   align-items: center;
@@ -19,6 +24,7 @@
   font-size: 14px;
 }
 .steps li > span {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 20px;
@@ -241,10 +247,10 @@
     border-radius: 0;
   }
   .steps {
-    gap: 16px;
+    gap: 12px;
   }
   .steps li {
-    gap: 8px;
+    gap: 4px;
   }
   .connections {
     gap: 8px;
@@ -266,5 +272,6 @@
   }
   .footer > div {
     gap: 8px;
+    margin-left: auto;
   }
 }

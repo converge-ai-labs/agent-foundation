@@ -306,7 +306,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         }}
       >
         <DialogHeader>
-          <DialogTitle>Make this workbench yours</DialogTitle>
+          <DialogTitle className={styles.title}>Set up Harness</DialogTitle>
           <DialogDescription>
             Connect a model and choose where it can work.
           </DialogDescription>

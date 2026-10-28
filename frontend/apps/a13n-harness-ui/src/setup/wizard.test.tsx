@@ -517,7 +517,7 @@ it("offers affinity presets and captures a custom replacement alongside the endp
       ).disabled,
     ).toBe(false),
   );
-  await user.click(await screen.findByText("Advanced connection options"));
+  await user.click(await screen.findByRole("tab", { name: "Model defaults" }));
   const affinity = screen.getByRole("combobox", {
     name: "Gateway session affinity",
   });
