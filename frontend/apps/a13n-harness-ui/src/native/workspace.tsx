@@ -1506,6 +1506,16 @@ export function NativeWorkspace({
               onFocusCapture={() => setFocusedArea("terminal")}
               onPointerDown={() => setFocusedArea("terminal")}
             >
+              {pane === "terminal" && (
+                <>
+                  {nativeFeedback}
+                  {opening && (
+                    <span role="status" className={styles.directoryLoading}>
+                      Opening…
+                    </span>
+                  )}
+                </>
+              )}
               <TerminalPanel
                 visible={terminalVisible}
                 directory={localRoots.includes(root) ? root : projectRoot}

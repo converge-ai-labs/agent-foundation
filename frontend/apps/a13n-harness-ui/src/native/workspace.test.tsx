@@ -1055,26 +1055,42 @@ it.each(["file", "diff"])(
     );
   },
 );
-it("a failed Host file link retains the active Browser tab and exposes its error", async () => {
-  const { get } = setup(
-    "/threads/current",
-    true,
-    undefined,
-    "project-one",
-    "project-one",
-    ["/native"],
-    <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
-  );
-  await chooseView("Browser");
-  get.mockRejectedValueOnce(new Error("File unavailable"));
-  fireEvent.click(screen.getByRole("link", { name: "Open report" }));
-  await screen.findByText("File unavailable");
-  expect(
-    screen.getByRole("tab", { name: "Browser", selected: true }),
-  ).toBeTruthy();
-  expect(screen.getByRole("tabpanel", { name: "Browser" })).toBeTruthy();
-  expect(screen.queryByRole("tab", { name: "report.txt" })).toBeNull();
-});
+it.each(["Browser", "Terminal"] as const)(
+  "a pending or failed Host file link retains the active %s tab and exposes feedback",
+  async (pane) => {
+    const { get } = setup(
+      "/threads/current",
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      ["/native"],
+      <MessageText text="[Open report](/threads/current?native=files&native_path=%2Fnative%2Freport.txt)" />,
+    );
+    await chooseView(pane);
+    let reject!: (error: Error) => void;
+    const pending = new Promise<{ data: { kind: string } }>(
+      (_resolve, fail) => {
+        reject = fail;
+      },
+    );
+    get.mockImplementationOnce(() => pending);
+    fireEvent.click(screen.getByRole("link", { name: "Open report" }));
+    const panel = screen.getByRole("tabpanel", { name: pane });
+    await within(panel).findByText("Opening…");
+    expect(
+      screen.getByRole("tab", { name: pane, selected: true }),
+    ).toBeTruthy();
+    reject(new Error("File unavailable"));
+    await within(panel).findByText("File unavailable");
+    expect(
+      screen.getByRole("tab", { name: pane, selected: true }),
+    ).toBeTruthy();
+    expect(panel.closest("[hidden]")).toBeNull();
+    expect(screen.queryByText("Opening…")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "report.txt" })).toBeNull();
+  },
+);
 
 it("shows pending and failed file opens beside the retained diff instead of hiding feedback in the explorer", async () => {
   const { get } = setup(
