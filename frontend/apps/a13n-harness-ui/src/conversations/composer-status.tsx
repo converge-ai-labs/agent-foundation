@@ -23,7 +23,11 @@ import {
 import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
 import { useDebug } from "../shell/debug";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  CircleHalf,
+  CurrencyDollar,
+} from "@phosphor-icons/react";
 
 export function ComposerStatus({
   threadId,
@@ -108,7 +112,6 @@ export function ComposerStatus({
             ["Tokens", summary.tokens, "Chat usage"],
             ["Context", summary.context, "Context usage"],
             ["Cost", summary.cost, "Chat usage"],
-            ["Cache", summary.cache, "Chat usage"],
           ] as const
         )
           .filter(([label]) => debug || label !== "Tokens")
@@ -125,17 +128,45 @@ export function ComposerStatus({
               <PopoverTrigger
                 className={styles.metric}
                 aria-label={`${label} details`}
+                title={`${label}: ${value}`}
               >
-                {label === "Cost" && !debug ? "Usage" : label}{" "}
-                <strong>{value}</strong>
+                {debug ? (
+                  label
+                ) : label === "Context" ? (
+                  <CircleHalf aria-hidden />
+                ) : (
+                  <CurrencyDollar aria-hidden />
+                )}{" "}
+                {label === "Context" && !debug && tokens != null && (
+                  <span>
+                    {Intl.NumberFormat("en", {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 2,
+                    }).format(tokens / 1000)}
+                    k
+                  </span>
+                )}
+                <strong>
+                  {label === "Context" && !debug && tokens != null
+                    ? `(${value})`
+                    : label === "Cost" && !debug
+                      ? value.replace(/^\$/, "")
+                      : value}
+                </strong>
               </PopoverTrigger>
-              <PopoverPopup side="top" align="end" className={styles.popup}>
+              <PopoverPopup
+                side="top"
+                align="end"
+                className={`${styles.popup} ${label === "Context" ? styles.contextPopup : ""}`}
+              >
                 <div className={styles.popupHeader}>
                   <PopoverTitle>{title}</PopoverTitle>
                   {label === "Context" && (
                     <HelpTip label="About context">
                       Tokens in the latest request. Chat totals are in Usage.
                       The context limit depends on the model.
+                      {!context.data?.context_window &&
+                        " This model has not provided a context limit, so its used percentage is unavailable."}
                     </HelpTip>
                   )}
                   <Button
@@ -157,10 +188,14 @@ export function ComposerStatus({
                 </div>
                 <div className={styles.popupBody}>
                   {label === "Context" ? (
-                    <ContextDetails
-                      used={tokens}
-                      capacity={context.data?.context_window}
-                    />
+                    <div className={styles.contextStats}>
+                      <ContextDetails
+                        used={tokens}
+                        capacity={context.data?.context_window}
+                        compact
+                        cacheRate={summary.cache}
+                      />
+                    </div>
                   ) : (
                     <UsageDetails usage={usage.data} />
                   )}
@@ -178,7 +213,7 @@ export function ComposerStatus({
               </PopoverPopup>
             </Popover>
           ))}
-        {(debug || active) && (
+        {debug && (
           <span
             className={styles.metric}
             title="Elapsed time for the current or latest operation."
@@ -187,12 +222,14 @@ export function ComposerStatus({
             <strong>{elapsedTime(operation, now)}</strong>
           </span>
         )}
-        <span
-          className={styles.metric}
-          title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
-        >
-          Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
-        </span>
+        {debug && (
+          <span
+            className={styles.metric}
+            title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
+          >
+            Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
+          </span>
+        )}
         {debug &&
           capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (

@@ -1,4 +1,6 @@
 .navigation {
+  --harness-nav-height: 30px;
+  --harness-nav-font: 13px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -6,7 +8,7 @@
   flex: 1;
 }
 .navigation label {
-  font-size: 14px;
+  font-size: 13px;
 }
 .navigationHeading {
   display: flex;
@@ -15,9 +17,9 @@
   gap: 8px;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .navigationHeading > span {
   overflow: hidden;
@@ -26,7 +28,7 @@
 }
 .shortcuts {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 .homeLink {
   composes: row from "../shell/navigation-row.module.css";
@@ -58,7 +60,7 @@
   margin-inline-start: auto;
   min-width: 16px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .draftsPopup {
@@ -123,10 +125,10 @@
   display: none;
 }
 .initialLoading {
-  min-height: 32px;
+  min-height: 30px;
   padding: 8px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: 13px;
 }
 .initialLoading > span {
   animation: revealLoading 0s 180ms both;
@@ -140,7 +142,10 @@
   }
 }
 .projectGroup {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+}
+.projectGroup:has(.groupThreads:not([hidden])) {
+  margin-bottom: 12px;
 }
 .projectPreview {
   background: var(--popover);
@@ -195,9 +200,9 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 14px;
-  border-radius: 6px;
-  margin-bottom: 4px;
+  font-size: 13px;
+  border-radius: 8px;
+  margin-bottom: 0;
 }
 .groupHeading:hover {
   background: var(--a13n-hover);
@@ -212,7 +217,7 @@
 .groupActions button,
 .threadActions {
   width: 24px;
-  height: 32px;
+  height: 30px;
 }
 .groupToggle {
   display: flex;
@@ -220,7 +225,7 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  min-height: 32px;
+  min-height: 30px;
   padding: 4px 88px 4px 8px;
   border: 0;
   background: transparent;
@@ -228,14 +233,14 @@
   font: inherit;
   text-align: start;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
   line-height: 20px;
 }
 .groupToggle > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: 500;
+  font-weight: 400;
 }
 .groupToggle > svg {
   width: 16px;
@@ -250,7 +255,7 @@
   display: grid;
   place-items: center;
   width: 32px;
-  height: 32px;
+  height: 30px;
   color: var(--a13n-secondary);
 }
 .groupChevron > svg {
@@ -269,7 +274,7 @@
   inset-inline-start: 1px;
   top: 0;
   width: 28px;
-  height: 32px;
+  height: 30px;
   z-index: 1;
   touch-action: none;
   cursor: grab;
@@ -308,8 +313,8 @@
   }
 }
 .groupThreads {
-  /* Match the project label after its 16px icon and 8px gap. */
-  margin-inline-start: 24px;
+  /* Rows share the project background width; only their text is indented. */
+  margin-inline-start: 0;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -317,7 +322,7 @@
 .movingProject {
   background: var(--a13n-surface);
   box-shadow: 0 -2px 0 var(--ring);
-  border-radius: 6px;
+  border-radius: 8px;
 }
 .srOnly {
   position: absolute;
@@ -331,9 +336,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 32px;
-  margin-bottom: 4px;
-  border-radius: 6px;
+  min-height: 30px;
+  margin-bottom: 2px;
+  border-radius: 8px;
   transition: background-color 120ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -351,11 +356,11 @@
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
-  height: 32px;
+  height: 30px;
   margin: 0 4px 0 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--a13n-secondary);
   cursor: pointer;
@@ -387,7 +392,7 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  height: 32px;
+  height: 30px;
   margin-inline: 4px;
   color: var(--a13n-tertiary);
 }
@@ -438,12 +443,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  min-height: 30px;
+  padding: 4px 8px 4px 32px;
+  border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
 }
 .threadLink:hover,
@@ -484,7 +489,7 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: 13px;
   margin-top: 4px;
 }
 .threadLink .coordinatorActivity {
@@ -495,7 +500,7 @@
   white-space: nowrap;
   margin: 0;
   line-height: 20px;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .resultDot {
@@ -512,7 +517,7 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
   color: var(--info-foreground);
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -951,16 +956,17 @@
   margin: 0 auto;
 }
 .page > .composer {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .composerInput {
+  --harness-control-height: 32px;
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto 32px;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
   border: 1px solid var(--a13n-input-border);
-  border-radius: 14px;
-  padding: 8px 8px;
+  border-radius: var(--harness-radius-composer);
+  padding: var(--composer-inset, 8px);
   background: var(--card);
   box-shadow: none;
   transition:
@@ -976,7 +982,7 @@
     padding: 16px 12px;
   }
   .composerInput {
-    padding: 8px;
+    padding: var(--composer-inset, 8px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1083,7 +1089,7 @@
   min-width: 0;
 }
 .attachButton {
-  align-self: end;
+  align-self: center;
 }
 .composerSync {
   display: flex;
@@ -1125,6 +1131,7 @@
   gap: 8px;
 }
 .composerInput[data-filled] {
+  --composer-text-inset: 8px;
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .composerInput[data-filled] .composerEditor {
@@ -1167,6 +1174,7 @@
 }
 @container composer (max-width: 600px) {
   .composerInput {
+    --composer-text-inset: 8px;
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
   .composerEditor {
@@ -1190,7 +1198,7 @@
 @media (max-width: 600px), (pointer: coarse) {
   @container composer (min-width: 601px) {
     .composerInput:not([data-filled]) {
-      grid-template-columns: 44px minmax(0, 1fr) auto 44px;
+      grid-template-columns: 32px minmax(0, 1fr) auto 32px;
     }
   }
   .composerInput {
@@ -1201,8 +1209,8 @@
   }
   .composerInput > button,
   .composerActions > button {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 32px;
+    min-height: 32px;
   }
 }
 .composerStatus {
@@ -1792,6 +1800,7 @@ dl.detailGrid > .detailLongRow dd {
 
 .readerFrame {
   position: relative;
+  isolation: isolate;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1803,6 +1812,69 @@ dl.detailGrid > .detailLongRow dd {
      timeline rail lives in the start inset. */
   padding-inline: 36px;
   scrollbar-gutter: stable both-edges;
+  /* Match the fade depth so the first message stays fully legible
+     at scroll origin, then dissolves as it approaches the titlebar. */
+  padding-top: 48px;
+}
+/* One masked surface keeps diffusion and tint on the same continuous curve.
+   Stacking backdrop filters leaves dark halos around partially faded text. */
+.readerFade {
+  position: absolute;
+  /* Keep the scrollbar outside the optical treatment. */
+  inset-inline: 12px;
+  height: 48px;
+  z-index: 1;
+  pointer-events: none;
+  --fade-direction: to top;
+  background: linear-gradient(
+    var(--fade-direction),
+    color-mix(in srgb, var(--a13n-canvas) 92%, transparent),
+    var(--a13n-canvas) 75%
+  );
+  backdrop-filter: blur(2px);
+  mask-image: linear-gradient(
+    var(--fade-direction),
+    transparent 0%,
+    rgb(0 0 0 / 8%) 15%,
+    rgb(0 0 0 / 32%) 35%,
+    rgb(0 0 0 / 68%) 60%,
+    rgb(0 0 0 / 92%) 80%,
+    #000 100%
+  );
+}
+.readerFade[data-edge="top"] {
+  top: 0;
+}
+.readerFade[data-edge="bottom"] {
+  bottom: 0;
+  height: 80px;
+  --fade-direction: to bottom;
+  /* Finish the fade before the activity row; its backdrop stays clean. */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(0 0 0 / 16%) 12%,
+    rgb(0 0 0 / 50%) 30%,
+    rgb(0 0 0 / 84%) 48%,
+    #000 60%
+  );
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--a13n-canvas) 92%, transparent),
+    var(--a13n-canvas) 60%
+  );
+  display: none;
+}
+.readerFrame:has(~ .composer) > .readerFade[data-edge="bottom"] {
+  display: block;
+}
+.readerFrame:has(~ .composer) {
+  /* Let the transcript continue behind the activity controls, right up to
+     the composer, instead of cutting it off above the controls. */
+  margin-bottom: -32px;
+}
+.readerFrame:has(~ .composer) .reading {
+  padding-bottom: 96px;
 }
 .turn {
   margin-bottom: 32px;
@@ -1915,72 +1987,9 @@ dl.detailGrid > .detailLongRow dd {
   }
 }
 
-.conversationFooter {
-  --conversation-footer-control-height: 24px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  flex-shrink: 0;
-  width: min(var(--harness-reading-width), 100% - 84px);
-  min-height: 24px;
-  margin: 8px auto 0;
-  padding-inline: 8px;
-}
-.conversationFooter > div {
-  width: auto;
-  margin: 0;
-  padding: 0;
-}
-.conversationFooter button {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-  isolation: isolate;
-  height: var(--conversation-footer-control-height);
-  min-height: var(--conversation-footer-control-height);
-  padding: 2px 8px;
-  border-radius: 5px;
-  line-height: 20px;
-}
-.conversationFooter button:is(:hover, [data-popup-open]) {
-  background: transparent;
-  color: var(--a13n-text);
-}
-/* Keep the quiet hover surface compact even when the touch target grows. */
-.conversationFooter button::before {
-  content: "";
-  position: absolute;
-  inset: calc(50% - 12px) 0;
-  z-index: -1;
-  border-radius: 5px;
-  pointer-events: none;
-}
-.conversationFooter button:is(:hover, [data-popup-open])::before {
-  background: var(--a13n-surface);
-}
-.conversationFooter button:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-.conversationFooter button:focus-visible::before {
-  outline: 1px solid var(--ring);
-  outline-offset: -2px;
-}
-@media (max-width: 600px), (pointer: coarse) {
+@media (pointer: coarse) {
   .childControlActions button {
     min-height: 44px;
-  }
-  .conversationFooter {
-    --conversation-footer-control-height: 44px;
-  }
-}
-@container conversation-page (max-width: 600px) {
-  .conversationFooter {
-    width: 100%;
-    gap: 4px;
-    padding-inline: 4px;
   }
 }
 

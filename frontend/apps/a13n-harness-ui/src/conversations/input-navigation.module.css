@@ -102,7 +102,7 @@
 .mobileTrigger:hover,
 .mobileTrigger[data-popup-open] {
   color: var(--a13n-text);
-  background: color-mix(in srgb, var(--a13n-text) 6%, var(--a13n-canvas));
+  background: var(--a13n-hover);
 }
 .menu {
   width: min(340px, calc(100vw - 32px));

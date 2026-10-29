@@ -289,7 +289,7 @@
   }
   .toolbar select,
   .chartToolbar select {
-    min-height: 44px;
+    min-height: var(--harness-control-height);
   }
   .chartHint {
     flex-direction: column;

@@ -148,7 +148,7 @@
 .modelLink:focus-visible::after {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
-  border-radius: 12px;
+  border-radius: var(--harness-radius-panel);
 }
 @media (max-width: 600px) {
   .modelList > .modelRow {

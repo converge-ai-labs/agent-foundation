@@ -254,7 +254,7 @@
     padding-left: var(--tool-inset);
   }
 }
-@media (max-width: 600px), (pointer: coarse) {
+@media (pointer: coarse) {
   .format > button {
     height: 44px;
   }

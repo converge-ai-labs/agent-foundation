@@ -1,11 +1,12 @@
 .strip {
+  position: relative;
   container: activity-strip / inline-size;
   display: grid;
   gap: 4px;
   flex-shrink: 0;
   /* Same column as the composer (see conversation.module.css). */
   width: min(var(--harness-reading-width), 100% - 84px);
-  margin: 0 auto 8px;
+  margin: 0 auto;
   padding-inline: 8px;
   color: var(--a13n-secondary);
   min-width: 0;
@@ -118,7 +119,7 @@
 .tabs button {
   width: 100%;
   justify-content: flex-start;
-  min-height: 36px;
+  min-height: var(--harness-control-height);
   gap: 8px;
 }
 .tabs .count {
@@ -148,8 +149,8 @@
     padding: 8px;
   }
   .tabs button {
-    min-height: 44px;
-    padding: 8px;
+    min-height: var(--harness-control-height);
+    padding: 4px 8px;
     font-size: 14px;
     gap: 4px;
   }
@@ -175,14 +176,16 @@
 .tasks li {
   display: flex;
   align-items: start;
-  gap: 12px;
+  gap: 8px;
   padding: 8px 0;
 }
 .tasks li + li {
   border-top: 1px solid var(--a13n-border-soft);
 }
 .tasks li > svg {
-  margin-top: 12px;
+  width: 16px;
+  height: 16px;
+  margin-top: calc((var(--harness-control-height) - 16px) / 2);
   flex-shrink: 0;
 }
 .tasks details {
@@ -361,4 +364,17 @@
 
 .children {
   margin-top: 0;
+}
+
+.status {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+@container activity-strip (max-width: 680px) {
+  .shortcuts > button:not(.more) {
+    display: none;
+  }
+  .shortcuts .more {
+    display: inline-flex;
+  }
 }

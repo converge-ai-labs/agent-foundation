@@ -14,6 +14,9 @@
   flex-shrink: 0;
   border-bottom: 0;
 }
+.workToolbar:has(+ .splitLayout) {
+  border-bottom: 1px solid var(--a13n-border);
+}
 /* Toolbar controls share one 32px height; touch devices keep
    a centered 44px hit area from Button. */
 .workToolbar button {
@@ -183,7 +186,7 @@
 .newTabChoices h2 {
   margin: 0 0 8px;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .newTabChoices > p {
   margin: 0 0 24px;
@@ -208,6 +211,9 @@
 .newTabChoices > button > svg:last-child {
   width: 16px;
   margin-left: auto;
+}
+.newTabChoices strong {
+  font-weight: 500;
 }
 .newTabChoices strong,
 .newTabChoices small {
@@ -508,7 +514,6 @@
   flex: 1;
   min-width: 0;
   max-width: none;
-  margin-right: 4px;
 }
 .fileRow {
   display: flex;

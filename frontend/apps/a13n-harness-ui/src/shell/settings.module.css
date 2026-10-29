@@ -15,7 +15,7 @@
   line-height: 20px;
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
-  border-radius: 8px;
+  border-radius: var(--harness-radius-panel);
   padding: 4px var(--harness-group-inset);
 }
 .section
@@ -166,15 +166,11 @@
 @media (max-width: 600px) {
   .row [data-slot="select-trigger"] {
     height: auto;
-    padding-block: 8px;
+    padding-block: 4px;
   }
   .row button[role="combobox"] {
     height: auto;
-    padding-block: 8px;
-  }
-  .row button[role="combobox"] :global(.truncate) {
-    white-space: normal;
-    overflow-wrap: anywhere;
+    padding-block: 4px;
   }
   .row [data-slot="select-value"] {
     display: -webkit-box;
@@ -207,6 +203,13 @@
   justify-content: flex-end;
 }
 .row button[role="combobox"] > span:first-child > span {
+  width: auto;
+  flex: 0 1 auto;
+}
+
+/* Identity labels use w-0 in full-width pickers. Compact settings values
+   must retain their intrinsic text width before truncating to the row. */
+.row button[role="combobox"] > span:first-child > span > :global(.truncate) {
   width: auto;
   flex: 0 1 auto;
 }

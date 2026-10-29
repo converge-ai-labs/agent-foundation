@@ -10,9 +10,13 @@ import { DebugOnly } from "../shell/debug";
 export function ContextDetails({
   used,
   capacity,
+  compact = false,
+  cacheRate,
 }: {
   used?: number | null;
   capacity?: number | null;
+  compact?: boolean;
+  cacheRate?: string;
 }) {
   const limit = capacity != null && capacity > 0 ? capacity : undefined;
   const remaining =
@@ -21,9 +25,22 @@ export function ContextDetails({
     used != null && limit != null ? (used / limit) * 100 : undefined;
   return (
     <>
+      {compact && (
+        <div className={styles.contextHero}>
+          <div>
+            <strong>{used?.toLocaleString() ?? "—"}</strong>
+            <span>tokens used</span>
+          </div>
+          {percent != null && (
+            <span className={styles.contextPercent}>
+              {Math.round(percent)}%
+            </span>
+          )}
+        </div>
+      )}
       {percent != null && (
         <div className={styles.contextCapacity}>
-          <span>{Math.round(percent)}% used</span>
+          {!compact && <span>{Math.round(percent)}% used</span>}
           <div
             className={styles.contextMeter}
             role="meter"
@@ -42,8 +59,12 @@ export function ContextDetails({
         className={`${styles.numbers} ${styles.contextNumbers}`}
         data-unknown-limit={limit == null || undefined}
       >
-        <dt>Used tokens</dt>
-        <dd>{used?.toLocaleString() ?? "Unknown"}</dd>
+        {!compact && (
+          <>
+            <dt>Used tokens</dt>
+            <dd>{used?.toLocaleString() ?? "Unknown"}</dd>
+          </>
+        )}
         {limit != null && (
           <>
             <dt>Context window</dt>
@@ -58,8 +79,20 @@ export function ContextDetails({
             <dd>{(used - limit).toLocaleString()}</dd>
           </>
         )}
+        {cacheRate != null && !compact && (
+          <>
+            <dt>Cache rate</dt>
+            <dd>{cacheRate}</dd>
+          </>
+        )}
       </dl>
-      {limit == null && (
+      {compact && cacheRate != null && (
+        <dl className={styles.contextCache}>
+          <dt>Cache rate</dt>
+          <dd>{cacheRate}</dd>
+        </dl>
+      )}
+      {limit == null && !compact && (
         <p className={styles.scope}>Context limit unavailable.</p>
       )}
     </>

@@ -99,7 +99,7 @@
 .markdown :not(pre) > code {
   padding: 4px 4px;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--a13n-secondary) 9%, transparent);
+  background: var(--a13n-surface);
 }
 .markdown pre {
   margin: 0;

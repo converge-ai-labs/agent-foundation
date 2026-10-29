@@ -101,17 +101,18 @@ it.each([
       </QueryClientProvider>
     );
     const view = render(content(250, true));
-    expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.getByText("(25%)")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Cost details" }).textContent,
-    ).toContain("Usage");
-    expect(screen.getByText("Speed").textContent).toBe("Speed —");
-    expect(
-      screen.getByRole("button", { name: "Cache details" }).textContent,
-    ).toBe("Cache 40.5%");
-    fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
-    expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
+    ).toContain("0.025");
+    expect(screen.queryByText("Speed")).toBeNull();
+    expect(screen.getByText("0.25k")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cache details" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+    expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
+    expect(screen.getByText("Cache rate")).toBeTruthy();
+    expect(screen.getByText("40.5%")).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(
@@ -160,7 +161,7 @@ it.each([
     expect(screen.getByText("400")).toBeTruthy();
     expect(screen.getByText("1,000")).toBeTruthy();
     expect(screen.getByText("600")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cost details" }));
     expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
     expect(screen.getByText("13,345")).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
@@ -178,10 +179,11 @@ it.each([
     fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
     expect(screen.queryByText("Time")).toBeNull();
-    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
-    expect(
-      screen.getByRole("button", { name: "Cache details" }).textContent,
-    ).toBe("Cache 45.0%");
+    expect(screen.queryByText("Speed")).toBeNull();
+    expect(screen.getByText("0.4k")).toBeTruthy();
+    expect(screen.getByText("(40%)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+    expect(screen.getByText("45.0%")).toBeTruthy();
     view.unmount();
     queries.clear();
   },

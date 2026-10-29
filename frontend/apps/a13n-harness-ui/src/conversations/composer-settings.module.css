@@ -63,7 +63,7 @@
 .choice {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 16px;
-  align-items: start;
+  align-items: center;
   gap: 8px;
   width: 100%;
   height: auto;
@@ -81,7 +81,6 @@
 .choice > svg {
   width: 16px;
   height: 16px;
-  margin-top: 2px;
 }
 .choice small {
   display: block;
@@ -120,12 +119,12 @@
     font-size: 16px;
   }
   .header button {
-    min-width: 44px;
+    min-width: var(--harness-control-height);
   }
   .header button,
   .body button,
   .body .levels > button {
-    min-height: 44px;
+    min-height: var(--harness-control-height);
   }
 }
 
@@ -318,8 +317,8 @@
 }
 @media (pointer: coarse) {
   .identity > button {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--harness-control-height);
+    min-height: var(--harness-control-height);
   }
 }
 

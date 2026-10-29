@@ -13,7 +13,6 @@
 }
 .search > svg {
   flex-shrink: 0;
-  margin-right: 4px;
 }
 .search input {
   padding: 0;

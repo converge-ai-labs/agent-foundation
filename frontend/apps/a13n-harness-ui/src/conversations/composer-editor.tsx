@@ -201,9 +201,10 @@ export function ComposerEditor({
           ".cm-content": {
             fontFamily: "inherit",
             minHeight: "var(--composer-content-height, 28px)",
-            padding: "4px",
-            lineHeight: "1.6",
+            padding: "4px var(--composer-text-inset, 0px)",
+            lineHeight: "1.5",
           },
+          ".cm-line": { padding: "0" },
           ".cm-scroller": {
             maxHeight:
               "max(48px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",

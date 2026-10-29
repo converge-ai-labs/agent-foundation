@@ -4,6 +4,10 @@
   --text-sm: 0.875rem;
   --text-sm--line-height: 1.25rem;
   --a13n-text-body: 14px;
+  /* Compact controls, softer containers, and clearly rounded overlays. */
+  --harness-radius-control: 8px;
+  --harness-radius-panel: 16px;
+  --harness-radius-composer: 20px;
   --harness-reading-width: 720px;
   --harness-section-gap: 32px;
   --harness-field-gap: 16px;
@@ -17,21 +21,21 @@
   --harness-code-comment: light-dark(#626b74, #919ba6);
   --harness-code-deletion: light-dark(#a40e26, #ffa198);
   --background: #fefefe;
-  --foreground: #262626;
+  --foreground: #333333;
   --card: #ffffff;
-  --card-foreground: #262626;
-  --muted: #f5f5f5;
+  --card-foreground: #333333;
+  --muted: #f9f9f9;
   --muted-foreground: #666666;
   --popover: #ffffff;
-  --popover-foreground: #262626;
+  --popover-foreground: #333333;
   --border: rgb(0 0 0 / 7%);
   --input: rgb(0 0 0 / 13%);
-  --accent: rgb(0 0 0 / 4.5%);
-  --accent-foreground: #262626;
+  --accent: rgb(0 0 0 / 2.5%);
+  --accent-foreground: #333333;
   --primary: #292929;
   --primary-foreground: #ffffff;
-  --sidebar: #f5f5f5;
-  --a13n-selected: rgb(0 0 0 / 7%);
+  --sidebar: #fafafa;
+  --a13n-selected: rgb(0 0 0 / 4%);
   --a13n-tertiary: var(--muted-foreground);
   --harness-menu-row: 32px;
   --harness-control-height: 32px;
@@ -59,7 +63,7 @@
   --accent-foreground: #ededed;
   --primary: #ededed;
   --primary-foreground: #262626;
-  --sidebar: #171717;
+  --sidebar: #242424;
   --a13n-selected: rgb(255 255 255 / 8%);
   --elevation-overlay:
     0 0 0 1px rgb(255 255 255 / 9%), 0 6px 20px -6px rgb(0 0 0 / 45%);
@@ -72,7 +76,7 @@
 [data-slot="select-popup"],
 [data-slot="combobox-popup"] {
   max-width: calc(100vw - 24px);
-  border-radius: 12px;
+  border-radius: var(--harness-radius-panel);
   box-shadow: var(--elevation-overlay);
 }
 
@@ -88,7 +92,7 @@
 
 /* App-wide defaults stay below local component rules in specificity. */
 :where(:is([data-slot="button"], [data-a13n-button])) {
-  border-radius: 6px;
+  border-radius: var(--harness-radius-control);
   font-weight: 400;
 }
 :where(
@@ -127,7 +131,7 @@
   [data-slot="select-button"]
 ) {
   min-height: var(--harness-control-height);
-  border-radius: 6px;
+  border-radius: var(--harness-radius-control);
 }
 :where([data-slot="input-control"][data-size="default"] > [data-slot="input"]) {
   height: calc(var(--harness-control-height) - 2px);
@@ -137,7 +141,7 @@
   --thumb-size: 14px;
 }
 :where([data-slot="tooltip-popup"]) {
-  border-radius: 6px;
+  border-radius: var(--harness-radius-control);
   padding: 4px 8px;
   font-size: 14px;
   line-height: 20px;
@@ -176,6 +180,17 @@
 [data-slot="tabs-list"][data-variant="underline"]
   > [data-slot="tabs-tab"][aria-selected="true"]::after {
   background: currentColor;
+}
+
+[data-a13n-modal] {
+  border-radius: var(--harness-radius-panel);
+}
+
+[data-slot="settings-section-content"]:is(
+  [data-variant="grouped"],
+  [data-variant="outlined"]
+) {
+  border-radius: var(--harness-radius-panel);
 }
 
 [data-a13n-modal][data-size="md"] {
@@ -263,23 +278,12 @@
   line-height: 20px;
 }
 
+/* A narrow desktop panel still uses compact controls. Only touch input
+   enlarges targets; width breakpoints govern wrapping and layout. */
 @media (max-width: 639px) {
-  :root {
-    --harness-menu-row: 44px;
-    --harness-control-height: 44px;
-  }
   [data-slot="input"],
   [data-slot="textarea"] {
     font-size: 16px;
-  }
-  [data-slot="menu-item"],
-  [data-slot="menu-link-item"],
-  [data-slot="menu-checkbox-item"],
-  [data-slot="menu-radio-item"],
-  [data-slot="menu-sub-trigger"],
-  [data-slot="select-item"],
-  [data-slot="combobox-item"] {
-    min-height: 44px;
   }
   [data-slot="select-item"] .truncate {
     white-space: normal;
@@ -306,8 +310,8 @@
     > :is([data-slot="dialog-close"], button[aria-label="Close"]) {
     top: 6px;
     right: 6px;
-    width: 44px;
-    height: 44px;
+    width: var(--harness-control-height);
+    height: var(--harness-control-height);
   }
   [data-a13n-modal] [data-slot="dialog-header"] {
     padding: 16px 56px 16px 16px;

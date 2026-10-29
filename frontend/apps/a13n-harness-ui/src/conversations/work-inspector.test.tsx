@@ -241,7 +241,7 @@ it.each([false, true])(
         screen.queryByRole("menuitem", { name: /Processes|Tools/ }),
       ).toBeNull();
     }
-    await user.keyboard("{Home}{Enter}");
+    await user.keyboard("{Home}{ArrowDown}{Enter}");
     await screen.findByText("Decision");
     expect(
       screen

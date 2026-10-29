@@ -1,20 +1,13 @@
 .bar {
-  /* Same column as the composer (see conversation.module.css). */
-  width: min(var(--harness-reading-width), 100% - 84px);
-  margin: 4px auto 0;
-  /* Metric text starts on the composer content line (13px inset + 8px). */
-  padding-inline: 12px;
-  flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
 }
 .metrics {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0 4px;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .metric {
@@ -22,7 +15,7 @@
   align-items: center;
   gap: 4px;
   min-height: var(--conversation-footer-control-height, 24px);
-  padding: 2px 8px;
+  padding: 4px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -195,7 +188,7 @@ button.metric {
   gap: 8px;
   min-height: 32px;
   margin-inline: 0;
-  padding: 8px 12px;
+  padding: 4px 12px;
   border-radius: 5px;
   list-style: none;
   cursor: pointer;
@@ -376,7 +369,7 @@ button.metric {
   }
 }
 
-@media (max-width: 600px), (pointer: coarse) {
+@media (pointer: coarse) {
   .breakdown > summary,
   .modelHeader,
   .attribution summary,
@@ -416,4 +409,98 @@ button.metric {
   background: transparent;
   box-shadow: inset 0 -2px var(--a13n-text);
   color: var(--a13n-text);
+}
+
+.metric svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+button.metric {
+  border-radius: 5px;
+}
+button.metric:is(:hover, [data-popup-open]) {
+  background: var(--a13n-hover);
+}
+button.metric:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.contextPopup {
+  width: min(280px, calc(100vw - 24px));
+}
+.contextPopup .popupHeader {
+  padding: 12px 16px 8px;
+  gap: 4px;
+}
+.contextPopup .popupBody {
+  padding: 0 16px 16px;
+}
+.contextHero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 8px 16px;
+}
+.contextHero > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.contextHero strong {
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.contextHero span {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.contextHero .contextPercent {
+  font-size: 14px;
+  color: var(--a13n-text);
+}
+.contextStats .numbers {
+  margin: 0;
+  gap: 4px 16px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.contextStats .numbers:empty {
+  display: none;
+}
+.contextStats .numbers dd {
+  font-size: inherit;
+  font-weight: 400;
+  line-height: inherit;
+  letter-spacing: normal;
+}
+.contextStats .contextCapacity {
+  margin: -4px 0 12px;
+}
+.contextStats .contextMeter {
+  margin: 0;
+  height: 4px;
+}
+.contextCache {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border-soft);
+  font-size: 12px;
+}
+.contextCache dt {
+  color: var(--a13n-secondary);
+}
+.contextCache dd {
+  margin: 0;
+  font-weight: 500;
+}
+.contextStats .numbers:empty + .contextCache {
+  margin-top: 0;
 }

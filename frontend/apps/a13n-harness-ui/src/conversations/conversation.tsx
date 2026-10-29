@@ -645,6 +645,16 @@ function ConversationContent({
           retry={reconcile}
         />
         <div className={styles.readerFrame}>
+          <div
+            className={styles.readerFade}
+            data-edge="top"
+            aria-hidden="true"
+          />
+          <div
+            className={styles.readerFade}
+            data-edge="bottom"
+            aria-hidden="true"
+          />
           <InputNavigation
             threadId={threadId}
             continuation={continuation}
@@ -903,6 +913,18 @@ function ConversationContent({
         {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
+            status={
+              !guest && thread && !thread.archived ? (
+                <ComposerStatus
+                  threadId={threadId}
+                  receipt={receipt}
+                  busy={thread.root_activity.state !== "inactive"}
+                  liveTokens={
+                    showLive ? display.contextUsage?.tokens : undefined
+                  }
+                />
+              ) : undefined
+            }
             display={display}
             connected={connection === "Live"}
             reconcile={reconcile}
@@ -1031,16 +1053,6 @@ function ConversationContent({
             View-only link · Following this chat live.
           </p>
         )}
-        <div className={styles.conversationFooter}>
-          {!guest && !readOnly && thread && !thread.archived && (
-            <ComposerStatus
-              threadId={threadId}
-              receipt={receipt}
-              busy={thread.root_activity.state !== "inactive"}
-              liveTokens={showLive ? display.contextUsage?.tokens : undefined}
-            />
-          )}
-        </div>
         {!guest && !readOnly && (
           <SharePanel
             open={dialog === "share"}

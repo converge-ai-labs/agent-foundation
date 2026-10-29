@@ -1,5 +1,5 @@
 import { HelpTip } from "../shell/help-tip";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -60,7 +60,9 @@ export function WorkInspector({
   goal,
   activity,
   onUseGoal,
+  status,
 }: {
+  status?: ReactNode;
   threadId: string;
   display: FocusDisplay;
   connected?: boolean;
@@ -179,7 +181,7 @@ export function WorkInspector({
               className={styles.more}
               aria-label="More activity"
             >
-              More
+              Activity
               {!guest && running > 0 && (
                 <span
                   className={styles.backgroundActivity}
@@ -196,28 +198,27 @@ export function WorkInspector({
               align="end"
               finalFocus={tab !== null ? false : undefined}
             >
-              {tabs
-                .filter((item) => item !== "tasks" && item !== "children")
-                .map((item) => {
-                  const { label, Icon } = activityViews[item];
-                  return (
-                    <MenuItem
-                      key={item}
-                      onClick={() => {
-                        returnFocus.current = moreTrigger.current;
-                        setTab(item);
-                      }}
-                    >
-                      <Icon />
-                      {label}
-                      {!!counts[item] && (
-                        <span className={styles.count}>{counts[item]}</span>
-                      )}
-                    </MenuItem>
-                  );
-                })}
+              {tabs.map((item) => {
+                const { label, Icon } = activityViews[item];
+                return (
+                  <MenuItem
+                    key={item}
+                    onClick={() => {
+                      returnFocus.current = moreTrigger.current;
+                      setTab(item);
+                    }}
+                  >
+                    <Icon />
+                    {label}
+                    {!!counts[item] && (
+                      <span className={styles.count}>{counts[item]}</span>
+                    )}
+                  </MenuItem>
+                );
+              })}
             </MenuPopup>
           </Menu>
+          {status && <div className={styles.status}>{status}</div>}
         </div>
         <DialogPopup
           showCloseButton={false}

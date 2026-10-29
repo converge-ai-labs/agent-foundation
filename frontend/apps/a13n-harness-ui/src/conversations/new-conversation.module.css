@@ -10,14 +10,15 @@
   padding-bottom: 8vh;
 }
 .inputArea > .welcome {
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   text-align: center;
   font-size: 20px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.25;
   letter-spacing: -0.025em;
 }
 .inputArea {
+  --composer-inset: 4px;
   flex-shrink: 0;
   width: min(100%, 680px);
   margin: 0 auto;
@@ -29,7 +30,7 @@
   display: flex;
   justify-content: center;
   border: 0;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   padding: 0;
   min-width: 0;
 }
