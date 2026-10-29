@@ -3,19 +3,19 @@
 from dataclasses import dataclass
 from datetime import timedelta
 
+from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
 from sqlalchemy import or_, select
 
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.ids import new_object_id
-from a13n_service.resources.providers.service import resolve_provider
-from a13n_service.resources.providers.tables import BrowserProviderRow
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers import lifecycle
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserOperationRow, BrowserSelectionRow
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import RunOptions
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
@@ -33,8 +33,9 @@ class Permit:
     browser_id: str
     generation: int
     epoch: int
-    provider_id: str
+    provider_id: str | None
     selected_id: str | None
+    configuration: RunConfiguration
 
 
 async def admit(
@@ -42,17 +43,17 @@ async def admit(
 ) -> Permit:
     permit: Permit | None = None
     async with transaction(runtime.storage) as session:
+        await lifecycle.lock_owners(session, (lease.thread_id,))
         run, principal = await lock_owner(session, runtime, lease)
         if run.browser_binding != binding.model_dump(mode="json"):
             raise conflict("browser", binding.browser_id, "browser_binding_changed")
         row = await lifecycle.find(session, lease.workspace_id, binding.browser_id, lock=True)
         lifecycle.usable(row)
-        await resolve_provider(
+        await lifecycle.authorize_use(
             session,
             principal,
-            BrowserProviderRow,
+            row,
             WorkspaceScope(lease.organization_id, lease.workspace_id),
-            row.provider_id,
             authority=ExecutionAuthority.model_validate(run.authority),
         )
         current = await now(session)
@@ -69,6 +70,12 @@ async def admit(
                     BrowserBlockedRow.thread_id == lease.thread_id,
                 )
             )
+            if registration is not None and (registration.suppressed or registration.expires_at <= current):
+                # A new actual block establishes new provenance. Old queued hints must keep referring
+                # to the retired identity, never to a renewed registration under another Run's authority.
+                await session.delete(registration)
+                await session.flush()
+                registration = None
             if registration is None:
                 session.add(
                     BrowserBlockedRow(
@@ -110,7 +117,13 @@ async def admit(
             row.last_used_at = current
             row.observation_epoch += 1
             permit = Permit(
-                new_object_id("bop"), row.id, row.generation, row.observation_epoch, row.provider_id, selected_id
+                new_object_id("bop"),
+                row.id,
+                row.generation,
+                row.observation_epoch,
+                row.provider_id,
+                selected_id,
+                RunOptions.model_validate(run.options).configuration or RunConfiguration(),
             )
             session.add(
                 BrowserOperationRow(

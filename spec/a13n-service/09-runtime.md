@@ -230,7 +230,7 @@ Sweeps run on every `all` and `control` replica at once. Coordination belongs to
 
 A `deliver_outbox` pass delivers its kinds side by side, so a slow kind never delays another. Within a kind it claims and handles at most its configured `parallel` rows at a time, each under its own claim of the kind's `lease_seconds`, and starts no new batch once one claim lease has passed since the pass began, so a pass ends within two leases. Retries, backoff and dead-lettering belong to the outbox ([07](07-facts-and-delivery.md#outbox)). There is no generic jobs table.
 
-Browser lifecycle/control reconciliation is owned by [Managed Browsers](14-browsers.md#api-and-runtime) and runs on the control role in bounded rotating batches. Browser handback reuses `deliver_outbox` and `advance_threads`, without another mailbox receiver or Agent loop.
+Browser lifecycle/control reconciliation is owned by [Browsers](14-browsers.md#api-and-runtime) and runs on the control role in bounded rotating batches. Browser handback reuses `deliver_outbox` and `advance_threads`, without another mailbox receiver or Agent loop.
 
 ## Worker
 

@@ -2,7 +2,7 @@
 
 [Schedule management](13-schedules.md#management-api) adds HTTP configuration, preview, status and paginated trigger history. These routes intentionally have no MCP admission.
 
-[Managed Browsers](14-browsers.md#api-and-runtime) adds Browser lifecycle, desired Thread binding and human-control APIs. Metadata and lifecycle management have external MCP admission; takeover, handback and viewer access remain direct HTTP operations.
+[Browsers](14-browsers.md#api-and-runtime) adds Browser lifecycle, desired Thread binding and human-control APIs. Metadata and lifecycle management have external MCP admission; takeover, handback and viewer access remain direct HTTP operations.
 
 ## Design position
 
@@ -240,13 +240,14 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/models/{model}`                   | GET, PATCH | [04](04-resources.md#models)                                  |
 | `/media-understanding-defaults`     | GET, PUT   | [04](04-resources.md#models)                                  |
 
-### Managed Browsers
+### Browsers
 
-[Managed Browsers](14-browsers.md#api-and-runtime) owns the authority and transition requirements of these routes.
+[Browsers](14-browsers.md#api-and-runtime) owns the authority and transition requirements of these routes.
 
 | Path                                                                                         | Methods   | Owner                                          |
 | -------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------- |
 | `/browsers`                                                                                  | GET, POST | [14](14-browsers.md#resource-and-binding)      |
+| `/browsers/attach`                                                                           | POST      | [14](14-browsers.md#external-cdp-attachment)   |
 | `/browsers/{browser}`                                                                        | GET       | [14](14-browsers.md#resource-and-binding)      |
 | `/browsers/{browser}/prepare`, `/browsers/{browser}/release`                                 | POST      | [14](14-browsers.md#preparation-and-retention) |
 | `/threads/{thread}/browser`                                                                  | GET, PUT  | [14](14-browsers.md#resource-and-binding)      |

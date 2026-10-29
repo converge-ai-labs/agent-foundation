@@ -1,12 +1,12 @@
 ---
-title: Managed browsers
-description: Bind a shared browser to a thread, prepare it on demand, and return human control safely.
+title: Browsers
+description: Attach an existing browser or reserve a managed one, then bind it to native agent tools.
 ---
 
-A managed browser keeps a live browser session across runs. Several threads can use the same browser and login state. Service manages allocation, tab ownership and human control independently of [environments](environments.md).
+A browser resource shares a live browser across runs and threads. Choose `managed` for a provider-owned allocation or `external_cdp` to attach an existing browser. Service manages access, tab ownership and logical selection independently of [environments](environments.md).
 
 > [!IMPORTANT]
-> This release supplies the lifecycle API and native agent tools. The built-in distribution has no live browser supplier or Console takeover interface. A deployment must register a compatible browser provider, and an integrating application must implement the control interface. Inspect `GET /api/v1/provider-types/browser` before configuring a browser.
+> External CDP attachment works without a browser provider. The built-in distribution has no live managed-browser supplier or Console takeover interface. Managed allocation requires a deployment-registered provider; inspect `GET /api/v1/provider-types/browser`. Human control requires a compatible managed provider and an integrating application.
 
 ## Reserve and bind a browser
 
@@ -29,21 +29,72 @@ Replace the example ID with the returned browser ID. Read the desired binding wi
 
 The native tools cover observation, reading, navigation, actions, waits, tabs, dialogs, screenshots and download inspection. Uploads are unavailable until a provider exposes an authorized transfer boundary. Browser-host file paths are not paths in the run's mounted environments.
 
+## Attach an existing browser
+
+Use a direct browser-level `ws://` or `wss://` debugger endpoint for one stable existing Chromium instance. HTTP discovery URLs and page-level sockets are rejected. The URL and optional headers are secrets: supply them only to the attachment API, never in an agent message. Service encrypts them and ordinary reads never return them. Endpoint changes require another attachment and explicit rebinding.
+
+The endpoint must be reachable from the Service worker. Loopback refers to that process's network environment. Destination policy applies at registration and every connection; plain WS requires an explicit allowed HTTP origin in deployment `providers.http_origins`. Run `allowed_hosts` restrictions apply too. Redirects are refused.
+
+The following sequence uses `curl` and `jq`, the [HTTP authentication variables](http.md#authentication), an existing idle `THREAD_ID`, and an `AGENT_ID` whose revision enables `toolsets.browser.enabled`. Keep the complete secret endpoint in `CDP_URL`; put an optional authorization value in `CDP_AUTHORIZATION`.
+
+1. Attach without connecting or allocating. The response has `source: "external_cdp"`, `provider_id: null`, `status: "reserved"` and `idle_seconds: null`.
+
+```sh
+BROWSER_ID=$(jq -n --arg url "$CDP_URL" --arg auth "${CDP_AUTHORIZATION:-}" \
+  '{name: "Existing browser", cdp_url: $url, headers: (if $auth == "" then {} else {Authorization: $auth} end)}' | \
+  curl --fail-with-body -sS "$A13N_URL/api/v1/browsers/attach" \
+    -H "Authorization: Bearer $A13N_API_KEY" -H 'Content-Type: application/json' --data-binary @- | jq -r '.id')
+```
+
+2. Bind the attachment before submitting work. Use `global` to inspect pre-existing pages; `thread` sees only tabs created by that thread and their popups.
+
+```sh
+THREAD_ETAG=$(curl --fail-with-body -sS "$A13N_URL/api/v1/threads/$THREAD_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY" | jq -r '"\"" + .id + ":" + (.version|tostring) + "\""')
+jq -n --arg id "$BROWSER_ID" '{browser_id: $id, tab_access: "global", preparation: "first_use"}' | \
+  curl --fail-with-body -sS -X PUT "$A13N_URL/api/v1/threads/$THREAD_ID/browser" \
+    -H "Authorization: Bearer $A13N_API_KEY" -H "If-Match: $THREAD_ETAG" \
+    -H 'Content-Type: application/json' --data-binary @-
+```
+
+3. Submit native-tool work with a new idempotency key. The first admitted browser call verifies and connects to the existing browser. To verify earlier, call `POST /api/v1/browsers/$BROWSER_ID/prepare`; preparation creates no browser.
+
+```sh
+jq -n --arg agent "$AGENT_ID" \
+  '{agent_id: $agent, payload: {content: [{type: "text", text: "Use browser_tabs to list pages. Select the relevant tab explicitly, then use browser_observe to inspect it. Do not close existing tabs."}]}}' | \
+  curl --fail-with-body -sS "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
+    -H "Authorization: Bearer $A13N_API_KEY" -H "Idempotency-Key: $(uuidgen)" \
+    -H 'Content-Type: application/json' --data-binary @-
+```
+
+4. Follow the returned entry and run using [Read the result](connect-application.md#read-the-result). Run completion leaves the external process and pages alive. Wait until active borrowers and unsettled calls have ended before releasing.
+5. Detach the desired binding with JSON `null` and a fresh thread ETag if future runs should no longer borrow it. Detachment does not close pages.
+6. Read a fresh browser ETag and release Service access. Release erases encrypted connection material, including an attachment that was never prepared; it leaves the external process, tabs and login state intact.
+
+```sh
+BROWSER_ETAG=$(curl --fail-with-body -sS "$A13N_URL/api/v1/browsers/$BROWSER_ID" \
+  -H "Authorization: Bearer $A13N_API_KEY" | jq -r '"\"" + .id + ":" + (.version|tostring) + "\""')
+curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/browsers/$BROWSER_ID/release" \
+  -H "Authorization: Bearer $A13N_API_KEY" -H "If-Match: $BROWSER_ETAG"
+```
+
+Network failure reports `browser_connection_failed` without declaring the instance lost. A later connection retries the same endpoint and restores exact target ownership and selection. Observe again before acting; failed or uncertain actions are never replayed. A gateway that silently replaces its browser cannot guarantee continuity. External viewer, takeover and handback return `browser_viewer_unsupported` before any control transition.
+
 ## Choose preparation and retention
 
-| Choice                                                        | Behavior                                                                                        |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `preparation: "first_use"`                                    | Default. Allocate on the first admitted browser call. Unused tools cost no supplier allocation. |
-| `preparation: "run_start"`                                    | Start preparation when execution begins.                                                        |
-| `prepare: true` on creation, or `POST /browsers/{id}/prepare` | Prepare explicitly before agent use.                                                            |
-| `idle_seconds: 1800`                                          | Default. Release after eligible idle time. Accepts 60–604800 seconds.                           |
-| `idle_seconds: null`                                          | Retain until explicit release or supplier expiry.                                               |
+| Choice                                                        | Behavior                                                                            |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `preparation: "first_use"`                                    | Default. Prepare on the first admitted browser call; external sources only connect. |
+| `preparation: "run_start"`                                    | Start preparation when execution begins.                                            |
+| `prepare: true` on creation, or `POST /browsers/{id}/prepare` | Prepare explicitly before agent use.                                                |
+| `idle_seconds: 1800`                                          | Managed default. Release after eligible idle time. Accepts 60–604800 seconds.       |
+| `idle_seconds: null`                                          | External default. Retain until explicit release or managed supplier expiry.         |
 
 Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation.
 
 Active runs, unsettled browser calls, human control and valid pending handback notifications prevent idle release. Supplier expiry can still end the session. A `lost` or `deleted` browser does not automatically restart. Create and bind another browser when replacement is intended.
 
-Run completion and binding detachment leave the browser and its tabs alive. To terminate the session, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Release does not save a resumable profile or preserve login state for a replacement.
+Run completion and binding detachment leave the browser and its tabs alive. To release Service access, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Managed release terminates the supplier session without saving a resumable profile. External release leaves the existing browser alive.
 
 ## Choose tab access
 
@@ -53,7 +104,7 @@ Each thread selects a tab independently of native browser focus. If its selected
 
 ## Take over and return control
 
-An integrating application implements this sequence with direct HTTP calls. Takeover, handback and viewer access are excluded from MCP discovery.
+For managed sources with viewer support, an integrating application implements this sequence with direct HTTP calls. Takeover, handback and viewer access are excluded from MCP discovery.
 
 1. Read the browser's current ETag and call `POST /api/v1/browsers/{id}/takeover` with `If-Match` and `{"thread_id": "<bound-thread-id>"}`.
 2. Read the browser until `control` becomes `human`. `draining` means Service has closed browser-tool admission and is waiting for previously admitted work to settle. Unknown completion is not treated as success after a timeout.

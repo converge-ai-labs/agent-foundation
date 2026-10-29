@@ -52,22 +52,35 @@ class Backend:
         self.epoch: int | None = None
         self.selected: str | None = None
 
-    async def _connect(self) -> CdpBrowserBackend:
-        selected = await lifecycle.ready_target(self.runtime, self.lease.workspace_id, self.binding.browser_id)
+    async def _connect(self, permit: admission.Permit) -> CdpBrowserBackend:
+        selected = await lifecycle.ready_target(
+            self.runtime, self.lease.workspace_id, self.binding.browser_id, configuration=permit.configuration
+        )
+        if self.native is not None and not self.native.browser.connected:
+            self.native.retire()
+            await self.native.browser.close()
+            self.native = None
+            self.epoch = None
         if self.native is None:
-            provider = await self.stack.enter_async_context(lifecycle.open_provider(self.runtime, selected.account))
             assert selected.state is not None
             with anyio.fail_after(self.runtime.settings.providers.operation_seconds):
-                browser = await provider.connect(selected.state)
+                if selected.account is None:
+                    browser = await lifecycle.connect_external(
+                        self.runtime, selected.state, self.runtime.endpoint_policy.for_run(permit.configuration)
+                    )
+                else:
+                    provider = await self.stack.enter_async_context(
+                        lifecycle.open_provider(self.runtime, selected.account)
+                    )
+                    browser = await provider.connect(selected.state)
             self.stack.push_async_callback(browser.close)
-            self.native = CdpBrowserBackend(browser)
+            self.native = CdpBrowserBackend(browser, fallback_selection=False)
         return self.native
 
     async def _sync(self, native: CdpBrowserBackend, permit: admission.Permit) -> None:
         infos = (await native.browser.send("Target.getTargets"))["targetInfos"]
         pages = {info["targetId"]: info for info in infos if info["type"] == "page"}
         async with transaction(self.runtime.storage) as session:
-            await lifecycle.find(session, self.lease.workspace_id, self.binding.browser_id, lock=True)
             owners = {
                 row.target_id: row.thread_id
                 for row in await session.scalars(
@@ -77,6 +90,7 @@ class Backend:
                     )
                 )
             }
+            discovered: dict[str, str] = {}
             while True:
                 added = {
                     target: owners[info["openerId"]]
@@ -85,17 +99,26 @@ class Backend:
                 }
                 if not added:
                     break
-                for target, owner in added.items():
-                    session.add(
-                        BrowserTabRow(
-                            browser_id=self.binding.browser_id,
-                            workspace_id=self.lease.workspace_id,
-                            target_id=target,
-                            thread_id=owner,
-                            generation=permit.generation,
-                        )
-                    )
+                discovered.update(added)
                 owners.update(added)
+            # Ownership is append-only within a generation. Concurrent discovery may insert the same
+            # exact popup, but must never change its opener's owner or invert Thread -> Browser locks.
+            await lifecycle.lock_owners(session, discovered.values())
+            row = await lifecycle.find(session, self.lease.workspace_id, self.binding.browser_id, lock=True)
+            if row.generation != permit.generation:
+                raise BrowserError("Browser generation changed. Ask for a new binding.")
+            for target, owner in discovered.items():
+                await session.execute(
+                    insert(BrowserTabRow)
+                    .values(
+                        browser_id=row.id,
+                        workspace_id=row.workspace_id,
+                        target_id=target,
+                        thread_id=owner,
+                        generation=permit.generation,
+                    )
+                    .on_conflict_do_nothing()
+                )
             selected_id = permit.selected_id
             if self.binding.tab_access == "thread" and (
                 selected_id is None or owners.get(selected_id) != self.lease.thread_id
@@ -128,6 +151,7 @@ class Backend:
         except BrowserError:
             selected = None
         async with transaction(self.runtime.storage) as session:
+            await lifecycle.lock_owners(session, (self.lease.thread_id,))
             row = await lifecycle.find(session, self.lease.workspace_id, self.binding.browser_id, lock=True)
             if row.generation != permit.generation:
                 return
@@ -189,7 +213,7 @@ class Backend:
                     )
                 except Refused as error:
                     raise RunError(str(error), code="call_refused") from error
-                native = await self._connect()
+                native = await self._connect(permit)
                 await self._sync(native, permit)
                 synced = True
                 if not inventory:
@@ -210,7 +234,7 @@ class Backend:
                 )
                 return result
             except BrowserError as error:
-                known = error.dispatch != "unknown"
+                known = known or error.dispatch != "unknown"
                 raise
             except ServiceError as error:
                 raise BrowserError(f"Browser unavailable ({error.code}).") from None
@@ -228,12 +252,6 @@ class Backend:
                     if native is not None:
                         native.check_access = None
                         if synced:
-                            if not inventory:
-                                try:
-                                    if native.page.target != permit.selected_id:
-                                        native.clear_selection()
-                                except BrowserError:
-                                    native.clear_selection()
                             await self._save(native, permit)
                     if known:
                         await admission.settle(self.runtime, permit)
@@ -307,7 +325,9 @@ async def open_backend(
                     tool_name="browser.prepare",
                     provider_id=permit.provider_id,
                 )
-                await lifecycle.ready_target(runtime, lease.workspace_id, binding.browser_id)
+                await lifecycle.ready_target(
+                    runtime, lease.workspace_id, binding.browser_id, configuration=permit.configuration
+                )
             except (BrowserHumanControl, BrowserError, ServiceError):
                 # Readiness is independent of the model loop. The next actual browser call reports it.
                 pass

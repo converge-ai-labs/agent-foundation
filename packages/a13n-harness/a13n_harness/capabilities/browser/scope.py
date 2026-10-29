@@ -37,11 +37,13 @@ class CdpBrowserBackend:
         check_access: Callable[[], None] | None = None,
         new_window: bool = False,
         tab_access: Literal["owned", "global"] = "owned",
+        fallback_selection: bool = True,
     ) -> None:
         if tab_access not in {"owned", "global"}:
             raise ValueError("tab_access must be 'owned' or 'global'.")
         self.browser = browser
         self.tab_access = tab_access
+        self.fallback_selection = fallback_selection
         self.new_window = new_window
         self.check_access = check_access
         self._targets: dict[str, None] = {}
@@ -87,7 +89,7 @@ class CdpBrowserBackend:
         if self.browser.owners.get(target) is self:
             self.browser.owners.pop(target)
         if self._selected == target:
-            self._selected = next(reversed(self._targets), None)
+            self._selected = next(reversed(self._targets), None) if self.fallback_selection else None
             self.invalidate()
 
     def clear_selection(self) -> None:

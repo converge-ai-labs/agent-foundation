@@ -676,3 +676,42 @@ def test_browser_revision_roundtrip(empty_database: Database) -> None:
     assert rows(empty_database, OBJECTS) == original_objects
     upgrade(empty_database, OSS)
     check(empty_database, OSS)
+
+
+@pytest.mark.anyio
+async def test_external_browser_migration_defaults_constraints_and_downgrade(service, runs_kit):
+    from .test_browser_external import attach
+    from .test_browsers import setup
+
+    _, managed = await setup(service, runs_kit)
+    query = "SELECT id, provider_id, name FROM browsers ORDER BY id"
+    original = rows(service.runtime.settings.database, query)
+    database = service.runtime.settings.database
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "0bbe5ff4f164")
+    assert rows(database, query) == original
+    upgrade(database, OSS)
+    assert rows(database, "SELECT source FROM browsers") == [("managed",)]
+    assert rows(database, query) == original
+    # Server default also supports old managed writers during the expand rollout.
+    assert rows(
+        database,
+        "SELECT column_default FROM information_schema.columns WHERE table_name='browsers' AND column_name='source'",
+    ) == [("'managed'::character varying",)]
+    external = await attach(service, runs_kit)
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        for assignment in ("source = 'unknown'", "provider_id = NULL"):
+            with engine.begin() as connection:
+                with pytest.raises(DBAPIError, match="source_provider"):
+                    connection.execute(text(f"UPDATE browsers SET {assignment} WHERE id=:id"), {"id": managed["id"]})
+        with engine.begin() as connection:
+            with pytest.raises(DBAPIError, match="source_control"):
+                connection.execute(text("UPDATE browsers SET control='human' WHERE id=:id"), {"id": external["id"]})
+    finally:
+        engine.dispose()
+    with pytest.raises(DBAPIError, match="cannot downgrade while external browser attachments exist"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "0bbe5ff4f164")
+    assert rows(database, "SELECT source FROM browsers ORDER BY source") == [("external_cdp",), ("managed",)]
+    check(database, OSS)

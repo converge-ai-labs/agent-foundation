@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from a13n_service.infra.ids import ObjectId
 
@@ -21,6 +21,15 @@ class BrowserCreate(BaseModel):
     idle_seconds: int | None = Field(default=1800, ge=60, le=604800)
 
 
+class BrowserAttach(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    name: str = Field(min_length=1, max_length=200)
+    cdp_url: SecretStr = Field(min_length=1, max_length=16384, repr=False)
+    headers: dict[str, SecretStr] = Field(default_factory=dict, max_length=64, repr=False)
+    prepare: bool = False
+    idle_seconds: int | None = Field(default=None, ge=60, le=604800)
+
+
 class BrowserBinding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, from_attributes=True)
     browser_id: ObjectId
@@ -33,7 +42,8 @@ class Browser(BaseModel):
     id: str
     organization_id: str
     workspace_id: str
-    provider_id: str
+    source: Literal["managed", "external_cdp"]
+    provider_id: str | None
     name: str
     status: BrowserStatus
     control: ControlStatus

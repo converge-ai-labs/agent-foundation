@@ -64,6 +64,30 @@ async def test_membership_selection_popups_and_external_close(scoped_browser):
         await one.tabs("list")
 
 
+@pytest.mark.parametrize("fallback", [True, False])
+@pytest.mark.parametrize("removed_by", ["event", "inventory", "close"])
+async def test_host_controls_selection_after_target_loss(scoped_browser, fallback, removed_by):
+    browser, infos = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"], fallback_selection=fallback)
+    await backend.attach("two")
+    if removed_by == "close":
+        tabs = await backend.tabs("close", target="two")
+    else:
+        infos.pop("two")
+        if removed_by == "event":
+            browser._destroyed({"targetId": "two"}, None)
+        tabs = await backend.tabs("list")
+    assert backend.targets == {"one"}
+    assert [tab.target for tab in tabs if tab.selected] == (["one"] if fallback else [])
+    if fallback:
+        assert backend.page.target == "one"
+    else:
+        with pytest.raises(BrowserError, match="No selected"):
+            _ = backend.page
+    await backend.tabs("select", target="one")
+    assert backend.page.target == "one"
+
+
 async def test_missing_destroy_event_is_reconciled_without_url_guessing(scoped_browser):
     browser, infos = scoped_browser
     backend = CdpBrowserBackend(browser, browser.pages["one"])

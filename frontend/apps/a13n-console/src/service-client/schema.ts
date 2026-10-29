@@ -498,6 +498,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/browsers/attach": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Attach Browser */
+    post: operations["attach_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/browsers/{browser_id}": {
     parameters: {
       query?: never;
@@ -5700,7 +5717,12 @@ export interface components {
       /** Organization Id */
       organization_id: string;
       /** Provider Id */
-      provider_id: string;
+      provider_id: string | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "managed" | "external_cdp";
       status: components["schemas"]["BrowserStatus"];
       /**
        * Updated At
@@ -5711,6 +5733,27 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** BrowserAttach */
+    BrowserAttach: {
+      /**
+       * Cdp Url
+       * Format: password
+       */
+      cdp_url: string;
+      /** Headers */
+      headers?: {
+        [key: string]: string;
+      };
+      /** Idle Seconds */
+      idle_seconds?: number | null;
+      /** Name */
+      name: string;
+      /**
+       * Prepare
+       * @default false
+       */
+      prepare?: boolean;
     };
     /** BrowserBinding */
     BrowserBinding: {
@@ -14206,6 +14249,35 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  attach_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BrowserAttach"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_browser: {
     parameters: {
       query?: never;
@@ -21185,7 +21257,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": components["schemas"]["BrowserBinding"] | null;
       };

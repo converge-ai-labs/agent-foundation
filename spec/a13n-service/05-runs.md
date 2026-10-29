@@ -32,7 +32,7 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 [Schedules](13-schedules.md#objects-and-ownership) select a mutable Session/Thread target, create new Threads or queue messages in a fixed Thread. Their trigger Entry and waiting/resume Run associations are owned by that contract; ordinary input and Run lifecycles remain unchanged.
 
-[Managed Browsers](14-browsers.md#resource-and-binding) owns the Thread's desired Browser binding and its frozen Run selection. Its [handback input contract](14-browsers.md#handback-input-and-durable-observation) uses this chapter's existing assignment, capacity and continuation mechanisms, with revocation checked before durable incorporation and any derived model summary.
+[Browsers](14-browsers.md#resource-and-binding) owns the Thread's desired Browser binding and its frozen Run selection. Its [handback input contract](14-browsers.md#handback-input-and-durable-observation) uses this chapter's existing assignment, capacity and continuation mechanisms, with revocation checked before durable incorporation and any derived model summary.
 
 ## Session display identity
 

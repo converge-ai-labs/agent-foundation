@@ -31,6 +31,11 @@ from a13n_service.tenancy.access import principal_for, workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope, authorize
 
 
+def require_viewer(row: BrowserRow) -> None:
+    if row.source == "external_cdp":
+        raise conflict("browser", row.id, "browser_viewer_unsupported")
+
+
 async def takeover(
     runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str, body: Takeover, *, if_match: str | None
 ) -> Browser:
@@ -44,6 +49,8 @@ async def takeover(
         row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
         require_match(if_match, row.id, row.version)
         lifecycle.usable(row)
+        require_viewer(row)
+        assert row.provider_id is not None
         account = await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
         if not runtime.registry.get("browser", account.type).supports_viewer:
             raise conflict("browser", row.id, "browser_viewer_unsupported")
@@ -78,6 +85,7 @@ async def handback(
         row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
         require_match(if_match, row.id, row.version)
         lifecycle.usable(row)
+        require_viewer(row)
         if row.control == "automation":
             return Browser.model_validate(row)
         # No viewer can have been granted before readiness. Cancel that control intent
@@ -102,6 +110,8 @@ async def viewer(runtime: Runtime, actor: Principal, workspace_id: str, browser_
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await lifecycle.find(session, workspace_id, browser_id)
         lifecycle.usable(row)
+        require_viewer(row)
+        assert row.provider_id is not None
         if row.expires_at is not None and row.expires_at <= await now(session):
             raise conflict("browser", row.id, "browser_expired")
         await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
@@ -133,7 +143,7 @@ async def controller_allowed(session: AsyncSession, runtime: Runtime, row: Brows
     try:
         actor = await principal_for(session, runtime.access, row.controller_id, confinement=scope)
         authorize(actor, scope, "run")
-        await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
+        await lifecycle.authorize_use(session, actor, row, scope)
     except ServiceError as error:
         if error.code == "unavailable":
             raise
@@ -168,9 +178,11 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
             row.failure = "browser_operations_unsettled"
             return
         selected = await lifecycle.target(session, runtime, row)
+        assert selected.account is not None
         phase, episode, grant_id = row.control, row.episode, row.viewer_id
         assert grant_id is not None and selected.state is not None
         baseline = row.human_baseline
+        owner = row.controller_thread_id
         row.claim_id = claim
         row.claim_until = current + timedelta(seconds=runtime.settings.providers.operation_seconds + 15)
     granted: ViewerGrant | None = None
@@ -197,6 +209,7 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
     except Exception:
         failure = "browser_viewer_grant_failed" if phase == "draining" else "browser_viewer_revoke_failed"
     async with transaction(runtime.storage) as session:
+        await lifecycle.lock_owners(session, (owner,) if owner is not None else ())
         row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
         if row.claim_id != claim:
             return

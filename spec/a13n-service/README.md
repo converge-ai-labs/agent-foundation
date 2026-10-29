@@ -28,7 +28,7 @@ The Service is a managed-agent runtime. A tenant configures resources (agents an
 
 Start with [00-overview.md](00-overview.md), [02-layout.md](02-layout.md) and the [glossary](glossary.md), then read the chapter that owns the behavior you are changing. Authorization ([03](03-tenancy.md)), durable facts ([07](07-facts-and-delivery.md)), runtime rules ([09](09-runtime.md)) and observability ([12](12-observability.md)) apply to every feature.
 
-[Managed Browsers](14-browsers.md) owns Browser resources/providers, frozen Thread bindings, exact tab ownership, browser-only human control, retention and handback input.
+[Browsers](14-browsers.md) owns Browser resources/providers, frozen Thread bindings, exact tab ownership, browser-only human control, retention and handback input.
 
 ## Rule ownership
 

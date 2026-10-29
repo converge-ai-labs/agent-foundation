@@ -1,14 +1,14 @@
-# Managed Browsers
+# Browsers
 
 ## Design position
 
-A Browser is a workspace resource whose live session can serve several Threads and outlive their Runs. Service owns allocation intent, authorization, durable target ownership, logical selection, human control and reconciliation. A Browser Provider owns supplier lifecycle and viewer access. [Harness Browser Use](../a13n-harness/23-browser-use.md) owns CDP execution, native tools and compact references. Browser resources are independent of Environment instances and Computer Use.
+A Browser is a workspace resource whose live session can serve several Threads and outlive their Runs. Service owns registration or allocation intent, authorization, durable target ownership, logical selection, human control and reconciliation. A Browser has source `managed` or `external_cdp`. A Browser Provider owns a managed source's supplier lifecycle and viewer access. An external source attaches an existing instance whose process and session lifecycle remain with its owner. [Harness Browser Use](../a13n-harness/23-browser-use.md) owns CDP execution, native tools and compact references. Browser resources are independent of Environment instances and Computer Use.
 
 A provider account, reserved Browser identity, live supplier allocation, borrowed CDP connection and viewer grant have separate lifetimes. The API reports readiness explicitly. Metadata reads and desired bindings allocate nothing.
 
 ## Resource and binding
 
-A Browser stores its workspace, provider, creation recipe, backend identity, lifecycle status, generation, control episode and retention policy. Supplier handles and viewer data are encrypted and excluded from ordinary resource representations. Public reads expose status, control, generation, episode, supplier expiry and a classified failure code.
+A Browser stores its workspace, source, nullable provider, creation recipe, backend identity, lifecycle status, generation, control episode and retention policy. Managed sources require a provider; external sources have no provider account. Supplier handles, external connection material and viewer data are encrypted and excluded from ordinary resource representations. Public reads expose source, nullable provider ID, status, control, generation, episode, supplier expiry and a classified failure code.
 
 A Thread has at most one desired Browser binding:
 
@@ -20,7 +20,19 @@ A Thread has at most one desired Browser binding:
 
 [Run acceptance](05-runs.md) freezes the binding alongside the execution authority ceiling. Editing or detaching the desired binding affects future Runs; an accepted Run does not silently switch Browsers. A handback continuation uses the originating Run's binding and authority. Child and forked Threads have no implicit Browser binding; callers bind them explicitly. This avoids silently widening a child's target visibility or transferring a parent's tab ownership.
 
-The Browser's lifetime is independent of its borrowers. Run exit and binding detachment disconnect borrowed clients without closing tabs or terminating the supplier allocation. Profile save/load and automatic replacement are not exposed by this contract. Releasing a live session does not preserve its DOM, tabs or login state as a resumable profile.
+The Browser's lifetime is independent of its borrowers. Run exit and binding detachment disconnect borrowed clients without closing tabs or terminating the supplier allocation. Profile save/load and automatic replacement are not exposed by this contract. Releasing a managed live session does not preserve its DOM, tabs or login state as a resumable profile. Releasing an external attachment only unregisters Service access.
+
+## External CDP attachment
+
+`POST /browsers/attach` registers one existing instance under workspace `run` authority. It accepts `name`, secret `cdp_url`, optional secret `headers`, `prepare` (default false) and `idle_seconds` (default null). Registration, metadata reads and lazy binding open no connection. The protected handle contains the complete URL and headers, including secret query parameters, until release.
+
+The caller supplies a direct browser-level WS(S) endpoint for one stable existing instance. HTTP discovery and endpoint changes are unavailable. Different instances require new Browser identities and explicit rebinding. A gateway's transparent replacement is not a continuity guarantee. Exact target IDs, never URL or title matches, determine ownership and selection.
+
+Preparation validates browser-level connectivity using the same fenced lifecycle claims as managed preparation; it allocates nothing. Deployment destination policy applies at registration and every connection. WS maps to HTTP and WSS to HTTPS for policy checks, with the existing explicit insecure-origin exception. The full secret URL stays separate from the policy destination; this does not relax sensitive-query rejection for other endpoints. Handshakes are bounded and redirects are refused before forwarding secrets. Worker connections additionally apply frozen Run configuration, accepted authority and current grants. Loopback addresses refer to the connecting Service process's network environment.
+
+Transport failure records `browser_connection_failed` without claiming the external instance is lost. A later connection may retry the immutable endpoint, reconstruct exact identities and invalidate references. No action is replayed and no replacement is allocated. External users and independently authorized clients remain outside Service's control.
+
+External sources support the same global and Thread tab access. Existing pages start unowned; Thread ownership comes only from newly created tabs and their owned popups. Run exit, detachment, release and idle expiry never terminate the external process or automatically close its tabs. Explicit authorized tab-close tools keep their ordinary meaning. Release uses the existing borrower, unsettled-operation, claim and precondition checks and clears encrypted connection material, including release before preparation. External viewer, takeover and handback requests fail with `browser_viewer_unsupported` before changing control state.
 
 ## Preparation and retention
 
@@ -30,18 +42,20 @@ Creation reserves an identity by default. `prepare: true`, explicit `prepare`, `
 stateDiagram-v2
     [*] --> reserved
     reserved --> creating: prepare
-    creating --> ready: same allocation confirmed
+    creating --> ready: allocation or external connection verified
     reserved --> deleted: release
-    creating --> deleting: authorized release
-    ready --> deleting: eligible release or idle expiry
-    ready --> lost: confirmed absence or supplier expiry
+    creating --> deleting: managed release
+    ready --> deleting: managed release or idle expiry
+    creating --> deleted: external release
+    ready --> deleted: external release or idle expiry
+    ready --> lost: managed absence or supplier expiry
     lost --> deleting: explicit cleanup
     deleting --> deleted: supplier confirms termination
 ```
 
-A claim records durable intent before supplier I/O and fences publication afterward. No database transaction spans supplier calls. Concurrent preparation converges on the original allocation identity. After uncertain create, reconciliation inspects that identity; absence does not authorize a second create. A previously confirmed allocation that disappears becomes `lost`; an inspection error preserves the last confirmed status and reports failure. Successful inspection refreshes the protected handle and supplier expiry without extending idle activity.
+The `deleting` and confirmed-loss paths apply to managed sources; external release directly forgets the attachment after the same safety checks. A claim records durable intent before supplier or external connection I/O and fences publication afterward. No database transaction spans supplier calls. Concurrent preparation converges on the original allocation identity. After uncertain create, reconciliation inspects that identity; absence does not authorize a second create. A previously confirmed allocation that disappears becomes `lost`; an inspection error preserves the last confirmed status and reports failure. Successful inspection refreshes the protected handle and supplier expiry without extending idle activity.
 
-`idle_seconds` defaults to 1800, accepts 60–604800 seconds, and accepts null for explicit-release retention. Retention is independent of preparation. Idle release requires no active accepted/running borrower, unsettled browser execution, human-control transition or unexpired handback obligation. A normally completed Run's blocked registration can retain the Browser until delivery and consumption, suppression or expiry. Unconsumed, still-valid inbox notifications retain it too. Obligations expire rather than retaining a billable resource forever. Supplier expiry takes precedence over local retention and invalidates outstanding availability notices.
+`idle_seconds` defaults to 1800 for managed creation and null for external attachment, accepts 60–604800 seconds, and accepts null for explicit-release retention. Retention is independent of preparation. Idle release requires no active accepted/running borrower, unsettled browser execution, human-control transition or unexpired handback obligation. A normally completed Run's blocked registration can retain the Browser until delivery and consumption, suppression or expiry. Unconsumed, still-valid inbox notifications retain it too. Obligations expire rather than retaining a billable resource forever. Supplier expiry takes precedence over local retention and invalidates outstanding availability notices.
 
 Release requires workspace `write` and the Browser's current `If-Match`. Live use or an active lifecycle claim refuses release. A lost Browser permits explicit supplier cleanup even when old operations remain unknown. Deleting a reserved identity needs no supplier allocation. Deleted and lost resources never silently restart; a caller creates and binds a new Browser.
 
@@ -73,7 +87,7 @@ stateDiagram-v2
 
 Takeover closes admission durably before waiting for already-admitted calls. Known completion settles an operation; worker loss, unknown protocol outcome or failure to persist ownership leaves it unsettled. Lease expiry alone never proves the browser action stopped. No viewer input grant is published while such operations remain unresolved.
 
-A blocked call returns immediately, identifies that no browser action executed and registers its Thread for handback. Repeated blocks coalesce per Browser generation, episode and Thread, retaining the originating execution provenance. Requesting takeover alone does not register a recipient. The Agent is directed to continue unrelated work or finish without polling.
+A blocked call returns immediately, identifies that no browser action executed and registers its Thread for handback. Repeated blocks coalesce per Browser generation, episode and Thread while the registration remains active, retaining the originating execution provenance. A new actual blocked call after suppression or expiry creates a fresh registration identity and provenance; earlier queued hints cannot refer to that new obligation. Requesting takeover alone does not register a recipient. The Agent is directed to continue unrelated work or finish without polling.
 
 Only the controlling principal obtains the sensitive viewer URL. Viewer expiry, provider disablement or lost controller authority triggers revocation, while control stays human until explicit handback. Revocation failure remains visible and keeps automation blocked. An authorized caller can hand back even when the controlling Thread is idle or has no tabs. Before readiness, handback cancels control intent without fabricating a browser-available event or replacing the allocation claim.
 
@@ -114,7 +128,8 @@ All paths below are relative to `/api/v1` and use [API scope and preconditions](
 
 | Operation                             | Authority and result                                                          |
 | ------------------------------------- | ----------------------------------------------------------------------------- |
-| `POST /browsers`                      | Workspace `run`; reserve identity, optionally prepare                         |
+| `POST /browsers`                      | Workspace `run`; reserve managed identity, optionally prepare                 |
+| `POST /browsers/attach`               | Workspace `run`; register external CDP identity, optionally verify            |
 | `GET /browsers`, `GET /browsers/{id}` | Workspace `read`; metadata only, no allocation; list omits deleted rows       |
 | `POST /browsers/{id}/prepare`         | Workspace `run`; converge on readiness                                        |
 | `POST /browsers/{id}/release`         | Workspace `write`, Browser `If-Match`; borrower-safe release                  |
@@ -130,4 +145,4 @@ The control role reconciles bounded rotating batches for lifecycle, idle expiry,
 
 ## Compatibility
 
-The schema change adds Browser provider/resource, binding, target ownership, selection, operation and blocked-registration tables, nullable frozen Run selection, and the new internal trigger/inbox/outbox kind. Old Runs without a binding remain browser-free. Deployments update control and worker code together before enabling browser workloads; older readers cannot interpret the new closed-enum values. Application rollback or forward repair is preferred once Browser facts exist; schema downgrade refuses to erase those facts.
+The schema change adds Browser provider/resource, binding, target ownership, selection, operation and blocked-registration tables, nullable frozen Run selection, and the new internal trigger/inbox/outbox kind. Existing Browser rows receive source `managed`; provider IDs become nullable only for external sources. Older workers cannot execute external sources, so the source extension requires coordinated control and worker rollout before attachment is enabled. Old Runs without a binding remain browser-free. Deployments update control and worker code together before enabling browser workloads; older readers cannot interpret the new closed-enum values. Application rollback or forward repair is preferred once Browser facts exist; schema downgrade refuses to erase those facts.

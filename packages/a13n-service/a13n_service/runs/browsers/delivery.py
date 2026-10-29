@@ -6,9 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import Claim, Handler, settle
-from a13n_service.resources.providers.service import resolve_provider
-from a13n_service.resources.providers.tables import BrowserProviderRow
 from a13n_service.runs import inbox
+from a13n_service.runs.browsers import lifecycle
 from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserRow, ThreadBrowserRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
@@ -55,7 +54,7 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Browse
     try:
         principal = await principal_for(session, runtime.access, origin.principal_id, confinement=scope)
         authorize(principal, scope, "run", authority=authority)
-        await resolve_provider(session, principal, BrowserProviderRow, scope, row.provider_id, authority=authority)
+        await lifecycle.authorize_use(session, principal, row, scope, authority=authority)
     except ServiceError as error:
         if error.code == "unavailable":
             raise

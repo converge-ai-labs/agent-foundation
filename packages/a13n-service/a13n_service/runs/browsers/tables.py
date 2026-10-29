@@ -27,6 +27,11 @@ class BrowserRow(Stamped, Base):
         ForeignKeyConstraint(
             ["workspace_id", "provider_id"], ["browser_providers.workspace_id", "browser_providers.id"]
         ),
+        CheckConstraint(
+            "(source = 'managed' AND provider_id IS NOT NULL) OR (source = 'external_cdp' AND provider_id IS NULL)",
+            name="source_provider",
+        ),
+        CheckConstraint("source <> 'external_cdp' OR control = 'automation'", name="source_control"),
         CheckConstraint("status IN ('reserved','creating','ready','deleting','deleted','lost')", name="status"),
         CheckConstraint("control IN ('automation','draining','human','returning')", name="control"),
         CheckConstraint("status <> 'ready' OR handle IS NOT NULL", name="ready_handle"),
@@ -37,7 +42,8 @@ class BrowserRow(Stamped, Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
-    provider_id: Mapped[str]
+    source: Mapped[str] = mapped_column(default="managed", server_default="managed")
+    provider_id: Mapped[str | None]
     name: Mapped[str]
     created_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     recipe: Mapped[dict] = mapped_column(JSONB)

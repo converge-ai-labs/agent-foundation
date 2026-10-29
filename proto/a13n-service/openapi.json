@@ -3004,7 +3004,22 @@
             "type": "string"
           },
           "provider_id": {
-            "title": "Provider Id",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          },
+          "source": {
+            "enum": [
+              "managed",
+              "external_cdp"
+            ],
+            "title": "Source",
             "type": "string"
           },
           "status": {
@@ -3028,6 +3043,7 @@
           "id",
           "organization_id",
           "workspace_id",
+          "source",
           "provider_id",
           "name",
           "status",
@@ -3042,6 +3058,59 @@
           "updated_at"
         ],
         "title": "Browser",
+        "type": "object"
+      },
+      "BrowserAttach": {
+        "additionalProperties": false,
+        "properties": {
+          "cdp_url": {
+            "format": "password",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Cdp Url",
+            "type": "string",
+            "writeOnly": true
+          },
+          "headers": {
+            "additionalProperties": {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            "maxProperties": 64,
+            "title": "Headers",
+            "type": "object"
+          },
+          "idle_seconds": {
+            "anyOf": [
+              {
+                "maximum": 604800.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idle Seconds"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "prepare": {
+            "default": false,
+            "title": "Prepare",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "cdp_url"
+        ],
+        "title": "BrowserAttach",
         "type": "object"
       },
       "BrowserBinding": {
@@ -27697,6 +27766,75 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/browsers/attach": {
+      "post": {
+        "operationId": "attach_browser",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserAttach"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Browser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Attach Browser",
+        "tags": [
+          "browsers"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/browsers/{browser_id}": {
       "get": {
         "operationId": "get_browser",
@@ -48433,8 +48571,7 @@
                 "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

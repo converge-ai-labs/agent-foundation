@@ -297,7 +297,7 @@ The outbox is durable at-least-once delivery of what a transaction committed. Th
 
 `tool_result` delivers one bounded completion hint for a retained invocation. Its origin suppression, inbox capacity, deduplication and result-retention rules are owned by [retained tool executions](05-runs.md#results-and-delivery). The result payload stays in its immutable object and late usage follows the existing original-attempt attribution.
 
-`browser_handback` delivers a bounded availability observation through the existing inbox. [Managed Browsers](14-browsers.md#handback-input-and-durable-observation) owns generation/episode validity, originating authority, suppression, coalescing and incorporation. Full inboxes defer delivery without consuming an attempt; successful append and outbox settlement commit together.
+`browser_handback` delivers a bounded availability observation through the existing inbox. [Browsers](14-browsers.md#handback-input-and-durable-observation) owns generation/episode validity, originating authority, suppression, coalescing and incorporation. Full inboxes defer delivery without consuming an attempt; successful append and outbox settlement commit together.
 
 **Staging** happens in the transaction of the change that needs the delivery. A row without an explicit dedupe key uses its own ID. A row keyed by a durable fact, such as one sealed child run, is staged at most once. A delivery that can never be sent is staged already `dead` with its reason.
 

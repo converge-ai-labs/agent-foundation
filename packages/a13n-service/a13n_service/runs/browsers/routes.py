@@ -4,7 +4,15 @@ from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.runs.browsers import control, service
-from a13n_service.runs.browsers.schemas import Browser, BrowserBinding, BrowserCreate, BrowserPage, Takeover, Viewer
+from a13n_service.runs.browsers.schemas import (
+    Browser,
+    BrowserAttach,
+    BrowserBinding,
+    BrowserCreate,
+    BrowserPage,
+    Takeover,
+    Viewer,
+)
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 
@@ -16,6 +24,13 @@ async def create_browser(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, actor: Actor, body: BrowserCreate
 ) -> Browser:
     return tagged(response, await service.create(runtime, actor, workspace_id, body))
+
+
+@router.post("/browsers/attach", status_code=201, openapi_extra={"x-a13n-mcp": True})
+async def attach_browser(
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, actor: Actor, body: BrowserAttach
+) -> Browser:
+    return tagged(response, await service.attach(runtime, actor, workspace_id, body))
 
 
 @router.get("/browsers", openapi_extra={"x-a13n-mcp": True})
@@ -64,7 +79,7 @@ async def bind_browser(
     workspace_id: WorkspaceId,
     actor: Actor,
     thread_id: str,
-    body: BrowserBinding | None,
+    body: BrowserBinding | None = None,
     if_match: IfMatch = None,
 ) -> BrowserBinding | None:
     return await service.bind(runtime, actor, workspace_id, thread_id, body, if_match=if_match)

@@ -30,8 +30,7 @@ async def maintain(runtime: Runtime, workspace_id: str, browser_id: str) -> None
             and (row.claim_until is None or row.claim_until <= current)
             and not await lifecycle.in_use(session, row)
         ):
-            row.status = "deleted" if row.status == "reserved" else "deleting"
-            row.claim_id = row.claim_until = None
+            lifecycle.release_intent(row)
             record(
                 session,
                 WorkspaceScope(row.organization_id, row.workspace_id),

@@ -10,10 +10,12 @@ from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.outbound import validate_cdp_endpoint
+from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import BrowserProviderRow
 from a13n_service.runs.browsers import lifecycle
-from a13n_service.runs.browsers.schemas import Browser, BrowserBinding, BrowserCreate, BrowserPage
+from a13n_service.runs.browsers.schemas import Browser, BrowserAttach, BrowserBinding, BrowserCreate, BrowserPage
 from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserRow, ThreadBrowserRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -62,6 +64,40 @@ async def create(runtime: Runtime, actor: Principal, workspace_id: str, body: Br
     return await get(runtime, actor, workspace_id, browser_id)
 
 
+async def attach(runtime: Runtime, actor: Principal, workspace_id: str, body: BrowserAttach) -> Browser:
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        try:
+            await validate_cdp_endpoint(runtime.endpoint_policy, body.cdp_url.get_secret_value())
+            headers = normalize_headers(
+                {name: value.get_secret_value() for name, value in body.headers.items()}, authentication=True
+            )
+        except ValueError:
+            raise invalid("connection", "CDP destination or headers are not permitted") from None
+        row = BrowserRow(
+            id=new_object_id("browser"),
+            organization_id=scope.organization_id,
+            workspace_id=scope.workspace_id,
+            source="external_cdp",
+            provider_id=None,
+            name=body.name,
+            recipe={},
+            provider_identity={},
+            idle_seconds=body.idle_seconds,
+            created_by_id=actor.id,
+        )
+        row.handle = lifecycle.protect(
+            runtime, row, "handle", {"cdp_url": body.cdp_url.get_secret_value(), "headers": headers}
+        )
+        session.add(row)
+        await session.flush()
+        audit(session, actor, row, "attach")
+        browser_id = row.id
+    if body.prepare:
+        await lifecycle.prepare(runtime, workspace_id, browser_id)
+    return await get(runtime, actor, workspace_id, browser_id)
+
+
 async def get(runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str) -> Browser:
     async with short_session(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
@@ -89,8 +125,9 @@ async def prepare(runtime: Runtime, actor: Principal, workspace_id: str, browser
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await lifecycle.find(session, workspace_id, browser_id)
-        await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
-    await lifecycle.prepare(runtime, workspace_id, browser_id)
+        await lifecycle.authorize_use(session, actor, row, scope)
+        external = row.source == "external_cdp"
+    await lifecycle.prepare(runtime, workspace_id, browser_id, inspect_ready=external)
     return await get(runtime, actor, workspace_id, browser_id)
 
 
@@ -107,8 +144,7 @@ async def release(
             raise conflict("browser", browser_id, "browser_in_use")
         if row.claim_until is not None and row.claim_until > await now(session):
             raise conflict("browser", browser_id, "browser_operation_pending")
-        row.claim_id = row.claim_until = None
-        row.status = "deleted" if row.status == "reserved" else "deleting"
+        lifecycle.release_intent(row)
         audit(session, actor, row, "release")
     await lifecycle.reconcile(runtime, workspace_id, browser_id)
     return await get(runtime, actor, workspace_id, browser_id)
@@ -140,7 +176,7 @@ async def bind(
         if body is not None:
             row = await lifecycle.find(session, workspace_id, body.browser_id, lock=True)
             lifecycle.usable(row)
-            await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
+            await lifecycle.authorize_use(session, actor, row, scope)
         if previous is not None:
             await session.delete(previous)
             await session.flush()
@@ -173,13 +209,8 @@ async def freeze(
         return None
     browser = await lifecycle.find(session, thread.workspace_id, selected.browser_id, lock=True)
     lifecycle.usable(browser)
-    await resolve_provider(
-        session,
-        actor,
-        BrowserProviderRow,
-        WorkspaceScope(thread.organization_id, thread.workspace_id),
-        browser.provider_id,
-        authority=authority,
+    await lifecycle.authorize_use(
+        session, actor, browser, WorkspaceScope(thread.organization_id, thread.workspace_id), authority=authority
     )
     browser.last_used_at = await now(session)
     return selected.model_dump(mode="json")

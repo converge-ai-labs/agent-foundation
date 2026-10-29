@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
+import anyio
 import httpx2
 from a13n_logging import get_logger
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
+from websockets.protocol import State
 
 from a13n_harness.capabilities.browser import (
     BrowserElement,
@@ -48,6 +52,13 @@ async def websocket_url(cdp_url: str) -> str:
         return endpoint
     except (httpx2.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise BrowserError("Cannot discover the browser CDP endpoint.") from exc
+
+
+class _DirectWebSocket(connect):
+    """One handshake destination: never forward connection secrets through a redirect."""
+
+    def process_redirect(self, exc: Exception) -> Exception | str:
+        return BrowserError("Cannot connect to the browser CDP endpoint.")
 
 
 @dataclass(frozen=True)
@@ -117,18 +128,52 @@ class Chromium:
     """One browser connection, explicit page sessions and bounded protocol calls."""
 
     @classmethod
-    async def connect(cls, endpoint: str) -> Chromium:
+    async def connect(
+        cls,
+        endpoint: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float = 10,
+        discover: bool = True,
+    ) -> Chromium:
         from cdp_use import CDPClient
 
-        client = CDPClient(await websocket_url(endpoint))
+        # cdp-use owns protocol dispatch and events. Its start() logs the full secret URL
+        # and follows redirects, so the Host supplies only the bounded handshake adapter.
+        url = await websocket_url(endpoint) if discover else endpoint
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.hostname or parsed.fragment:
+            raise BrowserError("Use a direct WS(S) browser CDP endpoint.")
+        client = CDPClient("[protected CDP endpoint]")
+        transport_logger = logging.Logger(__name__ + ".transport")
+        transport_logger.addHandler(logging.NullHandler())
+        transport_logger.propagate = False
+        transport_logger.disabled = True
         try:
-            await client.start()
-            browser = cls(client)
-            await browser.send("Target.setDiscoverTargets", {"discover": True})
-            return browser
-        except BaseException:
-            await client.stop()
-            raise
+            async with asyncio.timeout(timeout):
+                client.ws = await _DirectWebSocket(
+                    url,
+                    additional_headers=headers,
+                    open_timeout=timeout,
+                    close_timeout=5,
+                    max_size=client.max_ws_frame_size,
+                    logger=transport_logger,
+                )
+                client._message_handler_task = asyncio.create_task(client._handle_messages())
+                browser = cls(client)
+                await browser.send("Target.setDiscoverTargets", {"discover": True})
+                return browser
+        except BaseException as error:
+            with anyio.CancelScope(shield=True), anyio.move_on_after(5):
+                await client.stop()
+            if isinstance(error, asyncio.CancelledError):
+                raise
+            raise BrowserError("Cannot connect to the browser CDP endpoint.") from None
+
+    @property
+    def connected(self) -> bool:
+        socket = self.client.ws
+        return not self.disconnected and (not isinstance(socket, ClientConnection) or socket.state is State.OPEN)
 
     def __init__(self, client: Any) -> None:
         self.client = client

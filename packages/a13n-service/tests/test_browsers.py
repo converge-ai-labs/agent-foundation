@@ -150,9 +150,20 @@ async def setup(service, runs_kit):
     return supplier, response.json()
 
 
-async def bound_run(service, runs_kit, scripted_model, browser, *, agent=None, preparation="first_use", **config):
+async def bound_run(
+    service,
+    runs_kit,
+    scripted_model,
+    browser,
+    *,
+    agent=None,
+    preparation="first_use",
+    tab_access="thread",
+    run_options=None,
+    **config,
+):
     agent = agent or await runs_kit.create_agent(service, scripted_model, **config)
-    binding = BrowserBinding(browser_id=browser["id"], preparation=preparation)
+    binding = BrowserBinding(browser_id=browser["id"], preparation=preparation, tab_access=tab_access)
     started = await runs_kit.start_thread(service, agent, "work")
     thread = await runs_kit.get_thread(service, started["thread"]["id"])
     response = await service.client.put(
@@ -163,7 +174,9 @@ async def bound_run(service, runs_kit, scripted_model, browser, *, agent=None, p
     assert response.status_code == 200, response.text
     # The first accepted Run predates the binding. Stop it, then accept from desired state.
     await service.client.post(f"{service.api}/runs/{started['run']['id']}/interrupt")
-    response = await runs_kit.submit(service, thread["id"], runs_kit.message(agent, "use browser"))
+    response = await runs_kit.submit(
+        service, thread["id"], runs_kit.message(agent, "use browser", options=run_options or {})
+    )
     assert response.status_code == 201, response.text
     (lease,) = await claim(service.runtime, worker_id="browser-worker", worker_build="test", limit=1)
     return lease, binding
