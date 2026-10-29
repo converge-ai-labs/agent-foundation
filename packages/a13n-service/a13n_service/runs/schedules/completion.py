@@ -1,10 +1,10 @@
-"""Complete an occurrence at its root Thread's first final Run."""
+"""Complete only the occurrence that triggered this Run or its waiting predecessor."""
 
 from datetime import datetime
 from functools import partial
 
 from a13n_logging import get_logger
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit
@@ -31,7 +31,7 @@ async def _log(occurrence_id: str, run_id: str, outcome: str) -> None:
 async def _complete(
     session: AsyncSession,
     *,
-    occurrence_id: str,
+    entry_id: str,
     workspace_id: str,
     thread_id: str,
     run_id: str,
@@ -43,7 +43,7 @@ async def _complete(
     item = await session.scalar(
         update(OccurrenceRow)
         .where(
-            OccurrenceRow.id == occurrence_id,
+            OccurrenceRow.entry_id == entry_id,
             OccurrenceRow.workspace_id == workspace_id,
             OccurrenceRow.thread_id == thread_id,
             OccurrenceRow.status == "submitted",
@@ -58,34 +58,16 @@ async def _complete(
 
 
 async def complete(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: RunRow, at: datetime) -> None:
-    if thread.schedule_occurrence_id is None or thread.origin == "child" or run.status not in _OUTCOMES:
-        return
-    # Only the first final Run can complete an occurrence; historical results remain unchanged.
-    first = (
-        await session.execute(
-            select(RunRow.id, RunRow.status, RunRow.sealed_at)
-            .join(OccurrenceRow, OccurrenceRow.thread_id == RunRow.thread_id)
-            .where(
-                OccurrenceRow.id == thread.schedule_occurrence_id,
-                OccurrenceRow.status == "submitted",
-                RunRow.thread_id == thread.id,
-                RunRow.workspace_id == thread.workspace_id,
-                RunRow.status.in_(tuple(_OUTCOMES)),
-            )
-            .order_by(RunRow.sealed_at, RunRow.id)
-            .limit(1)
-        )
-    ).one_or_none()
-    if first is None or first.id != run.id:
+    if run.occurrence_trigger_entry_id is None or run.status not in _OUTCOMES:
         return
     item = await _complete(
         session,
-        occurrence_id=thread.schedule_occurrence_id,
-        workspace_id=thread.workspace_id,
+        entry_id=run.occurrence_trigger_entry_id,
+        workspace_id=run.workspace_id,
         thread_id=thread.id,
-        run_id=first.id,
-        status=first.status,
-        at=first.sealed_at,
+        run_id=run.id,
+        status=run.status,
+        at=at,
     )
     if item is not None:
         await occurrence_changed(session, runtime, item, at)

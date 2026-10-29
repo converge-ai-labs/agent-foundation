@@ -1,6 +1,6 @@
 # Schedules
 
-Use the `schedules` tools to manage one-time or recurring Agent invocations. Each trigger sends fixed text or JSON into a new Thread in the Schedule's dedicated Session. Obtain Agent and revision IDs from resource reads; a null `agent_revision_id` follows the current default when the input becomes a Run, while an explicit revision pins it. Preserve unrelated invocation options and Memory mounts when editing.
+Use the `schedules` tools to manage one-time or recurring Agent invocations. Each trigger sends fixed text or JSON to the configured target. `target.mode: new_thread` creates a Thread per trigger; `thread` reuses a Thread. Optional Session/Thread IDs select existing resources; omitted IDs create resources when saving. Target edits preserve pending work and historical messages. Obtain Agent and revision IDs from resource reads; a null `agent_revision_id` follows the current default when the input becomes a Run, while an explicit revision pins it. Preserve unrelated invocation options and Memory mounts when editing.
 
 ## Prepare and review
 

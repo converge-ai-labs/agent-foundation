@@ -3552,5 +3552,11 @@
   "Archived schedules cannot be edited.": "Archived schedules cannot be edited.",
   "Schedules that have finished cannot be edited.": "Schedules that have finished cannot be edited.",
   "Only the account that created this schedule can edit it. You are signed in with a different account.": "Only the account that created this schedule can edit it. You are signed in with a different account.",
-  "Editing this schedule requires both write and run permissions in this workspace.": "Editing this schedule requires both write and run permissions in this workspace."
+  "Editing this schedule requires both write and run permissions in this workspace.": "Editing this schedule requires both write and run permissions in this workspace.",
+  "Delivery target": "Delivery target",
+  "Thread behavior": "Thread behavior",
+  "New thread each time": "New thread each time",
+  "Reuse one thread": "Reuse one thread",
+  "Leave empty to create a thread when saving.": "Leave empty to create a thread when saving.",
+  "Leave empty to create a session with Memory disabled.": "Leave empty to create a session with Memory disabled."
 }

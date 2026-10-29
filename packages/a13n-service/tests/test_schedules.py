@@ -63,7 +63,9 @@ async def test_creation_replay_and_memory_are_atomic(service, scripted_model, ru
     memory = await service.client.patch(
         owner_url, json={"memory": {"enabled": True}}, headers=runs_kit.if_match(owner_view)
     )
-    assert memory.status_code == 409 and memory.json()["error"]["details"]["reason"] == "schedule_managed_memory"
+    assert memory.status_code == 200, memory.text
+    assert memory.json()["memory"]["enabled"]
+    owner_view = memory.json()
     labels = await service.client.patch(
         owner_url, json={"labels": {"team": "reports"}}, headers=runs_kit.if_match(owner_view)
     )
@@ -200,7 +202,7 @@ async def test_progress_does_not_change_etag_and_scope_is_enforced(service, scri
             row.version == schedule["version"]
             and row.updated_at.isoformat().replace("+00:00", "Z") == schedule["updated_at"]
         )
-    with pytest.raises(DBAPIError, match="schedule identity"):
+    with pytest.raises(DBAPIError, match="fk_schedules_workspace_id_sessions"):
         async with transaction(service.runtime.storage) as session:
             row = await session.get_one(ScheduleRow, schedule["id"])
             row.session_id = new_object_id("sess")

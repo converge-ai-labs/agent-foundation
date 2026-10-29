@@ -17,9 +17,9 @@ from sqlalchemy import event, func, select
 pytestmark = pytest.mark.anyio
 
 
-async def schedule_for(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def schedule_for(service, scripted_model, runs_kit, *, user_questions=False):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=user_questions)
     response = await service.client.post(
         f"{service.api}/schedules",
         json={
@@ -419,7 +419,12 @@ async def test_children_outbox_and_forks_do_not_reopen_completed_occurrence(serv
         webhooks = (await session.scalars(select(OutboxRow).where(OutboxRow.kind == "webhook"))).all()
         assert {hook.payload["type"] for hook in webhooks} == {"run.accepted", "run.running"}
         assert all(
-            hook.payload["run"]["schedule_origin"] == {"schedule_id": schedule["id"], "occurrence_id": item["id"]}
+            hook.payload["run"]["schedule_origin"]
+            == (
+                {"schedule_id": schedule["id"], "occurrence_id": item["id"]}
+                if hook.payload["run"]["thread_id"] == root.id
+                else None
+            )
             for hook in webhooks
         )
     # Forks have independent ownership even when they share the fixed Session.
@@ -442,8 +447,9 @@ async def test_children_outbox_and_forks_do_not_reopen_completed_occurrence(serv
         assert not await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
 
 
+@pytest.mark.parametrize("fixed", [False, True])
 async def test_resume_chain_blocks_until_terminal_but_later_conversation_does_not(
-    service, scripted_model, runs_kit
+    service, scripted_model, runs_kit, fixed
 ) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
@@ -461,6 +467,14 @@ async def test_resume_chain_blocks_until_terminal_but_later_conversation_does_no
         headers=runs_kit.fresh_key(),
     )
     schedule = response.json()
+    if fixed:
+        changed = await service.client.patch(
+            f"{service.api}/schedules/{schedule['id']}",
+            json={"target": {"mode": "thread"}},
+            headers=runs_kit.if_match(schedule),
+        )
+        assert changed.status_code == 200, changed.text
+        schedule = changed.json()
     item = await trigger(service, schedule, runs_kit)
     await dispatch.process(service.runtime, schedule["id"])
     scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
@@ -517,8 +531,10 @@ async def test_resume_chain_blocks_until_terminal_but_later_conversation_does_no
     await dispatch.process(service.runtime, schedule["id"])
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, next_item["id"])
-        assert stored.status == "submitted" and stored.thread_id != root.id
+        assert stored.status == "submitted"
+        assert (stored.thread_id == root.id) == fixed
         assert await queries.has_unfinished(session, await session.get_one(ScheduleRow, schedule["id"]))
+    assert continued.json()["run"]["schedule_origin"] is None
     assert not (await observed_execution(service, schedule, item["id"]))["has_unfinished_work"]
 
 

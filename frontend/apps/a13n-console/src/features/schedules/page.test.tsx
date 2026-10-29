@@ -13,7 +13,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { createClient, type Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { fixtureThread } from "../conversations/transcript/fixture";
 import { ScheduleDetail } from "./detail";
 import { SchedulesPage } from "./list";
 
@@ -52,6 +51,7 @@ afterEach(() => {
 
 const at = "2026-10-20T00:00:00Z";
 const schedule: Schema["Schedule"] = {
+  target: { mode: "new_thread", session_id: "ses_one", thread_id: null },
   id: "sch_one",
   session_id: "ses_one",
   workspace_id: "ws_one",
@@ -779,7 +779,7 @@ it.each([false, true])(
   },
 );
 
-it("pages history, distinguishes failed input from submission, and refreshes an old result on reconnect", async () => {
+it("pages history, distinguishes failed input from submission, and refreshes an old result manually", async () => {
   vi.spyOn(Math, "random").mockReturnValue(0);
   const controllers: ReadableStreamDefaultController<Uint8Array>[] = [],
     history: string[] = [];
@@ -852,17 +852,77 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
   ).toBe("/workspace/ws_one/sessions/ses_one/threads/thr_old");
   await act(async () => {
     completed = true;
-    controllers[0].close();
   });
+  expect(screen.queryByText("Execution finished")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
   expect(await screen.findByText("Execution finished")).toBeTruthy();
   expect(await screen.findByText("state.succeeded")).toBeTruthy();
-  expect(controllers.length).toBeGreaterThan(1);
+  expect(controllers).toHaveLength(0);
   await waitFor(() =>
     expect(
       history.filter((cursor) => cursor === "older").length,
     ).toBeGreaterThan(1),
   );
 });
+
+it.each(["session", "thread", "create_thread"])(
+  "edits the %s delivery target without a live subscription",
+  async (mode) => {
+    const user = userEvent.setup();
+    const bodies: Schema["ScheduleUpdate"][] = [];
+    const streams: string[] = [];
+    show("/workspace/ws_one/schedules/sch_one", async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith("/stream")) {
+        streams.push(path);
+        return live(request, []);
+      }
+      if (path.endsWith("/status")) return Response.json(status);
+      if (path.endsWith("/occurrences") || path.endsWith("/revisions"))
+        return Response.json({ items: [], next_cursor: null });
+      if (path === "/api/v1/agents")
+        return Response.json({
+          items: [{ id: schedule.invocation.agent_id, name: "Reporter" }],
+          next_cursor: null,
+        });
+      if (request.method === "PATCH") {
+        bodies.push(await request.json());
+        return Response.json({ ...schedule, version: 2 });
+      }
+      return Response.json(schedule);
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Edit schedule" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    if (mode !== "session") {
+      await user.click(
+        dialog.getByRole("button", { name: "Reuse one thread" }),
+      );
+      if (mode === "thread")
+        await user.type(
+          dialog.getByLabelText("Thread ID (optional)"),
+          "thread_existing",
+        );
+    }
+    if (mode !== "thread") {
+      await user.clear(dialog.getByLabelText("Session ID (optional)"));
+      if (mode === "session")
+        await user.type(
+          dialog.getByLabelText("Session ID (optional)"),
+          "sess_existing",
+        );
+    }
+    await user.click(dialog.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].target).toEqual({
+      mode: mode === "session" ? "new_thread" : "thread",
+      session_id: mode === "session" ? "sess_existing" : null,
+      thread_id: mode === "thread" ? "thread_existing" : null,
+    });
+    expect(streams).toEqual([]);
+  },
+);
 
 it("allows another writer to stop a schedule without offering creator-only actions", async () => {
   viewer = "usr_other";
@@ -987,84 +1047,7 @@ it.each([
   },
 );
 
-it("preserves execution across occurrence frames and refreshes unchanged submission versions on thread changes", async () => {
-  const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
-  const submitted = occurrence({
-    status: "submitted",
-    reason: null,
-    thread_id: "thr_one",
-    entry_id: "entry_one",
-  });
-  let reads = 0,
-    completed = false,
-    hold = false;
-  let resolveOld: ((response: Response) => void) | undefined;
-  function page() {
-    return {
-      items: [
-        {
-          ...submitted,
-          execution: {
-            initial_entry_status: completed ? "consumed" : "assigned",
-            initial_run: {
-              id: "run_one",
-              status: completed ? "completed" : "running",
-            },
-            has_unfinished_work: !completed,
-            observed_at: completed ? "2026-10-20T00:01:00Z" : at,
-          },
-        },
-      ],
-      next_cursor: null,
-    };
-  }
-  show("/workspace/ws_one/schedules/sch_one", (request) => {
-    const path = new URL(request.url).pathname;
-    if (path.endsWith("/stream")) return live(request, controllers);
-    if (path.endsWith("/status")) return Response.json(status);
-    if (path.endsWith("/occurrences")) {
-      reads++;
-      if (hold)
-        return new Promise<Response>((resolve) => {
-          resolveOld = resolve;
-        });
-      return Response.json(page());
-    }
-    expect(path).toBe("/api/v1/schedules/sch_one");
-    return Response.json(schedule);
-  });
-  await screen.findByText("state.running");
-  await waitFor(() => expect(reads).toBeGreaterThan(1));
-  const oldPage = page();
-  await act(async () => {
-    hold = true;
-    controllers[0].enqueue(
-      new TextEncoder().encode(
-        `event: occurrence\ndata: ${JSON.stringify({ session_id: "ses_one", schedule_id: "sch_one", occurrence: submitted })}\n\n`,
-      ),
-    );
-  });
-  await waitFor(() => expect(resolveOld).toBeDefined());
-  expect(screen.getByText("state.running")).toBeTruthy();
-  await act(async () => {
-    completed = true;
-    hold = false;
-    controllers[0].enqueue(
-      new TextEncoder().encode(
-        `event: thread\ndata: ${JSON.stringify({ thread: fixtureThread({ id: "thr_one", session_id: "ses_one" }), current_run: null, last_run: null, entries: [] })}\n\n`,
-      ),
-    );
-  });
-  await screen.findByText("state.completed");
-  await act(async () => {
-    resolveOld?.(Response.json(oldPage));
-  });
-  expect(screen.queryByText("state.running")).toBeNull();
-  expect(screen.getByText("state.completed")).toBeTruthy();
-  expect(screen.getByText("state.submitted")).toBeTruthy();
-});
-
-it("keeps an open draft's original ETag after live configuration changes", async () => {
+it("keeps an open draft's original ETag after a concurrent configuration change", async () => {
   const user = userEvent.setup(),
     controllers: ReadableStreamDefaultController<Uint8Array>[] = [],
     tags: string[] = [],
@@ -1101,24 +1084,8 @@ it("keeps an open draft's original ETag after live configuration changes", async
     within(dialog).queryByRole("checkbox", { name: "Enable immediately" }),
   ).toBeNull();
   await user.type(within(dialog).getByLabelText("Name"), " edited");
-  await act(async () => {
-    version = 2;
-    controllers[0].enqueue(
-      new TextEncoder().encode(
-        `event: schedule\ndata: ${JSON.stringify({ session_id: "ses_one", schedule_id: "sch_one", configuration: { id: "sch_one", version }, progress: {} })}\n\n`,
-      ),
-    );
-  });
-  await waitFor(() =>
-    expect(
-      cache.getQueryData<{ version: number }>([
-        "schedules",
-        "ws_one",
-        "sch_one",
-        "detail",
-      ])?.version,
-    ).toBe(2),
-  );
+  version = 2;
+  expect(controllers).toHaveLength(0);
   await user.click(
     within(dialog).getByRole("button", { name: "Save changes" }),
   );
@@ -1128,57 +1095,6 @@ it("keeps an open draft's original ETag after live configuration changes", async
   expect(
     (within(dialog).getByLabelText("Name") as HTMLInputElement).value,
   ).toBe("Morning report edited");
-});
-
-it("does not replace a newer streamed occurrence with an older in-flight history read", async () => {
-  const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
-  let block = false,
-    reads = 0,
-    resolveOld: ((response: Response) => void) | undefined;
-  const pending = occurrence({
-    status: "pending",
-    reason: null,
-    finished_at: null,
-    version: 1,
-  });
-  const failed = occurrence();
-  show("/workspace/ws_one/schedules/sch_one", (request) => {
-    const path = new URL(request.url).pathname;
-    if (path.endsWith("/stream")) return live(request, controllers);
-    if (path.endsWith("/status")) return Response.json(status);
-    if (path.endsWith("/occurrences")) {
-      reads++;
-      if (block)
-        return new Promise<Response>((resolve) => {
-          resolveOld = resolve;
-        });
-      return Response.json({ items: [pending], next_cursor: null });
-    }
-    return Response.json(schedule);
-  });
-  await screen.findByText("state.pending");
-  // Let the initial connection's batched refresh finish before holding the next request.
-  await waitFor(() => expect(reads).toBeGreaterThan(1));
-  await act(async () => {
-    block = true;
-    void cache.invalidateQueries({
-      queryKey: ["schedules", "ws_one", "sch_one", "history"],
-    });
-  });
-  await waitFor(() => expect(resolveOld).toBeDefined());
-  await act(async () => {
-    controllers[0].enqueue(
-      new TextEncoder().encode(
-        `event: occurrence\ndata: ${JSON.stringify({ session_id: "ses_one", schedule_id: "sch_one", occurrence: failed })}\n\n`,
-      ),
-    );
-  });
-  await screen.findByText("Submission failed");
-  await act(async () => {
-    resolveOld?.(Response.json({ items: [pending], next_cursor: null }));
-  });
-  expect(screen.queryByText("state.pending")).toBeNull();
-  expect(screen.getByText("Submission failed")).toBeTruthy();
 });
 
 it("keeps completed one-time history visible while only offering archive", async () => {

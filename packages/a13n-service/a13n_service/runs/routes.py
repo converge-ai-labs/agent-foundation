@@ -131,7 +131,7 @@ async def session_stream(
     credential: Credential,
 ) -> StreamingResponse:
     """The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-    frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot."""
+    frames, plus `schedule` and `occurrence` state scoped to this session. Every connection starts from a snapshot."""
     reader = await stream.open_stream(runtime, credential, workspace_id, session_id)
     return StreamingResponse(
         stream.frames(request.app.state.session_hub, reader),

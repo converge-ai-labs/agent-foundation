@@ -14,12 +14,12 @@ import {
   MenuPopup,
   MenuItem,
 } from "a13n-ui";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { ApiError, type SessionEvent } from "../../service-client";
+import { ApiError } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { Confirm, ConflictNotice } from "../../shared/dialogs";
 import {
@@ -33,11 +33,6 @@ import { useIdempotency } from "../../shared/idempotency";
 import { DetailHeader, DetailPage, Section } from "../../shared/page";
 import { JsonView } from "../../shared/forms";
 import { AgentLink } from "../agents/link";
-import { conversationKeys } from "../conversations/api";
-import {
-  SessionStreamProvider,
-  useSessionStream,
-} from "../conversations/session-stream";
 import {
   scheduleCommands,
   scheduleKeys,
@@ -53,84 +48,16 @@ import styles from "./schedules.module.css";
 export function ScheduleDetail() {
   const { scheduleId = "" } = useParams(),
     client = useClient(),
-    { workspace } = useWorkspace(),
-    cache = useQueryClient();
-  const keys = scheduleKeys(workspace.id);
+    { workspace } = useWorkspace();
   const query = useQuery(
     scheduleQueries(client, workspace.id).detail(scheduleId),
   );
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  useEffect(
-    () => () => {
-      clearTimeout(refreshTimer.current);
-      refreshTimer.current = undefined;
-    },
-    [workspace.id, scheduleId],
-  );
-  function received(event: SessionEvent) {
-    if (event.type === "schedule") {
-      // The event is a partial configuration. Keep the full edit representation intact and
-      // cancel older reads before fetching it again, so an old invocation never gets a new ETag.
-      void cache.cancelQueries({ queryKey: keys.detail(scheduleId) });
-      void cache.cancelQueries({ queryKey: keys.status(scheduleId) });
-      cache.setQueryData<Schema["ScheduleStatus"]>(
-        keys.status(scheduleId),
-        (previous) =>
-          previous ? { ...previous, ...event.data.progress } : previous,
-      );
-    } else if (event.type === "occurrence") {
-      void cache.cancelQueries({ queryKey: keys.history(scheduleId) });
-      cache.setQueriesData<Schema["OccurrencePage"]>(
-        { queryKey: keys.history(scheduleId) },
-        (previous) =>
-          previous
-            ? {
-                ...previous,
-                items: previous.items.map((item) =>
-                  item.id === event.data.occurrence.id &&
-                  item.version <= event.data.occurrence.version
-                    ? event.data.occurrence
-                    : item,
-                ),
-              }
-            : previous,
-      );
-    } else if (event.type === "thread") {
-      // Refresh execution observations even when the occurrence itself has not changed.
-      void cache.cancelQueries({ queryKey: keys.history(scheduleId) });
-    }
-    if (event.type === "connection" && event.state === "live") {
-      // Every connection starts afresh; the visible historical page can have finished while disconnected.
-      void cache.invalidateQueries({
-        queryKey: conversationKeys(workspace.id).root,
-      });
-    }
-    // A snapshot can contain many records. Refetch the visible page once after that batch.
-    if (
-      (event.type === "connection" && event.state === "live") ||
-      ["schedule", "occurrence", "thread"].includes(event.type)
-    )
-      refreshTimer.current ??= setTimeout(() => {
-        refreshTimer.current = undefined;
-        void cache.invalidateQueries({ queryKey: keys.schedule(scheduleId) });
-      }, 50);
-  }
   if (query.isPending) return <Loading variant="detail" />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
-  return (
-    <SessionStreamProvider
-      key={query.data.session_id}
-      sessionId={query.data.session_id}
-      onEvent={received}
-    >
-      <ScheduleContent schedule={query.data} error={query.error} />
-    </SessionStreamProvider>
-  );
+  return <ScheduleContent schedule={query.data} error={query.error} />;
 }
 
 function ScheduleContent({
@@ -145,8 +72,7 @@ function ScheduleContent({
     cache = useQueryClient(),
     { t } = useTranslation();
   const [webhookOpen, setWebhookOpen] = useState(false);
-  const stream = useSessionStream(),
-    keys = scheduleKeys(workspace.id);
+  const keys = scheduleKeys(workspace.id);
   const auth = useAuth();
   const status = useQuery(
     scheduleQueries(client, workspace.id).status(schedule.id),
@@ -332,21 +258,11 @@ function ScheduleContent({
       ) : (
         <ErrorNotice error={action.error} />
       )}
-      {stream?.state !== "live" && (
-        <p className={styles.notice} role="status">
-          {t(
-            stream?.state === "closed"
-              ? "Live updates stopped"
-              : "Connecting to live updates…",
-          )}{" "}
-          {stream?.state === "closed" && (
-            <Button size="sm" variant="outline" onClick={stream.reconnect}>
-              {t("Reconnect")}
-            </Button>
-          )}
-        </p>
-      )}
-      <ErrorNotice error={stream?.error} />
+      <div>
+        <Button variant="outline" onClick={refresh}>
+          {t("Refresh")}
+        </Button>
+      </div>
       {editReason && <p className={styles.notice}>{editReason}</p>}
       <div className={styles.overview}>
         <dl className={styles.summary}>
@@ -386,6 +302,25 @@ function ScheduleContent({
             <dd className={styles.resourceId}>
               {schedule.invocation.agent_id}
             </dd>
+          </div>
+          <div>
+            <dt>{t("Thread behavior")}</dt>
+            <dd>
+              {t(
+                schedule.target.mode === "thread"
+                  ? "Reuse one thread"
+                  : "New thread each time",
+              )}
+            </dd>
+            {schedule.target.thread_id && (
+              <dd>
+                <Link
+                  to={`${basePath}/sessions/${schedule.session_id}/threads/${schedule.target.thread_id}`}
+                >
+                  {schedule.target.thread_id}
+                </Link>
+              </dd>
+            )}
           </div>
           <div>
             <dt>{t("Target session")}</dt>

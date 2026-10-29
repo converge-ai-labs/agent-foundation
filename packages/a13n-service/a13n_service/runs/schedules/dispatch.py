@@ -17,8 +17,9 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import lifecycle, queries, service, webhooks
 from a13n_service.runs.schedules.schemas import Occurrence, OccurrenceSnapshot
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
-from a13n_service.runs.schemas import NewThread
-from a13n_service.runs.submit import prepare_thread
+from a13n_service.runs.schemas import Message, NewThread
+from a13n_service.runs.submit import prepare_message, prepare_thread
+from a13n_service.runs.threads import get_thread, require_open
 from a13n_service.tenancy.access import principal_for, require_active_workspace, workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize, execution_authority
 
@@ -138,16 +139,32 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
             await require_active_workspace(session, row.workspace_id)
             authorize(actor, scope, "run", authority=authority)
             invocation = OccurrenceSnapshot.model_validate(item.snapshot).invocation
-            thread, source = await prepare_thread(
-                session,
-                runtime,
-                actor,
-                scope,
-                NewThread(session_id=row.session_id, **invocation.model_dump()),
-                request=None,
-                authority=authority,
-                schedule_occurrence_id=item.id,
-            )
+            if row.thread_id is None:
+                thread, source = await prepare_thread(
+                    session,
+                    runtime,
+                    actor,
+                    scope,
+                    NewThread(session_id=item.session_id, delivery="next_run", **invocation.model_dump()),
+                    request=None,
+                    authority=authority,
+                    schedule_occurrence_id=item.id,
+                )
+            else:
+                thread = await get_thread(session, row.workspace_id, row.thread_id, lock=True)
+                require_open(thread)
+                item.session_id = thread.session_id
+                source = await prepare_message(
+                    session,
+                    runtime,
+                    actor,
+                    scope,
+                    thread,
+                    Message(delivery="next_run", **invocation.model_dump(exclude={"memories"})),
+                    None,
+                    authority=authority,
+                    schedule_occurrence_id=item.id,
+                )
             await accept(session, runtime, thread, explicit=source)
             assert source.entry is not None
             item.dispatch_attempts += 1

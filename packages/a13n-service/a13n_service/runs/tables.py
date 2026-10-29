@@ -308,6 +308,12 @@ class ThreadCodeActRow(Base):
 class InboxEntryRow(Base):
     __tablename__ = "inbox_entries"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "schedule_occurrence_id"],
+            ["schedule_occurrences.workspace_id", "schedule_occurrences.id"],
+            name="fk_inbox_entries_schedule_occurrence",
+            use_alter=True,
+        ),
         # Reordering sets several positions in one transaction; uniqueness is checked once they are all set.
         UniqueConstraint("thread_id", "position", deferrable=True, initially="IMMEDIATE"),
         UniqueConstraint("thread_id", "id"),
@@ -409,6 +415,7 @@ class InboxEntryRow(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     thread_id: Mapped[str]
+    schedule_occurrence_id: Mapped[str | None] = mapped_column(String(72))
     kind: Mapped[str]
     delivery: Mapped[str]
     position: Mapped[int] = mapped_column(BigInteger)
@@ -445,6 +452,12 @@ _RUN_PROGRESS = (
 class RunRow(Stamped, Base):
     __tablename__ = "runs"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["thread_id", "occurrence_trigger_entry_id"],
+            ["inbox_entries.thread_id", "inbox_entries.id"],
+            name="fk_runs_occurrence_trigger_entry",
+            use_alter=True,
+        ),
         Index("ix_runs_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_runs_thread_created", "thread_id", "created_at", "id"),
         Index("ix_runs_session_created", "workspace_id", "session_id", "created_at", "id"),
@@ -585,6 +598,7 @@ class RunRow(Stamped, Base):
     # The thread's memory mounts, frozen at acceptance.
     memory_mounts: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     source_entry_id: Mapped[str | None] = mapped_column(String(72))
+    occurrence_trigger_entry_id: Mapped[str | None] = mapped_column(String(72))
     resume: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     resumed_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     request_key: Mapped[str | None]

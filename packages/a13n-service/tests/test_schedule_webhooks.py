@@ -214,7 +214,7 @@ async def test_child_completion_and_waiting_do_not_complete_root_occurrence(serv
     assert len(completed) == 1
     assert completed[0]["occurrence"]["completion_run_id"] == resumed.json()["id"]
     # Schedule filtering applies to child Run and Attempt notices, too.
-    assert any(e.get("run", {}).get("thread_id") != thread.id and e["type"] == "run.completed" for e in events)
+    assert not any(e.get("run", {}).get("thread_id") != thread.id and e["type"] == "run.completed" for e in events)
     assert any(e["type"] == "run_attempt.succeeded" for e in events)
 
 

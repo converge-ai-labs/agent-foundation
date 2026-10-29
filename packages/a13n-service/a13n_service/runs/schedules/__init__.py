@@ -1,1 +1,1 @@
-"""Durable recurring input submission to a dedicated Session."""
+"""Durable recurring input submission to mutable Session and Thread targets."""

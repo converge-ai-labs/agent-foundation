@@ -17,6 +17,7 @@ from a13n_service.resources.memories.service import resolve_memory
 from a13n_service.resources.rows import audit_row
 from a13n_service.runs.accept import run_revision
 from a13n_service.runs.inbox import payload_size
+from a13n_service.runs.memories.mounts import mount_memories
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import lifecycle, queries, webhooks
 from a13n_service.runs.schedules.calendar import Calendar
@@ -29,12 +30,14 @@ from a13n_service.runs.schedules.schemas import (
     SchedulePreview,
     SchedulePreviewRequest,
     ScheduleRule,
+    ScheduleTarget,
     ScheduleTime,
     ScheduleUpdate,
 )
 from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.schemas import canonical_json
-from a13n_service.runs.sessions import new_session
+from a13n_service.runs.sessions import find_session, new_session, require_conversation
+from a13n_service.runs.threads import get_thread, new_thread, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize, execution_authority
 
@@ -115,6 +118,37 @@ async def validate_invocation(
         await resolve_memory(session, actor, scope, mount.memory_id, verb="run", authority=authority)
 
 
+async def resolve_target(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    target: ScheduleTarget,
+    invocation: ScheduleInvocation,
+) -> tuple[str, str | None]:
+    if target.thread_id is not None:
+        thread = await get_thread(session, scope.workspace_id, target.thread_id)
+        require_open(thread)
+        if target.session_id is not None and target.session_id != thread.session_id:
+            raise invalid("target.session_id", "thread_session_mismatch")
+        return thread.session_id, thread.id
+    if target.session_id is not None:
+        owner = await find_session(session, scope.workspace_id, target.session_id)
+        require_conversation(owner)
+    else:
+        owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
+        owner.memory = SessionMemorySettings(enabled=False).model_dump(mode="json")
+        session.add(owner)
+        await session.flush()
+    if target.mode == "new_thread":
+        return owner.id, None
+    thread = new_thread(owner, mcp_headers={})
+    session.add(thread)
+    await session.flush()
+    await mount_memories(session, thread, invocation.memories, limit=runtime.settings.memory.mounts_per_thread)
+    return owner.id, thread.id
+
+
 async def create(
     runtime: Runtime, actor: Principal, workspace_id: str, body: ScheduleCreate, *, request_key: str
 ) -> tuple[Schedule, bool]:
@@ -152,15 +186,13 @@ async def create(
         await validate_invocation(session, runtime, actor, scope, body.invocation, authority)
         current = await now(session)
         future = first_fire(body.schedule, current)
-        owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
-        owner.memory = SessionMemorySettings(enabled=False).model_dump(mode="json")
-        session.add(owner)
-        await session.flush()
+        session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, body.invocation)
         row = ScheduleRow(
             id=new_object_id("sch"),
             organization_id=scope.organization_id,
             workspace_id=scope.workspace_id,
-            session_id=owner.id,
+            session_id=session_id,
+            thread_id=thread_id,
             name=body.name,
             description=body.description,
             labels=dict(body.labels),
@@ -178,7 +210,7 @@ async def create(
             next_fire_at=future if body.state == "enabled" else None,
         )
         session.add(row)
-        audit_row(session, actor, row, "create", {"session_id": owner.id})
+        audit_row(session, actor, row, "create", {"session_id": session_id})
         await session.flush()
         if row.state == "enabled":
             await webhooks.schedule_changed(session, runtime, row, current)
@@ -206,7 +238,7 @@ async def update(
         config = ScheduleConfig.model_validate(
             {
                 **queries.view(row).model_dump(mode="json", include=set(ScheduleConfig.model_fields)),
-                **body.model_dump(mode="json", exclude_unset=True),
+                **body.model_dump(mode="json", exclude_unset=True, exclude={"target"}),
             }
         )
         await validate_invocation(session, runtime, actor, scope, config.invocation, authority)
@@ -219,6 +251,9 @@ async def update(
             "max_lateness_seconds": config.max_lateness_seconds,
             "invocation": config.invocation.model_dump(mode="json"),
         }
+        if body.target is not None:
+            session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, config.invocation)
+            values.update(session_id=session_id, thread_id=thread_id)
         changed = [name for name, value in values.items() if getattr(row, name) != value]
         if not changed:
             return queries.view(row)

@@ -30,7 +30,7 @@ At execution, accepted input distinguishes message content from a deferred-resul
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
-[Schedules](13-schedules.md#objects-and-ownership) create one fixed empty Session and new independent root Threads. Their nullable immutable Thread provenance and Session Memory restriction are owned by that contract; ordinary input and Run lifecycles remain unchanged.
+[Schedules](13-schedules.md#objects-and-ownership) select a mutable Session/Thread target, create new Threads or queue messages in a fixed Thread. Their trigger Entry and waiting/resume Run associations are owned by that contract; ordinary input and Run lifecycles remain unchanged.
 
 ## Session display identity
 

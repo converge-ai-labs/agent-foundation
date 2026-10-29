@@ -51,6 +51,7 @@ from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
 from a13n_service.runs.environments.mounts import adopt_mounts
 from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.origin import origins
 from a13n_service.runs.schemas import (
     Delivery,
     EnvironmentMount,
@@ -136,6 +137,7 @@ class ChildRuns(SubagentOperator):
             if (spawned or 0) >= settings.child_count:
                 raise conflict("run", run.id, "child_count_exceeded")
             owner = await session.get_one(SessionRow, run.session_id)
+            origin = (await origins(session, [run.id])).get(run.id) if run.occurrence_trigger_entry_id else None
             child = new_thread(
                 owner,
                 mcp_headers=run.mcp_headers,
@@ -144,7 +146,7 @@ class ChildRuns(SubagentOperator):
                 origin_run_id=run.id,
                 origin_tool_call_id=tool_call.tool_call_id,
                 subagent=request.subagent_name,
-                schedule_occurrence_id=thread.schedule_occurrence_id,
+                schedule_occurrence_id=origin.occurrence_id if origin else None,
             )
             session.add(child)
             await session.flush()

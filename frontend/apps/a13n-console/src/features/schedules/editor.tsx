@@ -133,6 +133,15 @@ function ScheduleForm({
   const [invocationBase, setInvocationBase] = useState<
     InvocationDraft | undefined
   >(schedule?.invocation);
+  const [targetMode, setTargetMode] = useState(
+    schedule?.target.mode ?? "new_thread",
+  );
+  const [targetSession, setTargetSession] = useState(
+    schedule?.target.session_id ?? "",
+  );
+  const [targetThread, setTargetThread] = useState(
+    schedule?.target.thread_id ?? "",
+  );
   const [name, setName] = useState(schedule?.name ?? "");
   const [description, setDescription] = useState(schedule?.description ?? "");
   const [enableImmediately, setEnableImmediately] = useState(false);
@@ -220,6 +229,15 @@ function ScheduleForm({
   const save = useMutation({
     mutationFn: async () => {
       const body: Schema["ScheduleCreate"] = {
+        target: {
+          mode: targetMode,
+          session_id:
+            targetMode === "thread" && targetThread.trim()
+              ? null
+              : targetSession.trim() || null,
+          thread_id:
+            targetMode === "thread" ? targetThread.trim() || null : null,
+        },
         name: name.trim(),
         description: description.trim() || null,
         schedule: timing(),
@@ -402,6 +420,43 @@ function ScheduleForm({
             onChange={(event) => setLateness(event.target.valueAsNumber)}
           />
         </FormField>
+      </FormSection>
+      <FormSection title={t("Delivery target")}>
+        <SegmentedControl
+          label={t("Thread behavior")}
+          value={targetMode}
+          onValueChange={(value) =>
+            setTargetMode(value === "thread" ? "thread" : "new_thread")
+          }
+          options={[
+            { value: "new_thread", label: t("New thread each time") },
+            { value: "thread", label: t("Reuse one thread") },
+          ]}
+        />
+        {targetMode === "thread" && (
+          <FormField
+            label={t("Thread ID (optional)")}
+            description={t("Leave empty to create a thread when saving.")}
+          >
+            <Input
+              value={targetThread}
+              onChange={(event) => setTargetThread(event.target.value)}
+            />
+          </FormField>
+        )}
+        {(targetMode === "new_thread" || !targetThread.trim()) && (
+          <FormField
+            label={t("Session ID (optional)")}
+            description={t(
+              "Leave empty to create a session with Memory disabled.",
+            )}
+          >
+            <Input
+              value={targetSession}
+              onChange={(event) => setTargetSession(event.target.value)}
+            />
+          </FormField>
+        )}
       </FormSection>
       <FormSection title={t("Invocation")}>
         <SegmentedControl

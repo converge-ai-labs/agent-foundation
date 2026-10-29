@@ -50,7 +50,7 @@ async def notify_subscribers(
     attempt: AttemptRow | None = None,
 ) -> None:
     """The last phase of a transition: stage the run's lifecycle payload for every matching subscription."""
-    origin = (await origins(session, [run.thread_id])).get(run.thread_id)
+    origin = (await origins(session, [run.id])).get(run.id) if run.occurrence_trigger_entry_id else None
     transition = lifecycle_transition(run, kinds, at=at, attempt=attempt, schedule_origin=origin)
     await stage_webhooks(
         session,

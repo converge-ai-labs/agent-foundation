@@ -89,7 +89,7 @@ async def validate_message(
     return revision, overrides
 
 
-async def _append(
+async def prepare_message(
     session: AsyncSession,
     runtime: Runtime,
     actor: Principal,
@@ -99,6 +99,7 @@ async def _append(
     request: Request | None,
     *,
     authority: ExecutionAuthority,
+    schedule_occurrence_id: str | None = None,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
     revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
@@ -110,6 +111,7 @@ async def _append(
         authority=authority,
         request=request,
         control=runtime.settings.control,
+        schedule_occurrence_id=schedule_occurrence_id,
     )
     runtime.mailbox.notify(session, entry)
     return Source.message(entry, "input", actor, revision, overrides)
@@ -172,7 +174,7 @@ async def submit_message(
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
         require_open(thread)
-        return thread, await _append(
+        return thread, await prepare_message(
             session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
         )
 
@@ -214,7 +216,17 @@ async def prepare_thread(
         await session.flush()
     await mount_environments(session, thread, body.environments, principal_id=actor.id)
     await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
-    return thread, await _append(session, runtime, actor, scope, thread, body, request, authority=authority)
+    return thread, await prepare_message(
+        session,
+        runtime,
+        actor,
+        scope,
+        thread,
+        body,
+        request,
+        authority=authority,
+        schedule_occurrence_id=schedule_occurrence_id,
+    )
 
 
 async def create_thread(
@@ -258,7 +270,7 @@ async def fork(
         await mount_environments(session, thread, [*shared, *body.environments], principal_id=actor.id)
         memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
         await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
-        return thread, await _append(
+        return thread, await prepare_message(
             session, runtime, actor, scope, thread, body, request, authority=execution_authority(actor, scope)
         )
 

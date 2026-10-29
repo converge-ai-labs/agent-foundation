@@ -484,3 +484,100 @@ async def test_retained_execution_revision_roundtrip_and_refuses_data_loss(datab
             command.downgrade(config, "82c26d512c94")
     assert rows(database, "SELECT values::text FROM thread_codeact") == [('{"saved": 42}',)]
     check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_schedule_target_migration_restores_waiting_execution_without_changing_history(
+    database, service, scripted_model, runs_kit
+):  # type: ignore[no-untyped-def]
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs.schedules import dispatch
+    from a13n_service.runs.schedules.tables import OccurrenceRow
+    from a13n_service.runs.tables import RunRow, ThreadRow
+
+    from .test_schedule_dispatch import schedule_for, trigger
+
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit, user_questions=True)
+    occurrence = await trigger(service, schedule, runs_kit)
+    await dispatch.process(service.runtime, schedule["id"])
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="migration_wait")
+    await (await runs_kit.attempt(service))
+    async with short_session(service.runtime.storage) as session:
+        item = await session.get_one(OccurrenceRow, occurrence["id"])
+        thread = await session.get_one(ThreadRow, item.thread_id)
+        waiting = await session.get_one(RunRow, thread.last_run_id)
+        assert waiting.status == "waiting"
+        entry_id = item.entry_id
+    resumed_before = await service.client.post(
+        f"{service.api}/runs/{waiting.id}/resume",
+        json={"approvals": {}, "calls": {"migration_wait": {"status": "returned", "value": {"response": "blue"}}}},
+        headers=runs_kit.fresh_key(),
+    )
+    assert resumed_before.status_code == 201, resumed_before.text
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="migration_again")
+    await (await runs_kit.attempt(service))
+    query = "SELECT id, status, version::text, updated_at::text FROM runs ORDER BY id"
+    before = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "707e22950c7f")
+    upgrade(database, OSS)
+    assert rows(database, query) == before
+    assert rows(database, "SELECT occurrence_trigger_entry_id FROM runs") == [(entry_id,), (entry_id,)]
+    assert rows(database, "SELECT schedule_occurrence_id FROM inbox_entries") == [(occurrence["id"],)]
+    resumed = await service.client.post(
+        f"{service.api}/runs/{resumed_before.json()['id']}/resume",
+        json={"approvals": {}, "calls": {"migration_again": {"status": "returned", "value": {"response": "blue"}}}},
+        headers=runs_kit.fresh_key(),
+    )
+    assert resumed.status_code == 201, resumed.text
+    scripted_model.say("After migration")
+    await (await runs_kit.attempt(service))
+    assert rows(database, "SELECT status, completion_run_id FROM schedule_occurrences") == [
+        ("completed", resumed.json()["id"])
+    ]
+
+
+@pytest.mark.anyio
+async def test_schedule_target_migration_keeps_legacy_finished_work_and_refuses_target_loss(
+    database, service, scripted_model, runs_kit, monkeypatch
+):  # type: ignore[no-untyped-def]
+    from unittest.mock import AsyncMock
+
+    from a13n_service.runs.schedules import completion, dispatch
+
+    from .test_schedule_dispatch import observed_execution, schedule_for, trigger
+
+    schedule, agent = await schedule_for(service, scripted_model, runs_kit)
+    occurrence = await trigger(service, schedule, runs_kit)
+    await dispatch.process(service.runtime, schedule["id"])
+    # Simulate execution before durable occurrence completion was introduced.
+    with monkeypatch.context() as patch:
+        patch.setattr(completion, "complete", AsyncMock())
+        scripted_model.say("Historical result")
+        await (await runs_kit.attempt(service))
+    stored = (
+        await service.client.get(f"{service.api}/schedules/{schedule['id']}/occurrences/{occurrence['id']}")
+    ).json()
+    ordinary = await runs_kit.submit(service, stored["thread_id"], runs_kit.message(agent, "Later message"))
+    assert ordinary.status_code == 201, ordinary.text
+    query = "SELECT id, status, version::text, updated_at::text FROM schedule_occurrences ORDER BY id"
+    before = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "707e22950c7f")
+    upgrade(database, OSS)
+    assert rows(database, query) == before
+    assert not (await observed_execution(service, schedule, occurrence["id"]))["has_unfinished_work"]
+    assert rows(database, "SELECT count(*)::text FROM runs WHERE occurrence_trigger_entry_id IS NOT NULL") == [("1",)]
+    changed = await service.client.patch(
+        f"{service.api}/schedules/{schedule['id']}",
+        json={"target": {"mode": "thread"}},
+        headers=runs_kit.if_match(schedule),
+    )
+    assert changed.status_code == 200, changed.text
+    with pytest.raises(DBAPIError, match="cannot downgrade while reusable or changed schedule targets exist"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "707e22950c7f")
+    check(database, OSS)
+    assert (await service.client.get(f"{service.api}/schedules/{schedule['id']}")).json()["target"] == changed.json()[
+        "target"
+    ]

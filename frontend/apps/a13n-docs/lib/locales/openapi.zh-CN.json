@@ -1,4 +1,5 @@
 {
+  "Omitted IDs create a session and, for thread mode, one empty reusable thread.": "省略 ID 时创建 session；thread 模式还会创建一个可重复使用的空 thread。",
   "Host-selected overlap policy, separate from the common compaction trigger.": "Host 选择的并行压缩策略，独立于普通压缩触发线。",
   "Explicit business headers, frozen in accepted Run options and kept out of model projections.": "显式业务请求头，冻结保存在已接受的 Run 选项中，不包含在模型可见的投影中。",
   "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.": "按需覆盖：null 表示继承；Thread PATCH 区分省略字段与 null。",
@@ -533,7 +534,7 @@
   "Dispatch Schedule": "手动触发定时任务",
   "List Schedules": "列出定时任务",
   "A Run's configured window and its latest eligible generation, when available.": "run 配置的上下文窗口，以及该 run 最近一次符合条件的模型生成用量（若有）。",
-  "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.": "通过 SSE 提供会话中的线程及其运行的实时输出：`thread`、`items`、`delta` 和 `gap` 帧。计划所属的会话还会发送 `schedule` 和 `occurrence` 状态。每个连接都从快照开始。",
+  "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state scoped to this session. Every connection starts from a snapshot.": "通过 SSE 提供会话中的线程及其运行的实时输出：`thread`、`items`、`delta` 和 `gap` 帧。还会发送属于该会话的 `schedule` 和 `occurrence` 状态。每个连接都从快照开始。",
   "Get Schedule": "获取定时任务",
   "Pause Schedule": "暂停定时任务",
   "Get Schedule Occurrence": "获取触发记录",

@@ -48,7 +48,7 @@ class OccurrenceEvent(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class Snapshot:
-    schedule: ScheduleEvent
+    schedules: list[ScheduleEvent]
     occurrences: list[OccurrenceEvent]
 
 
@@ -65,28 +65,30 @@ async def snapshots(session: AsyncSession, scopes: Sequence[Scope]) -> dict[Scop
             )
         )
     ).all()
-    if not schedules:
-        return {}
     occurrences = (
         await session.scalars(
             select(OccurrenceRow)
             .options(defer(OccurrenceRow.snapshot), defer(OccurrenceRow.authority))
-            .where(OccurrenceRow.schedule_id.in_([row.id for row in schedules]))
+            .where(
+                tuple_(OccurrenceRow.workspace_id, OccurrenceRow.session_id).in_(
+                    [(scope.workspace_id, scope.session_id) for scope in scopes]
+                )
+            )
             .order_by(OccurrenceRow.created_at, OccurrenceRow.id)
         )
     ).all()
-    grouped: dict[str, list[OccurrenceEvent]] = {row.id: [] for row in schedules}
+    result = {scope: Snapshot(schedules=[], occurrences=[]) for scope in scopes}
     for item in occurrences:
-        grouped[item.schedule_id].append(
+        result[Scope(item.workspace_id, item.session_id)].occurrences.append(
             OccurrenceEvent(
                 session_id=item.session_id,
                 schedule_id=item.schedule_id,
                 occurrence=OccurrenceSummary.model_validate(item),
             )
         )
-    return {
-        Scope(row.workspace_id, row.session_id): Snapshot(
-            schedule=ScheduleEvent(
+    for row in schedules:
+        result[Scope(row.workspace_id, row.session_id)].schedules.append(
+            ScheduleEvent(
                 session_id=row.session_id,
                 schedule_id=row.id,
                 configuration=Configuration.model_validate(
@@ -107,8 +109,6 @@ async def snapshots(session: AsyncSession, scopes: Sequence[Scope]) -> dict[Scop
                     pending_occurrence_id=row.pending_occurrence_id,
                     last_occurrence_id=row.last_occurrence_id,
                 ),
-            ),
-            occurrences=grouped[row.id],
+            )
         )
-        for row in schedules
-    }
+    return {scope: snapshot for scope, snapshot in result.items() if snapshot.schedules or snapshot.occurrences}

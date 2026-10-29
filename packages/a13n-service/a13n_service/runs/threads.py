@@ -16,6 +16,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.connections.service import validate_caller_headers
 from a13n_service.runs.history import HISTORY, MessageHistory
+from a13n_service.runs.schedules.tables import OccurrenceRow
 from a13n_service.runs.schemas import (
     McpHeaders,
     ThreadNavigation,
@@ -130,7 +131,10 @@ async def list_threads(
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)
         if occurrence_id is not None:
-            query = query.where(ThreadRow.schedule_occurrence_id == occurrence_id)
+            query = query.where(
+                (ThreadRow.schedule_occurrence_id == occurrence_id)
+                | ThreadRow.id.in_(select(OccurrenceRow.thread_id).where(OccurrenceRow.id == occurrence_id))
+            )
         if origins:
             query = query.where(ThreadRow.origin.in_(origins))
         if origin_run_id is not None:
