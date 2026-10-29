@@ -4,7 +4,6 @@ import {
   Popover,
   PopoverPopup,
   PopoverTitle,
-  PopoverDescription,
   PopoverTrigger,
   SegmentedControl,
 } from "a13n-ui";
@@ -16,6 +15,7 @@ import {
   SessionMemoryFields,
   validSpaceSelection,
 } from "../../memories/session-settings";
+import filterStyles from "../../../shared/forms/filter-popover.module.css";
 import styles from "./composer.module.css";
 
 type Settings = Schema["SessionMemorySettings"];
@@ -53,14 +53,11 @@ export function SessionMemoryControl({
         side="top"
         align="start"
         sideOffset={8}
-        className={styles.memoryPopup}
+        className={`${styles.memoryPopup} ${filterStyles.popup}`}
       >
-        <div className={styles.optionFields}>
+        <div className={filterStyles.body}>
           <header className={styles.memoryHeader}>
             <PopoverTitle>{t("Session memory")}</PopoverTitle>
-            <PopoverDescription>
-              {t("Applies only to this session.")}
-            </PopoverDescription>
           </header>
           <SegmentedControl
             label={t("Memory configuration")}

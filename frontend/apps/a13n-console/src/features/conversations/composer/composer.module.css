@@ -164,7 +164,7 @@ fieldset:disabled .chip {
 }
 .settingsPanel {
   display: grid;
-  gap: 22px;
+  gap: 24px;
   min-width: 0;
 }
 .instructionsRow {
@@ -201,9 +201,6 @@ fieldset:disabled .chip {
   gap: 8px;
 }
 @media (max-width: 480px) {
-  .settingsPanel {
-    gap: 18px;
-  }
   .settingsFooter {
     gap: 6px;
   }
@@ -271,11 +268,12 @@ fieldset:disabled .chip {
 }
 
 .memoryPopup {
-  width: min(460px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 24px));
 }
-.memoryHeader {
-  display: grid;
-  gap: 8px;
+.memoryHeader [data-slot="popover-title"] {
+  font-size: var(--a13n-text-lg);
+  font-weight: 500;
+  line-height: 1.4;
 }
 .memoryModes {
   width: 100%;

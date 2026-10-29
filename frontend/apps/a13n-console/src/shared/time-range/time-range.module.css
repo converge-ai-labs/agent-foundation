@@ -1,5 +1,7 @@
 /* Reads like the filter selects beside it: muted label, regular-weight value. */
 .trigger {
+  min-width: 0;
+  max-width: 100%;
   justify-content: flex-start;
   font-weight: 400;
 }
@@ -8,59 +10,23 @@
   color: var(--a13n-secondary);
 }
 .triggerLabel {
+  flex-shrink: 0;
   color: var(--a13n-secondary);
 }
 .triggerValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 .popup {
   width: min(352px, calc(100vw - 24px));
-}
-.body {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-/* Presets read as one segmented track; the applied window is lifted. */
-.presets {
-  display: grid;
-  grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
-}
-.presets button {
-  font-weight: 400;
-  color: var(--a13n-secondary);
-}
-.presets button[data-active] {
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-  color: var(--a13n-text);
-}
-.fields {
-  display: grid;
-  gap: 12px;
-}
-.fields [data-slot="popover-trigger"] {
-  width: 100%;
 }
 .error {
   margin: 0;
   color: var(--a13n-danger);
   font-size: var(--a13n-text-xs);
   line-height: 1.5;
-}
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
 }
 .spinning {
   animation: spin 800ms linear infinite;

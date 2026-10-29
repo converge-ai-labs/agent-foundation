@@ -1,0 +1,70 @@
+/* Shared anatomy for small, transient filter forms. */
+.popup [data-slot="popover-viewport"] {
+  padding: 12px;
+}
+.body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.dates {
+  container-type: inline-size;
+  display: grid;
+  gap: 12px;
+}
+.dates > [data-slot="field"] {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.dates [data-slot="popover-trigger"] {
+  width: 100%;
+  min-width: 0;
+  font-size: var(--a13n-text-sm);
+}
+@container (width < 310px) {
+  .dates > [data-slot="field"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+}
+.presets {
+  display: grid;
+  grid-template-columns: repeat(var(--columns, 3), minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.presets button {
+  height: 28px;
+  min-width: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  color: var(--a13n-secondary);
+}
+.presets button[data-active] {
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  color: var(--a13n-text);
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.footer button {
+  height: 28px;
+  font-size: var(--a13n-text-sm);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}

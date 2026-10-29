@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { DateTimeField } from "../forms";
 import { formatLocalDateTime, parseLocalDateTime } from "../local-date-time";
 import styles from "./time-range.module.css";
+import filterStyles from "../forms/filter-popover.module.css";
 
 /** A trailing window that ends now, in seconds, or a fixed range. */
 export type RangeSelection = { preset: number } | { start: Date; end: Date };
@@ -149,11 +150,11 @@ export function TimeRangePicker({
       <PopoverPopup
         aria-label={t("Time range")}
         align="start"
-        className={styles.popup}
+        className={`${styles.popup} ${filterStyles.popup}`}
       >
-        <div className={styles.body}>
+        <div className={filterStyles.body}>
           <div
-            className={styles.presets}
+            className={filterStyles.presets}
             style={
               { "--columns": Math.min(presets.length, 3) } as CSSProperties
             }
@@ -180,7 +181,7 @@ export function TimeRangePicker({
               );
             })}
           </div>
-          <div className={styles.fields}>
+          <div className={filterStyles.dates}>
             <DateTimeField
               label={t("Start time")}
               value={startText}
@@ -205,10 +206,11 @@ export function TimeRangePicker({
               {error}
             </p>
           )}
-          <div className={styles.footer}>
+          <div className={filterStyles.footer}>
             <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
             <Button
               size="sm"
+              variant="outline"
               type="button"
               disabled={!!error}
               onClick={() => {

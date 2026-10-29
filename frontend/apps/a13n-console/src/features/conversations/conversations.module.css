@@ -317,49 +317,11 @@ a.agentLink:focus-visible {
 .updatedPopup {
   width: min(22rem, calc(100vw - 32px));
 }
-.updatedBody {
-  display: grid;
-  gap: 16px;
-}
-.presets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
-}
-.presets button {
-  font-weight: 400;
-}
-.updatedFields {
-  display: grid;
-  gap: 14px;
-}
-.updatedFields [data-slot="popover-trigger"] {
-  width: 100%;
-}
 .updatedError {
   margin: 0;
   color: var(--a13n-danger);
   font-size: var(--a13n-text-xs);
 }
-.updatedFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-}
-.updatedActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 @media (max-width: 1024px) {
   .sessionHeader {
     padding-inline: 12px;

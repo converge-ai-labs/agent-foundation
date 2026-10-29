@@ -3,6 +3,7 @@ import { SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react";
 import Decimal from "decimal.js-light";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import filterStyles from "../../shared/forms/filter-popover.module.css";
 import styles from "./list.module.css";
 
 export type NumericRange = { min: string; max: string };
@@ -54,11 +55,11 @@ export function MetricFilter({
       </PopoverTrigger>
       <PopoverPopup
         align="start"
-        className={styles.metricPopup}
+        className={`${styles.metricPopup} ${filterStyles.popup}`}
         aria-label={t("Duration and cost")}
       >
         <form
-          className={styles.metricForm}
+          className={filterStyles.body}
           onSubmit={(event) => {
             event.preventDefault();
             const invalid = metrics.find((metric) => {
@@ -77,7 +78,6 @@ export function MetricFilter({
             setOpen(false);
           }}
         >
-          <div className={styles.metricTitle}>{t("Duration and cost")}</div>
           {metrics.map((metric) => {
             const label = metric === "duration" ? "Duration" : "Cost";
             return (
@@ -120,7 +120,7 @@ export function MetricFilter({
               </fieldset>
             );
           })}
-          <div className={styles.popoverFooter}>
+          <div className={filterStyles.footer}>
             <Button
               type="button"
               variant="ghost"
@@ -132,7 +132,7 @@ export function MetricFilter({
             >
               {t("Reset")}
             </Button>
-            <div className={styles.metricActions}>
+            <div className={filterStyles.actions}>
               <Button
                 type="button"
                 variant="ghost"
@@ -141,7 +141,7 @@ export function MetricFilter({
               >
                 {t("Cancel")}
               </Button>
-              <Button type="submit" size="sm">
+              <Button type="submit" size="sm" variant="outline">
                 {t("Apply")}
               </Button>
             </div>

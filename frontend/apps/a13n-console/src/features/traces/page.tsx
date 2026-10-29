@@ -44,6 +44,7 @@ import {
   MetricFilterSummary,
   type NumericRange,
 } from "./range-filter";
+import filterStyles from "../../shared/forms/filter-popover.module.css";
 import styles from "./list.module.css";
 
 const DAY = 86_400;
@@ -351,7 +352,7 @@ function MetadataFilter({
       <PopoverPopup
         aria-label={t("Metadata")}
         align="start"
-        className={styles.metadataPopup}
+        className={`${styles.metadataPopup} ${filterStyles.popup}`}
       >
         <div className={styles.filterPopover}>
           <div className={styles.metadataRows}>
@@ -404,7 +405,7 @@ function MetadataFilter({
               );
             })}
           </div>
-          <div className={styles.popoverFooter}>
+          <div className={`${filterStyles.footer} ${styles.metadataFooter}`}>
             <Button
               type="button"
               variant="ghost"
