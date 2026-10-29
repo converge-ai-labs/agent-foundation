@@ -356,8 +356,15 @@ it("adds files through the new-tab picker in one strip and closes views without 
     screen.getByRole("button", { name: "Close tab: second.txt" }),
   );
   expect(screen.getByText("Editor /native/first.txt")).toBe(editor);
+  expect(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Close tab: first.txt · Unsaved" }),
+  );
+  expect(screen.queryByRole("tablist", { name: "Workspace views" })).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open supporting panel" }),
   );
   expect(
     screen.getByRole("tab", { name: "New tab", selected: true }),
@@ -366,6 +373,55 @@ it("adds files through the new-tab picker in one strip and closes views without 
   expect(buffers.get("/native/first.txt")).toBe(dirty);
   expect(screen.getByTestId("chat")).toBe(conversation);
   expect(screen.getByLabelText("Private draft")).toBe(draft);
+});
+
+it.each(["sidebar", "tabs"])(
+  "closing the last blank tab collapses the %s layout and returns focus to Chat",
+  async (layout) => {
+    localStorage.setItem("a13n-harness-ui.native-layout", layout);
+    const { focus } = setup("/threads/current");
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Close tab: New tab" })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "New tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close tab: New tab" }));
+    expect(
+      screen.queryByRole("tablist", { name: "Workspace views" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open supporting panel" }),
+    ).toBeTruthy();
+    const chat = screen.getByTestId("chat");
+    expect(chat.closest("[hidden]")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement?.contains(chat)).toBe(true),
+    );
+    expect(focus).toHaveBeenLastCalledWith(null);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open supporting panel" }),
+    );
+    expect(
+      screen.getByRole("tab", { name: "New tab", selected: true }),
+    ).toBeTruthy();
+  },
+);
+
+it("closing an active tab selects its neighbor without collapsing the panel", async () => {
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close tab: New tab" }));
+  expect(
+    screen.getByRole("tab", { name: "first.txt", selected: true }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Close supporting panel" }),
+  ).toBeTruthy();
+  expect(screen.getByText("Editor /native/first.txt")).toBeTruthy();
 });
 
 it("opening a new tab cancels a pending file open and its late response cannot replace the picker", async () => {

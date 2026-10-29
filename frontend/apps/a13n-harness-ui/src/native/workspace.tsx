@@ -448,6 +448,15 @@ export function NativeWorkspace({
   const closeTab = (id: string) => {
     const action = { type: "close" as const, id, emptyId: nextTabId() };
     const next = workspaceTabs(tabs, action);
+    if (tabs.items.length === 1) {
+      animateLayout(() => {
+        dispatchTabs(action);
+        applyTab(next.items[0]!);
+        setSidebarCollapsed(true);
+        focusCenter();
+      }, "panel-close");
+      return;
+    }
     dispatchTabs(action);
     if (tabs.active === id) {
       applyTab(next.items.find((tab) => tab.id === next.active)!);
