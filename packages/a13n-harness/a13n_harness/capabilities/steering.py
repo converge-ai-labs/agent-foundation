@@ -396,7 +396,7 @@ def _request_for_input(
     metadata = {_SOURCE_RUN_METADATA_KEY: source_run_id}
     if input_id is not None:
         metadata[_INPUT_ID_METADATA_KEY] = input_id
-    from a13n_harness._emergency import mark_input
+    from a13n_harness._context_recovery import mark_input
     from a13n_harness.content import annotate_prompt, content_items
 
     content = deepcopy(input)

@@ -473,14 +473,7 @@ def _construct_capability(
     if capability_type is WorkingStateCapability:
         return WorkingStateCapability(WorkingStateConfiguration.model_validate(configuration))
     if capability_type is CompactionCapability:
-        policy_configuration = dict(configuration)
-        emergency_handoff = policy_configuration.pop("emergency_handoff", True)
-        if not isinstance(emergency_handoff, bool):
-            raise ValueError("compaction emergency_handoff must be a boolean")
-        return CompactionCapability(
-            CompactionPolicy.model_validate(policy_configuration) if policy_configuration else None,
-            emergency_handoff=emergency_handoff,
-        )
+        return CompactionCapability(CompactionPolicy.model_validate(configuration) if configuration else None)
     if capability_type is FileContextCapability:
         file_configuration: dict[str, Any] = dict(configuration)
         if isinstance(file_configuration.get("paths"), list):

@@ -983,3 +983,51 @@ async def test_restored_tool_result_continuation_preserves_read_conflicts() -> N
     assert "derived.md" not in store.files
     assert len(resumed.calls) == 2
     assert "read_conflict" in str(resumed.calls[-1])
+
+
+@pytest.mark.parametrize("proactive", [False, True])
+async def test_failed_overflow_compaction_does_not_retry_memory_projection(proactive: bool) -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    calls: list[str] = []
+
+    def reply(messages: list[ModelMessage]) -> str:
+        if _COMPACTION_PROMPT in _texts(messages):
+            calls.append("summary")
+            raise ValueError("summary failed")
+        calls.append("primary")
+        raise ModelContextWindowExceededError("test", "too large")
+
+    model = _Model(reply)
+    store = FakeFileStore({"a.md": "a\n"})
+    memory = FileMemoryCapability([FileMount("user", store, "write")], cursors=MemoryCursors())
+    executable = _build(model, memory, *([CompactionCapability()] if proactive else []))
+    result = await executable.run("hi")
+
+    assert result.status == "failed"
+    assert calls == ["primary", "summary"]
+    assert result.usage.requests == 2
+    assert _blocks(model.calls[0])
+    assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is None
+
+
+async def test_default_context_recovery_resets_memory_projection() -> None:
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    store = FakeFileStore({"a.md": "a\n"})
+    cursors = MemoryCursors()
+
+    def reply(messages):
+        if len(model.calls) <= 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        return "done"
+
+    model = _Model(reply)
+    executable = _build(model, FileMemoryCapability([FileMount("user", store, "write")], cursors=cursors))
+    result = await executable.run("hi")
+    assert result.output_or_raise() == "done"
+    assert len(model.calls) == 3
+    assert cursors.snapshot() == {"user": None}
+    await executable.run("again", previous_state=result.state)
+    assert 'kind="full"' in _blocks(model.calls[-1])[-1]

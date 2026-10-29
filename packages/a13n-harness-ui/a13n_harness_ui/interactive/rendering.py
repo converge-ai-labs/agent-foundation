@@ -1387,10 +1387,10 @@ class StreamRenderer:
                             self.finish()
                             label = f" · {identity}" if child else ""
                             self.append(f"[System{label}] Retrying model request…\n", kind="notice")
-                    elif isinstance(recovery, dict) and recovery.get("type") == "emergency_handoff":
+                    elif isinstance(recovery, dict) and recovery.get("type") == "context_recovery":
                         self.finish()
                         label = f" · {terminal_text(identity)}" if child else ""
-                        warning = terminal_text(str(recovery.get("warning", "Emergency context handoff")))
+                        warning = terminal_text(str(recovery.get("warning", "Context recovery")))
                         outcome = terminal_text(str(recovery.get("outcome", "unknown")))
                         self.append(f"[Warning{label}] {warning} Outcome: {outcome}.\n", kind="notice")
                     return

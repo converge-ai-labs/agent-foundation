@@ -11,7 +11,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
-from a13n_harness._emergency import mark_input
+from a13n_harness._context_recovery import mark_input
 from a13n_harness.content import annotate_prompt
 from a13n_harness.context import AgentContext
 from a13n_harness.events import input_events

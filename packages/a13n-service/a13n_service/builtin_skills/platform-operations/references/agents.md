@@ -27,7 +27,7 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 `background_compaction` belongs to the Agent Revision and defaults to `{enabled: false, blocking_threshold: 0.95}`. Enable it for background summaries on ordinary threads. Inline and asynchronous children compact synchronously. The blocking threshold accepts values greater than zero and at most one; counted input at or above this share of the context window waits for existing work or compacts synchronously if none exists. Output reserve can require blocking earlier. The common compaction trigger remains independent. Disabling generation preserves delivery of retained results.
 
-`emergency_handoff` defaults to true, independently of background generation and the compaction threshold. If both the ordinary and applicable summary requests exceed the context window, it permits one bounded history reconstruction per logical Run, including across Worker takeover. Set it to false in the complete AgentConfig to opt out. Every trigger requires immediate investigation of compaction configuration and unbounded tool output, even when the Run completes. History retention is best effort and follows the selected Environment's lifetime.
+Context recovery is enabled by the Host runtime independently of background generation and the compaction threshold. If both the ordinary and applicable summary requests exceed the context window, it permits one bounded history reconstruction per logical Run, including across Worker takeover. Every trigger requires immediate investigation of compaction configuration and unbounded tool output, even when the Run completes. History retention is best effort and follows the selected Environment's lifetime.
 
 ## Configure tool discovery
 

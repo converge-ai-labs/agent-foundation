@@ -215,20 +215,11 @@ A completed summary is saved before use, then applied at a safe model boundary o
 
 Cleanup runs at startup and hourly. Processed summaries are marked with the saved checkpoint before removal; unused work expires after seven days, protecting active Runs/requests and preserving conversation history. Embedded Apps can change `StorageSettings.compaction_retention_seconds`. Disabling background mode affects later Runs; saved unexpired summaries remain usable and Model budgets stay unchanged.
 
-### Emergency handoff
+### Context recovery
 
 If ordinary execution and normal compaction both exceed the Model window, Harness UI attempts one bounded, lossy continuation. A warning remains visible after success. Investigate every trigger immediately, starting with compaction configuration and unbounded tool output. History is saved best effort under the Thread's `history/` directory, outside scratch cleanup; missing files never block reconstruction.
 
-To opt out, set this on the Agent's `compaction` Capability; no explicit token threshold is required:
-
-```yaml
-capabilities:
-  - capability: compaction
-    configuration:
-      emergency_handoff: false
-```
-
-This setting applies in both synchronous and background mode. Usage and request limits still apply. A second overflow after reconstruction ends the Run rather than looping.
+Context recovery is enabled for roots and children even without the `compaction` Capability. It is runtime behavior, not an Agent YAML setting. Usage and request limits still apply. A second overflow after reconstruction ends the Run rather than looping.
 
 ### File memory
 

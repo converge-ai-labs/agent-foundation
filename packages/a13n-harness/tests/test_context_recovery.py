@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 
 import pytest
-from a13n_harness import HarnessBuilder, RunBindings
-from a13n_harness._emergency import DEFAULT_HANDOFF_CHARS, WARNING, mark_input, reconstruct
+from a13n_harness import ContextRecoveryPolicy, HarnessBuilder, RunBindings
+from a13n_harness._context_recovery import DEFAULT_RECOVERY_CHARS, WARNING, mark_input, reconstruct
 from a13n_harness.capabilities.context import CompactionCapability
 from a13n_harness.content import content_items, input_request, merge_request_history
 from pydantic_ai.agent.spec import AgentSpec
@@ -51,7 +51,7 @@ def test_reconstruction_preserves_order_roles_and_merged_provenance() -> None:
     assert not any(isinstance(part, ToolCallPart | ToolReturnPart) for part in request.parts)
 
 
-@pytest.mark.parametrize("budget", [2048, 4096, DEFAULT_HANDOFF_CHARS])
+@pytest.mark.parametrize("budget", [2048, 4096, DEFAULT_RECOVERY_CHARS])
 def test_reconstruction_total_budget_and_huge_inputs(budget: int) -> None:
     messages = [
         input_request(mark_input(content_items("task " * 100_000), kind="task", run_id="run")),
@@ -69,7 +69,8 @@ def test_reconstruction_total_budget_and_huge_inputs(budget: int) -> None:
 
 
 @pytest.mark.anyio
-async def test_primary_then_summary_overflow_resumes_without_transient_retry() -> None:
+@pytest.mark.parametrize("proactive", [False, True])
+async def test_primary_then_summary_overflow_resumes_without_transient_retry(proactive: bool) -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -86,7 +87,7 @@ async def test_primary_then_summary_overflow_resumes_without_transient_retry() -
         AgentSpec(),
         output_type=str,
         model=FunctionModel(function=summary, stream_function=stream),
-        capabilities=[CompactionCapability()],
+        capabilities=[CompactionCapability()] if proactive else [],
     )
     result = await executable.run("finish the task", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "resumed"
@@ -98,7 +99,7 @@ async def test_primary_then_summary_overflow_resumes_without_transient_retry() -
 
 @pytest.mark.anyio
 async def test_second_overflow_is_terminal_and_allowance_survives_host_takeover() -> None:
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
 
     calls = 0
 
@@ -119,19 +120,19 @@ async def test_second_overflow_is_terminal_and_allowance_survives_host_takeover(
         model=FunctionModel(function=summary, stream_function=stream),
         capabilities=[CompactionCapability()],
     )
-    bindings = RunBindings.embedded(emergency_scope_id="host-logical-run")
+    bindings = RunBindings.embedded(context_recovery_scope_id="host-logical-run")
     first = await executable.run("huge task", bindings=bindings)
-    assert first.failure is not None and first.failure.code == "emergency_handoff_exhausted"
+    assert first.failure is not None and first.failure.code == "context_recovery_exhausted"
     assert calls == 3
-    assert first.state.agent_context_state.get(EMERGENCY_STATE_ID) is not None
+    assert first.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is not None
     second = await executable.run(None, previous_state=first.state, bindings=bindings)
-    assert second.failure is not None and second.failure.code == "emergency_handoff_exhausted"
+    assert second.failure is not None and second.failure.code == "context_recovery_exhausted"
     assert calls == 4  # Neither a new summary nor another emergency reconstruction.
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("enabled", [True, False])
-async def test_emergency_requires_native_summary_overflow_and_explicit_enable(enabled: bool) -> None:
+async def test_context_recovery_requires_native_summary_overflow_and_explicit_enable(enabled: bool) -> None:
     calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -151,19 +152,19 @@ async def test_emergency_requires_native_summary_overflow_and_explicit_enable(en
         AgentSpec(),
         output_type=str,
         model=FunctionModel(function=summary, stream_function=stream),
-        capabilities=[CompactionCapability(emergency_handoff=enabled)],
+        context_recovery=ContextRecoveryPolicy(enabled=enabled),
     )
     result = await executable.run("task", bindings=RunBindings.embedded())
     assert result.status == "failed"
     assert calls == (2 if enabled else 1)
-    assert "Emergency handoff" not in str(result.state)
+    assert "Context recovery" not in str(result.state)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("primary_overflows", [False, True])
 async def test_summary_first_failure_is_reused_only_when_primary_overflows(primary_overflows: bool) -> None:
     from a13n_harness import HarnessState
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from a13n_harness.capabilities.context import _COMPACTION_PROMPT, CompactionPolicy
     from pydantic_ai.messages import UserPromptPart
     from pydantic_ai.usage import RequestUsage
@@ -194,14 +195,14 @@ async def test_summary_first_failure_is_reused_only_when_primary_overflows(prima
     result = await executable.run("continue", previous_state=previous)
     assert result.output_or_raise() == "done"
     assert calls == (["summary", "primary", "primary"] if primary_overflows else ["summary", "primary"])
-    assert (result.state.agent_context_state.get(EMERGENCY_STATE_ID) is not None) is primary_overflows
+    assert (result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is not None) is primary_overflows
 
 
 @pytest.mark.anyio
 async def test_completed_tools_are_not_replayed_and_detachment_survives_next_run() -> None:
     from contextlib import asynccontextmanager
 
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from pydantic_ai.capabilities import Capability
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -242,7 +243,7 @@ async def test_completed_tools_are_not_replayed_and_detachment_survives_next_run
     first = await executable.run("task")
     assert first.output_or_raise() == "done"
     assert executions == ["work", "work"]
-    assert first.state.agent_context_state.get(EMERGENCY_STATE_ID).data["outcome"] == "resumed"
+    assert first.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID).data["outcome"] == "resumed"
     second = (
         await HarnessBuilder().build(AgentSpec(), output_type=str, model=model).run("next", previous_state=first.state)
     )
@@ -270,7 +271,7 @@ async def test_completed_tools_are_not_replayed_and_detachment_survives_next_run
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("limit", [1, 2, 3])
-async def test_emergency_shares_request_limit(limit: int) -> None:
+async def test_context_recovery_shares_request_limit(limit: int) -> None:
     from pydantic_ai.usage import UsageLimits
 
     calls = 0
@@ -356,15 +357,18 @@ async def test_retained_history_is_readable_after_run_and_failures_do_not_block(
         text, bindings=RunBindings.embedded(environment=environment, retained_history_directory="/workspace/history")
     )
     assert result.output_or_raise() == "done"
-    assert "Emergency handoff" in str(calls[2])
-    if storage == "readable":
+    assert "Context recovery" in str(calls[2])
+    if storage in {"readable", "too-large"}:
         retained = next((tmp_path / "history").iterdir())
         content = retained.read_text()
         assert "original evidence" in content
         assert max(map(len, content.splitlines())) <= 1002
         assert "Historical evidence" in content
-        returns = [p for m in calls[3] for p in m.parts if isinstance(p, ToolReturnPart)]
-        assert returns and "original evidence" in str(returns[-1].content)
+        if storage == "readable":
+            returns = [p for m in calls[3] for p in m.parts if isinstance(p, ToolReturnPart)]
+            assert returns and "original evidence" in str(returns[-1].content)
+        else:
+            assert retained.stat().st_size > 10 * 1024 * 1024
     else:
         assert "Retained original history:" not in str(calls[2])
         assert "History preservation:" in str(calls[2])
@@ -382,3 +386,90 @@ def test_media_loss_and_unknown_provenance_are_explicit() -> None:
     assert "payload_omitted" in rebuilt.prompt
     assert "legacy task" in rebuilt.prompt
     assert "Latest task-start input" not in rebuilt.prompt
+
+
+@pytest.mark.anyio
+async def test_default_recovery_first_uses_successful_normal_compaction() -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+
+    calls = []
+
+    async def stream(messages, info):
+        calls.append(deepcopy(messages))
+        if len(calls) == 1:
+            raise ModelContextWindowExceededError("test", "too large")
+        if len(calls) == 2:
+            yield "Semantic summary of unfinished work"
+        else:
+            yield "done"
+
+    result = (
+        await HarnessBuilder()
+        .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
+        .run("task")
+    )
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 3
+    assert "Semantic summary of unfinished work" in str(calls[-1])
+    assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_recovery_policy_controls_default_runtime(enabled, monkeypatch) -> None:
+    import a13n_harness._context_recovery as recovery
+
+    async def unexpected_preservation(*args, **kwargs):
+        raise AssertionError("preservation is disabled")
+
+    monkeypatch.setattr(recovery, "preserve_history", unexpected_preservation)
+    calls = []
+
+    async def stream(messages, info):
+        calls.append(deepcopy(messages))
+        if len(calls) <= 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        yield "done"
+
+    policy = ContextRecoveryPolicy(enabled=enabled, max_history_chars=3000, preserve_history=False)
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream), context_recovery=policy
+    )
+    result = await executable.run("task" * 5000)
+    if enabled:
+        assert result.output_or_raise() == "done"
+        state = result.state.agent_context_state.get(recovery.CONTEXT_RECOVERY_STATE_ID)
+        assert state is not None and isinstance(state.data, dict)
+        assert state.data["after_chars"] <= 3000
+        assert state.data["preservation"] == "disabled by context recovery policy"
+    else:
+        assert result.status == "failed"
+        assert len(calls) == 1
+
+
+def test_recovery_policy_rejects_unusable_budget() -> None:
+    with pytest.raises(ValueError, match="max_history_chars"):
+        ContextRecoveryPolicy(max_history_chars=2047)
+
+
+@pytest.mark.anyio
+async def test_cancellation_during_preservation_propagates(monkeypatch) -> None:
+    import asyncio
+
+    import a13n_harness._context_recovery as recovery
+
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(recovery, "preserve_history", cancelled)
+
+    async def stream(messages, info):
+        raise ModelContextWindowExceededError("test", "too large")
+        yield "unreachable"
+
+    with pytest.raises(asyncio.CancelledError):
+        await (
+            HarnessBuilder()
+            .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
+            .run("task")
+        )

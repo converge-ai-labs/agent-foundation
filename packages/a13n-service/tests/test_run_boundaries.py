@@ -211,26 +211,26 @@ async def test_handoff_keeps_model_cut_when_tool_checkpoint_is_already_queued(
 
 
 @pytest.mark.parametrize("fail_commit", [False, True])
-async def test_emergency_replacement_must_commit_before_resume(fail_commit):
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+async def test_context_recovery_replacement_must_commit_before_resume(fail_commit):
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from a13n_harness.capabilities import CompactionCapability
     from pydantic_ai.exceptions import ModelContextWindowExceededError
 
     boundaries = Boundaries(lambda: {})
     fold = DisplayFold("host-run", Tail(), attempt=1, page_items=20, page_bytes=65536)
     boundaries.freeze_display = lambda _: fold.snapshot()
-    staged_emergency = asyncio.Event()
+    staged_context_recovery = asyncio.Event()
     release_commit = asyncio.Event()
     cuts = []
     calls = 0
 
     async def commit(staged):
         cuts.append(staged)
-        marker = staged.state.agent_context_state.get(EMERGENCY_STATE_ID)
+        marker = staged.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
         if marker is not None:
             assert marker.data["scope_id"] == "host-run"
-            assert "Emergency handoff" in str(staged.state.message_history)
-            staged_emergency.set()
+            assert "Context recovery" in str(staged.state.message_history)
+            staged_context_recovery.set()
             await release_commit.wait()
             if fail_commit:
                 raise RuntimeError("lost checkpoint fence")
@@ -252,7 +252,9 @@ async def test_emergency_replacement_must_commit_before_resume(fail_commit):
     )
 
     async def run():
-        async with executable.stream("task", bindings=RunBindings.embedded(emergency_scope_id="host-run")) as stream:
+        async with executable.stream(
+            "task", bindings=RunBindings.embedded(context_recovery_scope_id="host-run")
+        ) as stream:
             async with boundaries.process(commit):
                 async for _ in stream:
                     pass
@@ -261,7 +263,7 @@ async def test_emergency_replacement_must_commit_before_resume(fail_commit):
 
     async with asyncio.timeout(5):
         task = asyncio.create_task(run())
-        await staged_emergency.wait()
+        await staged_context_recovery.wait()
         await asyncio.sleep(0)
         assert calls == 2
         release_commit.set()
@@ -276,10 +278,10 @@ async def test_emergency_replacement_must_commit_before_resume(fail_commit):
 
 
 @pytest.mark.parametrize("overflow_after_takeover", [False, True])
-async def test_emergency_checkpoint_survives_worker_takeover(
+async def test_context_recovery_checkpoint_survives_worker_takeover(
     skill_service, scripted_model, runs_kit, monkeypatch, overflow_after_takeover
 ):
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from a13n_service.infra.db import short_session
     from a13n_service.runs.checkpoints import StatePointer, load_state
     from a13n_service.runs.execute import _Attempt
@@ -301,17 +303,17 @@ async def test_emergency_checkpoint_survives_worker_takeover(
             raise ModelContextWindowExceededError("test", "too large")
         return await create(self, messages, *args, **kwargs)
 
-    async def yield_after_emergency_commit(self, state, **kwargs):
+    async def yield_after_context_recovery_commit(self, state, **kwargs):
         nonlocal yielded
         result = await commit(self, state, **kwargs)
-        marker = state.agent_context_state.get(EMERGENCY_STATE_ID)
+        marker = state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
         if marker is not None and marker.data["pending"] and not yielded:
             yielded = True
             self.control.handoff.set()
         return result
 
     monkeypatch.setattr(OpenAIChatModel, "_completions_create", overflowing)
-    monkeypatch.setattr(_Attempt, "_commit", yield_after_emergency_commit)
+    monkeypatch.setattr(_Attempt, "_commit", yield_after_context_recovery_commit)
     async with asyncio.timeout(20):
         await (await runs_kit.attempt(service))
     assert yielded and len(calls) == 2
@@ -320,7 +322,7 @@ async def test_emergency_checkpoint_survives_worker_takeover(
         pointer = StatePointer.model_validate((await session.get_one(RunRow, run_id)).checkpoint)
     saved = await load_state(service.runtime.objects, pointer)
     assert saved is not None
-    marker = saved.harness.agent_context_state.get(EMERGENCY_STATE_ID)
+    marker = saved.harness.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
     assert marker is not None
     assert marker.data["scope_id"] == run_id and marker.data["pending"] is True
     assert "retain this task" in str(saved.harness.message_history)
@@ -335,7 +337,7 @@ async def test_emergency_checkpoint_survives_worker_takeover(
     assert final["attempts"] == 1
     assert final["status"] == ("failed" if overflow_after_takeover else "completed")
     assert len(calls) == 3
-    assert "Emergency handoff" in str(calls[-1])
+    assert "Context recovery" in str(calls[-1])
     assert "retain this task" in str(calls[-1])
     if overflow_after_takeover:
-        assert "emergency_handoff_exhausted" in str(final)
+        assert "context_recovery_exhausted" in str(final)

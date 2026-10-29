@@ -42,7 +42,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._capability_contract import _validate_capability_source
-from a13n_harness._emergency import EMERGENCY_STATE_ID, EmergencyState, record_outcome
+from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, record_outcome
 from a13n_harness._output_contract import _business_output_contains_deferred_value
 from a13n_harness.capabilities.context import HANDOFF_CAPABILITY_ID
 from a13n_harness.capabilities.producer import ProducerCaptureCapability
@@ -640,7 +640,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             working_state_observer=bindings.working_state_observer,
             client_toolsets=bindings.client_toolsets,
             tool_result_directory=bindings.tool_result_directory,
-            emergency_scope_id=bindings.emergency_scope_id,
+            context_recovery_scope_id=bindings.context_recovery_scope_id,
             retained_history_directory=bindings.retained_history_directory,
             _capability_provenance=_CapabilityProvenance(
                 definition_ids=self._executable._definition_reserved_capability_ids,
@@ -1304,11 +1304,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
         recovery = exchange.context._model_recovery
-        emergency = await exchange.context.state.read(EMERGENCY_STATE_ID, EmergencyState, version="1")
-        recovery.emergency_pending = bool(
-            emergency is not None
-            and emergency.scope_id == (exchange.context.emergency_scope_id or self.run_id)
-            and emergency.pending
+        context_recovery = await exchange.context.state.read(
+            CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1"
+        )
+        recovery.context_recovery_pending = bool(
+            context_recovery is not None
+            and context_recovery.scope_id == (exchange.context.context_recovery_scope_id or self.run_id)
+            and context_recovery.pending
         )
         tool_recovery = exchange.context._tool_recovery
         current_history = tool_recovery.messages if tool_recovery is not None else self._initial_history
@@ -1476,14 +1478,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             continue
 
                         if isinstance(error, ModelContextWindowExceededError):
-                            marker = await exchange.context.state.read(EMERGENCY_STATE_ID, EmergencyState, version="1")
+                            marker = await exchange.context.state.read(
+                                CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1"
+                            )
                             if marker is not None and marker.scope_id == (
-                                exchange.context.emergency_scope_id or self.run_id
+                                exchange.context.context_recovery_scope_id or self.run_id
                             ):
                                 await record_outcome(exchange.context, "overflow")
                                 yield await self._failed_candidate(
-                                    code="emergency_handoff_exhausted",
-                                    message="The model still exceeded its context window after emergency handoff. Immediate investigation is required.",
+                                    code="context_recovery_exhausted",
+                                    message="The model still exceeded its context window after context recovery. Immediate investigation is required.",
                                     details={**marker.diagnostic, "outcome": "overflow"},
                                     retry_hint="dependency_change",
                                 )

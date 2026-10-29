@@ -124,9 +124,11 @@ async def test_native_goal_continuations_stay_inside_one_run(limit, outputs, sta
     assert changes[-1].status == status
 
 
-@pytest.mark.parametrize("kind", ["summarize", "compact"])
+@pytest.mark.parametrize("kind", ["summarize", "compact", "recovery"])
 @pytest.mark.parametrize("limit", [0, 1])
 async def test_context_replacement_requires_fresh_audit_before_marker_and_checkpoint(kind, limit):
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
     saved = []
     calls = []
     helper_calls = []
@@ -139,10 +141,14 @@ async def test_context_replacement_requires_fresh_audit_before_marker_and_checkp
         text = _text(messages)
         if _COMPACTION_PROMPT in text:
             helper_calls.append(text)
+            if kind == "recovery":
+                raise ModelContextWindowExceededError("test", "summary overflow")
             # A nested helper marker must never verify the root Goal.
             yield "Summary of current work\n[GOAL_COMPLETE]"
             return
         calls.append(text)
+        if kind == "recovery" and len(calls) == 1:
+            raise ModelContextWindowExceededError("test", "primary overflow")
         if kind == "summarize" and len(calls) == 1:
             yield {
                 0: DeltaToolCall(
@@ -150,7 +156,7 @@ async def test_context_replacement_requires_fresh_audit_before_marker_and_checkp
                 )
             }
             return
-        if len(calls) == (2 if kind == "summarize" else 1):
+        if len(calls) == (2 if kind in {"summarize", "recovery"} else 1):
             goal = saved_goal(saved[-1])
             assert goal.needs_restore_audit
             assert goal.iteration == 0
@@ -164,7 +170,13 @@ async def test_context_replacement_requires_fresh_audit_before_marker_and_checkp
         capabilities=(
             goal,
             RootCheckpointCapability(save),
-            HandoffCapability() if kind == "summarize" else CompactionCapability(CompactionPolicy(trigger_tokens=2000)),
+            *(
+                (HandoffCapability(),)
+                if kind == "summarize"
+                else (CompactionCapability(CompactionPolicy(trigger_tokens=2000)),)
+                if kind == "compact"
+                else ()
+            ),
         ),
     )
     previous = HarnessState.new(
@@ -180,7 +192,7 @@ async def test_context_replacement_requires_fresh_audit_before_marker_and_checkp
     assert saved_goal(result.state).needs_restore_audit is (not limit)
     assert ("<goal-post-restore-audit>" in calls[-1]) is bool(limit)
     assert len(saved) == len(calls)
-    assert len(helper_calls) == (1 if kind == "compact" else 0)
+    assert len(helper_calls) == (1 if kind in {"compact", "recovery"} else 0)
 
 
 def test_saved_goal_roundtrip_and_clear_preserve_other_state():

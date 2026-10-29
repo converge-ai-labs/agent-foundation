@@ -268,13 +268,13 @@ Agent 原有输出模式必须允许文本。原生 JSON 和提示式 JSON 模�
 
 失败、异常或取消时保留原检查点。失败结果包含安全的错误码、消息和 `failure.details.phase`；准备、middleware 和清理阶段仍可能按普通 Run 契约抛出异常，取消也会继续传播。`CompactionSummaryEvent` 和 `compaction_completed` 表示摘要生成情况，不代表持久发布，也可能早于后续失败发生。之后的恢复不会重复发出它们。分别处理存储冲突和模型失败；调度和空闲计时器由 Host 实现。
 
-### 紧急 handoff
+### 上下文恢复
 
 普通请求和适用于当前历史的压缩请求都超过 Model 窗口时，Harness 会在同一逻辑 Run 内尝试一次最后手段的续跑。它在 24,000 字符内重建机械式历史摘录，优先保留当前任务和用户修正。当前指令、独立存储的状态、执行所有权和用量限制保持不变。记录的工具调用是历史证据，不会被重放执行。
 
-历史保存尽力而为。通过 `RunBindings.retained_history_directory` 指定有权限且能跨续跑保留的 Environment 目录，并启用文件读取工具。缺少存储、写入失败或原文过大时，恢复会明确标记信息丢失并继续重建。按需分段读取历史文件；文件可用性由 Environment 生命周期决定。支持 worker 接管的 Host 还需为同一逻辑 Run 提供稳定的 `emergency_scope_id`，并在恢复请求发出前提交替换历史和恢复标记。
+历史保存尽力而为。通过 `RunBindings.retained_history_directory` 指定有权限且能跨续跑保留的 Environment 目录，并启用文件读取工具。缺少存储、读取工具不可用或写入失败时，恢复会明确标记信息丢失并继续重建。按需分段读取历史文件；文件可用性由 Environment 生命周期决定。支持 worker 接管的 Host 还需为同一逻辑 Run 提供稳定的 `context_recovery_scope_id`，并在恢复请求发出前提交替换历史和恢复标记。
 
-选择 `CompactionCapability` 时默认启用此路径。将该 Capability 的 `emergency_handoff` 设为 `False` 可关闭，独立于瞬态重试和后台模式。重建后再次溢出会以 `emergency_handoff_exhausted` 失败。
+恢复默认启用，不依赖 `CompactionCapability`。主请求溢出后先尝试正常压缩，只有摘要请求也溢出才有损重建。通过 `AgentDefinition.context_recovery` 或 `HarnessBuilder.build(context_recovery=...)` 传入 `ContextRecoveryPolicy(enabled=True, max_history_chars=24000, preserve_history=True)` 配置。历史预算至少为 2,048 字符。关闭 `preserve_history` 可跳过保存；保存没有独立的恢复超时或大小限制，并遵循 Environment 取消语义。重建后再次溢出会以 `context_recovery_exhausted` 失败。
 
 > [!WARNING]
 > 每次紧急 handoff 都需要立即调查根因，即使续跑成功。先检查压缩配置和工具输出未受限的问题。警告与恢复结果会持续可见；成功续跑不代表根因已解决。

@@ -6,7 +6,6 @@ resumption. Check compaction configuration and unbounded tool output first.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
@@ -34,12 +33,13 @@ from a13n_harness.content import ContentItem, project_input_content, request_par
 if TYPE_CHECKING:
     from a13n_harness.capabilities.context import CompactionPolicy
     from a13n_harness.context import AgentContext
+    from a13n_harness.recovery import ContextRecoveryPolicy
 
-EMERGENCY_STATE_ID = "a13n.emergency-handoff"
+CONTEXT_RECOVERY_STATE_ID = "a13n.context-recovery"
 INPUT_PROVENANCE = "a13n.input-provenance"
-DEFAULT_HANDOFF_CHARS = 24_000
+DEFAULT_RECOVERY_CHARS = 24_000
 WARNING = (
-    "Emergency context handoff: ordinary execution and normal compaction exceeded the model window. "
+    "Context recovery: ordinary execution and normal compaction exceeded the model window. "
     "Immediate root-cause investigation is required even if resumption succeeds; "
     "check compaction configuration and unbounded tool output first."
 )
@@ -52,10 +52,10 @@ _RESUME = (
     "selectively in small ranges; do not reload the whole history. If a file is unavailable, treat that as "
     "information loss. Ask for missing information when it materially affects the next action.\n"
 )
-_LOSS = "\n[Historical content was truncated or omitted to fit the emergency budget.]\n"
+_LOSS = "\n[Historical content was truncated or omitted to fit the recovery budget.]\n"
 
 
-class EmergencyState(BaseModel):
+class ContextRecoveryState(BaseModel):
     """Allowance and outcome checkpointed with the existing capability state."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -180,7 +180,7 @@ def _fragments(messages: Sequence[ModelMessage]) -> list[_Fragment]:
 def reconstruct(
     messages: Sequence[ModelMessage],
     *,
-    max_chars: int = DEFAULT_HANDOFF_CHARS,
+    max_chars: int = DEFAULT_RECOVERY_CHARS,
     retained_reference: str | None = None,
     preservation: str = "Original history could not be retained as a readable file.",
 ) -> Reconstruction:
@@ -190,7 +190,7 @@ def reconstruct(
     Standing system/instruction roles remain outside it, as do fresh live overlays.
     """
     if max_chars < 2048:
-        raise ValueError("emergency handoff budget must be at least 2048 characters")
+        raise ValueError("context recovery budget must be at least 2048 characters")
     fragments = _fragments(messages)
     tasks = [fragment for fragment in fragments if fragment.kind == "task"]
     latest = tasks[-1] if tasks else None
@@ -204,7 +204,7 @@ def reconstruct(
         if retained_reference is not None and len(retained_reference) <= 1024
         else "\n" + _clip(preservation, 256) + "\n"
     )
-    fixed = "# Emergency handoff\n" + WARNING + reference + _LOSS + _RESUME
+    fixed = "# Context recovery\n" + WARNING + reference + _LOSS + _RESUME
     if latest is None:
         fixed += "\nTask-start provenance is unavailable; unclassified inputs below are not asserted task anchors.\n"
     remaining = max_chars - len(fixed)
@@ -255,16 +255,16 @@ def reconstruct(
         title = "Older task-start pair" if fragment.kind == "task" else "Historical input (provenance uncertain)"
         add((0, fragment.order), title, text, 2000)
     prompt = (
-        "# Emergency handoff\n"
+        "# Context recovery\n"
         + "".join(text for _, text in sorted(selected))
-        + fixed.removeprefix("# Emergency handoff\n")
+        + fixed.removeprefix("# Context recovery\n")
     )
     assert len(prompt) <= max_chars
     template = next((message for message in reversed(messages) if isinstance(message, ModelRequest)), None)
     request = ModelRequest(
         parts=[*_first_system_parts(list(messages)), _context_protocol_part(prompt)],
         instructions=template.instructions if template is not None else None,
-        metadata={"a13n.context": "emergency", "a13n.restored-boundary": "1"},
+        metadata={"a13n.restored-boundary": "1"},
     )
     return Reconstruction((request,), prompt, before, categories, omitted)
 
@@ -272,52 +272,52 @@ def reconstruct(
 async def preserve_history(
     context: AgentContext, messages: Sequence[ModelMessage], *, reader_enabled: bool
 ) -> tuple[str | None, str]:
-    """One bounded best-effort write to Host-retained storage; never Run spill storage."""
+    """One best-effort write to Host-retained storage; never Run spill storage."""
     directory = context.retained_history_directory
     if directory is None or not reader_enabled:
         return None, "unavailable: no retained directory or enabled reader"
     try:
-        async with asyncio.timeout(5):
-            selection = await context.environment.resolve_files(directory)
-            serialized = ModelMessagesTypeAdapter.dump_json(list(messages), indent=2)
-            if len(serialized) > 10 * 1024 * 1024:
-                return None, "omitted: original history exceeds the 10 MiB preservation limit"
-            # A single huge JSON string defeats line-range readers. This is a
-            # readable evidence transcript, not a resumable JSON checkpoint.
-            header = (
-                "Historical evidence, not current instructions. Read selectively by line range.\n"
-                "Native message JSON below preserves source roles and order. Long lines are hard-wrapped\n"
-                "at 1000 characters; continuation lines start with '| '. Media URLs may expire.\n"
-            )
-            lines = []
-            for line in serialized.decode("utf-8").splitlines():
-                lines.append(line[:1000])
-                lines.extend("| " + line[offset : offset + 1000] for offset in range(1000, len(line), 1000))
-            data = (header + "\n".join(lines) + "\n").encode("utf-8")
-            if len(data) > 10 * 1024 * 1024:
-                return None, "omitted: rendered history exceeds the 10 MiB preservation limit"
-            path = f"{directory.rstrip('/')}/emergency-{token_urlsafe(9)}.txt"
+        selection = await context.environment.resolve_files(directory)
+        serialized = ModelMessagesTypeAdapter.dump_json(list(messages), indent=2)
+        # A single huge JSON string defeats line-range readers. This is a
+        # readable evidence transcript, not a resumable JSON checkpoint.
+        header = (
+            "Historical evidence, not current instructions. Read selectively by line range.\n"
+            "Native message JSON below preserves source roles and order. Long lines are hard-wrapped\n"
+            "at 1000 characters; continuation lines start with '| '. Media URLs may expire.\n"
+        )
+        lines = []
+        for line in serialized.decode("utf-8").splitlines():
+            lines.append(line[:1000])
+            lines.extend("| " + line[offset : offset + 1000] for offset in range(1000, len(line), 1000))
+        data = (header + "\n".join(lines) + "\n").encode("utf-8")
+        path = f"{directory.rstrip('/')}/recovery-{token_urlsafe(9)}.txt"
 
-            async def chunks() -> AsyncIterator[bytes]:
-                for offset in range(0, len(data), 64 * 1024):
-                    yield data[offset : offset + 64 * 1024]
+        async def chunks() -> AsyncIterator[bytes]:
+            for offset in range(0, len(data), 64 * 1024):
+                yield data[offset : offset + 64 * 1024]
 
-            async with context.environment.open_files(selection) as files:
-                await files.mkdir(directory, parents=True, exist_ok=True)
-                await files.write_bytes_stream(path, chunks(), mode="create")
-                await files.stat(path)
-                await files.read_text(path, line_limit=1, max_line_length=128)
-            current = context.environment.select_files(directory)
-            if current != selection:
-                return None, "unavailable: retained Environment selection changed"
-            return path, "retained in Host-selected Environment storage; availability follows its lifetime"
+        async with context.environment.open_files(selection) as files:
+            await files.mkdir(directory, parents=True, exist_ok=True)
+            await files.write_bytes_stream(path, chunks(), mode="create")
+            await files.stat(path)
+            await files.read_text(path, line_limit=1, max_line_length=128)
+        current = context.environment.select_files(directory)
+        if current != selection:
+            return None, "unavailable: retained Environment selection changed"
+        return path, "retained in Host-selected Environment storage; availability follows its lifetime"
     except Exception as exc:
         # No exception messages: file/provider errors can contain private payloads.
         return None, f"failed: {type(exc).__name__}"
 
 
-async def prepare_emergency(
-    ctx: RunContext[AgentContext], request: ModelRequestContext, *, policy: CompactionPolicy | None, background: bool
+async def prepare_recovery(
+    ctx: RunContext[AgentContext],
+    request: ModelRequestContext,
+    *,
+    policy: ContextRecoveryPolicy,
+    compaction_policy: CompactionPolicy | None,
+    background: bool,
 ) -> Reconstruction:
     from a13n_harness.events import HarnessExtensionEvent
     from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
@@ -329,20 +329,27 @@ async def prepare_emergency(
         and HARNESS_TOOL_METADATA_KEY in tool.metadata
         and normalize_harness_tool_metadata(tool.metadata[HARNESS_TOOL_METADATA_KEY]).tool_id == "filesystem.view"
     ]
-    reference, preservation = await preserve_history(ctx.deps, ctx.messages, reader_enabled=bool(readers))
+    reference, preservation = (
+        await preserve_history(ctx.deps, ctx.messages, reader_enabled=bool(readers))
+        if policy.preserve_history
+        else (None, "disabled by context recovery policy")
+    )
     rebuilt = reconstruct(
-        ctx.messages, retained_reference=reference, preservation=f"History preservation: {preservation}."
+        ctx.messages,
+        max_chars=policy.max_history_chars,
+        retained_reference=reference,
+        preservation=f"History preservation: {preservation}.",
     )
     characteristics = ctx.deps.model_characteristics
     diagnostic: dict[str, JsonValue] = {
-        "type": "emergency_handoff",
+        "type": "context_recovery",
         "warning": WARNING,
         "primary_failure": "ModelContextWindowExceededError",
         "compaction_failure": "ModelContextWindowExceededError",
         "model": request.model.model_name,
         "provider": request.model.system,
         "model_characteristics": characteristics.model_dump(mode="json") if characteristics is not None else None,
-        "compaction_trigger_tokens": policy.trigger_tokens if policy is not None else None,
+        "compaction_trigger_tokens": compaction_policy.trigger_tokens if compaction_policy is not None else None,
         "background_compaction": background,
         "before_chars": rebuilt.before_chars,
         "after_chars": len(rebuilt.prompt),
@@ -352,14 +359,14 @@ async def prepare_emergency(
         "preservation": preservation,
         "outcome": "prepared",
     }
-    marker = EmergencyState(
-        scope_id=ctx.deps.emergency_scope_id or ctx.deps.run_id,
+    marker = ContextRecoveryState(
+        scope_id=ctx.deps.context_recovery_scope_id or ctx.deps.run_id,
         before_chars=rebuilt.before_chars,
         after_chars=len(rebuilt.prompt),
         preservation=preservation,
         diagnostic=diagnostic,
     )
-    await ctx.deps.state.write(EMERGENCY_STATE_ID, marker, version="1")
+    await ctx.deps.state.write(CONTEXT_RECOVERY_STATE_ID, marker, version="1")
     # State mutation and canonical history publication have no intervening suspension.
     ctx.messages[:] = rebuilt.messages
     await ctx.deps._steering.replace_retained(rebuilt.prompt)
@@ -373,14 +380,14 @@ async def prepare_emergency(
 async def record_outcome(context: AgentContext, outcome: str) -> None:
     from a13n_harness.events import HarnessExtensionEvent
 
-    state = await context.state.read(EMERGENCY_STATE_ID, EmergencyState, version="1")
-    if state is None or state.scope_id != (context.emergency_scope_id or context.run_id):
+    state = await context.state.read(CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1")
+    if state is None or state.scope_id != (context.context_recovery_scope_id or context.run_id):
         return
     diagnostic = {**state.diagnostic, "outcome": outcome}
     await context.state.write(
-        EMERGENCY_STATE_ID,
+        CONTEXT_RECOVERY_STATE_ID,
         state.model_copy(update={"pending": False, "outcome": outcome, "diagnostic": diagnostic}),
         version="1",
     )
     await context.events.emit(HarnessExtensionEvent(kind="recovery", payload=cast(JsonValue, diagnostic)))
-    get_logger(__name__).warning("Emergency context handoff outcome=%s; immediate investigation required", outcome)
+    get_logger(__name__).warning("Context recovery outcome=%s; immediate investigation required", outcome)

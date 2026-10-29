@@ -12,7 +12,7 @@ import type { EventEntry } from "./timeline";
  */
 export type LifecycleNotice =
   | {
-      kind: "emergency";
+      kind: "context-recovery";
       tone: "warning";
       message: string;
       outcome: string;
@@ -101,17 +101,17 @@ export function attemptEvent(
   );
 }
 
-export function emergencyEvent(
+export function contextRecoveryEvent(
   observation: ExecutionObservation,
 ): EventEntry | null {
-  if (observation.name !== "emergency_handoff" || !isRecord(observation.detail))
+  if (observation.name !== "context_recovery" || !isRecord(observation.detail))
     return null;
   const payload = observation.detail.payload;
   if (!isRecord(payload) || typeof payload.warning !== "string") return null;
   return eventEntry(
     observation.id,
     {
-      kind: "emergency",
+      kind: "context-recovery",
       tone: "warning",
       message: payload.warning,
       outcome:

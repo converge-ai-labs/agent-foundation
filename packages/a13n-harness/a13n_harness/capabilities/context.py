@@ -810,7 +810,7 @@ class ContextRestoredEvent(CapabilityEvent, namespace="a13n.context", name="rest
     is submitted. It carries no summary content and cannot veto the replacement.
     """
 
-    source: Literal["summarize", "compact", "emergency"]
+    source: Literal["summarize", "compact", "recovery"]
     operation_id: str
 
 
@@ -848,7 +848,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         *,
         background: bool | BackgroundCompactionPolicy = False,
         operator: CompactionOperator | None = None,
-        emergency_handoff: bool = True,
     ) -> None:
         if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
@@ -872,10 +871,8 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self._failed_fallback_id: str | None = None
         self._summary_failure: Exception | None = None
         self._summary_attempts = 0
-        self.emergency_handoff = emergency_handoff
         self._primary_request: ModelRequestContext | None = None
         self._summary_request: ModelRequestContext | None = None
-        self._overflow_compaction_attempted = False
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.usage import UsageCapability
@@ -903,7 +900,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             self.policy,
             background=self.background_policy,
             operator=self.operator,
-            emergency_handoff=self.emergency_handoff,
         )
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
         return replacement
@@ -914,7 +910,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
         if ctx.deps._compacting or self._depth > 0:
             return request_context
-        if ctx.deps._model_recovery.emergency_pending:
+        if ctx.deps._model_recovery.context_recovery_pending:
             # Retire old work without generating, waiting for or applying a summary.
             if self.operator is not None:
                 operation = await self.operator.inspect(ctx.deps.thread_id)
@@ -937,44 +933,18 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self._primary_request = prepared
         return prepared
 
-    async def recover_overflow(self, ctx: RunContext[AgentContext]) -> None:
-        """Prepare replacement while the native Agent and its collaborators are still entered.
-
-        The outer ModelAttempt owner publishes it after the failed native attempt
-        drains. No tool execution is repeated to reconstruct history.
-        """
-        from a13n_harness._emergency import EMERGENCY_STATE_ID, EmergencyState, prepare_emergency
-
-        if not self.emergency_handoff or self._primary_request is None or ctx.deps._compacting:
-            return
-        previous = await ctx.deps.state.read(EMERGENCY_STATE_ID, EmergencyState, version="1")
-        if previous is not None and previous.scope_id == (ctx.deps.emergency_scope_id or ctx.deps.run_id):
-            return
-        request = self._primary_request
-        if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
-            return
-        if self._summary_request is not request or not isinstance(
-            self._summary_failure, ModelContextWindowExceededError
-        ):
-            if self._overflow_compaction_attempted:
-                return
-            self._overflow_compaction_attempted = True
-            prepared = await self._compact_history(ctx, request, force=True)
-            if prepared is not request:
-                ctx.deps._model_recovery.context_replacement = tuple(ctx.messages)
-                return
+    async def compact_overflow(
+        self, ctx: RunContext[AgentContext], request: ModelRequestContext
+    ) -> Literal["compacted", "overflow", "unchanged"]:
+        """Reuse a native failure or report the outcome of ordinary compaction."""
+        request = self._primary_request or request
+        if self._summary_request is request and isinstance(self._summary_failure, ModelContextWindowExceededError):
+            return "overflow"
+        prepared = await self._compact_history(ctx, request, force=True)
         if isinstance(self._summary_failure, ModelContextWindowExceededError):
-            # Both native failures are established. Preservation is best effort;
-            # storage availability must never veto the bounded continuation.
-            rebuilt = await prepare_emergency(ctx, request, policy=self.policy, background=self.background)
-            replacement = _replace_context_history(ctx, request, list(rebuilt.messages), set())
-            ctx.messages[:] = replacement.messages
-            ctx.deps._model_recovery.emergency_pending = True
-            ctx.deps._model_recovery.context_replacement = tuple(ctx.messages)
-            await ctx.emit(ContextRestoredEvent(source="emergency", operation_id=f"emergency-{ctx.deps.run_id}"))
-            from a13n_harness.tools.discovery import finish_discovery_replacement
-
-            await finish_discovery_replacement(ctx)
+            return "overflow"
+        # Compare within the same projection stage, not with the caller's request.
+        return "compacted" if prepared is not request else "unchanged"
 
     async def apply_result(
         self,
@@ -1114,8 +1084,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         *,
         failed: CompactionOperation | None = None,
     ) -> ModelRequestContext:
+        from a13n_harness.capabilities.context_recovery import context_recovery_enabled
+
         if (
-            self.emergency_handoff
+            context_recovery_enabled(ctx)
             and failed is not None
             and failed.error_code == "model_context_window_exceeded"
             and _prefix_matches(failed.input.basis, ctx.messages)
@@ -1141,7 +1113,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 self._failed_fallback_id = failed.input.basis.operation_id
             prepared = await self._compact_history(ctx, request, force=fits is not True, failed=failed)
         if prepared is request:
-            if self.emergency_handoff and isinstance(self._summary_failure, ModelContextWindowExceededError):
+            if context_recovery_enabled(ctx) and isinstance(self._summary_failure, ModelContextWindowExceededError):
                 # A summary-only overflow is not permission to discard history.
                 # Send the ordinary request once, without retrying this summary.
                 return request

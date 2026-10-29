@@ -658,7 +658,7 @@ async def test_empty_clipboard_cleans_only_its_anchor_after_async_edits(
 
 
 @pytest.mark.parametrize("child", [False, True])
-def test_emergency_warning_remains_visible_after_success(child: bool) -> None:
+def test_context_recovery_warning_remains_visible_after_success(child: bool) -> None:
     renderer = StreamRenderer(Status(mode="concise"))
     for outcome in ("prepared", "resumed"):
         renderer.ingest(
@@ -668,7 +668,7 @@ def test_emergency_warning_remains_visible_after_success(child: bool) -> None:
                 "value": {
                     "event": {
                         "payload": {
-                            "type": "emergency_handoff",
+                            "type": "context_recovery",
                             "outcome": outcome,
                             "warning": "Immediate root-cause investigation is required.",
                             "before_chars": 100_000,

@@ -1047,7 +1047,7 @@ class _Attempt:
             tool_execution=self.runtime.executions if self.plan.retain_tools else None,
             codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
-            emergency_scope_id=lease.run_id,
+            context_recovery_scope_id=lease.run_id,
             retained_history_directory=f"{placement.ROOT}/history/{lease.thread_id}",
             request_context=self.plan.request_context,
             instance=AgentInstanceContext(

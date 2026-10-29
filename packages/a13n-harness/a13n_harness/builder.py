@@ -35,6 +35,7 @@ from a13n_harness._output_contract import (
 from a13n_harness.capabilities.context import (
     HandoffCapability,
 )
+from a13n_harness.capabilities.context_recovery import ContextRecoveryCapability
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
@@ -105,6 +106,7 @@ from a13n_harness.pricing import (
     get_current_pricing_catalog,
 )
 from a13n_harness.recovery import (
+    ContextRecoveryPolicy,
     ModelRecoveryPolicy,
 )
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
@@ -225,6 +227,7 @@ class AgentDefinition[OutputT]:
     tool_search: ToolSearchPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
+    context_recovery: ContextRecoveryPolicy = field(default_factory=ContextRecoveryPolicy)
 
     def __post_init__(self) -> None:
         if not self.definition_id.strip():
@@ -515,6 +518,7 @@ class HarnessBuilder:
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[BuildOutputT]: ...
 
@@ -532,6 +536,7 @@ class HarnessBuilder:
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 
@@ -548,6 +553,7 @@ class HarnessBuilder:
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[Any]:
         """Build with one current or explicitly pinned default pricing snapshot.
@@ -566,6 +572,7 @@ class HarnessBuilder:
                 or tool_search is not None
                 or subagents
                 or model_recovery is not None
+                or context_recovery is not None
             ):
                 raise TypeError("AgentDefinition build does not accept AgentSpec construction arguments")
             return self._build_definition(
@@ -587,6 +594,7 @@ class HarnessBuilder:
             tool_search=tool_search,
             subagents=tuple(subagents),
             model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
+            context_recovery=context_recovery if context_recovery is not None else ContextRecoveryPolicy(),
         )
         return self._build_definition(
             definition,
@@ -688,6 +696,7 @@ class HarnessBuilder:
                 ToolDiscoveryCapability(),
                 MessageIntegrityFilterCapability(),
                 LifecycleEventCapability(),
+                ContextRecoveryCapability(definition.context_recovery),
                 SteeringCapability(),
                 InputCapability(),
                 VideoUrlCapability(),

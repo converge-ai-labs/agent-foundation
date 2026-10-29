@@ -533,6 +533,9 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.model_recovery.enabled
     assert reconstructed.executable.definition.model_recovery.max_attempts == 5
+    from a13n_harness import ContextRecoveryPolicy
+
+    assert reconstructed.executable.definition.context_recovery == ContextRecoveryPolicy()
     from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
     from pydantic_ai.messages import TextContent
 
@@ -544,6 +547,7 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
         assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery
+        assert child.definition.context_recovery == ContextRecoveryPolicy()
 
 
 @pytest.mark.parametrize("profile", ["native", "sandbox", "custom"])

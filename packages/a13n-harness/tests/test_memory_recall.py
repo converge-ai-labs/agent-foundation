@@ -353,3 +353,21 @@ async def test_large_source_lists_are_explicitly_partial_without_failing_recall(
     assert source["sources_truncated"] is True
     assert 0 < len(source["records"]) < source["count"] == 500
     assert len(_records(_recalls(model.calls[0])[0])) == 500
+
+
+async def test_default_context_recovery_resets_memory_projection() -> None:
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    store = FakeRecordStore(["likes tea"])
+
+    def reply(messages):
+        if len(model.calls) <= 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        return "done"
+
+    model = _Model(reply)
+    result = await _build(model, RecordMemoryCapability([RecordMount("facts", store, "write")])).run("hi")
+    assert result.output_or_raise() == "done"
+    assert len(model.calls) == 3
+    assert not _recalls(model.calls[-1])
+    assert store.searches == [("hi", 5)]

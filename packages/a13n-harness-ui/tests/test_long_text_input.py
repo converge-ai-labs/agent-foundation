@@ -401,7 +401,7 @@ async def test_slow_steering_file_save_does_not_retarget_next_run(tmp_path, monk
 
 
 @pytest.mark.anyio
-async def test_emergency_history_and_warning_survive_root_completion_and_restart(tmp_path, monkeypatch):
+async def test_context_recovery_history_and_warning_survive_root_completion_and_restart(tmp_path, monkeypatch):
     from a13n_harness_ui.interactive.history import restore_transcript
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
     from pydantic_ai.exceptions import ModelContextWindowExceededError
@@ -423,7 +423,7 @@ async def test_emergency_history_and_warning_survive_root_completion_and_restart
         result = await app.wait_root_operation(receipt.receipt_id)
         assert result.status is RootOperationStatus.completed, result.failure
         assert calls == 3
-        retained = list((tmp_path / "data" / "threads" / thread.thread_id / "history").glob("emergency-*.txt"))
+        retained = list((tmp_path / "data" / "threads" / thread.thread_id / "history").glob("recovery-*.txt"))
         assert len(retained) == 1
         assert "Complete the original task" in retained[0].read_text()
         assert str(retained[0]) in str(observed[-1])

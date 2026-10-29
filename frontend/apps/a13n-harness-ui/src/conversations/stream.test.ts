@@ -2144,7 +2144,7 @@ it.each([
   },
 );
 
-it("retains emergency warnings after successful recovery without retry state", () => {
+it("retains context recovery warnings after successful recovery without retry state", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(0));
   display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
@@ -2162,7 +2162,7 @@ it("retains emergency warnings after successful recovery without retry state", (
       value: {
         event: {
           payload: {
-            type: "emergency_handoff",
+            type: "context_recovery",
             outcome,
             warning: "Immediate root-cause investigation is required.",
           },

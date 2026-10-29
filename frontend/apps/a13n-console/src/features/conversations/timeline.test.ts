@@ -513,10 +513,10 @@ it("retains the source entry of steering even when historical paging omits the i
   ]);
 });
 
-it("shows emergency warnings in a completed run and retains their raw diagnostics", () => {
+it("shows context recovery warnings in a completed run and retains their raw diagnostics", () => {
   const { entries } = timeline(
     custom("a13n.harness.recovery", {
-      type: "emergency_handoff",
+      type: "context_recovery",
       outcome: "resumed",
       warning: "Immediate root-cause investigation is required.",
       before_chars: 100000,
@@ -525,7 +525,7 @@ it("shows emergency warnings in a completed run and retains their raw diagnostic
   );
   expect(entries.find((entry) => entry.kind === "event")).toMatchObject({
     notice: {
-      kind: "emergency",
+      kind: "context-recovery",
       tone: "warning",
       outcome: "resumed",
       message: "Immediate root-cause investigation is required.",

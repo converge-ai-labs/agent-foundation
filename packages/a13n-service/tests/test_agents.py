@@ -1176,13 +1176,11 @@ async def test_plugin_catalog_is_authorized_and_exposes_only_public_metadata(ser
     assert (await service.client.get(f"{service.api}/plugins")).status_code == 401
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-def test_emergency_handoff_is_revision_owned_and_built(enabled: bool) -> None:
-    assert config().emergency_handoff is True
-    selected = config(emergency_handoff=enabled)
-    restored = AgentConfig.model_validate_json(selected.model_dump_json())
-    assert apply_override(restored, AgentOverride(instructions="Changed")).emergency_handoff is enabled
-    agent = resolved(new_object_id("ap"), new_object_id("apr"), restored)
+def test_context_recovery_is_default_host_execution_policy() -> None:
+    from a13n_harness import ContextRecoveryPolicy
+
+    agent = resolved(new_object_id("ap"), new_object_id("apr"), config())
     built = build(agent, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
-    [compaction] = [item for item in built.definition.capabilities if isinstance(item, CompactionCapability)]
-    assert compaction.emergency_handoff is enabled
+    assert built.definition.context_recovery == ContextRecoveryPolicy()
+    assert "context_recovery" not in AgentConfig.model_fields
+    assert "emergency_handoff" not in AgentConfig.model_fields

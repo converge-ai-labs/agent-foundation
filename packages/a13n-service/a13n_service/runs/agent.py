@@ -348,7 +348,6 @@ class _Host:
             CompactionCapability(
                 background=config.background_compaction if compaction is not None else False,
                 operator=compaction,
-                emergency_handoff=config.emergency_handoff,
             ),
         ]
         if (web := toolsets.web_tools(config.toolsets)) is not None:

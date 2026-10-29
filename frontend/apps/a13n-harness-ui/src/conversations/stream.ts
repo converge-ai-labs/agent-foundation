@@ -788,14 +788,14 @@ export class FocusDisplay {
     }
     if (
       name === "a13n.harness.recovery" &&
-      payload.type === "emergency_handoff"
+      payload.type === "context_recovery"
     ) {
-      const key = `${scope}:emergency-handoff`;
+      const key = `${scope}:context-recovery`;
       setBlock(key, {
         id: key,
         kind: "activity",
         text: `${string(payload.warning)} Outcome: ${string(payload.outcome)}.`,
-        metadata: { "a13n.recovery": "emergency_handoff" },
+        metadata: { "a13n.recovery": "context_recovery" },
       });
       return;
     }

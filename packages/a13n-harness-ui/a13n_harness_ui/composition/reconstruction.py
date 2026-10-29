@@ -294,7 +294,6 @@ class AgentReconstructor:
                             item.policy,
                             background=composition.background_compaction,
                             operator=compaction,
-                            emergency_handoff=item.emergency_handoff,
                         )
                         if isinstance(item, CompactionCapability)
                         else item

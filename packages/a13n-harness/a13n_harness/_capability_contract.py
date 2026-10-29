@@ -26,6 +26,7 @@ from a13n_harness.capabilities.context import (
     WorkspaceOutlineCapability,
     _FileContextRunCapability,
 )
+from a13n_harness.capabilities.context_recovery import CONTEXT_RECOVERY_CAPABILITY_ID, ContextRecoveryCapability
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID, DocumentsCapability
 from a13n_harness.capabilities.input import INPUT_CAPABILITY_ID, InputCapability
 from a13n_harness.capabilities.interaction import USER_INTERACTION_CAPABILITY_ID, UserInteractionCapability
@@ -107,6 +108,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     TOOL_SURFACE_CAPABILITY_ID: (ToolSurfaceCapability, "tool-surface"),
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID: (MessageIntegrityFilterCapability, "message-integrity Filter"),
     LIFECYCLE_EVENT_CAPABILITY_ID: (LifecycleEventCapability, "lifecycle event"),
+    CONTEXT_RECOVERY_CAPABILITY_ID: (ContextRecoveryCapability, "context recovery"),
     STEERING_CAPABILITY_ID: (SteeringCapability, "steering"),
     INPUT_CAPABILITY_ID: (InputCapability, "input"),
     VIDEO_URL_CAPABILITY_ID: (VideoUrlCapability, "video URL"),
@@ -150,6 +152,7 @@ def _reserved_harness_capability_contract() -> tuple[
         ToolExecutionBoundaryCapability,
         MessageIntegrityFilterCapability,
         LifecycleEventCapability,
+        ContextRecoveryCapability,
         ModelContextCoordinatorCapability,
         VideoUrlCapability,
         InvocationPolicyCapability,

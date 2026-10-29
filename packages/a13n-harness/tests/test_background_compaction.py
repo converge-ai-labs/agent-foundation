@@ -1738,8 +1738,8 @@ async def test_background_policy_rejects_invalid_threshold(threshold):
 
 
 @pytest.mark.parametrize("mismatch", [None, "model", "history", "error", "tools"])
-async def test_emergency_reuses_only_applicable_background_native_overflow(mismatch):
-    from a13n_harness._emergency import EMERGENCY_STATE_ID
+async def test_context_recovery_reuses_only_applicable_background_native_overflow(mismatch):
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from pydantic_ai.exceptions import ModelContextWindowExceededError
     from pydantic_ai.tools import ToolDefinition
 
@@ -1795,6 +1795,6 @@ async def test_emergency_reuses_only_applicable_background_native_overflow(misma
         if mismatch == "history"
         else ["summary", "primary", "primary"]
     )
-    assert result.state.agent_context_state.get(EMERGENCY_STATE_ID) is not None
+    assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is not None
     assert await compaction_disposition(result.state, basis=input.basis) == "skipped"
     assert operator.submissions == 0

@@ -64,7 +64,7 @@ if TYPE_CHECKING:
         HarnessTraceContent,
     )
     from a13n_harness.plugins import AbstractHarnessPlugin, PluginOrdering
-    from a13n_harness.recovery import ModelRecoveryPolicy, ToolRecoveryMode
+    from a13n_harness.recovery import ContextRecoveryPolicy, ModelRecoveryPolicy, ToolRecoveryMode
     from a13n_harness.result import HarnessRunResult, SafeFailure
     from a13n_harness.spec import (
         AgentSpec,
@@ -174,6 +174,7 @@ _EXPORTS = {
         "PluginOrdering",
     ),
     "a13n_harness.recovery": (
+        "ContextRecoveryPolicy",
         "ModelRecoveryPolicy",
         "ToolRecoveryMode",
     ),

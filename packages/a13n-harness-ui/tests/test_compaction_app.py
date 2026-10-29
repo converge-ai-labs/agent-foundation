@@ -18,10 +18,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("enabled", [None, False, True])
 @pytest.mark.parametrize("threshold", [0.95, 0.92])
-@pytest.mark.parametrize("emergency", [None, False])
-async def test_background_compaction_configuration_is_captured(
-    tmp_path: Path, enabled: bool | None, threshold, emergency
-):
+async def test_background_compaction_configuration_is_captured(tmp_path: Path, enabled: bool | None, threshold):
     from a13n_harness.capabilities import CompactionCapability
     from a13n_harness_ui.compaction import BackgroundCompaction
     from a13n_harness_ui.composition import AgentCompositionResolver, AgentReconstructor, ResolvedRunComposition
@@ -32,10 +29,7 @@ async def test_background_compaction_configuration_is_captured(
 
     root = _write_source(tmp_path)
     agent = tmp_path / "agents/assistant.yaml"
-    emergency_config = "    configuration: {emergency_handoff: false}\n" if emergency is False else ""
-    agent.write_text(
-        agent.read_text().replace("capabilities:\n", "capabilities:\n  - capability: compaction\n" + emergency_config)
-    )
+    agent.write_text(agent.read_text().replace("capabilities:\n", "capabilities:\n  - capability: compaction\n"))
     if enabled is not None:
         root.write_text(
             root.read_text()
@@ -60,7 +54,6 @@ async def test_background_compaction_configuration_is_captured(
         reconstructed.executable._agent.root_capability.apply(leaves.append)
         compactions = [item for item in leaves if isinstance(item, CompactionCapability)]
         assert compactions
-        assert all(item.emergency_handoff is (emergency is not False) for item in compactions)
         if enabled is not False:
             assert all(
                 item.background_policy == composition.background_compaction

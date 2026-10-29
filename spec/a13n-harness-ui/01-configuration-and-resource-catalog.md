@@ -208,7 +208,7 @@ Root `background_compaction` contains `enabled` (default `true`) and `blocking_t
 
 Setting `background_compaction.enabled` to `false` disables new background generation for later captured Runs while preserving delivery of already retained results. The blocking threshold uses Harness's [background policy](../a13n-harness/09-context-and-memory.md#background-execution-and-result-application); the common compaction trigger and Model context characteristics remain independent. Harness itself retains its synchronous default. [Local Storage and Recovery](03-local-storage-and-recovery.md#retained-background-compaction) owns result persistence, checkpoint acknowledgement, interruption, and shutdown.
 
-The `compaction` Capability configuration accepts `emergency_handoff` (boolean, default `true`) independently of `trigger_tokens` and background mode. Setting it to `false` opts out of Harness's [last-resort handoff](../a13n-harness/09-context-and-memory.md#emergency-handoff) without changing normal compaction. Reconstruction preserves this value when selecting background execution.
+Harness UI inherits the default [Harness context recovery policy](../a13n-harness/09-context-and-memory.md#context-recovery) for roots and children. Recovery is trusted runtime behavior independent of authored compaction configuration and background mode.
 
 ## Goal Iteration Policy
 

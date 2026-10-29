@@ -81,10 +81,10 @@ Ordinary threads can then continue while a summary is generated, provided the cu
 
 Summary requests count toward the originating run's request budget, and their usage may arrive after that run ends. Interrupting a run leaves its background summary running. Archiving the thread retires it; forks do not inherit pending summaries.
 
-If ordinary execution and applicable compaction both exceed the model window, Service permits one bounded emergency handoff per run, including worker takeover. It commits the reconstructed history and consumed allowance before dispatch. History files under the primary environment's `/workspace/.a13n/history/<thread-id>/` are best effort and last only as long as that environment. Missing files do not block recovery. Set revision field `emergency_handoff` to `false` through the API to opt out.
+If ordinary execution and applicable compaction both exceed the model window, Service permits one bounded context recovery per run, including worker takeover. It commits the reconstructed history and consumed allowance before dispatch. History files under the primary environment's `/workspace/.a13n/history/<thread-id>/` are best effort and last only as long as that environment. Missing files do not block recovery. Recovery is default runtime behavior, independent of Agent revision compaction settings.
 
 > [!WARNING]
-> Every emergency handoff requires immediate root-cause investigation, even after success. Check compaction configuration and unbounded tool output first. Console retains the warning and outcome separately from the final answer.
+> Every context recovery requires immediate root-cause investigation, even after success. Check compaction configuration and unbounded tool output first. Console retains the warning and outcome separately from the final answer.
 
 ### Tool permissions
 

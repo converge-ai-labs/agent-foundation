@@ -134,7 +134,7 @@ class Boundaries(AbstractCapability[AgentContext]):
     ) -> ModelRequestContext:
         if ctx.run_id == self.primary:
             completed = await self._stage(ctx, ctx.messages, "model")
-            if self.wait_for_model or ctx.deps.emergency_handoff_pending:
+            if self.wait_for_model or ctx.deps.context_recovery_pending:
                 # Commit replacement history and its consumed allowance under the
                 # existing lease fence before any recovery request can dispatch.
                 await asyncio.shield(completed)

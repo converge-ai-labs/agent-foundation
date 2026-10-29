@@ -219,16 +219,7 @@ background_compaction:
 
 普通执行和正常压缩都超过 Model 窗口时，Harness UI 会尝试一次有界、有损的续跑。成功后警告仍然可见。每次触发都要立即调查，先检查压缩配置和工具输出未受限的问题。历史会尽力保存在 Thread 的 `history/` 目录，不受临时文件清理影响；文件不可用不会阻止重建。
 
-要关闭，在 Agent 的 `compaction` Capability 中设置以下选项，无需显式指定 token 阈值：
-
-```yaml
-capabilities:
-  - capability: compaction
-    configuration:
-      emergency_handoff: false
-```
-
-此设置同时适用于同步和后台模式。用量和请求限制仍然生效。重建后再次溢出会结束 Run，不会循环恢复。
+上下文恢复在根 Agent 和子 Agent 中默认启用，不依赖 `compaction` Capability。它是运行时行为，不是 Agent YAML 配置项。用量和请求限制仍然生效。重建后再次溢出会结束 Run，不会循环恢复。
 
 ### 文件记忆
 

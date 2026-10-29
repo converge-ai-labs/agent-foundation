@@ -13,7 +13,7 @@ import type {
 } from "./execution";
 import {
   attemptEvent,
-  emergencyEvent,
+  contextRecoveryEvent,
   retryEvent,
   type LifecycleNotice,
 } from "./lifecycle";
@@ -294,7 +294,7 @@ export function runTimeline({
   }
   const entries = assemble(roots);
   for (const observation of execution.observations) {
-    const warning = emergencyEvent(observation);
+    const warning = contextRecoveryEvent(observation);
     if (warning) entries.push(warning);
   }
   if (execution.observations.length)

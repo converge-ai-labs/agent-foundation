@@ -323,6 +323,8 @@ def test_unknown_cyclic_provider_cause_is_terminal() -> None:
     ],
 )
 async def test_permanent_and_unknown_model_failures_stop_without_retry(error: Exception) -> None:
+    from a13n_harness import ContextRecoveryPolicy
+
     calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -336,6 +338,8 @@ async def test_permanent_and_unknown_model_failures_stop_without_retry(error: Ex
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(enabled=True, backoff_initial_seconds=0),
+        # This test isolates transient retries from independent native overflow recovery.
+        context_recovery=ContextRecoveryPolicy(enabled=False),
     )
     events = []
     async with executable.stream("start", bindings=RunBindings.embedded()) as run:

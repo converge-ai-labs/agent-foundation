@@ -34,6 +34,7 @@ class AgentDefinition[OutputT]:
     tool_search: ToolSearchPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
+    context_recovery: ContextRecoveryPolicy = ContextRecoveryPolicy()
 
     def with_updates(
         self,
@@ -43,17 +44,18 @@ class AgentDefinition[OutputT]:
     ) -> Self: ...
 ```
 
-| Field            | Meaning                                                                                                                    |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `agent`          | Harness or native Pydantic AI declarative Agent configuration                                                              |
-| `output_type`    | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`             |
-| `definition_id`  | Non-blank logical correlation value; it grants no authority                                                                |
-| `model`          | Optional concrete native Model used instead of string selection in `AgentSpec`                                             |
-| `capabilities`   | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks |
-| `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                                       |
-| `tool_search`    | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources   |
-| `subagents`      | Named complete process-local child definitions and authored edge ceilings                                                  |
-| `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                   |
+| Field              | Meaning                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`            | Harness or native Pydantic AI declarative Agent configuration                                                                                     |
+| `output_type`      | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`                                    |
+| `definition_id`    | Non-blank logical correlation value; it grants no authority                                                                                       |
+| `model`            | Optional concrete native Model used instead of string selection in `AgentSpec`                                                                    |
+| `capabilities`     | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks                        |
+| `plugins`          | Trusted concrete Harness middleware instances supplied directly with this definition                                                              |
+| `tool_search`      | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources                          |
+| `subagents`        | Named complete process-local child definitions and authored edge ceilings                                                                         |
+| `model_recovery`   | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                                          |
+| `context_recovery` | Default-on native context-overflow policy, independent of proactive compaction; see [Context Recovery](09-context-and-memory.md#context-recovery) |
 
 [Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns plan selection, grouping, and native composition semantics. Plugin contributions are collected once before applying the plan; the plan does not introduce another feature or execution plane.
 
@@ -183,6 +185,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
@@ -201,6 +204,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```
