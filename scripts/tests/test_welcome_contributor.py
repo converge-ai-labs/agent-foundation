@@ -102,6 +102,11 @@ def test_first_pr_welcomes_fork_authors_and_drafts_with_approved_copy(draft):
     assert 'width="640"' in comment["body"]
     assert "join.slack.com/t/a13n/" in comment["body"]
     assert comment["body"].endswith("Glad to have you here!")
+    # GitHub comments render single newlines as breaks; let each paragraph wrap naturally.
+    paragraphs = comment["body"].split("\n\n")
+    assert all("\n" not in paragraph for paragraph in paragraphs)
+    assert "ask here in the PR. Our [contributing guide]" in comment["body"]
+    assert ") to meet other contributors" in comment["body"]
     history = next(call for call in output["calls"] if call["action"] == "history")
     assert history == {
         "action": "history",

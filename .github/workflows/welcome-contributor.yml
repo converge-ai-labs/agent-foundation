@@ -58,11 +58,11 @@ jobs:
               '',
               `<img src="${image}" alt="Welcome to a13n — glad you are building with us." width="640">`,
               '',
-              'If you get stuck with setup, tests, or review feedback, ask here in the PR.',
-              `Our [contributing guide](${guide}) covers the development workflow.`,
+              'If you get stuck with setup, tests, or review feedback, ask here in the PR. ' +
+                `Our [contributing guide](${guide}) covers the development workflow.`,
               '',
-              `You're also welcome to [join us on Slack](${slack})`,
-              "to meet other contributors, ask questions, and share what you're building.",
+              `You're also welcome to [join us on Slack](${slack}) ` +
+                "to meet other contributors, ask questions, and share what you're building.",
               '',
               'Glad to have you here!',
             ].join('\n');
