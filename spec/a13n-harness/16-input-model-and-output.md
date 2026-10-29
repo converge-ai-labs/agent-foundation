@@ -475,7 +475,7 @@ class ModelRecoveryPolicy:
 
 Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID.
 
-Native context-window overflow is excluded from unchanged-input transient retry. [Context recovery](09-context-and-memory.md#context-recovery) separately requires both primary and applicable compaction overflow, then replaces canonical history once within the Host logical Run. Its durable marker also detaches provider-side conversation and cached-content seeds so restored requests send the replacement history.
+Native context-window overflow is excluded from unchanged-input transient retry. Default-on [context recovery](09-context-and-memory.md#context-recovery) first attempts normal compaction after primary overflow. Only native overflow in both the primary request and applicable compaction permits lossy history reconstruction, at most once within the Host logical Run. The reconstruction's durable marker also detaches provider-side conversation and cached-content seeds so restored requests send the replacement history.
 
 Provider-suspended continuation is not attempt recovery. Pydantic owns the public suspended message semantics; the Harness does not append a generic route pin or force a special hosted resolver contract.
 

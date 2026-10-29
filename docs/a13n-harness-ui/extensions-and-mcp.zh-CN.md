@@ -86,7 +86,7 @@ capabilities:
 
 ### 任务、提问与 CodeAct
 
-Harness UI 默认添加 `file_context` 和 `working_state`。根级开关启用时，还会添加 `user_interaction` 和 `codeact`。Skill、Web 访问、交接和压缩等其他功能需要在 Agent 中选择。
+Harness UI 默认添加 `file_context` 和 `working_state`。根级开关启用时，还会添加 `user_interaction` 和 `codeact`。Skill、Web 访问、交接和主动压缩等其他功能需要在 Agent 中选择。[上下文恢复](configuration.md#context-recovery) 默认启用，独立于主动压缩。
 
 | 功能       | 配置                                                                        | 检查方法                                                        |
 | ---------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |

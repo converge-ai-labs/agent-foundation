@@ -86,7 +86,7 @@ Pass a native model directly through `HarnessBuilder.build(model=...)`, or selec
 
 Harness prepares images for the selected Model without changing saved history or original files. Configure `HarnessModelCharacteristics.image_input` with `ImageInputPolicy`, or set `image_input=None` to disable preparation. See [Context](../../docs/a13n-harness/context.md#filters).
 
-Recognized provider-history repairs are on by default; configure them through `SelfHealingModelCapability` or disable automatic installation with `HarnessBuilder(self_healing_enabled=False)`. For long Threads, opt into [history compaction](../../docs/a13n-harness/context.md#compact-a-long-thread). Add other Capabilities for policy, memory, or delegation.
+Recognized provider-history repairs are on by default; configure them through `SelfHealingModelCapability` or disable automatic installation with `HarnessBuilder(self_healing_enabled=False)`. For long Threads, opt into [proactive history compaction](../../docs/a13n-harness/context.md#compact-a-long-thread). [Context recovery](../../docs/a13n-harness/context.md#context-recovery) is enabled by default and first tries normal compaction after native context-window overflow. Add other Capabilities for policy, memory, or delegation.
 
 A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `previous_state` to continue the Thread; each new Run receives a fresh `run_id`. The Host persists accepted state and reconstructs credentials and other current authority on resume. [State and resume](../../docs/a13n-harness/state-and-resume.md) covers serialization and interrupted calls.
 

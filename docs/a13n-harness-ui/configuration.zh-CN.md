@@ -215,11 +215,13 @@ background_compaction:
 
 清理在启动时及每小时执行。已处理摘要先随检查点标记，再删除；未使用工作七天后过期，活跃 Run/请求受到保护，对话历史保留。嵌入式 App 可修改 `StorageSettings.compaction_retention_seconds`。关闭后台模式影响后续 Run；已保存未过期摘要仍可使用，Model 预算不变。
 
-### 紧急 handoff
+### 上下文恢复
 
-普通执行和正常压缩都超过 Model 窗口时，Harness UI 会尝试一次有界、有损的续跑。成功后警告仍然可见。每次触发都要立即调查，先检查压缩配置和工具输出未受限的问题。历史会尽力保存在 Thread 的 `history/` 目录，不受临时文件清理影响；文件不可用不会阻止重建。
+上下文恢复在根 Agent 和子 Agent 中默认启用，独立于 `compaction` Capability。发生原生上下文窗口溢出后，Harness 先尝试正常压缩。摘要成功后，Run 使用压缩后的历史继续执行。这是运行时行为；Agent YAML 单独配置主动压缩。
 
-上下文恢复在根 Agent 和子 Agent 中默认启用，不依赖 `compaction` Capability。它是运行时行为，不是 Agent YAML 配置项。用量和请求限制仍然生效。重建后再次溢出会结束 Run，不会循环恢复。
+只有普通执行和适用的正常压缩都溢出时，Harness UI 才尝试有界、有损的历史重建，每个 Run 最多一次。历史会尽力保存在 Thread 的 `history/` 目录，不受临时文件清理影响；存储或读取工具不可用不会阻止重建。用量和请求限制仍然生效。重建后再次溢出会结束 Run。
+
+重建警告在成功后仍然可见。每次重建都要立即调查，先检查压缩配置和工具输出未受限的问题。恢复顺序和限制见[上下文恢复](../a13n-harness/context.md#context-recovery)。
 
 ### 文件记忆
 

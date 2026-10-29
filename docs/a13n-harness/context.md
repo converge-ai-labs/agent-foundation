@@ -7,15 +7,16 @@ A useful next turn needs both current information and remembered decisions. Cont
 
 ## Choose the right mechanism
 
-| Need                                        | Mechanism                          |
-| ------------------------------------------- | ---------------------------------- |
-| Current time, usage, selected Run metadata  | Runtime context                    |
-| Workspace structure or project instructions | Workspace outline and file context |
-| Tasks and decisions across turns            | Working state in `HarnessState`    |
-| A shorter long-running conversation         | Handoff or compaction              |
-| Durable files shared across Threads         | [File memory](memory.md)           |
-| Facts recalled by similarity                | [Record memory](memory.md)         |
-| Shorter old tool results after idle time    | Cold-start filter                  |
+| Need                                          | Mechanism                             |
+| --------------------------------------------- | ------------------------------------- |
+| Current time, usage, selected Run metadata    | Runtime context                       |
+| Workspace structure or project instructions   | Workspace outline and file context    |
+| Tasks and decisions across turns              | Working state in `HarnessState`       |
+| A shorter long-running conversation           | Handoff or proactive compaction       |
+| Continue after native context-window overflow | Context recovery (enabled by default) |
+| Durable files shared across Threads           | [File memory](memory.md)              |
+| Facts recalled by similarity                  | [Record memory](memory.md)            |
+| Shorter old tool results after idle time      | Cold-start filter                     |
 
 Start with the [two-Run example](#context-composition), then add workspace guidance or compaction as needed. [State and Resume](state-and-resume.md) explains how the Host saves and continues the Thread.
 
@@ -270,16 +271,26 @@ On failure, exception, or cancellation, keep the original checkpoint. Failed res
 
 ### Context recovery
 
-When both an ordinary request and its applicable summary request raise a native context-window overflow, Harness attempts one last-resort continuation in the same logical Run. It reconstructs a mechanical history excerpt within 24,000 characters, prioritizing the current task and user corrections. It retains current instructions, separately stored state, execution ownership and usage limits. Recorded tool calls are evidence, not requests to replay.
+Context recovery is enabled by default, independently of proactive `CompactionCapability` and transient `ModelRecoveryPolicy`. After a native context-window overflow in an ordinary request, Harness first tries normal compaction. A successful summary lets the same logical Run continue with compacted history.
+
+If both the ordinary request and its applicable summary request overflow, Harness reconstructs a bounded, lossy history excerpt. Either failure may occur first; an applicable summary failure is reused. The excerpt prioritizes the current task and user corrections. Current instructions, separately stored state, execution ownership and usage limits remain in effect. Recorded tool calls are historical evidence and are never replayed by reconstruction.
 
 History preservation is best effort. Supply `RunBindings.retained_history_directory` for an authorized Environment location that survives continuation and enable a file reader. Missing storage, unavailable readers or write failures produce explicit loss notices and still allow reconstruction. Read retained files selectively; their availability follows the Environment's lifetime. Hosts with worker takeover also supply one stable `context_recovery_scope_id` per logical Run and commit the replacement history and marker before resuming dispatch.
 
 A successful summary does not authorize reconstruction. If the compacted primary request still overflows before a complete primary response advances to tool execution, the Run fails with that overflow. Harness does not repeat overflow-triggered compaction without this progress. After accepted primary progress, a later overflow can try normal compaction again. This retry bound is separate from the persisted limit of one reconstruction per logical Run.
 
-Recovery is enabled by default, independently of `CompactionCapability`. After primary overflow, it first attempts normal compaction, then reconstructs only if the summary also overflows. Configure `AgentDefinition.context_recovery` or `HarnessBuilder.build(context_recovery=...)` with `ContextRecoveryPolicy(enabled=True, max_history_chars=24000, preserve_history=True)`. The history budget must be at least 2,048 characters. Disable `preserve_history` to skip file saving; saving otherwise has no separate recovery timeout or size ceiling and follows Environment cancellation. A second overflow after reconstruction fails with `context_recovery_exhausted`.
+Configure `AgentDefinition.context_recovery` or `HarnessBuilder.build(context_recovery=...)` with `ContextRecoveryPolicy` from `a13n_harness`:
+
+| Setting             | Default | Meaning                                                                                    |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `enabled`           | `True`  | Enable overflow-triggered compaction and last-resort reconstruction                        |
+| `max_history_chars` | `24000` | Aggregate reconstructed history prompt budget, including notices and paths; minimum `2048` |
+| `preserve_history`  | `True`  | Attempt to save a readable transcript before reconstruction                                |
+
+Set `enabled=False` to disable this recovery path; configured proactive compaction remains active. The history budget covers the reconstructed excerpt, while system instructions and regenerated live context remain outside it. Preservation uses the Environment's file operations and cancellation behavior, with no additional recovery-specific timeout or size ceiling. A second overflow after reconstruction fails with `context_recovery_exhausted`.
 
 > [!WARNING]
-> Every context recovery requires immediate root-cause investigation, even when continuation succeeds. Check compaction configuration and unbounded tool output first. The warning and recovery outcome remain visible; success does not fix the underlying cause.
+> Every lossy reconstruction requires immediate root-cause investigation, even when continuation succeeds. Check compaction configuration and unbounded tool output first. The warning and recovery outcome remain visible; success does not fix the underlying cause.
 
 ### Background compaction
 
@@ -315,7 +326,7 @@ Harness summarizes a complete history prefix and retains later messages, includi
 | Failed operation and compaction still needed                    | Try synchronous recovery                         |
 | Ready, applicable result                                        | Replace the matching prefix; preserve the suffix |
 
-Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity, except that a native summary overflow allows one ordinary request to establish whether context recovery is needed. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity, except that enabled context recovery allows one ordinary request after a native summary overflow to establish whether lossy reconstruction is needed. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
 
 If continuation is blocked, `compaction_capacity_unavailable` reports the attempt count and failure type, or explains that the request budget cannot cover a summary and the pending ordinary request. It preserves the original exception as its cause without including provider response bodies. Retry in a new Run for a transient failure; increase the request limit when the diagnostic identifies insufficient budget.
 

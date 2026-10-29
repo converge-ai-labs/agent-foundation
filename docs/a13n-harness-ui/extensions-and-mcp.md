@@ -86,7 +86,7 @@ capabilities:
 
 ### Tasks, questions, and CodeAct
 
-Harness UI adds `file_context` and `working_state` by default. Root switches also add `user_interaction` and `codeact` when enabled. Other features, such as Skills, Web access, handoff, and compaction, need their Agent selections.
+Harness UI adds `file_context` and `working_state` by default. Root switches also add `user_interaction` and `codeact` when enabled. Other features, such as Skills, Web access, handoff, and proactive compaction, need their Agent selections. [Context recovery](configuration.md#context-recovery) is enabled by default, independently of proactive compaction.
 
 | Feature              | Configuration                                                                            | Check                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |

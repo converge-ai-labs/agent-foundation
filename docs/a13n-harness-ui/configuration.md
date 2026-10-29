@@ -217,9 +217,11 @@ Cleanup runs at startup and hourly. Processed summaries are marked with the save
 
 ### Context recovery
 
-If ordinary execution and normal compaction both exceed the Model window, Harness UI attempts one bounded, lossy continuation. A warning remains visible after success. Investigate every trigger immediately, starting with compaction configuration and unbounded tool output. History is saved best effort under the Thread's `history/` directory, outside scratch cleanup; missing files never block reconstruction.
+Context recovery is enabled for root and child Agents, independently of the `compaction` Capability. After a native context-window overflow, Harness first tries normal compaction. A successful summary lets the Run continue with compacted history. This is runtime behavior; Agent YAML configures proactive compaction separately.
 
-Context recovery is enabled for roots and children even without the `compaction` Capability. It is runtime behavior, not an Agent YAML setting. Usage and request limits still apply. A second overflow after reconstruction ends the Run rather than looping.
+If both ordinary execution and applicable normal compaction overflow, Harness UI attempts one bounded, lossy history reconstruction per Run. History is saved best effort under the Thread's `history/` directory, outside scratch cleanup; unavailable storage or readers do not block reconstruction. Usage and request limits still apply. A second overflow after reconstruction ends the Run.
+
+A reconstruction warning remains visible after success. Investigate every reconstruction immediately, starting with compaction configuration and unbounded tool output. See [Context recovery](../a13n-harness/context.md#context-recovery) for the recovery sequence and limits.
 
 ### File memory
 

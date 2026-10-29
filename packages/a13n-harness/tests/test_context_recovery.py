@@ -127,12 +127,12 @@ async def test_second_overflow_is_terminal_and_allowance_survives_host_takeover(
     assert first.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is not None
     second = await executable.run(None, previous_state=first.state, bindings=bindings)
     assert second.failure is not None and second.failure.code == "context_recovery_exhausted"
-    assert calls == 4  # Neither a new summary nor another emergency reconstruction.
+    assert calls == 4  # The consumed allowance prevents another summary or reconstruction.
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("enabled", [True, False])
-async def test_context_recovery_requires_native_summary_overflow_and_explicit_enable(enabled: bool) -> None:
+async def test_context_recovery_requires_native_summary_overflow_and_enabled_policy(enabled: bool) -> None:
     calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -312,7 +312,7 @@ async def test_retained_history_is_readable_after_run_and_failures_do_not_block(
 
     source = DirectLocalSource(
         DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=tmp_path)),
-        environment_id="emergency-test",
+        environment_id="context-recovery-test",
     )
     environment = create_environment_runtime(
         mounts={

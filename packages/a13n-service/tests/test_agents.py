@@ -1183,4 +1183,3 @@ def test_context_recovery_is_default_host_execution_policy() -> None:
     built = build(agent, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
     assert built.definition.context_recovery == ContextRecoveryPolicy()
     assert "context_recovery" not in AgentConfig.model_fields
-    assert "emergency_handoff" not in AgentConfig.model_fields
