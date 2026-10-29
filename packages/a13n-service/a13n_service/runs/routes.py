@@ -282,10 +282,20 @@ async def list_thread_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
     anchor: Annotated[str | None, Query(max_length=72)] = None,
+    sort: Literal["cost", "calls", "duration"] | None = None,
+    direction: Literal["asc", "desc"] = "desc",
 ) -> ThreadRunPage:
-    """Newest first, optionally starting at an anchor run; cursors page towards older or newer runs."""
+    """Page chronological history from an anchor, or rank all Thread runs by a recorded metric."""
     return await listings.list_thread_runs(
-        runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor, anchor=anchor
+        runtime.storage,
+        actor,
+        workspace_id,
+        thread_id,
+        limit=limit,
+        cursor=cursor,
+        anchor=anchor,
+        sort=sort,
+        direction=direction,
     )
 
 

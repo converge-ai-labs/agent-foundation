@@ -2,6 +2,9 @@ import { Button, MenuItem } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowRightIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ArrowsDownUpIcon,
   ChatsIcon,
   CopyIcon,
   PencilSimpleIcon,
@@ -26,6 +29,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
+import { costColumnFormat, exactCost } from "../../shared/cost";
 import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
@@ -67,6 +71,20 @@ export function SessionList() {
     >
       <SessionResults
         filters={filters}
+        onSort={(sort) =>
+          setSearch((previous) => {
+            const next = new URLSearchParams(previous);
+            const active = (filters.sort ?? "updated_at") === sort;
+            next.set("sort", sort);
+            next.set(
+              "direction",
+              active && (filters.direction ?? "desc") === "desc"
+                ? "asc"
+                : "desc",
+            );
+            return next;
+          })
+        }
         create={create}
         onFilter={(key, value) =>
           setSearch((previous) => {
@@ -86,10 +104,12 @@ function SessionResults({
   filters,
   create,
   onFilter,
+  onSort,
 }: {
   filters: SessionFilters;
   create: ReactNode;
   onFilter: (key: "application" | "label", value: string) => void;
+  onSort: (sort: NonNullable<SessionFilters["sort"]>) => void;
 }) {
   const { t } = useTranslation(),
     { workspace, basePath, can } = useWorkspace(),
@@ -116,9 +136,41 @@ function SessionResults({
     agents.data?.map((agent) => [agent.id, agent.image_url]),
   );
   const path = (id: string) => sessionPath(basePath, id, filters.q);
-  const filtered = Object.values(filters).some((value) =>
+  const { sort = "updated_at", direction = "desc", ...filterValues } = filters;
+  const filtered = Object.values(filterValues).some((value) =>
     Array.isArray(value) ? value.length > 0 : !!value,
   );
+  const cost = costColumnFormat(items.map((item) => item.cost));
+  const sortColumn = (
+    field: NonNullable<SessionFilters["sort"]>,
+    label: string,
+  ) => {
+    const active = sort === field;
+    const Icon = !active
+      ? ArrowsDownUpIcon
+      : direction === "desc"
+        ? ArrowDownIcon
+        : ArrowUpIcon;
+    return {
+      ariaSort: active
+        ? direction === "asc"
+          ? ("ascending" as const)
+          : ("descending" as const)
+        : ("none" as const),
+      header: (
+        <button
+          type="button"
+          className={styles.sortButton}
+          data-active={active || undefined}
+          aria-label={t("Sort by {{field}}", { field: label })}
+          onClick={() => onSort(field)}
+        >
+          {label}
+          <Icon size={12} aria-hidden="true" />
+        </button>
+      ),
+    };
+  };
   return (
     <>
       <ErrorNotice error={sessions.error} />
@@ -145,6 +197,15 @@ function SessionResults({
                     }
                     href={`${path(session.id)}?view=debug`}
                     onFilter={onFilter}
+                    metrics={
+                      <>
+                        {t("Runs")} {session.run_count ?? "—"} · {t("Cost")}{" "}
+                        {cost(session.cost)}
+                        {session.cost != null && !!session.unpriced_requests
+                          ? "*"
+                          : ""}
+                      </>
+                    }
                   />
                 ),
               },
@@ -181,6 +242,7 @@ function SessionResults({
               },
               {
                 label: t("Runs"),
+                ...sortColumn("runs", t("Runs")),
                 dataColumn: "runs",
                 align: "right",
                 render: (session) => (
@@ -190,7 +252,29 @@ function SessionResults({
                 ),
               },
               {
+                label: t("Cost"),
+                ...sortColumn("cost", t("Cost")),
+                dataColumn: "cost",
+                align: "right",
+                render: (session) => (
+                  <span
+                    className={styles.cost}
+                    title={
+                      session.unpriced_requests
+                        ? t("Known subtotal; some model calls are unpriced.")
+                        : exactCost(session.cost)
+                    }
+                  >
+                    {cost(session.cost)}
+                    {session.cost != null && !!session.unpriced_requests && (
+                      <span aria-label={t("Known subtotal")}>*</span>
+                    )}
+                  </span>
+                ),
+              },
+              {
                 label: t("Updated"),
+                ...sortColumn("updated_at", t("Updated")),
                 dataColumn: "activity",
                 render: (session) => (
                   <span className={styles.activity}>
@@ -274,10 +358,12 @@ function SessionIdentity({
   agentImage,
   href,
   onFilter,
+  metrics,
 }: {
   session: Schema["SessionView"];
   agentImage?: string | null;
   href: string;
+  metrics: ReactNode;
   onFilter: (key: "application" | "label", value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -351,6 +437,7 @@ function SessionIdentity({
             </span>
           )}
         </div>
+        <span className={styles.mobileMetrics}>{metrics}</span>
       </div>
       {/* The identifier stays one hover away, as in every other collection. */}
       <ResourceReference

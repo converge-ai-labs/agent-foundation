@@ -1,7 +1,12 @@
 import { expect, it } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { createClient } from "../../service-client";
-import { applyThreadState, conversationKeys, conversationQueries } from "./api";
+import {
+  applyThreadState,
+  conversationKeys,
+  conversationQueries,
+  invalidateConversation,
+} from "./api";
 import {
   fixtureRun,
   fixtureRunPage,
@@ -201,6 +206,69 @@ it("compares acceptance timestamps numerically when fractional seconds differ", 
   });
   expect(cache.getQueryState(keys.session("ses_1"))?.isInvalidated).toBe(true);
   cache.clear();
+});
+
+it("refreshes metric rankings and only affected history pages when a streamed Run seals", async () => {
+  const cache = new QueryClient();
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+  });
+  const queries = conversationQueries(client, "ws_1");
+  const keys = conversationKeys("ws_1");
+  const run = fixtureRun({ status: "running", sealed_at: null });
+  const thread = fixtureThread({ current_run_id: run.id, last_run_id: null });
+  const current = queries.runs(thread.id, { anchor: run.id });
+  const older = queries.runs(thread.id, { cursor: "older" });
+  const ranked = queries.rankedRuns(thread.id, "cost", "desc");
+  const ranking = { pages: [fixtureRunPage([run])], pageParams: [undefined] };
+  cache.setQueryData(keys.thread(thread.id), thread);
+  cache.setQueryData(keys.run(run.id), run);
+  cache.setQueryData(current.queryKey, fixtureRunPage([run]));
+  cache.setQueryData(
+    older.queryKey,
+    fixtureRunPage([fixtureRun({ id: "old" })], { previous_cursor: "newer" }),
+  );
+  cache.setQueryData(ranked.queryKey, ranking);
+
+  const sealed = fixtureRun({ version: run.version + 1 });
+  applyThreadState(cache, "ws_1", {
+    thread: {
+      ...thread,
+      current_run_id: null,
+      last_run_id: run.id,
+      version: thread.version + 1,
+    },
+    current_run: null,
+    last_run: sealed,
+    entries: [],
+  });
+  expect(cache.getQueryData(ranked.queryKey)).toEqual(ranking);
+  expect(cache.getQueryState(ranked.queryKey)?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(current.queryKey)?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(older.queryKey)?.isInvalidated).toBe(false);
+  expect(cache.getQueryData(current.queryKey)?.items[0]).toMatchObject({
+    status: "completed",
+    version: sealed.version,
+  });
+
+  cache.setQueryData(ranked.queryKey, ranking);
+  applyThreadState(cache, "ws_1", {
+    thread: { ...thread, version: thread.version + 2, current_run_id: "next" },
+    current_run: fixtureRun({
+      id: "next",
+      status: "accepted",
+      sealed_at: null,
+    }),
+    last_run: sealed,
+    entries: [],
+  });
+  expect(cache.getQueryState(ranked.queryKey)?.isInvalidated).toBe(true);
+  cache.setQueryData(ranked.queryKey, ranking);
+  await invalidateConversation(cache, "ws_1", { threadId: thread.id });
+  expect(cache.getQueryState(ranked.queryKey)?.isInvalidated).toBe(true);
+  cache.clear();
+  client.close();
 });
 
 it("uses a bounded ordinary Thread query for delegation links", async () => {

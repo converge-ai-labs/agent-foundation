@@ -29,6 +29,7 @@ import {
 import type { SessionFilters } from "./api";
 import { zoneOffset } from "./format";
 import styles from "./conversations.module.css";
+import listStyles from "./session-list.module.css";
 
 const statuses: Schema["RunStatus"][] = [
   "accepted",
@@ -67,11 +68,17 @@ export function readSessionFilters(search: URLSearchParams): SessionFilters {
     trigger: known(search.getAll("trigger"), triggers),
     updated_after: search.get("updated_after") || undefined,
     updated_before: search.get("updated_before") || undefined,
+    sort: known(search.getAll("sort"), [
+      "runs",
+      "cost",
+      "updated_at",
+    ] as const)[0],
+    direction: known(search.getAll("direction"), ["asc", "desc"] as const)[0],
   };
 }
 
 /** URL values restricted to the filter's known options. */
-function known<T extends string>(values: string[], options: T[]): T[] {
+function known<T extends string>(values: string[], options: readonly T[]): T[] {
   return values.filter((value): value is T =>
     options.some((option) => option === value),
   );
@@ -201,6 +208,30 @@ export function SessionFilterBar({
                 update({ updated_after: [after], updated_before: [before] })
               }
             />
+            <div className={listStyles.mobileSort}>
+              <ChoiceFilter
+                label={t("Sort")}
+                allLabel={t("Recently updated")}
+                value={
+                  search.has("sort") || search.has("direction")
+                    ? `${search.get("sort") ?? "updated_at"}:${search.get("direction") ?? "desc"}`
+                    : undefined
+                }
+                options={[
+                  { value: "updated_at:asc", label: t("Oldest update") },
+                  { value: "runs:desc", label: t("Most runs") },
+                  { value: "runs:asc", label: t("Fewest runs") },
+                  { value: "cost:desc", label: t("Highest cost") },
+                  { value: "cost:asc", label: t("Lowest cost") },
+                ]}
+                onChange={(value) => {
+                  const [sort, direction] = (value ?? "updated_at:desc").split(
+                    ":",
+                  );
+                  update({ sort: [sort!], direction: [direction!] });
+                }}
+              />
+            </div>
             {active && (
               <Button
                 variant="ghost"

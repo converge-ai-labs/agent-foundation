@@ -373,7 +373,7 @@
   line-height: 1.5;
 }
 .dockNotice > span {
-  flex: 1;
+  flex: 1 1 16ch;
   min-width: 0;
 }
 .dockLink {

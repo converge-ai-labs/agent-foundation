@@ -45,17 +45,13 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
       ...cursors.map((cursor) => options.runs(threadId, { cursor })),
     ],
   });
-  const numbered = new Map<
-    string,
-    { run: Schema["RunListItem"]; number: number }
-  >();
+  const numbered = new Map<string, Schema["ThreadRunItem"]>();
   for (const page of pages)
-    page.data?.items.forEach((run, index) => {
+    page.data?.items.forEach((run) => {
       const held = numbered.get(run.id);
-      if (!held || held.run.version < run.version)
-        numbered.set(run.id, { run, number: page.data!.first_number - index });
+      if (!held || held.version < run.version) numbered.set(run.id, run);
     });
-  const runs = chronological([...numbered.values()].map(({ run }) => run));
+  const runs = chronological([...numbered.values()]);
   const ordered = pages
     .flatMap((page) => (page.data ? [page.data] : []))
     .sort((a, b) => a.first_number - b.first_number);

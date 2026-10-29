@@ -10,12 +10,15 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import type { Client } from "../../../../service-client";
+import { createClient, type Client } from "../../../../service-client";
 import { RunNavigator } from "./run-navigator";
 import {
   fixtureBranchedSession,
   fixtureForkThread,
   fixtureThread,
+  fixtureRun,
+  fixtureRunList,
+  fixtureRunPage,
 } from "../fixture";
 
 let client: Client;
@@ -41,6 +44,71 @@ vi.mock("react-i18next", () => ({
 beforeEach(() => {
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = fixtureBranchedSession();
+});
+
+it("requests ranked pages for the whole thread and preserves sorting when opening a run outside the chronological window", async () => {
+  const requests: URLSearchParams[] = [];
+  client.close();
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      requests.push(url.searchParams);
+      if (!url.searchParams.has("sort"))
+        return Response.json(
+          fixtureRunPage(
+            [fixtureRun({ id: "run_2" }), fixtureRun({ id: "run_1" })],
+            { total: 3, first_number: 2, previous_cursor: "newer" },
+          ),
+        );
+      const more = url.searchParams.has("cursor");
+      return Response.json({
+        items: [
+          {
+            ...fixtureRunList(fixtureRun({ id: more ? "run_1" : "run_3" })),
+            number: more ? 1 : 3,
+            cost: more ? "0.1" : "7",
+            model_calls: 18,
+            unpriced_requests: 0,
+          },
+        ],
+        total: 3,
+        first_number: more ? 1 : 3,
+        previous_cursor: null,
+        next_cursor: more ? null : "rank-2",
+      });
+    },
+  });
+  show();
+  const list = await openList(/Run 2 of 3/);
+  await userEvent
+    .setup()
+    .click(list.getByRole("button", { name: "Sort by Cost" }));
+  await list.findByRole("button", { name: /^Run 3/ });
+  expect(list.getAllByRole("button", { name: /^Run \d/ })).toHaveLength(1);
+  await userEvent
+    .setup()
+    .click(list.getByRole("button", { name: "Load more" }));
+  await list.findByRole("button", { name: /^Run 1/ });
+  const ranked = requests.filter((params) => params.has("sort"));
+  expect(
+    ranked.map((params) => [
+      params.get("sort"),
+      params.get("direction"),
+      params.get("cursor"),
+    ]),
+  ).toEqual([
+    ["cost", "desc", null],
+    ["cost", "desc", "rank-2"],
+  ]);
+  expect(ranked.every((params) => !params.has("anchor"))).toBe(true);
+  await userEvent.setup().click(list.getByRole("button", { name: /^Run 3/ }));
+  expect(
+    await screen.findByText(
+      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_3?run_sort=cost&run_direction=desc&view=debug",
+    ),
+  ).toBeTruthy();
 });
 afterEach(() => {
   cleanup();
@@ -69,17 +137,18 @@ function show(thread = fixtureThread(), runId = "run_2") {
 /** The pill's own list, which the outline in the gutter mirrors. */
 async function openList(name: RegExp) {
   await userEvent.setup().click(await screen.findByRole("button", { name }));
-  return within(await screen.findByRole("menu"));
+  return within(
+    (await screen.findAllByRole("navigation", { name: "Runs" })).at(-1)!,
+  );
 }
 
 it("lists only the current thread's runs, excluding children and forks", async () => {
   show();
   const list = await openList(/Run 2 of 2/);
-  const items = list.getAllByRole("menuitem");
-  expect(items.map((item) => item.textContent)).toEqual([
-    "Run 1Review the release12s",
-    "Run 2Write the markerstate.waiting",
-  ]);
+  const items = list.getAllByRole("button", { name: /^Run \d/ });
+  expect(items).toHaveLength(2);
+  expect(items[0]!.textContent).toContain("Run 1Review the release");
+  expect(items[1]!.textContent).toContain("Run 2Write the marker");
   expect(list.queryByText("Root thread")).toBeNull();
   await userEvent.setup().click(items[0]!);
   expect(
@@ -112,9 +181,9 @@ it("draws nothing for a lone fork Run, since parent runs are not its own", async
   await waitFor(() => {
     const queries = cache.getQueryCache().getAll();
     expect(queries.length).toBeGreaterThan(0);
-    expect(queries.every((query) => query.state.status === "success")).toBe(
-      true,
-    );
+    expect(
+      queries.find((query) => query.queryKey[2] === "runs")?.state.status,
+    ).toBe("success");
   });
   expect(screen.queryByRole("button", { name: "Previous run" })).toBeNull();
 });

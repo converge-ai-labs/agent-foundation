@@ -3556,5 +3556,17 @@
   "Context summary": "上下文摘要",
   "Summarize tool": "摘要工具",
   "Let the agent write a summary and continue from a fresh context.": "允许 agent 编写摘要，并从新的上下文继续执行。",
-  "Automatic context compaction remains available when this tool is off.": "关闭此工具后，自动上下文压缩仍然可用。"
+  "Automatic context compaction remains available when this tool is off.": "关闭此工具后，自动上下文压缩仍然可用。",
+  "Sort by {{field}}": "按{{field}}排序",
+  "Ascending": "升序",
+  "Descending": "降序",
+  "Known subtotal; some model calls are unpriced.": "已知费用小计；部分模型调用未定价。",
+  "Known subtotal": "已知费用小计",
+  "Sort": "排序",
+  "Recently updated": "最近更新",
+  "Oldest update": "最早更新",
+  "Most runs": "运行次数最多",
+  "Fewest runs": "运行次数最少",
+  "Highest cost": "费用最高",
+  "Lowest cost": "费用最低"
 }

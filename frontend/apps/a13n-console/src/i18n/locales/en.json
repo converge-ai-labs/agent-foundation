@@ -3556,5 +3556,17 @@
   "Context summary": "Context summary",
   "Summarize tool": "Summarize tool",
   "Let the agent write a summary and continue from a fresh context.": "Let the agent write a summary and continue from a fresh context.",
-  "Automatic context compaction remains available when this tool is off.": "Automatic context compaction remains available when this tool is off."
+  "Automatic context compaction remains available when this tool is off.": "Automatic context compaction remains available when this tool is off.",
+  "Sort by {{field}}": "Sort by {{field}}",
+  "Ascending": "Ascending",
+  "Descending": "Descending",
+  "Known subtotal; some model calls are unpriced.": "Known subtotal; some model calls are unpriced.",
+  "Known subtotal": "Known subtotal",
+  "Sort": "Sort",
+  "Recently updated": "Recently updated",
+  "Oldest update": "Oldest update",
+  "Most runs": "Most runs",
+  "Fewest runs": "Fewest runs",
+  "Highest cost": "Highest cost",
+  "Lowest cost": "Lowest cost"
 }

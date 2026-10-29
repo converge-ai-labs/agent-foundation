@@ -88,6 +88,8 @@ export function fixtureSession(
     origin: null,
     created_by_id: "usr_1",
     last_run_id: "run_2",
+    cost: null,
+    unpriced_requests: 0,
     version: 1,
     created_at: START,
     updated_at: at(12),
@@ -276,7 +278,13 @@ export function fixtureRunPage(
   overrides: Partial<Schema["ThreadRunPage"]> = {},
 ): Schema["ThreadRunPage"] {
   return {
-    items: runs.map(fixtureRunList),
+    items: runs.map((run, index) => ({
+      ...fixtureRunList(run),
+      number: (overrides.first_number ?? runs.length) - index,
+      cost: null,
+      model_calls: 0,
+      unpriced_requests: 0,
+    })),
     total: runs.length,
     first_number: runs.length,
     next_cursor: null,

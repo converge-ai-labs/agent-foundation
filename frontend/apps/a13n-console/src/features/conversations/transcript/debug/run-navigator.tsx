@@ -1,4 +1,4 @@
-import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
+import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import {
   CaretDownIcon,
   CaretLeftIcon,
@@ -8,8 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
 import { useRunOutline } from "./outline";
-import { RunOutline, RunRow, RunPages } from "./run-outline";
-import outline from "./run-outline.module.css";
+import { RunOutline } from "./run-outline";
 import styles from "./details.module.css";
 
 /** The current Thread's Runs in a wide outline or a compact navigation menu. */
@@ -22,6 +21,7 @@ export function RunNavigator({
 }) {
   const { t } = useTranslation();
   const tree = useRunOutline(thread, runId);
+  const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<{ id: string; offset: number } | null>(
     null,
   );
@@ -65,8 +65,8 @@ export function RunNavigator({
         >
           <CaretLeftIcon size={13} aria-hidden="true" />
         </Button>
-        <Menu>
-          <MenuTrigger
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
             render={
               <Button
                 variant="ghost"
@@ -78,22 +78,15 @@ export function RunNavigator({
           >
             {tree.label}
             <CaretDownIcon size={11} aria-hidden="true" />
-          </MenuTrigger>
-          <MenuPopup align="center" className={styles.navigatorPopup}>
-            <RunPages outline={tree} direction="older" menu />
-            {tree.nodes.map((node) => (
-              <MenuItem
-                key={node.run.id}
-                className={`${outline.row} ${outline.menuRow}`}
-                data-current={node.run.id === tree.inView || undefined}
-                onClick={() => tree.open(node.run)}
-              >
-                <RunRow node={node} />
-              </MenuItem>
-            ))}
-            <RunPages outline={tree} direction="newer" menu />
-          </MenuPopup>
-        </Menu>
+          </PopoverTrigger>
+          <PopoverPopup align="center" className={styles.navigatorPopup}>
+            <RunOutline
+              outline={tree}
+              compact
+              onSelect={() => setOpen(false)}
+            />
+          </PopoverPopup>
+        </Popover>
         <Button
           size="icon-sm"
           variant="ghost"
