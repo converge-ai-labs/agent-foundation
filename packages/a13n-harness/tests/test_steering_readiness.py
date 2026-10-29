@@ -580,3 +580,53 @@ async def test_host_acceptance_guard_rechecks_after_native_lock_wait(immediate):
         assert not bridge._pending_requests
         finish.set()
         await consumer
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_rejected_input_is_removed_from_merged_history_and_replay_only(pending):
+    from a13n_harness import HarnessState
+    from a13n_harness.capabilities.steering import STEERING_CAPABILITY_ID, without_input
+    from a13n_harness.content import (
+        ContentItem,
+        ContentMetadata,
+        input_request,
+        merge_request_history,
+        request_input_content,
+    )
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, StoredRef
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+    notice = input_request(
+        [ContentItem("expired hint", ContentMetadata(source_id="notice", display=False))],
+        metadata={"a13n.steering-input": "notice"},
+    )
+    user = input_request(
+        [ContentItem("real work", ContentMetadata(source_id="user"))], metadata={"a13n.steering-input": "user"}
+    )
+    returned = ModelRequest(parts=[ToolReturnPart("delegate", "completed child", "child")])
+    ref = StoredRef(key="child-state", digest="0" * 64, size=10)
+    ledger = {"retained_requests": [user], "pending_requests": []}
+    ledger["pending_requests" if pending else "retained_requests"].append(notice)
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+    # Use the native message codec for the owning namespace's wire shape.
+    ledger = {key: ModelMessagesTypeAdapter.dump_python(value, mode="json") for key, value in ledger.items()}
+    state = HarnessState.new(
+        message_history=merge_request_history((returned, notice, user)),
+        agent_context_state=AgentContextStateSnapshot(
+            entries={
+                STEERING_CAPABILITY_ID: CapabilityState(version="1", data=ledger),
+                "child": CapabilityState(version="1", data={"continuation": "keep"}),
+            }
+        ),
+    ).model_copy(update={"refs": (ref,), "future_field": {"keep": True}})
+    corrected = without_input(state, input_id="notice", source_id="notice")
+    assert "expired hint" not in corrected.model_dump_json()
+    assert "expired hint" in state.model_dump_json()
+    assert steering_input_ids(corrected.message_history) == ("user",)
+    (request,) = corrected.message_history
+    assert request.parts[0] == returned.parts[0]
+    assert [item.metadata.source_id for item in request_input_content(request)] == ["user"]
+    assert corrected.agent_context_state.get("child") == state.agent_context_state.get("child")
+    assert corrected.refs == (ref,) and corrected.model_extra == state.model_extra
+    assert without_input(corrected, input_id="notice", source_id="notice") == corrected

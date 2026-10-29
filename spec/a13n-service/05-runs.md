@@ -25,12 +25,14 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 - A **session** groups related threads. Its `last_run_id` names the most recently accepted run of any of its threads.
 - A **thread** advances one history at a time. It has an inbox, desired environment and memory mounts ([06](06-environments.md#mounts), [11](11-memory.md#mounts)) and caller headers ([04](04-resources.md#caller-headers)).
-- An **entry** is one queued input: a `message`, `child_result` or `tool_result`. Only a pending message can change.
+- An **entry** is one queued input: a `message`, `child_result`, `tool_result` or `browser_handback`. Only a pending message can change.
 - A **run** starts from one source, either an entry or the answers that resume a waiting run. It freezes an agent revision, options and an execution identity, and may incorporate further compatible entries. Its initial history never changes.
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
 [Schedules](13-schedules.md#objects-and-ownership) select a mutable Session/Thread target, create new Threads or queue messages in a fixed Thread. Their trigger Entry and waiting/resume Run associations are owned by that contract; ordinary input and Run lifecycles remain unchanged.
+
+[Managed Browsers](14-browsers.md#resource-and-binding) owns the Thread's desired Browser binding and its frozen Run selection. Its [handback input contract](14-browsers.md#handback-input-and-durable-observation) uses this chapter's existing assignment, capacity and continuation mechanisms, with revocation checked before durable incorporation and any derived model summary.
 
 ## Session display identity
 
@@ -130,7 +132,7 @@ inbox_entries
   request_key NULL  request_digest NULL  request_kind NULL  request_target NULL
   status  assigned_run_id NULL  incorporated_checkpoint_seq NULL  failure NULL
   created_at  finished_at NULL
-  kind IN ('message', 'child_result', 'tool_result')
+  kind IN ('message', 'child_result', 'tool_result', 'browser_handback')
   delivery IN ('steer', 'next_run')
   status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')
   request_kind IN ('thread', 'message', 'fork')
@@ -151,7 +153,7 @@ inbox_entries
 runs
   id  organization_id  workspace_id  session_id  thread_id  agent_id  agent_revision_id
   revision_selection  principal_id  authority  options  options_digest  mcp_headers  environment_mounts
-  memory_mounts  memory_cursors
+  memory_mounts  memory_cursors  browser_binding NULL
   source_entry_id NULL  resume NULL  resumed_by_id NULL  request_key NULL  request_digest NULL
   trigger  lineage  parent_run_id NULL
   status  wait_reason NULL  pending NULL  cancel_requested_at NULL
@@ -160,7 +162,7 @@ runs
   checkpoint NULL  tail NULL  output NULL  failure NULL  usage_at_seal NULL
   labels  started_at NULL  sealed_at NULL  version  created_at  updated_at
   revision_selection IN ('pinned', 'default', 'inherited')
-  trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'spawned')
+  trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')
   lineage IN ('root', 'continue', 'fork')
   status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')
   wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')

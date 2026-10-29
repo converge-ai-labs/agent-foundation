@@ -551,3 +551,15 @@ async def test_global_selection_waits_for_admitted_shared_page_input(scoped_brow
     assert typed == ["a", "b", "c"] and json.loads(result)["dispatch"] == "dispatched"
     assert page.requires_observation and not page.revision
     assert owner.page is shared.page and not shared.targets
+
+
+async def test_host_can_clear_selection_without_relinquishing_owned_tabs(scoped_browser):
+    browser, _ = scoped_browser
+    scope = CdpBrowserBackend(browser, browser.pages["one"])
+    scope.clear_selection()
+    assert scope.targets == {"one"}
+    assert not any(tab.selected for tab in await scope.tabs("list"))
+    with pytest.raises(BrowserError, match="No tabs"):
+        await scope.observe()
+    await scope.tabs("select", target="one")
+    assert scope.page.target == "one" and scope.page.requires_observation

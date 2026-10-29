@@ -230,6 +230,8 @@ Sweeps run on every `all` and `control` replica at once. Coordination belongs to
 
 A `deliver_outbox` pass delivers its kinds side by side, so a slow kind never delays another. Within a kind it claims and handles at most its configured `parallel` rows at a time, each under its own claim of the kind's `lease_seconds`, and starts no new batch once one claim lease has passed since the pass began, so a pass ends within two leases. Retries, backoff and dead-lettering belong to the outbox ([07](07-facts-and-delivery.md#outbox)). There is no generic jobs table.
 
+Browser lifecycle/control reconciliation is owned by [Managed Browsers](14-browsers.md#api-and-runtime) and runs on the control role in bounded rotating batches. Browser handback reuses `deliver_outbox` and `advance_threads`, without another mailbox receiver or Agent loop.
+
 ## Worker
 
 Each executing process runs one claim loop with `worker.slots` local slots and a worker ID, `wrk_` plus 32 hex characters, new for each worker incarnation and recorded on each attempt; `run_attempts.worker_build` records its package version. The start log names the worker ID, host and build separately. The loop reserves capacity before claiming: it asks for at most as many runs as it has free slots, and a full worker waits for a slot to free before scanning again. [05](05-runs.md#claim-heartbeat-and-authority) owns the claim transaction. A claim that fails, for example during a database outage, is logged and tried again after `worker.scan_seconds`; running attempts keep their slots and leases.

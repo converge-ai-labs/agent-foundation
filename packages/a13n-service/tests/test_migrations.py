@@ -662,3 +662,17 @@ def test_schedule_target_migration_replaces_unique_session_index(database):  # t
     upgrade(database, OSS)
     assert session_indexes() == [("ix_schedules_session_id", "false", "session_id")]
     check(database, OSS)
+
+
+def test_browser_revision_roundtrip(empty_database: Database) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "a9acb6772400")
+    original_rules, original_objects = rows(empty_database, RULES), rows(empty_database, OBJECTS)
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "a9acb6772400")
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)

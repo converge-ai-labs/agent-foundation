@@ -200,6 +200,9 @@ async def recover(
 async def stop(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: RunRow) -> None:
     """Cancel an active run under its thread and run locks: an accepted run seals now, a running one is asked to
     stop at its next safe boundary. A sealed run is left as it is."""
+    from a13n_service.runs.browsers.delivery import suppress
+
+    await suppress(session, thread.id)
     current = await now(session)
     if run.status == "accepted":
         await seal(session, runtime, thread, run, None, Outcome.cancelled(), at=current)

@@ -1,6 +1,6 @@
 # Providers
 
-Read `/platform-instance/catalog.json` for installed provider types, configuration schemas and authentication requirements. List workspace providers before proposing a create. Model, Environment, Connector and Web Providers are supported; Memory is outside Composer's scope.
+Read `/platform-instance/catalog.json` for installed provider types, configuration schemas and authentication requirements. List workspace providers before proposing a create. Model, Environment, Connector and Web Providers support the Composer credential card; Memory is outside Composer's scope. Browser Provider reads and tests use the providers group, but Browser account creation and human control require an integrating application. Check `/provider-types/browser` before proposing a Browser: the built-in distribution registers no live supplier. A provider account is not an allocated Browser.
 
 To test a saved provider, call `POST /api/v1/{kind}-providers/{provider_id}/test` with its `provider_id` and no request body. This operation requires review and Provider `run` permission. The Service uses the saved configuration and credentials for one non-billable probe and returns `{provider_id, provider_version, status, message}`. Report `succeeded`, `failed` or `unsupported` as returned; success does not prove a particular model can complete inference. Check `supports_test` in the installed type catalog first. Model discovery is a separate capability and must not substitute for this test.
 

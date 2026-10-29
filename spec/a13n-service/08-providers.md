@@ -10,7 +10,7 @@ A provider is a backend the Service calls on a tenant's behalf: a model API, an 
 
 ## Registry
 
-`providers/registry.py` holds the definitions a deployment registers, keyed by `(kind, type)`. `kind` is `model`, `environment`, `connector`, `web` or `memory`; there is no trace kind.
+`providers/registry.py` holds the definitions a deployment registers, keyed by `(kind, type)`. `kind` is `model`, `environment`, `connector`, `web`, `memory` or `browser`; there is no trace kind. [Managed Browsers](14-browsers.md#provider-contract) owns the Service Browser definition, supplier lifecycle and viewer guarantees. The built-in distribution registers no live Browser supplier.
 
 - `Registry.of(definitions)` groups the distribution's definitions by kind. A duplicate type within a kind, or a definition of any other kind, fails assembly ([09](09-runtime.md#assembly)).
 - `get(kind, type)` returns the definition a resource's `type` selects. An unregistered type is `unavailable` with dependency `{kind}:{type}`, so a row whose type a deployment no longer registers stays readable and fails only when used.

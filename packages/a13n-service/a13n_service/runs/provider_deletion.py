@@ -12,6 +12,7 @@ from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.tables import (
+    BrowserProviderRow,
     ConnectorProviderRow,
     MemoryProviderRow,
     ModelProviderOAuthRow,
@@ -20,6 +21,7 @@ from a13n_service.resources.providers.tables import (
     WebProviderRow,
 )
 from a13n_service.resources.rows import audit_row, find_row
+from a13n_service.runs.browsers.tables import BrowserRow
 from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.tables import InboxEntryRow, RunRow
 from a13n_service.tenancy.access import workspace_scope
@@ -66,6 +68,7 @@ async def delete_provider(
                 ModelProviderRow: (ModelRow, ModelRow.provider_id),
                 ConnectorProviderRow: (ConnectionRow, ConnectionRow.connector_provider_id),
                 MemoryProviderRow: (MemoryRow, MemoryRow.provider_id),
+                BrowserProviderRow: (BrowserRow, BrowserRow.provider_id),
             }[row_type]
             if await session.scalar(
                 select(owner.id)

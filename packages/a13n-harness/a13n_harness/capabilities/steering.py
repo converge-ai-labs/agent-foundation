@@ -13,11 +13,17 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, UserPromptPart
 
-from a13n_harness.content import ContentItem, ContentMetadata, input_request
+from a13n_harness.content import ContentItem, ContentMetadata, input_request, replace_request_parts, request_parts
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
-from a13n_harness.state import AgentContextState
+from a13n_harness.state import (
+    AgentContextState,
+    AgentContextStateSnapshot,
+    CapabilityState,
+    HarnessState,
+    encode_messages,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -376,6 +382,63 @@ def steering_input_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
     return _input_ids(messages, _INPUT_ID_METADATA_KEY)
 
 
+def without_input(state: HarnessState, *, input_id: str, source_id: str) -> HarnessState:
+    """Remove a Host-rejected input from a pre-model continuation and its replay ledger.
+
+    The Host must stop the live run before its next model call and resume this replacement
+    state. This does not undo effects or rewrite responses to an already-observed input.
+    `source_id` identifies the Host's content, including an initial input without a steer ID.
+    Unrelated history, capability state, child continuations and stored references survive.
+    """
+
+    def clean(request: ModelRequest) -> ModelRequest | None:
+        parts = []
+        for part, items in request_parts(request):
+            if items is not None:
+                kept = [item for item in items if item.metadata.source_id != source_id]
+                if not kept:
+                    continue
+                assert isinstance(part, UserPromptPart)
+                part, items = replace(part, content=[item.value for item in kept]), kept
+            parts.append((part, items))
+        if not parts:
+            return None
+        metadata = dict(request.metadata or {})
+        ids = [value for value in steering_input_ids((request,)) if value != input_id]
+        if ids:
+            metadata[_INPUT_ID_METADATA_KEY] = ids
+        else:
+            metadata.pop(_INPUT_ID_METADATA_KEY, None)
+        return replace_request_parts(replace(request, metadata=metadata), parts)
+
+    messages = tuple(
+        cleaned
+        for message in state.message_history
+        if (cleaned := clean(message) if isinstance(message, ModelRequest) else message) is not None
+    )
+    entries = state.agent_context_state.entries
+    entry = entries.get(STEERING_CAPABILITY_ID)
+    if entry is not None:
+        if entry.version != _STEERING_STATE_VERSION:
+            raise RunError("Unsupported steering state version.", code="state_version_unsupported")
+        ledger = _SteeringState.model_validate(entry.data)
+        ledger = _SteeringState(
+            retained_requests=tuple(
+                value for request in ledger.retained_requests if (value := clean(request)) is not None
+            ),
+            pending_requests=tuple(
+                value for request in ledger.pending_requests if (value := clean(request)) is not None
+            ),
+        )
+        entries[STEERING_CAPABILITY_ID] = CapabilityState(version=entry.version, data=ledger.model_dump(mode="json"))
+    return state.model_copy(
+        update={
+            "message_history_json": encode_messages(messages),
+            "agent_context_state": AgentContextStateSnapshot(entries=entries),
+        }
+    )
+
+
 def _input_ids(messages: Sequence[ModelMessage], key: str) -> tuple[str, ...]:
     return tuple(
         input_id
@@ -465,4 +528,4 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
             ctx.deps._steering.unbind(ctx, owned=owned)
 
 
-__all__ = ["STEERING_CAPABILITY_ID", "SteeringBridge", "SteeringCapability", "steering_input_ids"]
+__all__ = ["STEERING_CAPABILITY_ID", "SteeringBridge", "SteeringCapability", "steering_input_ids", "without_input"]

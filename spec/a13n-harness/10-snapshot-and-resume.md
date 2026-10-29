@@ -133,6 +133,10 @@ State export does not require `HarnessState.message_history` to equal a result o
 
 Accepted steering inputs that are not yet represented in canonical history are retained in the steering Capability namespace during ordinary export and graceful interrupt-save. Restoration preserves their order and omits identities already incorporated in history. This applies to ordinary and immediate steering; it adds no per-steer checkpoint. Abrupt process loss retains the Host's existing persistence limits.
 
+### Removing unobserved Host input
+
+`capabilities.steering.without_input(state, input_id=..., source_id=...)` returns a detached corrected checkpoint for a Host input rejected before model observation. It removes the exact source-tagged content and steering identity from canonical history and pending/retained replay requests, preserving other content in merged requests, completed tool results, child state, references and unrelated Capability/Environment namespaces. The Host must stop the live attempt and resume from the corrected state before dispatching a model request. This helper does not undo tool effects or retract derived summaries; a Host with revocable input must arbitrate incorporation before compaction or any other model observation.
+
 ## Host State Store
 
 ```python

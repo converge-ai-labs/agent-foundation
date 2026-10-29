@@ -30,7 +30,7 @@ from a13n_service.providers.registry import WebOperation
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
 PLATFORM_SOURCE = "platform"
 
-type ToolsetKey = Literal["files", "shell", "computer", "web", "memory", "assets"] | PlatformGroup
+type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -195,6 +195,16 @@ def _platform(group: PlatformGroup, display_name: str, description: str) -> _Too
 
 
 _TOOLSETS: tuple[_Toolset, ...] = (
+    _Toolset(
+        "browser",
+        "Browser",
+        False,
+        tuple(
+            _Tool(key, key.replace("_", " ").title(), f"browser.{key}", f"browser_{key}")
+            for key in ("observe", "read", "navigate", "act", "wait", "tabs", "dialog", "files", "screenshot")
+        ),
+        description="Native browser tools on the Thread's managed Browser binding.",
+    ),
     _Toolset(
         "files",
         "Files",

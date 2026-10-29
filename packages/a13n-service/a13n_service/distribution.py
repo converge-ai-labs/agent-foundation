@@ -56,6 +56,7 @@ from a13n_service.resources.models.routes import router as models_router
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.routes import router as providers_router
 from a13n_service.resources.providers.tables import (
+    BrowserProviderRow,
     ConnectorProviderRow,
     EnvironmentProviderRow,
     MemoryProviderRow,
@@ -73,6 +74,17 @@ from a13n_service.resources.uploads.tables import UploadRow
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
+from a13n_service.runs.browsers.delivery import handbacks
+from a13n_service.runs.browsers.maintenance import sweep as browser_sweep
+from a13n_service.runs.browsers.routes import router as browsers_router
+from a13n_service.runs.browsers.tables import (
+    BrowserBlockedRow,
+    BrowserOperationRow,
+    BrowserRow,
+    BrowserSelectionRow,
+    BrowserTabRow,
+    ThreadBrowserRow,
+)
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.compactions import sweep as compaction_sweep
@@ -297,6 +309,7 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
                 "webhook": webhooks,
                 "child_result": child_results(runtime),
                 "tool_result": tool_results(runtime),
+                "browser_handback": handbacks(runtime),
                 "email": mail,
                 MEMORY_PURGE: MemoryPurger(runtime),
                 CLEANUP: partial(clean, runtime),
@@ -353,6 +366,13 @@ OSS = Distribution(
         WebProviderRow,
         ConnectorProviderRow,
         EnvironmentProviderRow,
+        BrowserProviderRow,
+        BrowserRow,
+        ThreadBrowserRow,
+        BrowserTabRow,
+        BrowserSelectionRow,
+        BrowserOperationRow,
+        BrowserBlockedRow,
         EnvironmentTemplateRow,
         ConnectionRow,
         SubscriptionRow,
@@ -425,6 +445,7 @@ OSS = Distribution(
         findings_router,
         environment_templates_router,
         environments_router,
+        browsers_router,
         desktop_assistance_router,
         memories_router,
         memory_spaces_router,
@@ -443,6 +464,7 @@ OSS = Distribution(
         _reconcile_tool_executions,
         _prune_tool_results,
         desktop_assistance_sweep,
+        browser_sweep,
         _expire_credentials,
         maintenance_sweep,
         renewal_sweep,

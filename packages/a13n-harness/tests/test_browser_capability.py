@@ -339,3 +339,24 @@ async def test_host_can_return_takeover_guidance_without_waiting_or_replaying(na
     notify.assert_called_once_with()
     backend.wait_for_handback.assert_not_awaited()
     assert not owner._references and not owner._tabs and owner._screenshot is None
+
+
+async def test_host_tool_selection_survives_run_binding():
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from pydantic_ai.models.function import FunctionModel
+
+    backend = AsyncMock(spec=BrowserBackend)
+
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools if tool.name.startswith("browser_")} == {"browser_tabs"}
+        yield "Done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        capabilities=(BrowserUseCapability(enabled_tools=frozenset({"tabs"})),),
+        output_type=str,
+    )
+    await executable.run("List tools", bindings=RunBindings.embedded(browser_backend=backend))
+    with pytest.raises(ValueError, match="Unknown browser tool"):
+        BrowserUseCapability(enabled_tools=frozenset({"typo"}))

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IfMatch
 from a13n_service.resources.providers.tables import (
+    BrowserProviderRow,
     ConnectorProviderRow,
     MemoryProviderRow,
     ModelProviderRow,
@@ -37,5 +38,5 @@ def _add_route(row_type: type[ProviderRow]) -> None:
         return Response(status_code=204)
 
 
-for _row_type in (ModelProviderRow, ConnectorProviderRow, WebProviderRow, MemoryProviderRow):
+for _row_type in (ModelProviderRow, ConnectorProviderRow, WebProviderRow, MemoryProviderRow, BrowserProviderRow):
     _add_route(_row_type)

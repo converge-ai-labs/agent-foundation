@@ -38,7 +38,7 @@ from a13n_harness import (
     RunPreparationContext,
 )
 from a13n_harness.capabilities import MemoryCursors
-from a13n_harness.capabilities.steering import steering_input_ids
+from a13n_harness.capabilities.steering import steering_input_ids, without_input
 from a13n_harness.compaction import CompactionResult
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
@@ -50,6 +50,7 @@ from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import short_session, transaction
@@ -70,7 +71,8 @@ from a13n_service.runs.attempts import (
     authorize_execution,
     lock_thread_lease,
 )
-from a13n_service.runs.boundaries import Boundaries, Staged
+from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
+from a13n_service.runs.browsers.delivery import StaleNotice, require_notice
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
@@ -148,6 +150,7 @@ class _Plan:
     tail: Tail
     committed: Committed | None
     seq: int
+    obsolete_notice: bool = False
 
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
@@ -283,6 +286,27 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         unknown_outcomes = checkpoint is None and parent is not None and parent.status in {"failed", "cancelled"}
         session_id, source_entry_id = run.session_id, run.source_entry_id
         source = await session.get(InboxEntryRow, source_entry_id) if source_entry_id else None
+        obsolete_notice = (
+            not assigned
+            and source is not None
+            and source.kind == "browser_handback"
+            and source.status == "failed"
+            and source.failure is not None
+            and source.failure.get("code") == "browser_notice_stale"
+        )
+        if obsolete_notice:
+            # A corrected first cut may already contain other incorporated input which
+            # still needs its model response. Only a notice-only Run completes as a no-op.
+            obsolete_notice = not await session.scalar(
+                select(
+                    select(InboxEntryRow.id)
+                    .where(
+                        InboxEntryRow.assigned_run_id == run.id,
+                        InboxEntryRow.status == "consumed",
+                    )
+                    .exists()
+                )
+            )
         input_text = (
             MessagePayload.model_validate(source.payload).text()
             if source is not None and source.kind == "message"
@@ -350,6 +374,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         tail=tail,
         committed=committed,
         seq=own.seq if own is not None else 0,
+        obsolete_notice=obsolete_notice,
     )
 
 
@@ -402,6 +427,10 @@ class _Offers:
         if self.requested:
             ids |= self.initial
         return [entry_id for entry_id in self.open if entry_id in ids]
+
+    def pending_notice(self, messages: list[ModelMessage]) -> bool:
+        ids = set(steering_input_ids(messages)) | self.initial
+        return any(entry.kind == "browser_handback" and entry.id in ids for entry in self.open.values())
 
     def consumed(self, entry_ids: list[str]) -> None:
         for entry_id in entry_ids:
@@ -465,11 +494,23 @@ class _Attempt:
         self.yielding = False
         self.desktop_paused = False
         self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))
-        self.boundaries.wait_for_model = self.desktop_enabled
+        self.boundaries.wait_for_model = self.desktop_enabled or any(
+            entry.kind == "browser_handback" for entry in plan.assigned
+        )
         self.live: ThreadStream | None = None
 
     async def run(self) -> None:
         try:
+            if self.plan.obsolete_notice:
+                # A notification-only continuation lost its source before its first checkpoint.
+                # Preserve inherited history and complete without a model call or a Thread pause.
+                await self._commit(
+                    self.plan.state,
+                    cursors=self.cursors.snapshot(),
+                    snapshot=self._snapshot(),
+                    outcome=Outcome(status="completed"),
+                )
+                return
             result = await self._stream()
             if result is None:
                 if self.control.stopped.is_set():
@@ -488,6 +529,14 @@ class _Attempt:
             error = _own(wrapped)
             if isinstance(error, LeaseLost):
                 raise error from None
+            if isinstance(error, StaleNotice):
+                # Input-read rejection has no new work. Checkpoint rejection has already saved
+                # the same cut without the notice, including completed tools and child state.
+                async with transaction(self.runtime.storage) as session:
+                    _, run, _, current = await lock_thread_lease(session, self.lease)
+                    await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
+                await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
+                return
             outcome = self._refusal() or _failure(self.lease, error)
             if outcome is None:
                 await _release(self.runtime, self.lease, error)
@@ -547,6 +596,7 @@ class _Attempt:
                 capabilities=lambda node: (
                     [
                         self.boundaries,
+                        InputBoundary(self.boundaries, self.offers.pending_notice),
                         *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *host.memory,
@@ -678,7 +728,7 @@ class _Attempt:
             output.observe(item)
 
     async def _boundary(self, staged: Staged, *, stream: HarnessRunStream, output: Coalescer) -> None:
-        if staged.at == "model":
+        if staged.at in {"input", "model"}:
             self.offers.requested = True
         steers = await self._commit(
             staged.state,
@@ -710,6 +760,42 @@ class _Attempt:
         pause_boundary: bool = False,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
+    ) -> list[Offered]:
+        rejected: list[StaleNotice] = []
+        while True:
+            try:
+                steers = await self._commit_cut(
+                    state,
+                    cursors=cursors,
+                    snapshot=snapshot,
+                    pause_boundary=pause_boundary,
+                    outcome=outcome,
+                    deferred=deferred,
+                    rejected=rejected,
+                )
+                break
+            except StaleNotice as error:
+                # The model waits at this cut. Preserve its completed work and remove only
+                # the expired hint from history and compact/recovery replay state.
+                rejected.append(error)
+                state = without_input(state, input_id=error.entry_id, source_id=error.entry_id)
+                self.offers.open.pop(error.entry_id)
+        if rejected:
+            # The live Harness still holds the old input. End this attempt before dispatch;
+            # ordinary recovery restores the corrected, durably committed continuation.
+            raise rejected[0]
+        return steers
+
+    async def _commit_cut(
+        self,
+        state: HarnessState,
+        *,
+        cursors: dict[str, str | None],
+        snapshot: Snapshot,
+        pause_boundary: bool,
+        outcome: Outcome | None,
+        deferred: JsonValue,
+        rejected: list[StaleNotice],
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
@@ -755,6 +841,15 @@ class _Attempt:
         async with transaction(self.runtime.storage) as session:
             # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
             thread, run, attempt, current = await lock_thread_lease(session, self.lease)
+            # This transaction is the observation boundary: retake either suppresses the hint
+            # first, or follows its durable incorporation. No model request carrying a new
+            # Browser notice dispatches before this commit, and no lock spans external I/O.
+            for entry_id in consumed:
+                if self.offers.open[entry_id].kind == "browser_handback":
+                    entry = await session.get_one(InboxEntryRow, entry_id)
+                    await require_notice(session, self.runtime, entry)
+            for error in rejected:
+                await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
             committed = await checkpoints.commit(
                 session,
                 run,
@@ -815,6 +910,8 @@ class _Attempt:
                     continue
                 if not self.boundaries.accepting_steers:
                     return  # Keep the unconsumed entry for continuation after native completion.
+                if entry.kind == "browser_handback":
+                    self.boundaries.wait_for_model = True
                 try:
                     await stream.steer(
                         content,

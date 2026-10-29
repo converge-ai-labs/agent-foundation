@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
-from a13n_harness.capabilities import CompactionCapability
+from a13n_harness.capabilities import CompactionCapability, HandoffCapability
+from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapRunHandler
@@ -27,7 +28,7 @@ from a13n_service.runs.display import Snapshot, open_tool_calls
 class Staged:
     """One immutable checkpoint cut and its pre-effect completion signal."""
 
-    at: Literal["model", "tool"]
+    at: Literal["input", "model", "tool"]
     state: HarnessState
     cursors: dict[str, str | None]
     display: Snapshot
@@ -149,7 +150,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         return args
 
     async def _stage(
-        self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["model", "tool"]
+        self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["input", "model", "tool"]
     ) -> asyncio.Future[None]:
         if self._closed:
             raise asyncio.CancelledError
@@ -172,3 +173,27 @@ class Boundaries(AbstractCapability[AgentContext]):
             completed.cancel()
             raise
         return completed
+
+
+class InputBoundary(AbstractCapability[AgentContext]):
+    """Commit revocable input before any context transform can derive a summary from it."""
+
+    id = "a13n.service.input-boundary"
+
+    def __init__(self, boundaries: Boundaries, pending: Callable[[list[ModelMessage]], bool]) -> None:
+        self.boundaries = boundaries
+        self.pending = pending
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(
+            wraps=(HandoffCapability, CompactionCapability, ModelContextCoordinatorCapability),
+            wrapped_by=(InputCapability,),
+        )
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        if ctx.run_id == self.boundaries.primary and self.pending(ctx.messages):
+            completed = await self.boundaries._stage(ctx, ctx.messages, "input")
+            await asyncio.shield(completed)
+        return request_context

@@ -14,6 +14,7 @@ from functools import partial
 
 from a13n_harness import AgentContext, EnvironmentMount, RequestContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
+from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
@@ -30,6 +31,7 @@ from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
+    enabled_tools,
     memory_file_tools,
     memory_record_tools,
     platform_tools,
@@ -39,6 +41,10 @@ from a13n_service.resources.connections.runtime import SelectedConnection, open_
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease
+from a13n_service.runs.browsers.admission import GUIDANCE as BROWSER_GUIDANCE
+from a13n_service.runs.browsers.execution import Backend as BrowserBackend
+from a13n_service.runs.browsers.execution import open_backend
+from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.environments.mounts import PRIMARY, has_primary
@@ -70,6 +76,7 @@ class _Parts:
     platform: Mapping[str, ToolIdentity]
     host_skills: bool
     builtin_instructions: str | None
+    browser_tools: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +87,7 @@ class HostPlan:
     # The root agent's enabled memory tools of each kind.
     file_tools: frozenset[FileToolKey]
     record_tools: frozenset[RecordToolKey]
+    browser: BrowserBinding | None
 
 
 async def resolve_host(
@@ -133,6 +141,7 @@ async def resolve_host(
             platform=platform_tools(config.toolsets),
             host_skills=host_skills,
             builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
+            browser_tools=enabled_tools(config.toolsets, "browser"),
         )
     return HostPlan(
         parts,
@@ -140,6 +149,7 @@ async def resolve_host(
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
+        browser=BrowserBinding.model_validate(run.browser_binding) if run.browser_binding is not None else None,
     )
 
 
@@ -154,6 +164,7 @@ class Host:
     skill_cache: Cache
     tools: Mapping[str, Mapping[str, AbstractCapability[AgentContext]]]
     webs: Mapping[str, WebBinding]
+    browsers: Mapping[str, BrowserBackend]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
     environment: EnvironmentRuntime
@@ -167,6 +178,10 @@ class Host:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
+        if agent.revision_id in self.browsers:
+            features.append(
+                BrowserUseCapability(enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE)
+            )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
@@ -203,6 +218,7 @@ class Host:
             given,
             model_context=ModelContext(self.lease.run_id),
             web=self.webs.get(agent.revision_id),
+            browser_backend=self.browsers.get(agent.revision_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )
 
@@ -230,6 +246,7 @@ async def open_host(
         platform_mounts = runtime.platform_mounts if any(parts.host_skills for parts in plan.parts.values()) else {}
         tools: dict[str, dict[str, AbstractCapability[AgentContext]]] = {}
         webs: dict[str, WebBinding] = {}
+        browsers: dict[str, BrowserBackend] = {}
         for revision_id, parts in plan.parts.items():
             connections = await stack.enter_async_context(
                 open_connections(
@@ -249,6 +266,10 @@ async def open_host(
             if parts.platform:
                 platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
                 tools[revision_id]["platform"] = platform
+            if plan.browser is not None and parts.browser_tools:
+                browsers[revision_id] = await stack.enter_async_context(
+                    open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
+                )
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
@@ -284,6 +305,7 @@ async def open_host(
             skill_cache,
             tools,
             webs,
+            browsers,
             memory,
             _environment(environments, platform_mounts, command_environment=plan.execution.environment),
         )

@@ -249,7 +249,7 @@ Isolated cache readers hold shared-filesystem pins until execution teardown; evi
 
 ## Provider resources
 
-A provider resource is a tenant-configured backend account: a model provider, an environment provider, a connector provider, a web provider or a memory provider. [08](08-providers.md) owns the definitions its `type` selects.
+A provider resource is a tenant-configured backend account: a model provider, an environment provider, a connector provider, a web provider, a memory provider or a browser provider. [08](08-providers.md) owns the definitions its `type` selects.
 
 ```
 model_providers        (mprov_)
@@ -257,6 +257,7 @@ environment_providers  (eprov_)
 connector_providers    (cprov_)
 web_providers          (wprov_)
 memory_providers       (memprov_)
+browser_providers      (bprov_)
   id  organization_id  workspace_id  type  name  config  credential NULL  extra_headers
   enabled  version  created_by_id NULL  updated_by_id NULL  created_at  updated_at
   UNIQUE (workspace_id, id)
@@ -270,6 +271,8 @@ memory_providers       (memprov_)
 - **Provider deletion.** Every kind supports `DELETE /{kind}-providers/{id}` with workspace `write` and the current `If-Match`. Deletion locks the provider and rechecks references in its transaction; references refuse deletion with `conflict`, reason `provider_in_use`. Models (including disabled models), connections, memories, and pending memory namespace purges retain their providers. Web providers remain referenced by retained Agent revisions, Run and Inbox overrides, and Schedule invocation configurations. An unused provider is deleted with an audit event, including its local credentials and model OAuth state. No upstream account or native resource is deleted. These operations are admitted to management MCP.
 - **Environment provider deletion.** Console uses Provider for all provider categories; Connections are separate MCP or external-account resources. `GET /environment-providers/{id}/references` needs workspace `read` and returns template and environment counts plus at most ten IDs, names and statuses for each category. Disabled templates and retained historical environments count. `DELETE /environment-providers/{id}` needs `write` and the current `If-Match`; it locks the provider and rechecks all references inside the deletion transaction. Any reference refuses deletion with `conflict`, reason `provider_in_use`, and the same bounded reference details. Unused providers are deleted with an audit event; no native target is contacted or deleted. Both operations are admitted to the management MCP surface.
 - **Test.** `POST /{kind}-providers/{id}/test` needs `run`. It makes one non-billable probe of the current configuration outside any transaction, bounded by `providers.operation_seconds` and `providers.response_bytes`, and changes nothing. It returns `{provider_id, provider_version, status, message}` with status `succeeded`, `failed` or `unsupported`; the message is fixed text or the provider's classified code, never an upstream body. A model type is probed when its definition has a connection probe; a connector provider runs its own account test; a memory provider lists one page of a namespace no memory owns ([11](11-memory.md#memory-providers)); web types are `unsupported`. Of the environment types only Docker is probed, and its test only reads. A remote engine the account names passes the endpoint policy first ([08](08-providers.md#outbound-endpoint-policy)): a denied one fails with `provider_endpoint_denied` and a host that does not resolve with `provider_unavailable`, without being dialed; the engine then answers one ping. Nothing is pulled, created or started, and a failure reports only the provider's error code. Billable verification goes through a run and its admission checks, so a test never becomes an unmetered execution path.
+
+Browser providers serve [managed Browsers](14-browsers.md), independently of Environment instances. Retained Browsers, including deleted resource history, keep their provider references. Provider tests do not allocate a Browser and report `unsupported` without a registered non-billable probe.
 
 Environment providers serve [environment templates](#environment-templates) and the managed instances created from them ([06](06-environments.md)); an external envd target is no provider resource. Memory providers serve [record memories](11-memory.md#memory-providers), each owning one namespace of the provider's backend. A connector provider, such as Composio, is configured once per workspace with the platform's API key as its credential; each [connection](#connections) through it binds one external account. `GET /connector-providers/{id}/apps` (`query`, `refresh`, cursor), `…/apps/{app}` and `…/apps/{app}/actions` read its app catalogue with the provider's credential and need `run`; app and action listings are cached for `providers.discovery_ttl` per provider version, and `refresh=true` reads the apps again.
 

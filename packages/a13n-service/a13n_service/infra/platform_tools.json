@@ -418,6 +418,30 @@
   {
     "effect": "read",
     "group": "providers",
+    "key": "list_browser_providers",
+    "method": "GET",
+    "path": "/api/v1/browser-providers",
+    "summary": "List browser providers"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_browser_provider",
+    "method": "GET",
+    "path": "/api/v1/browser-providers/{provider_id}",
+    "summary": "Get browser provider"
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_browser_provider",
+    "method": "POST",
+    "path": "/api/v1/browser-providers/{provider_id}/test",
+    "summary": "Test browser provider"
+  },
+  {
+    "effect": "read",
+    "group": "providers",
     "key": "list_connector_providers",
     "method": "GET",
     "path": "/api/v1/connector-providers",

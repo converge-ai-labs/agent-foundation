@@ -90,6 +90,11 @@ class CdpBrowserBackend:
             self._selected = next(reversed(self._targets), None)
             self.invalidate()
 
+    def clear_selection(self) -> None:
+        """Let a Host clear a lost durable selection without choosing another owned tab."""
+        self.invalidate()
+        self._selected = None
+
     def invalidate(self) -> None:
         """Require fresh observation after human input or Host selection changes."""
         for target in self._targets.keys() | {self._selected}:

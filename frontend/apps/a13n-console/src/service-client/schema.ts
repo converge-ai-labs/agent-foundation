@@ -423,6 +423,183 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/browser-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List browser providers */
+    get: operations["list_browser_providers"];
+    put?: never;
+    /** Create browser provider */
+    post: operations["create_browser_provider"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browser-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get browser provider */
+    get: operations["get_browser_provider"];
+    put?: never;
+    post?: never;
+    /** Delete Browser Provider */
+    delete: operations["delete_browser_provider"];
+    options?: never;
+    head?: never;
+    /**
+     * Update browser provider
+     * @description Omitted credentials and extra headers keep their saved values, including when `config` changes.
+     */
+    patch: operations["update_browser_provider"];
+    trace?: never;
+  };
+  "/api/v1/browser-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test browser provider */
+    post: operations["test_browser_provider"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Browsers */
+    get: operations["list_browsers"];
+    put?: never;
+    /** Create Browser */
+    post: operations["create_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Browser */
+    get: operations["get_browser"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}/handback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Handback Browser */
+    post: operations["handback_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}/prepare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Prepare Browser */
+    post: operations["prepare_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}/release": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Release Browser */
+    post: operations["release_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}/takeover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Takeover Browser */
+    post: operations["takeover_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/browsers/{browser_id}/viewer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Browser Viewer */
+    post: operations["browser_viewer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/builtin-skills": {
     parameters: {
       query?: never;
@@ -3319,6 +3496,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/threads/{thread_id}/browser": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Binding */
+    get: operations["get_binding"];
+    /** Bind Browser */
+    put: operations["bind_browser"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/threads/{thread_id}/environments": {
     parameters: {
       query?: never;
@@ -5480,6 +5675,91 @@ export interface components {
        */
       password: string;
     };
+    /** Browser */
+    Browser: {
+      control: components["schemas"]["ControlStatus"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Episode */
+      episode: number;
+      /** Expires At */
+      expires_at: string | null;
+      /** Failure */
+      failure: string | null;
+      /** Generation */
+      generation: number;
+      /** Id */
+      id: string;
+      /** Idle Seconds */
+      idle_seconds: number | null;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Provider Id */
+      provider_id: string;
+      status: components["schemas"]["BrowserStatus"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** BrowserBinding */
+    BrowserBinding: {
+      /** Browser Id */
+      browser_id: string;
+      /**
+       * Preparation
+       * @default first_use
+       * @enum {string}
+       */
+      preparation?: "first_use" | "run_start";
+      /**
+       * Tab Access
+       * @default thread
+       * @enum {string}
+       */
+      tab_access?: "global" | "thread";
+    };
+    /** BrowserCreate */
+    BrowserCreate: {
+      /**
+       * Idle Seconds
+       * @default 1800
+       */
+      idle_seconds?: number | null;
+      /** Name */
+      name: string;
+      /**
+       * Prepare
+       * @default false
+       */
+      prepare?: boolean;
+      /** Provider Id */
+      provider_id: string;
+      /** Recipe */
+      recipe?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
+    /** BrowserPage */
+    BrowserPage: {
+      /** Items */
+      items: components["schemas"]["Browser"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** @enum {string} */
+    BrowserStatus:
+      "reserved" | "creating" | "ready" | "deleting" | "deleted" | "lost";
     /** BuiltinSkill */
     BuiltinSkill: {
       /** Description */
@@ -6115,6 +6395,8 @@ export interface components {
       /** Session Id */
       session_id: string;
     };
+    /** @enum {string} */
+    ControlStatus: "automation" | "draining" | "human" | "returning";
     CpuLimit:
       | components["schemas"]["UnlimitedCpuLimit"]
       | components["schemas"]["LimitedCpuLimit"];
@@ -6678,7 +6960,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "message" | "child_result" | "tool_result";
+      kind: "message" | "child_result" | "tool_result" | "browser_handback";
       options: components["schemas"]["RunOptions-Output"];
       /** Origin Run Id */
       origin_run_id: string | null;
@@ -11728,6 +12010,11 @@ export interface components {
       /** Thread Count */
       thread_count?: number | null;
     };
+    /** Takeover */
+    Takeover: {
+      /** Thread Id */
+      thread_id: string;
+    };
     /** Template */
     Template: {
       config: components["schemas"]["TemplateConfig"];
@@ -12299,7 +12586,15 @@ export interface components {
       tools: components["schemas"]["ToolDefinition"][];
     };
     ToolsetKey:
-      | ("files" | "shell" | "computer" | "web" | "memory" | "assets")
+      | (
+          | "files"
+          | "shell"
+          | "computer"
+          | "browser"
+          | "web"
+          | "memory"
+          | "assets"
+        )
       | components["schemas"]["PlatformGroup"];
     /** ToolsetSelection */
     ToolsetSelection: {
@@ -12356,6 +12651,7 @@ export interface components {
       | "resume"
       | "child_result"
       | "tool_result"
+      | "browser_handback"
       | "spawned";
     /** TypedQuery */
     TypedQuery: {
@@ -12661,6 +12957,21 @@ export interface components {
       state: string;
       /** Tool Call Id */
       tool_call_id: string | null;
+    };
+    /**
+     * Viewer
+     * @description Sensitive, authorized control response; excluded from ordinary Browser reads.
+     */
+    Viewer: {
+      /** Episode */
+      episode: number;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Url */
+      url: string;
     };
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple" | "desktop_control";
@@ -13664,6 +13975,406 @@ export interface operations {
           "application/json": components["schemas"]["SessionProfile"];
         };
       };
+      default: components["responses"]["Error"];
+    };
+  };
+  list_browser_providers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_browser_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_browser_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_browser_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_browser_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_browser_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_browsers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BrowserCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  handback_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  prepare_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  release_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  takeover_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Takeover"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  browser_viewer: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Viewer"];
+        };
+      };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };
@@ -18272,7 +18983,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        kind: "model" | "environment" | "connector" | "web" | "memory";
+        kind:
+          "model" | "environment" | "connector" | "web" | "memory" | "browser";
       };
       cookie?: never;
     };
@@ -20426,6 +21138,66 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ThreadView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_binding: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserBinding"] | null;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  bind_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BrowserBinding"] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserBinding"] | null;
         };
       };
       400: components["responses"]["Error"];

@@ -286,6 +286,21 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             await reserve_primary(
                 session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
             )
+    from a13n_service.runs.browsers.service import freeze as freeze_browser
+
+    browser_binding = await freeze_browser(
+        session,
+        principal,
+        thread,
+        source.authority,
+        inherited=(
+            await _run(session, source.entry.origin_run_id)
+            if source.trigger == "browser_handback" and source.entry is not None
+            else parent
+            if source.trigger == "resume"
+            else None
+        ),
+    )
     mounts = await freeze_mounts(
         session,
         thread,
@@ -345,6 +360,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         # Frozen here: the thread's headers apply to this run even if the thread is edited later.
         mcp_headers=thread.mcp_headers,
         environment_mounts=mounts,
+        browser_binding=browser_binding,
         memory_mounts=memories,
         memory_cursors=inherited_cursors(parent, memories),
         source_entry_id=source.entry.id if source.entry is not None else None,
@@ -406,6 +422,12 @@ async def _source(
         return explicit
     if entry.kind == "message":
         return await Source.load(session, runtime, thread, entry, "queued")
+    if entry.kind == "browser_handback":
+        from a13n_service.runs.browsers.delivery import require_notice
+
+        await require_notice(session, runtime, entry)
+        origin = await session.get_one(RunRow, entry.origin_run_id)
+        return await Source.inherited(session, runtime, origin, "browser_handback", entry=entry)
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
     return await Source.inherited(

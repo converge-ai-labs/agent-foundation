@@ -32,6 +32,11 @@ async def archive(
         current = await now(session)
         thread.archived_at = current
         await inbox.withdraw_pending(session, thread, at=current)
+        from a13n_service.runs.browsers.delivery import suppress
+        from a13n_service.runs.browsers.tables import ThreadBrowserRow
+
+        await suppress(session, thread.id)
+        await session.execute(delete(ThreadBrowserRow).where(ThreadBrowserRow.thread_id == thread.id))
         await session.execute(delete(ThreadEnvironmentRow).where(ThreadEnvironmentRow.thread_id == thread.id))
         await session.execute(delete(ThreadMemoryRow).where(ThreadMemoryRow.thread_id == thread.id))
         if thread.current_run_id is not None:

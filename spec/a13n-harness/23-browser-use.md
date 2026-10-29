@@ -23,6 +23,8 @@ The Host authorizes browser access using the captured current Run, including any
 
 A restrictive `allowed_hosts` configuration is rejected: native browser traffic cannot be reliably constrained by the Harness HTTP allowlist. Network isolation belongs to the browser Host. Internal Chromium pages and Host file URLs are accepted. Upload paths refer to the browser Host filesystem, not a remote user's computer or the Agent's sandbox.
 
+A Host may select an explicit `enabled_tools` subset on `BrowserUseCapability`; omitted selection exposes all nine native tools. Disabled names are absent from tool discovery and invocation. This is composition policy, independent of backend authorization.
+
 ## Tab Access, Ownership, and Selection
 
 `CdpBrowserBackend(browser, tab_access="owned")` preserves the default owned-tab behavior. The Host can explicitly select `tab_access="global"` on the same runtime. This is a binding policy, separate from tab cleanup ownership and shared profile state.
@@ -35,6 +37,8 @@ A restrictive `allowed_hosts` configuration is rejected: native browser traffic 
 Global discovery and selection do not claim tabs. An explicit `browser_tabs(close)` may close any accessible tab; lifecycle cleanup closes only the backend's `targets`. New tabs created by either mode belong to the creating backend. Popups inherit the owner's exact opener ancestry, including when a global binding interacts with another scope's page. A new-tab command from a borrowed page creates an independent target rather than inheriting the borrowed opener's owner. Native tab groups and windows do not define ownership.
 
 Each binding maintains its own logical selection without following or activating the globally foreground tab. Global listing does not select a page implicitly. Target destruction removes ownership and clears affected selections; a binding selects a surviving owned target when available, otherwise the caller explicitly selects or opens another tab. An empty scope remains usable for opening a new tab. Reconciliation uses exact target IDs and opener ancestry; it never adopts tabs by matching title, URL, or native window. Host-only attachment validates an exact live page target and requires fresh observation. One target has at most one cleanup owner, even when several bindings can access it.
+
+A durable Host may call `clear_selection()` to preserve an explicitly missing logical selection after reconnect or target loss. This clears selected-page observation state without selecting another owned target; it does not change ownership or close a target.
 
 Operations serialize within a binding and on each shared Page. After waiting for a Page, admission is checked again. Switching the binding using a Page expires its element and screenshot references and requires that binding to observe before acting; another binding's observation cannot satisfy that requirement. Independent pages may progress concurrently. Cleanup drains other bindings' operations on each owned Page before closing it. Browser-wide configuration, native focus, profile operations, and viewer control remain coordinated by the Host. There is no browser-wide Agent task queue.
 

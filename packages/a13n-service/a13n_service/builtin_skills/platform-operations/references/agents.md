@@ -39,6 +39,10 @@ Ungrouped sources remain direct. Grouping preserves source selection, permission
 
 Connection selections configure execution through `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored.
 
+## Configure managed browser tools
+
+The `browser` toolset is disabled by default. It selects `observe`, `read`, `navigate`, `act`, `wait`, `tabs`, `dialog`, `files` and `screenshot`, each with ordinary tool permissions. Enabling it does not allocate a browser. An integrating application binds a managed Browser to the Thread before accepting a Run; the Run freezes that binding. Browser resources and takeover are not platform operations available to Composer. Check installed supplier support before promising browser execution. A blocked human-control call registers for an internal handback notification: continue other work or finish, without polling or replaying the blocked action. Uploads require a supported authorized transfer boundary and are currently unavailable.
+
 ## Configure desktop coordinates
 
 The Computer toolset requires explicit enablement and an authorized desktop Environment. `toolsets.computer.config.coordinate_space` defaults to `pixels`. Select `normalized_1000` only when the chosen model supplies relative positions on a 0–1000 scale for each axis. The tool converts pointer positions using the referenced screenshot; model instructions must not ask the model to multiply by image dimensions. Scroll distances retain their declared units. Do not infer or change this setting from the Environment Provider or template. Check the deployed toolset catalog for supported configuration before creating a Revision.

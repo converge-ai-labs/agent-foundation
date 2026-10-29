@@ -182,12 +182,29 @@ async def append_tool_result(
     session: AsyncSession, thread: ThreadRow, origin: RunRow, payload: dict[str, JsonValue]
 ) -> InboxEntryRow:
     """Append a completion hint after the caller reserves capacity under the Thread lock."""
+    return await _append_notice(session, thread, origin, payload, kind="tool_result")
+
+
+async def append_browser_handback(
+    session: AsyncSession, thread: ThreadRow, origin: RunRow, payload: dict[str, JsonValue]
+) -> InboxEntryRow:
+    return await _append_notice(session, thread, origin, payload, kind="browser_handback")
+
+
+async def _append_notice(
+    session: AsyncSession,
+    thread: ThreadRow,
+    origin: RunRow,
+    payload: dict[str, JsonValue],
+    *,
+    kind: Literal["tool_result", "browser_handback"],
+) -> InboxEntryRow:
     entry = InboxEntryRow(
         id=new_object_id("inb"),
         organization_id=thread.organization_id,
         workspace_id=thread.workspace_id,
         thread_id=thread.id,
-        kind="tool_result",
+        kind=kind,
         delivery="steer",
         position=await _next_position(session, thread.id),
         principal_id=origin.principal_id,
@@ -326,6 +343,14 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     A steer that gives no options (the defaults) joins whatever options the run started with. Options it gives
     compare as submitted: the run froze its own at acceptance, so it keeps the digest of what its source submitted.
     """
+    if entry.kind == "browser_handback":
+        return (
+            origin is not None
+            and (origin.id == run.id or origin.sealed_at is not None)
+            and origin.principal_id == run.principal_id
+            and origin.authority == run.authority
+            and origin.browser_binding == run.browser_binding
+        )
     if entry.kind in {"child_result", "tool_result"}:
         # The origin must be this run or a sealed one this run continues: its spawning call was committed before the
         # child could exist, so it is in the origin's last checkpoint.

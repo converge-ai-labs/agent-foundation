@@ -22,14 +22,15 @@ Set [tool permissions](agents-and-runs.md#tool-permissions) in the revision: all
 
 Use `GET /api/v1/toolsets` to inspect your deployment's tool keys, model-visible names, defaults and configuration schemas. Select tools by those keys; for example, the terminal's `exec` key exposes `shell_exec` to the model.
 
-| Toolset    | Use                                              | Default and prerequisite                                               |
-| ---------- | ------------------------------------------------ | ---------------------------------------------------------------------- |
-| `files`    | Read, search, write and organize files           | Enabled; requires a mounted environment                                |
-| `shell`    | Start commands and inspect or control processes  | Enabled; requires a mounted environment with the relevant actions      |
-| `computer` | Observe and interact with a desktop              | Disabled; requires a compatible desktop and explicit mount permissions |
-| `web`      | `search`, `scrape`, `fetch`, `download`          | Each tool disabled; enable individually                                |
-| `memory`   | Read and update file or record memories          | Enabled; requires a matching memory mount                              |
-| `assets`   | Publish an environment file with `publish_asset` | Disabled; produces a workspace asset                                   |
+| Toolset    | Use                                              | Default and prerequisite                                                      |
+| ---------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `files`    | Read, search, write and organize files           | Enabled; requires a mounted environment                                       |
+| `shell`    | Start commands and inspect or control processes  | Enabled; requires a mounted environment with the relevant actions             |
+| `computer` | Observe and interact with a desktop              | Disabled; requires a compatible desktop and explicit mount permissions        |
+| `web`      | `search`, `scrape`, `fetch`, `download`          | Each tool disabled; enable individually                                       |
+| `memory`   | Read and update file or record memories          | Enabled; requires a matching memory mount                                     |
+| `assets`   | Publish an environment file with `publish_asset` | Disabled; produces a workspace asset                                          |
+| `browser`  | Observe and operate a managed browser            | Disabled; requires a [browser binding](browsers.md) and a registered supplier |
 
 After selecting file or terminal tools, mount an [environment](environments.md) before testing the agent. For desktop setup and screenshot previews, follow [Computer Use](environments.md#computer-use). A [memory](memory.md) mounted as `read` exposes only viewing, listing and searching; writable mounts offer the matching mutation tools. Published files become [assets](files-and-webhooks.md#assets).
 

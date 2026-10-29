@@ -203,6 +203,21 @@ async def content(
     the run principal's access."""
     if entry.kind == "message":
         return await _message(runtime, principal, recipient, environment, entry, configuration=configuration)
+    if entry.kind == "browser_handback":
+        from a13n_service.infra.db import short_session
+        from a13n_service.runs.browsers.delivery import require_notice
+
+        async with short_session(runtime.storage) as session:
+            stored = await session.get_one(InboxEntryRow, entry.id)
+            await require_notice(session, runtime, stored)
+        return (
+            TextContent(
+                "Human control ended for Browser "
+                + str(entry.payload["browser_id"])
+                + ". Observe afresh before acting. No blocked action was replayed.",
+                metadata={"source_id": entry.id, "display": False},
+            ),
+        )
     if entry.kind == "tool_result":
         hint = "A retained tool execution ended. Read its result with tool_execution_result: "
         return (_text(entry, hint + json.dumps(entry.payload, ensure_ascii=False)),)
