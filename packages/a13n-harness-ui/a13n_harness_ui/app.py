@@ -2071,19 +2071,28 @@ class HarnessUiApp:
                 get_logger(__name__).warning("Read model maintenance failed", extra={"error_type": type(exc).__name__})
             await sleep(30)
 
-    async def _prune_compactions_periodically(self) -> None:
-        while True:
+    async def _prune_storage(self) -> None:
+        """Independent maintenance failures never cancel the App's task group."""
+        for kind, prune in (
+            ("scratch", self._thread_files.prune),
+            ("compaction", self._prune_compactions),
+            ("checkpoint", self._store.checkpoints.prune),
+        ):
             try:
-                if self._compaction is not None:
-                    await self._compaction.prune(self._settings.storage.compaction_retention_seconds)
+                await prune()
             except Exception as exc:
-                get_logger(__name__).warning("Compaction pruning failed", extra={"error_type": type(exc).__name__})
-            await sleep(3600)
+                get_logger(__name__).warning(
+                    "Storage pruning failed", extra={"kind": kind, "error_type": type(exc).__name__}
+                )
 
-    async def _prune_thread_files_periodically(self) -> None:
+    async def _prune_compactions(self) -> None:
+        if self._compaction is not None:
+            await self._compaction.prune(self._settings.storage.compaction_retention_seconds)
+
+    async def _prune_storage_periodically(self) -> None:
         while True:
+            await self._prune_storage()
             await sleep(3600)
-            await self._thread_files.prune()
 
     async def _prepare_input(
         self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
@@ -3467,7 +3476,6 @@ async def open_harness_ui_app(
             )
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
-            await thread_files.prune()
             devices = DeviceConnections(api_keys=ApiKeyStore(store.layout.root / "auth.json"))
             resources.push_async_callback(devices.close)
             device_configuration = await configurations.current()
@@ -3817,8 +3825,7 @@ async def open_harness_ui_app(
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)
                     background.start_soon(app.subscription_usage.poll)
-                    background.start_soon(app._prune_thread_files_periodically)
-                    background.start_soon(app._prune_compactions_periodically)
+                    background.start_soon(app._prune_storage_periodically)
                     background.start_soon(app._maintain_read_models)
                     if host_mode == "webui":
                         background.start_soon(environment_monitoring.run)

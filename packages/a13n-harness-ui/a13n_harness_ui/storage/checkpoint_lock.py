@@ -10,7 +10,7 @@ from filelock import FileLock, Timeout
 
 
 @asynccontextmanager
-async def checkpoint_lock(root: Path, thread_id: str) -> AsyncGenerator[None]:
+async def checkpoint_lock(root: Path, thread_id: str, *, wait: bool = True) -> AsyncGenerator[None]:
     """Protect file use, not Run ownership; never hold across model or tool work."""
     directory = root / "checkpoint-locks"
     await to_thread.run_sync(lambda: directory.mkdir(mode=0o700, parents=True, exist_ok=True))
@@ -29,6 +29,8 @@ async def checkpoint_lock(root: Path, thread_id: str) -> AsyncGenerator[None]:
                 await to_thread.run_sync(lock.acquire)
                 acquired = True
             except Timeout:
+                if not wait:
+                    raise TimeoutError from None
                 await sleep(min(0.05, remaining))
         yield
     finally:

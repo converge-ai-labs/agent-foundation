@@ -479,6 +479,10 @@ jobs:
           uv run --locked --no-sync python -m pytest --durations=20 --junitxml=test-results/ui-native.xml
           packages/a13n-harness-ui/tests/test_entrypoint.py
           packages/a13n-harness-ui/tests/test_thread_files.py
+          packages/a13n-harness-ui/tests/test_checkpoint_pruning.py
+          packages/a13n-harness-ui/tests/test_storage_maintenance.py
+          packages/a13n-harness-ui/tests/test_checkpoint_retention.py
+          packages/a13n-harness-ui/tests/test_continuation_objects.py
           packages/a13n-harness-ui/tests/test_host_files.py
           packages/a13n-harness-ui/tests/test_host_git.py
           packages/a13n-harness-ui/tests/test_configuration_mutation.py

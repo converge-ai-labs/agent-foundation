@@ -15,6 +15,7 @@ from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
 
 from .checkpoint_lock import checkpoint_lock
+from .checkpoint_pruning import CheckpointPruner
 from .compaction import CompactionRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
@@ -56,6 +57,7 @@ class LocalStore:
         self.layout = layout
         self.database = database
         self.objects = objects
+        self.checkpoints = CheckpointPruner(database.sessions, objects)
         self._object_count = 0
         self.configurations = ConfigurationRepository(database.sessions)
         self.project_models = ProjectModelPreferenceRepository(database.sessions)

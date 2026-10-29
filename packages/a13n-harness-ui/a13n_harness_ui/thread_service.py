@@ -156,6 +156,10 @@ class ThreadService:
 
     async def fork(self, thread_id: str, *, files: ThreadFiles) -> Thread:
         """Fork the complete saved conversation without borrowing execution authority."""
+        async with self._store.objects.checkpoint_access.use():
+            return await self._fork(thread_id, files=files)
+
+    async def _fork(self, thread_id: str, *, files: ThreadFiles) -> Thread:
         async with checkpoint_lock(self._store.layout.root, thread_id):
             source = await self.get(thread_id)
             if (
@@ -317,6 +321,10 @@ class ThreadService:
         The App serializes this command with root admission. Immutable publication
         precedes the ordinary compare-and-select, so failures retain the old head.
         """
+        async with self._store.objects.checkpoint_access.use():
+            await self._clear_context(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
+
+    async def _clear_context(self, *, thread_id: str, expected_continuation_id: str) -> None:
         thread = await self.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
