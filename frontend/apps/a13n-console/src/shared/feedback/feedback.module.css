@@ -276,12 +276,15 @@
   letter-spacing: var(--a13n-tracking-title);
 }
 .errorPage p {
-  max-width: 440px;
+  max-width: min(440px, 100%);
   margin: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
+  overflow-wrap: anywhere;
 }
 .errorPage small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin-top: 3px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
@@ -354,4 +357,14 @@
   .skeletonPageHeader > .skeletonDetailAction {
     width: 108px;
   }
+}
+
+/* Identifiers must wrap inside narrow forms and filter popovers. */
+.errorNotice {
+  margin-block: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.errorNotice > * {
+  min-width: 0;
 }

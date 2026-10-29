@@ -62,40 +62,42 @@ export function MessageAuthor({
           )}
         </PopoverTrigger>
         <PopoverPopup className={styles.card} align="start" sideOffset={6}>
-          <strong>{name}</strong>
-          <span className={styles.detail}>
-            {principal
-              ? t(service ? "Service account" : "User account")
-              : t("Author details unavailable")}
-          </span>
-          {principal?.status === "disabled" && (
-            <span className={styles.detail}>{t("Disabled")}</span>
-          )}
-          {principal?.email && (
-            <div className={styles.field}>
-              <span>{principal.email}</span>
-              <CopyButton
-                value={principal.email}
-                iconOnly
-                copyLabel={t("Copy email")}
-              />
-            </div>
-          )}
-          {id && (
-            <div className={styles.field}>
-              <Identifier value={id} />
-              <CopyButton
-                value={id}
-                iconOnly
-                copyLabel={t("Copy principal ID")}
-              />
-            </div>
-          )}
-          {failed && (
-            <Button size="sm" variant="outline" onClick={retry}>
-              {t("Retry")}
-            </Button>
-          )}
+          <div className={styles.cardBody}>
+            <strong>{name}</strong>
+            <span className={styles.detail}>
+              {principal
+                ? t(service ? "Service account" : "User account")
+                : t("Author details unavailable")}
+            </span>
+            {principal?.status === "disabled" && (
+              <span className={styles.detail}>{t("Disabled")}</span>
+            )}
+            {principal?.email && (
+              <div className={styles.field}>
+                <span>{principal.email}</span>
+                <CopyButton
+                  value={principal.email}
+                  iconOnly
+                  copyLabel={t("Copy email")}
+                />
+              </div>
+            )}
+            {id && (
+              <div className={styles.field}>
+                <Identifier value={id} />
+                <CopyButton
+                  value={id}
+                  iconOnly
+                  copyLabel={t("Copy principal ID")}
+                />
+              </div>
+            )}
+            {failed && (
+              <Button size="sm" variant="outline" onClick={retry}>
+                {t("Retry")}
+              </Button>
+            )}
+          </div>
         </PopoverPopup>
       </Popover>
       {date && (

@@ -71,10 +71,10 @@
 
 /* Console modal composition, including dialogs rendered through portals. */
 [data-a13n-modal] {
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
 }
 [data-a13n-modal]::before {
-  border-radius: 13px;
+  border-radius: calc(var(--a13n-radius-group) - 1px);
 }
 :root:not(.dark) [data-a13n-modal] {
   --popover: var(--card);
@@ -107,7 +107,8 @@ form:has(> [data-a13n-form-section]),
   :is([data-a13n-form-actions], [data-slot="dialog-footer"])
   button:not([role="switch"]) {
   font-size: var(--a13n-text-sm);
-  min-height: 32px;
+  height: 28px;
+  min-height: 28px;
   padding-inline: 12px;
   border-radius: 8px;
 }

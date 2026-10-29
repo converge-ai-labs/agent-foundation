@@ -282,7 +282,7 @@ tr:focus-within .rowMenu,
   gap: 10px;
   width: 100%;
   padding: 7px 8px;
-  border-radius: 7px;
+  border-radius: var(--a13n-radius-row);
   text-align: left;
   font-size: var(--a13n-text-sm);
   cursor: pointer;

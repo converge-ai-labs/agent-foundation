@@ -7,7 +7,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, useCursor } from "../../shared/collection";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, InlineLoading } from "../../shared/feedback";
 import styles from "./usage.module.css";
 
 export function MemberPicker({
@@ -79,29 +79,28 @@ function MemberOptions({
   });
   return (
     <>
-      <Button
-        variant="ghost"
+      <button
+        type="button"
         className={styles.memberOption}
         aria-pressed={!member}
         onClick={() => onSelect(null)}
       >
         {t("All members")}
         {!member && <CheckIcon aria-hidden="true" />}
-      </Button>
-      <p className={styles.pickerHint}>
-        {t("Members with usage in this period")}
-      </p>
+      </button>
       <div className={styles.memberOptions}>
         {query.isPending ? (
-          <Loading />
+          <div className={styles.pickerHint}>
+            <InlineLoading />
+          </div>
         ) : query.error ? (
           <ErrorNotice error={query.error} retry={() => void query.refetch()} />
         ) : (
           <>
             {query.data.items.map((item) => (
-              <Button
+              <button
                 key={item.principal_id}
-                variant="ghost"
+                type="button"
                 className={styles.memberOption}
                 aria-label={`${item.name} · ${t(item.kind === "user" ? "User" : "Service account")}${item.status === "disabled" ? ` · ${t("Disabled")}` : ""}`}
                 aria-pressed={item.principal_id === member?.principal_id}
@@ -117,7 +116,7 @@ function MemberOptions({
                 {item.principal_id === member?.principal_id && (
                   <CheckIcon aria-hidden="true" />
                 )}
-              </Button>
+              </button>
             ))}
             {!query.data.items.length && (
               <p className={styles.pickerHint}>
@@ -127,7 +126,11 @@ function MemberOptions({
           </>
         )}
       </div>
-      {query.data && <Pagination page={page} next={query.data.next_cursor} />}
+      {query.data && (page.previous || query.data.next_cursor) && (
+        <div className={styles.pickerPagination}>
+          <Pagination page={page} next={query.data.next_cursor} />
+        </div>
+      )}
     </>
   );
 }

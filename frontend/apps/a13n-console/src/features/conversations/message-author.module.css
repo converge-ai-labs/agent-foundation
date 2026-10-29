@@ -70,11 +70,16 @@
 .card {
   width: 300px;
   max-width: calc(100vw - 32px);
-  padding: 14px;
-  display: grid;
-  gap: 8px;
+  padding: 0;
   font-size: var(--a13n-text-xs);
   overflow-wrap: anywhere;
+}
+.card [data-slot="popover-viewport"] {
+  padding: 14px;
+}
+.cardBody {
+  display: grid;
+  gap: 8px;
 }
 .field {
   display: flex;

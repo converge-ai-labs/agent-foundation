@@ -202,7 +202,7 @@ export function ErrorNotice({
   if (!error) return null;
   const details = errorDetails(error, t);
   return (
-    <Alert variant="error" className="my-4">
+    <Alert variant="error" className={styles.errorNotice}>
       <WarningCircleIcon aria-hidden="true" />
       <AlertTitle>{details.title}</AlertTitle>
       <AlertDescription>

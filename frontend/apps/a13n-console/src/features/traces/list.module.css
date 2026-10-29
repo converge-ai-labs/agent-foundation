@@ -152,6 +152,9 @@
   align-items: center;
   gap: 6px;
 }
+.metadataRow [data-slot="select-trigger"] {
+  width: 100%;
+}
 .popoverFooter {
   display: flex;
   align-items: center;

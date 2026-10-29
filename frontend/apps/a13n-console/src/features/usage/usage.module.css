@@ -345,30 +345,64 @@
 .memberTrigger svg {
   flex-shrink: 0;
 }
+/* A filter list owns one compact inset, including the popover viewport. */
 .memberPicker {
-  width: min(340px, calc(100vw - 32px));
-  padding: 6px;
+  width: min(280px, calc(100vw - 24px));
+  padding: 0;
+}
+.memberPicker [data-slot="popover-viewport"] {
+  padding: 4px;
 }
 .memberOptions {
-  max-height: 320px;
+  max-height: 260px;
   overflow-y: auto;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .memberOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  height: auto;
-  min-height: 36px;
-  padding: 10px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--a13n-radius-row);
+  background: transparent;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  line-height: 18px;
   justify-content: space-between;
   text-align: left;
+  cursor: pointer;
+}
+.memberOption:hover {
+  background: var(--a13n-hover);
+}
+.memberOption[aria-pressed="true"] {
+  background: var(--a13n-selected);
+}
+.memberOption:focus-visible {
+  outline: 1px solid var(--a13n-signal);
+  outline-offset: -1px;
 }
 .memberOption > span {
   min-width: 0;
+  gap: 0;
 }
 .memberOption svg {
-  flex-shrink: 0;
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 .pickerHint {
-  padding: 8px 10px;
+  padding: 8px;
   font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
+}
+.pickerPagination {
+  margin-top: 4px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--a13n-border-soft);
 }

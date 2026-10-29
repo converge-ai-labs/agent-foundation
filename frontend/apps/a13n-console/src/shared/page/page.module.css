@@ -365,7 +365,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px 10px 16px;
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
   background: var(--a13n-elevated);
   box-shadow:
     0 12px 32px color-mix(in srgb, var(--a13n-text) 12%, transparent),
