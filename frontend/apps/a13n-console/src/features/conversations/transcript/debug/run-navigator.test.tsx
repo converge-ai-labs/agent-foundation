@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -9,7 +10,13 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
 import { createClient, type Client } from "../../../../service-client";
 import { RunNavigator } from "./run-navigator";
 import {
@@ -49,6 +56,10 @@ beforeEach(() => {
 it("requests ranked pages for the whole thread and preserves sorting when opening a run outside the chronological window", async () => {
   const requests: URLSearchParams[] = [];
   let refresh: Promise<void> | undefined;
+  let finishAnchor!: () => void;
+  const anchorRead = new Promise<void>((resolve) => {
+    finishAnchor = resolve;
+  });
   client.close();
   client = createClient({
     baseUrl: "https://service.example",
@@ -56,13 +67,23 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
       requests.push(url.searchParams);
-      if (!url.searchParams.has("sort"))
+      if (!url.searchParams.has("sort")) {
+        if (url.searchParams.get("anchor") === "run_3") {
+          await anchorRead;
+          return Response.json(
+            fixtureRunPage([fixtureRun({ id: "run_3" })], {
+              total: 3,
+              number: 3,
+            }),
+          );
+        }
         return Response.json(
           fixtureRunPage(
             [fixtureRun({ id: "run_2" }), fixtureRun({ id: "run_1" })],
             { total: 3, number: 2, previous_cursor: "newer" },
           ),
         );
+      }
       const more = url.searchParams.has("cursor");
       await refresh;
       return Response.json({
@@ -82,7 +103,8 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
     },
   });
   show();
-  const list = await openList(/Run 2 of 3/);
+  const panel = await screen.findByRole("navigation", { name: "Runs" });
+  const list = within(panel);
   await userEvent
     .setup()
     .click(list.getByRole("button", { name: "Sort by Cost" }));
@@ -126,12 +148,81 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
     ["cost", "desc", "rank-2"],
   ]);
   expect(ranked.every((params) => !params.has("anchor"))).toBe(true);
-  await userEvent.setup().click(list.getByRole("button", { name: /^Run 3/ }));
+  const rows = list.getAllByRole("button", { name: /^Run \d/ });
+  let selected = list.getByRole("button", { name: /^Run 3/ });
+  panel.scrollTop = 90;
+  await userEvent.setup().click(selected);
   expect(
     await screen.findByText(
       "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_3?run_sort=cost&run_direction=desc&view=debug",
     ),
   ).toBeTruthy();
+  await waitFor(() =>
+    expect(requests.some((params) => params.get("anchor") === "run_3")).toBe(
+      true,
+    ),
+  );
+  const expectStable = (number: number) => {
+    expect(screen.getByRole("navigation", { name: "Runs" })).toBe(panel);
+    expect(list.getAllByRole("button", { name: /^Run \d/ })).toEqual(rows);
+    expect(panel.scrollTop).toBe(90);
+    expect(document.activeElement).toBe(selected);
+    expect(selected.getAttribute("aria-current")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: new RegExp(`Run ${number} of 3`) }),
+    ).toBeTruthy();
+  };
+  expectStable(3);
+  // The list remains interactive, and a late history response cannot restore an old selection.
+  selected = list.getByRole("button", { name: /^Run 1/ });
+  await userEvent.setup().click(selected);
+  expectStable(1);
+  await act(async () => finishAnchor());
+  await waitFor(() => expect(cache.isFetching()).toBe(0));
+  expectStable(1);
+  expect(requests.filter((params) => params.has("sort"))).toHaveLength(3);
+});
+
+it("loads a ranked deep link independently of the chronological window", async () => {
+  let finishHistory!: () => void;
+  const history = new Promise<void>((resolve) => {
+    finishHistory = resolve;
+  });
+  client.close();
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      if (!url.searchParams.has("sort")) await history;
+      return Response.json(
+        fixtureRunPage([
+          fixtureRun({ id: "run_2" }),
+          fixtureRun({ id: "run_1" }),
+        ]),
+      );
+    },
+  });
+  show(fixtureThread(), "run_2", "?run_sort=duration&run_direction=desc");
+  const panel = await screen.findByRole("navigation", { name: "Runs" });
+  expect(
+    within(panel)
+      .getByRole("button", { name: /^Run 2/ })
+      .getAttribute("aria-current"),
+  ).toBe("true");
+  expect(screen.getByRole("button", { name: /Run 2 of 2/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Previous run" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  await act(async () => finishHistory());
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Previous run" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(screen.getByRole("navigation", { name: "Runs" })).toBe(panel);
 });
 afterEach(() => {
   cleanup();
@@ -144,13 +235,29 @@ function Location() {
   return <p>{`${pathname}${search}`}</p>;
 }
 
-function show(thread = fixtureThread(), runId = "run_2") {
+function Navigator({ thread }: { thread: ReturnType<typeof fixtureThread> }) {
+  const { runId = "" } = useParams();
+  return (
+    <>
+      <RunNavigator thread={thread} runId={runId} />
+      <Location />
+    </>
+  );
+}
+
+function show(thread = fixtureThread(), runId = "run_2", search = "") {
   return render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/start"]}>
-        <RunNavigator thread={thread} runId={runId} />
+      <MemoryRouter
+        initialEntries={[
+          `/workspace/design/sessions/${thread.session_id}/threads/${thread.id}/runs/${runId}${search}`,
+        ]}
+      >
         <Routes>
-          <Route path="*" element={<Location />} />
+          <Route
+            path="/workspace/design/sessions/:sessionId/threads/:threadId/runs/:runId"
+            element={<Navigator thread={thread} />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

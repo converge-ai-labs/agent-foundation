@@ -67,12 +67,11 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
       sort.field === "order" ? "cost" : sort.field,
       sort.direction,
     ),
-    enabled: sort.field !== "order" && pages.total > 1,
+    enabled: sort.field !== "order",
   });
   const { runs, number } = pages;
   const visible = useVisibleRun(runId);
   const inView = runs.some((run) => run.id === visible) ? visible : runId;
-  const position = number(inView);
   const node = (run: Run): OutlineRun => ({
     run,
     label: t("Run {{index}}", { index: run.number }),
@@ -87,6 +86,14 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
       for (const run of page.items) unique.set(run.id, run);
     return [...unique.values()];
   }, [ranking.data]);
+  // Selecting a ranked Run may replace the chronological window. The ranking
+  // already owns the count and position, so it stays usable while that window loads.
+  const total =
+    sort.field === "order"
+      ? pages.total
+      : Math.max(pages.total, ranking.data?.pages[0]?.total ?? 0);
+  const position =
+    number(inView) ?? ranked.find((run) => run.id === inView)?.number ?? null;
   const sorted =
     sort.field === "order"
       ? sort.direction === "asc"
@@ -95,6 +102,7 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
       : ranked.map(node);
   return {
     ...pages,
+    total,
     nodes,
     sorted,
     sort,
@@ -124,7 +132,7 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
         ? t("Runs")
         : t("Run {{index}} of {{total}}", {
             index: position,
-            total: pages.total,
+            total,
           }),
     open(run) {
       const loaded = runSection(run.id);
