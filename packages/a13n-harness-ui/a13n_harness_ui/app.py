@@ -1675,6 +1675,7 @@ class HarnessUiApp:
 
     async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
         """Permanently remove an idle conversation and its subagent history."""
+        deleted: tuple[str, ...] | None = None
         async with self._operation():
             async with self._root_runs.require_inactive(thread_id):
                 with CancelScope(shield=True):
@@ -1695,7 +1696,8 @@ class HarnessUiApp:
                         await self._thread_files.remove(removed)
                     await self._retire_mcp_owners()
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
-                    return deleted
+                assert deleted is not None
+                return deleted
 
     async def update_thread_metadata(
         self,
