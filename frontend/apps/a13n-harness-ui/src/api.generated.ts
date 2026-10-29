@@ -2862,11 +2862,6 @@ export interface components {
         };
         /** AgentSummary */
         AgentSummary: {
-            /**
-             * Tool Search Mcp Servers
-             * @default []
-             */
-            tool_search_mcp_servers?: string[];
             /** Agent Id */
             agent_id: string;
             /** Name */
@@ -2875,6 +2870,11 @@ export interface components {
             model_id?: string | null;
             /** Source Path */
             source_path: string;
+            /**
+             * Tool Search Mcp Servers
+             * @default []
+             */
+            tool_search_mcp_servers?: string[];
         };
         /** AgentToolSearch */
         AgentToolSearch: {
@@ -5391,12 +5391,13 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
+        McpToolName: string;
         /** McpToolSettings */
         McpToolSettings: {
-            /** Source Digest */
-            source_digest: string;
+            /** Resource Digest */
+            resource_digest: string;
             /** Tools */
-            tools: string[] | null;
+            tools: components["schemas"]["McpToolName"][] | null;
             /** Server Id */
             server_id: string;
             /** Name */
@@ -6462,8 +6463,6 @@ export interface components {
         };
         /** SelectableResourceSummary */
         SelectableResourceSummary: {
-            /** Selected Tool Count */
-            selected_tool_count?: number | null;
             /** Resource Id */
             resource_id: string;
             /** Name */
@@ -6477,6 +6476,8 @@ export interface components {
             implementation_key?: string | null;
             /** Source Path */
             source_path: string;
+            /** Selected Tool Count */
+            selected_tool_count?: number | null;
         };
         /** SessionAffinityPreset */
         SessionAffinityPreset: {
@@ -9208,10 +9209,10 @@ export interface components {
         };
         /** McpToolSelection */
         McpToolSelection: {
-            /** Source Digest */
-            source_digest: string;
+            /** Resource Digest */
+            resource_digest: string;
             /** Tools */
-            tools: string[] | null;
+            tools: components["schemas"]["McpToolName"][] | null;
         };
         /**
          * ResourceMutationRequest

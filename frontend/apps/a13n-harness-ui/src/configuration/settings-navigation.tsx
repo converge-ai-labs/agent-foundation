@@ -11,7 +11,7 @@ import {
   FileCode,
 } from "@phosphor-icons/react";
 import { useSources } from "../transport/context";
-import { DraftContext } from "./sources";
+import { DraftContext } from "./drafts";
 import { readDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import layout from "./settings.module.css";

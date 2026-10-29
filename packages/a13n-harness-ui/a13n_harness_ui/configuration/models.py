@@ -68,6 +68,7 @@ _SECRET_FIELD_NAMES = frozenset(
 type ResourceId = Annotated[str, Field(min_length=3, max_length=128, pattern=_RESOURCE_ID)]
 type CatalogKey = Annotated[str, Field(min_length=1, max_length=200, pattern=_CATALOG_KEY)]
 type ToolName = Annotated[str, Field(min_length=1, max_length=128, pattern=_CATALOG_KEY)]
+type McpToolName = Annotated[str, Field(min_length=1, max_length=128)]
 type RosterName = Annotated[str, Field(min_length=1, max_length=63, pattern=_NAME)]
 type SourceDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -677,7 +678,7 @@ class McpServerResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
-    tools: tuple[ToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+    tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:

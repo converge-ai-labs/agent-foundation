@@ -12,7 +12,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
-import { DraftContext, SourceDocument, type SourceDraft } from "./sources";
+import { SourceDocument } from "./sources";
+import { DraftContext, type SourceDraft } from "./drafts";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
 vi.mock("./fields", async () => {

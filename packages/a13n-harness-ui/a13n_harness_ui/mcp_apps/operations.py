@@ -114,7 +114,7 @@ class AppOperations:
             raise HarnessUiError("Close an App View before activating another.", code="mcp_app_view_limit")
         original = await self.snapshots.read(reference)
         owner = await self.owners.resolve(reference.thread_id)
-        owner.require_tool(reference.tool_name)
+        owner.require_tool(reference.tool_name, reference.server_id)
         recipe = owner.recipe(reference.server_id)
         transport, effective, _ = await prepare_mcp_transport(recipe, self.configuration_root)
         connection = await self.snapshots.connections.acquire(

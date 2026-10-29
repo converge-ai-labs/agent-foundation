@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
-import { DraftContext, SourceDocument } from "./sources";
+import { SourceDocument } from "./sources";
+import { DraftContext } from "./drafts";
 import { EnvdRuntime } from "./envd";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));

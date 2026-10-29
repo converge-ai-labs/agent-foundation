@@ -573,7 +573,7 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
             ? json({
                 server_id: new URL(request.url).pathname.split("/")[3],
                 name: "Private MCP server",
-                source_digest: "a",
+                resource_digest: "a",
                 tools: null,
               })
             : fixture(request),

@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { parse } from "yaml";
 import { ModelsPage } from "./models";
-import { DraftContext, type SourceDraft } from "./sources";
+import { DraftContext, type SourceDraft } from "./drafts";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
 const state = vi.hoisted(() => ({

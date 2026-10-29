@@ -4,26 +4,28 @@ from __future__ import annotations
 
 import hashlib
 import json
+from io import StringIO
 from pathlib import Path
 
 import yaml
 from anyio import fail_after
 from fastmcp import Client
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from ruamel.yaml import YAML
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
 
 from .loader import _parse_mcp_resources, _read_bounded_stable
-from .models import LoadedHarnessUiConfiguration, McpServerResource
+from .models import LoadedHarnessUiConfiguration, McpServerResource, McpToolName, SourceDocument
 from .mutation import ResourceMutationRequest, _select_target
 
 
 class McpToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    tools: list[str] | None = Field(max_length=1024)
+    resource_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tools: list[McpToolName] | None = Field(max_length=1024)
 
 
 class McpToolSettings(McpToolSelection):
@@ -37,54 +39,98 @@ class McpToolDescriptor(BaseModel):
     input_schema: dict[str, JsonValue]
 
 
-def server_resource(source: LoadedHarnessUiConfiguration | None, server_id: str) -> McpServerResource:
+def _server_resource(
+    source: LoadedHarnessUiConfiguration | None, server_id: str
+) -> tuple[LoadedHarnessUiConfiguration, McpServerResource]:
     if source is None or server_id not in source.mcp_servers:
         raise ConfigurationError("The MCP server is unavailable.", code="configuration_resource_missing")
-    return source.mcp_servers[server_id]
+    return source, source.mcp_servers[server_id]
 
 
-def tool_settings(source: LoadedHarnessUiConfiguration | None, server_id: str) -> McpToolSettings:
-    resource = server_resource(source, server_id)
-    assert source is not None
+def _server_document(
+    configuration_path: Path, source: LoadedHarnessUiConfiguration | None, server_id: str
+) -> tuple[SourceDocument, McpServerResource, Path, bytes, dict, str | None]:
+    source, resource = _server_resource(source, server_id)
     document = next(item for item in source.sources if server_id in item.indexed_resource_ids)
+    _, _, target = _select_target(configuration_path, document.relative_path, False)
+    content, _ = _read_bounded_stable(target, 1024 * 1024)
+    # Validate before parsing; parser errors must not expose credentials.
+    resources = _parse_mcp_resources(target, content)
+    raw = json.loads(content) if target.suffix == ".json" else yaml.safe_load(content)
+    key = None
+    if "mcpServers" in raw:
+        key = next(
+            (name for name, item in zip(raw["mcpServers"], resources, strict=True) if item.id == server_id), None
+        )
+        if key is None:
+            raise ConfigurationError(
+                "The MCP server changed. Reload its settings.", code="configuration_source_changed"
+            )
+    elif raw.get("id") != server_id:
+        raise ConfigurationError("The MCP server changed. Reload its settings.", code="configuration_source_changed")
+    return document, resource, target, content, raw, key
+
+
+def _resource_digest(raw: dict, key: str | None) -> str:
+    # File formatting, sibling edits and the shared schema marker do not change
+    # this server's policy or connection. Credentials participate only in the hash.
+    selected = dict(raw["mcpServers"][key] if key is not None else raw)
+    selected.pop("schema_version", None)
+    return hashlib.sha256(json.dumps(selected, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def tool_settings(
+    configuration_path: Path, source: LoadedHarnessUiConfiguration | None, server_id: str
+) -> McpToolSettings:
+    document, resource, _, content, raw, key = _server_document(configuration_path, source, server_id)
+    if hashlib.sha256(content).hexdigest() != document.source_digest:
+        raise ConfigurationError(
+            "The MCP configuration changed. Reload its settings.", code="configuration_source_changed"
+        )
     return McpToolSettings(
         server_id=server_id,
         name=resource.name,
-        source_digest=document.source_digest,
+        resource_digest=_resource_digest(raw, key),
         tools=list(resource.tools) if resource.tools is not None else None,
     )
 
 
 def selection_mutation(
-    configuration_path: Path, source: LoadedHarnessUiConfiguration, server_id: str, request: McpToolSelection
+    configuration_path: Path, source: LoadedHarnessUiConfiguration | None, server_id: str, request: McpToolSelection
 ) -> tuple[str, ResourceMutationRequest]:
-    """Patch only the selection, preserving hidden credentials and sibling servers."""
-    settings = tool_settings(source, server_id)
-    document = next(item for item in source.sources if server_id in item.indexed_resource_ids)
-    _, _, target = _select_target(configuration_path, document.relative_path, False)
-    content, _ = _read_bounded_stable(target, 1024 * 1024)
-    if settings.source_digest != request.source_digest or hashlib.sha256(content).hexdigest() != request.source_digest:
+    """Patch one server, preserving credentials, comments and sibling selections."""
+    document, _, target, content, raw, key = _server_document(configuration_path, source, server_id)
+    if _resource_digest(raw, key) != request.resource_digest:
         raise ConfigurationError(
-            "The MCP configuration changed. Reload its settings before saving.", code="configuration_source_changed"
+            "The MCP server changed. Reload its settings before saving.", code="configuration_source_changed"
         )
-    # Validate the source before parsing it; parser exceptions must not expose credentials.
-    resources = _parse_mcp_resources(target, content)
-    raw = json.loads(content) if target.suffix == ".json" else yaml.safe_load(content)
-    if "mcpServers" in raw:
-        key = list(raw["mcpServers"])[next(i for i, resource in enumerate(resources) if resource.id == server_id)]
-        selected = raw["mcpServers"][key]
+    selected = raw["mcpServers"][key] if key is not None else raw
+    if selected.get("tools") == request.tools:
+        return document.relative_path, ResourceMutationRequest(content=content.decode())
+    formatter = YAML()
+    formatter.preserve_quotes = True
+    if target.suffix != ".json":
+        raw = formatter.load(content.decode())
+        selected = raw["mcpServers"][key] if key is not None else raw
+
+    if request.tools is None:
+        selected.pop("tools", None)
     else:
-        selected = raw
-    raw["schema_version"] = "2"
-    selected["tools"] = request.tools
-    updated = json.dumps(raw, indent=2) + "\n" if target.suffix == ".json" else yaml.safe_dump(raw, sort_keys=False)
+        selected["tools"] = request.tools
+        raw["schema_version"] = "2"
+    if target.suffix == ".json":
+        updated = json.dumps(raw, indent=2) + "\n"
+    else:
+        output = StringIO()
+        formatter.dump(raw, output)
+        updated = output.getvalue()
     return document.relative_path, ResourceMutationRequest(content=updated)
 
 
 async def discover_tools(
-    source: LoadedHarnessUiConfiguration, server_id: str, configuration_root: Path
+    source: LoadedHarnessUiConfiguration | None, server_id: str, configuration_root: Path
 ) -> tuple[McpToolDescriptor, ...]:
-    resource = server_resource(source, server_id)
+    source, resource = _server_resource(source, server_id)
     recipe = ResolvedMcpRecipe(
         server_id=server_id,
         transport=resource.transport,

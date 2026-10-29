@@ -13,7 +13,7 @@ import {
 import { Startup } from "./shell/startup";
 import { VoiceProvider } from "./voice";
 import { TransportContext } from "./transport/context";
-import { DraftContext, type SourceDraft } from "./configuration/sources";
+import { DraftContext, type SourceDraft } from "./configuration/drafts";
 import { Workbench } from "./shell/workbench";
 import { NotificationsProvider } from "./shell/notifications";
 import { disablePush } from "./shell/push";

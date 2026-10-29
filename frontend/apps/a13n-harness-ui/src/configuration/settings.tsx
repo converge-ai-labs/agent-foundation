@@ -18,8 +18,8 @@ import {
   SourcesPage,
   NewResourceButton,
   DraftLinks,
-  DraftContext,
 } from "./sources";
+import { DraftContext } from "./drafts";
 import { readDocument, type ResourceKind } from "./documents";
 import { InstallSettings } from "../shell/install";
 import { DevicesSection } from "./devices";

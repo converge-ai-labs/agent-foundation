@@ -30,3 +30,40 @@ it("uses stable distinct group names when server identifiers have the same prefi
     true,
   );
 });
+
+it("does not accumulate empty groups when a server is repeatedly toggled", () => {
+  let plan = selectSearchServer({}, "mcp-one", "One", true);
+  const keys = Object.keys(plan.groups!);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    plan = selectSearchServer(plan, "mcp-one", "One", false);
+    expect(plan.groups).toEqual({});
+    plan = selectSearchServer(plan, "mcp-one", "One", true);
+    expect(Object.keys(plan.groups!)).toEqual(keys);
+  }
+});
+
+it("retains groups with plugin or capability sources when their last MCP server is removed", () => {
+  const plan = {
+    groups: {
+      plugin: {
+        description: "Plugin",
+        mcp_servers: ["mcp-one"],
+        harness_plugins: ["plugin-one"],
+      },
+      capability: { description: "Capability", capabilities: ["native"] },
+    },
+  };
+  expect(selectSearchServer(plan, "mcp-one", "One", false).groups).toEqual({
+    plugin: { ...plan.groups.plugin, mcp_servers: [] },
+    capability: plan.groups.capability,
+  });
+});
+
+it("reuses an existing empty key without losing its custom description", () => {
+  const plan = {
+    groups: { "mcp-one": { description: "Custom search", mcp_servers: [] } },
+  };
+  expect(selectSearchServer(plan, "mcp-one", "One", true).groups).toEqual({
+    "mcp-one": { description: "Custom search", mcp_servers: ["mcp-one"] },
+  });
+});

@@ -47,7 +47,6 @@ import {
   SettingsTextField as TextField,
 } from "../shell/settings";
 
-export { DraftContext, type SourceDraft } from "./drafts";
 import { DraftContext, type SourceDraft } from "./drafts";
 
 export function NewResourceButton({
@@ -477,6 +476,8 @@ export function SourceDocument({
             : kind === "mcp_server" || kind === "harness_plugin"
               ? ["/settings/connections", "Connections"]
               : ["/settings/resources", "Configuration files"];
+  // Hidden MCP connections have an empty placeholder with no editable base.
+  // Only an explicit replacement turns that placeholder into a source draft.
   const dirty =
     !!draft &&
     (isNew || draft.replacement || draft.base !== null) &&

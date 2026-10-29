@@ -54,7 +54,7 @@ export function McpTools({ serverId }: { serverId: string }) {
       result(
         client.PUT("/api/mcp/{server_id}/tools", {
           params: { path: { server_id: serverId } },
-          body: { tools: draft!.tools, source_digest: draft!.digest },
+          body: { tools: draft!.tools, resource_digest: draft!.digest },
         }),
       ),
     onSuccess: async () => {
@@ -72,7 +72,7 @@ export function McpTools({ serverId }: { serverId: string }) {
     setSaved(false);
     const value = {
       tools: next,
-      digest: draft?.digest ?? settings.data!.source_digest,
+      digest: draft?.digest ?? settings.data!.resource_digest,
     };
     drafts.set(draftKey, {
       content: JSON.stringify(value),
@@ -113,7 +113,7 @@ export function McpTools({ serverId }: { serverId: string }) {
             <SettingsChoice
               label="Available tools"
               value={tools === null ? "all" : "selected"}
-              disabled={save.isPending}
+              disabled={save.isPending || discovery.isFetching}
               description={
                 tools === null
                   ? "Includes new tools added by this server."
@@ -123,13 +123,15 @@ export function McpTools({ serverId }: { serverId: string }) {
                 { value: "all", label: "All tools" },
                 { value: "selected", label: "Selected tools" },
               ]}
-              onValueChange={(value) =>
-                update(
-                  value === "all"
-                    ? null
-                    : (descriptors ?? []).map((tool) => tool.name),
-                )
-              }
+              onValueChange={async (value) => {
+                if (value === "all") {
+                  update(null);
+                  return;
+                }
+                const inventory =
+                  descriptors ?? (await discovery.refetch()).data;
+                if (inventory) update(inventory.map((tool) => tool.name));
+              }}
             />
           )
         )}
@@ -275,7 +277,7 @@ export function McpTools({ serverId }: { serverId: string }) {
                 </Button>
               )}
               <Button
-                disabled={!draft || save.isPending}
+                disabled={!draft || save.isPending || discovery.isFetching}
                 loading={save.isPending}
                 onClick={() => save.mutate()}
               >

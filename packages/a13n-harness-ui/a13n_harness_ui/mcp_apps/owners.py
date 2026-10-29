@@ -28,11 +28,10 @@ class AppOwner:
             raise HarnessUiError("This MCP server is not enabled for the current App owner.", code="mcp_app_denied")
         return recipe
 
-    def require_tool(self, name: str, server_id: str | None = None) -> None:
-        if server_id is not None:
-            recipe = self.recipe(server_id)
-            if recipe.tools is not None and name not in recipe.tools:
-                raise HarnessUiError("This tool is excluded by the MCP server selection.", code="mcp_app_denied")
+    def require_tool(self, name: str, server_id: str) -> None:
+        recipe = self.recipe(server_id)
+        if recipe.tools is not None and name not in recipe.tools:
+            raise HarnessUiError("This tool is excluded by the MCP server selection.", code="mcp_app_denied")
         if self.node.tools is not None and name not in self.node.tools:
             raise HarnessUiError("This tool is excluded by the current Agent selection.", code="mcp_app_denied")
 

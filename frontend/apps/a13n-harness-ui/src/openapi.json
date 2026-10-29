@@ -8741,14 +8741,6 @@
       },
       "AgentSummary": {
         "properties": {
-          "tool_search_mcp_servers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tool Search Mcp Servers",
-            "default": []
-          },
           "agent_id": {
             "type": "string",
             "maxLength": 128,
@@ -8779,6 +8771,14 @@
             "maxLength": 4096,
             "minLength": 1,
             "title": "Source Path"
+          },
+          "tool_search_mcp_servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Search Mcp Servers",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -15697,18 +15697,23 @@
         ],
         "title": "McpToolDescriptor"
       },
+      "McpToolName": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
       "McpToolSettings": {
         "properties": {
-          "source_digest": {
+          "resource_digest": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Source Digest"
+            "title": "Resource Digest"
           },
           "tools": {
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/McpToolName"
                 },
                 "type": "array",
                 "maxItems": 1024
@@ -15731,7 +15736,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "source_digest",
+          "resource_digest",
           "tools",
           "server_id",
           "name"
@@ -18820,18 +18825,6 @@
       },
       "SelectableResourceSummary": {
         "properties": {
-          "selected_tool_count": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Tool Count"
-          },
           "resource_id": {
             "type": "string",
             "maxLength": 128,
@@ -18871,6 +18864,18 @@
             "maxLength": 4096,
             "minLength": 1,
             "title": "Source Path"
+          },
+          "selected_tool_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Tool Count"
           }
         },
         "additionalProperties": false,
@@ -25962,16 +25967,16 @@
       "McpToolSelection": {
         "additionalProperties": false,
         "properties": {
-          "source_digest": {
+          "resource_digest": {
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Source Digest",
+            "title": "Resource Digest",
             "type": "string"
           },
           "tools": {
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/McpToolName"
                 },
                 "maxItems": 1024,
                 "type": "array"
@@ -25984,7 +25989,7 @@
           }
         },
         "required": [
-          "source_digest",
+          "resource_digest",
           "tools"
         ],
         "title": "McpToolSelection",

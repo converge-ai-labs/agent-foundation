@@ -34,15 +34,15 @@ async def test_selection_preserves_private_connection_and_siblings(tmp_path: Pat
     )
     root, _ = _source(tmp_path, document, suffix=suffix)
     source = await load_harness_ui_configuration(root)
-    settings = tool_settings(source, "mcp-one")
+    settings = tool_settings(root, source, "mcp-one")
     assert "private-sentinel" not in settings.model_dump_json()
     for selected in (["search"], [], None):
         path, mutation = selection_mutation(
-            root, source, "mcp-one", McpToolSelection(source_digest=settings.source_digest, tools=selected)
+            root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=selected)
         )
         saved = await mutate_configuration_source(root, path, mutation)
         source = saved.configuration
-        settings = tool_settings(source, "mcp-one")
+        settings = tool_settings(root, source, "mcp-one")
         assert settings.tools == selected
         resource = source.mcp_servers["mcp-one"]
         assert resource.schema_version == "2"
@@ -58,11 +58,13 @@ async def test_selection_preserves_private_connection_and_siblings(tmp_path: Pat
 async def test_stale_selection_does_not_overwrite_connection(tmp_path: Path):
     root, file = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}}})
     source = await load_harness_ui_configuration(root)
-    settings = tool_settings(source, "mcp-one")
+    settings = tool_settings(root, source, "mcp-one")
     external = file.read_text().replace("python", "node")
     file.write_text(external)
     with pytest.raises(ConfigurationError, match="changed"):
-        selection_mutation(root, source, "mcp-one", McpToolSelection(source_digest=settings.source_digest, tools=[]))
+        selection_mutation(
+            root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=[])
+        )
     assert file.read_text() == external
 
 
@@ -181,3 +183,71 @@ async def test_mcp_selection_filters_model_directory_and_proxy_dispatch(
         result = await executable.run("test", bindings=RunBindings.embedded())
         assert result.output_or_raise() == "done"
         assert calls == selected
+
+
+async def test_bundle_drafts_save_independently_but_reject_same_server_changes(tmp_path: Path):
+    root, file = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}, "two": {"command": "node"}}})
+    source = await load_harness_ui_configuration(root)
+    one = tool_settings(root, source, "mcp-one")
+    two = tool_settings(root, source, "mcp-two")
+    for server_id, settings, selected in [("mcp-one", one, ["search"]), ("mcp-two", two, [])]:
+        path, mutation = selection_mutation(
+            root, source, server_id, McpToolSelection(resource_digest=settings.resource_digest, tools=selected)
+        )
+        source = (await mutate_configuration_source(root, path, mutation)).configuration
+    assert source.mcp_servers["mcp-one"].tools == ("search",)
+    assert source.mcp_servers["mcp-two"].tools == ()
+    before = file.read_bytes()
+    with pytest.raises(ConfigurationError, match="changed"):
+        selection_mutation(root, source, "mcp-one", McpToolSelection(resource_digest=one.resource_digest, tools=[]))
+    assert file.read_bytes() == before
+
+
+async def test_yaml_comments_survive_and_all_tools_does_not_upgrade_unrestricted_files(tmp_path: Path):
+    root, file = _source(tmp_path, {}, suffix="yaml")
+    original = '# keep me\nmcpServers:\n  one:\n    command: "python" # inline\n'
+    file.write_text(original)
+    source = await load_harness_ui_configuration(root)
+    settings = tool_settings(root, source, "mcp-one")
+    path, mutation = selection_mutation(
+        root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=None)
+    )
+    assert mutation.content == original
+    for selected in (["_private tool"], None):
+        path, mutation = selection_mutation(
+            root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=selected)
+        )
+        source = (await mutate_configuration_source(root, path, mutation)).configuration
+        settings = tool_settings(root, source, "mcp-one")
+        text = file.read_text()
+        assert "# keep me" in text and "# inline" in text
+        assert 'command: "python"' in text
+        assert settings.tools == selected
+    assert "tools:" not in file.read_text()
+
+
+@pytest.mark.parametrize("name", ["_private tool", "_private", "x" * 128])
+async def test_selection_accepts_exact_mcp_tool_names(tmp_path: Path, name: str):
+    root, _ = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}}})
+    source = await load_harness_ui_configuration(root)
+    settings = tool_settings(root, source, "mcp-one")
+    path, mutation = selection_mutation(
+        root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=[name])
+    )
+    source = (await mutate_configuration_source(root, path, mutation)).configuration
+    assert source.mcp_servers["mcp-one"].tools == (name,)
+
+
+async def test_json_noop_preserves_bytes_and_changed_selection_normalizes_indentation(tmp_path: Path):
+    root, file = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}}})
+    original = file.read_text()
+    source = await load_harness_ui_configuration(root)
+    settings = tool_settings(root, source, "mcp-one")
+    _, unchanged = selection_mutation(
+        root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=None)
+    )
+    assert unchanged.content == original
+    _, changed = selection_mutation(
+        root, source, "mcp-one", McpToolSelection(resource_digest=settings.resource_digest, tools=[])
+    )
+    assert changed.content == json.dumps(json.loads(changed.content), indent=2) + "\n"

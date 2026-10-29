@@ -21,6 +21,14 @@ type Search = {
   config?: unknown;
 };
 
+function hasSources(group: Group) {
+  return !!(
+    group.mcp_servers?.length ||
+    group.harness_plugins?.length ||
+    group.capabilities?.length
+  );
+}
+
 export function selectSearchServer(
   plan: Search,
   id: string,
@@ -29,9 +37,10 @@ export function selectSearchServer(
 ): Search {
   const groups = structuredClone(plan.groups ?? {});
   if (!selected) {
-    for (const group of Object.values(groups)) {
+    for (const [key, group] of Object.entries(groups)) {
       if (group.mcp_servers)
         group.mcp_servers = group.mcp_servers.filter((server) => server !== id);
+      if (!hasSources(group)) delete groups[key];
     }
   } else if (
     !Object.values(groups).some((group) => group.mcp_servers?.includes(id))
@@ -39,9 +48,11 @@ export function selectSearchServer(
     const base = id.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 26);
     let key = base;
     let index = 1;
-    while (groups[key]) key = `${base}-${index++}`;
+    while (groups[key] && hasSources(groups[key])) key = `${base}-${index++}`;
     groups[key] = {
-      description: `Search and use ${name} tools.`.slice(0, 512),
+      description:
+        groups[key]?.description ??
+        `Search and use ${name} tools.`.slice(0, 512),
       mcp_servers: [id],
     };
   }
@@ -60,10 +71,7 @@ export function ToolSearchFields({
   const raw = readDocument(source)?.toJS() ?? {};
   const plan: Search = raw.tool_search ?? {};
   const groups = plan.groups ?? {};
-  const enabled =
-    !!raw.tool_search &&
-    plan.enabled !== false &&
-    Object.keys(groups).length > 0;
+  const enabled = !!raw.tool_search && plan.enabled !== false;
   const servers = selectors.data?.mcp_servers ?? [];
   const defaults: string[] =
     raw.mcp_servers ?? root.configuration?.defaults?.mcp_servers ?? [];
@@ -77,7 +85,7 @@ export function ToolSearchFields({
         description="Find selected servers’ enabled tools when needed."
         onCheckedChange={(checked) => {
           let next: Search = { ...plan, enabled: checked };
-          if (checked && !Object.keys(groups).length) {
+          if (checked && !raw.tool_search) {
             for (const server of servers.filter((item) =>
               defaults.includes(item.resource_id),
             ))
@@ -87,13 +95,6 @@ export function ToolSearchFields({
                 server.name,
                 true,
               );
-            if (!Object.keys(next.groups ?? {}).length)
-              next.groups = {
-                mcp: {
-                  description: "Search connected MCP tools.",
-                  mcp_servers: [],
-                },
-              };
           }
           set(next);
         }}
