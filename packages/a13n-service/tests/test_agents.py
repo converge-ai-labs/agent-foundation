@@ -89,6 +89,7 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     tools = [tool for toolset in catalogue.items for tool in toolset.tools]
 
     assert [toolset.key for toolset in catalogue.items] == [
+        "browser",
         "files",
         "shell",
         "computer",
@@ -111,9 +112,19 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     provider = new_object_id("wp")
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})
 
-    assert set(selected.toolsets) == {"files", "shell", "computer", "web", "memory", "assets", *PLATFORM_GROUPS}
+    assert set(selected.toolsets) == {
+        "browser",
+        "files",
+        "shell",
+        "computer",
+        "web",
+        "memory",
+        "assets",
+        *PLATFORM_GROUPS,
+    }
     assert not any(selected.toolsets[group].enabled for group in PLATFORM_GROUPS)
     assert not selected.toolsets["assets"].enabled
+    assert not selected.toolsets["browser"].enabled
     # Memory tools reach a run only through its mounts; a disabled tool is left out of every mount.
     assert toolsets.memory_file_tools(selected.toolsets) == {
         "view",
@@ -477,7 +488,7 @@ async def test_summarize_survives_service_checkpoint_and_next_run(executing, scr
     scripted_model.say("Continuing after summary.")
     submitted = await runs_kit.start_thread(executing, agent, "Prepare the release")
     run = await runs_kit.sealed(executing, submitted["run"]["id"])
-    assert run["status"] == "completed" and run["output"] == "Continuing after summary."
+    assert run["status"] == "completed" and run["output"] == "Continuing after summary.", run
     await scripted_model.request()
     after_summary = await scripted_model.request()
     assert summary in str(runs_kit.user_texts(after_summary))
@@ -1015,6 +1026,7 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
     assert view["description"] == "Read file contents"
     assert view["model_name"] == "view"
     assert [toolset["key"] for toolset in catalogue.json()["items"]] == [
+        "browser",
         "files",
         "shell",
         "computer",

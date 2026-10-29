@@ -7,8 +7,12 @@ from sqlalchemy import ForeignKeyConstraint, String
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
 # run's display pages by ordinal and pending answers by tool call. Desktop targets are keyed by native identity
 # so aliases share the same authority. Desktop execution fences are keyed by Run. Memory organization state is keyed by Space;
-# model dispatches are keyed by Harness call ID; every other row has a Service object ID.
+# model dispatches are keyed by Harness call ID. Browser bindings use Thread IDs; tabs and selections use
+# Browser/target and Browser/Thread pairs. Every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
+    "browser_tabs",
+    "browser_selections",
+    "thread_browsers",
     "desktop_targets",
     "desktop_executions",
     "memory_file_revisions",
@@ -38,6 +42,15 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert [column.name for column in metadata.tables["thread_browsers"].primary_key.columns] == ["thread_id"]
+    assert [column.name for column in metadata.tables["browser_tabs"].primary_key.columns] == [
+        "browser_id",
+        "target_id",
+    ]
+    assert [column.name for column in metadata.tables["browser_selections"].primary_key.columns] == [
+        "browser_id",
+        "thread_id",
+    ]
     assert [column.name for column in metadata.tables["model_dispatches"].primary_key.columns] == ["call_id"]
     assert [column.name for column in metadata.tables["desktop_targets"].primary_key.columns] == ["key"]
     assert [column.name for column in metadata.tables["desktop_executions"].primary_key.columns] == ["run_id"]

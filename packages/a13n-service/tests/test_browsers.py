@@ -790,10 +790,11 @@ async def test_stale_handback_keeps_completed_inline_delegate(service, runs_kit,
     assert "Human control ended" not in str(requests[-1]["messages"])
 
 
+@pytest.mark.parametrize("handoff", [False, True])
 @pytest.mark.parametrize("background", [False, True])
 @pytest.mark.parametrize("retake_first", [False, True])
 async def test_handback_is_committed_before_compaction_can_observe_it(
-    service, runs_kit, scripted_model, monkeypatch, background, retake_first
+    service, runs_kit, scripted_model, monkeypatch, background, retake_first, handoff
 ):
     from a13n_harness.capabilities import context
     from a13n_service.runs import checkpoints
@@ -801,7 +802,7 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     from a13n_service.runs.tables import RunRow
 
     _, browser, lease = await accepted_handback(
-        service, runs_kit, scripted_model, background_compaction={"enabled": background}
+        service, runs_kit, scripted_model, background_compaction={"enabled": background}, summarize=handoff
     )
     plan = await _plan(service.runtime, lease)
 

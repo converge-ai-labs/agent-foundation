@@ -200,8 +200,18 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "Browser",
         False,
         tuple(
-            _Tool(key, key.replace("_", " ").title(), f"browser.{key}", f"browser_{key}")
-            for key in ("observe", "read", "navigate", "act", "wait", "tabs", "dialog", "files", "screenshot")
+            _Tool(key, key.title(), f"browser.{key}", f"browser_{key}", description=description)
+            for key, description in (
+                ("observe", "Observe the selected page and obtain element references"),
+                ("read", "Read page text, links, forms, tables, or attributes"),
+                ("navigate", "Navigate the selected tab or traverse its history"),
+                ("act", "Interact with an observed element or screenshot location"),
+                ("wait", "Wait for a page condition"),
+                ("tabs", "List, open, select, or close accessible tabs"),
+                ("dialog", "Inspect, accept, or dismiss a browser dialog"),
+                ("files", "Inspect downloads or upload files through the browser binding"),
+                ("screenshot", "Capture the selected page or a viewport region"),
+            )
         ),
         description="Native browser tools on the Thread's managed Browser binding.",
     ),

@@ -186,6 +186,8 @@ class InputBoundary(AbstractCapability[AgentContext]):
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(
+            # Handoff is outermost; join its tier before applying relative ordering.
+            position="outermost",
             wraps=(HandoffCapability, CompactionCapability, ModelContextCoordinatorCapability),
             wrapped_by=(InputCapability,),
         )
