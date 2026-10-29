@@ -27,6 +27,7 @@ class _Row:
 def _parts(item: Item) -> list[dict[str, Any]]:
     content = item.content
     metadata = content.get("metadata") or {}
+    duration = max(0, round((item.ended_at - item.started_at).total_seconds() * 1000)) if item.ended_at else None
     if item.kind in {"text_message", "reasoning_message"}:
         media = content.get("input_media")
         return [
@@ -40,6 +41,7 @@ def _parts(item: Item) -> list[dict[str, Any]]:
                 else "assistant",
                 "text": json.dumps(media, ensure_ascii=False) if media is not None else str(content.get("text", "")),
                 "metadata": metadata,
+                "duration_ms": duration,
             }
         ]
     if item.kind == "tool_call":
@@ -47,6 +49,7 @@ def _parts(item: Item) -> list[dict[str, Any]]:
             "tool_name": content.get("toolCallName"),
             "tool_call_id": content.get("toolCallId"),
             "provider": content.get("provider"),
+            "duration_ms": duration,
         }
         parts = [{"kind": "tool_call", "value": content.get("arguments"), **common}]
         # Older saved items predate the native retried outcome's retry flag.
@@ -176,7 +179,29 @@ def display_entries(display: DisplayHistory, thread: Thread | None = None) -> tu
     return tuple(entries)
 
 
+def _run_timings(display: DisplayHistory) -> dict[str, tuple[str, int]]:
+    """Associate items with their observed root Run; never time human pauses."""
+    timings: dict[str, tuple[str, int]] = {}
+    started: Item | None = None
+    members: list[str] = []
+    for item in display.items:
+        if item.content.get("subagentRunId"):
+            continue
+        event = item.content.get("type")
+        if event == "RUN_STARTED":
+            started, members = item, []
+        elif event in {"RUN_FINISHED", "RUN_ERROR"} and started is not None:
+            duration = max(0, round((item.started_at - started.started_at).total_seconds() * 1000))
+            for member in members:
+                timings[member] = (started.id, duration)
+            started, members = None, []
+        elif started is not None:
+            members.append(item.id)
+    return timings
+
+
 def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
+    timings = _run_timings(display)
     rows = _rows(display)
     inputs = [(index, row) for index, row in enumerate(rows) if any(ordinary_input(item) for item in row.items)]
     turns = []
@@ -207,6 +232,7 @@ def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
         )
         if final is not None:
             output = final
+        runs = dict(timings[item.id] for row in section for item in row.items if item.id in timings)
         source = first.items[0].content
         imported = source.get("turn")
         preview = " ".join(
@@ -233,6 +259,7 @@ def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
                 else None,
                 preview=str(imported["preview"]) if isinstance(imported, dict) else excerpt_text(preview, 512),
                 timestamp=_timestamp(first),
+                duration_ms=sum(runs.values()) if runs else None,
                 tool_count=sum(part["kind"] == "tool_call" for row in section for part in row.parts),
                 steering_count=sum(
                     cast(int, item.content.get("steering_count", 0)) for row in section for item in row.items

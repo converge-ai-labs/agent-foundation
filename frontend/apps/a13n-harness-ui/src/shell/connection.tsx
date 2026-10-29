@@ -16,9 +16,7 @@ export function ConnectionNotice({ retry }: { retry: () => void }) {
       <WifiSlashIcon size={18} aria-hidden="true" />
       <div className={styles.connectionMessage}>
         <strong>Connection interrupted</strong>
-        <span>
-          Reconnecting automatically. If the server was stopped, restart it.
-        </span>
+        <span>Reconnecting automatically…</span>
       </div>
       <Button variant="ghost" size="sm" onClick={retry}>
         Retry now

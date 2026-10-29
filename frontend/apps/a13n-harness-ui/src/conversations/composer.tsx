@@ -35,6 +35,7 @@ import {
   type Transport,
 } from "../transport/client";
 import type { Profile } from "../shell/presence";
+import { ConnectionNoticeContext } from "../shell/connection";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
@@ -348,6 +349,9 @@ export function Composer({
   canClearContext = false,
   continuationId,
   unavailableReason,
+  feedback,
+  feedbackError,
+  suppressConnectionNotice = false,
   profile,
   unauthorized,
   reconcile,
@@ -358,6 +362,9 @@ export function Composer({
   canClearContext?: boolean;
   continuationId?: string | null;
   unavailableReason?: string;
+  feedback?: ReactNode;
+  feedbackError?: unknown;
+  suppressConnectionNotice?: boolean;
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
@@ -376,6 +383,7 @@ export function Composer({
   modelId?: string;
 }) {
   const draft = useDraft(threadId);
+  const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const promotion = useCoordinatorMutation({ thread_id: threadId });
   const { tracker: results } = useResults();
@@ -479,7 +487,14 @@ export function Composer({
   const [syncDelayed, setSyncDelayed] = useState(false);
   const synchronized = draft.synchronized;
   const showSyncStatus =
-    !local && !synchronized && !draft.replacement && syncDelayed;
+    !local &&
+    !synchronized &&
+    !draft.replacement &&
+    !suppressConnectionNotice &&
+    !disconnected &&
+    !draft.error &&
+    !error &&
+    syncDelayed;
   useEffect(() => {
     setSyncDelayed(false);
     if (synchronized || local) return;
@@ -949,52 +964,133 @@ export function Composer({
       className={styles.composer}
       aria-label={busy ? "Next message" : "Message composer"}
     >
-      {contextCleared && (
-        <p role="status" className={styles.composerConnection}>
-          Context cleared. Your next message starts fresh; chat history and your
-          draft are kept.
-        </p>
-      )}
-      {showSyncStatus && draft.status !== "Connected" && (
-        <p role="status" className={styles.composerConnection}>
-          {draft.status} · your edits are still in this tab
-        </p>
-      )}
-      {draft.replacement && (
-        <div role="alert" className={styles.warning}>
-          <p>
-            The shared draft changed. Keep your input or discard it to rejoin.
-            Neither option sends a message.
+      <div className={styles.composerFeedback}>
+        {feedback}
+        {contextCleared && (
+          <p role="status" className={styles.composerConnection}>
+            Context cleared. Your next message starts fresh; chat history and
+            your draft are kept.
           </p>
-          <Button variant="outline" onClick={() => draft.joinReplacement(true)}>
-            Keep my input
-          </Button>
-          <ConfirmAction
-            key={draft.replacement.draft_id}
-            trigger={<Button variant="ghost">Discard and rejoin</Button>}
-            title="Discard old input?"
-            description="Discard this tab's old input and join the new shared draft?"
-            confirmLabel="Discard and rejoin"
-            destructive
-            onConfirm={() => draft.joinReplacement(false)}
-          />
-        </div>
-      )}
-      {draft.coordinatorUncertain && (
-        <div className={styles.warning} role="alert">
-          <p>
-            Coordination may already be on. Check its status before sending.
-            Your input is saved here.
+        )}
+        {showSyncStatus && draft.status !== "Connected" && (
+          <p role="status" className={styles.composerConnection}>
+            {draft.status} · your edits are still in this tab
           </p>
-          <Button
-            variant="outline"
-            loading={coordinatorStatus.isPending}
-            onClick={() => coordinatorStatus.mutate()}
-          >
-            Check status
-          </Button>
-        </div>
-      )}
+        )}
+        {draft.replacement && (
+          <div role="alert" className={styles.warning}>
+            <p>
+              The shared draft changed. Keep your input or discard it to rejoin.
+              Neither option sends a message.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => draft.joinReplacement(true)}
+            >
+              Keep my input
+            </Button>
+            <ConfirmAction
+              key={draft.replacement.draft_id}
+              trigger={<Button variant="ghost">Discard and rejoin</Button>}
+              title="Discard old input?"
+              description="Discard this tab's old input and join the new shared draft?"
+              confirmLabel="Discard and rejoin"
+              destructive
+              onConfirm={() => draft.joinReplacement(false)}
+            />
+          </div>
+        )}
+        {draft.coordinatorUncertain && (
+          <div className={styles.warning} role="alert">
+            <p>
+              Coordination may already be on. Check its status before sending.
+              Your input is saved here.
+            </p>
+            <Button
+              variant="outline"
+              loading={coordinatorStatus.isPending}
+              onClick={() => coordinatorStatus.mutate()}
+            >
+              Check status
+            </Button>
+          </div>
+        )}
+        {blockedReason &&
+          !feedback &&
+          !showSyncStatus &&
+          !error &&
+          draft.submission.kind !== "rejected" && (
+            <p role="status" className={styles.composerConnection}>
+              {blockedReason}
+            </p>
+          )}
+        {cancellation.request && (
+          <div className={styles.composerStatus}>
+            <p
+              role={
+                cancellation.observationFailed ||
+                ["uncertain", "rejected"].includes(cancellation.request.phase)
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {cancellation.request.message}
+              {cancellation.observationFailed &&
+                " Current status is unavailable; stopping is not yet confirmed."}
+            </p>
+            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
+              Check stop status
+            </Button>
+          </div>
+        )}
+        {(error ||
+          (draft.error &&
+            draft.error !==
+              (feedbackError instanceof Error
+                ? feedbackError.message
+                : feedbackError))) &&
+          draft.submission.kind !== "rejected" &&
+          !unknown && (
+            <p role="alert" className={styles.warning}>
+              {error || draft.error}
+            </p>
+          )}
+        {(draft.submission.kind === "rejected" || unknown) && (
+          <div role="alert" className={styles.warning}>
+            <p>{"message" in draft.submission && draft.submission.message}</p>
+            {unknown &&
+              "receipt" in draft.submission &&
+              draft.submission.receipt && (
+                <details>
+                  <summary>Message details</summary>
+                  <small>Operation: {draft.submission.receipt}</small>
+                </details>
+              )}
+            {unknown && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={onReviewOutcome ?? reconcile}
+                >
+                  {onReviewOutcome ? "Review message" : "Refresh chat"}
+                </Button>
+                {!onReviewOutcome && (
+                  <ConfirmAction
+                    trigger={<Button variant="ghost">Allow new message</Button>}
+                    title="Enable a new submission?"
+                    description="Your message may already be sent. Check the chat before allowing another message."
+                    confirmLabel="Enable submission"
+                    onConfirm={() => {
+                      draft.submission = { kind: "idle" };
+                      draft.notify();
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
       <div className={styles.composerBody}>
         {(draft.mode === "goal" ||
           ownerControl ||
@@ -1204,70 +1300,6 @@ export function Composer({
             {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
           </Button>
         </div>
-        {blockedReason && (
-          <p role="status" className={styles.composerConnection}>
-            {blockedReason}
-          </p>
-        )}
-        {cancellation.request && (
-          <div className={styles.composerStatus}>
-            <p
-              role={
-                cancellation.observationFailed ||
-                ["uncertain", "rejected"].includes(cancellation.request.phase)
-                  ? "alert"
-                  : "status"
-              }
-            >
-              {cancellation.request.message}
-              {cancellation.observationFailed &&
-                " Current status is unavailable; stopping is not yet confirmed."}
-            </p>
-            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
-              Check stop status
-            </Button>
-          </div>
-        )}
-        {(error || draft.error) && (
-          <p role="alert" className={styles.warning}>
-            {error || draft.error}
-          </p>
-        )}
-        {(draft.submission.kind === "rejected" || unknown) && (
-          <div role="alert" className={styles.warning}>
-            <p>{"message" in draft.submission && draft.submission.message}</p>
-            {unknown &&
-              "receipt" in draft.submission &&
-              draft.submission.receipt && (
-                <details>
-                  <summary>Message details</summary>
-                  <small>Operation: {draft.submission.receipt}</small>
-                </details>
-              )}
-            {unknown && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={onReviewOutcome ?? reconcile}
-                >
-                  {onReviewOutcome ? "Review message" : "Refresh chat"}
-                </Button>
-                {!onReviewOutcome && (
-                  <ConfirmAction
-                    trigger={<Button variant="ghost">Allow new message</Button>}
-                    title="Enable a new submission?"
-                    description="Your message may already be sent. Check the chat before allowing another message."
-                    confirmLabel="Enable submission"
-                    onConfirm={() => {
-                      draft.submission = { kind: "idle" };
-                      draft.notify();
-                    }}
-                  />
-                )}
-              </>
-            )}
-          </div>
-        )}
       </div>
       {preview?.image && preview.url && (
         <ImagePreview

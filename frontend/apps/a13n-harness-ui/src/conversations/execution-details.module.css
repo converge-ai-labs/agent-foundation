@@ -8,9 +8,12 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--a13n-text-supporting);
+  color: var(--harness-log-text);
   text-align: start;
   cursor: pointer;
+}
+.preview:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
 }
 .preview:focus-visible {
   outline: 2px solid var(--ring);
@@ -18,17 +21,23 @@
 }
 .previewHeading {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   font-size: 14px;
+}
+.previewHeading > span:not(.excerpt) {
+  flex: none;
+  white-space: nowrap;
 }
 .previewHeading > svg {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
 }
 .excerpt {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -76,6 +85,7 @@
 }
 .fullscreen > [data-execution-reader] {
   min-height: 0;
+  overflow-y: auto;
   max-height: none;
   margin: 0;
   border-radius: 0;
@@ -94,4 +104,13 @@
 .fullscreen :global([data-tool-details]),
 .fullscreen :global([data-tool-resources]) {
   overflow: visible;
+}
+
+.preview:is(:hover, :focus-visible) .previewHeading > svg {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .previewHeading > svg {
+    opacity: 1;
+  }
 }

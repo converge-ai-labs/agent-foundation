@@ -1,31 +1,8 @@
-import {
-  createContext,
-  memo,
-  useContext,
-  useId,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useGuestAccess } from "../transport/context";
-import {
-  ArrowSquareOut,
-  BracketsCurly,
-  Check,
-  Copy,
-  FileText,
-  PencilSimple,
-  TerminalWindow,
-  MagnifyingGlass,
-  Code,
-  Wrench,
-  Globe,
-  Chats,
-  ListChecks,
-  UsersThree,
-  Hourglass,
-} from "@phosphor-icons/react";
+import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
   describeTool,
@@ -44,7 +21,8 @@ import { SyntaxCode, codeLanguage } from "./syntax-code";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { RetainedImagePreview } from "./image-preview";
 import { copyText } from "../platform";
-import { DebugData, DebugId, DebugOnly } from "../shell/debug";
+import { DebugData, DebugId } from "../shell/debug";
+import { ToolWorkingState } from "./tool-working-state";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -274,11 +252,11 @@ function ToolData({ tool }: { tool: ToolView }) {
         </Button>
       </div>
       {tool.inputOmitted ? (
-        <p>Arguments omitted by the server.</p>
+        <p>Input omitted by the server.</p>
       ) : (
         tool.input !== undefined && (
           <CodeContent
-            title="Arguments"
+            title="Input"
             value={raw ? tool.input : parsed(tool.input)}
           />
         )
@@ -304,14 +282,7 @@ function ToolData({ tool }: { tool: ToolView }) {
   );
 }
 
-function ToolDetails({
-  tool,
-  data = true,
-}: {
-  tool: ToolView;
-  /** Grouped operations offer recorded data from their own row instead. */
-  data?: boolean;
-}) {
+function ToolDetails({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const textResult = parsed(tool.result);
   const replacements =
@@ -348,10 +319,12 @@ function ToolDetails({
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
       {tool.resultParts && <AguiContent parts={tool.resultParts} />}
       {!tool.resultParts &&
+        !info.shell &&
         typeof textResult === "string" &&
         textResult &&
         !info.errorText && <CodeContent title="Output" value={textResult} />}
       <CollaborationDetails tool={tool} />
+      <ToolWorkingState tool={tool} />
       {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (
         <ToolImages tool={tool} />
       )}
@@ -395,35 +368,47 @@ function ToolDetails({
           </section>
         )}
       {info.shell && (
-        <>
+        <section className={styles.shellResult} aria-label="Command result">
           {info.command && (
             <CodeContent title="Command" value={info.command} language="bash" />
           )}
-          {record(info.result.status) && (
-            <small>
-              Process: {sourceText(info.result.status.phase)}
-              {typeof info.result.status.exit_code === "number"
-                ? ` · Exit ${info.result.status.exit_code}`
-                : ""}
+          {!tool.resultParts &&
+            typeof textResult === "string" &&
+            textResult &&
+            !info.errorText && (
+              <CodeContent title="Output" value={textResult} />
+            )}
+          {["stdout", "stderr"].map((name) => {
+            const stream = info.result[name];
+            const value =
+              typeof stream === "string"
+                ? stream
+                : record(stream)
+                  ? stream.text
+                  : undefined;
+            return typeof value === "string" && value ? (
+              <CodeContent key={name} title={name} value={value} />
+            ) : null;
+          })}
+          {(record(info.result.status) || info.exitCode !== undefined) && (
+            <small className={styles.processStatus}>
+              {[
+                record(info.result.status) &&
+                typeof info.result.status.phase === "string"
+                  ? info.result.status.phase
+                  : "",
+                info.exitCode !== undefined ? `Exit ${info.exitCode}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </small>
-          )}
-          {["stdout", "stderr"].map((name) =>
-            record(info.result[name]) &&
-            typeof info.result[name].text === "string" &&
-            info.result[name].text ? (
-              <CodeContent
-                key={name}
-                title={name}
-                value={info.result[name].text}
-              />
-            ) : null,
           )}
           {info.outputIncomplete && (
             <p role="status">
               Partial process output. Earlier or omitted bytes are not shown.
             </p>
           )}
-        </>
+        </section>
       )}
       {tool.name === "view" && typeof info.result.content === "string" && (
         <CodeContent
@@ -446,13 +431,12 @@ function ToolDetails({
       {tool.name === "run_code" && typeof info.args.code === "string" && (
         <CodeContent title="Code" value={info.args.code} language="python" />
       )}
-      {data && (
-        <DebugOnly>
-          <DisclosureSection title="Arguments & result">
-            <ToolData tool={tool} />
-          </DisclosureSection>
-        </DebugOnly>
-      )}
+      <DisclosureSection
+        className={styles.recordedDisclosure}
+        title="Input & result"
+      >
+        <ToolData tool={tool} />
+      </DisclosureSection>
     </div>
   );
 }
@@ -460,8 +444,6 @@ function ToolDetails({
 /** One grouped call: a single row whose semantic details follow directly. */
 function ToolOperation({ tool }: { tool: ToolView }) {
   const detail = describeTool(tool);
-  const [data, setData] = useState(false);
-  const panel = useId();
   return (
     <section
       className={styles.operation}
@@ -477,29 +459,8 @@ function ToolOperation({ tool }: { tool: ToolView }) {
           <small className={styles.phase}>{detail.phase}</small>
         )}
         <ToolActions tool={tool} />
-        <DebugOnly>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className={styles.dataToggle}
-            aria-label="Arguments & result"
-            title="Arguments & result"
-            aria-expanded={data}
-            aria-controls={data ? panel : undefined}
-            onClick={() => setData((open) => !open)}
-          >
-            <BracketsCurly />
-          </Button>
-        </DebugOnly>
       </header>
-      {data && (
-        <DebugOnly>
-          <div id={panel} className={styles.operationData}>
-            <ToolData tool={tool} />
-          </div>
-        </DebugOnly>
-      )}
-      <ToolDetails tool={tool} data={false} />
+      <ToolDetails tool={tool} />
     </section>
   );
 }
@@ -508,17 +469,6 @@ function toolState(phase: string) {
   if (phase === "Result received") return "done";
   return "running";
 }
-
-const toolIcons = {
-  file: FileText,
-  edit: PencilSimple,
-  shell: TerminalWindow,
-  search: MagnifyingGlass,
-  web: Globe,
-  thread: Chats,
-  code: Code,
-  tool: Wrench,
-};
 
 function ToolActions({ tool }: { tool: ToolView }) {
   const guest = useGuestAccess();
@@ -673,7 +623,6 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
-  const Icon = toolIcons[info.kind];
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -687,17 +636,14 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <Icon aria-hidden="true" />
             <strong>{info.label}</strong>
             {info.summary && <span title={info.summary}>{info.summary}</span>}
           </span>
         }
         summary={
-          <span className={styles.phase}>
-            {info.phase === "Result received" || info.phase === "Failed"
-              ? ""
-              : info.phase}
-          </span>
+          info.phase !== "Result received" ? (
+            <span className={styles.phase}>{info.phase}</span>
+          ) : undefined
         }
       >
         {expanded && <ToolDetails tool={tool} />}
@@ -719,7 +665,7 @@ export function QuestionInteraction({ tool }: { tool: ToolView }) {
       : []);
   return (
     <section
-      className={styles.questionReceipt}
+      className={`${styles.tool} ${styles.questionReceipt}`}
       data-tool-id={tool.id}
       aria-label={receipt ? "Answers" : "Question"}
     >
@@ -829,15 +775,8 @@ export const ToolActivity = memo(function ToolActivity({
       </>
     );
   const info = activitySummary(tools);
-  const Icon = {
-    explore: MagnifyingGlass,
-    shell: TerminalWindow,
-    web: Globe,
-    edit: PencilSimple,
-    work: ListChecks,
-    subagents: UsersThree,
-    executions: Hourglass,
-  }[kind];
+  const single = tools.length === 1 ? describeTool(tools[0]) : undefined;
+  const target = single?.summary;
   return (
     <section
       className={`${styles.tool} ${styles.group}`}
@@ -850,13 +789,14 @@ export const ToolActivity = memo(function ToolActivity({
       }
     >
       <DisclosureSection
-        className={styles.groupDisclosure}
         open={expanded}
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <Icon aria-hidden="true" />
-            <strong>{info.title}</strong>
+            <strong>
+              {kind === "work" && single ? single.label : info.title}
+            </strong>
+            {target && <span title={target}>{target}</span>}
           </span>
         }
         summary={
@@ -867,9 +807,14 @@ export const ToolActivity = memo(function ToolActivity({
       >
         {expanded && (
           <div className={styles.operations}>
-            {tools.map((tool) => (
-              <ToolOperation key={tool.id} tool={tool} />
-            ))}
+            {tools.length === 1 ? (
+              <>
+                <ToolDetails tool={tools[0]} />
+                <ToolActions tool={tools[0]} />
+              </>
+            ) : (
+              tools.map((tool) => <ToolOperation key={tool.id} tool={tool} />)
+            )}
           </div>
         )}
       </DisclosureSection>

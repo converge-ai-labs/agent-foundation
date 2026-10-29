@@ -57,14 +57,14 @@ export function DefaultWorkingDirectory({
     (allowUnsetDefault ? "" : selectedWorkingDirectory(value));
   const missing =
     !!selected && !choices.some((item) => item.value === selected);
+  if (choices.length === 1 && !missing && !allowUnsetDefault) return null;
   return (
-    <SettingsSection title="Working folder" className={styles.defaultDirectory}>
+    <SettingsSection className={styles.defaultDirectory}>
       <ChoiceField
         label="Default folder"
         popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
-        description="Used when a command or path doesn't specify a folder."
         options={[
           ...(allowUnsetDefault && !value.environment_bindings?.length
             ? [
@@ -258,6 +258,7 @@ export function EnvironmentBindings({
           type="button"
           variant="ghost"
           size="sm"
+          className={styles.addEnvironment}
           disabled={bindings.length >= 64}
           onClick={() => setEditing({})}
         >
@@ -271,8 +272,6 @@ export function EnvironmentBindings({
           if (!open) setEditing(undefined);
         }}
         title={editing?.group ? "Edit environment" : "Add environment"}
-        size="lg"
-        description="Choose a device and folders to add to your draft."
         closeLabel="Close"
       >
         {editing && (
@@ -421,23 +420,25 @@ function DeviceEnvironmentEditor({
             })),
           ]}
         />
-        <ChoiceField
-          label="Allowed actions"
-          value={permission}
-          onValueChange={setPermission}
-          placeholder="Keep existing permissions"
-          options={[
-            { value: "read_only", label: "Read only" },
-            { value: "full", label: "Full control" },
-          ]}
-          description={
-            permission === "full"
-              ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
-              : permission === "read_only"
-                ? "Read files in the folders below. No file changes, commands or desktop access."
-                : "Keep each folder's current permissions unless you choose an option."
-          }
-        />
+        {deviceId && (
+          <ChoiceField
+            label="Allowed actions"
+            value={permission}
+            onValueChange={setPermission}
+            placeholder="Keep existing permissions"
+            options={[
+              { value: "read_only", label: "Read only" },
+              { value: "full", label: "Full control" },
+            ]}
+            description={
+              permission === "full"
+                ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
+                : permission === "read_only"
+                  ? "Read files in the folders below. No file changes, commands or desktop access."
+                  : "Keep each folder's current permissions unless you choose an option."
+            }
+          />
+        )}
       </SettingsSection>
       <div>
         <ConnectDevice

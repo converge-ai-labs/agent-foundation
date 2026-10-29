@@ -33,10 +33,11 @@ function enumOptions(field: Record<string, unknown>) {
   return undefined;
 }
 
-export function McpInputs({ threadId }: { threadId: string }) {
+export function useMcpInputRequests(threadId: string, enabled = true) {
   const { client } = useTransport();
-  const requests = useQuery({
+  return useQuery({
     queryKey: ["thread", threadId, "mcp-inputs"],
+    enabled,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/mcp/inputs", {
@@ -45,20 +46,27 @@ export function McpInputs({ threadId }: { threadId: string }) {
         }),
       ),
   });
+}
+
+export function McpInputs({
+  threadId,
+  requests,
+  reconcile,
+}: {
+  threadId: string;
+  requests?: Request[];
+  reconcile: () => void;
+}) {
   return (
     <>
-      <ErrorNotice
-        error={requests.error}
-        retry={() => void requests.refetch()}
-      />
-      {requests.data
+      {requests
         ?.filter((request) => request.state === "pending")
         .map((request) => (
           <McpInput
             key={request.request_id}
             threadId={threadId}
             request={request}
-            reconcile={() => void requests.refetch()}
+            reconcile={reconcile}
           />
         ))}
     </>

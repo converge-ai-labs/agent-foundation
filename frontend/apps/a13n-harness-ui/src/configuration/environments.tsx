@@ -3,6 +3,7 @@ import {
   SettingsSection,
 } from "../shell/settings";
 import styles from "./environments.module.css";
+import { HelpTip } from "../shell/help-tip";
 
 import type { Schema } from "../transport/client";
 import {
@@ -50,8 +51,14 @@ export function EnvironmentsEditor({
   return (
     <div className={styles.editor}>
       <SettingsSection
-        title="Local"
-        description="The computer running Harness."
+        title={
+          <span className={styles.sectionTitle}>
+            Local
+            <HelpTip label="About local environments">
+              The computer running Harness.
+            </HelpTip>
+          </span>
+        }
       >
         <ChoiceField
           label="Local mode"

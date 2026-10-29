@@ -40,6 +40,7 @@ import {
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
+import { TextField as ModalTextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 import layout from "../configuration/settings.module.css";
 import {
@@ -795,29 +796,32 @@ export function SubscriptionAccounts({
       >
         <div className={styles.form}>
           <ErrorNotice error={create.error || update.error} />
-          <SettingsSection>
-            {!editing && (
-              <ChoiceField
-                label="Provider"
-                value={provider}
-                onValueChange={(value) =>
-                  setProvider(value as Schema<"AccountConnection">["provider"])
-                }
-                options={connections.map((item) => ({
-                  value: item.provider,
-                  label: item.label,
-                }))}
-              />
-            )}
-            {editing || namedProvider ? (
-              <TextField label="Account name" value={name} onChange={setName} />
-            ) : (
-              <p>
-                This provider shares one account across the server. Continue to
-                manage it.
-              </p>
-            )}
-          </SettingsSection>
+          {!editing && (
+            <ChoiceField
+              label="Provider"
+              layout="stacked"
+              value={provider}
+              onValueChange={(value) =>
+                setProvider(value as Schema<"AccountConnection">["provider"])
+              }
+              options={connections.map((item) => ({
+                value: item.provider,
+                label: item.label,
+              }))}
+            />
+          )}
+          {editing || namedProvider ? (
+            <ModalTextField
+              label="Account name"
+              value={name}
+              onChange={setName}
+            />
+          ) : (
+            <p>
+              This provider shares one account across the server. Continue to
+              manage it.
+            </p>
+          )}
         </div>
       </ModalFrame>
       <ModalFrame

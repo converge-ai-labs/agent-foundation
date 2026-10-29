@@ -19,6 +19,7 @@ import {
   PageHeader,
   Panel,
   SearchField,
+  TextField as ModalTextField,
 } from "../shell/ui";
 import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
@@ -381,9 +382,10 @@ export function SourcesPage({
           </>
         }
       >
-        <SettingsSection>
+        <div className={styles.stack}>
           <ChoiceField
             label="Type"
+            layout="stacked"
             value={kind}
             options={resourceKinds}
             onValueChange={(value) => {
@@ -394,13 +396,13 @@ export function SourcesPage({
               setId(`${choice.prefix}-new`);
             }}
           />
-          <TextField
+          <ModalTextField
             label="ID"
             value={id}
             onChange={setId}
             description="Use the resource prefix and a lowercase hyphenated name."
           />
-        </SettingsSection>
+        </div>
       </ModalFrame>
     </section>
   );

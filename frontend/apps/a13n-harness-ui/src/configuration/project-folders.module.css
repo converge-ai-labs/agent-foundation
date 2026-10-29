@@ -8,13 +8,21 @@
 .folders {
   gap: 8px;
 }
+.compact {
+  padding-block: 8px;
+}
+.addFolder {
+  margin-inline-start: -8px;
+  padding-inline: 8px;
+}
 .label {
   margin: 0;
   font-size: 14px;
   font-weight: 400;
   line-height: 20px;
 }
-.directoryRow {
+.row.directoryRow {
+  align-items: center;
   gap: 8px;
 }
 .directoryRow > [data-slot="button"] {
@@ -38,8 +46,8 @@
 .browser {
   padding: 12px;
   border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  background: var(--a13n-surface);
+  border-radius: var(--harness-radius-control);
+  background: var(--card);
 }
 .toolbar {
   display: flex;
@@ -57,7 +65,7 @@
   font-size: 14px;
 }
 .entries {
-  max-height: 240px;
+  max-height: min(200px, 30dvh);
   overflow: auto;
   display: grid;
   gap: 4px;

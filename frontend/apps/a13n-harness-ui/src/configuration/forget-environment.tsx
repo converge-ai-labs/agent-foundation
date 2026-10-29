@@ -89,9 +89,9 @@ export function ForgetEnvironment({
         before their next run.
       </p>
       {references.length > 0 && (
-        <div>
+        <div className="grid gap-2">
           <p>Used by these projects:</p>
-          <ul>
+          <ul className="grid gap-2 pl-4 list-disc break-words">
             {references.map((project) => {
               const source = sources.data?.sources.find((item) =>
                 item.resource_ids.includes(project.project_id),

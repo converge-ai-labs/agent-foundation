@@ -230,7 +230,7 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
   });
   expect(
     (await screen.findByRole("combobox", { name: "Login method" })).textContent,
-  ).toContain("Automatic browser callback");
+  ).toContain("Browser callback");
   fireEvent.click(await screen.findByText("Callback can't reach this server?"));
   const input = screen.getByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { SharePanel } from "../sharing";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import {
@@ -19,7 +20,6 @@ import {
   Folder,
   CaretRight,
   DotsThree,
-  DotsSixVertical,
   Gear,
   ArrowUp,
   ArrowDown,
@@ -27,11 +27,20 @@ import {
   Check,
   ChatCircle,
 } from "@phosphor-icons/react";
-import { useProjects } from "../transport/context";
-import type { Schema } from "../transport/client";
+import { useProjects, useTransport } from "../transport/context";
+import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
-import { useThread, useThreads, useThreadOwners } from "./queries";
-import { useProjectExpansion, useProjectOrder } from "./project-order";
+import {
+  refreshThreadLists,
+  useThread,
+  useThreads,
+  useThreadOwners,
+} from "./queries";
+import {
+  useProjectExpansion,
+  useProjectOrder,
+  useChatOrder,
+} from "./project-order";
 import { CoordinatorEntry } from "./coordinator-entry";
 import { NewProject } from "./new-project";
 import { RenameProject } from "../configuration/rename-project";
@@ -41,6 +50,11 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { DraftNavigation } from "./draft-navigation";
 import { ChatSearch } from "./chat-search";
+
+import { NavigationDragContext, useNavigationDrag } from "./navigation-drag";
+import { applyThreadMutation } from "./thread-updates";
+import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
 
 type Group = {
   id: string;
@@ -63,6 +77,86 @@ export function ConversationNavigation() {
   const order = useProjectOrder(
     (projects.data ?? []).map((project) => project.project_id),
   );
+  const chatOrder = useChatOrder();
+  const transport = useTransport();
+  const queries = useQueryClient();
+  const transfer = useMutation({
+    mutationFn: ({
+      thread,
+      projectId,
+    }: {
+      thread: Schema<"ThreadSummary">;
+      projectId: string | null;
+    }) =>
+      result(
+        transport.client.PATCH("/api/threads/{thread_id}/configuration", {
+          params: { path: { thread_id: thread.thread_id } },
+          body: {
+            expected_version: thread.configuration.version,
+            patch: { project_id: projectId },
+          },
+        }),
+      ),
+    onSuccess: (updated) => {
+      applyThreadMutation(queries, updated);
+      setExpanded(updated.configuration.project_id ?? "@projectless", true);
+    },
+    onSettled: (_data, _error, { thread }) => {
+      refreshThread(queries, thread.thread_id, "configuration");
+      refreshActivity(queries, transport, thread.thread_id);
+      void refreshThreadLists(queries);
+    },
+  });
+  const drag = useNavigationDrag({
+    expand: (id) => setExpanded(id, true),
+    drop: (source, target) => {
+      if (source.kind === "project") {
+        order.place(source.id, target.id, target.edge === "after");
+      } else if (target.edge === "inside") {
+        if (!transfer.isPending)
+          transfer.mutate({
+            thread: source.thread,
+            projectId: target.group === "@projectless" ? null : target.group,
+          });
+      } else
+        chatOrder.place(
+          target.group,
+          target.peers,
+          source.id,
+          target.id,
+          target.edge === "after",
+        );
+    },
+  });
+  const moveThread = (
+    thread: Schema<"ThreadSummary">,
+    element: HTMLElement,
+    delta: number,
+  ) => {
+    const group = element.closest<HTMLElement>("[data-nav-group]");
+    const bucket =
+      element.closest<HTMLElement>("[data-nav-bucket]")?.dataset.navBucket;
+    if (!group) return;
+    const ids = Array.from(
+      group.querySelectorAll<HTMLElement>("[data-nav-thread]"),
+    )
+      .filter(
+        (node) =>
+          !node.closest("[hidden]") &&
+          node.closest<HTMLElement>("[data-nav-bucket]")?.dataset.navBucket ===
+            bucket,
+      )
+      .map((node) => node.dataset.navThread!);
+    const target = ids[ids.indexOf(thread.thread_id) + delta];
+    if (target)
+      chatOrder.place(
+        group.dataset.navGroup!,
+        ids,
+        thread.thread_id,
+        target,
+        delta > 0,
+      );
+  };
   const groups: Group[] = order.ids.map((id) => {
     const project = projects.data!.find((item) => item.project_id === id)!;
     return { id, projectId: id, name: project.name, roots: project.roots };
@@ -93,78 +187,100 @@ export function ConversationNavigation() {
     // Opening a different Thread reveals its group, but refreshes do not undo a manual collapse.
   }, [selectedId, activeGroup, setExpanded]);
   return (
-    <div className={styles.navigation}>
-      <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
-        <NavLink to="/" end className={styles.newConversationLink}>
-          <Plus size={18} aria-hidden="true" />
-          <span>New</span>
-        </NavLink>
-        <ChatSearch onOpen={order.cancel} />
-        <DraftNavigation />
-      </nav>
-      <div className={styles.navigationHeading}>
-        <span>Projects</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Add project"
-          title="Add project"
-          onClick={() => setAdding(true)}
-        >
-          <Plus />
-        </Button>
-      </div>
-      <ErrorNotice
-        error={projects.error}
-        retry={() => void projects.refetch()}
-      />
-      <div
-        className={`${styles.threadGroups} a13n-scrollbar`}
-        data-project-scroll
-        {...order.pointerEvents}
-      >
-        {projects.isPending && <p role="status">Loading projects…</p>}
-        <div>
-          {groups.map((group) => (
-            <ProjectGroup
-              key={group.id}
-              group={group}
-              expanded={
-                expanded[group.id] ??
-                (activeGroup === group.id ||
-                  (projects.isSuccess &&
-                    !projects.data.length &&
-                    group.id === "@projectless"))
-              }
-              toggle={(open) => setExpanded(group.id, open)}
-              selected={activeGroup === group.id ? selected : undefined}
-              selectedUpdatedAt={selectedDetail.dataUpdatedAt}
-              create={() =>
-                navigate(newConversationPath(group.projectId ?? null))
-              }
-              order={order}
-              rename={() => setRenaming(group)}
-            />
-          ))}
+    <NavigationDragContext.Provider
+      value={{
+        begin: (event, source) => {
+          if (!transfer.isPending) drag.begin(event, source);
+        },
+        moving:
+          drag.source?.id ??
+          (transfer.isPending
+            ? transfer.variables?.thread.thread_id
+            : undefined),
+        moveThread,
+      }}
+    >
+      <div className={styles.navigation}>
+        <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
+          <NavLink to="/" end className={styles.newConversationLink}>
+            <Plus size={18} aria-hidden="true" />
+            <span>New</span>
+          </NavLink>
+          <ChatSearch
+            onOpen={() => {
+              order.cancel();
+              drag.cancel();
+            }}
+          />
+          <DraftNavigation />
+        </nav>
+        <div className={styles.navigationHeading}>
+          <span>Projects</span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Add project"
+            title="Add project"
+            onClick={() => setAdding(true)}
+          >
+            <Plus />
+          </Button>
         </div>
+        <ErrorNotice
+          error={projects.error}
+          retry={() => void projects.refetch()}
+        />
+        <div
+          className={`${styles.threadGroups} a13n-scrollbar`}
+          data-project-scroll
+        >
+          {projects.isPending && <p role="status">Loading projects…</p>}
+          <div>
+            {groups.map((group) => (
+              <ProjectGroup
+                key={group.id}
+                group={group}
+                expanded={
+                  expanded[group.id] ??
+                  (activeGroup === group.id ||
+                    (projects.isSuccess &&
+                      !projects.data.length &&
+                      group.id === "@projectless"))
+                }
+                toggle={(open) => setExpanded(group.id, open)}
+                selected={activeGroup === group.id ? selected : undefined}
+                selectedUpdatedAt={selectedDetail.dataUpdatedAt}
+                create={() =>
+                  navigate(newConversationPath(group.projectId ?? null))
+                }
+                order={order}
+                chatOrder={chatOrder}
+                drag={drag}
+                rename={() => setRenaming(group)}
+              />
+            ))}
+          </div>
+        </div>
+        <ErrorNotice error={transfer.error} inline />
+        <span className={styles.srOnly} role="status">
+          {order.announcement}
+        </span>
+        {adding && (
+          <NewProject
+            close={() => setAdding(false)}
+            created={(id) => setExpanded(id, true)}
+          />
+        )}
+        {drag.overlay}
+        {renaming?.projectId && (
+          <RenameProject
+            projectId={renaming.projectId}
+            name={renaming.name}
+            close={() => setRenaming(null)}
+          />
+        )}
       </div>
-      <span className={styles.srOnly} role="status">
-        {order.announcement}
-      </span>
-      {adding && (
-        <NewProject
-          close={() => setAdding(false)}
-          created={(id) => setExpanded(id, true)}
-        />
-      )}
-      {renaming?.projectId && (
-        <RenameProject
-          projectId={renaming.projectId}
-          name={renaming.name}
-          close={() => setRenaming(null)}
-        />
-      )}
-    </div>
+    </NavigationDragContext.Provider>
   );
 }
 
@@ -177,6 +293,8 @@ function ProjectGroup({
   create,
   rename,
   order,
+  chatOrder,
+  drag,
 }: {
   group: Group;
   expanded: boolean;
@@ -186,6 +304,8 @@ function ProjectGroup({
   create: () => void;
   rename: () => void;
   order: ReturnType<typeof useProjectOrder>;
+  chatOrder: ReturnType<typeof useChatOrder>;
+  drag: ReturnType<typeof useNavigationDrag>;
 }) {
   const navigate = useNavigate();
   const results = useResults();
@@ -222,7 +342,9 @@ function ProjectGroup({
       ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
       ...(list.data?.pages[0]?.active_rows ?? []),
       ...(list.data?.pages[0]?.starred_rows ?? []),
-    ].map((row) => [row.thread.thread_id, row]),
+    ]
+      .filter((row) => belongs(row.thread))
+      .map((row) => [row.thread.thread_id, row]),
   );
   for (const { thread, observedAt } of results.threads.values()) {
     const page = list.data?.pages.find((page, index) =>
@@ -350,7 +472,25 @@ function ProjectGroup({
     (a, b) =>
       Number(!!b.thread.starred) - Number(!!a.thread.starred) || byTouch(a, b),
   );
-  const rows = [...activeRows, ...unreadRows, ...recentRows];
+  const arranged = (items: Row[]) => {
+    const ranks = new Map(
+      chatOrder
+        .ids(
+          group.id,
+          items.map((item) => item.thread.thread_id),
+        )
+        .map((id, index) => [id, index]),
+    );
+    return [...items].sort(
+      (a, b) => ranks.get(a.thread.thread_id)! - ranks.get(b.thread.thread_id)!,
+    );
+  };
+  const rows = [
+    ...arranged(activeRows),
+    ...arranged(unreadRows),
+    ...arranged(recentRows.filter((row) => row.thread.starred)),
+    ...arranged(recentRows.filter((row) => !row.thread.starred)),
+  ];
   const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
   const recentStart = activeRows.length + unreadRows.length;
   const isVisible = (row: Row, index: number) =>
@@ -379,36 +519,44 @@ function ProjectGroup({
   return (
     <section
       data-project-key={group.projectId}
+      data-nav-group={group.id}
+      data-nav-source={drag.source?.id === group.id || undefined}
       aria-label={group.name}
       className={`${styles.projectGroup} ${order.moving === group.id ? styles.movingProject : ""}`}
     >
-      <div ref={headingRef} className={styles.groupHeading}>
-        {group.projectId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.projectDrag}
-            aria-label={`Reorder ${group.name}`}
-            aria-pressed={order.moving === group.id}
-            title="Drag to reorder, or press Space and use arrow keys"
-            {...order.handle(group.id)}
-          >
-            <DotsSixVertical />
-          </Button>
-        )}
-        <Tooltip>
+      <div ref={headingRef} className={styles.groupHeading} data-nav-heading>
+        <Tooltip disabled={!!drag.source}>
           <TooltipTrigger
             disabled={!group.projectId}
             aria-describedby={group.projectId ? summaryId : undefined}
             className={styles.groupToggle}
             aria-expanded={expanded}
             onClick={() => toggle(!expanded)}
+            {...(group.projectId ? order.handle(group.id) : {})}
+            onPointerDown={
+              group.projectId
+                ? (event) =>
+                    drag.begin(event, {
+                      kind: "project",
+                      id: group.id,
+                      label: group.name,
+                    })
+                : undefined
+            }
+            aria-keyshortcuts={group.projectId ? "Alt+Space" : undefined}
+            aria-description={
+              group.projectId
+                ? "Drag to reorder, or press Alt+Space and use arrow keys."
+                : undefined
+            }
+            data-reordering={order.moving === group.id || undefined}
           >
-            <Folder
-              size={18}
-              aria-hidden="true"
-              className={styles.projectIcon}
-            />
+            <span className={styles.projectIndicator} aria-hidden="true">
+              <Folder className={styles.projectIcon} />
+              <CaretRight
+                className={`${styles.groupChevron} ${expanded ? styles.expandedChevron : ""}`}
+              />
+            </span>
             <span>{group.name}</span>
             {unreadCount > 0 && (
               <small
@@ -419,11 +567,6 @@ function ProjectGroup({
                 {unreadCount}
               </small>
             )}
-            <span className={styles.groupChevron} aria-hidden="true">
-              <CaretRight
-                className={expanded ? styles.expandedChevron : undefined}
-              />
-            </span>
           </TooltipTrigger>
           {group.projectId && (
             <TooltipPopup
@@ -490,7 +633,7 @@ function ProjectGroup({
               <Plus />
             </Button>
           )}
-          {(group.projectId || unreadCount > 0) && (
+          {(group.scope !== "unavailable" || unreadCount > 0) && (
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
@@ -563,6 +706,12 @@ function ProjectGroup({
                     </MenuItem>
                   </>
                 )}
+                {group.scope !== "unavailable" && (
+                  <MenuItem onClick={() => chatOrder.reset(group.id)}>
+                    <ArrowCounterClockwise />
+                    Reset chat order
+                  </MenuItem>
+                )}
               </MenuPopup>
             </Menu>
           )}
@@ -601,7 +750,18 @@ function ProjectGroup({
                   </Button>
                 </div>
               )}
-              <div hidden={!isVisible(row, index)}>
+              <div
+                hidden={!isVisible(row, index)}
+                data-nav-bucket={
+                  activeRows.includes(row)
+                    ? "active"
+                    : unreadRows.includes(row)
+                      ? "unread"
+                      : row.thread.starred
+                        ? "starred"
+                        : "recent"
+                }
+              >
                 {row.thread.role === "coordinator" ? (
                   <CoordinatorEntry
                     row={row}

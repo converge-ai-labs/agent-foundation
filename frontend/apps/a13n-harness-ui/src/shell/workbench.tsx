@@ -82,6 +82,7 @@ import { UnsentProvider } from "../conversations/unsent";
 import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
+import { WorkbenchSidebar } from "./sidebar";
 import { NotificationSettings } from "./notifications";
 import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 
@@ -335,10 +336,7 @@ function WorkbenchContent({
       <a className={styles.skipLink} href="#main-content">
         Skip to content
       </a>
-      <aside
-        className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}
-        aria-label="Workbench navigation"
-      >
+      <WorkbenchSidebar collapsed={sidebarCollapsed}>
         <header className={styles.sidebarHeader}>
           <Link to="/" className={styles.brand} aria-label="Harness UI home">
             <Logo alt="" width={20} height={20} />
@@ -361,7 +359,7 @@ function WorkbenchContent({
           </div>
         </header>
         {navigation}
-      </aside>
+      </WorkbenchSidebar>
       <Sheet open={menu} onOpenChange={setMenu}>
         <SheetPopup
           id="workbench-navigation"
@@ -388,39 +386,50 @@ function WorkbenchContent({
       </Sheet>
       <div className={styles.workspace}>
         <main id="main-content" tabIndex={-1} className={styles.main}>
-          {disconnected && <ConnectionNotice retry={live.retrySummary} />}
-          {(results.storageError || results.lookupError) && (
-            <div role="alert" className={styles.notice}>
-              <p>{results.storageError || results.lookupError}</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void results.tracker?.refresh()}
-              >
-                Retry updates
-              </Button>
-            </div>
-          )}
-          {status.access === "dangerous_bypass" && (
-            <div className={styles.notice}>
-              Server login is disabled. Anyone who can reach this server can use
-              it.
-            </div>
-          )}
-          {status.app?.candidate_error_message && (
-            <div role="alert" className={styles.notice}>
-              <strong>Configuration could not be updated</strong>
-              <p>{status.app.candidate_error_message}</p>
-              <p>
-                Your previous settings are still in use. Open Settings to review
-                and fix the changes.
-              </p>
-            </div>
-          )}
-          <ErrorNotice
-            error={statusQuery.error}
-            retry={() => void statusQuery.refetch()}
-          />
+          <div className={styles.workbenchFeedback}>
+            {disconnected && <ConnectionNotice retry={live.retrySummary} />}
+            {(results.storageError || results.lookupError) && (
+              <div role="alert" className={styles.notice}>
+                <p>{results.storageError || results.lookupError}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void results.tracker?.refresh()}
+                >
+                  Retry updates
+                </Button>
+              </div>
+            )}
+            {status.access === "dangerous_bypass" && (
+              <div className={styles.notice}>
+                Server login is disabled. Anyone who can reach this server can
+                use it.
+              </div>
+            )}
+            {status.app?.candidate_error_message && (
+              <div role="alert" className={styles.notice}>
+                <details>
+                  <summary>
+                    Settings couldn't be updated. Previous settings are still
+                    active.
+                  </summary>
+                  <p>{status.app.candidate_error_message}</p>
+                </details>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  render={<Link to="/settings" />}
+                >
+                  Settings
+                </Button>
+              </div>
+            )}
+            <ErrorNotice
+              inline
+              error={statusQuery.error}
+              retry={() => void statusQuery.refetch()}
+            />
+          </div>
           <NativeWorkspace
             profile={
               <>
@@ -703,10 +712,11 @@ function WorkbenchContent({
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label="Open page"
                       render={<Link to={href} />}
                       onClick={() => setPeopleOpen(false)}
                     >
-                      Open page
+                      Open
                     </Button>
                   )}
                 </div>

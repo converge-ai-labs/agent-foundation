@@ -1,8 +1,4 @@
-import {
-  SettingsTextField as TextField,
-  SettingsRow,
-  SettingsSection,
-} from "../shell/settings";
+import { SettingsRow } from "../shell/settings";
 import { useState } from "react";
 import {
   useMutation,
@@ -16,7 +12,7 @@ import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, SearchField } from "../shell/ui";
+import { ErrorNotice, SearchField, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 import layout from "../configuration/settings.module.css";
 
@@ -306,25 +302,23 @@ export function CredentialKeys({
           }}
         >
           <ErrorNotice error={save.error} />
-          <SettingsSection>
-            {editing === "new" ? (
-              <TextField
-                label="Saved key name"
-                value={reference}
-                onChange={setReference}
-              />
-            ) : (
-              <SettingsRow label="Saved key name">
-                <span>{reference}</span>
-              </SettingsRow>
-            )}
+          {editing === "new" ? (
             <TextField
-              label="API key"
-              type="password"
-              value={secret}
-              onChange={setSecret}
+              label="Saved key name"
+              value={reference}
+              onChange={setReference}
             />
-          </SettingsSection>
+          ) : (
+            <SettingsRow label="Saved key name">
+              <span>{reference}</span>
+            </SettingsRow>
+          )}
+          <TextField
+            label="API key"
+            type="password"
+            value={secret}
+            onChange={setSecret}
+          />
           {duplicate && (
             <p role="alert">
               This name is already saved. Use Replace key to update it.

@@ -317,6 +317,24 @@ export function TerminalPanel({
         title="End this terminal session?"
         description="Ends this session and its jobs for everyone. To keep it running, close only the panel."
         closeLabel="Cancel"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setClosing(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending || attempted}
+              onClick={() => void close()}
+            >
+              {pending ? "Waiting…" : "End session"}
+            </Button>
+          </>
+        }
       >
         <ErrorNotice error={error} />
         {attempted && error != null && (
@@ -325,9 +343,6 @@ export function TerminalPanel({
             and refresh the session list before continuing.
           </p>
         )}
-        <Button disabled={pending || attempted} onClick={() => void close()}>
-          {pending ? "Waiting…" : "End session"}
-        </Button>
       </ModalFrame>
     </section>
   );

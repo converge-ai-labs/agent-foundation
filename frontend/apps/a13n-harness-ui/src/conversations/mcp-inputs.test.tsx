@@ -8,7 +8,18 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { McpInputs } from "./mcp-inputs";
+import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
+
+function RequestForms() {
+  const requests = useMcpInputRequests("root-one");
+  return (
+    <McpInputs
+      threadId="root-one"
+      requests={requests.data}
+      reconcile={() => void requests.refetch()}
+    />
+  );
+}
 import { ApiError } from "../transport/client";
 
 const client = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
@@ -52,7 +63,7 @@ function mount() {
         })
       }
     >
-      <McpInputs threadId="root-one" />
+      <RequestForms />
     </QueryClientProvider>,
   );
 }

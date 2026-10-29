@@ -261,7 +261,9 @@ it("does not remount an unchanged saved part when a sibling changes, but replace
   );
   const answer = screen.getByText("Visible reply");
   fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
-  const reasoning = screen.getByText("Reasoning").closest("details")!;
+  const reasoning = screen
+    .getByText("Thought", { selector: "summary" })
+    .closest("details");
   view.rerender(
     <ConversationTranscript
       {...props}
@@ -278,7 +280,9 @@ it("does not remount an unchanged saved part when a sibling changes, but replace
     />,
   );
   expect(screen.getByText("Visible reply")).toBe(answer);
-  expect(screen.getByText("Reasoning").closest("details")).not.toBe(reasoning);
+  expect(
+    screen.getByText("Thought", { selector: "summary" }).closest("details"),
+  ).not.toBe(reasoning);
 });
 
 it("does not transfer live state to changed saved text or to another input boundary", () => {

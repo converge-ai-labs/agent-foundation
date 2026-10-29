@@ -20,14 +20,14 @@ export function LiveConnectionNotice({
   }, [pending]);
   if (!pending || !delayed) return null;
   return (
-    <div className={styles.activityBar}>
-      <small role="status">
+    <div className={styles.composerConnection}>
+      <span role="status">
         {reconnections > 0
           ? `Reconnecting live updates… · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
           : connection === "Connecting"
             ? "Connecting live updates…"
             : connection}
-      </small>
+      </span>
     </div>
   );
 }

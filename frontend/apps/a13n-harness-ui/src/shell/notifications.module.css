@@ -10,87 +10,6 @@
   min-height: 0;
   height: auto;
 }
-/* A slim in-flow bar under the app: it never covers the transcript,
-   composer or a dialog, and reads like a status line rather than a card. */
-.permissionToast {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 36px;
-  padding: 4px 8px 4px 16px;
-  padding-bottom: max(4px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--a13n-border);
-  background: var(--a13n-surface);
-  font-size: 14px;
-  line-height: 20px;
-  animation: bar-in 160ms ease-out;
-}
-@keyframes bar-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .permissionToast {
-    animation: none;
-  }
-}
-.permissionToast > svg {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-}
-.permissionBody {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  gap: 8px;
-}
-.permissionToast h2 {
-  flex-shrink: 0;
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-}
-.permissionToast p {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--a13n-secondary);
-}
-.actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  margin-inline-start: auto;
-}
-.actions a {
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: var(--a13n-secondary);
-  font-size: 14px;
-  text-decoration: none;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
-}
-.actions a:hover {
-  color: inherit;
-  background: var(--a13n-hover, rgb(127 127 127 / 10%));
-}
-.reminderClose {
-  width: 32px;
-  height: 32px;
-  padding: 8px;
-}
-/* Toast and bar actions carry a full label on wide screens and a single
-   verb on phones, so the message keeps the room. */
 .mobileLabel {
   display: none;
 }
@@ -132,24 +51,6 @@
   }
   .mobileLabel {
     display: inline;
-  }
-  .permissionToast p:not([role="alert"]) {
-    display: none;
-  }
-  .actions button {
-    font-size: 14px;
-  }
-  .reminderClose {
-    width: 32px;
-    height: 32px;
-    padding: 8px;
-  }
-  .permissionToast h2 {
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 

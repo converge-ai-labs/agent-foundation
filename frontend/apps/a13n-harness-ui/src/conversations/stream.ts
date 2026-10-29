@@ -18,6 +18,7 @@ import {
 } from "./tool-presentation";
 
 export type DisplayBlock = {
+  durationMs?: number;
   id: string;
   shellCommand?: string;
   toolCallId?: string;
@@ -666,6 +667,9 @@ export class FocusDisplay {
       this.recovery = { ...this.recovery, state: "resumed" };
     const block: DisplayBlock = {
       id: item.id,
+      durationMs: item.ended_at
+        ? Math.max(0, Date.parse(item.ended_at) - Date.parse(item.started_at))
+        : undefined,
       kind:
         item.kind === "tool_call"
           ? "tool"

@@ -7,7 +7,7 @@ import {
   fireEvent,
   within,
 } from "@testing-library/react";
-import { ToolCall, OpenHostFile, editPatch } from "./tool-call";
+import { ToolActivity, ToolCall, OpenHostFile, editPatch } from "./tool-call";
 import {
   describeTool,
   hostLookupPath,
@@ -189,7 +189,7 @@ it("labels historical replacement as input and offers explicit host lookup outsi
   expect(hostLookupPath("C:\\work\\a.py")).toBe("C:\\work\\a.py");
 });
 
-it("keeps shell output readable and exposes recorded payloads only in Debug", () => {
+it("keeps shell output readable and exposes complete input and result without Debug", () => {
   const { container } = render(
     <LiveOutput
       gap={false}
@@ -225,14 +225,15 @@ it("keeps shell output readable and exposes recorded payloads only in Debug", ()
   ).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "Arguments & result" }),
-  ).toBeNull();
-  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
-  fireEvent.click(screen.getByRole("button", { name: "Arguments & result" }));
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
   expect(screen.getByRole("button", { name: "Raw" })).toBeTruthy();
-  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
-  expect(screen.queryByRole("button", { name: "Raw" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '{"command":"printf hello"}',
+  );
+  expect(screen.getByRole("region", { name: "Result" }).textContent).toContain(
+    '"content_complete":false',
+  );
   expect(screen.getByText("warning")).toBeTruthy();
 });
 
@@ -250,9 +251,91 @@ it("keeps structured tool content visible without enabling Debug", () => {
   );
   fireEvent.click(screen.getByRole("button", { name: /lookup/ }));
   expect(screen.getByText("The requested document is ready.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Input & result" })).toBeTruthy();
+});
+
+it("shows legacy file targets and shell output without dropping flat stream values or exit codes", () => {
   expect(
-    screen.queryByRole("button", { name: "Arguments & result" }),
-  ).toBeNull();
+    describeTool({ id: "file", name: "view", input: { path: "checkout.ts" } })
+      .summary,
+  ).toBe("checkout.ts");
+  const tool = {
+    id: "shell",
+    name: "shell_exec",
+    input: { command: "check", cwd: "/project" },
+    result: {
+      stdout: "one check passed",
+      stderr: "one check failed",
+      exit_code: 1,
+    },
+  };
+  expect(describeTool(tool).phase).toBe("Failed");
+  render(<ToolCall tool={tool} />);
+  fireEvent.click(screen.getByRole("button", { name: /Run/ }));
+  expect(screen.getByText("one check passed")).toBeTruthy();
+  expect(screen.getByText("one check failed")).toBeTruthy();
+  expect(screen.getByText("Exit 1")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '"cwd": "/project"',
+  );
+});
+
+it("shows note content and complete payloads for each call in a group", () => {
+  render(
+    <ToolActivity
+      tools={[
+        {
+          id: "one",
+          name: "note_write",
+          input: { key: "Plan", value: "Keep retries explicit." },
+          result: { ok: true, key: "Plan", action: "created" },
+        },
+        {
+          id: "two",
+          name: "task_create",
+          input: { subject: "Review", description: "Check failures" },
+          result: {
+            ok: true,
+            task: {
+              subject: "Review",
+              description: "Check failures",
+              status: "pending",
+            },
+          },
+        },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Tasks & notes/ }));
+  expect(screen.getByText("Keep retries explicit.")).toBeTruthy();
+  expect(screen.getByText("Check failures")).toBeTruthy();
+  const records = screen.getAllByRole("button", { name: "Input & result" });
+  expect(records).toHaveLength(2);
+  fireEvent.click(records[0]);
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '"value"',
+  );
+  expect(screen.getByRole("region", { name: "Result" }).textContent).toContain(
+    '"created"',
+  );
+});
+
+it("discloses omitted input and results instead of presenting empty data as complete", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "omitted",
+        name: "lookup",
+        inputOmitted: true,
+        resultOmitted: true,
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /lookup/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
+  expect(screen.getByText("Input omitted by the server.")).toBeTruthy();
+  expect(screen.getByText("Result omitted by the server.")).toBeTruthy();
 });
 
 it("preserves retry requests as a distinct saved tool status", () => {

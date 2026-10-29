@@ -652,3 +652,56 @@ def test_imported_display_rows_ignore_retired_comment_targets():
     entries = display_entries(retained)
     assert entries[0].parts[0].text == "Original output"
     assert "comment_target" not in entries[0].parts[0].model_dump()
+
+
+def test_recorded_execution_timing_excludes_human_pauses_and_preserves_part_times():
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.display_projection import display_turns
+    from a13n_stream_protocol.display import Item
+
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    items = []
+
+    def item(kind, content, at, ended=None):
+        ordinal = len(items) + 1
+        value = Item(
+            id=f"item-{ordinal}",
+            ordinal=ordinal,
+            kind=kind,
+            state="completed",
+            first_stream_id=f"1-{ordinal}",
+            last_stream_id=f"1-{ordinal}",
+            started_at=start + timedelta(seconds=at),
+            ended_at=start + timedelta(seconds=ended) if ended is not None else None,
+            content=content,
+        )
+        items.append(value)
+        return value
+
+    item("text_message", {"role": "user", "text": "Review"}, 0)
+    item("observation", {"type": "RUN_STARTED", "runId": "first"}, 1)
+    item("reasoning_message", {"text": "Think", "responseGroup": "first"}, 2, 4.4)
+    item(
+        "tool_call",
+        {"toolCallName": "view", "toolCallId": "read", "arguments": "{}", "result": "ok", "responseGroup": "first"},
+        4.4,
+        5.6,
+    )
+    item("observation", {"type": "RUN_FINISHED"}, 6)
+    # A long human pause before resuming must not become execution time.
+    item("observation", {"type": "RUN_STARTED", "runId": "second"}, 3600)
+    answer = item("text_message", {"role": "assistant", "text": "Done"}, 3601, 3603)
+    item("observation", {"type": "RUN_FINISHED"}, 3604)
+    history = DisplayHistory(items=tuple(items), completed=(answer.id,))
+    (turn,) = display_turns(history)
+    assert turn.duration_ms == 9000
+    parts = [part for entry in display_entries(history) for part in entry.parts]
+    assert next(part for part in parts if part.kind == "thinking").duration_ms == 2400
+    assert next(part for part in parts if part.kind == "tool_result").duration_ms == 1200
+    # Legacy imports have no trustworthy start/end pair.
+    legacy = import_display_history(
+        [ModelRequest(parts=[UserPromptPart("Old")]), ModelResponse(parts=[TextPart("Answer")])]
+    )
+    assert display_turns(legacy)[0].duration_ms is None
+    assert all(part.duration_ms is None for entry in display_entries(legacy) for part in entry.parts)

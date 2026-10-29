@@ -46,6 +46,7 @@ import { ParticipantAvatars } from "./shell/participant-avatars";
 import { ErrorNotice, TextField } from "./shell/ui";
 import { readPreference, writePreference } from "./shell/preferences";
 import styles from "./sharing.module.css";
+import layout from "./shell/workbench.module.css";
 
 export function guestKey(shareId: string) {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
@@ -435,7 +436,7 @@ function GuestShell({
         closeLabel="Close"
       >
         <form
-          className={styles.panel}
+          className={layout.stack}
           onSubmit={(e) => {
             e.preventDefault();
             const value = name.trim().slice(0, 80) || "Guest";
@@ -445,7 +446,16 @@ function GuestShell({
           }}
         >
           <TextField label="Name" value={name} onChange={setName} />
-          <Button type="submit">Save name</Button>
+          <div className={layout.dialogActions} data-a13n-form-actions>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setProfileOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">Save name</Button>
+          </div>
         </form>
       </ModalFrame>
     </main>

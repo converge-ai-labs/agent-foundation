@@ -8,10 +8,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Link, useMatch, useNavigate } from "react-router";
+import { useMatch, useNavigate } from "react-router";
 import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, X } from "@phosphor-icons/react";
 import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
@@ -93,7 +92,7 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [refreshVersion, refreshSubscription] = useState(0);
   const transport = useContext(TransportContext);
   const navigate = useNavigate();
-  const settings = useMatch("/settings");
+  const settings = useMatch("/settings/*");
   const viewedThread = useMatch("/threads/:threadId/*")?.params.threadId;
   const queries = useQueryClient();
   const toast = useToast();
@@ -153,7 +152,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         if (active) {
           setBackground("error");
           setError(
-            "Couldn't sync background alerts. Check your connection and reconnect notifications. Alerts still appear while Harness is open.",
+            "Background alerts are paused. Reconnect to resume delivery.",
           );
         }
       });
@@ -389,66 +388,39 @@ function PermissionDescription({ permission }: { permission: Permission }) {
 }
 function PermissionToast({ onDismiss }: { onDismiss: () => void }) {
   const notifications = useNotifications()!;
-  const requestLabel =
-    notifications.permission === "granted"
-      ? notifications.background === "error"
-        ? "Reconnect"
-        : "Enable background delivery"
-      : "Enable notifications";
-  return (
-    <aside
-      className={styles.permissionToast}
-      aria-label="Notification permission"
-    >
-      <Bell size={14} aria-hidden="true" />
-      <div className={styles.permissionBody}>
-        <h2>
-          {notifications.permission === "granted"
-            ? notifications.background === "error"
-              ? "Reconnect background notifications"
-              : "Enable background notifications"
-            : notifications.permission === "default"
-              ? "Enable task notifications"
-              : "Set up task notifications"}
-        </h2>
-        <p>
-          {notifications.permission === "granted" ? (
-            "Connect this device to receive system alerts."
-          ) : (
-            <PermissionDescription permission={notifications.permission} />
-          )}
-        </p>
-        {notifications.error && <p role="alert">{notifications.error}</p>}
-        <div className={styles.actions}>
-          <Link to="/settings/notifications">Settings</Link>
-          {(notifications.permission === "default" ||
-            (notifications.permission === "granted" && supportsPush())) && (
-            <Button
-              size="sm"
-              onClick={() => void notifications.request()}
-              loading={notifications.requesting}
-              aria-label={requestLabel}
-            >
-              <span className={styles.desktopLabel}>{requestLabel}</span>
-              <span className={styles.mobileLabel}>
-                {requestLabel === "Reconnect" ? requestLabel : "Enable"}
-              </span>
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDismiss}
-            aria-label="Dismiss notification setup"
-            title="Dismiss notification setup"
-            className={styles.reminderClose}
-          >
-            <X aria-hidden />
-          </Button>
-        </div>
-      </div>
-    </aside>
-  );
+  const toast = useToast();
+  const navigate = useNavigate();
+  const latest = useRef({ onDismiss, navigate, toast });
+  latest.current = { onDismiss, navigate, toast };
+  const issue = notifications.background === "error";
+  useEffect(() => {
+    let active = true;
+    const manager = latest.current.toast;
+    const id = manager.add({
+      id: "notification-setup",
+      title: issue ? "Background alerts paused" : "Get task notifications",
+      description: issue
+        ? "Alerts still appear here. Reconnect in Settings."
+        : "Get notified when a task finishes or needs your input.",
+      type: issue ? "warning" : "info",
+      timeout: 8000,
+      actionProps: {
+        children: "Settings",
+        onClick: () => {
+          latest.current.onDismiss();
+          latest.current.navigate("/settings/notifications");
+        },
+      },
+      onClose: () => {
+        if (active) latest.current.onDismiss();
+      },
+    });
+    return () => {
+      active = false;
+      manager.close(id);
+    };
+  }, [issue]);
+  return null;
 }
 export function NotificationSettings({
   embedded = false,

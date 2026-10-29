@@ -128,7 +128,6 @@ export function RunEnvironments({
           if (!open) setEditing(undefined);
         }}
         title="Environments"
-        size="lg"
         closeLabel="Close"
         description="Applies to upcoming runs in this tab."
         footer={footer}

@@ -4,17 +4,13 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { template, updateDocument } from "../configuration/documents";
-import { ErrorNotice } from "../shell/ui";
-import {
-  SettingsSection,
-  SettingsTextField as TextField,
-} from "../shell/settings";
+import { ErrorNotice, TextField } from "../shell/ui";
 import {
   EnvironmentsEditor,
   invalidEnvironments,
   type EnvironmentSelection,
 } from "../configuration/environments";
-import layout from "../shell/workbench.module.css";
+import styles from "./new-project.module.css";
 
 export function NewProject({
   close,
@@ -78,38 +74,25 @@ export function NewProject({
     <ModalFrame
       open
       title="Add project"
-      size="lg"
-      description="Give your project a name and choose where its agents work."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
       }}
     >
       <form
-        className={layout.configurationForm}
+        className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
           if (name.trim() && validRoots && !save.isPending) save.mutate();
         }}
       >
-        <SettingsSection>
-          <TextField label="Project name" value={name} onChange={setName} />
-        </SettingsSection>
-        <SettingsSection title="Environments">
-          <div className={layout.fieldGroup}>
-            <EnvironmentsEditor
-              requireWorkspace
-              value={environments}
-              profiles={selectors.data?.environments}
-              onChange={(patch) =>
-                setEnvironments({ ...environments, ...patch })
-              }
-            />
-          </div>
-        </SettingsSection>
-        <small className="text-muted-foreground">
-          Change the agent and other defaults in project settings later.
-        </small>
+        <TextField label="Project name" value={name} onChange={setName} />
+        <EnvironmentsEditor
+          requireWorkspace
+          value={environments}
+          profiles={selectors.data?.environments}
+          onChange={(patch) => setEnvironments({ ...environments, ...patch })}
+        />
         <ErrorNotice error={save.error} />
         <div data-a13n-form-actions className="flex justify-end gap-2">
           <Button

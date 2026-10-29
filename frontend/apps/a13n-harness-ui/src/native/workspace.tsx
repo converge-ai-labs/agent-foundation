@@ -42,6 +42,7 @@ import {
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
+import { isUnavailableChat } from "../conversations/conversation-unavailable";
 import {
   FileBuffers,
   basename,
@@ -668,11 +669,14 @@ export function NativeWorkspace({
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
+  const unavailableThread = isUnavailableChat(thread.error);
   const title = threadId
-    ? conversationTitle(
-        thread.data?.thread,
-        composers.get(threadId)?.localInputs,
-      )
+    ? unavailableThread
+      ? "Chat unavailable"
+      : conversationTitle(
+          thread.data?.thread,
+          composers.get(threadId)?.localInputs,
+        )
     : (PAGE_TITLES[location.pathname] ??
       (matchPath("/projects/:projectId", location.pathname)
         ? "Project settings"
@@ -777,9 +781,10 @@ export function NativeWorkspace({
           : undefined,
     );
   };
-  const nativeFeedback = (error || projects.error || thread.error) && (
+  // Conversation and navigation own their query failures; this slot only owns pane actions.
+  const nativeFeedback = !!error && (
     <div className={styles.paneFeedback}>
-      <ErrorNotice error={error || projects.error || thread.error} />
+      <ErrorNotice error={error} inline />
     </div>
   );
   const viewChoices = [
@@ -907,7 +912,7 @@ export function NativeWorkspace({
             />
           )}
           {profile}
-          {threadId && (
+          {threadId && !unavailableThread && (
             <Menu>
               <MenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}

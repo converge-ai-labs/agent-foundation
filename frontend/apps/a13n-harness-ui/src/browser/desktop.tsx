@@ -8,13 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  Button,
-  Dialog,
-  DialogPopup,
-  DialogTitle,
-  DialogDescription,
-} from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { ArrowClockwise, Camera, HandArrowDown } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -42,30 +36,27 @@ function CaptureStatus({
   failed?: boolean;
 }) {
   return (
-    <Dialog
+    <ModalFrame
       open
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-    >
-      <DialogPopup finalFocus={false} showCloseButton={false}>
-        <div style={{ padding: 24 }}>
-          <DialogTitle>
-            {failed
-              ? "Screenshot editor unavailable"
-              : "Loading screenshot editor…"}
-          </DialogTitle>
-          <DialogDescription>
-            {failed
-              ? "Reload the page and capture again."
-              : "Preparing local editing tools."}
-          </DialogDescription>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </DialogPopup>
-    </Dialog>
+      finalFocus={false}
+      title={
+        failed ? "Screenshot editor unavailable" : "Loading screenshot editor…"
+      }
+      description={
+        failed
+          ? "Reload the page and capture again."
+          : "Preparing local editing tools."
+      }
+      closeLabel="Close"
+      footer={
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+      }
+    />
   );
 }
 

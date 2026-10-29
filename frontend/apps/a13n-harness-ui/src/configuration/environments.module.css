@@ -1,8 +1,25 @@
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   min-width: 0;
+}
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.editor [data-slot="settings-row"] > :first-child {
+  display: contents;
+}
+.editor [data-slot="settings-row-label"] {
+  grid-column: 1;
+  grid-row: 1;
+}
+.editor [data-slot="settings-row"] > :first-child > p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0 0 4px;
 }
 .environment {
   display: flex;
@@ -54,9 +71,13 @@
 .remote:empty {
   display: none;
 }
+.addEnvironment {
+  margin-inline-start: -8px;
+  padding-inline: 8px;
+}
 .remote .environment {
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--harness-radius-panel);
   background: var(--a13n-surface);
 }
 .directoryList {
@@ -87,6 +108,9 @@
   color: var(--a13n-secondary);
   font-size: 14px;
   line-height: 20px;
+}
+.defaultDirectory [data-slot="settings-row"] {
+  grid-template-columns: max-content minmax(0, 1fr);
 }
 .defaultDirectory [data-slot="select-trigger"] {
   max-width: 260px;

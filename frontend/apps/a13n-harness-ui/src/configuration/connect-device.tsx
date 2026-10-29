@@ -9,6 +9,7 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { HelpTip } from "../shell/help-tip";
 import { NewResourceButton } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 
@@ -30,10 +31,8 @@ export function ConnectDevice({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title="Connect a Device"
-      description="Run envd on the other computer, then verify its code here."
+      title="Connect device"
       closeLabel="Close dialog"
-      size="lg"
       trigger={
         <Button type="button" variant={onConnected ? "outline" : "default"}>
           {label}
@@ -94,10 +93,14 @@ function ConnectDeviceSteps({
       {!approved ? (
         <>
           <section className={styles.step}>
-            <h3>1. Run on the device</h3>
+            <h3>
+              1. Run on the device{" "}
+              <HelpTip label="Installation help">
+                Install a13n-envd and add it to PATH on the other computer.
+              </HelpTip>
+            </h3>
             <p>
-              Install a13n-envd, add it to PATH, and run this command. Keep this
-              terminal open while connected.
+              Run this command on the other computer and keep its terminal open.
             </p>
             <SettingsSection>
               <ChoiceField
@@ -111,7 +114,7 @@ function ConnectDeviceSteps({
               />
               <SettingsToggle
                 label="Enable shell execution"
-                description="Run commands as the device user, without a sandbox. Off by default. Server permissions don't apply."
+                description="Run commands as the device user, without a sandbox. Server permissions don't apply."
                 checked={execution}
                 onCheckedChange={setExecution}
               />
@@ -127,26 +130,30 @@ function ConnectDeviceSteps({
                 </div>
               </details>
             </SettingsSection>
-            <pre className={styles.command}>
-              <code>{command}</code>
-            </pre>
-            <div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => copy.mutate()}
-                loading={copy.isPending}
-              >
-                {copied === command ? "Copied" : "Copy command"}
-              </Button>
+            <div className={styles.commandBlock}>
+              <div className={styles.commandHeader}>
+                <span>Run command</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copy.mutate()}
+                  loading={copy.isPending}
+                >
+                  {copied === command ? "Copied" : "Copy command"}
+                </Button>
+              </div>
+              <pre className={styles.command}>
+                <code>{command}</code>
+              </pre>
             </div>
             <ErrorNotice error={copy.error} />
-            <p>
-              Enter an address this device can reach. Use HTTPS for remote
-              connections. Localhost means the device itself.
-            </p>
             <details className={layout.details}>
-              <summary>Reconnecting and multiple hosts</summary>
+              <summary>Connection help</summary>
+              <p>
+                Use an address the device can reach and HTTPS for remote
+                connections. Localhost means the device itself.
+              </p>
               <p>
                 After a restart, run the same command with the same environment
                 variables and access options. Saved credentials are reused
@@ -167,11 +174,13 @@ function ConnectDeviceSteps({
             </p>
             <ErrorNotice error={pairings.error} />
             {!pairings.data?.length && (
-              <p role="status">
-                Waiting for a code. A request may disappear if it expires or is
-                handled elsewhere. Check the device's status to confirm
-                approval.
-              </p>
+              <div className={styles.waiting}>
+                <p role="status">Waiting for a connection request…</p>
+                <HelpTip label="About connection requests">
+                  Requests disappear if they expire or are handled elsewhere.
+                  Check the device's status to confirm approval.
+                </HelpTip>
+              </div>
             )}
             {pairings.data?.map((pairing) => (
               <PendingDevice

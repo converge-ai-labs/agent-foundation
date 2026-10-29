@@ -576,8 +576,8 @@ function LoadedModelEditor({
           keepMounted
           className={management.modelPanel}
         >
+          {nameField}
           <SettingsSection>
-            {nameField}
             <ResourceChoice
               label="Model connection"
               placeholder="Search connections…"

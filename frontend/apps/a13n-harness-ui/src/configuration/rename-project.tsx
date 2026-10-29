@@ -4,11 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice } from "../shell/ui";
-import {
-  SettingsSection,
-  SettingsTextField as TextField,
-} from "../shell/settings";
+import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import { DraftContext } from "./sources";
 import styles from "../shell/workbench.module.css";
@@ -98,7 +94,6 @@ export function RenameProject({
     <ModalFrame
       open
       title="Rename project"
-      description="Update the name shown in your workspace."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -111,9 +106,7 @@ export function RenameProject({
           if (editable && name.trim() && !save.isPending) save.mutate();
         }}
       >
-        <SettingsSection>
-          <TextField label="Project name" value={name} onChange={setName} />
-        </SettingsSection>
+        <TextField label="Project name" value={name} onChange={setName} />
         <ErrorNotice
           error={sources.error || source.error || save.error}
           retry={
@@ -135,7 +128,16 @@ export function RenameProject({
           (!path || (source.isSuccess && !editable && !dirty)) && (
             <p>This project source is unavailable or read only.</p>
           )}
-        <div className={styles.actions}>
+        <div className={styles.dialogActions} data-a13n-form-actions>
+          {!save.isPending && (
+            <Link
+              className={styles.dialogSecondaryAction}
+              to={`/projects/${encodeURIComponent(projectId)}`}
+              onClick={close}
+            >
+              Project settings
+            </Link>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -156,15 +158,6 @@ export function RenameProject({
           >
             Save name
           </Button>
-
-          {!save.isPending && (
-            <Link
-              to={`/projects/${encodeURIComponent(projectId)}`}
-              onClick={close}
-            >
-              Project settings
-            </Link>
-          )}
         </div>
       </form>
     </ModalFrame>

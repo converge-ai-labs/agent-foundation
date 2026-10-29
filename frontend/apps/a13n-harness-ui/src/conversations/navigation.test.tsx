@@ -36,6 +36,7 @@ function thread(id: string, project: string | null = "project-one") {
     title: id,
     configuration: {
       project_id: project,
+      version: 1,
       agent_source: { kind: "agent", id: "assistant" },
     },
     root_activity: { state: "inactive" },
@@ -327,7 +328,12 @@ beforeEach(() => {
     },
   });
 });
+const elementFromPoint = document.elementFromPoint;
 afterEach(() => {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: elementFromPoint,
+  });
   cleanup();
   queryClient.clear();
   vi.unstubAllGlobals();
@@ -407,7 +413,7 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   await screen.findByText("Global match");
   expect(activity).toHaveLength(calls + 1);
   expect(activity.at(-1)?.searchParams.has("project_id")).toBe(false);
-  expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "One" })).toBeNull();
   if (!screen.queryByRole("searchbox"))
     fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
   fireEvent.click(screen.getByRole("button", { name: "Close search" }));
@@ -475,14 +481,14 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
 
 it("reorders whole project groups with keyboard, cancels preview, and persists only in this browser", async () => {
   const first = mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
-  fireEvent.keyDown(handle, { key: " " });
+  const handle = await screen.findByRole("button", { name: "One" });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   expect(groupNames()).toEqual(["Two", "One"]);
   fireEvent.keyDown(handle, { key: "Escape" });
   expect(groupNames()).toEqual(["One", "Two"]);
   expect(localStorage.getItem("a13n-harness-ui.project-order")).toBeNull();
-  fireEvent.keyDown(handle, { key: " " });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   fireEvent.keyDown(handle, { key: "Enter" });
   expect(
@@ -491,7 +497,7 @@ it("reorders whole project groups with keyboard, cancels preview, and persists o
   expect(writes).toHaveLength(0);
   first.unmount();
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["Two", "One"]);
 });
 
@@ -499,6 +505,9 @@ it("uses the existing validated source publication to add a project without crea
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Add project" }));
   const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).queryByRole("combobox", { name: "Default folder" }),
+  ).toBeNull();
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: "Project name" }),
     { target: { value: "Example: workspace" } },
@@ -510,6 +519,10 @@ it("uses the existing validated source publication to add a project without crea
     within(dialog).getByRole("textbox", { name: "Server directory" }),
     { target: { value: "/srv/my project" } },
   );
+  expect(
+    within(dialog).getByRole("combobox", { name: "Default folder" })
+      .textContent,
+  ).toContain("/srv/my project");
   failSave = true;
   fireEvent.click(within(dialog).getByRole("button", { name: "Add project" }));
   await screen.findByText("Invalid server directory");
@@ -563,15 +576,15 @@ it("ignores corrupt or stale browser ordering without hiding newly added project
   );
   localStorage.setItem("a13n-harness-ui.project-expansion", "invalid json");
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["Two", "One"]);
 });
 
 it("retains keyboard focus when a project DOM group moves", async () => {
   mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
+  const handle = await screen.findByRole("button", { name: "One" });
   handle.focus();
-  fireEvent.keyDown(handle, { key: " " });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   expect(document.activeElement).toBe(handle);
   fireEvent.keyDown(handle, { key: "Enter" });
@@ -580,14 +593,32 @@ it("retains keyboard focus when a project DOM group moves", async () => {
 
 it("captures pointer drags on the stable scroller and never turns a click into a move", async () => {
   mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
+  const handle = await screen.findByRole("button", { name: "One" });
   const scroller = document.querySelector<HTMLElement>(
     "[data-project-scroll]",
   )!;
   scroller.setPointerCapture = vi.fn();
+  scroller.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 0,
+      right: 220,
+      bottom: 800,
+      width: 220,
+      height: 800,
+    }) as DOMRect;
   const target = document.querySelector<HTMLElement>(
     '[data-project-key="project-two"]',
   )!;
+  target.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 40,
+      right: 220,
+      bottom: 120,
+      width: 220,
+      height: 80,
+    }) as DOMRect;
   Object.defineProperty(document, "elementFromPoint", {
     configurable: true,
     value: () => target,
@@ -597,10 +628,17 @@ it("captures pointer drags on the stable scroller and never turns a click into a
     kind: "pointerDown" | "pointerMove" | "pointerUp",
     x: number,
     y: number,
+    buttons = kind === "pointerUp" ? 0 : 1,
   ) => {
     const event = new MouseEvent(
       kind.replace(/[A-Z]/, (letter) => letter.toLowerCase()),
-      { bubbles: true, button: 0, clientX: x, clientY: y },
+      {
+        bubbles: true,
+        button: 0,
+        buttons,
+        clientX: x,
+        clientY: y,
+      },
     );
     Object.defineProperty(event, "pointerId", { value: 1 });
     fireEvent(element, event);
@@ -609,11 +647,26 @@ it("captures pointer drags on the stable scroller and never turns a click into a
   point(scroller, "pointerMove", 12, 11);
   point(scroller, "pointerUp", 12, 11);
   expect(localStorage.getItem("a13n-harness-ui.project-order")).toBeNull();
+  const initialExpanded = handle.getAttribute("aria-expanded");
+  fireEvent.click(handle);
+  expect(handle.getAttribute("aria-expanded")).not.toBe(initialExpanded);
+  const expandedBeforeDrag = handle.getAttribute("aria-expanded");
+  // A press released outside the scroller must not start a later hover drag.
   point(handle, "pointerDown", 10, 10);
-  expect(scroller.setPointerCapture).toHaveBeenCalledWith(1);
+  point(scroller, "pointerMove", 50, 100, 0);
+  expect(groupNames()).toEqual(["One", "Two"]);
+  expect(scroller.setPointerCapture).not.toHaveBeenCalled();
+  point(handle, "pointerDown", 10, 10);
+  expect(scroller.setPointerCapture).not.toHaveBeenCalled();
   point(scroller, "pointerMove", 50, 100);
-  expect(groupNames()).toEqual(["Two", "One"]);
+  expect(scroller.setPointerCapture).toHaveBeenCalledWith(1);
+  // The list stays still under the pointer; commit exactly once on release.
+  expect(groupNames()).toEqual(["One", "Two"]);
   point(scroller, "pointerUp", 50, 100);
+  expect(groupNames()).toEqual(["Two", "One"]);
+  fireEvent.click(handle, { detail: 1 });
+  expect(handle.getAttribute("aria-expanded")).toBe(expandedBeforeDrag);
+  expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
   expect(
     JSON.parse(localStorage.getItem("a13n-harness-ui.project-order")!),
   ).toEqual(["project-two", "project-one"]);
@@ -883,7 +936,7 @@ it("puts the current server directory first by default and on reset, while respe
     JSON.stringify(["project-one", "project-two"]),
   );
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["One", "Two"]);
   await user.click(screen.getByRole("button", { name: "Actions for One" }));
   await user.click(
@@ -2095,4 +2148,88 @@ it("keeps Fork unavailable in Coordinator and worker action menus", async () => 
   );
   await screen.findByRole("menuitem", { name: "Rename chat" });
   expect(screen.queryByRole("menuitem", { name: "Fork chat" })).toBeNull();
+});
+
+it("orders chats locally without navigating or writing server metadata, and restores touch order on reset", async () => {
+  const mounted = mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const link = await screen.findByRole("link", { name: "Recent 2" });
+  const titles = () =>
+    within(screen.getByRole("region", { name: "One" }))
+      .getAllByRole("link")
+      .map((node) => node.textContent);
+  const original = titles();
+  fireEvent.keyDown(link, { key: "ArrowUp", altKey: true });
+  expect(titles().indexOf("Recent 2")).toBe(original.indexOf("Recent 2") - 1);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
+  expect(writes).toHaveLength(0);
+  mounted.unmount();
+  mount();
+  await screen.findByRole("link", { name: "Recent 2" });
+  expect(titles().indexOf("Recent 2")).toBe(original.indexOf("Recent 2") - 1);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Actions for One" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Reset chat order" }),
+  );
+  expect(titles()).toEqual(original);
+});
+
+it("version-checks cross-project drops and leaves the original chat in place on failure", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const requests: unknown[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (
+      request.method === "PATCH" &&
+      new URL(request.url).pathname.endsWith("/configuration")
+    ) {
+      requests.push(await request.json());
+      return json(
+        { error: { message: "Chat changed. Try moving it again." } },
+        409,
+      );
+    }
+    return original(input, init);
+  });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const chat = await screen.findByRole("link", { name: "Recent 1" });
+  const target = screen.getByRole("button", { name: "Two" });
+  const scroller = document.querySelector<HTMLElement>(
+    "[data-project-scroll]",
+  )!;
+  scroller.setPointerCapture = vi.fn();
+  scroller.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, right: 220, bottom: 800 }) as DOMRect;
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => target,
+  });
+  const pointer = (element: Element | Window, type: string, y: number) => {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      button: 0,
+      buttons: type === "pointerup" ? 0 : 1,
+      clientX: 20,
+      clientY: y,
+    });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(element, event);
+  };
+  pointer(chat, "pointerdown", 20);
+  pointer(window, "pointermove", 300);
+  pointer(window, "pointerup", 300);
+  expect(
+    await screen.findByText("Chat changed. Try moving it again."),
+  ).toBeTruthy();
+  expect(requests).toEqual([
+    { expected_version: 1, patch: { project_id: "project-two" } },
+  ]);
+  expect(
+    within(screen.getByRole("region", { name: "One" })).getByRole("link", {
+      name: "Recent 1",
+    }),
+  ).toBe(chat);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
 });

@@ -15,7 +15,8 @@ import {
   restoreReadingAnchor,
   type ReadingAnchor,
 } from "./reading-anchor";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
+import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
 import { QuestionInteraction, ToolActivity } from "./tool-call";
@@ -61,7 +62,10 @@ type Row = {
   readingAnchor?: string;
 } & (
   | { kind: "input"; parts: InputPart[]; status?: string }
-  | { kind: "thinking"; segments: { id: string; text: string }[] }
+  | {
+      kind: "thinking";
+      segments: { id: string; text: string; durationMs?: number }[];
+    }
   | { kind: "tools"; tools: ToolView[] }
   | { kind: "origin"; childId: string }
   | { kind: "app"; reference: Schema<"AppReference">; live?: boolean }
@@ -158,7 +162,13 @@ function savedRows(
         rows.push({
           id,
           kind: "thinking",
-          segments: [{ id, text: part.text ?? "" }],
+          segments: [
+            {
+              id,
+              text: part.text ?? "",
+              durationMs: part.duration_ms ?? undefined,
+            },
+          ],
         });
       } else
         rows.push({
@@ -253,7 +263,9 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
       rows.push({
         id: block.id,
         kind: "thinking",
-        segments: [{ id: block.id, text: block.text }],
+        segments: [
+          { id: block.id, text: block.text, durationMs: block.durationMs },
+        ],
       });
     } else if (block.kind === "assistant")
       rows.push({
@@ -388,18 +400,39 @@ function groupRows(rows: Row[]) {
   return grouped;
 }
 
-function Reasoning({ segments }: { segments: { id: string; text: string }[] }) {
-  const [open, setOpen] = useState(true);
+function Reasoning({
+  segments,
+}: {
+  segments: { id: string; text: string; durationMs?: number }[];
+}) {
+  const duration = executionTime(
+    segments.every((segment) => segment.durationMs != null)
+      ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
+      : undefined,
+  );
+  const [open, setOpen] = useState(false);
   return (
     <details
       className={styles.reasoning}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>Reasoning</summary>
-      {segments.map((segment) => (
-        <MessageText key={segment.id} text={segment.text} />
-      ))}
+      <summary>
+        Thought
+        {duration && (
+          <span className={styles.executionDuration}>for {duration}</span>
+        )}
+        <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
+      </summary>
+      <section
+        className={styles.reasoningBody}
+        aria-label="Thought content"
+        tabIndex={0}
+      >
+        {segments.map((segment) => (
+          <MessageText key={segment.id} text={segment.text} />
+        ))}
+      </section>
     </details>
   );
 }
@@ -939,7 +972,9 @@ function TurnSegments({
     const kind =
       !row.subagentRunId &&
       (row.kind === "input" ||
-        row.kind === "assistant" ||
+        (row.kind === "assistant" &&
+          (!complete || row.position === outputPosition)) ||
+        row.kind === "failure" ||
         row.kind === "app" ||
         row.kind === "question")
         ? "visible"
@@ -950,7 +985,7 @@ function TurnSegments({
     } else if (row.kind === "question" || row.kind === "app") {
       boundary = row.id;
       textIndex = 0;
-    } else if (row.kind === "assistant") textIndex++;
+    } else if (row.kind === "assistant" && kind === "visible") textIndex++;
     const previous = segments.at(-1);
     if (
       previous?.kind === kind &&
@@ -964,7 +999,13 @@ function TurnSegments({
     else
       segments.push({
         id:
-          kind === "execution" ? `${boundary}:execution:${textIndex}` : row.id,
+          kind === "execution"
+            ? ((complete
+                ? [...mountedExecution.current].find((key) =>
+                    key.startsWith(`${boundary}:execution:`),
+                  )
+                : undefined) ?? `${boundary}:execution:${textIndex}`)
+            : row.id,
         kind,
         rows: [row],
       });
@@ -1038,6 +1079,12 @@ function TurnSegments({
             rows={segment.rows}
             threadId={threadId}
             complete={complete}
+            durationMs={
+              visibleSegments.filter((item) => item.kind === "execution")
+                .length === 1
+                ? turn?.duration_ms
+                : undefined
+            }
             recovery={segment === recoverySegment ? recovery : undefined}
           />
         );
@@ -1050,8 +1097,10 @@ function ExecutionSegment({
   rows,
   threadId,
   complete,
+  durationMs,
   recovery,
 }: {
+  durationMs?: number | null;
   recovery?: FocusDisplay["recovery"];
   rows: Row[];
   threadId: string;
@@ -1060,36 +1109,18 @@ function ExecutionSegment({
   const latest = rows.at(-1);
   const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
   const toolInfo = latestTool ? describeTool(latestTool) : undefined;
-  const toolCount = rows.reduce(
-    (count, row) => count + (row.kind === "tools" ? row.tools.length : 0),
-    0,
-  );
-  const runningTools = rows
-    .flatMap((row) => (row.kind === "tools" ? row.tools : []))
-    .filter((tool) =>
-      ["Receiving input", "Awaiting result"].includes(describeTool(tool).phase),
-    ).length;
-  const preview = toolInfo
-    ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
-    : latest?.kind === "thinking"
-      ? "Reasoning…"
-      : "View the available execution steps";
+  const duration = executionTime(durationMs);
+  const preview = complete
+    ? `Worked${duration ? ` for ${duration}` : ""}`
+    : toolInfo
+      ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
+      : latest?.kind === "thinking"
+        ? "Thought"
+        : "View the available execution steps";
   return (
-    <ExecutionDetails
-      complete={complete}
-      preview={preview}
-      summary={
-        toolCount ? (
-          <span>
-            {" "}
-            · {toolCount} {toolCount === 1 ? "tool call" : "tool calls"}
-            {runningTools > 0 && ` · ${runningTools} running`}
-          </span>
-        ) : null
-      }
-    >
+    <ExecutionDetails complete={complete} preview={preview}>
       {(open) => (
-        <ExecutionReader open={open}>
+        <ExecutionReader open={open} complete={complete}>
           <Rows rows={rows} threadId={threadId} continuation />
           <RecoveryNotice recovery={recovery} />
         </ExecutionReader>
@@ -1100,13 +1131,15 @@ function ExecutionSegment({
 
 function ExecutionReader({
   open,
+  complete,
   children,
 }: {
   open: boolean;
+  complete: boolean;
   children: ReactNode;
 }) {
   const reader = useRef<HTMLDivElement>(null);
-  const follow = useRef(true);
+  const follow = useRef(!complete);
   const anchor = useRef<ReadingAnchor | undefined>(undefined);
   useLayoutEffect(() => {
     const element = reader.current;

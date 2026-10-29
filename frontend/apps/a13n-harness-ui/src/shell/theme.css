@@ -12,8 +12,9 @@
   --harness-section-gap: 32px;
   --harness-field-gap: 16px;
   --harness-group-inset: 16px;
-  --harness-prose-size: 16px;
+  --harness-prose-size: 14px;
   --harness-prose-leading: 1.6;
+  --harness-log-text: light-dark(#767676, #969696);
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
   --harness-code-string: light-dark(#116329, #a5d6ff);
   --harness-code-value: light-dark(#0550ae, #79c0ff);
@@ -94,6 +95,8 @@
 :where(:is([data-slot="button"], [data-a13n-button])) {
   border-radius: var(--harness-radius-control);
   font-weight: 400;
+  /* Keep compact rows and their labels stationary while pressing. */
+  scale: 1;
 }
 :where(
   :is([data-slot="button"], [data-a13n-button]):is(
@@ -213,6 +216,8 @@
   line-height: 20px;
 }
 :where([data-a13n-modal] [data-slot="dialog-panel"]) {
+  display: grid;
+  gap: 16px;
   padding: 0 24px 24px;
 }
 :where(
@@ -220,14 +225,25 @@
 ) {
   padding-bottom: 0;
 }
+/* The footer owns the final inset; don't add panel padding above it. */
+[data-a13n-modal]:has(> [data-slot="dialog-footer"])
+  [data-slot="dialog-panel"] {
+  padding-bottom: 0;
+}
+[data-a13n-modal] [data-slot="dialog-panel"]:empty {
+  display: none;
+}
+[data-a13n-modal] [data-slot="dialog-title"],
+[data-a13n-modal] [data-slot="dialog-description"] {
+  overflow-wrap: anywhere;
+}
 [data-a13n-modal] [data-a13n-form-actions] {
-  padding-block: 16px 24px;
+  padding-block: 0 24px;
 }
 :where([data-a13n-modal] [data-slot="dialog-footer"]) {
   padding: 16px 24px 24px;
 }
-[data-a13n-modal]
-  > :is([data-slot="dialog-close"], button[aria-label="Close"]) {
+[data-a13n-modal] > :is([data-slot="dialog-close"], button[aria-label]) {
   top: 20px;
   right: 16px;
   width: 32px;
@@ -306,10 +322,9 @@
 }
 
 @media (max-width: 600px) {
-  [data-a13n-modal]
-    > :is([data-slot="dialog-close"], button[aria-label="Close"]) {
-    top: 6px;
-    right: 6px;
+  [data-a13n-modal] > :is([data-slot="dialog-close"], button[aria-label]) {
+    top: 12px;
+    right: 8px;
     width: var(--harness-control-height);
     height: var(--harness-control-height);
   }
@@ -321,5 +336,8 @@
   }
   [data-a13n-modal] [data-slot="dialog-footer"] {
     padding: 16px;
+  }
+  [data-a13n-modal] [data-a13n-form-actions] {
+    padding-bottom: 16px;
   }
 }

@@ -14,7 +14,7 @@ import {
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { EmptyList, ErrorNotice, PageHeader, SearchField } from "../shell/ui";
-import { SettingsTextField as TextField } from "../shell/settings";
+import { TextField } from "../shell/ui";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
@@ -414,7 +414,6 @@ function AddModelDialog({
       }
       initialFocus={title}
       disablePointerDismissal
-      size="lg"
       closeLabel="Close"
       footer={
         <>

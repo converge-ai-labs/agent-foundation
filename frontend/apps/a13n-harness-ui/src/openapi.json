@@ -22073,6 +22073,19 @@
       },
       "TranscriptPart": {
         "properties": {
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms",
+            "description": "Recorded elapsed time for this display item."
+          },
           "text_truncated": {
             "type": "boolean",
             "title": "Text Truncated",
@@ -22311,6 +22324,19 @@
               }
             ],
             "title": "Timestamp"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms",
+            "description": "Recorded root Run time, excluding pauses between Runs."
           },
           "tool_count": {
             "type": "integer",

@@ -4,8 +4,7 @@ import {
   Button,
   Dialog,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
+  ModalFrame,
   DialogPopup,
   DialogTitle,
 } from "a13n-ui";
@@ -643,28 +642,23 @@ export default function AnnotationEditor({
             </select>
           )}
         </footer>
-        <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
-          <DialogPopup showCloseButton={false}>
-            <DialogHeader>
-              <DialogTitle>Discard annotations?</DialogTitle>
-              <DialogDescription>
-                Closing removes your local edits and undo history. Copy or
-                download the PNG first if you want to keep it.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                onClick={() => setConfirmClose(false)}
-              >
+        <ModalFrame
+          open={confirmClose}
+          onOpenChange={setConfirmClose}
+          title="Discard annotations?"
+          description="Closing removes your local edits and undo history. Copy or download the PNG first if you want to keep it."
+          closeLabel="Close confirmation"
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setConfirmClose(false)}>
                 Keep editing
               </Button>
               <Button variant="destructive" onClick={onClose}>
                 Discard
               </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
+            </>
+          }
+        />
       </DialogPopup>
     </Dialog>
   );

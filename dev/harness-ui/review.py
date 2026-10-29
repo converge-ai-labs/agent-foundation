@@ -167,7 +167,9 @@ async def model(messages, info):
         (
             i
             for i, message in enumerate(messages)
-            if isinstance(message, ModelRequest) and any(isinstance(part, UserPromptPart) for part in message.parts)
+            if isinstance(message, ModelRequest)
+            and any(isinstance(part, UserPromptPart) for part in message.parts)
+            and not any(isinstance(part, ToolReturnPart) for part in message.parts)
         ),
         default=0,
     )
@@ -179,12 +181,14 @@ async def model(messages, info):
         for part in message.parts
         if isinstance(part, UserPromptPart)
     )
-    returned = any(
-        isinstance(part, ToolReturnPart)
+    returns = [
+        part
         for message in turn
         if isinstance(message, ModelRequest)
         for part in message.parts
-    )
+        if isinstance(part, ToolReturnPart)
+    ]
+    returned = bool(returns)
     if "[failure]" in prompt:
         yield "I'm checking the deployment configuration.\n\n"
         raise UsageLimitExceeded("The review model reached its request limit. Your chat and input are saved.")
@@ -213,24 +217,57 @@ async def model(messages, info):
             )
         }
         return
+    if "[answer]" in prompt:
+        yield "Use the same order identifier for retries. Disable **Place order** while the request is pending, and keep the form intact if it fails."
+        return
+    pause = 5 if "[slow]" in prompt else 1.4
     if not returned:
-        yield "I'll trace the checkout flow, check how it handles retries, and run the focused checks.\n\n"
+        yield "I'll trace the submission path, then check duplicate requests and retry behavior.\n\n"
+        thoughts = [
+            "First I need to distinguish a repeated click from a deliberate retry. Both should use the same order identifier, but the UI needs to explain whether a request is pending or has failed.",
+            "The important boundary is the pending state: it must be set before the first asynchronous operation, and cleared on both success and failure.",
+        ]
+        if "[thought]" in prompt:
+            thoughts += [
+                f"Case {index + 1}: check the boundary between submission, provider acknowledgement, and UI recovery. Preserve the original address and cart; never treat an unknown payment state as a successful order. Inspect the recorded request identifier before proposing another attempt."
+                for index in range(16)
+            ]
+        for thought in thoughts:
+            yield {0: DeltaThinkingPart(content=thought + "\n\n")}
+            await asyncio.sleep(pause / len(thoughts))
+        yield {1: DeltaToolCall(name="view", tool_call_id="review-read", json_args='{"path":"checkout.ts"}')}
+        return
+    shells = [part for part in returns if part.tool_name == "shell_exec"]
+    if not shells:
+        yield "The submit handler has no pending guard. I'll run the focused checks before changing the retry path.\n\n"
         yield {
             0: DeltaThinkingPart(
-                content="I should inspect the request boundary before proposing a change. The important cases are duplicate submissions, slow responses, and recoverable failures."
+                content="A small guard should stop duplicate clicks. The existing request identifier should survive a retry; generating a new one would defeat provider deduplication."
             )
         }
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(pause)
+        command = "pnpm test checkout --offline" if "[retry]" in prompt else "pnpm test checkout"
         yield {
-            1: DeltaToolCall(name="view", tool_call_id="review-read", json_args='{"path":"checkout.ts"}'),
-            2: DeltaToolCall(
-                name="shell_exec", tool_call_id="review-check", json_args='{"command":"pnpm test checkout"}'
-            ),
-            3: DeltaToolCall(
+            1: DeltaToolCall(name="shell_exec", tool_call_id="review-check", json_args=json.dumps({"command": command}))
+        }
+        return
+    if "[retry]" in prompt and len(shells) == 1:
+        yield "The offline check could not resolve the test dependencies. I'll retry with the available local runner.\n\n"
+        await asyncio.sleep(pause)
+        yield {
+            0: DeltaToolCall(
+                name="shell_exec", tool_call_id="review-retry", json_args='{"command":"pnpm test checkout"}'
+            )
+        }
+        return
+    if not any(part.tool_name == "note_write" for part in returns):
+        yield "All three checks passed. I'm saving the retry decision for the next review.\n\n"
+        yield {
+            0: DeltaToolCall(
                 name="note_write",
                 tool_call_id="review-note",
-                json_args='{"key":"Review focus","value":"Keep retries explicit and preserve the form after a failed request."}',
-            ),
+                json_args='{"key":"Checkout retries","value":"Reuse the order identifier, reject duplicate clicks, and preserve form input after failure."}',
+            )
         }
         return
     answer = ANSWER
@@ -252,13 +289,21 @@ async def serve(root: Path, port: int):
         tools = FunctionToolset(id="design-review")
 
         @tools.tool_plain
-        def view(path: str) -> str:
+        async def view(path: str) -> str:
             """Read a fictional source file."""
+            await asyncio.sleep(0.25)
             return "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
 
         @tools.tool_plain
-        def shell_exec(command: str) -> dict[str, object]:
+        async def shell_exec(command: str) -> dict[str, object]:
             """Return scripted check results; never execute a shell command."""
+            await asyncio.sleep(1.2)
+            if "--offline" in command:
+                return {
+                    "stdout": "",
+                    "stderr": "The offline test runner could not resolve cached dependencies.",
+                    "exit_code": 1,
+                }
             return {
                 "stdout": "✓ rejects duplicate submissions\n✓ preserves input after failure\n✓ shows payment progress\n\n3 tests passed",
                 "exit_code": 0,
@@ -299,10 +344,16 @@ async def serve(root: Path, port: int):
                 ("Plan the next release", "project-atlas", "[long] Create a detailed review of the next release."),
                 ("Investigate deployment failure", "project-atlas", "[failure] Check the deployment configuration."),
                 (
-                    "Compare onboarding approaches",
+                    "Inspect a long thought",
                     "project-research",
-                    "Review the onboarding approach and recommend next steps.",
+                    "[thought] Review checkout edge cases in detail before recommending a fix.",
                 ),
+                (
+                    "Recover a failed check",
+                    "project-atlas",
+                    "[retry] Check the checkout tests and recover if the first attempt fails.",
+                ),
+                ("A quick answer", "project-research", "[answer] Summarize the retry rule."),
                 ("A fresh idea", "project-research", None),
             ):
                 thread = await app.create_thread(title=title, defaults=NewThreadDefaults(project_id=project))
@@ -312,10 +363,25 @@ async def serve(root: Path, port: int):
                     expected = "failed" if "[failure]" in prompt else "completed"
                     if operation.status != expected:
                         raise RuntimeError(f"Fixture {title!r} ended with {operation.status}, expected {expected}")
+                if title == "A quick answer":
+                    followup = await app.submit_thread(
+                        thread_id=thread.thread_id, prompt="[answer] What should happen to the form after a failure?"
+                    )
+                    operation = await app.wait_root_operation(followup.receipt_id, timeout_seconds=30)
+                    if operation.status != "completed":
+                        raise RuntimeError("The follow-up fixture did not finish")
                 print(f"  {title}: /threads/{thread.thread_id}", flush=True)
+            question = await app.create_thread(
+                title="Choose the review scope", defaults=NewThreadDefaults(project_id="project-research")
+            )
+            await app.submit_thread(
+                thread_id=question.thread_id, prompt="[question] Help me choose what to review first."
+            )
+            print(f"  Choose the review scope: /threads/{question.thread_id}", flush=True)
             print(f"Review API: http://127.0.0.1:{port} (key: test-only-key)", flush=True)
             print(
-                "All responses and tool results are scripted. Try [slow], [long], [failure], or [question].", flush=True
+                "All responses and tool results are scripted. Try [slow], [long], [thought], [retry], [answer], [failure], or [question].",
+                flush=True,
             )
             yield app
 

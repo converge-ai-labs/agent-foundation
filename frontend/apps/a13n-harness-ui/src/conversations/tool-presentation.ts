@@ -6,6 +6,7 @@ import { ProcessObservations } from "./process-observations";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
+  durationMs?: number;
   id: string;
   toolCallId?: string;
   subagentRunId?: string;
@@ -90,13 +91,20 @@ export function describeTool(tool: ToolView) {
     tool.edit?.file_path ||
     tool.editPath ||
     text(result.file_path) ||
-    text(args.file_path);
+    text(args.file_path) ||
+    (tool.name === "view" ? text(args.path) : "");
   const shell =
     tool.name.startsWith("shell_") ||
     (!!tool.shellCommand &&
       ["tool_execution_result", "tool_execution_wait"].includes(tool.name));
   const command = shell ? text(args.command) || tool.shellCommand || "" : "";
   const status = record(result.status) ? result.status : {};
+  const exitCode =
+    typeof status.exit_code === "number"
+      ? status.exit_code
+      : typeof result.exit_code === "number"
+        ? result.exit_code
+        : undefined;
   const error = record(result.error) ? result.error : {};
   const failed =
     tool.outcome === "failed" ||
@@ -108,7 +116,7 @@ export function describeTool(tool: ToolView) {
       tool.name === "web_search" &&
       result.status === "failed") ||
     (shell &&
-      ((typeof status.exit_code === "number" && status.exit_code !== 0) ||
+      ((exitCode !== undefined && exitCode !== 0) ||
         ["failed", "signaled", "timed_out", "cancelled"].includes(
           text(status.phase),
         )));
@@ -464,6 +472,7 @@ export function describeTool(tool: ToolView) {
     executionReceipt,
     shell,
     command,
+    exitCode,
   };
 }
 
@@ -563,6 +572,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
             : undefined,
           resultOmitted: part.value_omitted,
           outcome: part.outcome ?? undefined,
+          durationMs: part.duration_ms ?? undefined,
           provider: part.provider ?? view?.provider,
           edit:
             part.applied_edit?.before != null &&

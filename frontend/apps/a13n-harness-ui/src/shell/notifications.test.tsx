@@ -205,12 +205,12 @@ it("keeps attention notices without permission or when desktop reminders are dis
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
 });
-it("dismisses setup without disabling notifications and remembers the dismissal", () => {
+it("dismisses setup without disabling notifications and remembers the dismissal", async () => {
   const view = mount();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Dismiss notification setup" }),
+  fireEvent.click(screen.getByLabelText("Dismiss notification"));
+  await waitFor(() =>
+    expect(screen.queryByText("Get task notifications")).toBeNull(),
   );
-  expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(
     screen
       .getByRole("switch", { name: "Enable browser notifications" })
@@ -218,13 +218,22 @@ it("dismisses setup without disabling notifications and remembers the dismissal"
   ).toBe("true");
   view.unmount();
   mount();
-  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  expect(screen.queryByText("Get task notifications")).toBeNull();
   const toggle = screen.getByRole("switch", {
     name: "Enable browser notifications",
   });
   fireEvent.click(toggle);
   fireEvent.click(toggle);
-  expect(screen.getByLabelText("Notification permission")).toBeTruthy();
+  expect(screen.getByText("Get task notifications")).toBeTruthy();
+});
+it("routes setup to Settings without requesting permission or repeating the toast there", async () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(await screen.findByText("/settings/notifications")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.queryByText("Get task notifications")).toBeNull(),
+  );
+  expect(request).not.toHaveBeenCalled();
 });
 it("reflects permission revocation and another tab disabling reminders", () => {
   permission = "granted";
@@ -258,9 +267,7 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
   expect(native).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("heading", { name: "Reconnect background notifications" }),
-  ).toBeTruthy();
+  expect(screen.getByText("Background alerts paused")).toBeTruthy();
   let finish!: () => void;
   enable.mockImplementation(
     () =>

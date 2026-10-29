@@ -16,6 +16,7 @@ import {
 import { result, type Schema } from "./transport/client";
 import { useProjects, useTransport } from "./transport/context";
 import { useThread } from "./conversations/queries";
+import { isUnavailableChat } from "./conversations/conversation-unavailable";
 import { ErrorNotice } from "./shell/ui";
 import styles from "./sharing.module.css";
 import { copyText } from "./platform";
@@ -41,6 +42,7 @@ export function ShareButton() {
   const detail = useThread(threadId ?? "");
   if (
     !threadId ||
+    isUnavailableChat(detail.error) ||
     detail.data?.thread.memory_scope ||
     detail.data?.thread.configuration.agent_source.kind === "live"
   )

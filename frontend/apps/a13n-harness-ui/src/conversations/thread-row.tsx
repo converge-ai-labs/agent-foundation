@@ -9,6 +9,8 @@ import {
   CircleNotch,
   WarningCircleIcon,
   Archive,
+  ArrowUp,
+  ArrowDown,
   ArrowCounterClockwise,
   DotsThree,
   GitFork,
@@ -36,6 +38,8 @@ import {
   CoordinatorPromotion,
   useCoordinatorMutation,
 } from "./coordinator-settings";
+
+import { NavigationDragContext } from "./navigation-drag";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -79,6 +83,13 @@ export function ThreadRow({
   activeWorkerCount?: number;
   disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
+  const drag = useContext(NavigationDragContext);
+  const rowElement = useRef<HTMLDivElement>(null);
+  const sortable =
+    !!drag &&
+    !row.thread.archived &&
+    row.thread.role !== "worker" &&
+    !row.thread.parent_thread_id;
   const coordinator = useCoordinatorMutation(row.thread);
   const [promoting, setPromoting] = useState(false);
   const { tracker: results } = useResults();
@@ -166,8 +177,49 @@ export function ThreadRow({
   });
   return (
     <div>
-      <div key={row.thread.thread_id} className={styles.threadRow}>
+      <div
+        ref={rowElement}
+        key={row.thread.thread_id}
+        className={styles.threadRow}
+        data-nav-thread={sortable ? row.thread.thread_id : undefined}
+        data-nav-source={drag?.moving === row.thread.thread_id || undefined}
+      >
         <NavLink
+          draggable={false}
+          onPointerDown={
+            sortable
+              ? (event) =>
+                  drag.begin(event, {
+                    kind: "thread",
+                    id: row.thread.thread_id,
+                    label: title,
+                    thread: row.thread,
+                  })
+              : undefined
+          }
+          onKeyDown={
+            sortable
+              ? (event) => {
+                  if (
+                    event.altKey &&
+                    ["ArrowUp", "ArrowDown"].includes(event.key)
+                  ) {
+                    event.preventDefault();
+                    drag.moveThread(
+                      row.thread,
+                      rowElement.current!,
+                      event.key === "ArrowUp" ? -1 : 1,
+                    );
+                    requestAnimationFrame(() =>
+                      rowElement.current
+                        ?.querySelector<HTMLElement>("a")
+                        ?.focus(),
+                    );
+                  }
+                }
+              : undefined
+          }
+          aria-keyshortcuts={sortable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
           to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
           className={({ isActive }) =>
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
@@ -271,6 +323,26 @@ export function ThreadRow({
               >
                 <ChatCircle /> New worker
               </MenuItem>
+            )}
+            {sortable && (
+              <>
+                <MenuItem
+                  onClick={() =>
+                    drag.moveThread(row.thread, rowElement.current!, -1)
+                  }
+                >
+                  <ArrowUp />
+                  Move up
+                </MenuItem>
+                <MenuItem
+                  onClick={() =>
+                    drag.moveThread(row.thread, rowElement.current!, 1)
+                  }
+                >
+                  <ArrowDown />
+                  Move down
+                </MenuItem>
+              </>
             )}
             {canStar && (
               <MenuItem disabled={star.isPending} onClick={toggleStar}>

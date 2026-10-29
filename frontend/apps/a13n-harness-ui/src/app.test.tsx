@@ -282,7 +282,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
     ),
   ).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Usage & details" }));
-  await screen.findByRole("dialog");
+  await screen.findByRole("dialog", { name: "Chat details" });
   expect(
     screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
   ).toBe("true");
@@ -1710,7 +1710,9 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
     { target: { value: "Renamed" } },
   );
   await user.click(screen.getByRole("button", { name: "Save name" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Rename project" })).toBeNull(),
+  );
   await waitFor(() =>
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );

@@ -7738,6 +7738,11 @@ export interface components {
         /** TranscriptPart */
         TranscriptPart: {
             /**
+             * Duration Ms
+             * @description Recorded elapsed time for this display item.
+             */
+            duration_ms?: number | null;
+            /**
              * Text Truncated
              * @default false
              */
@@ -7816,6 +7821,11 @@ export interface components {
             preview: string;
             /** Timestamp */
             timestamp?: string | null;
+            /**
+             * Duration Ms
+             * @description Recorded root Run time, excluding pauses between Runs.
+             */
+            duration_ms?: number | null;
             /**
              * Tool Count
              * @default 0

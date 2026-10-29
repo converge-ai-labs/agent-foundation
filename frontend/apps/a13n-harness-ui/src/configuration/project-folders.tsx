@@ -31,7 +31,7 @@ export function ProjectFolders({
   const update = (index: number, path: string) =>
     onChange(roots.map((root, i) => (i === index ? { ...root, path } : root)));
   return (
-    <div className={styles.folders}>
+    <div className={`${styles.folders} ${compact ? styles.compact : ""}`}>
       {compact && roots.length > 0 && (
         <p className={styles.label}>Working folders</p>
       )}
@@ -115,6 +115,7 @@ export function ProjectFolders({
           type="button"
           variant="ghost"
           size="sm"
+          className={compact ? styles.addFolder : undefined}
           disabled={roots.length >= 64}
           onClick={() => onChange([...roots, { path: "" }])}
         >

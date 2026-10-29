@@ -211,7 +211,7 @@
   display: flex;
   flex-shrink: 0;
   position: absolute;
-  inset-inline-end: 28px;
+  inset-inline-end: 4px;
   top: 0;
 }
 .groupActions button,
@@ -226,7 +226,7 @@
   flex: 1;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 88px 4px 8px;
+  padding: 4px 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -236,32 +236,62 @@
   border-radius: 8px;
   line-height: 20px;
 }
-.groupToggle > span {
+.groupToggle > span:not(.projectIndicator) {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-weight: 400;
 }
-.groupToggle > svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-}
-.groupChevron {
-  position: absolute;
-  inset-inline-end: 4px;
-  top: 0;
+.projectIndicator {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 30px;
-  color: var(--a13n-secondary);
-}
-.groupChevron > svg {
+  flex: 0 0 16px;
   width: 16px;
   height: 16px;
+}
+.projectIndicator > svg {
+  grid-area: 1 / 1;
+  color: var(--a13n-secondary);
+}
+.projectIndicator .projectIcon {
+  width: 16px;
+  height: 16px;
+}
+.projectIndicator .groupChevron {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
   transition: transform 120ms ease;
+}
+.groupHeading:hover .projectIcon {
+  opacity: 0;
+}
+.groupHeading:hover .groupChevron {
+  opacity: 1;
+}
+.groupHeading:has(.groupActions) .groupToggle {
+  padding-inline-end: 60px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .groupHeading:has(.groupActions) .groupToggle {
+    padding-inline-end: 8px;
+  }
+  .groupHeading:is(:hover, :focus-within, :has([data-popup-open]))
+    .groupToggle {
+    mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - 60px),
+      transparent calc(100% - 48px)
+    );
+  }
+}
+.groupToggle[aria-keyshortcuts] {
+  touch-action: none;
+  user-select: none;
+}
+.groupToggle[data-reordering="true"] {
+  cursor: grabbing;
 }
 .groupToggle:focus-visible {
   outline: 2px solid var(--ring);
@@ -269,55 +299,9 @@
 .expandedChevron {
   transform: rotate(90deg);
 }
-.projectDrag {
-  position: absolute;
-  inset-inline-start: 1px;
-  top: 0;
-  width: 28px;
-  height: 30px;
-  z-index: 1;
-  touch-action: none;
-  cursor: grab;
-  color: var(--a13n-secondary);
-}
-.groupHeading:has(.projectDrag) .projectIcon {
-  visibility: hidden;
-}
-@media (hover: hover) and (pointer: fine) {
-  .projectDrag {
-    opacity: 0;
-    pointer-events: none;
-  }
-  .groupHeading:has(.projectDrag) .projectIcon {
-    visibility: visible;
-  }
-  .groupHeading:hover .projectDrag,
-  .groupHeading:focus-within .projectDrag,
-  .projectDrag[aria-pressed="true"] {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .groupHeading:has(.projectDrag):hover .projectIcon,
-  .groupHeading:has(.projectDrag):focus-within .projectIcon,
-  .groupHeading:has(.projectDrag[aria-pressed="true"]) .projectIcon {
-    visibility: hidden;
-  }
-}
-@media (hover: hover) and (pointer: fine) {
-  .groupToggle {
-    padding-inline-end: 32px;
-  }
-  .groupHeading:is(:hover, :focus-within, :has([data-popup-open]))
-    .groupToggle {
-    padding-inline-end: 88px;
-  }
-}
 .groupThreads {
   /* Rows share the project background width; only their text is indented. */
   margin-inline-start: 0;
-}
-.projectDrag[aria-pressed="true"] {
-  cursor: grabbing;
 }
 .movingProject {
   background: var(--a13n-surface);
@@ -370,8 +354,8 @@
   outline-offset: -2px;
 }
 .threadDisclosure svg {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   transition: transform 120ms ease;
 }
 .threadRow:hover,
@@ -432,8 +416,7 @@
 .threadActions:hover,
 .threadActions[data-popup-open],
 .groupActions button:hover,
-.groupActions button[data-popup-open],
-.projectDrag:hover {
+.groupActions button[data-popup-open] {
   color: var(--a13n-text);
   background: transparent;
 }
@@ -687,8 +670,6 @@
   }
   .groupActions button,
   .threadActions,
-  .groupChevron,
-  .projectDrag,
   .threadDisclosure,
   .threadStar {
     height: 44px;
@@ -804,45 +785,59 @@
   overflow-wrap: anywhere;
 }
 .reasoning {
-  margin: 16px 0;
-  color: var(--a13n-text-supporting);
-}
-.reasoning > div + div {
-  margin-top: 12px;
+  margin: 0;
+  color: var(--harness-log-text);
+  font-size: 14px;
+  line-height: 1.6;
 }
 .reasoning > summary {
   display: flex;
   align-items: center;
   gap: 8px;
   width: fit-content;
-  min-height: 32px;
-  margin: 0 0 8px -8px;
-  padding: 0 8px;
-  border-radius: 8px;
-  color: var(--a13n-secondary);
-  font-size: 14px;
+  min-height: 28px;
+  padding: 4px 8px;
+  line-height: 20px;
   cursor: pointer;
   list-style: none;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
+  transition: color 120ms ease;
+}
+.reasoning > summary::before {
+  content: none;
 }
 .reasoning > summary::-webkit-details-marker {
   display: none;
 }
-.reasoning > summary:hover {
-  background: color-mix(in srgb, var(--a13n-surface) 70%, transparent);
+.reasoning > summary:is(:hover, :focus-visible) {
   color: var(--a13n-text);
 }
-.reasoning[open] > div {
-  font-size: 14px;
-  line-height: 1.6;
-  padding-inline-start: 16px;
-  border-inline-start: 1px solid var(--a13n-border);
+.reasoningCaret {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
-.reasoning > summary:focus-visible {
-  outline: 1px solid var(--ring);
-  outline-offset: 3px;
+.reasoning[open] .reasoningCaret {
+  transform: rotate(90deg);
+}
+.reasoning > summary:is(:hover, :focus-visible) .reasoningCaret {
+  opacity: 1;
+}
+.reasoningBody {
+  max-height: 144px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin: 4px 8px 8px;
+}
+.reasoningBody > div + div {
+  margin-top: 12px;
+}
+.reasoning > summary:focus-visible,
+.reasoningBody:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .activity {
   margin: 4px 0;
@@ -869,7 +864,7 @@
     color 120ms ease;
 }
 .activity > summary:hover {
-  background: color-mix(in srgb, var(--a13n-surface) 70%, transparent);
+  background: transparent;
   color: var(--a13n-text);
 }
 .activity[open] > summary {
@@ -989,14 +984,16 @@
   .messageActions,
   .composerInput,
   .activity > summary,
-  .reasoning > summary {
+  .reasoningCaret,
+  .executionCaret,
+  .executionToggle {
     transition: none;
   }
 }
 .composerConnection {
   margin: 4px 4px 0;
   font-size: 14px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .sendButton {
   flex-shrink: 0;
@@ -1005,11 +1002,11 @@
 }
 .composerContext {
   font-size: 14px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .executionLoad {
   padding-block: 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
 }
 .executionLoad > button {
@@ -1017,7 +1014,7 @@
   border: 0;
   border-radius: 8px;
   background: var(--a13n-surface);
-  color: inherit;
+  color: var(--harness-log-text);
   cursor: pointer;
 }
 .executionLoad > button:hover {
@@ -1047,7 +1044,7 @@
   flex-shrink: 0;
   gap: 8px;
   padding: 8px 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   white-space: nowrap;
 }
@@ -1060,7 +1057,7 @@
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--a13n-hover);
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
 }
 .workerIdentity > span {
@@ -1220,7 +1217,7 @@
   gap: 4px 12px;
   padding: 8px 0;
   font-size: 14px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .composerStatus p {
   flex: 1 1 220px;
@@ -1246,13 +1243,13 @@
   margin: 0 0 4px;
 }
 .receipt small {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   display: block;
 }
 .empty {
   text-align: center;
   padding: 48px 24px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .empty h2 {
   color: var(--a13n-text);
@@ -1281,7 +1278,7 @@
   gap: 12px;
 }
 .detailGrid dt {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
 }
 .detailGrid dd {
@@ -1307,7 +1304,7 @@ dl.detailGrid dt {
 }
 dl.detailGrid dd {
   margin: 0;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   text-align: right;
   line-height: 20px;
 }
@@ -1346,7 +1343,7 @@ dl.detailGrid > .detailLongRow dd {
 .inspection [data-slot="tabs-content"] > section > p,
 .inspection [data-slot="tabs-content"] > .form > section > p {
   margin-block: 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -1390,7 +1387,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .decision > p {
   margin: 0 0 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   line-height: 20px;
 }
@@ -1410,7 +1407,7 @@ dl.detailGrid > .detailLongRow dd {
   margin: 0;
 }
 .question legend {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   margin-bottom: 4px;
 }
@@ -1447,7 +1444,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .answerOption small {
   display: block;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   margin-top: 4px;
   font-size: 14px;
   line-height: 20px;
@@ -1462,7 +1459,7 @@ dl.detailGrid > .detailLongRow dd {
   min-width: 0;
 }
 .settingsHint {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   line-height: 20px;
 }
@@ -1488,7 +1485,7 @@ dl.detailGrid > .detailLongRow dd {
   overflow-wrap: anywhere;
 }
 .attachmentCard small {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 
 .form h3 {
@@ -1507,7 +1504,7 @@ dl.detailGrid > .detailLongRow dd {
   min-height: 26px;
   margin-block: 4px 0;
   padding-inline: 8px 4px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
   font-weight: 500;
 }
@@ -1523,7 +1520,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .showMore {
   margin: 4px 0 0 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 
 /* Attachment identities live in the editor text; widgets are their presentation. */
@@ -1548,7 +1545,7 @@ dl.detailGrid > .detailLongRow dd {
   gap: 8px;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--harness-log-text);
   font: inherit;
   cursor: pointer;
   padding: 0 8px;
@@ -1568,7 +1565,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .inlineAttachmentRemove {
   align-self: stretch;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   padding-inline: 8px;
   flex-shrink: 0;
 }
@@ -1621,7 +1618,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .inputAttachment > details > summary::after {
   content: "+";
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   margin-left: 8px;
 }
 .inputAttachment > details[open] > summary::after {
@@ -1663,7 +1660,7 @@ dl.detailGrid > .detailLongRow dd {
   overflow-wrap: anywhere;
 }
 .inputAttachmentDetails small {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .inputAttachment > details[open] .attachmentThumbnail {
   width: 96px;
@@ -1677,7 +1674,7 @@ dl.detailGrid > .detailLongRow dd {
   gap: 8px;
   margin: 12px 0;
   font-size: 14px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .recoveryNotice > svg {
   flex-shrink: 0;
@@ -1688,7 +1685,7 @@ dl.detailGrid > .detailLongRow dd {
   gap: 8px;
   min-height: 24px;
   margin: 8px 0 16px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
 }
 .runActivity > svg {
@@ -1723,13 +1720,13 @@ dl.detailGrid > .detailLongRow dd {
   font-weight: 500;
 }
 .failureNotice p {
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
 .failureNotice details {
   margin-top: 8px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
 }
 .failureNotice pre {
   white-space: pre-wrap;
@@ -1751,7 +1748,7 @@ dl.detailGrid > .detailLongRow dd {
   --context-accent: #43928a;
 }
 .contextActivity > summary {
-  color: var(--a13n-text-supporting);
+  color: var(--harness-log-text);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -1765,7 +1762,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .contextStatus {
   margin-left: 12px;
-  color: var(--a13n-text-supporting);
+  color: var(--harness-log-text);
   font-size: 14px;
   font-weight: 400;
 }
@@ -1776,7 +1773,7 @@ dl.detailGrid > .detailLongRow dd {
   overflow: hidden;
   overflow-wrap: anywhere;
   margin-top: 4px;
-  color: var(--a13n-text-supporting);
+  color: var(--harness-log-text);
   font-weight: 400;
   line-height: 1.5;
 }
@@ -1794,7 +1791,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .childAnswer > header {
   font-size: 14px;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   margin-block: 12px;
 }
 
@@ -1893,41 +1890,68 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .execution {
-  margin: 8px 12px 16px;
+  margin: 8px 4px 16px;
+}
+.executionHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .executionToggle {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  gap: 12px;
+  min-height: 32px;
+  line-height: 20px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--a13n-secondary);
+  color: var(--harness-log-text);
   font-size: 14px;
-  padding: 8px 8px;
-  margin-inline-start: -8px;
+  padding: 4px 8px;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 .executionPreview {
   flex: 1;
-  min-width: 100px;
+  min-width: 0;
   max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--a13n-tertiary);
-  padding-left: 8px;
+  color: inherit;
+  font-size: 14px;
+  line-height: 20px;
 }
-.executionTitle {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8px;
+.executionDuration {
+  color: var(--a13n-text-muted);
+  font-weight: 400;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.executionToggle:hover {
-  background: var(--a13n-hover);
+.executionCaret {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition:
+    transform 150ms ease-out,
+    opacity 120ms ease;
+}
+.executionToggle[aria-expanded="true"] .executionCaret {
+  transform: rotate(90deg);
+}
+.executionToggle:is(:hover, :focus-visible) .executionCaret {
+  opacity: 1;
+}
+.executionToggle:is(:hover, :focus-visible) {
+  background: transparent;
   color: var(--a13n-text);
 }
 .executionToggle:focus-visible {
@@ -1939,27 +1963,22 @@ dl.detailGrid > .detailLongRow dd {
 }
 .executionContent {
   position: relative;
-  max-height: min(480px, 52dvh);
+  max-height: min(640px, 70dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 4px 0 4px 12px;
-  margin-block-start: 4px;
-  margin-inline-start: 4px;
-  border-inline-start: 1px solid var(--a13n-border);
+  scrollbar-gutter: stable;
+  padding: 4px 0;
+  margin-block-start: 0;
+  margin-inline-start: 0;
 }
-/* Inside the work log, reasoning keeps the 32px row rhythm of the tool groups
-   instead of the looser spacing it has between transcript paragraphs. */
-.executionContent .reasoning {
-  margin: 4px 0;
-}
-.executionContent .reasoning > summary {
-  min-height: var(--harness-control-height, 32px);
-  margin-bottom: 4px;
-}
-.executionContent .reasoning[open]:not(:last-child) {
-  margin-bottom: 12px;
+.executionContent .assistantMessage {
+  margin-block: 8px 12px;
+  padding-inline: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--a13n-text);
 }
 .executionContent:focus-visible {
   outline: 2px solid var(--a13n-focus);
@@ -2028,4 +2047,85 @@ dl.detailGrid > .detailLongRow dd {
     );
     border: 0;
   }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .reasoningCaret,
+  .executionCaret {
+    opacity: 1;
+  }
+}
+
+/* Pointer sorting keeps geometry still until drop. Touch continues to pan. */
+[data-nav-source="true"] {
+  opacity: 0.4;
+}
+[data-nav-drop="inside"] {
+  background: var(--a13n-hover);
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+.threadGroups[data-nav-dragging] {
+  cursor: grabbing;
+  user-select: none;
+}
+.threadGroups[data-nav-dragging] .groupActions,
+.threadGroups[data-nav-dragging] .threadActions {
+  visibility: hidden;
+}
+.threadGroups[data-nav-dragging] .groupToggle {
+  mask-image: none;
+}
+.threadGroups[data-nav-dragging] .groupHeading:hover,
+.threadGroups[data-nav-dragging] .threadRow:hover {
+  background: transparent;
+}
+.threadGroups[data-nav-dragging] [data-nav-drop="inside"] {
+  background: var(--a13n-hover);
+}
+.threadGroups .threadLink {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+@media (pointer: coarse) {
+  .groupToggle[aria-keyshortcuts] {
+    touch-action: pan-y;
+  }
+}
+
+/* Recovery has one stable home above the composer, never scattered around
+   the transcript or inside the input border. */
+.composerFeedback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(240px, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.composerFeedback:empty {
+  display: none;
+}
+.composerFeedback .warning,
+.composerFeedback .composerStatus,
+.composerFeedback .composerConnection {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  width: auto;
+}
+.composerFeedback .warning p,
+.composerFeedback .composerStatus p {
+  margin: 0;
+}
+.conversationFeedback {
+  width: min(var(--harness-reading-width), calc(100% - 32px));
+  margin: 0 auto 8px;
+  flex-shrink: 0;
 }

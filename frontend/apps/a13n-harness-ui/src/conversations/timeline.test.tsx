@@ -187,7 +187,7 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  const disclosure = screen.getByText("Reasoning").closest("details")!;
+  const disclosure = screen.getByText("Thought").closest("details")!;
   act(() => {
     disclosure.open = false;
     fireEvent(disclosure, new Event("toggle"));
@@ -201,7 +201,7 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  expect(screen.getByText("Reasoning").closest("details")).toBe(disclosure);
+  expect(screen.getByText("Thought").closest("details")).toBe(disclosure);
   view.rerender(
     <ConversationTranscript
       entries={[saved([{ kind: "thinking", text: "Replaced history" }])]}
@@ -211,7 +211,7 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  expect(screen.getByText("Reasoning").closest("details")).not.toBe(disclosure);
+  expect(screen.getByText("Thought").closest("details")).not.toBe(disclosure);
 });
 
 it("groups adjacent reasoning across saved entries and the live boundary, but not across prose", () => {
@@ -231,7 +231,7 @@ it("groups adjacent reasoning across saved entries and the live boundary, but no
       threadId="one"
     />,
   );
-  expect(screen.getAllByText("Reasoning")).toHaveLength(2);
+  expect(screen.getAllByText("Thought")).toHaveLength(2);
   const group = screen.getByText("First plan").closest("details");
   expect(screen.getByText("Third plan").closest("details")).toBe(group);
   expect(screen.getByText("Fourth plan").closest("details")).not.toBe(group);
@@ -249,7 +249,7 @@ it("keeps separate reasoning Markdown documents and stops grouping at tool activ
       ]}
     />,
   );
-  expect(screen.getAllByText("Reasoning")).toHaveLength(2);
+  expect(screen.getAllByText("Thought")).toHaveLength(2);
   expect(screen.getByText("A new part").tagName).toBe("STRONG");
 });
 
@@ -393,7 +393,7 @@ it("keeps history and an expanded summary through saved cutover and later contin
   expect(screen.getByText("Earlier answer")).toBe(earlier);
 });
 
-it("keeps every input and text part visible between independent execution segments", () => {
+it("keeps inputs and final text visible while folding completed progress into execution segments", () => {
   const entries = [
     saved(
       previewInput("round", ["Original input"]) as Schema<"TranscriptPart">[],
@@ -445,7 +445,6 @@ it("keeps every input and text part visible between independent execution segmen
   );
   for (const text of [
     "Original input",
-    "Progress update",
     "Change direction",
     "Final part one",
     "Final part two",
@@ -457,7 +456,11 @@ it("keeps every input and text part visible between independent execution segmen
   }
   expect(screen.queryByText("Internal plan")).toBeNull();
   expect(screen.queryByText("Final reasoning")).toBeNull();
+  expect(screen.queryByText("Progress update")).toBeNull();
   fireEvent.click(toggles[0]);
+  expect(
+    screen.getByText("Progress update").closest("[data-execution-reader]"),
+  ).toBeTruthy();
   expect(screen.getByText("Internal plan").closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Final reasoning")).toBeNull();
   view.rerender(transcript("new-head"));
@@ -654,7 +657,7 @@ it("groups only adjacent notifications in order across saved/live cutover", () =
   check();
 });
 
-it("counts only the tool calls in each execution segment", () => {
+it("keeps execution segments inspectable without tool totals in their summaries", () => {
   render(
     <ConversationTranscript
       threadId="one"
@@ -690,14 +693,10 @@ it("counts only the tool calls in each execution segment", () => {
       ]}
     />,
   );
-  expect(
-    screen
-      .getAllByRole("button", { name: /Work log/ })
-      .map((toggle) => toggle.textContent),
-  ).toEqual([
-    expect.stringMatching(/^Work log · 1 tool call · 1 running/),
-    expect.stringMatching(/^Work log · 2 tool calls · 2 running/),
-  ]);
+  const summaries = screen.getAllByRole("button", { name: /Work log/ });
+  expect(summaries).toHaveLength(2);
+  for (const summary of summaries)
+    expect(summary.textContent).not.toMatch(/\d+ (?:tool calls?|running)/);
 });
 
 it.each([false, true])(

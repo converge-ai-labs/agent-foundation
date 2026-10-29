@@ -252,6 +252,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
@@ -326,6 +327,9 @@ class TranscriptTurn(SurfaceModel):
     app_positions: tuple[int, ...] = ()
     preview: str = Field(max_length=512)
     timestamp: datetime | None = None
+    duration_ms: int | None = Field(
+        default=None, ge=0, description="Recorded root Run time, excluding pauses between Runs."
+    )
     tool_count: int = Field(default=0, ge=0)
     steering_count: int = Field(default=0, ge=0)
 

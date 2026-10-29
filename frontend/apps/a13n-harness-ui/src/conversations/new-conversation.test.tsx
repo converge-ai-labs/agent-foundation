@@ -310,6 +310,7 @@ beforeEach(() => {
           );
         }
         if (pathname.endsWith("/tasks")) return json({ tasks: [] });
+        if (pathname.endsWith("/mcp/inputs")) return json([]);
         if (pathname.endsWith("/children"))
           return json({ executions: [], total: 0 });
         if (pathname.endsWith("/usage"))
@@ -2058,11 +2059,11 @@ it.each(["desktop", "mobile"])(
     expect(screen.queryByText("Earlier execution work")).toBeNull();
     // One retry completes the turn without exposing transport-page controls.
     fireEvent.click(retry);
-    await screen.findByText("Earlier progress text");
-    expect(drafts.get(id)!.localInputs).toHaveLength(0);
+    await waitFor(() => expect(drafts.get(id)!.localInputs).toHaveLength(0));
+    // Completed progress stays folded until the user opens its segment.
+    expect(screen.queryByText("Earlier progress text")).toBeNull();
     for (const text of [
       "Please use plan B",
-      "Earlier progress text",
       "Current prompt",
       "Current answer",
     ]) {
@@ -2090,10 +2091,18 @@ it.each(["desktop", "mobile"])(
       name: /Work log/,
     });
     expect(segments).toHaveLength(2);
+    fireEvent.click(segments[1]);
+    const progress = await screen.findByText("Earlier progress text");
+    expect(progress.closest("[data-execution-reader]")).toBeTruthy();
+    if (layout === "mobile") {
+      fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } else fireEvent.click(segments[1]);
     fireEvent.click(segments[0]);
     const execution = await screen.findByRole("region", {
       name: "Work log",
     });
+    fireEvent.click(within(execution).getByText("Thought"));
     expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
     expect(within(execution).queryByText("Recent execution work")).toBeNull();
     if (layout === "mobile") {

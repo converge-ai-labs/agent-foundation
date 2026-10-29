@@ -7,7 +7,12 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ModalFrame } from "a13n-ui";
-import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  ArrowsClockwise,
+  Check,
+  Copy,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel } from "../shell/ui";
@@ -272,8 +277,14 @@ export function ProviderAccount({
       >
         {account.data?.usable ? "Reconnect account" : "Connect account"}
       </Button>
-      <Button variant="ghost" onClick={() => void account.refetch()}>
-        Refresh status
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Refresh status"
+        title="Refresh status"
+        onClick={() => void account.refetch()}
+      >
+        <ArrowsClockwise aria-hidden />
       </Button>
       {account.data?.availability === "available" && (
         <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
@@ -394,10 +405,10 @@ export function ProviderAccount({
                       value: method,
                       label:
                         method === "device"
-                          ? "Device code (recommended for remote servers)"
+                          ? "Device code"
                           : method === "manual_callback"
-                            ? "Paste the complete callback URL"
-                            : "Automatic browser callback",
+                            ? "Paste callback URL"
+                            : "Browser callback",
                     }))}
                     onValueChange={(value) =>
                       setMethod(

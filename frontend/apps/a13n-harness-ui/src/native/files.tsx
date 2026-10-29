@@ -588,7 +588,7 @@ export function FileOperation({
                 onChange={setFolder}
               />
               <p className={styles.operationHint}>
-                Use an absolute server path to move to another folder.
+                Use an absolute server path.
               </p>
             </div>
           </details>
@@ -609,8 +609,9 @@ export function FileOperation({
       )}
       {operation.kind !== "delete" && operation.kind !== "replace" && (
         <p className={styles.operationHint}>
-          Existing files aren't replaced. Choose a new name, or use Upload
-          replacement from the file's menu.
+          {operation.kind === "new-directory"
+            ? "Choose a name that isn't already in this folder."
+            : "Existing files aren't replaced. Use a different name or Upload replacement."}
         </p>
       )}
       {operation.kind === "delete" && recursive && (
