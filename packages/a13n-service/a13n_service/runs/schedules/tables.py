@@ -65,6 +65,7 @@ class ScheduleRow(Stamped, Base):
         CheckConstraint("(state = 'paused') = (pause_reason IS NOT NULL)", name="pause_reason"),
         CheckConstraint("(state = 'archived') = (archived_at IS NOT NULL)", name="archived"),
         CheckConstraint("max_lateness_seconds BETWEEN 60 AND 86400", name="lateness"),
+        Index("ix_schedules_session_id", "session_id"),
         Index("ix_schedules_workspace_created", "workspace_id", "created_at", "id"),
         Index("ix_schedules_due", "next_fire_at", "id", postgresql_where=text("state = 'enabled'")),
         rules(

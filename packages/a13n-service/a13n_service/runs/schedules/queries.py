@@ -68,18 +68,8 @@ async def find(session: AsyncSession, workspace_id: str, schedule_id: str, *, lo
 
 
 def unfinished_occurrence() -> ColumnElement[bool]:
-    """Match this trigger, including historical executions sealed before completion was recorded."""
-    finished = exists(
-        select(RunRow.id)
-        .where(
-            RunRow.workspace_id == OccurrenceRow.workspace_id,
-            RunRow.thread_id == OccurrenceRow.thread_id,
-            RunRow.occurrence_trigger_entry_id == OccurrenceRow.entry_id,
-            RunRow.status.in_(("completed", "failed", "cancelled")),
-        )
-        .correlate(OccurrenceRow)
-    )
-    return and_(OccurrenceRow.status == "submitted", ~finished)
+    """Submission stays busy until its own execution records durable completion."""
+    return OccurrenceRow.status == "submitted"
 
 
 async def has_unfinished(session: AsyncSession, row: ScheduleRow) -> bool:

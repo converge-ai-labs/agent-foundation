@@ -72,6 +72,7 @@ def upgrade() -> None:
         ["workspace_id", "id"],
     )
     op.add_column("schedules", sa.Column("thread_id", sa.String(length=72), nullable=True))
+    op.create_index("ix_schedules_session_id", "schedules", ["session_id"], unique=False)
     op.drop_constraint(op.f("uq_schedules_session_id"), "schedules", type_="unique")
     op.create_foreign_key(
         "fk_schedules_target_thread",
@@ -122,8 +123,9 @@ CREATE OR REPLACE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE 
                 RETURN NEW;
             END $$
     """)
-    # The change requires coordinated control/worker rollout. Preserve historical versions while
+    # The change requires coordinated control/worker rollout. Preserve Entry/Run versions while
     # filling internal provenance in bounded batches; all trigger changes roll back on interruption.
+    # Occurrences newly completed below retain ordinary version/timestamp updates.
     op.execute("ALTER TABLE inbox_entries DISABLE TRIGGER USER")
     op.execute("ALTER TABLE runs DISABLE TRIGGER USER")
     connection = op.get_bind()
@@ -161,6 +163,29 @@ CREATE OR REPLACE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE 
         """),
             {"ids": ids},
         )
+        # Before reusable targets exist, the old rule treats the first final Run in the
+        # occurrence Thread as completion, even when its trigger Entry never started a Run.
+        # Record that fact once rather than assigning false trigger provenance to manual Runs.
+        connection.execute(
+            sa.text("""
+            WITH completed AS (
+                SELECT o.id, r.id AS run_id, r.status, r.sealed_at
+                FROM schedule_occurrences o
+                CROSS JOIN LATERAL (
+                    SELECT r.id, r.status, r.sealed_at FROM runs r
+                    WHERE r.workspace_id = o.workspace_id AND r.thread_id = o.thread_id
+                      AND r.status IN ('completed', 'failed', 'cancelled')
+                    ORDER BY r.sealed_at, r.id LIMIT 1
+                ) r
+                WHERE o.id = ANY(:ids) AND o.status = 'submitted'
+            )
+            UPDATE schedule_occurrences o
+            SET status = 'completed', completion_run_id = c.run_id, completed_at = c.sealed_at,
+                execution_outcome = CASE WHEN c.status = 'completed' THEN 'succeeded' ELSE c.status END
+            FROM completed c WHERE o.id = c.id
+        """),
+            {"ids": ids},
+        )
         after = ids[-1]
     op.execute("ALTER TABLE runs ENABLE TRIGGER USER")
     op.execute("ALTER TABLE inbox_entries ENABLE TRIGGER USER")
@@ -189,6 +214,7 @@ def downgrade() -> None:
     op.create_unique_constraint(
         op.f("uq_schedules_session_id"), "schedules", ["session_id"], postgresql_nulls_not_distinct=False
     )
+    op.drop_index("ix_schedules_session_id", table_name="schedules")
     op.drop_column("schedules", "thread_id")
     op.drop_constraint(
         op.f("fk_schedule_occurrences_workspace_id_schedules"), "schedule_occurrences", type_="foreignkey"
