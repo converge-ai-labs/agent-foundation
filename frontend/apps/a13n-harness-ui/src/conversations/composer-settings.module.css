@@ -137,7 +137,7 @@
   max-width: 100%;
 }
 .modelTrigger {
-  max-width: 160px;
+  max-width: min(360px, 100%);
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: 14px;
@@ -306,9 +306,6 @@
   line-height: 1.6;
 }
 @container composer (max-width: 480px) {
-  .modelTrigger {
-    max-width: 170px;
-  }
   /* Narrow composers keep one line: the model name only; the agent stays
      available in the settings popover the summary opens. */
   .summary > span:not([aria-hidden]):first-child,

@@ -50,9 +50,9 @@
   pointer-events: none;
 }
 .location > button {
-  max-width: 300px;
-  width: auto;
-  min-width: 150px;
+  max-width: min(480px, 100%);
+  width: max-content;
+  min-width: 0;
   height: 32px;
   padding-inline: 32px 12px;
   border: 0;
