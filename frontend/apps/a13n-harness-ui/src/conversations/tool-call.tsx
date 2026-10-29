@@ -305,9 +305,9 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           failure: tool.failure,
         }}
       />
-      {info.errorText && (
+      {(info.errorText || info.failed) && (
         <p role="status" className={styles.error}>
-          {info.errorText}
+          {info.errorText || info.phase}
         </p>
       )}
       {info.executionReceipt && (
@@ -636,7 +636,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <strong>{info.label}</strong>
+            <strong>{info.label}</strong>{" "}
             {info.summary && <span title={info.summary}>{info.summary}</span>}
           </span>
         }
@@ -795,7 +795,7 @@ export const ToolActivity = memo(function ToolActivity({
           <span className={styles.title}>
             <strong>
               {kind === "work" && single ? single.label : info.title}
-            </strong>
+            </strong>{" "}
             {target && <span title={target}>{target}</span>}
           </span>
         }

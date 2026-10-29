@@ -180,13 +180,15 @@ it("surfaces the OpenAI adapter's failed native-search status in live and saved 
     },
   ] as Schema<"TranscriptEntry">[];
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
-  render(<ToolActivity tools={saved} />);
+  const view = render(<ToolActivity tools={[tool]} />);
   const toggle = screen.getByRole("button", {
     name: /Browsed the web/,
   });
   expect(toggle.textContent).not.toContain("Failed");
   fireEvent.click(toggle);
-  expect(screen.getByText("Failed")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe("Failed");
+  view.rerender(<ToolActivity tools={saved} />);
+  expect(screen.getByRole("status").textContent).toBe("Failed");
   expect(describeTool({ ...tool, provider: undefined }).failed).toBe(false);
 });
 
@@ -234,9 +236,11 @@ it("groups web operations and preserves message and tool category boundaries in 
   expect(
     screen.getByRole("button", { name: "Browsed the web · 2 actions" }),
   ).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Ran 1 command" })).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "File changes · 1 file" }),
+    screen.getByRole("button", { name: "Ran 1 command check" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "File changes · 1 file /work/a" }),
   ).toBeTruthy();
   expect(document.querySelectorAll("[data-activity]")).toHaveLength(3);
 });

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GuestAccessContext, TransportContext } from "../transport/context";
@@ -201,7 +202,8 @@ it("keeps one live App frame outside execution details when the original becomes
     />,
     { wrapper },
   );
-  const frame = await screen.findByTitle("counter");
+  const app = screen.getByRole("region", { name: "MCP App: counter" });
+  const frame = await within(app).findByTitle("counter");
   expect(frame.closest('[aria-label="Work log"]')).toBeNull();
   view.rerender(
     <ConversationTranscript
@@ -238,7 +240,13 @@ it("keeps one live App frame outside execution details when the original becomes
       ]}
     />,
   );
-  await waitFor(() => expect(screen.getByTitle("counter")).toBe(frame));
+  await waitFor(() =>
+    expect(
+      within(
+        screen.getByRole("region", { name: "MCP App: counter" }),
+      ).getByTitle("counter"),
+    ).toBe(frame),
+  );
   expect(
     screen.getAllByRole("region", { name: "MCP App: counter" }),
   ).toHaveLength(1);
