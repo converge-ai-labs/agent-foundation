@@ -69,6 +69,10 @@ class ContextRecoveryCapability(AbstractCapability[AgentContext]):
             self._request = request_context
         return request_context
 
+    def record_primary_progress(self) -> None:
+        """Allow normal compaction again after an accepted primary response."""
+        self._compaction_attempted = False
+
     async def recover_overflow(self, ctx: RunContext[AgentContext]) -> None:
         """Prepare replacement before native collaborators leave the failed attempt."""
         if not self.policy.enabled or self._request is None or ctx.deps._compacting:

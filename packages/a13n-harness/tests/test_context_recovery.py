@@ -473,3 +473,138 @@ async def test_cancellation_during_preservation_propagates(monkeypatch) -> None:
             .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
             .run("task")
         )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("proactive", [False, True])
+@pytest.mark.parametrize("summary_overflows", [False, True])
+async def test_primary_progress_allows_compaction_for_a_later_overflow(proactive, summary_overflows) -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.function import DeltaToolCall
+
+    calls = 0
+    executions = 0
+
+    async def work() -> str:
+        nonlocal executions
+        executions += 1
+        return "completed work"
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls in (1, 4) or (calls == 5 and summary_overflows):
+            raise ModelContextWindowExceededError("test", "too large")
+        if calls in (2, 5):
+            yield "Semantic summary of unfinished work"
+        elif calls == 3:
+            yield {0: DeltaToolCall(name="work", json_args="{}", tool_call_id="work-once")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=[Capability(id="work", tools=[work]), *([CompactionCapability()] if proactive else [])],
+        context_recovery=ContextRecoveryPolicy(preserve_history=False),
+    )
+    result = await executable.run("task")
+    assert result.output_or_raise() == "done"
+    assert calls == 6
+    assert executions == 1
+    marker = result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
+    assert (marker is not None) is summary_overflows
+    if marker is not None:
+        assert marker.data["outcome"] == "resumed"
+
+
+@pytest.mark.anyio
+async def test_successful_summary_does_not_reset_compaction_without_primary_progress() -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            yield "Semantic summary"
+        else:
+            raise ModelContextWindowExceededError("test", "too large")
+
+    result = (
+        await HarnessBuilder()
+        .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
+        .run("task")
+    )
+    assert result.status == "failed"
+    assert calls == 3
+    assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "ending", ["value-error", "http-error", "usage-limit", "retry-exhausted", "resumed", "overflow"]
+)
+async def test_reconstruction_records_terminal_outcome_after_transient_retries(ending) -> None:
+    from a13n_harness import HarnessEvent, HarnessExtensionEvent, ModelRecoveryPolicy
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from pydantic_ai.exceptions import ModelHTTPError
+    from pydantic_ai.usage import UsageLimits
+
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls <= 2 or ending == "overflow":
+            raise ModelContextWindowExceededError("test", "too large")
+        if ending == "value-error":
+            raise ValueError("terminal failure")
+        if ending == "http-error":
+            raise ModelHTTPError(400, "test", "terminal failure")
+        if ending in {"retry-exhausted", "usage-limit"} or (ending == "resumed" and calls == 3):
+            raise ModelHTTPError(503, "test", "temporary failure")
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        context_recovery=ContextRecoveryPolicy(preserve_history=False),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    bindings = RunBindings.embedded(context_recovery_scope_id="host-run")
+    async with executable.stream(
+        "task", bindings=bindings, usage_limits=UsageLimits(request_limit=3 if ending == "usage-limit" else 10)
+    ) as run:
+        events = [event async for event in run]
+        result = run.result
+    assert result is not None
+    expected = "resumed" if ending == "resumed" else "overflow" if ending == "overflow" else "failed"
+    assert result.status == ("completed" if ending == "resumed" else "failed")
+    marker = result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
+    assert marker is not None
+    assert marker.data["pending"] is False
+    assert marker.data["outcome"] == expected
+    outcomes = [
+        event.event.payload["outcome"]
+        for event in events
+        if isinstance(event, HarnessEvent)
+        and isinstance(event.event, HarnessExtensionEvent)
+        and event.event.kind == "recovery"
+        and isinstance(event.event.payload, dict)
+        and "outcome" in event.event.payload
+    ]
+    assert outcomes == ["prepared", expected]
+    assert calls == (4 if ending in {"retry-exhausted", "resumed"} else 3)
+
+    # A terminal failure must not refund the logical Host Run's reconstruction allowance.
+    calls = 0
+    second = await executable.run("continue", previous_state=result.state, bindings=bindings)
+    assert second.failure is not None and second.failure.code == "context_recovery_exhausted"
+    assert calls == 1

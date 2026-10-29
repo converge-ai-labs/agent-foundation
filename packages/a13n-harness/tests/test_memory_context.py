@@ -1031,3 +1031,27 @@ async def test_default_context_recovery_resets_memory_projection() -> None:
     assert cursors.snapshot() == {"user": None}
     await executable.run("again", previous_state=result.state)
     assert 'kind="full"' in _blocks(model.calls[-1])[-1]
+
+
+async def test_default_overflow_compaction_success_drops_stale_memory_projection() -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    def reply(messages):
+        if len(model.calls) == 1:
+            raise ModelContextWindowExceededError("test", "too large")
+        if len(model.calls) == 2:
+            return "Semantic summary of unfinished work"
+        return "done"
+
+    model = _Model(reply)
+    store = FakeFileStore({"a.md": "a\n"})
+    executable = _build(model, FileMemoryCapability([FileMount("user", store, "write")], cursors=MemoryCursors()))
+    result = await executable.run("hi")
+    assert result.output_or_raise() == "done"
+    assert len(model.calls) == 3
+    assert _blocks(model.calls[0])
+    assert not _blocks(model.calls[-1])
+    assert not _blocks(result.state.message_history)
+    assert "Semantic summary of unfinished work" in str(model.calls[-1])
+    assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is None

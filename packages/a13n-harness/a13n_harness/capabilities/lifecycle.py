@@ -122,7 +122,15 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
             # A retry node, partial stream, or auxiliary Agent response is not
             # accepted progress in the primary execution being recovered.
             if primary_request and isinstance(result, CallToolsNode) and result.model_response.state == "complete":
+                from a13n_harness.capabilities.context_recovery import (
+                    CONTEXT_RECOVERY_CAPABILITY_ID,
+                    ContextRecoveryCapability,
+                )
+
                 recovery.consecutive_failures = 0
+                context_recovery = ctx.capabilities.get(CONTEXT_RECOVERY_CAPABILITY_ID)
+                if isinstance(context_recovery, ContextRecoveryCapability):
+                    context_recovery.record_primary_progress()
                 if recovery.context_recovery_pending:
                     from a13n_harness._context_recovery import record_outcome
 

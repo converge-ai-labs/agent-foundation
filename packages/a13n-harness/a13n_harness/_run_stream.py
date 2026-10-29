@@ -1485,6 +1485,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 exchange.context.context_recovery_scope_id or self.run_id
                             ):
                                 await record_outcome(exchange.context, "overflow")
+                                recovery.context_recovery_pending = False
                                 yield await self._failed_candidate(
                                     code="context_recovery_exhausted",
                                     message="The model still exceeded its context window after context recovery. Immediate investigation is required.",
@@ -1661,6 +1662,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         details: dict[str, JsonValue] | None = None,
         retry_hint: RetryHint = "dependency_change",
     ) -> HarnessRunResult[OutputT]:
+        if self.context._model_recovery.context_recovery_pending:
+            await record_outcome(self.context, "failed")
+            self.context._model_recovery.context_recovery_pending = False
         state = await self.context.export_state(self._latest_messages)
         return self._record_inner_candidate(
             HarnessRunResult(
