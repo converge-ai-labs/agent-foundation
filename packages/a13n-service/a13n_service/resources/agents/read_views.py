@@ -18,6 +18,7 @@ type ConfigSection = Literal[
     "model",
     "model_settings",
     "model_characteristics",
+    "summarize",
     "instructions",
     "toolsets",
     "skills",

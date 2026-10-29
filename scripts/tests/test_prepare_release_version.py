@@ -41,9 +41,13 @@ def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> 
     import tomllib
 
     project = tomllib.loads((REPOSITORY_ROOT / manifest).read_text())["project"]
-    requirements = [requirement for requirement in project["dependencies"] if requirement.startswith("pydantic-ai")]
+    requirements = [
+        requirement
+        for requirement in project["dependencies"]
+        if re.match(r"pydantic-ai(?:-slim)?(?:\[|[<>=!~;\s]|$)", requirement)
+    ]
     assert len(requirements) == 1
-    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.61\.\*", requirements[0])
+    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.63\.\*", requirements[0])
 
 
 def copy_release_files(destination: Path) -> None:
@@ -543,8 +547,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", "==0.22.3"),
-        ("a13n-harness-ui", "0.21.0", "==0.22.3"),
+        ("a13n-service", "0.1.0", "==0.23.0"),
+        ("a13n-harness-ui", "0.21.0", "==0.23.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

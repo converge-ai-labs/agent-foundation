@@ -245,14 +245,14 @@ Agent links shaped as `/threads/{root_thread_id}?native=files&native_path={URL-e
 
 Native terminals require a POSIX Host and computer sharing. Windows reports PTY unavailable; Files and Git remain independently usable.
 
-1. Open a Project with a configured root. In **Terminal**, choose **New terminal**, or use **Files → Open terminal here** for a folder.
+1. Open a Project with a configured root. Use **+ → Terminal** to open the Terminal tab, then choose **New terminal**, or use **Files → Open terminal here** for a folder.
 2. Wait for the creator's control request to be confirmed before typing. Other viewers use **Take control** or **Take over input**.
 3. Use **Release control** to let others type while keeping the shell running. Only the controller resizes it.
 4. Choose **End session** and confirm when you intend to stop the shared shell and its jobs for everyone.
 
-Opening the panel alone starts no shell. New terminal creates a session rather than inserting `cd` into another one. The displayed initial directory does not track later shell `cd`. Project switching hides/detaches old views without stopping sessions; unassociated sessions remain available through the native API.
+Terminal shares the resource-tab strip with Files, Changes, and Browser. It appears beside Chat in Side by side layout and fills the content area in Tabs layout. Opening its tab alone starts no shell. New terminal creates a session rather than inserting `cd` into another one. The displayed initial directory does not track later shell `cd`. Project switching hides/detaches old views without stopping sessions; unassociated sessions remain available through the native API.
 
-**Disconnect**, panel collapse, Settings, and page closure detach without ending the process. Reopen read-only; after explicit Disconnect, use **Reconnect**. Reconnection repeats no keystrokes. Input is UTF-8 with a 16 KiB paste limit; legacy binary mouse reports are unsupported.
+**Disconnect**, switching away, closing the Terminal tab, panel collapse, Settings, and page closure detach without ending the process. Reopen read-only; after explicit Disconnect, use **Reconnect**. Reconnection repeats no keystrokes. Input is UTF-8 with a 16 KiB paste limit; legacy binary mouse reports are unsupported.
 
 Output retains up to 1 MiB of server bytes and 2,000 local lines, with gaps disclosed. Slow rendering pauses the connection. Use Ctrl/Cmd+F for **Find in output**, **Copy selection**, or **Add selection to message** for an attributed excerpt. The latter only adds to the draft; **Return to conversation** focuses it. HTTP links open separately, and unambiguous absolute `path:line` links open Host files.
 

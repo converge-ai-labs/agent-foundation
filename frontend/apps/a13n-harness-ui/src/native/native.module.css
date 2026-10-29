@@ -41,13 +41,6 @@
   gap: 4px;
   flex-shrink: 0;
 }
-/* Phones keep the title readable: Files, Changes and Terminal fold into one
-   "More views" menu below 640px. */
-.panelTools .viewsMenu {
-  display: inline-flex;
-  gap: 8px;
-  color: var(--a13n-secondary);
-}
 .workspaceHeading {
   flex: 1;
   min-width: 0;
@@ -83,26 +76,28 @@
   .projectBreadcrumb {
     display: none;
   }
-  .viewsMenu > span {
-    display: none;
-  }
-}
-@media (max-width: 639px) {
-  .panelTools .viewsMenu {
-    display: inline-flex;
-  }
-  .panelTools .viewButton {
-    display: none;
-  }
 }
 .layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   flex: 1;
   overflow: hidden;
 }
+.splitLayout {
+  grid-template-columns: minmax(0, 1fr) 5px var(--panel-width, 44%);
+}
+.layout[data-resizing],
+.layout[data-resizing] * {
+  cursor: ew-resize;
+  user-select: none;
+}
 .center {
+  view-transition-name: harness-chat;
+  grid-column: 1;
+  grid-row: 2;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -152,7 +147,9 @@
    controls sit 4px in so their ghost padding lands on the same line, and
    the editor page trades 6px of padding for its stable scrollbar gutter. */
 .pane {
-  flex: 0 0 var(--panel-width, 44%);
+  view-transition-name: harness-panel;
+  grid-column: 1;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -168,8 +165,63 @@
 .paneBody[hidden] {
   display: none;
 }
+.splitLayout .center {
+  grid-row: 1 / -1;
+}
+.splitLayout .pane {
+  grid-column: 3;
+}
+/* The picker uses the same supporting surface as files and browser views. */
+.newTabPage {
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px;
+}
+.newTabChoices {
+  width: min(100%, 340px);
+}
+.newTabChoices h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.newTabChoices > p {
+  margin: 0 0 24px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.newTabChoices > button {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 64px;
+  gap: 12px;
+  padding: 12px;
+  text-align: left;
+}
+.newTabChoices > button > svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.newTabChoices > button > svg:last-child {
+  width: 16px;
+  margin-left: auto;
+}
+.newTabChoices strong,
+.newTabChoices small {
+  display: block;
+}
+.newTabChoices small {
+  margin-top: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
 .resizeHandle {
-  flex: 0 0 5px;
+  grid-column: 2;
+  grid-row: 1 / -1;
   cursor: col-resize;
   touch-action: none;
   background: transparent;
@@ -178,13 +230,89 @@
 .resizeHandle:focus-visible {
   background: var(--a13n-border);
 }
-@media (max-width: 999px) {
-  .resizeHandle {
-    display: none;
-  }
+.workspaceTabs {
+  view-transition-name: harness-panel-tabs;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 20px 8px;
+  flex-shrink: 0;
 }
-.expandedPane {
-  flex-basis: 70%;
+.splitLayout .workspaceTabs {
+  grid-column: 3;
+  padding-inline: 12px;
+  border-left: 1px solid var(--a13n-border);
+}
+.workspaceTab {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  max-width: 240px;
+  border-radius: 6px;
+}
+.workspaceTab[data-active] {
+  background: var(--a13n-selected);
+}
+.workspaceTab > [role="tab"] {
+  min-width: 0;
+  max-width: 210px;
+  background: transparent;
+}
+.workspaceTab > [role="tab"] > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspaceTab > [role="tab"] > svg {
+  flex-shrink: 0;
+}
+.workspaceTab > button:last-child:not([role="tab"]) {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+}
+.workspaceTab > button:last-child:not([role="tab"]) > svg {
+  width: 12px;
+  height: 12px;
+}
+.workspaceTabs > .panelTools {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--tabs-fade-left, 0px),
+    #000 calc(100% - var(--tabs-fade-right, 0px)),
+    transparent
+  );
+}
+.workspaceTabs > .panelTools::-webkit-scrollbar {
+  display: none;
+}
+.workspaceTabs > [data-overflow-left] {
+  --tabs-fade-left: 24px;
+}
+.workspaceTabs > [data-overflow-right] {
+  --tabs-fade-right: 24px;
+}
+.workspaceTools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.center[hidden],
+.pane[hidden],
+.workspaceTabs[hidden] {
+  display: none;
+}
+.tabLayout .pane {
+  border-left: 0;
 }
 .pane > .paneHeader {
   padding: 4px 4px;
@@ -208,8 +336,8 @@
 .pane .editorPage {
   padding: 12px 8px 12px 12px;
 }
-.terminalDock {
-  display: contents;
+.terminalPane {
+  overflow: hidden;
 }
 .paneHeader {
   display: flex;
@@ -666,18 +794,6 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 999px) {
-  .expandPane {
-    display: none;
-  }
-  .withPane .center {
-    display: none;
-  }
-  .pane {
-    flex: 1;
-    border-left: 0;
-  }
-}
 @media (max-width: 760px), (pointer: coarse) {
   .shortcuts {
     display: none;
@@ -695,6 +811,9 @@
   .page.chatPage {
     padding: 12px;
   }
+  .workspaceTabs {
+    padding-inline: 8px;
+  }
 }
 
 .location > summary {
@@ -710,32 +829,6 @@
   display: grid;
   gap: 12px;
   padding: 8px 0 12px;
-}
-
-.fileTabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  flex-shrink: 0;
-  padding: 4px;
-  border-bottom: 1px solid var(--a13n-border);
-  scrollbar-width: none;
-}
-.fileTabs::-webkit-scrollbar {
-  display: none;
-}
-.fileTabs > span {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-@media (max-width: 700px) {
-  .withTerminal .layout {
-    display: none;
-  }
-  .withTerminal .fileTabs {
-    display: none;
-  }
 }
 
 .diffSummary {
@@ -816,4 +909,66 @@
 }
 .linkField > button {
   flex-shrink: 0;
+}
+
+:global(::view-transition-group(harness-chat)),
+:global(::view-transition-group(harness-panel)),
+:global(::view-transition-group(harness-panel-tabs)),
+:global(::view-transition-old(harness-chat)),
+:global(::view-transition-new(harness-chat)),
+:global(::view-transition-old(harness-panel)),
+:global(::view-transition-new(harness-panel)),
+:global(::view-transition-old(harness-panel-tabs)),
+:global(::view-transition-new(harness-panel-tabs)) {
+  animation-duration: 180ms;
+  animation-timing-function: ease;
+}
+
+:global(::view-transition-old(harness-chat)),
+:global(::view-transition-new(harness-chat)),
+:global(::view-transition-old(harness-panel)),
+:global(::view-transition-new(harness-panel)),
+:global(::view-transition-old(harness-panel-tabs)),
+:global(::view-transition-new(harness-panel-tabs)) {
+  height: 100%;
+  object-fit: none;
+  object-position: top left;
+}
+
+:global(
+  :root:active-view-transition-type(panel-close)::view-transition-old(
+      harness-panel
+    )
+),
+:global(
+  :root:active-view-transition-type(panel-close)::view-transition-old(
+      harness-panel-tabs
+    )
+) {
+  animation-name: panel-slide-right;
+  animation-fill-mode: both;
+}
+
+:global(
+  :root:active-view-transition-type(panel-open)::view-transition-new(
+      harness-panel
+    )
+),
+:global(
+  :root:active-view-transition-type(panel-open)::view-transition-new(
+      harness-panel-tabs
+    )
+) {
+  animation-name: panel-slide-right;
+  animation-direction: reverse;
+  animation-fill-mode: both;
+}
+
+@keyframes panel-slide-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }

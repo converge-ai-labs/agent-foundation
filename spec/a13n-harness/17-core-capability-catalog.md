@@ -37,6 +37,8 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 
 ## Optional Capability Roles
 
+`DetectLoops` is the upstream opt-in repeated-action detector, supported through both native code-first composition and declarative configuration. [Native loop detection](04-capability-model.md#opt-in-native-loop-detection) owns its attempt scope and failure behavior.
+
 `BrowserUseCapability` contributes Chromium browser tools over a Host-authorized `RunBindings.browser_backend` or trusted embedded backend. The core owns scoped tabs and fresh references; Hosts own browser processes, profiles, and viewer access. [Browser Use](23-browser-use.md) owns binding, lifecycle, concurrency, and recovery.
 
 `ToolPermissionsCapability` selects stable-ID rules before custom validation for all locally executable tools. The same Capability owns optional model-backed or code-first risk review at that gate, with shell-specific input rendering but no separate review Capability. It does not grant Host authority. [Tool permissions and review](07-tool-execution.md#tool-permissions-and-review) owns modes, identity, ordering, and approval provenance.

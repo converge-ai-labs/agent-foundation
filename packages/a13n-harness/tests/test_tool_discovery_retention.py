@@ -119,10 +119,11 @@ async def test_native_discovery_retains_lru_and_immediate_codeact_directory(monk
         if index == len(calls) - 1:
             replaced = True
             assert sum(isinstance(part, ToolSearchReturnPart) for msg in messages for part in msg.parts) == 1
+            assert info.instructions.count("async def double") == 1
+            assert "async def triple" not in info.instructions
             for tool in info.function_tools:
                 if tool.name in {"run_code", "run_program"}:
-                    assert "async def double" in tool.description
-                    assert "async def triple" not in tool.description
+                    assert "async def double" not in tool.description
             assert not any(
                 isinstance(part, ToolReturnPart) and part.tool_name == "run_code"
                 for msg in messages
@@ -257,14 +258,13 @@ async def test_search_without_target_calls_retains_nothing(monkeypatch, proxy):
     _, snapshots = await _run_calls(capabilities, [search, ("summarize", {"content": "Continue"})])
     messages, info = snapshots[-1]
     assert not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
-    for tool in info.function_tools:
-        if tool.name in {"run_code", "run_program"}:
-            assert "async def double" not in tool.description
-            assert "async def triple" not in tool.description
+    assert "async def double" not in info.instructions
+    assert "async def triple" not in info.instructions
     assert not info.model_request_parameters.revealed_tool_names
 
 
-async def test_byte_budget_counts_native_schema_and_both_codeact_directories(monkeypatch):
+@pytest.mark.parametrize("budget, codeact_retained", [(10_000, False), (12_000, True)])
+async def test_byte_budget_counts_native_schema_and_one_shared_codeact_catalog(monkeypatch, budget, codeact_retained):
     def large(value: int) -> int:
         return value
 
@@ -276,8 +276,8 @@ async def test_byte_budget_counts_native_schema_and_both_codeact_directories(mon
             )
         ]
     )
-    monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", 10_000)
-    for codeact, retained in [(False, True), (True, False)]:
+    monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", budget)
+    for codeact, retained in [(False, True), (True, codeact_retained)]:
         capabilities = (
             source,
             ToolSearch(strategy="keywords"),
@@ -390,9 +390,7 @@ async def test_loaded_capability_is_not_retained_or_advertised_by_codeact():
             ("summarize", {"content": "Continue"}),
         ],
     )
-    for tool in snapshots[-1][1].function_tools:
-        if tool.name in {"run_code", "run_program"}:
-            assert "async def lookup" not in tool.description
+    assert "async def lookup" not in snapshots[-1][1].instructions
     assert not snapshots[-1][1].model_request_parameters.revealed_tool_names
 
 

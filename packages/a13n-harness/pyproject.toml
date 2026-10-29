@@ -26,7 +26,7 @@ dependencies = [
     "jsonschema>=4.25,<5",
     "opentelemetry-api>=1.39,<2",
     "pydantic>=2.12,<3",
-    "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,typesafe,xai,xai-realtime]==2.61.*",
+    "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,typesafe,xai,xai-realtime]==2.63.*",
     "pydantic-core>=2.41,<3",
     "pydantic-monty>=1.4.0,<2",
     "pyjwt[crypto]>=2.10,<3",
@@ -35,6 +35,7 @@ dependencies = [
     "tenacity>=9,<10",
     "typing-extensions>=4.15,<5",
     "typesafe-sdk>=0.7.1,<1",
+    "pydantic-ai-harness==0.63.*",
 ]
 
 [project.optional-dependencies]

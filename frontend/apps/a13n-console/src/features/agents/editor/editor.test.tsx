@@ -267,3 +267,44 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
   expect(inspection.getByText("Off")).toBeTruthy();
   expect(inspection.getByText("92.5")).toBeTruthy();
 });
+
+it("saves the summarize tool selection and shows it in read-only inspection", () => {
+  http.GET.mockResolvedValue({
+    data: { items: [], next_cursor: null },
+    response: new Response(null, { status: 200 }),
+  });
+  const submit = vi.fn();
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  const editor = (readonly = false) => (
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <AgentEditor
+          readonly={readonly}
+          id="summary-form"
+          initial={{ model: "test", summarize: true }}
+          pending={false}
+          error={undefined}
+          submit={submit}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(editor());
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  const toggle = screen.getByRole("switch", { name: "Summarize tool" });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(toggle);
+  fireEvent.submit(document.getElementById("summary-form")!);
+  expect(submit.mock.lastCall?.[0].summarize).toBe(false);
+  fireEvent.click(toggle);
+  fireEvent.submit(document.getElementById("summary-form")!);
+  expect(submit.mock.lastCall?.[0].summarize).toBe(true);
+  rerender(editor(true));
+  const inspection = within(
+    screen.getByRole("region", { name: "Context summary" }),
+  );
+  expect(inspection.queryByRole("switch")).toBeNull();
+  expect(inspection.getByText("On")).toBeTruthy();
+});

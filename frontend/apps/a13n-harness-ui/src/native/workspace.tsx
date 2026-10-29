@@ -1,6 +1,7 @@
 import { ViewLink } from "./view-link";
 import {
   useContext,
+  useId,
   useEffect,
   useRef,
   useState,
@@ -8,12 +9,22 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
+import { flushSync } from "react-dom";
 import { matchPath, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+  useMediaQuery,
+} from "a13n-ui";
 import {
   DotsThree,
   Folder,
+  FileText,
+  Plus,
   Globe,
   GitDiff,
   X,
@@ -22,12 +33,11 @@ import {
   ArrowLeft,
   ArrowUp,
   CaretRight,
-  ArrowsOutSimple,
-  ArrowsInSimple,
   SidebarSimple,
   PencilSimple,
   SlidersHorizontal,
   ShareNetwork,
+  ChatCircle,
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
@@ -45,11 +55,18 @@ import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
-import { TerminalAction } from "./terminal-action";
-import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
+import { terminalShortcut } from "./terminal-shortcuts";
 import { BrowserPanel } from "../browser/panel";
 import { BrowserActivity } from "../browser/activity";
 import { usePanelSize } from "./panel-size";
+import { panelResize } from "./panel-resize";
+import {
+  emptyTabs,
+  workspaceTabs,
+  type WorkspaceTabs,
+  type WorkspaceTab,
+  type TabContent,
+} from "./workspace-tabs";
 import { ReturnToChat } from "./capture";
 import { useThread } from "../conversations/queries";
 import { ComposerDrafts } from "../conversations/composer";
@@ -58,6 +75,7 @@ import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
 import { DebugOnly } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
+import { readPreference, writePreference } from "../shell/preferences";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "New chat",
@@ -107,7 +125,7 @@ export function NativeWorkspace({
     location.pathname === "/memory" || !!thread.data?.thread.memory_scope;
   const isWorkspace =
     !memoryMode && (location.pathname === "/" || !!threadId || isNew);
-  const projectLoading = !!threadId && (thread.isPending || projects.isPending);
+  const projectLoading = projects.isPending || (!!threadId && thread.isPending);
   const resolvedProject = projects.data?.find(
     (item) =>
       item.project_id ===
@@ -129,18 +147,86 @@ export function NativeWorkspace({
   if (isWorkspace && !projectLoading) retainedRoots.current = selectedRoots;
   const localRoots = isWorkspace ? selectedRoots : retainedRoots.current;
   const projectRoot = localRoots[0] ?? "";
-  const [expanded, setExpanded] = useState(false);
-  const [width, setWidth] = usePanelSize("a13n.native.width", 44, 28, 70);
+  const hasSupportingViews = !!(
+    status.data?.features?.host_files ||
+    status.data?.features?.host_git ||
+    status.data?.features?.browser ||
+    status.data?.features?.host_terminal
+  );
+  const [tabLayout, setTabLayout] = useState(
+    () => readPreference("native-layout", "sidebar") === "tabs",
+  );
+  const [nativeActive, setNativeActive] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => readPreference("native-panel", "open") === "closed",
+  );
+  const narrow = useMediaQuery("(max-width: 999px)");
+  const [narrowSidebar, setNarrowSidebar] = useState(false);
+  const singleView =
+    hasSupportingViews &&
+    !sidebarCollapsed &&
+    (tabLayout || (narrow && !narrowSidebar));
+  const supportingExpanded =
+    hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);
+  const layoutTransition = useRef<ViewTransition | null>(null);
+  const layoutRevision = useRef(0);
+  const animateLayout = (
+    change: () => void,
+    motion?: "panel-close" | "panel-open",
+  ) => {
+    const revision = ++layoutRevision.current;
+    layoutTransition.current?.skipTransition();
+    if (
+      !document.startViewTransition ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      change();
+      return;
+    }
+    const transition = document.startViewTransition(() => {
+      if (layoutRevision.current === revision) flushSync(change);
+    });
+    if (motion) transition.types?.add(motion);
+    layoutTransition.current = transition;
+    // Skipping snapshots does not cancel an older transition's update callback.
+    void transition.ready.catch(() => {});
+  };
+  const toggleSupportingPanel = () => {
+    animateLayout(
+      () => {
+        setTabLayout(false);
+        setNarrowSidebar(narrow);
+        setSidebarCollapsed(supportingExpanded);
+        if (supportingExpanded) focusCenter();
+        else {
+          applyTab(activeTab);
+          setNativeActive(true);
+          requestAnimationFrame(() => paneElement.current?.focus());
+        }
+      },
+      supportingExpanded ? "panel-close" : "panel-open",
+    );
+  };
+  const workspaceId = useId();
+  useEffect(() => {
+    writePreference("native-layout", tabLayout ? "tabs" : "sidebar");
+  }, [tabLayout]);
+  useEffect(() => {
+    writePreference("native-panel", sidebarCollapsed ? "closed" : "open");
+  }, [sidebarCollapsed]);
+  const [width, setWidth] = usePanelSize("a13n.native.width", 44, 0, 100);
   const resizeStart = useRef<{
+    pointerId: number;
     x: number;
     width: number;
     available: number;
+    kind: ReturnType<typeof panelResize>["kind"];
   } | null>(null);
+  const [resizing, setResizing] = useState(false);
   const [, renderBuffers] = useReducer((n: number) => n + 1, 0);
   const [fileLine, setFileLine] = useState<number>();
   const [terminalRequest, setTerminalRequest] = useState<TerminalRequest>();
   const [view, setView] = useState<"page" | "file" | "diff">("page");
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [focusedArea, setFocusedArea] = useState<
     "page" | "native" | "explorer" | "terminal"
   >("page");
@@ -151,16 +237,72 @@ export function NativeWorkspace({
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
-  const [pane, setPane] = useState<"files" | "changes" | "browser" | null>(
-    null,
-  );
+  const [pane, setPane] = useState<
+    "files" | "changes" | "browser" | "terminal" | null
+  >(null);
+  const tabSequence = useRef(0);
+  const nextTabId = () => `view-${++tabSequence.current}`;
+  const [tabs, dispatchTabs] = useReducer(workspaceTabs, emptyTabs("new-0"));
+  const activeTab = tabs.items.find((tab) => tab.id === tabs.active)!;
+  const terminalVisible =
+    isWorkspace &&
+    pane === "terminal" &&
+    !sidebarCollapsed &&
+    (!singleView || nativeActive) &&
+    !projectLoading;
+  const viewTabsElement = useRef<HTMLDivElement>(null);
+  const [tabsOverflow, setTabsOverflow] = useState({
+    left: false,
+    right: false,
+  });
+  useEffect(() => {
+    const element = viewTabsElement.current;
+    if (!element) return;
+    const measure = () => {
+      const left = element.scrollLeft > 1;
+      const right =
+        element.scrollWidth - element.clientWidth - element.scrollLeft > 1;
+      setTabsOverflow((previous) =>
+        previous.left === left && previous.right === right
+          ? previous
+          : { left, right },
+      );
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(measure);
+    observer?.observe(element);
+    for (const child of element.children) observer?.observe(child);
+    element.addEventListener("scroll", measure, { passive: true });
+    measure();
+    return () => {
+      observer?.disconnect();
+      element.removeEventListener("scroll", measure);
+    };
+  }, [
+    isWorkspace,
+    singleView,
+    sidebarCollapsed,
+    status.data?.features?.host_files,
+    status.data?.features?.host_git,
+    status.data?.features?.browser,
+    status.data?.features?.host_terminal,
+    tabs.items,
+  ]);
+  useEffect(() => {
+    viewTabsElement.current
+      ?.querySelector<HTMLElement>(
+        '[aria-selected="true"], [aria-pressed="true"]',
+      )
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [nativeActive, tabs.active, singleView, narrow]);
   const [directory, setDirectory] = useState("");
   const [root, setRoot] = useState("");
   const [path, setPath] = useState("");
-  const [fileTabs, setFileTabs] = useState<string[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [opening, setOpening] = useState(false);
-  const [selected, select] = useState<DiffSelection | null>(null);
+  const [selected, setSelected] = useState<DiffSelection | null>(null);
   const [diffChoices, setDiffChoices] = useState<DiffSelection[]>([]);
   const projectViews = useRef(
     new Map<
@@ -169,14 +311,13 @@ export function NativeWorkspace({
         root: string;
         directory: string;
         path: string;
-        tabs: string[];
-        selected: DiffSelection | null;
+        tabs: WorkspaceTabs;
         terminalId: string;
       }
     >(),
   );
   const openingRequest = useRef<AbortController | null>(null);
-  const appliedProject = useRef<string | null>(null);
+  const [appliedProject, setAppliedProject] = useState<string | null>(null);
   const fileRoot =
     localRoots.includes(root) && withinRoot(directory, root)
       ? root
@@ -205,41 +346,133 @@ export function NativeWorkspace({
   useEffect(() => {
     if (projectLoading) return;
     const context = `${projectId ?? ""}:${projectRoot}`;
-    if (appliedProject.current === context) return;
-    if (appliedProject.current) {
-      projectViews.current.set(appliedProject.current, {
+    if (appliedProject === context) return;
+    if (appliedProject) {
+      projectViews.current.set(appliedProject, {
         root,
         directory,
         path,
-        tabs: fileTabs,
-        selected,
+        tabs,
         terminalId,
       });
       if (projectViews.current.size > 16)
         projectViews.current.delete(projectViews.current.keys().next().value!);
     }
     const saved = projectViews.current.get(context);
-    appliedProject.current = context;
+    setAppliedProject(context);
     openingRequest.current?.abort();
     setOpening(false);
     setError(null);
     setRoot(saved?.root ?? projectRoot);
     setDirectory(saved?.directory ?? projectRoot);
     setPath(saved?.path ?? "");
-    setFileTabs(saved?.tabs ?? []);
-    select(saved?.selected ?? null);
-    setDiffChoices([]);
+    const restored = saved?.tabs ?? emptyTabs(nextTabId());
+    dispatchTabs({ type: "restore", state: restored });
+    applyTab(restored.items.find((tab) => tab.id === restored.active)!);
     setFileLine(undefined);
     setTerminalRequest(undefined);
-    setView("page");
     setTerminalId(saved?.terminalId ?? "");
   }, [projectId, projectRoot, projectLoading]);
   useEffect(() => {
     setOpening(false);
     return () => openingRequest.current?.abort();
   }, [location.pathname, location.search]);
+  const applyTab = (tab: TabContent) => {
+    cancelOpening();
+    setError(null);
+    setFileLine(undefined);
+    if (tab.kind === "new") {
+      setPane(null);
+      setSelected(null);
+      setDiffChoices([]);
+      setView("page");
+      setFocusedArea("explorer");
+    } else if (tab.kind === "terminal") {
+      setPane("terminal");
+      setTerminalOpened(true);
+      setView("page");
+      setFocusedArea("terminal");
+    } else if (tab.kind === "browser") {
+      setPane("browser");
+      setView("page");
+      setFocusedArea("native");
+    } else if (tab.kind === "changes") {
+      setPane("changes");
+      setRoot(tab.root);
+      setDirectory(tab.root);
+      setSelected(tab.selection);
+      setDiffChoices(tab.choices);
+      setView(tab.selection ? "diff" : "page");
+      setFocusedArea(tab.selection ? "native" : "explorer");
+    } else {
+      setPane("files");
+      setRoot(tab.root);
+      if (tab.kind === "file") {
+        setPath(tab.path);
+        setDirectory(parentPath(tab.path));
+        setView("file");
+        setFocusedArea("native");
+      } else {
+        setDirectory(tab.directory);
+        setView("page");
+        setFocusedArea("explorer");
+      }
+    }
+  };
+  const navigateTab = (content: TabContent) => {
+    dispatchTabs({ type: "navigate", content });
+    applyTab(content);
+  };
+  const revealTab = (
+    content: TabContent,
+    replace = activeTab.kind === "new",
+  ) => {
+    dispatchTabs({
+      type: "open",
+      tab: { ...content, id: nextTabId() },
+      replace,
+    });
+    applyTab(content);
+    setNativeActive(true);
+    setSidebarCollapsed(false);
+  };
+  const activateTab = (tab: WorkspaceTab) => {
+    dispatchTabs({ type: "select", id: tab.id });
+    applyTab(tab);
+    setNativeActive(true);
+    setSidebarCollapsed(false);
+  };
+  const addTab = () => {
+    revealTab({ kind: "new" }, false);
+  };
+  const closeTab = (id: string) => {
+    const action = { type: "close" as const, id, emptyId: nextTabId() };
+    const next = workspaceTabs(tabs, action);
+    dispatchTabs(action);
+    if (tabs.active === id) {
+      applyTab(next.items.find((tab) => tab.id === next.active)!);
+      requestAnimationFrame(() => {
+        viewTabsElement.current
+          ?.querySelector<HTMLElement>('[aria-selected="true"]')
+          ?.focus();
+      });
+    }
+  };
+  const select = (selection: DiffSelection | null, choices = diffChoices) => {
+    setSelected(selection);
+    setDiffChoices(choices);
+    if (activeTab.kind === "changes")
+      dispatchTabs({
+        type: "update",
+        id: activeTab.id,
+        content: { ...activeTab, selection, choices },
+      });
+  };
   const open = async (target: string, line?: number) => {
+    setSidebarCollapsed(false);
     openingRequest.current?.abort();
+    if (!pane) setPane("files");
+    setNativeActive(true);
     const controller = new AbortController();
     openingRequest.current = controller;
     setOpening(true);
@@ -278,24 +511,15 @@ export function NativeWorkspace({
           );
       }
       if (controller.signal.aborted) return;
-      const nextDirectory = isDirectory ? target : parentPath(target);
-      setDirectory(nextDirectory);
-      if (!root) setRoot(nextDirectory);
-      if (!isDirectory) {
-        setPath(target);
-        setFileLine(line);
-        setView("file");
-        setFocusedArea("native");
-        setPane("files");
-      }
-      if (!isDirectory)
-        setFileTabs((tabs) =>
-          tabs.includes(target) ? tabs : [...tabs, target],
+      const nextRoot = root || (isDirectory ? target : parentPath(target));
+      if (isDirectory)
+        navigateTab({ kind: "files", directory: target, root: nextRoot });
+      else
+        revealTab(
+          { kind: "file", path: target, root: nextRoot },
+          activeTab.kind === "new" || activeTab.kind === "files",
         );
-      if (isDirectory) {
-        setView("page");
-        setFocusedArea("explorer");
-      }
+      setFileLine(line);
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure);
     } finally {
@@ -303,47 +527,46 @@ export function NativeWorkspace({
     }
   };
   useEffect(() => {
-    if (!isWorkspace || projectLoading) return;
+    // Project restoration must commit before a link captures its root and active tab.
+    if (
+      !isWorkspace ||
+      projectLoading ||
+      appliedProject !== `${projectId ?? ""}:${projectRoot}`
+    )
+      return;
     const link = nativeLink(location.search);
     if (link.pane && link.path && status.data?.features?.host_files) {
+      setSidebarCollapsed(false);
+      setNativeActive(true);
       setPane(link.pane);
       setFocusedArea("native");
-      if (window.matchMedia("(max-width: 999px)").matches)
-        setTerminalOpen(false);
       if (link.pane === "changes") {
-        openingRequest.current?.abort();
-        setOpening(false);
-        setError(null);
-        setDirectory(link.path);
-        setRoot(link.path);
-        if (link.diffPath && link.comparison) {
-          setView("diff");
-        } else {
-          setView("page");
-          setFocusedArea("explorer");
-        }
-        select(
-          link.diffPath && link.comparison
-            ? {
-                repository_path: link.path,
-                path: link.diffPath,
-                comparison: link.comparison,
-              }
-            : null,
-        );
+        revealTab({
+          kind: "changes",
+          root: link.path,
+          selection:
+            link.diffPath && link.comparison
+              ? {
+                  repository_path: link.path,
+                  path: link.diffPath,
+                  comparison: link.comparison,
+                }
+              : null,
+          choices: [],
+        });
       } else void open(link.path);
     }
     if (link.terminal && status.data?.features?.host_terminal) {
       setTerminalId(link.terminal);
       setFocusedArea("terminal");
-      setTerminalOpen(true);
-      setTerminalOpened(true);
+      revealTab({ kind: "terminal" });
     }
     // Navigation never creates a session, claims control or adds model input.
     // Explicit file/Changes links override defaults; terminals remain Project-scoped.
   }, [
     isWorkspace,
     projectLoading,
+    appliedProject,
     projectId,
     projectRoot,
     location.pathname,
@@ -354,11 +577,8 @@ export function NativeWorkspace({
   useEffect(() => {
     const link = nativeLink(location.search);
     if (!(link.pane && link.path) && !link.terminal) {
+      setNativeActive(false);
       setFocusedArea("page");
-      setView("page");
-      if (window.matchMedia("(max-width: 999px)").matches) setPane(null);
-      if (window.matchMedia("(max-width: 700px)").matches)
-        setTerminalOpen(false);
     }
   }, [location.pathname, location.search]);
   const nativeTarget = (): Schema<"PageTarget"> | null =>
@@ -388,7 +608,7 @@ export function NativeWorkspace({
           : focusedArea === "explorer"
             ? nativeTarget()
             : focusedArea === "terminal" &&
-                terminalOpen &&
+                terminalVisible &&
                 activeTerminalId &&
                 activeTerminalId === terminalId
               ? { kind: "terminal", terminal_id: activeTerminalId }
@@ -403,31 +623,29 @@ export function NativeWorkspace({
     directory,
     root,
     selected,
-    terminalOpen,
+    terminalVisible,
     terminalId,
     activeTerminalId,
     onFocus,
   ]);
   const focusCenter = () => {
+    openingRequest.current?.abort();
+    setOpening(false);
+    setNativeActive(false);
     setFocusedArea("page");
-    pageElement.current?.focus();
+    requestAnimationFrame(() => pageElement.current?.focus());
   };
   const openTerminal = (cwd: string) => {
     if (!projectId) return;
     setTerminalRequest({ cwd, projectId });
-    setTerminalOpened(true);
-    setTerminalOpen(true);
-    setFocusedArea("terminal");
-    if (window.matchMedia("(max-width: 999px)").matches) setPane(null);
+    revealTab({ kind: "terminal" });
   };
   const toggleTerminal = () => {
     cancelOpening();
-    setTerminalOpen(!terminalOpen);
-    if (!terminalOpen) {
-      setFocusedArea("terminal");
-      if (window.matchMedia("(max-width: 999px)").matches) setPane(null);
-    } else focusCenter();
-    setTerminalOpened(true);
+    if (terminalVisible) {
+      setSidebarCollapsed(true);
+      focusCenter();
+    } else revealTab({ kind: "terminal" });
     refresh();
   };
   useEffect(() => {
@@ -475,11 +693,11 @@ export function NativeWorkspace({
       previous.state &&
       previous.state !== "inactive" &&
       runState === "inactive" &&
-      (pane || terminalOpen)
+      (pane || terminalVisible)
     )
       refresh();
     previousRun.current = { threadId, state: runState };
-  }, [threadId, runState, pane, terminalOpen]);
+  }, [threadId, runState, pane, terminalVisible]);
   const previousArea = useRef(focusedArea);
   useEffect(() => {
     if (
@@ -494,44 +712,155 @@ export function NativeWorkspace({
     openingRequest.current?.abort();
     setOpening(false);
   };
-  const closePane = () => {
-    cancelOpening();
-    setPane(null);
-    focusCenter();
+  const show = (next: "files" | "changes" | "browser" | "terminal") => {
+    revealTab(
+      next === "files"
+        ? {
+            kind: "files",
+            directory: directory || projectRoot,
+            root: root || projectRoot,
+          }
+        : next === "changes"
+          ? {
+              kind: "changes",
+              root: root || projectRoot,
+              selection: null,
+              choices: [],
+            }
+          : { kind: next },
+    );
     refresh();
   };
-  // Phones keep the title readable: CSS swaps the secondary view buttons
-  // for one menu below 640px, so first paint never reflows.
-  const hasViews = Boolean(
-    status.data?.features?.host_files ||
-    status.data?.features?.host_git ||
-    status.data?.features?.host_terminal ||
-    status.data?.features?.browser,
+  const resizePanel = (
+    nextWidth: number,
+    available: number,
+    restoreWidth: number,
+  ) => {
+    const next = panelResize(nextWidth, available);
+    const start = resizeStart.current;
+    if (next.kind === "resize") {
+      setWidth(next.width);
+      if (!start || start.kind === "resize") return;
+    }
+    if (start) {
+      if (start.kind === next.kind) return;
+      start.kind = next.kind;
+    }
+    animateLayout(
+      () => {
+        if (next.kind !== "resize") setWidth(restoreWidth);
+        if (next.kind === "tabs") {
+          setSidebarCollapsed(false);
+          setTabLayout(true);
+          setNarrowSidebar(false);
+
+          setNativeActive(true);
+          setFocusedArea(
+            pane === "terminal"
+              ? "terminal"
+              : view === "page"
+                ? "explorer"
+                : "native",
+          );
+          requestAnimationFrame(() => paneElement.current?.focus());
+        } else {
+          setSidebarCollapsed(next.kind === "close");
+          setTabLayout(false);
+          setNarrowSidebar(narrow);
+          if (next.kind === "close") focusCenter();
+        }
+      },
+      next.kind === "close"
+        ? "panel-close"
+        : sidebarCollapsed
+          ? "panel-open"
+          : undefined,
+    );
+  };
+  const nativeFeedback = (error || projects.error || thread.error) && (
+    <div className={styles.paneFeedback}>
+      <ErrorNotice error={error || projects.error || thread.error} />
+    </div>
   );
-  const show = (next: "files" | "changes" | "browser") => {
-    cancelOpening();
-    if (pane === next) {
-      closePane();
-      return;
-    }
-    setPane(next);
-    setView("page");
-    setFocusedArea("explorer");
-    if (window.matchMedia("(max-width: 999px)").matches) setTerminalOpen(false);
-    requestAnimationFrame(() => paneElement.current?.focus());
-    refresh();
-    if (next === "changes") {
-      setDirectory(root);
-      select(null);
-    }
-  };
+  const viewChoices = [
+    {
+      key: "files" as const,
+      label: "Files",
+      description: "Browse and open a file",
+      icon: Folder,
+      available: status.data?.features?.host_files,
+    },
+    {
+      key: "changes" as const,
+      label: "Changes",
+      description: "Review working tree changes",
+      icon: GitDiff,
+      available: status.data?.features?.host_git,
+    },
+    {
+      key: "terminal" as const,
+      label: "Terminal",
+      description: "Open shared terminal sessions",
+      icon: TerminalWindow,
+      available: status.data?.features?.host_terminal,
+    },
+    {
+      key: "browser" as const,
+      label: "Browser",
+      description: "View the host browser",
+      icon: Globe,
+      available: status.data?.features?.browser,
+    },
+  ].filter((choice) => choice.available);
+  const workspaceViews = [
+    ...(singleView
+      ? [
+          {
+            key: "conversation",
+            label: "Chat",
+            icon: ChatCircle,
+            tab: null,
+          },
+        ]
+      : []),
+    ...tabs.items.map((tab) => ({
+      key: tab.id,
+      label:
+        tab.kind === "new"
+          ? "New tab"
+          : tab.kind === "file"
+            ? `${tabs.items.some((other) => other.kind === "file" && other.path !== tab.path && basename(other.path) === basename(tab.path)) ? tab.path : basename(tab.path)}${buffers.get(tab.path)?.dirty ? " · Unsaved" : ""}`
+            : tab.kind === "changes" && tab.selection
+              ? `${basename(tab.selection.path)} · Changes`
+              : tab.kind === "files"
+                ? "Files"
+                : tab.kind === "changes"
+                  ? "Changes"
+                  : tab.kind === "terminal"
+                    ? "Terminal"
+                    : "Browser",
+      icon:
+        tab.kind === "new"
+          ? Plus
+          : tab.kind === "file"
+            ? FileText
+            : tab.kind === "files"
+              ? Folder
+              : tab.kind === "changes"
+                ? GitDiff
+                : tab.kind === "terminal"
+                  ? TerminalWindow
+                  : Globe,
+      tab,
+    })),
+  ];
+  const activeView = nativeActive || !singleView ? tabs.active : "conversation";
+  const splitLayout =
+    isWorkspace && !singleView && !sidebarCollapsed && hasSupportingViews;
   return (
     <ReturnToChat
       value={() => {
-        if (window.matchMedia("(max-width: 999px)").matches) {
-          setPane(null);
-          setTerminalOpen(false);
-        }
+        setNativeActive(false);
         setFocusedArea("page");
         requestAnimationFrame(() =>
           document
@@ -541,7 +870,7 @@ export function NativeWorkspace({
       }}
     >
       <div
-        className={`${styles.workarea} ${isWorkspace && pane ? styles.withPane : ""} ${isWorkspace && terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
+        className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
       >
         <header
           className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
@@ -558,58 +887,24 @@ export function NativeWorkspace({
               {title}
             </ToolbarTitle>
           </div>
-          {isWorkspace && (
-            <div className={styles.panelTools} aria-label="Workbench views">
-              <DebugOnly>
-                <EnvironmentMonitor />
-              </DebugOnly>
-              {threadId && status.data?.features?.browser && (
-                <BrowserActivity
-                  key={threadId}
-                  threadId={threadId}
-                  occupied={pane !== null || view !== "page"}
-                  visible={pane === "browser"}
-                  reveal={() => setPane("browser")}
-                  open={() => show("browser")}
-                />
-              )}
-              {hasViews && (
-                <Menu>
-                  <MenuTrigger
-                    render={<Button variant="ghost" size="sm" />}
-                    className={styles.viewsMenu}
-                    aria-label="Workspace tools"
-                    title="Files, changes, browser and terminal"
-                  >
-                    <SidebarSimple />
-                    <span>Workspace</span>
-                  </MenuTrigger>
-                  <MenuPopup align="end">
-                    {status.data?.features?.host_files && (
-                      <MenuItem onClick={() => show("files")}>
-                        <Folder /> Files
-                      </MenuItem>
-                    )}
-                    {status.data?.features?.host_git && (
-                      <MenuItem onClick={() => show("changes")}>
-                        <GitDiff /> Changes
-                      </MenuItem>
-                    )}
-                    {status.data?.features?.browser && (
-                      <MenuItem onClick={() => show("browser")}>
-                        <Globe /> Browser
-                      </MenuItem>
-                    )}
-                    {status.data?.features?.host_terminal && (
-                      <MenuItem onClick={toggleTerminal}>
-                        <TerminalWindow />
-                        {terminalOpen ? "Hide terminal" : "Terminal"}
-                      </MenuItem>
-                    )}
-                  </MenuPopup>
-                </Menu>
-              )}
-            </div>
+          {isWorkspace && threadId && status.data?.features?.browser && (
+            <BrowserActivity
+              key={threadId}
+              threadId={threadId}
+              occupied={
+                sidebarCollapsed ||
+                singleView ||
+                pane !== null ||
+                view !== "page"
+              }
+              visible={
+                !sidebarCollapsed &&
+                pane === "browser" &&
+                (!singleView || nativeActive)
+              }
+              reveal={() => revealTab({ kind: "browser" })}
+              open={() => show("browser")}
+            />
           )}
           {profile}
           {threadId && (
@@ -647,23 +942,179 @@ export function NativeWorkspace({
               </MenuPopup>
             </Menu>
           )}
+          {isWorkspace && hasSupportingViews && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={
+                supportingExpanded
+                  ? "Close supporting panel"
+                  : "Open supporting panel"
+              }
+              title={
+                supportingExpanded
+                  ? "Close supporting panel"
+                  : "Open supporting panel"
+              }
+              aria-expanded={supportingExpanded}
+              onClick={toggleSupportingPanel}
+            >
+              <SidebarSimple mirrored />
+            </Button>
+          )}
         </header>
-        <div className={styles.layout}>
-          <div className={styles.center}>
+        <div
+          className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
+          style={{ "--panel-width": `${width}%` } as CSSProperties}
+          data-resizing={resizing || undefined}
+          onPointerMove={(event) => {
+            const start = resizeStart.current;
+            if (start && start.pointerId === event.pointerId && start.available)
+              resizePanel(
+                start.width +
+                  ((start.x - event.clientX) / start.available) * 100,
+                start.available,
+                start.width,
+              );
+          }}
+          onPointerUp={(event) => {
+            if (resizeStart.current?.pointerId !== event.pointerId) return;
+            resizeStart.current = null;
+            setResizing(false);
+          }}
+          onPointerCancel={(event) => {
+            if (resizeStart.current?.pointerId !== event.pointerId) return;
+            resizeStart.current = null;
+            setResizing(false);
+          }}
+          onLostPointerCapture={(event) => {
+            if (resizeStart.current?.pointerId !== event.pointerId) return;
+            resizeStart.current = null;
+            setResizing(false);
+          }}
+        >
+          {isWorkspace && hasSupportingViews && (
+            <nav
+              className={styles.workspaceTabs}
+              aria-label="Workbench views"
+              hidden={sidebarCollapsed}
+            >
+              <div
+                ref={viewTabsElement}
+                className={styles.panelTools}
+                role="tablist"
+                aria-label="Workspace views"
+                aria-busy={projectLoading}
+                data-overflow-left={tabsOverflow.left || undefined}
+                data-overflow-right={tabsOverflow.right || undefined}
+                onKeyDown={(event) => {
+                  const tabs = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]',
+                    ),
+                  );
+                  const index = tabs.indexOf(event.target as HTMLButtonElement);
+                  if (index < 0) return;
+                  const next =
+                    event.key === "ArrowRight"
+                      ? (index + 1) % tabs.length
+                      : event.key === "ArrowLeft"
+                        ? (index + tabs.length - 1) % tabs.length
+                        : event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? tabs.length - 1
+                            : -1;
+                  if (next < 0) return;
+                  event.preventDefault();
+                  tabs[next].click();
+                  tabs[next].focus();
+                }}
+              >
+                {workspaceViews.map(({ key, label, icon: Icon, tab }) => (
+                  <span
+                    className={styles.workspaceTab}
+                    key={key}
+                    data-active={activeView === key || undefined}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      role="tab"
+                      id={`${workspaceId}-${key}-tab`}
+                      aria-controls={`${workspaceId}-${key === "conversation" ? "conversation" : "native"}`}
+                      aria-selected={activeView === key}
+                      disabled={!!tab && projectLoading}
+                      tabIndex={activeView === key ? 0 : -1}
+                      title={tab?.kind === "file" ? tab.path : label}
+                      onClick={() => {
+                        if (tab) activateTab(tab);
+                        else {
+                          cancelOpening();
+                          setNativeActive(false);
+                          setFocusedArea("page");
+                        }
+                      }}
+                    >
+                      <Icon /> <span>{label}</span>
+                    </Button>
+                    {tab && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Close tab: ${label}`}
+                        title={`Close ${label}`}
+                        disabled={projectLoading}
+                        onClick={() => closeTab(tab.id)}
+                      >
+                        <X />
+                      </Button>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="New tab"
+                title="New tab"
+                disabled={projectLoading}
+                onClick={addTab}
+              >
+                <Plus />
+              </Button>
+              <div className={styles.workspaceTools}>
+                <DebugOnly>
+                  <EnvironmentMonitor />
+                </DebugOnly>
+              </div>
+            </nav>
+          )}
+          <div
+            className={styles.center}
+            id={`${workspaceId}-conversation`}
+            role={isWorkspace && singleView ? "tabpanel" : undefined}
+            aria-labelledby={
+              isWorkspace && singleView
+                ? `${workspaceId}-conversation-tab`
+                : undefined
+            }
+            hidden={isWorkspace && singleView && nativeActive}
+          >
             <div
               ref={pageElement}
               tabIndex={-1}
               onFocusCapture={() => setFocusedArea("page")}
-              onPointerDown={() => setFocusedArea("page")}
+              onPointerDown={() => {
+                cancelOpening();
+                setFocusedArea("page");
+              }}
               className={`${styles.page} a13n-scrollbar ${isWorkspace ? styles.chatPage : location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
             >
               <OpenHostFile
                 value={
                   status.data?.features?.host_files && !projectLoading
                     ? (target) => {
-                        setPane("files");
-                        if (window.matchMedia("(max-width: 999px)").matches)
-                          setTerminalOpen(false);
                         void open(target);
                       }
                     : undefined
@@ -673,106 +1124,110 @@ export function NativeWorkspace({
               </OpenHostFile>
             </div>
           </div>
-          {isWorkspace && pane && (
+          {isWorkspace && !pane && supportingExpanded && (
+            <section
+              className={`${styles.pane} ${styles.newTabPage}`}
+              id={`${workspaceId}-native`}
+              role="tabpanel"
+              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+            >
+              <div className={styles.newTabChoices}>
+                <h2>Open a new tab</h2>
+                <p>Choose what you want to work with.</p>
+                {viewChoices.map(({ key, label, description, icon: Icon }) => (
+                  <Button
+                    key={key}
+                    variant="ghost"
+                    aria-label={label}
+                    disabled={projectLoading}
+                    onClick={() => show(key)}
+                  >
+                    <Icon />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{description}</small>
+                    </span>
+                    <CaretRight />
+                  </Button>
+                ))}
+              </div>
+            </section>
+          )}
+          {splitLayout && (
             <div
               className={styles.resizeHandle}
               role="separator"
               aria-label="Resize supporting panel"
               aria-orientation="vertical"
-              aria-valuemin={28}
-              aria-valuemax={70}
-              aria-valuenow={expanded ? 70 : width}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={width}
               tabIndex={0}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
-                  setExpanded(false);
-                  setWidth(
-                    Math.max(
-                      28,
-                      Math.min(
-                        70,
-                        width + (event.key === "ArrowLeft" ? 4 : -4),
-                      ),
-                    ),
+                  resizePanel(
+                    width + (event.key === "ArrowLeft" ? 4 : -4),
+                    event.currentTarget.parentElement!.clientWidth,
+                    width,
                   );
                 }
               }}
               onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
+                if (event.button !== 0 || resizeStart.current) return;
+                event.preventDefault();
+                // The separator unmounts when snapping; the layout owns the
+                // capture until release so the same gesture can reverse it.
+                event.currentTarget.parentElement!.setPointerCapture(
+                  event.pointerId,
+                );
                 resizeStart.current = {
+                  pointerId: event.pointerId,
                   x: event.clientX,
-                  width: expanded ? 70 : width,
+                  width,
                   available: event.currentTarget.parentElement!.clientWidth,
+                  kind: "resize",
                 };
-                setExpanded(false);
-              }}
-              onPointerMove={(event) => {
-                const start = resizeStart.current;
-                if (start?.available)
-                  setWidth(
-                    Math.max(
-                      28,
-                      Math.min(
-                        70,
-                        start.width +
-                          ((start.x - event.clientX) / start.available) * 100,
-                      ),
-                    ),
-                  );
-              }}
-              onPointerUp={() => {
-                resizeStart.current = null;
-              }}
-              onLostPointerCapture={() => {
-                resizeStart.current = null;
+                setResizing(true);
               }}
             />
           )}
           {isWorkspace && pane === "browser" && (
             <aside
+              id={`${workspaceId}-native`}
+              role="tabpanel"
+              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}
-              className={`${styles.pane} ${expanded ? styles.expandedPane : ""}`}
+              className={styles.pane}
               aria-label="Browser panel"
             >
-              <header className={styles.paneHeader}>
-                <strong>Browser</strong>
-                <div className={styles.panelTools}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      expanded ? "Restore drawer width" : "Expand drawer"
-                    }
-                    onClick={() => setExpanded(!expanded)}
-                  >
-                    {expanded ? <ArrowsInSimple /> : <ArrowsOutSimple />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Close browser viewer"
-                    title="Close viewer (browser keeps running)"
-                    onClick={closePane}
-                  >
-                    <X />
-                  </Button>
-                </div>
-              </header>
-              <BrowserPanel
-                key={threadId ?? "new"}
-                threadId={threadId}
-                fullControl={
-                  thread.data?.thread.configuration?.environment_profile_id ===
-                  "environment-native"
-                }
-              />
+              {nativeFeedback}
+              {opening && (
+                <span role="status" className={styles.directoryLoading}>
+                  Opening…
+                </span>
+              )}
+              {supportingExpanded && (
+                <BrowserPanel
+                  key={threadId ?? "new"}
+                  threadId={threadId}
+                  fullControl={
+                    thread.data?.thread.configuration
+                      ?.environment_profile_id === "environment-native"
+                  }
+                />
+              )}
             </aside>
           )}
-          {isWorkspace && pane && pane !== "browser" && (
+          {isWorkspace && pane && pane !== "browser" && pane !== "terminal" && (
             <aside
+              id={`${workspaceId}-native`}
+              role="tabpanel"
+              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+              hidden={!supportingExpanded}
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}
               tabIndex={-1}
@@ -782,7 +1237,7 @@ export function NativeWorkspace({
               onPointerDown={() =>
                 setFocusedArea(view === "page" ? "explorer" : "native")
               }
-              className={`${styles.pane} ${expanded ? styles.expandedPane : ""} a13n-scrollbar`}
+              className={`${styles.pane} a13n-scrollbar`}
               aria-label="File explorer"
             >
               <header className={styles.paneHeader}>
@@ -793,9 +1248,14 @@ export function NativeWorkspace({
                       size="sm"
                       title={pane === "files" ? directory : root}
                       onClick={() => {
-                        cancelOpening();
-                        setView("page");
-                        setFocusedArea("explorer");
+                        if (pane === "files") {
+                          navigateTab({ kind: "files", directory, root });
+                        } else {
+                          cancelOpening();
+                          select(null);
+                          setView("page");
+                          setFocusedArea("explorer");
+                        }
                       }}
                     >
                       <ArrowLeft />
@@ -827,102 +1287,9 @@ export function NativeWorkspace({
                       <ArrowClockwise />
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      expanded ? "Restore drawer width" : "Expand drawer"
-                    }
-                    className={styles.expandPane}
-                    title={expanded ? "Restore drawer width" : "Expand drawer"}
-                    onClick={() => setExpanded(!expanded)}
-                  >
-                    {expanded ? <ArrowsInSimple /> : <ArrowsOutSimple />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Close file explorer"
-                    onClick={closePane}
-                  >
-                    <X />
-                  </Button>
                 </div>
               </header>
-              {(fileTabs.length > 0 || selected) && (
-                <nav className={styles.fileTabs} aria-label="Open files">
-                  {fileTabs.map((tab) => (
-                    <span key={tab}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-pressed={view === "file" && tab === path}
-                        title={tab}
-                        onClick={() => void open(tab)}
-                      >
-                        {fileTabs.filter(
-                          (item) => basename(item) === basename(tab),
-                        ).length > 1
-                          ? tab
-                          : basename(tab)}
-                        {buffers.get(tab)?.dirty ? " · Unsaved" : ""}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Close file view: ${tab}`}
-                        onClick={() => {
-                          setFileTabs((tabs) =>
-                            tabs.filter((item) => item !== tab),
-                          );
-                          if (tab === path) {
-                            const remaining = fileTabs.filter(
-                              (item) => item !== tab,
-                            );
-                            const adjacent =
-                              remaining[
-                                Math.min(
-                                  fileTabs.indexOf(tab),
-                                  remaining.length - 1,
-                                )
-                              ];
-                            if (adjacent) void open(adjacent);
-                            else {
-                              setPath("");
-                              setView("page");
-                              setFocusedArea("explorer");
-                            }
-                          }
-                        }}
-                      >
-                        <X />
-                      </Button>
-                    </span>
-                  ))}
-                  {selected && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-pressed={view === "diff"}
-                      onClick={() => {
-                        cancelOpening();
-                        setView("diff");
-                        setFocusedArea("native");
-                        setPane("changes");
-                      }}
-                    >
-                      {basename(selected.path)} · Changes
-                    </Button>
-                  )}
-                </nav>
-              )}
-              {(error || projects.error || thread.error) && (
-                <div className={styles.paneFeedback}>
-                  <ErrorNotice
-                    error={error || projects.error || thread.error}
-                  />
-                </div>
-              )}
+              {nativeFeedback}
               {opening && (
                 <span role="status" className={styles.directoryLoading}>
                   Opening…
@@ -948,13 +1315,20 @@ export function NativeWorkspace({
                             title={folder}
                             aria-pressed={root === folder}
                             onClick={() => {
-                              cancelOpening();
-                              setRoot(folder);
-                              setDirectory(folder);
-                              setView("page");
-                              setFocusedArea("explorer");
-                              select(null);
-                              setError(null);
+                              navigateTab(
+                                pane === "changes"
+                                  ? {
+                                      kind: "changes",
+                                      root: folder,
+                                      selection: null,
+                                      choices: [],
+                                    }
+                                  : {
+                                      kind: "files",
+                                      directory: folder,
+                                      root: folder,
+                                    },
+                              );
                             }}
                           >
                             <Folder />
@@ -1101,17 +1475,13 @@ export function NativeWorkspace({
                         onChoices={setDiffChoices}
                         select={(next, choices) => {
                           cancelOpening();
-                          select(next);
-                          if (choices) setDiffChoices(choices);
+                          select(next, choices ?? diffChoices);
                           if (next) {
                             setView("diff");
                             setFocusedArea("native");
                           }
                         }}
-                        openFile={(target) => {
-                          setPane("files");
-                          void open(target);
-                        }}
+                        openFile={(target) => void open(target)}
                       />
                     )}
                   </div>
@@ -1119,36 +1489,52 @@ export function NativeWorkspace({
               )}
             </aside>
           )}
+          {terminalOpened && status.data?.features?.host_terminal && (
+            <aside
+              className={`${styles.pane} ${styles.terminalPane}`}
+              ref={pane === "terminal" ? paneElement : undefined}
+              tabIndex={-1}
+              id={pane === "terminal" ? `${workspaceId}-native` : undefined}
+              role="tabpanel"
+              aria-labelledby={
+                pane === "terminal"
+                  ? `${workspaceId}-${tabs.active}-tab`
+                  : undefined
+              }
+              aria-label="Terminal"
+              hidden={!terminalVisible}
+              onFocusCapture={() => setFocusedArea("terminal")}
+              onPointerDown={() => setFocusedArea("terminal")}
+            >
+              {pane === "terminal" && (
+                <>
+                  {nativeFeedback}
+                  {opening && (
+                    <span role="status" className={styles.directoryLoading}>
+                      Opening…
+                    </span>
+                  )}
+                </>
+              )}
+              <TerminalPanel
+                visible={terminalVisible}
+                directory={localRoots.includes(root) ? root : projectRoot}
+                projectId={project?.project_id ?? ""}
+                projectName={project?.name}
+                request={terminalRequest}
+                threadId={threadId}
+                openFile={(target, line) => void open(target, line)}
+                selected={terminalId}
+                onActive={setActiveTerminalId}
+                select={(id) => {
+                  setTerminalId(id);
+                  setFocusedArea(id ? "terminal" : "page");
+                }}
+                unauthorized={unauthorized}
+              />
+            </aside>
+          )}
         </div>
-        {terminalOpened && status.data?.features?.host_terminal && (
-          <div
-            className={styles.terminalDock}
-            onFocusCapture={() => setFocusedArea("terminal")}
-            onPointerDown={() => setFocusedArea("terminal")}
-          >
-            <TerminalPanel
-              visible={isWorkspace && terminalOpen && !projectLoading}
-              directory={localRoots.includes(root) ? root : projectRoot}
-              projectId={project?.project_id ?? ""}
-              projectName={project?.name}
-              request={terminalRequest}
-              threadId={threadId}
-              openFile={(target, line) => void open(target, line)}
-              selected={terminalId}
-              onActive={setActiveTerminalId}
-              select={(id) => {
-                setTerminalId(id);
-                setFocusedArea(id ? "terminal" : "page");
-              }}
-              collapse={() => {
-                setTerminalOpen(false);
-                focusCenter();
-                refresh();
-              }}
-              unauthorized={unauthorized}
-            />
-          </div>
-        )}
       </div>
     </ReturnToChat>
   );

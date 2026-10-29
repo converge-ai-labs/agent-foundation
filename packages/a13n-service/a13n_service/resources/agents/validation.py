@@ -130,6 +130,8 @@ def _check_rules(config: AgentConfig) -> None:
         if tool.provider_id is None:
             raise invalid(f"toolsets.web.tools.{operation}.config.provider_id", "required while the tool is enabled")
     reserved = toolsets.model_names(config.toolsets) | ({definition.QUESTION_TOOL} if config.user_questions else set())
+    if config.summarize:
+        reserved |= {"summarize"}
     for index, tool in enumerate(config.client_tools):
         if tool.name in reserved:
             raise invalid(f"client_tools.{index}.name", "is the name of a built-in tool")

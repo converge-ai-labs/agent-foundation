@@ -61,7 +61,11 @@ const file: Schema<"FileText"> = {
   text: "first",
 };
 function fixture() {
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   const get = vi.fn(
     async (path: string, _options?: unknown): Promise<{ data: unknown }> => {
       if (path === "/api/status")

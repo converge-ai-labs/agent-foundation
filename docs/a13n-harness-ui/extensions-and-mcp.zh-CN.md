@@ -71,6 +71,19 @@ capabilities:
 
 在 Model 的 `model_characteristics` 中统一设置上下文预算，参见 [Model 预算](models-and-authentication.md)。这些 Capability 从预算派生常规默认值。需要单独覆盖时，在相应 Capability 的 `configuration` 中配置 `runtime_context.context_window_tokens`、`handoff.summary_reminder_tokens` 或 `compaction.trigger_tokens`。显式值优先。
 
+### 重复动作循环
+
+循环检测需要显式启用。在 Agent 文件中添加原生 Capability：
+
+```yaml title="Agent file — capabilities fragment"
+capabilities:
+  - capability: DetectLoops
+    configuration:
+      action: nudge
+```
+
+`nudge` 在出现重复调用、相同结果、交替调用或重复文本时提醒 Model 改变方法。使用 `action: error` 可在检测到循环时让 Run 失败。正常轮询任务应提高阈值/窗口，或设置 `repeated_call_threshold: null` 和 `repeated_result_threshold: null`。检测器只观察 Model 层的调用，CodeAct 内部的 host 调用不在检测范围内。每个原生 Model attempt（包括继续会话和恢复重试）都会重新计数。硬预算仍由用量限制控制。默认值与 Python 组合方式见 [Harness 循环检测](../a13n-harness/capabilities.md#detect-repeated-action-loops)。
+
 ### 任务、提问与 CodeAct
 
 Harness UI 默认添加 `file_context` 和 `working_state`。根级开关启用时，还会添加 `user_interaction` 和 `codeact`。Skill、Web 访问、交接和压缩等其他功能需要在 Agent 中选择。

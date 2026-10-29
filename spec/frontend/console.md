@@ -70,6 +70,8 @@ Saving Agent configuration explains that the new version becomes the default for
 
 Environment template editors expose an Environment variables key/value section for every built-in provider. Empty values are valid; blank, invalid or duplicate names block form submission. Values are identified as ordinary readable configuration, not credentials. Docker standard/desktop preset switches preserve these variables together with CPU, memory and mounts; read-only users cannot edit them.
 
+The Agent editor exposes a Context summary section under Advanced with a Summarize tool switch. Saving publishes the selection in the Agent Revision; read-only inspection shows its saved state. Disabling the tool leaves automatic compaction available. [Agent configuration](../a13n-service/04-resources.md#agents) owns the runtime defaults and reminder policy.
+
 ### Command environment overrides
 
 The shared execution-policy form exposes ordinary environment-variable maps in Agent defaults, Thread policy and single-Run options, and renders the accepted map in Run details. It reuses the environment template variable editor and its draft validation. Thread save submits a whole-map replacement; removing every row resets that layer. Values remain readable configuration, not credentials. The [Run execution policy](../a13n-service/05-runs.md#execution-policy) owns precedence and freezing.

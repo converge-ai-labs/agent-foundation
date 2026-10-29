@@ -2,7 +2,7 @@ Use restricted Python to compose tool calls and process their results before ret
 
 Host calls:
 
-- Only the functions in the current directory below are available. Call them directly by their listed Python names with keyword arguments; do not import them.
+- Only the functions in the current CodeAct catalog are available. Call them directly by their listed Python names with keyword arguments; do not import them.
 - Await every host function, including tools whose underlying implementation is synchronous. Await dependent calls in order; use `await asyncio.gather(...)` for independent calls after `import asyncio`. Finish all needed calls before ending the code.
 - Send a runner as the only tool call in a model response. Parallelize inside the code, not by sending sibling runner/tool calls.
 - Arguments and results are finite JSON values, not arbitrary Python objects. Inspect and select useful fields rather than printing or returning entire large results.
@@ -14,4 +14,4 @@ State and failure:
 - Successful explicit writes survive sandbox reset, failure, and cancellation. Cross-run recovery requires the host to persist and restore HarnessState.
 - Tool effects are not transactional or rolled back. After a failure, inspect what completed and recover deliberately; do not blindly replay code that may repeat external effects.
 
-The Monty sandbox supports a Python subset, not general CPython. Built-in data processing includes `csv`, `hashlib`, `bisect`, `tomllib`, and `decimal`, plus dataclasses with methods. Convert Decimal values and dataclass instances explicitly to finite JSON-compatible values before passing them to tools, storing them, or returning them. Supported `datetime` and `time` APIs can read system time; the sandbox timezone defaults to UTC. It has no ambient filesystem, network, process, environment, or credential access and cannot install packages. Use listed host tools for those operations. Function/type declarations below are documentation, not definitions to execute or runtime classes to instantiate. The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority.
+The Monty sandbox supports a Python subset, not general CPython. Built-in data processing includes `csv`, `hashlib`, `bisect`, `tomllib`, and `decimal`, plus dataclasses with methods. Convert Decimal values and dataclass instances explicitly to finite JSON-compatible values before passing them to tools, storing them, or returning them. Supported `datetime` and `time` APIs can read system time; the sandbox timezone defaults to UTC. It has no ambient filesystem, network, process, environment, or credential access and cannot install packages. Use listed host tools for those operations. Catalog function/type declarations are documentation, not definitions to execute or runtime classes to instantiate. The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority.

@@ -187,10 +187,12 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
 
     def inspect(_step: int, info: AgentInfo) -> None:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-        assert "discover_tools" in runner.description
-        assert "call_tool" in runner.description
-        assert "crm__double" not in runner.description
-        assert "async def double" not in runner.description
+        catalog = info.instructions or ""
+        assert "async def discover_tools" in catalog
+        assert "async def call_tool" in catalog
+        assert "crm__double" not in catalog
+        assert "async def double" not in catalog
+        assert "async def discover_tools" not in runner.description
 
     source = """found = await discover_tools(query='double', group='crm')
 match = found['tools'][0]
@@ -923,8 +925,11 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
         assert "Preserve capability instructions." in (info.instructions or "")
         if codeact:
             runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-            assert ("call_tool" in runner.description) is grouped
-            assert ("async def identify" in runner.description) is not grouped
+            catalog = info.instructions or ""
+            assert ("async def call_tool" in catalog) is grouped
+            assert ("async def identify" in catalog) is not grouped
+            assert "async def call_tool" not in runner.description
+            assert "async def identify" not in runner.description
         else:
             assert ("identify" in names) is not grouped
             assert ("call_tool" in names) is grouped

@@ -3558,5 +3558,9 @@
   "New thread each time": "New thread each time",
   "Reuse one thread": "Reuse one thread",
   "Leave empty to create a thread when saving.": "Leave empty to create a thread when saving.",
-  "Leave empty to create a session with Memory disabled.": "Leave empty to create a session with Memory disabled."
+  "Leave empty to create a session with Memory disabled.": "Leave empty to create a session with Memory disabled.",
+  "Context summary": "Context summary",
+  "Summarize tool": "Summarize tool",
+  "Let the agent write a summary and continue from a fresh context.": "Let the agent write a summary and continue from a fresh context.",
+  "Automatic context compaction remains available when this tool is off.": "Automatic context compaction remains available when this tool is off."
 }

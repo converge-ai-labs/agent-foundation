@@ -218,7 +218,6 @@ it("controller controls stay disabled until acknowledgement; collapse detaches w
 it("creation uses the reviewed native cwd, uncertain create cannot be repeated, and process closure requires explicit confirmation", async () => {
   const f = setup();
   const selected = vi.fn();
-  const collapse = vi.fn();
   f.post.mockRejectedValue(new Error("Response lost"));
   const props = {
     visible: true,
@@ -226,7 +225,6 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
     projectId: "project-one",
     selected: "",
     select: selected,
-    collapse,
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -283,7 +281,6 @@ it("the creator claims input once after attachment, waits for acknowledgement an
         projectId="project-one"
         selected={selected}
         select={select}
-        collapse={() => {}}
         unauthorized={unauthorized}
       />
     );
@@ -355,7 +352,6 @@ it("only shows the current Project's terminals and never ends another Project's 
     projectId: "project-one",
     selected: "",
     select: vi.fn(),
-    collapse: vi.fn(),
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -400,7 +396,6 @@ it("a terminal creation completing after a Project switch cannot select a termin
     projectId: "project-one",
     selected: "",
     select: vi.fn(),
-    collapse: vi.fn(),
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -435,7 +430,6 @@ it.each(["project-two", ""])(
         selected="terminal-one"
         select={vi.fn()}
         onActive={onActive}
-        collapse={vi.fn()}
         unauthorized={vi.fn()}
       />,
       { wrapper: f.Wrapper },
@@ -650,7 +644,6 @@ it("cycles only the current Project's sessions without creating or ending them",
       projectId="project-one"
       selected="terminal-one"
       select={select}
-      collapse={vi.fn()}
       unauthorized={vi.fn()}
     />,
     { wrapper: f.Wrapper },

@@ -245,14 +245,14 @@ Agent 的 `/threads/{root_thread_id}?native=files&native_path={URL-encoded absol
 
 原生终端需要 POSIX Host 和计算机共享。Windows 会报告 PTY 不可用；Files 和 Git 仍可独立使用。
 
-1. 打开具有配置根目录的 Project。在 **Terminal** 选择 **New terminal**，或对文件夹使用 **Files → Open terminal here**。
+1. 打开具有配置根目录的 Project。用 **+ → Terminal** 打开终端标签页，再选择 **New terminal**，或对文件夹使用 **Files → Open terminal here**。
 2. 等待创建者的控制请求被确认再输入。其他查看者使用 **Take control** 或 **Take over input**。
 3. 用 **Release control** 让其他人输入，同时保留 shell 运行。只有控制者可以调整尺寸。
 4. 需要为所有人停止共享 shell 及其作业时，选择 **End session** 并确认。
 
-只打开面板不会启动 shell。New terminal 创建会话，不向其他会话插入 `cd`。显示的初始目录不追踪后续 shell `cd`。切换 Project 隐藏并断开旧视图，不停止会话；无 Project 关联的会话仍可通过原生 API 使用。
+Terminal 与 Files、Changes 和 Browser 共用资源标签栏。在 Side by side 布局中显示在 Chat 旁边，在 Tabs 布局中占满内容区域。只打开标签页不会启动 shell。New terminal 创建会话，不向其他会话插入 `cd`。显示的初始目录不追踪后续 shell `cd`。切换 Project 隐藏并断开旧视图，不停止会话；无 Project 关联的会话仍可通过原生 API 使用。
 
-**Disconnect**、折叠面板、Settings 和关闭页面都只断开连接，不结束进程。重新打开时只读连接；明确 Disconnect 后使用 **Reconnect**。重连不重复按键。输入为 UTF-8，粘贴上限 16 KiB，不支持旧式二进制鼠标报告。
+**Disconnect**、切换到其他标签页、关闭 Terminal 标签页、折叠面板、Settings 和关闭页面都只断开连接，不结束进程。重新打开时只读连接；明确 Disconnect 后使用 **Reconnect**。重连不重复按键。输入为 UTF-8，粘贴上限 16 KiB，不支持旧式二进制鼠标报告。
 
 输出最多保留服务器 1 MiB 字节和本地 2,000 行，缺口会说明。渲染缓慢时暂停连接。Ctrl/Cmd+F 打开 **Find in output**，也可使用 **Copy selection**，或用 **Add selection to message** 添加带来源的片段。后者只加入草稿；**Return to conversation** 聚焦草稿。HTTP 链接单独打开，明确的绝对 `path:line` 链接打开 Host 文件。
 

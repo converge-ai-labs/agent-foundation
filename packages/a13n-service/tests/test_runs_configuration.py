@@ -50,7 +50,10 @@ async def test_model_endpoint_refusal_is_visible_without_retrying(serve, setting
     assert "private-secret" not in str(run["failure"])
 
 
-async def test_model_http_failure_preserves_status_without_exposing_the_response(service, runs_kit, listen):
+@pytest.mark.parametrize("status_code", [400, 401, 403, 422])
+async def test_model_http_failure_preserves_status_without_exposing_the_response(
+    service, runs_kit, listen, status_code
+):
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
 
@@ -62,7 +65,7 @@ async def test_model_http_failure_preserves_status_without_exposing_the_response
         requests.append(True)
         return JSONResponse(
             {"error": {"message": "private-secret upstream authentication details", "type": "authentication_error"}},
-            status_code=401,
+            status_code=status_code,
         )
 
     async with listen(app) as url:
@@ -72,7 +75,7 @@ async def test_model_http_failure_preserves_status_without_exposing_the_response
         run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "failed" and run["attempts"] == 1, run
     assert run["failure"]["code"] == "agent_run_failed"
-    assert "HTTP 401" in run["failure"]["message"]
+    assert f"HTTP {status_code}" in run["failure"]["message"]
     assert "private-secret" not in str(run["failure"])
     assert requests == [True]
 

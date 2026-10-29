@@ -375,6 +375,11 @@
             "title": "Subagents",
             "type": "object"
           },
+          "summarize": {
+            "default": false,
+            "title": "Summarize",
+            "type": "boolean"
+          },
           "tool_search": {
             "anyOf": [
               {
@@ -588,6 +593,11 @@
             },
             "title": "Subagents",
             "type": "object"
+          },
+          "summarize": {
+            "default": false,
+            "title": "Summarize",
+            "type": "boolean"
           },
           "tool_search": {
             "anyOf": [
@@ -3806,6 +3816,7 @@
           "model",
           "model_settings",
           "model_characteristics",
+          "summarize",
           "instructions",
           "toolsets",
           "skills",
@@ -25603,6 +25614,7 @@
                 "model",
                 "model_settings",
                 "model_characteristics",
+                "summarize",
                 "instructions",
                 "toolsets",
                 "skills",
@@ -40257,6 +40269,7 @@
                 "model",
                 "model_settings",
                 "model_characteristics",
+                "summarize",
                 "instructions",
                 "toolsets",
                 "skills",

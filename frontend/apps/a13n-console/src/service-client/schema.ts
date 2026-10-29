@@ -4632,6 +4632,11 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
+      /**
+       * Summarize
+       * @default false
+       */
+      summarize?: boolean;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -4715,6 +4720,11 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
       };
+      /**
+       * Summarize
+       * @default false
+       */
+      summarize?: boolean;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -5771,6 +5781,7 @@ export interface components {
       | "model"
       | "model_settings"
       | "model_characteristics"
+      | "summarize"
       | "instructions"
       | "toolsets"
       | "skills"
@@ -13150,6 +13161,7 @@ export interface operations {
           | "model"
           | "model_settings"
           | "model_characteristics"
+          | "summarize"
           | "instructions"
           | "toolsets"
           | "skills"
@@ -18366,6 +18378,7 @@ export interface operations {
           | "model"
           | "model_settings"
           | "model_characteristics"
+          | "summarize"
           | "instructions"
           | "toolsets"
           | "skills"

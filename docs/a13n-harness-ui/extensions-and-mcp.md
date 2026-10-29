@@ -71,6 +71,19 @@ capabilities:
 
 Set the context budget once in the Model's `model_characteristics`; see [Model budgets](models-and-authentication.md). The Capabilities derive their normal defaults from that budget. For a specific override, configure `runtime_context.context_window_tokens`, `handoff.summary_reminder_tokens`, or `compaction.trigger_tokens` inside the respective Capability's `configuration`. Explicit values take precedence.
 
+### Repeated-action loops
+
+Loop detection is opt-in. Add the native Capability to the Agent file:
+
+```yaml title="Agent file — capabilities fragment"
+capabilities:
+  - capability: DetectLoops
+    configuration:
+      action: nudge
+```
+
+`nudge` asks the Model to change approach after repeated calls, identical results, alternating calls, or repeated text. Use `action: error` to fail the Run on detection. For expected polling, raise the thresholds/window or set `repeated_call_threshold: null` and `repeated_result_threshold: null`. Detection observes Model-level calls, so CodeAct's internal host calls are outside its scope. Counts start fresh for each native Model attempt, including continuation and recovery. Keep usage limits for a hard budget. See [Harness loop detection](../a13n-harness/capabilities.md#detect-repeated-action-loops) for defaults and Python composition.
+
 ### Tasks, questions, and CodeAct
 
 Harness UI adds `file_context` and `working_state` by default. Root switches also add `user_interaction` and `codeact` when enabled. Other features, such as Skills, Web access, handoff, and compaction, need their Agent selections.

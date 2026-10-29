@@ -14,6 +14,7 @@ from a13n_harness.model_calls import ModelCall
 from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.usage import RunUsageLedger, UsageSnapshot
 from a13n_logging import exception_details, get_logger
+from pydantic_ai.direct import model_request
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_service.infra.db import lock, transaction
@@ -202,6 +203,7 @@ class BackgroundCompaction:
 
                         async def request(input: CompactionInput):
                             messages, settings, parameters = input.request_messages, input.settings, input.parameters
+                            messages = model.prepare_messages(messages, parameters)
                             context = ModelRequestContext(
                                 model=model,
                                 model_id=selected.key,
@@ -209,7 +211,13 @@ class BackgroundCompaction:
                                 model_settings=settings,
                                 model_request_parameters=parameters,
                             )
-                            return await MeteredModel(context, binding, None).request(messages, settings, parameters)
+                            return await model_request(
+                                MeteredModel(context, binding, None),
+                                messages,
+                                model_settings=settings,
+                                model_request_parameters=parameters,
+                                instrument=False,
+                            )
 
                         result = await generate_compaction(input, request)
                     # Retry publication only; never repeat generation after a storage failure.

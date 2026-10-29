@@ -12,8 +12,11 @@ from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, Store
 from pydantic import ValidationError, model_serializer
 from pydantic_ai.messages import (
     BinaryContent,
+    CompactionPart,
     ModelRequest,
     ModelResponse,
+    ModelSettingsDeltaPart,
+    SystemPromptPart,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -38,8 +41,18 @@ from pydantic_core import PydanticSerializationError
                 parts=[ThinkingPart("thinking", signature="opaque", provider_name="anthropic"), TextPart("ok")]
             )
         ],
+        [
+            ModelRequest(
+                parts=[
+                    SystemPromptPart("budget", scope="request", metadata={"owner": "test"}),
+                    ModelSettingsDeltaPart(settings={"thinking": "high"}, top_level=True),
+                    CompactionPart("portable summary", metadata={"owner": "test"}),
+                ]
+            ),
+            ModelResponse(parts=[TextPart("ok")], canonical_system="openai"),
+        ],
     ],
-    ids=["empty", "unicode", "binary", "tool", "thinking"],
+    ids=["empty", "unicode", "binary", "tool", "thinking", "native-history"],
 )
 def test_complete_json_bytes_preserve_native_state(messages: Any) -> None:
     state = HarnessState(

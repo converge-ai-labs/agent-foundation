@@ -1,12 +1,11 @@
 .panel {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  flex: 1;
   position: relative;
-  min-height: 120px;
+  min-height: 0;
   min-width: 0;
   gap: 8px;
-  border-top: 1px solid var(--a13n-border);
   padding: 8px 16px 12px;
   overflow: hidden;
 }
@@ -31,18 +30,6 @@
 .header strong {
   font-size: 14px;
   font-weight: 500;
-}
-.resizeHandle {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 5px;
-  cursor: ns-resize;
-  touch-action: none;
-  z-index: 1;
-}
-.resizeHandle:hover,
-.resizeHandle:focus-visible {
-  background: var(--a13n-accent);
 }
 .sessionBar {
   flex-shrink: 0;
@@ -119,12 +106,6 @@
   max-width: 620px;
 }
 @media (max-width: 700px) {
-  .panel {
-    flex: 1 1 0 !important;
-  }
-  .resizeHandle {
-    display: none;
-  }
   .header {
     align-items: start;
   }

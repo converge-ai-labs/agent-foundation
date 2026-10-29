@@ -708,16 +708,14 @@ def _build_catalog(
     return _Catalog(definitions, sandbox_to_canonical, prepared_tools, fingerprint)
 
 
-def render_codeact_runner_description(
+def render_codeact_catalog(
     tools: dict[str, ToolsetTool[AgentContext]],
     *,
-    program: bool,
     ctx: RunContext[AgentContext],
 ) -> str:
-    base = _RUN_PROGRAM_DESCRIPTION if program else _RUN_CODE_DESCRIPTION
     catalog = _build_catalog(tools, ctx=ctx)
     if not catalog.definitions:
-        return base + "\n\nNo host tools are callable from CodeAct in this run step."
+        return "No host tools are callable from CodeAct in this run step."
 
     entries: list[str] = []
     for sandbox_name, definition in sorted(catalog.definitions.items()):
@@ -750,7 +748,7 @@ def render_codeact_runner_description(
                 )
             )
         entries.append("\n".join(details))
-    return base + "\n\nCodeAct callable host tools:\n" + "\n".join(entries)
+    return "CodeAct callable host tools:\n" + "\n".join(entries)
 
 
 def _render_tool_declaration(definition: ToolDefinition) -> str:

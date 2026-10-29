@@ -3558,5 +3558,9 @@
   "New thread each time": "每次新建线程",
   "Reuse one thread": "复用固定线程",
   "Leave empty to create a thread when saving.": "留空则在保存时创建一个线程。",
-  "Leave empty to create a session with Memory disabled.": "留空则创建一个初始关闭 Memory 的会话。"
+  "Leave empty to create a session with Memory disabled.": "留空则创建一个初始关闭 Memory 的会话。",
+  "Context summary": "上下文摘要",
+  "Summarize tool": "摘要工具",
+  "Let the agent write a summary and continue from a fresh context.": "允许 agent 编写摘要，并从新的上下文继续执行。",
+  "Automatic context compaction remains available when this tool is off.": "关闭此工具后，自动上下文压缩仍然可用。"
 }
