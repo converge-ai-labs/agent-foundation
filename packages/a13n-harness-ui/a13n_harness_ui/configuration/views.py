@@ -128,6 +128,7 @@ def agent_tool_search_view(
     owners = {
         resource_id: name
         for name, group in proxy.groups.items()
+        if proxy.enabled
         for resource_id in (*group.mcp_servers, *group.harness_plugins, *group.capabilities)
     }
     selected = {

@@ -672,15 +672,20 @@ type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
 class McpServerResource(ConfigurationModel):
-    schema_version: Literal["1"]
+    schema_version: Literal["1", "2"]
     kind: Literal["mcp_server"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    tools: tuple[ToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "mcp-")
+        if self.tools is not None and self.schema_version != "2":
+            raise ValueError("MCP tool selection requires schema_version 2")
+        if self.tools is not None and len(set(self.tools)) != len(self.tools):
+            raise ValueError("MCP tool names must be unique")
         return self
 
 
@@ -737,6 +742,7 @@ class AgentToolSearchGroup(ConfigurationModel):
 
 
 class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
+    enabled: bool = Field(default=True, exclude_if=lambda value: value)
     groups: dict[str, AgentToolSearchGroup] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -760,6 +766,7 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
     ) -> AgentToolSearch:
         """Capture only enabled membership, without activating dormant references."""
         return AgentToolSearch(
+            enabled=self.enabled,
             groups={
                 name: AgentToolSearchGroup(
                     description=group.description,

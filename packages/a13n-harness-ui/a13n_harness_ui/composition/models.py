@@ -80,6 +80,7 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Historical recipes were all generically selected, including Apps-enabled ones.
     generic_selected: bool = Field(default=True, exclude_if=lambda value: value)

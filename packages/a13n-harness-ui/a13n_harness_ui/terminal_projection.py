@@ -499,6 +499,11 @@ class TerminalProjectionService:
             media_understanding_environment=environment_media_kinds(),
             agents=tuple(
                 AgentSummary(
+                    tool_search_mcp_servers=tuple(
+                        server for group in item.tool_search.groups.values() for server in group.mcp_servers
+                    )
+                    if item.tool_search is not None and item.tool_search.enabled
+                    else (),
                     agent_id=item.id,
                     name=item.name,
                     model_id=item.model,
@@ -545,6 +550,7 @@ class TerminalProjectionService:
                     resource_id=item.id,
                     name=item.name,
                     kind="mcp_server",
+                    selected_tool_count=len(item.tools) if item.tools is not None else None,
                     source_path=paths.get(item.id, "a13n-harness-ui.yaml"),
                 )
                 for item in sorted(source.mcp_servers.values(), key=lambda item: (item.name.casefold(), item.id))

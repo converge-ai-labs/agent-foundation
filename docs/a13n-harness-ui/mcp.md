@@ -37,6 +37,14 @@ Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the roo
 
 Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loopback host with no configured headers. The client does not follow redirects; configure the final MCP endpoint directly. Remote transport is Streamable HTTP, not legacy SSE, and this configuration does not provide an OAuth login flow.
 
+## Choose tools
+
+In **Settings → Connections**, open an MCP server, click **Load tools**, and choose **Selected tools**. Search the list, select the tools you need, then **Save**. This applies to every Agent and chat using that server, starting with subsequent Runs. Loading or refreshing the list does not execute tools. Connection credentials remain hidden and are preserved when saving tool choices.
+
+**All tools** includes future server additions. **Selected tools** keeps new tools disabled, even if you select every currently listed tool. Clearing the selection disables all tools while retaining the connection. Missing selected tools appear as unavailable; refresh errors preserve your selections.
+
+File-based selections require `schema_version: "2"` and `tools: [search, fetch_content]` on the MCP resource. For a `mcpServers` wrapper, put `schema_version: "2"` next to `mcpServers` and `tools` inside the selected server entry. Older Harness UI versions may reject version 2; do not remove the version merely to bypass that check. Omitted or null `tools` means all tools; `[]` means none. [Tool search](agents-and-subagents.md#tool-search-groups) can further reduce model context without enabling excluded tools.
+
 ## Command transport
 
 1. Install and inspect the MCP server you intend to run. Obtain its executable, arguments, and required environment variables from that server's documentation.

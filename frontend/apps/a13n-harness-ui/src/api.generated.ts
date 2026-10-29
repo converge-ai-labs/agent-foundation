@@ -1678,6 +1678,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mcp/{server_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Tools Settings */
+        get: operations["mcp_tools_settings_api_mcp__server_id__tools_get"];
+        /** Mcp Tools Select */
+        put: operations["mcp_tools_select_api_mcp__server_id__tools_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}/tools/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Tools Discover */
+        post: operations["mcp_tools_discover_api_mcp__server_id__tools_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/configuration/sources": {
         parameters: {
             query?: never;
@@ -2827,6 +2862,11 @@ export interface components {
         };
         /** AgentSummary */
         AgentSummary: {
+            /**
+             * Tool Search Mcp Servers
+             * @default []
+             */
+            tool_search_mcp_servers?: string[];
             /** Agent Id */
             agent_id: string;
             /** Name */
@@ -2839,6 +2879,11 @@ export interface components {
         /** AgentToolSearch */
         AgentToolSearch: {
             config?: components["schemas"]["ToolSearchConfig"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
             /** Groups */
             groups?: {
                 [key: string]: components["schemas"]["AgentToolSearchGroup"];
@@ -5335,6 +5380,28 @@ export interface components {
             /** Retired */
             retired: boolean;
         };
+        /** McpToolDescriptor */
+        McpToolDescriptor: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** McpToolSettings */
+        McpToolSettings: {
+            /** Source Digest */
+            source_digest: string;
+            /** Tools */
+            tools: string[] | null;
+            /** Server Id */
+            server_id: string;
+            /** Name */
+            name: string;
+        };
         /**
          * MemoryAgentSource
          * @description Application-owned organizer; not a selectable Agent resource.
@@ -6395,6 +6462,8 @@ export interface components {
         };
         /** SelectableResourceSummary */
         SelectableResourceSummary: {
+            /** Selected Tool Count */
+            selected_tool_count?: number | null;
             /** Resource Id */
             resource_id: string;
             /** Name */
@@ -9136,6 +9205,13 @@ export interface components {
              * Format: password
              */
             callback_url: string;
+        };
+        /** McpToolSelection */
+        McpToolSelection: {
+            /** Source Digest */
+            source_digest: string;
+            /** Tools */
+            tools: string[] | null;
         };
         /**
          * ResourceMutationRequest
@@ -12600,6 +12676,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_settings_api_mcp__server_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_select_api_mcp__server_id__tools_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpToolSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_discover_api_mcp__server_id__tools_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolDescriptor"][];
                 };
             };
             /** @description Validation Error */

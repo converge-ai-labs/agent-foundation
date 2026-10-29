@@ -71,6 +71,15 @@ from a13n_harness_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_harness_ui.configuration.mcp_tools import (
+    McpToolDescriptor,
+    McpToolSelection,
+    McpToolSettings,
+    discover_tools,
+    selection_mutation,
+    server_resource,
+    tool_settings,
+)
 from a13n_harness_ui.configuration.models import BrowserConfiguration, DeviceResource, PairedDeviceAuthentication
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
@@ -734,6 +743,33 @@ class HarnessUiApp:
                     continue
                 self._configuration_fingerprint = fingerprint
                 await self._reload_configuration_from_path()
+
+    async def mcp_tool_settings(self, server_id: str) -> McpToolSettings:
+        async with self._operation():
+            return tool_settings(await self._configurations.current(), server_id)
+
+    async def discover_mcp_tools(self, server_id: str) -> tuple[McpToolDescriptor, ...]:
+        async with self._operation():
+            source = await self._configurations.current()
+            server_resource(source, server_id)
+            assert source is not None
+            return await discover_tools(source, server_id, self._require_configuration_path().parent)
+
+    async def select_mcp_tools(self, server_id: str, request: McpToolSelection) -> ConfigurationMutationResult:
+        async with self._operation(), self._configuration_lock:
+            source = await self._configurations.current()
+            server_resource(source, server_id)
+            assert source is not None
+            path = self._require_configuration_path()
+            relative_path, mutation = await to_thread.run_sync(selection_mutation, path, source, server_id, request)
+            result = await mutate_configuration_source(
+                path,
+                relative_path,
+                mutation,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            return await self._accept_mutation(result)
 
     async def configuration_sources(self) -> ConfigurationSourceCatalog:
         """List the accepted generation, not a live filesystem or credential inventory."""

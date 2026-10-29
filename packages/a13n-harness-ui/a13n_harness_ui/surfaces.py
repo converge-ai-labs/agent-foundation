@@ -770,6 +770,7 @@ class ThreadActivityPage(SurfaceModel):
 
 
 class AgentSummary(SurfaceModel):
+    tool_search_mcp_servers: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -777,6 +778,7 @@ class AgentSummary(SurfaceModel):
 
 
 class SelectableResourceSummary(SurfaceModel):
+    selected_tool_count: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
     resource_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     kind: Literal["harness_plugin", "environment_run_extension", "mcp_server"]

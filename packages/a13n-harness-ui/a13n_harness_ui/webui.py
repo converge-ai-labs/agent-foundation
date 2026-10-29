@@ -50,6 +50,7 @@ from a13n_harness_ui.browser import (
 from a13n_harness_ui.browser_capture import WindowPreview
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
+from a13n_harness_ui.configuration.mcp_tools import McpToolDescriptor, McpToolSelection, McpToolSettings
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
@@ -1667,6 +1668,22 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    @server.get("/api/mcp/{server_id}/tools", response_model=McpToolSettings)
+    async def mcp_tools_settings(server_id: str) -> McpToolSettings:
+        return await app().mcp_tool_settings(server_id)
+
+    @server.post("/api/mcp/{server_id}/tools/discover", response_model=tuple[McpToolDescriptor, ...])
+    async def mcp_tools_discover(server_id: str) -> tuple[McpToolDescriptor, ...]:
+        return await app().discover_mcp_tools(server_id)
+
+    @server.put(
+        "/api/mcp/{server_id}/tools", response_model=ConfigurationPublication, openapi_extra=_body(McpToolSelection)
+    )
+    async def mcp_tools_select(server_id: str, request: Request) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(
+            await app().select_mcp_tools(server_id, await _document(request, McpToolSelection))
+        )
 
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:

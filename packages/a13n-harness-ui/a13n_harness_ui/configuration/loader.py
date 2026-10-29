@@ -521,13 +521,18 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
     if "mcpServers" not in raw:
         definitions = [(raw, ("transport",))]
     else:
-        if set(raw) != {"mcpServers"} or not isinstance(raw["mcpServers"], dict):
+        if (
+            set(raw) - {"mcpServers", "schema_version"}
+            or raw.get("schema_version", "1") not in {"1", "2"}
+            or not isinstance(raw["mcpServers"], dict)
+        ):
             raise _error("configuration_resource_invalid", "Expected an mcpServers object without extra fields.", path)
         definitions = []
         for name, server in raw["mcpServers"].items():
             if not isinstance(name, str) or not name or not isinstance(server, dict):
                 raise _error("configuration_resource_invalid", "MCP server entries must be named objects.", path)
             transport = dict(server)
+            selected_tools = transport.pop("tools", None)
             transport_type = transport.pop("type", None)
             expected_type = "stdio" if "command" in transport else "http"
             if transport_type == "streamable-http":
@@ -546,7 +551,8 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
             definitions.append(
                 (
                     {
-                        "schema_version": "1",
+                        "schema_version": raw.get("schema_version", "1"),
+                        "tools": selected_tools,
                         "kind": "mcp_server",
                         "id": resource_id,
                         "name": name,

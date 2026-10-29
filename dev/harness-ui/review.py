@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -125,6 +126,31 @@ def configuration(root: Path) -> Path:
             "id": "agent-review",
             "name": "Builder",
             "model": "model-review",
+        },
+        "mcp/tinyfish.yaml": {
+            "schema_version": "2",
+            "kind": "mcp_server",
+            "id": "mcp-tinyfish",
+            "name": "TinyFish",
+            "tools": ["search", "fetch_content"],
+            "transport": {
+                "command": sys.executable,
+                "arguments": [str(Path(__file__).with_name("review_mcp.py").resolve())],
+            },
+        },
+        "agents/research.yaml": {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": "agent-research",
+            "name": "Research assistant",
+            "model": "model-review",
+            "mcp_servers": ["mcp-tinyfish"],
+            "instructions": "Search the web and compare sources before presenting your findings.",
+            "tool_search": {
+                "groups": {
+                    "web": {"description": "Search the web and fetch page content.", "mcp_servers": ["mcp-tinyfish"]}
+                }
+            },
         },
         "projects/atlas.yaml": {
             "schema_version": "1",

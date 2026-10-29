@@ -537,6 +537,29 @@ export function ThreadSelections({
                   <SettingsRow
                     key={option.resource_id}
                     label={option.name}
+                    description={
+                      key === "mcp_server_ids" ? (
+                        <>
+                          <Link
+                            to={`/settings/source?path=${encodeURIComponent(option.source_path)}`}
+                          >
+                            {option.selected_tool_count == null
+                              ? "All tools"
+                              : `${option.selected_tool_count} selected tools`}
+                          </Link>
+                          {selectors.data?.agents
+                            .find(
+                              (agent) =>
+                                agent.agent_id ===
+                                (patch.agent_id ??
+                                  configuration.agent_source.id),
+                            )
+                            ?.tool_search_mcp_servers?.includes(
+                              option.resource_id,
+                            ) && " · On demand"}
+                        </>
+                      ) : undefined
+                    }
                     controlId={`thread-${threadId}-${key}-${option.resource_id}`}
                   >
                     <Checkbox

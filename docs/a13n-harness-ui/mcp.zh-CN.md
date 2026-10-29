@@ -37,6 +37,14 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 
 使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE；此配置不提供 OAuth 登录流程。
 
+## 选择工具
+
+在 **Settings → Connections** 打开 MCP 服务，点击 **Load tools**，切换到 **Selected tools**。搜索并勾选需要的工具，然后 **Save**。设置适用于使用该服务的所有 Agent 和对话，从后续 Run 生效。加载或刷新列表不会执行工具；保存工具选择会保留隐藏的连接凭据。
+
+**All tools** 包括服务以后新增的工具。**Selected tools** 不会自动启用新工具，即使你选中了当前全部工具。清空选择会禁用所有工具，但保留连接。已选但消失的工具会显示为不可用；刷新失败会保留选择。
+
+通过文件配置时，MCP 资源需要 `schema_version: "2"` 和 `tools: [search, fetch_content]`。对于 `mcpServers` 包装格式，在 `mcpServers` 旁设置 `schema_version: "2"`，在对应服务条目内设置 `tools`。旧版 Harness UI 可能拒绝版本 2；不要删除版本来绕过检查。省略或 null 表示全部工具，`[]` 表示不启用工具。工具搜索可以进一步减少上下文，但不能启用已排除的工具。
+
 ## 命令传输
 
 1. 安装并检查准备运行的 MCP 服务器。从服务器文档获取可执行文件、参数和必需环境变量。
