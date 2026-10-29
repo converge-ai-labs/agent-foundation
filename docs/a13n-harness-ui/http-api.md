@@ -154,6 +154,12 @@ Set `THREAD_ID` to an existing Thread ID. Keep the returned `attachment_id` for 
 
 PATCH `/api/threads/{thread_id}/metadata` with the current `metadata_version` as `expected_version` and a `patch`. An omitted title is unchanged; null clears it. `archived` must be boolean, and archiving requires an inactive root. Metadata version, configuration version, and continuation ID protect different operations.
 
+### Permanently delete a Thread
+
+DELETE `/api/threads/{thread_id}?expected_version=<metadata_version>` with instance-owner authentication. The response is an array of deleted Thread IDs: the root and its recursive subagent history. Archived and unarchived ordinary roots are eligible. Active work, stale metadata, or remaining Coordinator workers cause a conflict. Live, Memory, and standalone child deletion are rejected. Scoped guests cannot delete.
+
+Deletion removes saved conversation indexes, usage records, and Thread share grants. Thread files receive best-effort cleanup. Project files, independent forks, and shared immutable history objects are retained. There is no restore operation or secure byte-erasure guarantee. If the response is lost, refetch the Thread before deciding what to do next; do not automatically retry the mutation.
+
 ## Run-only execution environment
 
 Add `environment` to `/submit` when one Run needs different execution selections:

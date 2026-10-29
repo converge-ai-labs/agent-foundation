@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, func, or_, select, true, update
+from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
@@ -34,6 +34,7 @@ from .database import DatabaseSessions, short_session, transaction
 from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
+    CompactionRecord,
     ConfigurationSourceRecord,
     CoordinatorRecord,
     CoordinatorWorkerRecord,
@@ -42,6 +43,7 @@ from .models import (
     PlannedRestartRecord,
     ProjectModelPreferenceRecord,
     ResourceIndexRecord,
+    ShareGrantRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
 )
@@ -413,6 +415,70 @@ class ThreadRepository:
             if configuration is None:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
+
+    async def delete(
+        self,
+        thread_id: str,
+        *,
+        expected_version: int,
+        active_execution_ids: frozenset[str],
+        busy_thread_ids: frozenset[str],
+    ) -> tuple[str, ...]:
+        """Remove one root family atomically, preserving independent worker roots."""
+        async with transaction(self._sessions) as session:
+            root = await session.get(ThreadRecord, thread_id)
+            if root is None:
+                raise StoreConflictError("Thread does not exist.", code="thread_not_found")
+            if root.metadata_version != expected_version:
+                raise StoreConflictError(
+                    "The chat changed. Review it before deleting.", code="thread_metadata_conflict"
+                )
+            if await session.scalar(
+                select(CoordinatorWorkerRecord.worker_thread_id)
+                .where(CoordinatorWorkerRecord.coordinator_thread_id == thread_id)
+                .limit(1)
+            ):
+                raise StoreConflictError(
+                    "Delete this Coordinator's worker chats first.", code="thread_workers_conflict"
+                )
+            roots = (
+                select(ThreadRecord.thread_id)
+                .where(ThreadRecord.thread_id == thread_id)
+                .cte("deleted_family", recursive=True)
+            )
+            family = roots.union_all(
+                select(ThreadRecord.thread_id).join(roots, ThreadRecord.parent_thread_id == roots.c.thread_id)
+            )
+            thread_ids = tuple(await session.scalars(select(family.c.thread_id)))
+            executions = tuple(
+                await session.scalars(
+                    select(ChildExecutionRecord)
+                    .where(ChildExecutionRecord.child_thread_id.in_(thread_ids))
+                    .order_by(ChildExecutionRecord.segment_index.desc())
+                )
+            )
+            if busy_thread_ids.intersection(thread_ids) or any(
+                execution.execution_id in active_execution_ids for execution in executions
+            ):
+                raise StoreConflictError(
+                    "Wait for this chat's subagents and tools to finish before deleting it.",
+                    code="thread_run_active",
+                )
+            # Resumed segments RESTRICT deletion of their predecessors. Delete
+            # the newest segment first, before Thread FK cascades run.
+            for execution in executions:
+                await session.execute(
+                    delete(ChildExecutionRecord).where(ChildExecutionRecord.execution_id == execution.execution_id)
+                )
+            await session.execute(delete(CompactionRecord).where(CompactionRecord.thread_id.in_(thread_ids)))
+            await session.execute(
+                delete(ShareGrantRecord).where(
+                    ShareGrantRecord.scope == "thread", ShareGrantRecord.target_id.in_(thread_ids)
+                )
+            )
+            await session.execute(delete(CoordinatorRecord).where(CoordinatorRecord.thread_id == thread_id))
+            await session.execute(delete(ThreadRecord).where(ThreadRecord.thread_id == thread_id))
+            return thread_ids
 
     async def memory_thread(self, scope: str) -> Thread | None:
         async with short_session(self._sessions) as session:

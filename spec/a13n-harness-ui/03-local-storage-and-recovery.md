@@ -208,6 +208,14 @@ Stars are shared instance metadata displayed within the Thread's current Project
 
 Metadata compare-and-select prevents a stale surface from silently overwriting a title, archive, or star change. Process-local active status is not stored in this head. Root archive admission additionally checks current-process activity; another process remains an ordinary concurrent writer and is handled by the metadata version rather than a liveness protocol.
 
+## Permanent Thread Deletion
+
+An instance owner can permanently delete an ordinary root Thread, whether archived or unarchived, together with its recursive asynchronous child history. Deletion compares the root's expected metadata version and removes the family identities, mutable heads, inspection/work/usage records, child execution segments, compaction indexes, and Thread-scoped share grants in one short writer transaction. Deleted consumption records leave retained usage totals. There is no restore operation.
+
+The App serializes deletion with current-process root admission and checkpoint publication, and rejects active root, child, or retained tool execution. Live and Memory Threads remain reserved; child history is deleted through its root. A Coordinator with any owned worker, including archived workers, requires those independent worker roots to be deleted first. Deleting a worker removes its ownership edge and preserves its Coordinator.
+
+After the transaction, the App closes local shared drafts and suppresses automatic completion input. It attempts to remove each deleted Thread's file area, respecting other Apps' file-use locks and preserving symlink targets. Cleanup failures remain diagnostic and do not restore the Thread. Project roots, remote Environment files, and independent forks remain intact. Immutable checkpoint/composition/display objects remain in the object store because references can be shared with forks; deletion is not secure byte erasure or object-store garbage collection. Current-process execution checks do not establish distributed liveness.
+
 ## Thread Configuration Head
 
 Each root or child Thread has one mutable configuration head:

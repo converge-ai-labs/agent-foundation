@@ -142,6 +142,17 @@ export class NewDraftStore {
     return draft;
   }
 
+  discardDeleted(threadId: string) {
+    if (this.current?.threadId !== threadId) return;
+    this.dispose();
+    this.current = undefined;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      this.error = "Couldn't remove the saved draft from this browser.";
+    }
+  }
+
   detachArchived(threadId: string) {
     const old = this.current;
     if (!old || old.threadId !== threadId) return;

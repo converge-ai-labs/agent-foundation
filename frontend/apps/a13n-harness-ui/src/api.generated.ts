@@ -2242,7 +2242,8 @@ export interface paths {
         get: operations["thread_api_threads__thread_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Thread */
+        delete: operations["delete_thread_api_threads__thread_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -13915,6 +13916,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_thread_api_threads__thread_id__delete: {
+        parameters: {
+            query: {
+                expected_version: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description Validation Error */

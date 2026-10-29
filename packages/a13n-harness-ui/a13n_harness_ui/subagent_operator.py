@@ -577,6 +577,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
             next_offset=next_offset if next_offset < total else None,
         )
 
+    @asynccontextmanager
+    async def guard_execution_admission(self) -> AsyncGenerator[frozenset[str]]:
+        """Keep the active snapshot stable while an idle family is deleted."""
+        async with self._lock:
+            yield frozenset(self._active)
+
     async def active_execution_ids(self) -> frozenset[str]:
         """Return a detached snapshot of locally owned active child executions."""
 

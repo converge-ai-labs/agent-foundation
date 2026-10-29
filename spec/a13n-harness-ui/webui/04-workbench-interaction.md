@@ -26,6 +26,12 @@ A Coordinator appears once among the Project's leading active rows while either 
 
 Promotion and follow-up controls use the ordinary Thread projections and invalidation. They do not allocate replacement conversations, rewrite titles, aggregate approvals, or add Project-wide execution state. Coordinators and workers retain the ordinary conversation renderer, composer, result tracking and pending-decision controls.
 
+## Delete Chat
+
+Instance owners can choose **Delete chat** from ordinary root rows, including Project lists and Archived, or from chat details. Live, Memory, and child conversations do not offer deletion. Active roots disable the action. A destructive confirmation names the chat, explains that its subagent history is removed for everyone and cannot be restored, and distinguishes retained Project files and other chats. Cancel leaves the chat unchanged.
+
+Confirmation submits the displayed metadata version once. Pending deletion disables repeat submission and dismissal. Failure remains in the dialog without automatic retry. Success clears deleted browser drafts and cached Thread projections, refreshes navigation, and replaces a deleted selected conversation with New chat in its Project. Deleting a different conversation preserves the current page. The App remains authoritative for eligibility and [deletion scope](../03-local-storage-and-recovery.md#permanent-thread-deletion).
+
 ## Usage Analytics
 
 The sidebar footer workspace menu exposes **Usage**, opening `/usage`. The narrow navigation sheet exposes the same menu. Project menus offer **View usage**, and Thread usage details offer **Open analytics** with the corresponding scope selected.

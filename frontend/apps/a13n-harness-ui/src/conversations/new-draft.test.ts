@@ -192,3 +192,18 @@ it("restores old Thread identities and trailing attachments without replaying an
   expect([...restored.composer.doc.getMap("attachments").keys()]).toEqual(keys);
   doc.destroy();
 });
+
+it("discards a deleted Thread without reviving it from late composer edits", () => {
+  const owner = store();
+  const deleted = owner.get(composers);
+  deleted.created = true;
+  deleted.composer.doc.getText("text").insert(0, "Discard me");
+  owner.discardDeleted("another-thread");
+  expect(owner.get(composers)).toBe(deleted);
+  owner.discardDeleted(deleted.threadId);
+  deleted.composer.doc.getText("text").insert(0, "Late edit");
+  expect(localStorage.getItem("a13n-harness-ui.new-draft")).toBeNull();
+  const replacement = owner.get(composers);
+  expect(replacement.threadId).not.toBe(deleted.threadId);
+  expect(values(replacement.composer.doc).prompt).toBe("");
+});

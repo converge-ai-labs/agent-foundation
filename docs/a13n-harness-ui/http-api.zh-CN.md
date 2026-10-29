@@ -154,6 +154,12 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/attachments?name=notes.tx
 
 向 `/api/threads/{thread_id}/metadata` PATCH `expected_version` 和 `patch`，其中版本取当前 `metadata_version`。省略标题表示不改，null 表示清空。`archived` 必须为布尔值，且归档要求根操作不活跃。元数据版本、配置版本和 continuation ID 分别保护不同操作。
 
+### 永久删除 Thread
+
+使用实例所有者身份调用 DELETE `/api/threads/{thread_id}?expected_version=<metadata_version>`。响应是已删除 Thread ID 的数组，包含根对话及其递归子 agent 历史。普通根对话无论是否归档都可删除。运行中的任务、过期元数据版本或尚存的 Coordinator worker 会导致冲突。Live、Memory 和单独删除子 Thread 的请求会被拒绝。范围受限的访客无权删除。
+
+删除会移除保存的对话索引、用量记录和 Thread 分享授权，并尽力清理 Thread 文件。Project 文件、独立 fork 和共享的不可变历史对象会保留。此操作没有恢复功能，也不保证安全擦除字节。如果响应丢失，请先重新查询 Thread 再决定下一步，不要自动重试删除。
+
 ## 仅本次 Run 的执行环境
 
 当一次 Run 需要不同的执行选择时，在 `/submit` 中加入 `environment`：

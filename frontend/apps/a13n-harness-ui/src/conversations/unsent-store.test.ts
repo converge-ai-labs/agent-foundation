@@ -131,3 +131,15 @@ it.each([false, true])(
     store.dispose();
   },
 );
+
+it("forgets deleted drafts and ignores their late edits", () => {
+  const draft = new ThreadDraft();
+  const store = new UnsentStore();
+  store.track("deleted", draft);
+  draft.doc.getText("text").insert(0, "Discard me");
+  expect(store.getSnapshot().has("deleted")).toBe(true);
+  store.forget("deleted");
+  draft.doc.getText("text").insert(0, "Late edit");
+  expect(store.getSnapshot().has("deleted")).toBe(false);
+  store.dispose();
+});

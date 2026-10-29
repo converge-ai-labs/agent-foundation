@@ -1673,6 +1673,30 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
 
+    async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
+        """Permanently remove an idle conversation and its subagent history."""
+        async with self._operation():
+            async with self._root_runs.require_inactive(thread_id):
+                with CancelScope(shield=True):
+                    async with self._subagent_operator.guard_execution_admission() as active:
+                        deleted = await self._threads.delete(
+                            thread_id,
+                            expected_version=expected_version,
+                            active_execution_ids=active,
+                            busy_thread_ids=self._tool_executions.busy_thread_ids(),
+                        )
+                    for removed in deleted:
+                        self._tool_executions.suppress(removed)
+                        self._tool_executions.clear_state(removed)
+                        if (draft := self._shared_drafts.pop(removed, None)) is not None:
+                            draft.close()
+                        if self._browsers is not None:
+                            self._browsers.handback.suppress(removed)
+                        await self._thread_files.remove(removed)
+                    await self._retire_mcp_owners()
+                    await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+                    return deleted
+
     async def update_thread_metadata(
         self,
         *,

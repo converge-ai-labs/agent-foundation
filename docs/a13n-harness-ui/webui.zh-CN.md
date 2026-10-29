@@ -64,7 +64,9 @@ flowchart TB
 
 展开 Project 可查看最近更新的五个根对话。**Show more** 加载该 Project 的下一页，折叠后保留已加载页面。搜索覆盖全部保存的根对话，包括未加载页面。**Without a project**、**Unavailable projects** 和 **Archived** 分别保留无 Project、Project 已移除和已归档对话的入口。
 
-使用对话 **…** 菜单改名、加星、分享、检查或归档。在 **Archived** 恢复归档对话。**Project settings** 则修改 Project。对话不能拖到其他 Project。
+使用对话 **…** 菜单改名、加星、分享、检查、归档或删除。在 **Archived** 恢复归档对话。**Project settings** 则修改 Project。对话不能拖到其他 Project。
+
+对话详情和 **Archived** 中也提供 **Delete chat**。确认后，会为所有参与者永久删除该对话及其子 agent 历史。请先停止运行中的任务。删除 Coordinator 前，需要先删除其 worker 对话。Live 和 Memory 对话不可删除，分享链接访客也无权删除对话。Project 文件和独立 fork 会保留。系统会尽力清理 Thread 文件，共享的不可变历史对象仍保留在磁盘上。此操作无法撤销，也不属于安全擦除磁盘。
 
 拖动 Project 手柄排序，或使用菜单的 Move 和 Reset。键盘操作为聚焦手柄、按 Space、用上下箭头移动，再按 Enter 保存或 Escape 取消。Project 顺序和展开状态只属于当前浏览器；改名只改变显示名称。活动工作优先显示，完成时更新导航时间。
 

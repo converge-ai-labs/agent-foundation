@@ -16,6 +16,7 @@ import {
   ShareNetwork,
   SlidersHorizontal,
   Star,
+  Trash,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -31,6 +32,7 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useUnsent } from "./unsent";
 import { CoordinatorIcon } from "./coordinator-icon";
+import { canDeleteThread, DeleteThread } from "./delete-thread";
 import {
   canPromoteCoordinator,
   CoordinatorPromotion,
@@ -81,6 +83,7 @@ export function ThreadRow({
 }) {
   const coordinator = useCoordinatorMutation(row.thread);
   const [promoting, setPromoting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { tracker: results } = useResults();
   const unsent = useUnsent().inputs.has(row.thread.thread_id);
   const unread = results?.isUnread(row.thread.thread_id);
@@ -359,12 +362,24 @@ export function ThreadRow({
                 {row.thread.archived ? "Restore chat" : "Archive chat"}
               </MenuItem>
             )}
+            {canDeleteThread(row.thread) && (
+              <MenuItem
+                variant="destructive"
+                disabled={row.thread.root_activity.state !== "inactive"}
+                onClick={() => setDeleting(true)}
+              >
+                <Trash /> Delete chat
+              </MenuItem>
+            )}
           </MenuPopup>
         </Menu>
       </div>
       <ErrorNotice
         error={star.error || archive.error || fork.error || coordinator.error}
       />
+      {deleting && (
+        <DeleteThread thread={row.thread} close={() => setDeleting(false)} />
+      )}
       <CoordinatorPromotion
         open={promoting}
         close={() => setPromoting(false)}

@@ -432,6 +432,30 @@ class ThreadFiles:
                 logger.warning("Could not prune Thread scratch: %s", directory.name, exc_info=True)
         return tuple(removed)
 
+    async def remove(self, thread_id: str) -> None:
+        """Best-effort cleanup after the durable Thread identity has been deleted."""
+        async with self._mutex:
+            await to_thread.run_sync(self._remove, thread_id)
+
+    def _remove(self, thread_id: str) -> None:
+        directory = self.directory(thread_id)
+        try:
+            with self._gate(thread_id):
+                if (token := self._held.pop(thread_id, None)) is not None:
+                    token.release()
+                    Path(token.lock_file).unlink(missing_ok=True)
+                for path in (self._locks / thread_id).glob("use-*.lock"):
+                    token = FileLock(path, timeout=0, thread_local=False)
+                    with token:
+                        pass
+                    path.unlink(missing_ok=True)
+                if directory.is_symlink():
+                    directory.unlink()
+                elif directory.exists():
+                    shutil.rmtree(directory)
+        except (OSError, Timeout):
+            logger.warning("Could not remove deleted Thread files: %s", thread_id, exc_info=True)
+
     async def close(self) -> None:
         with CancelScope(shield=True):
             async with self._mutex:

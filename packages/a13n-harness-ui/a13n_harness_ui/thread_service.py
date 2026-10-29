@@ -359,6 +359,27 @@ class ThreadService:
             )
             await self._store.publish_work(thread_id, published, state)
 
+    async def delete(
+        self,
+        thread_id: str,
+        *,
+        expected_version: int,
+        active_execution_ids: frozenset[str],
+        busy_thread_ids: frozenset[str],
+    ) -> tuple[str, ...]:
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            thread = await self.require_interactive(thread_id)
+            if thread.parent_thread_id is not None:
+                raise ThreadError("Delete subagent history with its parent chat.", code="child_thread_scoped")
+            if thread.configuration.agent_source.kind == "live":
+                raise ThreadError("The Live Thread stays available for voice sessions.", code="live_thread_reserved")
+            return await self._store.threads.delete(
+                thread_id,
+                expected_version=expected_version,
+                active_execution_ids=active_execution_ids,
+                busy_thread_ids=busy_thread_ids,
+            )
+
     async def update_metadata(
         self,
         *,

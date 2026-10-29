@@ -64,7 +64,9 @@ The instance login key grants full workbench and Host access. Give guests a [sha
 
 Expand a Project for its five most recently updated root conversations. **Show more** loads another page for that Project; collapsing it preserves loaded pages. Search covers all saved roots, including unloaded pages. **Without a project**, **Unavailable projects**, and **Archived** keep unassigned, removed-Project, and archived conversations reachable.
 
-Use a conversation's **…** menu to rename, star, share, inspect, or archive it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.
+Use a conversation's **…** menu to rename, star, share, inspect, archive, or delete it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.
+
+**Delete chat** is also available in chat details and in **Archived**. Confirming permanently removes the chat and its subagent history for everyone. Stop active work first. Delete a Coordinator's worker chats before deleting the Coordinator. Live and Memory chats cannot be deleted, and shared-link guests cannot delete chats. Project files and independent forks are kept. Thread files are cleaned up on a best-effort basis; shared immutable history objects remain on disk. This operation has no undo and is not secure disk erasure.
 
 Drag a Project's handle to reorder it, or use the menu's Move and Reset actions. With the keyboard, focus the handle, press Space, use Up/Down, and press Enter to save or Escape to cancel. Project order and expansion are browser-local; renaming changes only the display name. Active work appears first, and completion updates navigation time.
 

@@ -46,6 +46,14 @@ class ToolExecutions:
             or any(record.thread_id == thread_id for record in self.runtime.active)
         )
 
+    def busy_thread_ids(self) -> frozenset[str]:
+        """Include completion delivery that can still resume a child lane."""
+        return (
+            frozenset(self._pending)
+            | frozenset(self._scheduled)
+            | frozenset(record.thread_id for record in self.runtime.active)
+        )
+
     def _notify_settled(self, thread_id: str) -> None:
         if self.settled is not None:
             self.settled(thread_id)

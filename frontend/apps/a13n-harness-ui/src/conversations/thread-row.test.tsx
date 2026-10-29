@@ -46,7 +46,9 @@ beforeEach(() => {
                   message: "Chat changed. Try again after refreshing.",
                 },
               }
-            : {},
+            : request.method === "DELETE"
+              ? ["thread-one"]
+              : {},
         ),
         {
           status: fail ? 409 : 200,
@@ -422,4 +424,82 @@ it("finishes Star on confirmation without waiting for list refresh or invalidati
   expect(queries.getQueryState(historyKey)?.isInvalidated).toBe(false);
   expect(document.activeElement).toBe(actions);
   invalidate.mockRestore();
+});
+
+it.each([false, true])(
+  "confirms permanent deletion of a chat (archived=%s)",
+  async (archived) => {
+    mount({ archived });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Actions for Example" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete chat" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Delete chat?" });
+    expect(requests).toHaveLength(0);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(requests).toHaveLength(0);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Actions for Example" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete chat" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete chat",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Location").textContent).toBe("/new"),
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0].method).toBe("DELETE");
+    expect(new URL(requests[0].url).searchParams.get("expected_version")).toBe(
+      "3",
+    );
+  },
+);
+
+it("keeps deletion failures in the confirmation without navigating or retrying", async () => {
+  fail = true;
+  mount();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Delete chat" }),
+  );
+  await userEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", {
+      name: "Delete chat",
+    }),
+  );
+  await screen.findByText("Chat changed. Try again after refreshing.");
+  expect(screen.getByLabelText("Location").textContent).toBe(
+    "/threads/thread-one",
+  );
+  expect(requests).toHaveLength(1);
+});
+
+it("disables deletion while a chat is running and hides it for Live", async () => {
+  mount({ running: true });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  expect(
+    (await screen.findByRole("menuitem", { name: "Delete chat" })).getAttribute(
+      "aria-disabled",
+    ),
+  ).toBe("true");
+  cleanup();
+  mount({ live: true });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await screen.findByRole("menu");
+  expect(screen.queryByRole("menuitem", { name: "Delete chat" })).toBeNull();
 });

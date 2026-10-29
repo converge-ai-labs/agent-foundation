@@ -1972,6 +1972,10 @@ def create_webui(
             coordinator_thread_id=document.coordinator_thread_id,
         )
 
+    @server.delete("/api/threads/{thread_id}", response_model=tuple[str, ...])
+    async def delete_thread(thread_id: str, expected_version: Annotated[int, Query(ge=1)]) -> tuple[str, ...]:
+        return await app().delete_thread(thread_id=thread_id, expected_version=expected_version)
+
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str) -> ThreadDetail:
         return await app().get_thread(thread_id)
