@@ -2,7 +2,7 @@
 
 ## Product Boundary
 
-Console is the browser application for Service, consuming the public API through a private client generated from `proto/a13n-service/`. The Service's API-serving roles serve the production build and the API on one origin ([09](../a13n-service/09-runtime.md#console)); development uses a Vite proxy. The [design system](design-system.md) owns reusable UI components.
+Console is the browser application for Service, consuming the public API through a private client generated from `proto/a13n-service/`. The Service's API-serving roles serve the production build and the API on one origin ([09](../a13n-service/09-runtime.md#console)); development uses a Vite proxy. The [design system](design-system.md) owns shared visual foundations and reusable UI components; [Console design](console-design-guidelines.md) owns Console-specific visual presentation.
 
 Service owns permissions, resource versions, execution, durable state and storage. Console owns navigation, forms, resource cache, localized presentation and interaction rendering. Closing a page or stream does not interrupt a run. Independent SDKs have no build or runtime role in Console.
 

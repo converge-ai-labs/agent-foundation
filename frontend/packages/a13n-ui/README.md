@@ -31,7 +31,7 @@ Use the Coss UI component API directly. Button uses `onClick`, `disabled`, `load
 
 FormField associates a label, description, and error with its Input or Textarea. ChoiceField accepts options and controlled `value` / `onValueChange`; use `hideLabel` when another visible label already names the control. For custom composition, use Field and Select parts directly.
 
-Select and SearchPicker choose values; DisclosureSection expands optional configuration. Keep simple fields visible and use a named Button with a plus icon for add actions. See [Forms and Fields](../../../spec/frontend/design-system.md#forms-and-fields) for layout and interaction rules.
+Select and SearchPicker choose values; DisclosureSection expands optional configuration. Keep simple fields visible and use a named Button with a plus icon for add actions. See [shared control rules](../../../spec/frontend/design-system.md#controls-overlays-and-feedback) and the affected product guide linked from the [frontend specification catalog](../../../spec/frontend/README.md) for layout and interaction rules.
 
 SearchPicker accepts grouped options and controlled `value` / `onValueChange`. It uses a Select for up to eight local options and a searchable Combobox for larger lists or remote search through `onSearchChange`. Local search matches labels, descriptions, group names, and keywords. Supply unique option values and group names, translated labels, a placeholder, and an empty message. Selection persists while the search query resets on close. Disabled options cannot activate.
 

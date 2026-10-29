@@ -6,6 +6,7 @@ Agent Foundation is built on Harness, an embeddable agent execution foundation. 
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read the sections relevant to the requested change and handoff.
 - [DEVELOPMENT.md](DEVELOPMENT.md) owns code quality principles and component engineering standards. Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) to features, bug fixes, refactoring, and reviews; read the component rules and owning specifications relevant to the change.
+- For changes affecting browser presentation or interaction, including shared components and UI review fixtures, first follow [frontend agent guidance](frontend/AGENTS.md) and read its applicable shared and product design contracts. Validation scales with the change; the guidance does not require a full visual audit for a small edit.
 - [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
 - [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
 - `docs/` contains Markdown user documentation and its `meta.json` navigation; the Fumadocs site in `frontend/apps/a13n-docs` publishes it. [Documentation Changes](CONTRIBUTING.md#documentation-changes) owns authoring conventions.

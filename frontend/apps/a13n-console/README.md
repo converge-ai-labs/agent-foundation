@@ -2,6 +2,8 @@
 
 The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and its private Service client. The display language follows the browser by default, with English as the fallback. Users can choose English or Simplified Chinese in personal Preferences.
 
+Before UI changes, read [Console design](../../../spec/frontend/console-design-guidelines.md) and follow the [frontend agent guide](../../AGENTS.md). The [shared compositions catalog](src/shared/README.md) describes implementation APIs.
+
 ## Local development
 
 From the repository root, start this checkout's PostgreSQL and Redis, apply migrations, and run the local scripted model, the Service and Console in the background:

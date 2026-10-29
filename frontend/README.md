@@ -2,6 +2,8 @@
 
 Private pnpm workspace for a13n browser applications. Use Node.js 24 and the pnpm version pinned in `package.json`.
 
+For visual and interaction changes, start with the [frontend agent guide](AGENTS.md) and [design contract catalog](../spec/frontend/README.md). Shared foundations and product-specific guides have distinct scopes; validation is proportional to the change.
+
 - `apps/a13n-console`: Service management and conversation application with English and Simplified Chinese resources.
 - `apps/a13n-harness-ui`: Harness UI browser application, compiled into its Python distribution.
 - `apps/a13n-docs`: the Fumadocs documentation site built from the repository `docs/` Markdown; see [Documentation Changes](../CONTRIBUTING.md#documentation-changes).
