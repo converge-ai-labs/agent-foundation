@@ -152,6 +152,7 @@ export function DateTimeField({
             />
             <div className="flex gap-2">
               <ChoiceField
+                data-field-layout="stacked"
                 label={t("Hour")}
                 options={hours.map((option) => ({
                   ...option,
@@ -166,6 +167,7 @@ export function DateTimeField({
                 className="min-w-0 flex-1 [&_[data-slot=select-trigger]]:min-w-0"
               />
               <ChoiceField
+                data-field-layout="stacked"
                 label={t("Minute")}
                 options={minutes.map((option) => ({
                   ...option,
@@ -183,6 +185,7 @@ export function DateTimeField({
               />
               {precision === "second" && (
                 <ChoiceField
+                  data-field-layout="stacked"
                   label={t("Second")}
                   options={minutes.map((option) => ({
                     ...option,

@@ -170,9 +170,11 @@ export function ProviderConfigurationFields({
               "Enable for desktop environments. Uses envd to run commands, access files and operate the desktop. Docker Engine still manages containers; these channels work together, not as alternatives.",
             )}
             controlId={httpId}
+            stackOnNarrow={false}
           >
             <Switch
               id={httpId}
+              aria-describedby={`${httpId}-description`}
               checked={configuration.envd_http != null}
               onCheckedChange={(enabled) =>
                 onConfigurationChange({

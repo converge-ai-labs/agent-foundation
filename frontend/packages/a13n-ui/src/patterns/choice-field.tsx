@@ -36,6 +36,7 @@ export function ChoiceField({
   className,
   popupClassName,
   "aria-describedby": describedBy,
+  "data-field-layout": layout,
 }: {
   label: string;
   placeholder?: string;
@@ -53,11 +54,16 @@ export function ChoiceField({
   className?: string;
   popupClassName?: string;
   "aria-describedby"?: string;
+  "data-field-layout"?: React.ComponentProps<
+    typeof FormField
+  >["data-field-layout"];
 }) {
   if (readOnly) {
     const selected = options.find((option) => option.value === value);
     return (
       <ReadOnlyField
+        data-field-kind="choice"
+        data-field-layout={layout}
         label={label}
         hideLabel={hideLabel}
         description={description}
@@ -75,6 +81,7 @@ export function ChoiceField({
   }
   return (
     <FormField
+      data-field-layout={layout}
       label={label}
       hideLabel={hideLabel || variant === "filter"}
       description={description}
@@ -166,7 +173,10 @@ function ChoiceControl({
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     {option.icon}
-                    <span className="min-w-0 flex-1 truncate">
+                    <span
+                      data-slot="choice-option-label"
+                      className="min-w-0 flex-1 truncate"
+                    >
                       {option.label}
                     </span>
                     {option.hint && (

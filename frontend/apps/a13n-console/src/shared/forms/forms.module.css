@@ -99,23 +99,6 @@
 .schemaFields:empty {
   display: none;
 }
-.switchField {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-}
-.switchField label {
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-}
-.switchField p {
-  margin: 4px 0 0;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.5;
-}
 /* A nested object group: its name sits above the fields it contains. */
 .schemaGroup {
   display: grid;

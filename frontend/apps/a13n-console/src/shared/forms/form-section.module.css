@@ -67,53 +67,58 @@
   padding-block: 0;
 }
 
-/* Compact single-value fields share a label column. Long-form text keeps the
-   full writing width, and hidden labels never reserve an empty column. */
+/* Every field occupies its own row, including nested choice collections. */
+.fieldRows :global([data-slot="field"]),
+.fieldRows :global([data-slot="read-only-field"]) {
+  grid-column: 1 / -1;
+}
+
+/* Text inputs share a label column; choices own their compact setting layout.
+   Long-form text and hidden labels never reserve an empty column. */
 .fieldRows
   :global(
-    [data-slot="field"]:not([data-field-layout="stacked"]):not(
-        :has(> textarea, > .sr-only)
+    [data-slot="field"]:not([data-field-layout]):not(
+        :has(
+          > textarea,
+          > .sr-only,
+          > [data-slot="select-trigger"],
+          > [data-slot="select-button"],
+          > [data-slot="combobox-trigger"][role="combobox"]
+        )
       )
   ),
-.fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only))) {
+.fieldRows
+  :global(
+    [data-slot="read-only-field"]:not([data-field-layout]):not(
+        [data-field-kind="choice"]
+      ):not(:has(> .sr-only))
+  ) {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: minmax(100px, 0.32fr) minmax(0, 1fr);
   align-items: start;
   column-gap: 20px;
   row-gap: 6px;
-}
-.fieldRows
-  :global(
-    [data-slot="field"]:not([data-field-layout="stacked"]):not(
-        :has(> textarea, > .sr-only)
-      )
-      > *
-  ),
-.fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only)) > *) {
-  min-width: 0;
-  grid-column: 2;
-}
-.fieldRows
-  :global(
-    [data-slot="field"]:not([data-field-layout="stacked"])
-      > [data-slot="field-label"]
-  ),
-.fieldRows
-  :global(
-    [data-slot="field"]:not([data-field-layout="stacked"])
-      > [data-slot="field-label-row"]
-  ),
-.fieldRows
-  :global([data-slot="read-only-field"] > [data-slot="read-only-label"]) {
-  grid-column: 1;
-  grid-row: 1;
-  padding-top: 7px;
-}
-.fieldRows
-  :global([data-slot="read-only-field"] > [data-slot="read-only-label"]) {
-  padding-top: 0;
-  line-height: 1.5rem;
+
+  > * {
+    min-width: 0;
+    grid-column: 2;
+  }
+  > :global([data-slot="field-label"]),
+  > :global([data-slot="field-label-row"]),
+  > :global([data-slot="read-only-label"]) {
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 7px;
+  }
+  > :global([data-slot="read-only-label"]) {
+    padding-top: 0;
+    line-height: 1.5rem;
+  }
+  @media (width < 480px) {
+    grid-template-columns: 88px minmax(0, 1fr);
+    column-gap: 12px;
+  }
 }
 .fieldRows :global([data-slot="field-label-row"]) {
   flex-direction: column;
@@ -125,16 +130,4 @@
 }
 .fieldRows :global([data-slot="schema-fields"] > *) {
   grid-column: 1 / -1;
-}
-@media (width < 480px) {
-  .fieldRows
-    :global(
-      [data-slot="field"]:not([data-field-layout="stacked"]):not(
-          :has(> textarea, > .sr-only)
-        )
-    ),
-  .fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only))) {
-    grid-template-columns: 88px minmax(0, 1fr);
-    column-gap: 12px;
-  }
 }

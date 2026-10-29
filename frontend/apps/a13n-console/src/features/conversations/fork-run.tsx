@@ -1,4 +1,4 @@
-import { Button, DisclosureSection, Label, ModalFrame, Switch } from "a13n-ui";
+import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
 import { GitBranchIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,7 +8,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, StatePill } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/forms";
+import { FormActions, SwitchField, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
@@ -206,14 +206,12 @@ export function ForkRun({
             )}
           </p>
           <DisclosureSection title={t("Environment options")}>
-            <Label className={styles.environmentChoice}>
-              <Switch
-                checked={fresh}
-                onCheckedChange={setFresh}
-                disabled={mutation.isPending}
-              />
-              {t("Use a new environment")}
-            </Label>
+            <SwitchField
+              label={t("Use a new environment")}
+              checked={fresh}
+              onCheckedChange={setFresh}
+              disabled={mutation.isPending}
+            />
           </DisclosureSection>
         </div>
         <ErrorNotice error={mutation.error} />

@@ -167,6 +167,22 @@ export function ThreadRow({
   return (
     <div>
       <div key={row.thread.thread_id} className={styles.threadRow}>
+        {disclosure && (
+          <button
+            type="button"
+            className={styles.threadDisclosure}
+            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-expanded={disclosure.expanded}
+            onClick={disclosure.onToggle}
+          >
+            <CaretRight
+              aria-hidden="true"
+              className={
+                disclosure.expanded ? styles.expandedChevron : undefined
+              }
+            />
+          </button>
+        )}
         <NavLink
           to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
           className={({ isActive }) =>
@@ -345,22 +361,6 @@ export function ThreadRow({
             )}
           </MenuPopup>
         </Menu>
-        {disclosure && (
-          <button
-            type="button"
-            className={styles.threadDisclosure}
-            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
-            aria-expanded={disclosure.expanded}
-            onClick={disclosure.onToggle}
-          >
-            <CaretRight
-              aria-hidden="true"
-              className={
-                disclosure.expanded ? styles.expandedChevron : undefined
-              }
-            />
-          </button>
-        )}
       </div>
       <ErrorNotice
         error={star.error || archive.error || fork.error || coordinator.error}

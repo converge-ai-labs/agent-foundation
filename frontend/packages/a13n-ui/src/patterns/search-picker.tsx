@@ -186,7 +186,7 @@ export function SearchPicker({
       >
         <span className="flex w-full min-w-0 items-center gap-2">
           {selected?.icon}
-          <span className="w-0 flex-1 truncate">
+          <span className="min-w-0 flex-1 truncate">
             <ComboboxValue placeholder={placeholder} />
           </span>
         </span>

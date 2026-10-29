@@ -1,8 +1,8 @@
-import { Badge, FormField, Switch } from "a13n-ui";
+import { Badge } from "a13n-ui";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
-import { ExecutionFields, formSectionStyles } from "../../../shared/forms";
+import { ExecutionFields, SwitchField } from "../../../shared/forms";
 import { ErrorToast } from "../../../shared/feedback";
 import {
   DetailLayout,
@@ -335,7 +335,6 @@ export function AgentEditor({
               <Section
                 title={t("Auto review")}
                 description={t("Checks tools set to Auto review.")}
-                className={styles.parameterSection}
               >
                 <ReviewerSection
                   draft={draft}
@@ -348,7 +347,6 @@ export function AgentEditor({
               <Section
                 title={t("Tool discovery")}
                 description={t("Choose how the agent finds tools.")}
-                className={styles.parameterSection}
               >
                 <ToolSearchSection
                   draft={draft}
@@ -365,21 +363,15 @@ export function AgentEditor({
                 )}
                 actions={mark("summarize")}
               >
-                <div className={formSectionStyles.fieldRows}>
-                  <FormField
-                    label={t("Summarize tool")}
-                    description={t(
-                      "Automatic context compaction remains available when this tool is off.",
-                    )}
-                    readOnly={configurationReadonly}
-                  >
-                    <Switch
-                      checked={draft.summarize}
-                      value={t(draft.summarize ? "On" : "Off")}
-                      onCheckedChange={draft.setSummarize}
-                    />
-                  </FormField>
-                </div>
+                <SwitchField
+                  label={t("Summarize tool")}
+                  description={t(
+                    "Automatic context compaction remains available when this tool is off.",
+                  )}
+                  readOnly={configurationReadonly}
+                  checked={draft.summarize}
+                  onCheckedChange={draft.setSummarize}
+                />
               </Section>
               <Section
                 title={t("Background compaction")}
@@ -400,7 +392,6 @@ export function AgentEditor({
               <Section
                 title={t("Execution")}
                 description={t("Control tool runs and incoming messages.")}
-                className={styles.parameterSection}
               >
                 <ExecutionFields
                   compact

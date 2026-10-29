@@ -382,6 +382,11 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   await screen.findByText("Recent 5");
   expect(activity).toHaveLength(1);
   expect(activity[0].searchParams.get("limit")).toBe("5");
+  expect(
+    within(screen.getByRole("region", { name: "One" })).queryAllByRole(
+      "heading",
+    ),
+  ).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Two" }));
   await screen.findByText("Other project");
   fireEvent.click(
@@ -1046,8 +1051,12 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   );
   await screen.findByText("Recent 5");
   expect(
-    within(group).getByRole("heading", { name: "New results · 1" }),
-  ).toBeTruthy();
+    within(group)
+      .getAllByRole("heading")
+      .map(
+        (heading) => heading.getAttribute("aria-label") ?? heading.textContent,
+      ),
+  ).toEqual(["Active", "New results · 1", "History"]);
   expect(
     within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
@@ -1083,6 +1092,16 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   expect(
     within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
+  expect(
+    within(group)
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent),
+  ).toEqual(["Active", "History"]);
+  activeThreads = [];
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(within(group).queryAllByRole("heading")).toEqual([]),
+  );
   expect(writes).toEqual([]);
   vi.restoreAllMocks();
 });

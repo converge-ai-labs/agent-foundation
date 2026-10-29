@@ -265,7 +265,9 @@ it("keeps a connected account ready when reselecting the current connection", as
   await screen.findByText(/Account: account-test/);
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Model connection" }));
-  await user.click(screen.getByRole("option", { name: "Codex subscription" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Codex subscription" }),
+  );
   await chooseModel();
   await continueStep();
   expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
