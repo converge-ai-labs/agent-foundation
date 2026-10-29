@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 
 from a13n_harness_ui.errors import ObjectIntegrityError, StoreIntegrityError
 
-from .checkpoint_access import CheckpointAccess
 from .layout import StorageLayout
 
 if TYPE_CHECKING:
@@ -151,7 +150,6 @@ class ImmutableObjectStore:
         self._layout = layout
         self._settings = settings
         self._producer_release = producer_release
-        self.checkpoint_access = CheckpointAccess(layout.root)
 
     async def publish(
         self,

@@ -1,19 +1,19 @@
-"""Native filesystem/OS-lock coverage shared by Linux, macOS and Windows."""
+"""Deletion-scoped cleanup on native Linux, macOS and Windows filesystems."""
 
 import asyncio
-import sys
-from contextlib import asynccontextmanager
 
 import pytest
-from a13n_harness_ui.errors import ObjectIntegrityError
+from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 from a13n_harness_ui.restart_models import RestartBatch, RestartItem
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import open_local_store
-from a13n_harness_ui.storage.checkpoint_access import CheckpointAccess
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
 from a13n_harness_ui.storage.contracts import ReferencedContinuation
+from a13n_harness_ui.storage.database import short_session
 from a13n_harness_ui.storage.display import seal_display
+from a13n_harness_ui.storage.models import DeletedThreadRecord
 from a13n_harness_ui.storage.objects import ObjectKind
+from sqlalchemy import select
 
 from .test_continuation_objects import checkpoint
 from .test_thread_repository import _configuration, _initial
@@ -21,35 +21,89 @@ from .test_thread_repository import _configuration, _initial
 pytestmark = pytest.mark.anyio
 
 
-async def test_prune_deleted_checkpoints_but_retain_live_history_and_shared_prefix(tmp_path):
+async def create_owner(store, value):
+    return await store.threads.create(
+        thread_id=value.harness_state.thread_id, configuration=_configuration(), initial_state=_initial()
+    )
+
+
+async def delete_owner(store, value):
+    return await store.threads.delete(
+        value.harness_state.thread_id,
+        expected_version=1,
+        active_execution_ids=frozenset(),
+        busy_thread_ids=frozenset(),
+    )
+
+
+async def test_only_explicitly_deleted_threads_are_reclaimed(tmp_path):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         value = checkpoint()
         archive = await seal_display(store.objects, value.display)
         value = value.model_copy(update={"display": archive})
+        await create_owner(store, value)
         deleted = await publish_continuation(store.objects, value)
+        # A fork owns fresh native/display payloads but shares the prefix.
         fork = value.model_copy(update={"harness_state": value.harness_state.fork()})
-        await store.threads.create(
-            thread_id=fork.harness_state.thread_id, configuration=_configuration(), initial_state=_initial()
-        )
-        # Both historical checkpoints survive, even without a current SQL head.
+        await create_owner(store, fork)
         first = await publish_continuation(store.objects, fork)
         second = await publish_continuation(store.objects, fork)
+        # Missing owner is not deletion evidence (including pre-upgrade leftovers).
+        unknown = value.model_copy(update={"harness_state": value.harness_state.fork()})
+        unknown_ref = await publish_continuation(store.objects, unknown)
         unrelated = await store.objects.publish(
             object_kind=ObjectKind.mcp_app_resource, object_schema_version="1", payload={"keep": True}
         )
+        assert await store.checkpoints.prune() == 0
+        await delete_owner(store, value)
         assert await store.checkpoints.prune() == 3
         refs = await store.objects.references()
         assert deleted not in refs
         assert archive.prefix in refs and unrelated.ref in refs
-        for reference in (first, second):
-            assert await read_continuation(store.objects, reference, include_display=True) == fork
+        for reference, expected in ((first, fork), (second, fork), (unknown_ref, unknown)):
+            assert await read_continuation(store.objects, reference, include_display=True) == expected
         assert await store.checkpoints.prune() == 0
 
 
-@pytest.mark.parametrize("state", ["ready", "consumed"])
-async def test_restart_reference_protects_checkpoint_without_thread(tmp_path, state):
+async def test_failed_deletion_has_no_marker_and_deleted_identity_cannot_be_reused(tmp_path):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         value = checkpoint()
+        await create_owner(store, value)
+        ref = await publish_continuation(store.objects, value)
+        with pytest.raises(StoreConflictError):
+            await store.threads.delete(
+                value.harness_state.thread_id,
+                expected_version=2,
+                active_execution_ids=frozenset(),
+                busy_thread_ids=frozenset(),
+            )
+        async with short_session(store.database.sessions) as session:
+            assert not list(await session.scalars(select(DeletedThreadRecord)))
+        assert await store.checkpoints.prune() == 0
+        assert await read_continuation(store.objects, ref)
+        await delete_owner(store, value)
+        with pytest.raises(StoreIntegrityError) as failure:
+            await create_owner(store, value)
+        assert failure.value.code == "thread_deleted"
+        source = await store.threads.create(
+            thread_id="thread-source", configuration=_configuration(), initial_state=_initial()
+        )
+        with pytest.raises(StoreIntegrityError) as failure:
+            await store.threads.fork(
+                source=source,
+                thread_id=value.harness_state.thread_id,
+                initial_state=_initial(),
+                continuation=None,
+                read_model=None,
+            )
+        assert failure.value.code == "thread_deleted"
+
+
+@pytest.mark.parametrize("state", ["ready", "consumed"])
+async def test_restart_reference_protects_deleted_threads_checkpoint(tmp_path, state):
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        value = checkpoint()
+        await create_owner(store, value)
         ref = await publish_continuation(store.objects, value)
         await store.restarts.publish(
             RestartBatch(
@@ -66,13 +120,16 @@ async def test_restart_reference_protects_checkpoint_without_thread(tmp_path, st
                 ),
             )
         )
+        await delete_owner(store, value)
         assert await store.checkpoints.prune() == 0
         assert await read_continuation(store.objects, ref, include_display=True) == value
 
 
 @pytest.mark.parametrize("kind", [ObjectKind.continuation_display, ObjectKind.continuation])
-async def test_interrupted_publication_payloads_are_reclaimed(tmp_path, monkeypatch, kind):
+async def test_interrupted_publication_payloads_are_out_of_scope(tmp_path, monkeypatch, kind):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        value = checkpoint()
+        await create_owner(store, value)
         publish = store.objects.publish_model
 
         async def fail(**kwargs):
@@ -82,20 +139,24 @@ async def test_interrupted_publication_payloads_are_reclaimed(tmp_path, monkeypa
 
         monkeypatch.setattr(store.objects, "publish_model", fail)
         with pytest.raises(OSError):
-            await publish_continuation(store.objects, checkpoint())
+            await publish_continuation(store.objects, value)
+        await delete_owner(store, value)
         before = await store.objects.references()
         assert before
-        assert await store.checkpoints.prune() == len(before)
-        assert not await store.objects.references()
+        assert await store.checkpoints.prune() == 0
+        assert await store.objects.references() == before
 
 
 @pytest.mark.parametrize(
     "kind", [ObjectKind.continuation, ObjectKind.continuation_state, ObjectKind.continuation_display]
 )
-async def test_unlink_failure_is_retryable_without_removing_protected_payloads(tmp_path, monkeypatch, kind):
+async def test_unlink_failure_is_best_effort_without_generic_orphan_sweeping(tmp_path, monkeypatch, kind):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
-        ref = await publish_continuation(store.objects, checkpoint())
+        value = checkpoint()
+        await create_owner(store, value)
+        ref = await publish_continuation(store.objects, value)
         manifest = await store.objects.read_model(ref, ReferencedContinuation)
+        await delete_owner(store, value)
         remove = store.objects.remove
 
         async def fail(reference):
@@ -107,132 +168,83 @@ async def test_unlink_failure_is_retryable_without_removing_protected_payloads(t
         await store.checkpoints.prune()
         remaining = await store.objects.references()
         assert remaining
+        monkeypatch.setattr(store.objects, "remove", remove)
         if kind == ObjectKind.continuation:
             assert set(remaining) == {ref, manifest.native_state, manifest.display}
-        monkeypatch.setattr(store.objects, "remove", remove)
-        assert await store.checkpoints.prune() == len(remaining)
-        assert not await store.objects.references()
+            assert await store.checkpoints.prune() == 3
+        else:
+            # Once the manifest is removed, a failed unlink leaves a partial
+            # payload. Recovering arbitrary partials is deliberately not this GC.
+            assert len(remaining) == 1 and remaining[0].object_kind == kind
+            assert await store.checkpoints.prune() == 0
 
 
-async def test_corrupt_manifest_aborts_before_deleting_unattached_payloads(tmp_path):
+async def test_unreadable_manifest_is_skipped_without_blocking_other_cleanup(tmp_path):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
-        ref = await publish_continuation(store.objects, checkpoint())
-        await store.objects.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload={"bad": 1})
-        before = await store.objects.references()
-        with pytest.raises(ObjectIntegrityError):
-            await store.checkpoints.prune()
-        assert await store.objects.references() == before
-        assert await read_continuation(store.objects, ref)
+        value = checkpoint()
+        await create_owner(store, value)
+        ref = await publish_continuation(store.objects, value)
+        corrupt = await store.objects.publish(
+            object_kind=ObjectKind.continuation, object_schema_version="1", payload={"bad": 1}
+        )
+        await delete_owner(store, value)
+        assert await store.checkpoints.prune() == 3
+        assert ref not in await store.objects.references()
+        assert corrupt.ref in await store.objects.references()
 
 
-async def test_scan_yields_to_publication_even_if_publisher_finishes_before_recheck(tmp_path, monkeypatch):
+async def test_pruning_ignores_in_progress_publication_without_global_access_registration(tmp_path, monkeypatch):
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
-        await publish_continuation(store.objects, checkpoint())
-        inventory = store.objects.references
+        deleted = checkpoint()
+        await create_owner(store, deleted)
+        await publish_continuation(store.objects, deleted)
+        await delete_owner(store, deleted)
+        value = deleted.model_copy(update={"harness_state": deleted.harness_state.fork()})
         entered, release = asyncio.Event(), asyncio.Event()
+        publish = store.objects.publish_model
 
-        async def paused():
-            refs = await inventory()
-            entered.set()
-            await release.wait()
-            return refs
+        async def paused(**kwargs):
+            if kwargs["object_kind"] == ObjectKind.continuation:
+                entered.set()
+                await release.wait()
+            return await publish(**kwargs)
 
-        monkeypatch.setattr(store.objects, "references", paused)
-        pruning = asyncio.create_task(store.checkpoints.prune())
+        monkeypatch.setattr(store.objects, "publish_model", paused)
+        task = asyncio.create_task(publish_continuation(store.objects, value))
         await asyncio.wait_for(entered.wait(), 5)
         try:
-            # Scanning does not hold the foreground gate. A completed reader is
-            # sufficient to invalidate the scan; active-token checks alone aren't.
-            async with CheckpointAccess(tmp_path).use():
-                pass
+            assert await store.checkpoints.prune() == 3
         finally:
             release.set()
-        assert await asyncio.wait_for(pruning, 5) == 0
-        monkeypatch.setattr(store.objects, "references", inventory)
-        assert await store.checkpoints.prune() == 3
+        ref = await asyncio.wait_for(task, 5)
+        assert await read_continuation(store.objects, ref, include_display=True) == value
 
 
-async def test_active_access_and_gate_contention_skip_without_waiting(tmp_path):
-    first, second = CheckpointAccess(tmp_path), CheckpointAccess(tmp_path)
-    async with first.use():
-        assert await asyncio.wait_for(second.snapshot(), 1) is None
-    generation = await first.snapshot()
-    assert generation is not None
-    async with first.unchanged(generation) as idle:
-        assert idle
-        assert await asyncio.wait_for(second.snapshot(), 1) is None
-        async with second.unchanged(generation) as other:
-            assert not other
-    # Errors raised inside the body must not be mistaken for acquisition failure.
-    with pytest.raises(TimeoutError, match="body"):
-        async with first.unchanged(generation):
-            raise TimeoutError("body")
+async def test_concurrent_collectors_and_bounded_passes(tmp_path, monkeypatch):
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_local_store(settings) as first, open_local_store(settings) as second:
+        value = checkpoint()
+        await create_owner(first, value)
+        for _ in range(4):
+            await publish_continuation(first.objects, value)
+        await delete_owner(first, value)
+        assert await first.checkpoints.prune(limit=0) == 0
+        assert await first.checkpoints.prune(limit=1) == 3
+        assert len(await first.objects.references()) == 9
+        inventory = first.objects.references
+        both = asyncio.Event()
+        entered = 0
 
+        async def snapshot():
+            nonlocal entered
+            refs = await inventory()
+            entered += 1
+            if entered == 2:
+                both.set()
+            await both.wait()
+            return refs
 
-async def test_cancelled_consumer_releases_use_token(tmp_path):
-    access = CheckpointAccess(tmp_path)
-    entered = asyncio.Event()
-
-    async def consumer():
-        async with access.use():
-            entered.set()
-            await asyncio.Event().wait()
-
-    task = asyncio.create_task(consumer())
-    await asyncio.wait_for(entered.wait(), 5)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert await access.snapshot() is not None
-    assert not list((tmp_path / "checkpoint-users").glob("*.lock"))
-
-
-async def test_native_process_death_releases_use_and_allows_pruning(tmp_path):
-    script = """
-import asyncio, sys
-from pathlib import Path
-from a13n_harness_ui.storage.checkpoint_access import CheckpointAccess
-async def main():
-    async with CheckpointAccess(Path(sys.argv[1])).use():
-        print('ready', flush=True)
-        await asyncio.Event().wait()
-asyncio.run(main())
-"""
-    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
-        await publish_continuation(store.objects, checkpoint())
-        process = await asyncio.create_subprocess_exec(
-            sys.executable, "-c", script, str(tmp_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        try:
-            assert (await asyncio.wait_for(process.stdout.readline(), 10)).strip() == b"ready"
-            assert await store.checkpoints.prune() == 0
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await asyncio.wait_for(process.communicate(), 10)
-        assert await store.checkpoints.prune() == 3
-        assert not list((tmp_path / "checkpoint-users").glob("*.lock"))
-
-
-async def test_pruning_is_bounded_and_readers_can_enter_between_batches(tmp_path, monkeypatch):
-    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
-        for _ in range(12):
-            await publish_continuation(store.objects, checkpoint())
-        assert await store.checkpoints.prune(limit=1) == 3
-        access = store.objects.checkpoint_access
-        unchanged = access.unchanged
-        passes = 0
-
-        @asynccontextmanager
-        async def enter(generation):
-            nonlocal passes
-            passes += 1
-            if passes == 2:
-                async with CheckpointAccess(tmp_path).use():
-                    pass
-            async with unchanged(generation) as idle:
-                yield idle
-
-        monkeypatch.setattr(access, "unchanged", enter)
-        assert await store.checkpoints.prune() == 30
-        assert len(await store.objects.references()) == 3
+        monkeypatch.setattr(first.objects, "references", snapshot)
+        monkeypatch.setattr(second.objects, "references", snapshot)
+        await asyncio.wait_for(asyncio.gather(first.checkpoints.prune(), second.checkpoints.prune()), 5)
+        assert not await inventory()

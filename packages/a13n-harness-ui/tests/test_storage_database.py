@@ -115,6 +115,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "compaction",
             "configuration_source",
             "current_configuration",
+            "deleted_thread",
             "environment_binding",
             "live_transcript_head",
             "project_model_preference",
@@ -155,6 +156,30 @@ def test_upgrade_preserves_planned_handoff(tmp_path: Path) -> None:
         migrator.verify_current()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
+    finally:
+        engine.dispose()
+
+
+def test_deleted_thread_migration_starts_empty_and_downgrade_only_discards_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "62534972e2d6"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
+        migrator.upgrade()
+        with engine.begin() as connection:
+            assert connection.execute(text("SELECT count(*) FROM deleted_thread")).scalar_one() == 0
+            connection.execute(text("INSERT INTO deleted_thread (thread_id) VALUES ('thread-deleted')"))
+        migrator._run(lambda config: command.downgrade(config, "62534972e2d6"), write=True)
+        assert "deleted_thread" not in inspect(engine).get_table_names()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM deleted_thread")).scalar_one() == 0
     finally:
         engine.dispose()
 

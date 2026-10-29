@@ -49,13 +49,6 @@ async def read_continuation(
     objects: ImmutableObjectStore, reference: ObjectRef, *, include_display: bool = False
 ) -> Continuation:
     """Resolve an exact checkpoint; callers protect replaceable heads with the Thread lock."""
-    async with objects.checkpoint_access.use():
-        return await _read_continuation(objects, reference, include_display=include_display)
-
-
-async def _read_continuation(
-    objects: ImmutableObjectStore, reference: ObjectRef, *, include_display: bool
-) -> Continuation:
     stored = (await objects.read_model(reference, ContinuationPayload)).root
     if isinstance(stored, StoredContinuation):
         state, display = await to_thread.run_sync(detach_display_history, stored.harness_state)
@@ -84,11 +77,6 @@ def _check_owner(expected: str, actual: str) -> None:
 
 async def publish_continuation(objects: ImmutableObjectStore, value: Continuation) -> ObjectRef:
     """Publish owned state and display before the manifest; selection remains the caller's CAS."""
-    async with objects.checkpoint_access.use():
-        return await _publish_continuation(objects, value)
-
-
-async def _publish_continuation(objects: ImmutableObjectStore, value: Continuation) -> ObjectRef:
     if not value.display_loaded:
         raise ValueError("Load display before publishing a continuation")
     state, legacy_display = await to_thread.run_sync(detach_display_history, value.harness_state)
@@ -119,10 +107,9 @@ async def _publish_continuation(objects: ImmutableObjectStore, value: Continuati
 
 async def remove_continuation(objects: ImmutableObjectStore, reference: ObjectRef) -> None:
     """Release a superseded checkpoint under its Thread lock, never shared prefix segments."""
-    async with objects.checkpoint_access.use():
-        stored = (await objects.read_model(reference, ContinuationPayload)).root
-        await objects.remove(reference)
-        if isinstance(stored, ReferencedContinuation):
-            await objects.remove(stored.native_state)
-            if stored.display is not None:
-                await objects.remove(stored.display)
+    stored = (await objects.read_model(reference, ContinuationPayload)).root
+    await objects.remove(reference)
+    if isinstance(stored, ReferencedContinuation):
+        await objects.remove(stored.native_state)
+        if stored.display is not None:
+            await objects.remove(stored.display)

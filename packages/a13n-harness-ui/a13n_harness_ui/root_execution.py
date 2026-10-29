@@ -957,10 +957,7 @@ class RootRunExecutor:
             # cancellation; terminal saving starts only after stream teardown.
             # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
-            async with (
-                self._store.objects.checkpoint_access.use(),
-                checkpoint_lock(self._store.layout.root, thread.thread_id),
-            ):
+            async with checkpoint_lock(self._store.layout.root, thread.thread_id):
                 published_ref = await publish_continuation(self._store.objects, continuation)
                 settlement = await self._store.compactions.settlement(state)
                 selected = await self._store.threads.select_continuation(

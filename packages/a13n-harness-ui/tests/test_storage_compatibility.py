@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261029_1f69a2ed231f_record_deleted_threads_for_checkpoint_.py").unlink()
     (newer / "versions/20261026_62534972e2d6_retain_background_compaction_operations.py").unlink()
     (newer / "versions/20261019_f3d4ba03d1cc_add_scoped_sharing_grants.py").unlink()
     (newer / "versions/20261012_cb56f9a0a4df_add_live_voice_transcript_head_and_.py").unlink()
@@ -99,6 +100,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
+                "deleted_thread",
                 "compaction",
                 "coordinator",
                 "coordinator_worker",

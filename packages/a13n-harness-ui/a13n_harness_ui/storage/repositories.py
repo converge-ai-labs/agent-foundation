@@ -39,6 +39,7 @@ from .models import (
     CoordinatorRecord,
     CoordinatorWorkerRecord,
     CurrentConfigurationRecord,
+    DeletedThreadRecord,
     EnvironmentBindingRecord,
     PlannedRestartRecord,
     ProjectModelPreferenceRecord,
@@ -225,6 +226,8 @@ class ThreadRepository:
                     raise StoreIntegrityError(
                         "A worker must be a root in its Coordinator's Project.", code="coordinator_worker_invalid"
                     )
+            if await session.get(DeletedThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError("Deleted Thread identities cannot be reused.", code="thread_deleted")
             if await session.get(ThreadRecord, thread_id) is not None:
                 raise StoreIntegrityError(
                     "Thread identity already exists; read it before retrying.", code="thread_exists"
@@ -274,6 +277,8 @@ class ThreadRepository:
             _require_kind(continuation, ObjectKind.continuation)
         now = datetime.now(UTC)
         async with transaction(self._sessions) as session:
+            if await session.get(DeletedThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError("Deleted Thread identities cannot be reused.", code="thread_deleted")
             current = await session.get(ThreadRecord, source.thread_id)
             configuration = await session.get(ThreadConfigurationRecord, source.thread_id)
             if current is None or configuration is None:
@@ -477,6 +482,9 @@ class ThreadRepository:
                 )
             )
             await session.execute(delete(CoordinatorRecord).where(CoordinatorRecord.thread_id == thread_id))
+            # Commit deletion evidence with the removal, never infer it from a
+            # missing row: a fork publishes its checkpoint before creating one.
+            session.add_all(DeletedThreadRecord(thread_id=identity) for identity in thread_ids)
             await session.execute(delete(ThreadRecord).where(ThreadRecord.thread_id == thread_id))
             return thread_ids
 

@@ -8,7 +8,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import HarnessUiError, StoreConflictError, ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage.database import short_session, transaction
-from a13n_harness_ui.storage.models import ChildExecutionRecord, ShareGrantRecord
+from a13n_harness_ui.storage.models import ChildExecutionRecord, DeletedThreadRecord, ShareGrantRecord
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
 from a13n_harness_ui.thread_files import AttachmentUpload, ThreadFiles
 from anyio import Event, fail_after, sleep
@@ -126,11 +126,14 @@ async def test_delete_family_handles_resumed_segments_and_checks_active_descenda
                 active_execution_ids=frozenset(),
                 busy_thread_ids=frozenset({"thread-child"}),
             )
+        async with short_session(store.database.sessions) as session:
+            assert not list(await session.scalars(select(DeletedThreadRecord)))
         deleted = await app.delete_thread(thread_id=root.thread_id, expected_version=1)
         assert set(deleted) == {root.thread_id, "thread-child", "thread-grandchild"}
         async with short_session(store.database.sessions) as session:
             assert not list(await session.scalars(select(ChildExecutionRecord)))
             assert not list(await session.scalars(select(ShareGrantRecord)))
+            assert set(await session.scalars(select(DeletedThreadRecord.thread_id))) == set(deleted)
         assert all([await store.threads.get(identity) is None for identity in deleted])
 
 

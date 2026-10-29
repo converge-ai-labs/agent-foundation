@@ -64,6 +64,14 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class DeletedThreadRecord(Base):
+    """Permanent deletion evidence, independent of the removed Thread row."""
+
+    __tablename__ = "deleted_thread"
+
+    thread_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+
+
 class CompactionRecord(Base):
     """Generation outcomes and independent Host settlement, awaiting pruning."""
 
