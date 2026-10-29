@@ -91,6 +91,7 @@ class Page:
     navigation: int = 0
     deferred_objects: list[tuple[Frame, str]] = field(default_factory=list)
     requires_observation: bool = False
+    reference_owner: object | None = field(default=None, repr=False)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     loaded: asyncio.Event = field(default_factory=asyncio.Event)
     visual: View | None = None
@@ -207,9 +208,12 @@ class Chromium:
 
     def _destroyed(self, event: dict, session: str | None) -> None:
         target = event["targetId"]
-        if owner := self.owners.get(target):
-            owner._removed(target)
-        self.pages.pop(target, None)
+        for scope in self.scopes:
+            scope._removed(target)
+        if removed := self.pages.pop(target, None):
+            removed.invalidate()
+            removed.requires_observation = True
+            removed.reference_owner = None
         self.attach_locks.pop(target, None)
         for page in self.pages.values():
             if target in page.frame_sessions:

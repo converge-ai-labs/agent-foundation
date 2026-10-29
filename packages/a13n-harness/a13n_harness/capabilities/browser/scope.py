@@ -22,11 +22,11 @@ from .cdp import Chromium, Page
 
 
 class CdpBrowserBackend:
-    """One tab scope on a borrowed Chromium connection, independent of Run lifetime.
+    """Tab access and owned cleanup on a borrowed Chromium connection.
 
-    Hosts authorize the binding before exposing it, and may supply check_access
-    for live revocation. All scopes sharing a browser must use the same Chromium
-    connection for exclusive membership. A scope is not profile isolation.
+    Hosts authorize the binding and may supply check_access for live revocation.
+    tab_access defaults to owned targets; global access includes all live pages
+    without claiming them. Bindings share one Chromium runtime and profile.
     """
 
     def __init__(
@@ -36,14 +36,19 @@ class CdpBrowserBackend:
         *,
         check_access: Callable[[], None] | None = None,
         new_window: bool = False,
+        tab_access: Literal["owned", "global"] = "owned",
     ) -> None:
+        if tab_access not in {"owned", "global"}:
+            raise ValueError("tab_access must be 'owned' or 'global'.")
         self.browser = browser
+        self.tab_access = tab_access
         self.new_window = new_window
         self.check_access = check_access
         self._targets: dict[str, None] = {}
         self._download_targets: set[str] = set()
         self._selected: str | None = None
         self._lock = asyncio.Lock()
+        self._reference_owner = object()
         self._retired = False
         self._paused = False
         self._handback = asyncio.Event()
@@ -51,13 +56,14 @@ class CdpBrowserBackend:
         if page is not None:
             if browser.pages.get(page.target) is not page:
                 raise BrowserError("Page does not belong to this browser connection.")
-            self._claim(page.target)
+            if tab_access == "owned":
+                self._claim(page.target)
             self._selected = page.target
         browser.scopes.add(self)
 
     @property
     def targets(self) -> frozenset[str]:
-        """Current process-local membership; never a durable recovery checkpoint."""
+        """Owned cleanup targets, independent of global visibility; process-local only."""
         return frozenset(self._targets)
 
     @property
@@ -86,8 +92,8 @@ class CdpBrowserBackend:
 
     def invalidate(self) -> None:
         """Require fresh observation after human input or Host selection changes."""
-        for target in self._targets:
-            if page := self.browser.pages.get(target):
+        for target in self._targets.keys() | {self._selected}:
+            if page := self.browser.pages.get(target or ""):
                 page.invalidate()
                 page.requires_observation = True
 
@@ -114,6 +120,31 @@ class CdpBrowserBackend:
             page.requires_observation = True
         return self.page
 
+    @asynccontextmanager
+    async def _page_operation(self, page: Page) -> AsyncIterator[None]:
+        async with page.lock:
+            self._check()
+            if self.browser.pages.get(page.target) is not page:
+                raise BrowserError("The requested browser tab no longer exists. List tabs again.")
+            if page.reference_owner is not self._reference_owner:
+                if page.reference_owner is not None:
+                    page.invalidate()
+                    page.requires_observation = True
+                page.reference_owner = self._reference_owner
+            yield
+
+    async def _close_target(self, target: str, *, cleanup: bool = False) -> None:
+        # Cleanup also drains operations from other bindings using this page.
+        if page := self.browser.pages.get(target):
+            async with page.lock:
+                if not cleanup:
+                    self._check()
+                await self.browser.close_target(target)
+        else:
+            if not cleanup:
+                self._check()
+            await self.browser.close_target(target)
+
     async def attach(self, target: str, *, select: bool = True) -> None:
         """Host-only admission of an exact live target, including best-effort reattachment."""
         async with self._operation():
@@ -121,12 +152,14 @@ class CdpBrowserBackend:
             if not any(info["targetId"] == target and info["type"] == "page" for info in infos):
                 raise BrowserError("The requested browser tab no longer exists.")
             self._check()
-            self._claim(target)
+            if self.tab_access == "owned":
+                self._claim(target)
             page = await self.browser.attach(target)
-            page.invalidate()
-            page.requires_observation = True
-            if select:
-                self._selected = target
+            async with self._page_operation(page):
+                page.invalidate()
+                page.requires_observation = True
+                if select:
+                    self._selected = target
 
     async def _refresh(self) -> list[dict]:
         infos = (await self.browser.send("Target.getTargets"))["targetInfos"]
@@ -145,7 +178,9 @@ class CdpBrowserBackend:
         for target in tuple(self._targets):
             if target not in live:
                 self._removed(target)
-        return [info for info in pending if info["targetId"] in self._targets]
+        if self._selected is not None and self._selected not in live:
+            self._removed(self._selected)
+        return [info for info in pending if self.tab_access == "global" or info["targetId"] in self._targets]
 
     async def pause(self) -> None:
         """Block admission immediately and drain this scope before human input."""
@@ -185,7 +220,7 @@ class CdpBrowserBackend:
                 for target in remaining:
                     attempted.add(target)
                     try:
-                        await self.browser.close_target(target)
+                        await self._close_target(target, cleanup=True)
                     except BrowserError as exc:
                         errors.append(exc)
             if errors:
@@ -217,7 +252,7 @@ class CdpBrowserBackend:
     async def observe(self, query: BrowserQuery | None = None) -> BrowserObservation:
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await self.browser.observe(page, query)
 
     async def read(
@@ -232,7 +267,7 @@ class CdpBrowserBackend:
     ) -> str:
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await self.browser.read(
                     page, kind, target=target, revision=revision, frame_index=frame_index, offset=offset, limit=limit
                 )
@@ -242,7 +277,7 @@ class CdpBrowserBackend:
 
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await capture(self.browser, page, full_page=full_page, clip=clip)
 
     async def navigate(
@@ -254,7 +289,7 @@ class CdpBrowserBackend:
             async with asyncio.timeout_at(end) as admission:
                 async with self._operation():
                     page = await self._selected_page()
-                    async with page.lock:
+                    async with self._page_operation(page):
                         if page.requires_observation:
                             raise BrowserError("Observe after handback before continuing.")
                         # The page operation owns dispatch-aware timeout reporting.
@@ -270,7 +305,7 @@ class CdpBrowserBackend:
             async with asyncio.timeout(timeout):
                 async with self._operation():
                     page = await self._selected_page()
-                    async with page.lock:
+                    async with self._page_operation(page):
                         return await wait(self.browser, page, condition, revision=revision, check_access=self._check)
         except TimeoutError:
             return '{"verification":"timed_out","dispatch":"not_dispatched"}'
@@ -280,47 +315,50 @@ class CdpBrowserBackend:
 
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await interact(self.browser, page, action, revision=revision)
 
     async def tabs(self, action: BrowserTabAction, *, target: str = "", url: str = "") -> tuple[BrowserTab, ...]:
         async with self._operation():
             infos = await self._refresh()
-            if action in {"select", "close"} and target not in self._targets:
-                raise BrowserError("Tab is not owned by this browser scope. List tabs again.")
+            if action in {"select", "close"} and target not in {info["targetId"] for info in infos}:
+                raise BrowserError("Tab is not owned or accessible in this browser scope. List tabs again.")
             if action == "new":
-                if self._selected is None:
-                    # Recreate a lost owned window, but preserve Chromium's
-                    # default tab placement for a scope that has never owned a tab.
+                if self._selected is None or self.browser.owners.get(self._selected) is not self:
+                    # Do not use a borrowed opener: its popups belong to its owner.
+                    # Recreate a lost owned window when this scope had one.
                     page = await self.browser.create(new_window=self.new_window or bool(self._download_targets))
                 else:
                     source = await self._selected_page()
-                    async with source.lock:
+                    async with self._page_operation(source):
                         page = await self.browser.new_tab(source)
                 # Register even if close/pause began during creation: cleanup must
                 # see the late target. Never navigate it after retirement.
                 self._claim(page.target)
                 self._selected = page.target
-                self.invalidate()
                 if self._retired or self._paused:
                     raise BrowserError("Tab creation was interrupted. List tabs after handback; do not replay it.")
-                self._check()
-                if url:
-                    result = json.loads(await self.browser.navigate(page, url))
-                    if result["verification"] != "passed":
-                        raise BrowserError(
-                            "Tab opened, but navigation did not finish: "
-                            + result.get("error", "unknown outcome")
-                            + " List tabs before continuing; do not repeat tab creation.",
-                            dispatch="unknown",
-                        )
+                async with self._page_operation(page):
+                    page.invalidate()
+                    page.requires_observation = True
+                    if url:
+                        result = json.loads(await self.browser.navigate(page, url))
+                        if result["verification"] != "passed":
+                            raise BrowserError(
+                                "Tab opened, but navigation did not finish: "
+                                + result.get("error", "unknown outcome")
+                                + " List tabs before continuing; do not repeat tab creation.",
+                                dispatch="unknown",
+                            )
                 infos = await self._refresh()
             elif action == "select":
-                self._selected = target
-                await self._selected_page()
-                self.invalidate()
+                page = await self.browser.attach(target)
+                async with self._page_operation(page):
+                    page.invalidate()
+                    page.requires_observation = True
+                    self._selected = target
             elif action == "close":
-                await self.browser.close_target(target)
+                await self._close_target(target)
                 infos = await self._refresh()
             return tuple(
                 BrowserTab(
@@ -332,15 +370,19 @@ class CdpBrowserBackend:
     async def dialog(self, action: Literal["inspect", "accept", "dismiss"], *, text: str = "") -> str:
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await self.browser.dialog(page, action, text=text)
 
     async def upload(self, target: str, paths: tuple[str, ...], *, revision: str) -> str:
         async with self._operation():
             page = await self._selected_page()
-            async with page.lock:
+            async with self._page_operation(page):
                 return await self.browser.upload(page, target, paths, revision=revision)
 
     async def downloads(self) -> str:
         async with self._operation():
-            return self.browser.downloads(self._download_targets)
+            targets = self._download_targets
+            if self.tab_access == "global":
+                targets = targets | {item["page"] for item in self.browser.download_records.values()}
+                targets |= self.browser.download_omitted.keys()
+            return self.browser.downloads(targets)

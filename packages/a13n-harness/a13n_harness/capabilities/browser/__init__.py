@@ -305,7 +305,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             action: Literal["goto", "back", "forward", "reload"] = "goto",
             timeout: Annotated[float, Field(gt=0, le=60)] = 25,
         ) -> str:
-            """Navigate the scoped tab, go back/forward or reload. Supply URL only for goto.
+            """Navigate the selected tab, go back/forward or reload. Supply URL only for goto.
             Returns dispatch, load verification and final observed URL/title. Never retries navigation.
             """
             if (action == "goto") != bool(url):
@@ -348,7 +348,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
 
         @tools.tool_plain(metadata=metadata("tabs"))
         async def browser_tabs(action: BrowserTabAction = "list", tab: str = "", url: str = "") -> str:
-            """List, open, select or close this scope's tabs. Use returned t references."""
+            """List, open, select or close tabs accessible to this binding. Use returned t references."""
             if action in {"select", "close"} and tab not in self._tabs:
                 raise ModelRetry("Unknown tab. List browser_tabs again.")
             result = await guarded(backend.tabs(action, target=self._tabs.get(tab, ""), url=url))
@@ -386,7 +386,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             paths: Annotated[list[Annotated[str, Field(min_length=1, max_length=4096)]], Field(max_length=16)]
             | None = None,
         ) -> str:
-            """List scoped download status/Host paths, or set a file input to absolute browser-Host paths.
+            """List accessible tracked download status/Host paths, or set a file input to absolute browser-Host paths.
             Upload requires ref and 1-16 paths; downloads takes neither. Does not transfer client or sandbox files.
             """
             if action == "downloads":

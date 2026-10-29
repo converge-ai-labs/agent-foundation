@@ -304,3 +304,59 @@ async def test_scopes_survive_runs_reconcile_popups_and_reattach(native_browser)
             await runtime.close()
         if replacement is not None:
             await replacement.close()
+
+
+async def test_global_and_owned_bindings_share_pages_but_not_cleanup(native_browser):
+    from a13n_harness.capabilities.browser import BrowserError
+
+    endpoint, process = native_browser
+    runtime = await Chromium.connect(endpoint)
+    try:
+        existing = {
+            item["targetId"]
+            for item in (await runtime.send("Target.getTargets"))["targetInfos"]
+            if item["type"] == "page"
+        }
+        owned = CdpBrowserBackend(runtime)
+        await owned.tabs("new", url='data:text/html,<input aria-label="Editor">')
+        target = owned.page.target
+        global_scope = CdpBrowserBackend(runtime, tab_access="global")
+        global_tools = BrowserUseCapability(global_scope).get_toolset().tools
+        listing = await global_tools["browser_tabs"].function(action="list")
+        assert listing.count("[t") == len(existing) + 1
+        assert not global_scope.targets
+        await global_scope.tabs("select", target=target)
+        original = await owned.observe()
+        old = next(item for item in original.elements if item.description == "Editor")
+        observation = await global_scope.observe()
+        editor = next(item for item in observation.elements if item.description == "Editor")
+        result = await global_scope.interact(
+            Fill(kind="fill", target=Ref(kind="ref", ref=editor.target), text="shared"), revision=observation.revision
+        )
+        assert json.loads(result)["dispatch"] == "dispatched"
+        stale = await owned.interact(
+            Fill(kind="fill", target=Ref(kind="ref", ref=old.target), text="stale"), revision=original.revision
+        )
+        assert json.loads(stale)["dispatch"] == "not_dispatched"
+        assert await runtime.evaluate(owned.page, "document.querySelector('input').value") == "shared"
+        await owned.observe()
+        assert "shared" in await owned.read("forms")
+        await global_scope.tabs("new")
+        created = global_scope.page.target
+        assert global_scope.targets == {created}
+        assert owned.targets == {target} and owned.page.target == target
+        await global_scope.close()
+        remaining = {item["targetId"] for item in (await runtime.send("Target.getTargets"))["targetInfos"]}
+        assert created not in remaining and {target} | existing <= remaining
+        # Exact reattachment borrows the surviving target without claiming it.
+        replacement = CdpBrowserBackend(runtime, tab_access="global")
+        await replacement.attach(target)
+        assert replacement.page.requires_observation and not replacement.targets
+        await replacement.observe()
+        await owned.close()
+        with pytest.raises(BrowserError, match="No tabs"):
+            await replacement.observe()
+        await replacement.close()
+        assert process.returncode is None
+    finally:
+        await runtime.close()
