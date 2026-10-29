@@ -8,9 +8,8 @@ export function speedLabel(state?: Schema<"FastControl">["state"] | null) {
     case "ultrafast":
       return "Ultrafast";
     case "off":
-      return "Standard";
     case "default":
-      return "Provider default";
+      return "Standard";
     default:
       return "—";
   }

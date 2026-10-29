@@ -4,7 +4,7 @@ import { speedLabel } from "./speed-label";
 it.each([
   ["on", "Fast"],
   ["off", "Standard"],
-  ["default", "Provider default"],
+  ["default", "Standard"],
   ["ultrafast", "Ultrafast"],
   [null, "—"],
   [undefined, "—"],
