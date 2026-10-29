@@ -59,6 +59,9 @@ def test_demo_configuration_isolation_and_cleanup(tmp_path: Path, monkeypatch, o
         assert document.defaults.agent == "agent-counter"
         assert document.webui.mcp_apps.enabled
         assert document.webui.mcp_apps.servers == ("mcp-counter",)
+        server = loaded.configuration.mcp_servers["mcp-counter"]
+        assert server.schema_version == "2"
+        assert server.tools is None
         agent = loaded.configuration.agents["agent-counter"]
         assert loaded.configuration.selected_mcp_servers(agent) == ()
         assert agent.capabilities[0].configuration == {"rules": {"mcp/mcp-counter/reset_counter": "ask"}}

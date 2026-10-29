@@ -48,7 +48,7 @@ def write_configuration(root: Path, model_url: str) -> Path:
             ],
         },
         "mcp/counter.yaml": {
-            "schema_version": "1",
+            "schema_version": "2",
             "kind": "mcp_server",
             "id": "mcp-counter",
             "name": "Counter App",

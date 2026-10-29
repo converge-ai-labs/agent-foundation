@@ -209,7 +209,7 @@ Have a working MCP endpoint and its authentication details ready. The following 
 2. Create the complete server file:
 
    ```yaml title="mcp/docs.yaml — complete file"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-docs
    name: Documentation server

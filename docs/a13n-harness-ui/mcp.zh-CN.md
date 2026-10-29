@@ -20,7 +20,7 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 2. 将以下完整文件保存为 `mcp/docs.yaml`，替换 URL：
 
    ```yaml title="mcp/docs.yaml — complete file; replace endpoint"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-docs
    name: Documentation service
@@ -39,11 +39,23 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 
 ## 选择工具
 
-在 **Settings → Connections** 打开 MCP 服务，点击 **Load tools**，切换到 **Selected tools**。搜索并勾选需要的工具，然后 **Save**。设置适用于使用该服务的所有 Agent 和对话，从后续 Run 生效。加载或刷新列表不会执行工具；保存工具选择会保留隐藏的连接凭据。
+在 **Settings → Connections** 打开 MCP 服务，选择 **Selected tools** 即可加载工具列表。也可以点击 **Load tools** 或 **Refresh** 主动获取列表。搜索并勾选需要的工具，然后 **Save**。设置适用于使用该服务的所有 Agent 和对话，从后续 Run 生效。加载或刷新列表不会执行工具；保存工具选择会保留隐藏的连接凭据。
 
 **All tools** 包括服务以后新增的工具。**Selected tools** 不会自动启用新工具，即使你选中了当前全部工具。清空选择会禁用所有工具，但保留连接。已选但消失的工具会显示为不可用；刷新失败会保留选择。
 
-通过文件配置时，MCP 资源需要 `schema_version: "2"` 和 `tools: [search, fetch_content]`。对于 `mcpServers` 包装格式，在 `mcpServers` 旁设置 `schema_version: "2"`，在对应服务条目内设置 `tools`。旧版 Harness UI 可能拒绝版本 2；不要删除版本来绕过检查。省略或 null 表示全部工具，`[]` 表示不启用工具。工具搜索可以进一步减少上下文，但不能启用已排除的工具。
+对于单资源文件，在 `transport` 同级添加 `tools`，填写服务器返回的精确工具名：
+
+```yaml title="mcp/docs.yaml — merge fragment"
+tools: [search, fetch_content]
+```
+
+| `tools` 值                | 允许使用的工具                   |
+| ------------------------- | -------------------------------- |
+| 省略或 `null`             | 全部工具，包括以后新增的工具     |
+| `[]`                      | 不允许任何工具                   |
+| `[search, fetch_content]` | 仅这些精确匹配的服务器原生工具名 |
+
+对于 `mcpServers` 包装格式，在对应服务器条目内设置 `tools`。限制适用于直接调用、工具搜索调用和 MCP Apps。[工具搜索](agents-and-subagents.md#tool-search-groups)可以进一步减少模型上下文，但不能启用已排除的工具。
 
 ## 命令传输
 
@@ -52,7 +64,7 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 2. 将如下完整资源保存为 `mcp/local.yaml`。用已安装服务器的实际值替换可执行文件和参数：
 
    ```yaml title="mcp/local.yaml — complete file; replace executable and arguments"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-local
    name: Local tools
@@ -72,10 +84,11 @@ Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外
 
 ## 复制 JSON 配置
 
-如果服务器文档提供 `mcpServers`，可将该对象直接保存为 `mcp/servers.json`。以下示例是 `mcp/docs.yaml` 的**替代形式**，使用同一 `mcp-docs` ID：
+如果服务器文档提供 `mcpServers`，在其同级添加 `schema_version: "2"`，再将对象保存为 `mcp/servers.json`。以下示例是 `mcp/docs.yaml` 的**替代形式**，使用同一 `mcp-docs` ID：
 
 ```json title="mcp/servers.json — complete file; replace endpoint"
 {
+  "schema_version": "2",
   "mcpServers": {
     "docs": {
       "type": "http",
@@ -178,11 +191,15 @@ mcp:
 
 ## MCP 字段参考
 
-单资源文件需要 `schema_version: "1"`、`kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
+MCP 资源和包装对象使用 `schema_version: "2"`。单资源文件还需要 `kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
 
 | 传输 | 必需      | 可选                               |
 | ---- | --------- | ---------------------------------- |
 | 命令 | `command` | `arguments: []`、`environment: {}` |
 | 远程 | `url`     | `headers: {}`                      |
 
-Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。
+Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。可选的 `tools` 遵循[工具选择规则](#choose-tools)。
+
+### 兼容性
+
+已有的 v1 MCP 资源和未标版本的 `mcpServers` 包装对象仍可读取，默认允许全部工具。添加工具限制前，将 MCP 文档的 `schema_version` 设为 `"2"`。旧版 Harness UI 无法加载 v2；保留版本标记可防止旧版静默忽略限制。根配置、Agent 和 Model 的 schema 版本相互独立，保持不变。

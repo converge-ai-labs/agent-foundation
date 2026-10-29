@@ -36,7 +36,7 @@ uv run --locked mcp-apps-example
 The final command speaks MCP on stdin/stdout and waits for an MCP client. It is not an HTTP server. Add the following resource under the selected configuration directory's `mcp/` and enable it in the root YAML. WebUI automatically adds it to every root and child Agent; no Agent `mcp_servers` entry is needed:
 
 ```yaml
-schema_version: '1'
+schema_version: '2'
 kind: mcp_server
 id: mcp-counter
 name: Counter App

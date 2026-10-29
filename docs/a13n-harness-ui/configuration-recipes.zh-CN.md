@@ -209,7 +209,7 @@ Jev 将严重程度 0–3 映射为 `low`、`medium`、`high` 和 `extra_high`�
 2. 创建完整的服务器文件：
 
    ```yaml title="mcp/docs.yaml — 完整文件"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-docs
    name: Documentation server

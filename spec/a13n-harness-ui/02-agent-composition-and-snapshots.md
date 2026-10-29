@@ -131,10 +131,10 @@ Auxiliary inference uses the selected Model's own settings and normal Host crede
 
 ## MCP Servers
 
-Files under `mcp/` use lower-case `.yaml` or `.json`. Either format accepts one canonical reusable MCP server:
+Files under `mcp/` use lower-case `.yaml` or `.json`. New MCP resources, templates, and examples use schema version 2. Either format accepts one canonical reusable MCP server:
 
 ```yaml
-schema_version: "1"
+schema_version: "2"
 kind: mcp_server
 id: mcp-github
 name: GitHub
@@ -146,10 +146,11 @@ transport:
       env: GITHUB_TOKEN
 ```
 
-Either format also accepts a top-level `mcpServers` object with no other top-level fields:
+Either format also accepts a top-level `mcpServers` object alongside `schema_version`, with no other top-level fields:
 
 ```json
 {
+  "schema_version": "2",
   "mcpServers": {
     "local": {
       "command": "python",
@@ -164,7 +165,7 @@ Either format also accepts a top-level `mcpServers` object with no other top-lev
 }
 ```
 
-Each named entry normalizes to a version-1 `mcp_server` resource. Its name is preserved for display; its ID lowercases the name, replaces runs outside `[a-z0-9]` with `-`, trims surrounding hyphens, and adds `mcp-` unless already present. If no ASCII alphanumeric characters remain, the suffix is the first 12 lowercase hex characters of the original name's UTF-8 SHA-256 digest. Names are non-empty and at most 256 characters; resulting IDs meet the ordinary 128-character resource ID constraint. Normalized-name collisions and cross-file ID duplicates reject the candidate, with no precedence rule.
+Each named entry normalizes to an `mcp_server` resource using the wrapper's schema version. Its name is preserved for display; its ID lowercases the name, replaces runs outside `[a-z0-9]` with `-`, trims surrounding hyphens, and adds `mcp-` unless already present. If no ASCII alphanumeric characters remain, the suffix is the first 12 lowercase hex characters of the original name's UTF-8 SHA-256 digest. Names are non-empty and at most 256 characters; resulting IDs meet the ordinary 128-character resource ID constraint. Normalized-name collisions and cross-file ID duplicates reject the candidate, with no precedence rule.
 
 Entries use `command`, optional `args`/`env`, or `url`/optional `headers`, never both transports. Optional `type` is `stdio` for commands or `http`/`streamable-http` for remote servers; omission infers the type. `args` and `env` normalize to `arguments` and `environment`. Unknown fields, including `disabled` and legacy SSE transport selection, fail explicitly. Discovery never enables a server. This compatibility surface does not claim every client's configuration dialect or OAuth workflow.
 
@@ -194,7 +195,7 @@ Every Run creates fresh native MCP Toolset projections. The root `mcp` mapping o
 
 An MCP resource may restrict its tools with `tools: [name, ...]`, using exact server-native names of 1–128 characters, without applying catalog-key syntax. Omitted or null `tools` enables the full discovered inventory, including later additions; an empty list enables none. A selected list never automatically grows. Missing selected names remain selected but unavailable; remaining tools can still run. This resource-wide restriction applies to every root and child using the server, intersects Agent canonical target allowlists, and filters the callable target directory before direct model definitions, tool-search controls, or CodeAct exposure. MCP Apps admission checks the current server restriction for both the original App tool and each requested tool.
 
-Restricted resources require `schema_version: "2"`; version 1 rejects non-null `tools`. A version-2 `mcpServers` wrapper declares `schema_version: "2"` beside `mcpServers` and stores `tools` beside each server's transport fields. Version 1 remains readable with unrestricted defaults. Explicit versioning prevents an older reader from silently ignoring an execution restriction. Immutable MCP recipes capture the selected names; historical recipes omit the field and remain unrestricted. Changes affect subsequent Run captures, while App admission continues to use current authority.
+Version-2 resources support both unrestricted and selected tools. A `mcpServers` wrapper stores `tools` beside each server's transport fields. Version-1 resources and unversioned wrappers remain readable with unrestricted defaults; non-null `tools` requires version 2. Explicit versioning prevents an older reader from silently ignoring an execution restriction. Immutable MCP recipes capture the selected names; historical recipes omit the field and remain unrestricted. Changes affect subsequent Run captures, while App admission continues to use current authority.
 
 ## Agent Resources
 

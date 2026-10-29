@@ -74,7 +74,7 @@ export function template(kind: ResourceKind, id: string): string {
     mcp_server: { transport: { command: "", arguments: [] } },
   };
   return stringify({
-    schema_version: "1",
+    schema_version: kind === "mcp_server" ? "2" : "1",
     kind,
     id,
     name: "Untitled",

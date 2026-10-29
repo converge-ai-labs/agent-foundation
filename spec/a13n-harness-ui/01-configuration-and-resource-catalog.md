@@ -281,7 +281,7 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 ## Compatibility
 
-The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. Unversioned MCP `mcpServers` wrappers normalize to version-1 resources. Tool-restricted MCP resources and wrappers use version 2 under the [MCP tool selection contract](02-agent-composition-and-snapshots.md#mcp-tool-selection). A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
+The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. New MCP resources and wrappers use version 2 under the [MCP tool selection contract](02-agent-composition-and-snapshots.md#mcp-tool-selection); unversioned wrappers retain version-1 normalization for compatibility. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
 
 Within a supported version, root configuration sections, resource envelopes, Project roots/defaults, Capability selections, tool-search groups, canonical subagent metadata, and retained generation/source envelopes accept additive JSON fields. Readers preserve those fields in normalized round trips without applying unknown behavior. Source loading logs unknown field locations and names, never their values, so a typo remains diagnosable without disabling the whole tree. Managed read-modify-write operations preserve unrelated known and unknown fields; explicit full-source replacement still replaces the submitted document.
 

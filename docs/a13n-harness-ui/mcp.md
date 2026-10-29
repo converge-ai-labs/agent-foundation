@@ -20,7 +20,7 @@ Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the roo
 2. Save this complete file as `mcp/docs.yaml`, replacing the URL:
 
    ```yaml title="mcp/docs.yaml — complete file; replace endpoint"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-docs
    name: Documentation service
@@ -39,11 +39,23 @@ Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loop
 
 ## Choose tools
 
-In **Settings → Connections**, open an MCP server, click **Load tools**, and choose **Selected tools**. Search the list, select the tools you need, then **Save**. This applies to every Agent and chat using that server, starting with subsequent Runs. Loading or refreshing the list does not execute tools. Connection credentials remain hidden and are preserved when saving tool choices.
+In **Settings → Connections**, open an MCP server and choose **Selected tools** to load its tool list. Use **Load tools** or **Refresh** to fetch the list explicitly. Search the list, select the tools you need, then **Save**. This applies to every Agent and chat using that server, starting with subsequent Runs. Loading or refreshing the list does not execute tools. Connection credentials remain hidden and are preserved when saving tool choices.
 
 **All tools** includes future server additions. **Selected tools** keeps new tools disabled, even if you select every currently listed tool. Clearing the selection disables all tools while retaining the connection. Missing selected tools appear as unavailable; refresh errors preserve your selections.
 
-File-based selections require `schema_version: "2"` and `tools: [search, fetch_content]` on the MCP resource. For a `mcpServers` wrapper, put `schema_version: "2"` next to `mcpServers` and `tools` inside the selected server entry. Older Harness UI versions may reject version 2; do not remove the version merely to bypass that check. Omitted or null `tools` means all tools; `[]` means none. [Tool search](agents-and-subagents.md#tool-search-groups) can further reduce model context without enabling excluded tools.
+For a single-resource file, add `tools` beside `transport`. Use exact tool names reported by the server:
+
+```yaml title="mcp/docs.yaml — merge fragment"
+tools: [search, fetch_content]
+```
+
+| `tools` value             | Access                                |
+| ------------------------- | ------------------------------------- |
+| Omitted or `null`         | All tools, including future additions |
+| `[]`                      | No tools                              |
+| `[search, fetch_content]` | Only those exact server-native names  |
+
+For a `mcpServers` wrapper, put `tools` inside the selected server entry. The restriction applies to direct calls, tool-search calls, and MCP Apps. [Tool search](agents-and-subagents.md#tool-search-groups) can further reduce model context without enabling excluded tools.
 
 ## Command transport
 
@@ -52,7 +64,7 @@ File-based selections require `schema_version: "2"` and `tools: [search, fetch_c
 2. Save a complete resource such as the following as `mcp/local.yaml`. Replace the executable and arguments with your installed server's values:
 
    ```yaml title="mcp/local.yaml — complete file; replace executable and arguments"
-   schema_version: "1"
+   schema_version: "2"
    kind: mcp_server
    id: mcp-local
    name: Local tools
@@ -72,10 +84,11 @@ Harness UI launches this program on the Host. Selecting a Sandbox Environment do
 
 ## Copy a JSON configuration
 
-If your server documentation supplies `mcpServers`, save that object directly as `mcp/servers.json`. This example is an **alternative** to `mcp/docs.yaml`, with the same `mcp-docs` ID:
+If your server documentation supplies `mcpServers`, add `schema_version: "2"` beside it and save the object as `mcp/servers.json`. This example is an **alternative** to `mcp/docs.yaml`, with the same `mcp-docs` ID:
 
 ```json title="mcp/servers.json — complete file; replace endpoint"
 {
+  "schema_version": "2",
   "mcpServers": {
     "docs": {
       "type": "http",
@@ -178,11 +191,15 @@ Cancellation, expiry, connection closure, or shutdown ends the request. If answe
 
 ## MCP field reference
 
-A single-resource file requires `schema_version: "1"`, `kind: mcp_server`, a unique `mcp-` `id`, a display `name`, and exactly one transport form:
+Use `schema_version: "2"` for MCP resources and wrappers. A single-resource file also requires `kind: mcp_server`, a unique `mcp-` `id`, a display `name`, and exactly one transport form:
 
 | Transport | Required  | Optional                           |
 | --------- | --------- | ---------------------------------- |
 | Command   | `command` | `arguments: []`, `environment: {}` |
 | Remote    | `url`     | `headers: {}`                      |
 
-Environment and header values accept strings or `{env: VARIABLE}`. In a `mcpServers` wrapper, use `args` and `env` instead of `arguments` and `environment`.
+Environment and header values accept strings or `{env: VARIABLE}`. In a `mcpServers` wrapper, use `args` and `env` instead of `arguments` and `environment`. Optional `tools` follows the [tool selection rules](#choose-tools).
+
+### Compatibility
+
+Existing v1 MCP resources and unversioned `mcpServers` wrappers remain readable with all tools allowed. Set the MCP document's `schema_version` to `"2"` before adding a tool restriction. Older Harness UI versions cannot load v2; keep the version marker so they cannot silently ignore the restriction. Root, Agent, and Model schema versions are independent and remain unchanged.
