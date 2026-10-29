@@ -580,6 +580,14 @@ function ProjectGroup({
         <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
+              {((index === 0 && activeRows.length > 0) ||
+                (index === recentStart && recentStart > 0)) && (
+                <div className={styles.sectionHeading}>
+                  <span role="heading" aria-level={3}>
+                    {index === 0 ? "Active" : "History"}
+                  </span>
+                </div>
+              )}
               {unreadRows.length > 0 && index === activeRows.length && (
                 <div className={styles.sectionHeading}>
                   <span
