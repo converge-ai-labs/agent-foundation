@@ -2,7 +2,6 @@
 
 import re
 from collections.abc import Sequence
-from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import ColumnElement, Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -239,23 +238,10 @@ async def _metric_page(
         try:
             if len(position) != 2 or not isinstance(position[1], str) or len(position[1]) > 72:
                 raise ValueError("position")
-            if position[0] is not None and not isinstance(position[0], str):
-                raise ValueError("metric")
-            value = None if position[0] is None else Decimal(str(position[0]))
-            if value is not None and not value.is_finite():
-                raise ValueError("metric")
-        except (ValueError, InvalidOperation):
+        except ValueError:
             raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
-        if value is None:
-            query = query.where(metric.is_(None), SessionRow.id > position[1])
-        else:
-            query = query.where(
-                or_(
-                    metric < value if descending else metric > value,
-                    (metric == value) & (SessionRow.id > position[1]),
-                    metric.is_(None),
-                )
-            )
+        value = None if position[0] is None else cursors.numeric_value(position[0])
+        query = query.where(cursors.metric_after(metric, value, SessionRow.id > position[1], descending=descending))
     values = (
         await session.execute(
             query.add_columns(metric)

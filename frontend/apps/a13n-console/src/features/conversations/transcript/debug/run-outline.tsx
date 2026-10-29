@@ -1,12 +1,8 @@
+import { SortButton } from "../../../../shared/collection";
+import { KnownSubtotal } from "../../../../shared/known-subtotal";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ArrowsDownUpIcon,
-  CaretUpIcon,
-  CaretDownIcon,
-} from "@phosphor-icons/react";
+import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import type { Schema } from "../../../../shared/api";
 import { costColumnFormat, exactCost } from "../../../../shared/cost";
@@ -47,23 +43,11 @@ export function RunOutline({
   );
   const sortButton = (field: Outline["sort"]["field"], label: string) => {
     const active = outline.sort.field === field;
-    const Icon = active
-      ? outline.sort.direction === "asc"
-        ? ArrowUpIcon
-        : ArrowDownIcon
-      : ArrowsDownUpIcon;
     return (
-      <button
-        type="button"
+      <SortButton
+        label={label}
         className={styles.sortButton}
-        data-active={active || undefined}
-        aria-label={t("Sort by {{field}}", { field: label })}
-        aria-pressed={active}
-        title={
-          active
-            ? t(outline.sort.direction === "asc" ? "Ascending" : "Descending")
-            : undefined
-        }
+        direction={active ? outline.sort.direction : undefined}
         onClick={() =>
           outline.setSort({
             field,
@@ -76,10 +60,7 @@ export function RunOutline({
                 : "desc",
           })
         }
-      >
-        {label}
-        <Icon size={11} aria-hidden="true" />
-      </button>
+      />
     );
   };
   return (
@@ -185,7 +166,7 @@ export function RunRow({
           }
         >
           {cost(node.cost)}
-          {node.cost !== null && node.unpriced ? "*" : ""}
+          {node.cost !== null && node.unpriced && <KnownSubtotal />}
         </span>
         <span>{node.calls}</span>
         <span className={styles.duration}>{spanOf(node.run, t)}</span>

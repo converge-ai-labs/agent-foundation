@@ -476,7 +476,7 @@ class SessionView(BaseModel):
     labels: dict[str, str]
     created_by_id: str
     last_run_id: str | None
-    run_count: int = 0
+    run_count: int
     cost: Decimal | None
     unpriced_requests: int
     memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
@@ -699,7 +699,6 @@ class ThreadRunPage(BaseModel):
     next_cursor: str | None
     previous_cursor: str | None
     total: int
-    first_number: int
 
 
 class RunAgent(BaseModel):

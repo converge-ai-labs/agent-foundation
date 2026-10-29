@@ -48,6 +48,7 @@ beforeEach(() => {
 
 it("requests ranked pages for the whole thread and preserves sorting when opening a run outside the chronological window", async () => {
   const requests: URLSearchParams[] = [];
+  let refresh: Promise<void> | undefined;
   client.close();
   client = createClient({
     baseUrl: "https://service.example",
@@ -59,10 +60,11 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
         return Response.json(
           fixtureRunPage(
             [fixtureRun({ id: "run_2" }), fixtureRun({ id: "run_1" })],
-            { total: 3, first_number: 2, previous_cursor: "newer" },
+            { total: 3, number: 2, previous_cursor: "newer" },
           ),
         );
       const more = url.searchParams.has("cursor");
+      await refresh;
       return Response.json({
         items: [
           {
@@ -74,7 +76,6 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
           },
         ],
         total: 3,
-        first_number: more ? 1 : 3,
         previous_cursor: null,
         next_cursor: more ? null : "rank-2",
       });
@@ -86,7 +87,28 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
     .setup()
     .click(list.getByRole("button", { name: "Sort by Cost" }));
   await list.findByRole("button", { name: /^Run 3/ });
+  expect(
+    list
+      .getByRole("button", { name: "Sort by Cost, Descending" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(list.getAllByRole("button", { name: /^Run \d/ })).toHaveLength(1);
+  // A stream invalidation must keep loaded results and the paging action visible.
+  let finishRefresh!: () => void;
+  refresh = new Promise<void>((resolve) => {
+    finishRefresh = resolve;
+  });
+  const refetched = cache.invalidateQueries({
+    predicate: (query) => query.queryKey.includes("ranked-runs"),
+  });
+  await waitFor(() => expect(cache.isFetching()).toBeGreaterThan(0));
+  expect(list.queryByText("Loading…")).toBeNull();
+  expect(list.getByRole("button", { name: "Load more" })).toHaveProperty(
+    "disabled",
+    false,
+  );
+  finishRefresh();
+  await refetched;
   await userEvent
     .setup()
     .click(list.getByRole("button", { name: "Load more" }));
@@ -99,6 +121,7 @@ it("requests ranked pages for the whole thread and preserves sorting when openin
       params.get("cursor"),
     ]),
   ).toEqual([
+    ["cost", "desc", null],
     ["cost", "desc", null],
     ["cost", "desc", "rank-2"],
   ]);

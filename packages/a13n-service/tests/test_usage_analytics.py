@@ -1,5 +1,7 @@
 """Workspace aggregates observe current facts, independent Run populations and query-bound pages."""
 
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -85,6 +87,25 @@ async def read(service, path="overview", **params):  # type: ignore[no-untyped-d
     response = await service.client.get(f"{service.api}/usage/{path}", params={**WINDOW, **params})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def assert_invalid_numeric_cursors(service, path, params, cursor):
+    """An opaque cursor is still untrusted input: reject invalid positions before SQL."""
+    position = json.loads(base64.urlsafe_b64decode(cursor))
+    for index, value in (
+        (2, "1e999999"),
+        (2, "1e-999999"),
+        (2, "NaN"),
+        (2, "Infinity"),
+        (2, 1),
+        (len(position) - 1, "x" * 129),
+    ):
+        malformed = position.copy()
+        malformed[index] = value
+        token = base64.urlsafe_b64encode(json.dumps(malformed).encode()).decode()
+        response = await service.client.get(path, params={**params, "cursor": token})
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["code"] == "invalid_cursor"
 
 
 async def test_overview_and_groups_use_distinct_populations(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -276,6 +297,7 @@ async def test_cost_order_and_cursor_scope(service, scripted_model, runs_kit):  
             break
     assert found == [*sorted(ids[:2]), *ids[2:]]
     cursor = (await read(service, "agents", limit=1))["next_cursor"]
+    await assert_invalid_numeric_cursors(service, f"{service.api}/usage/agents", WINDOW, cursor)
     for path, fields in (("models", {}), ("agents", {"end": "2026-09-05T00:00:00Z"}), ("agents", {"cursor": "bad"})):
         response = await service.client.get(
             f"{service.api}/usage/{path}", params={**WINDOW, "cursor": cursor, **fields}
@@ -714,6 +736,9 @@ async def test_session_metric_sorting_pages_exact_totals_and_keeps_unknown_last(
                     assert item["unpriced_requests"] == 1
     filtered = await service.client.get(f"{service.api}/sessions", params={"sort": "cost", "q": "Empty"})
     assert [item["id"] for item in filtered.json()["items"]] == [empty["id"]]
+    params = {"sort": "cost", "limit": 1}
+    first = (await service.client.get(f"{service.api}/sessions", params=params)).json()
+    await assert_invalid_numeric_cursors(service, f"{service.api}/sessions", params, first["next_cursor"])
 
 
 async def test_thread_metric_ranking_is_global_exact_and_bounded(service, scripted_model, runs_kit):
@@ -772,3 +797,28 @@ async def test_thread_metric_ranking_is_global_exact_and_bounded(service, script
     assert (await service.client.get(path, params={"sort": "cost", "anchor": expected[0]["id"]})).status_code == 400
     chronological = (await service.client.get(path, params={"anchor": expected[2]["id"], "limit": 2})).json()
     assert [item["number"] for item in chronological["items"]] == [3, 2]
+    for field in ("cost", "calls", "duration"):
+        params = {"sort": field, "limit": 1}
+        first = (await service.client.get(path, params=params)).json()
+        await assert_invalid_numeric_cursors(service, path, params, first["next_cursor"])
+
+
+async def test_duration_ranking_keeps_sealed_waiting_runs_last(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    finished, _ = await observed_run(service, runs_kit, agent, seconds=40)
+    thread_id = (await runs_kit.get_run(service, finished))["thread_id"]
+    submitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Pick a color"))
+    waiting_id = submitted.json()["run"]["id"]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    await (await runs_kit.attempt(service))
+    waiting = await runs_kit.get_run(service, waiting_id)
+    assert waiting["status"] == "waiting" and waiting["sealed_at"] is not None
+    path = f"{service.api}/threads/{thread_id}/runs"
+    for direction in ("asc", "desc"):
+        params = {"sort": "duration", "direction": direction, "limit": 1}
+        first = (await service.client.get(path, params=params)).json()
+        assert [run["id"] for run in first["items"]] == [finished]
+        second = (await service.client.get(path, params={**params, "cursor": first["next_cursor"]})).json()
+        assert [run["id"] for run in second["items"]] == [waiting_id]
+        assert second["next_cursor"] is None

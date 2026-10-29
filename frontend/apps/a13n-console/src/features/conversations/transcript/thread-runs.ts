@@ -52,27 +52,23 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
       if (!held || held.version < run.version) numbered.set(run.id, run);
     });
   const runs = chronological([...numbered.values()]);
-  const ordered = pages
-    .flatMap((page) => (page.data ? [page.data] : []))
-    .sort((a, b) => a.first_number - b.first_number);
+  const loadedPages = pages.flatMap((page) => (page.data ? [page.data] : []));
+  const ordered = loadedPages
+    .filter((page) => page.items.length)
+    .sort((a, b) => a.items[0]!.number - b.items[0]!.number);
   // Refreshes can shorten a page at the character budget. Repair only uncovered
   // intervals; retaining fixed cursor pages must not silently hide boundary Runs.
   const gaps: string[] = [];
   let edge: Schema["ThreadRunPage"] | undefined;
   for (const page of [...ordered].reverse()) {
-    if (!page.items.length) continue;
     if (
       edge &&
-      page.first_number < edge.first_number - edge.items.length &&
+      page.items[0]!.number < edge.items.at(-1)!.number - 1 &&
       edge.next_cursor &&
       !cursors.includes(edge.next_cursor)
     )
       gaps.push(edge.next_cursor);
-    if (
-      !edge ||
-      page.first_number - page.items.length <
-        edge.first_number - edge.items.length
-    )
+    if (!edge || page.items.at(-1)!.number < edge.items.at(-1)!.number)
       edge = page;
   }
   useEffect(() => {
@@ -97,7 +93,7 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
   };
   return {
     runs,
-    total: Math.max(0, ...ordered.map((page) => page.total)),
+    total: Math.max(0, ...loadedPages.map((page) => page.total)),
     query: pages[0]!,
     loading: pages.some((page) => page.isFetching),
     error: pages.find((page) => page.error)?.error,

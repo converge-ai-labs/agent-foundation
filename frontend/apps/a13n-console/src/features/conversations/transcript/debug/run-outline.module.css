@@ -68,32 +68,7 @@
   justify-content: flex-end;
 }
 .sortButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 0;
-  border: 0;
-  background: none;
-  color: var(--a13n-secondary);
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.sortButton svg {
-  opacity: 0.45;
-}
-.sortButton[data-active],
-.sortButton:hover {
-  color: var(--a13n-text);
-}
-.sortButton[data-active] svg,
-.sortButton:hover svg {
-  opacity: 1;
-}
-.sortButton:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: 3px;
-  border-radius: 3px;
+  padding-block: 3px;
 }
 /* Identity above figures keeps the request readable and the metrics aligned. */
 .row {

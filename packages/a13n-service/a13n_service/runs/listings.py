@@ -2,10 +2,9 @@
 
 from collections.abc import Sequence
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from sqlalchemy import Select, case, func, literal, or_, select, true, tuple_
+from sqlalchemy import Select, case, func, literal, select, true, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 
@@ -194,7 +193,6 @@ async def list_thread_runs(
         return ThreadRunPage(
             items=values,
             total=total,
-            first_number=number,
             previous_cursor=cursor_at("newer", rows[0]) if rows and number < total else None,
             next_cursor=cursor_at("older", rows[-1]) if rows and number > len(rows) else None,
         )
@@ -269,24 +267,11 @@ async def _ranked_page(
             time = datetime.fromisoformat(position[1])
             if time.tzinfo is None:
                 raise ValueError("timestamp")
-            if position[0] is not None and not isinstance(position[0], str):
-                raise ValueError("metric")
-            value = None if position[0] is None else Decimal(position[0])
-            if value is not None and not value.is_finite():
-                raise ValueError("metric")
-        except (ValueError, InvalidOperation):
+        except ValueError:
             raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
+        value = None if position[0] is None else cursors.numeric_value(position[0])
         after = chronology > tuple_(literal(time), literal(position[2]))
-        if value is None:
-            statement = statement.where(metric.is_(None), after)
-        else:
-            statement = statement.where(
-                or_(
-                    metric < value if descending else metric > value,
-                    (metric == value) & after,
-                    metric.is_(None),
-                )
-            )
+        statement = statement.where(cursors.metric_after(metric, value, after, descending=descending))
     result = (
         await session.execute(
             statement.add_columns(metric, numbered.c.number, numbered.c.total)
@@ -307,7 +292,6 @@ async def _ranked_page(
     return ThreadRunPage(
         items=values[:count],
         total=total or 0,
-        first_number=page[0][2] if page else 0,
         next_cursor=following,
         previous_cursor=None,
     )

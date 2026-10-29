@@ -145,7 +145,7 @@ it("opens a deep run without walking thousands of pages and numbers both directi
       return Response.json(
         fixtureRunPage([run(first), run(first - 1)], {
           total: 10000,
-          first_number: first,
+          number: first,
           next_cursor: cursor === "older" ? "oldest" : "older",
           previous_cursor: cursor === "newer" ? "newest" : "newer",
         }),
@@ -200,7 +200,7 @@ it("repairs a page that shrinks after sealing without refetching older history",
       return Response.json(
         fixtureRunPage(ids.map(run), {
           total: 10,
-          first_number: ids[0]!,
+          number: ids[0]!,
           next_cursor: `older${ids.at(-1)}`,
           previous_cursor: cursor === "anchor" ? null : "newer",
         }),
@@ -248,7 +248,7 @@ it("refreshes a loaded newest cursor page when another Run arrives", async () =>
       return Response.json(
         fixtureRunPage(ids.map(run), {
           total,
-          first_number: ids[0]!,
+          number: ids[0]!,
           next_cursor: `older${ids.at(-1)}`,
           previous_cursor: cursor === "anchor" ? "newer4" : null,
         }),

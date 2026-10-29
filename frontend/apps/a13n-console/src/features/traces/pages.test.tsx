@@ -31,10 +31,10 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string; provider?: string }) =>
+    t: (key: string, options?: Record<string, string>) =>
       (options?.defaultValue ?? key).replace(
-        "{{provider}}",
-        options?.provider ?? "",
+        /{{(\w+)}}/g,
+        (_, name) => options?.[name] ?? "",
       ),
     i18n: { resolvedLanguage: "en" },
   }),
@@ -1038,7 +1038,7 @@ it("requests whole-range sorting and resets pagination when the sort changes", a
       ),
     ).toBe(true),
   );
-  await user.click(screen.getByRole("button", { name: "Duration" }));
+  await user.click(screen.getByRole("button", { name: /^Sort by Duration/ }));
   await screen.findByRole("link", { name: "duration-desc" });
   expect(http.GET).toHaveBeenCalledWith(
     "/api/v1/traces/search",
@@ -1065,9 +1065,9 @@ it("requests whole-range sorting and resets pagination when the sort changes", a
       http.GET.mock.calls.filter(([path]) => path === "/api/v1/traces/search"),
     ).toHaveLength(rankedCalls + 1),
   );
-  await user.click(screen.getByRole("button", { name: "Cost" }));
+  await user.click(screen.getByRole("button", { name: /^Sort by Cost/ }));
   await screen.findByRole("link", { name: "cost-desc" });
-  await user.click(screen.getByRole("button", { name: "Cost" }));
+  await user.click(screen.getByRole("button", { name: /^Sort by Cost/ }));
   await screen.findByRole("link", { name: "cost-asc" });
   const searches = http.GET.mock.calls.filter(
     ([path]) => path === "/api/v1/traces/search",
@@ -1203,8 +1203,8 @@ it("restarts the whole-range query when its cursor is rejected", async () => {
     return response({ items: [trace()], next_cursor: null });
   });
   mount(<TracesPage />);
-  await screen.findByRole("button", { name: "Duration" });
-  await user.click(screen.getByRole("button", { name: "Duration" }));
+  await screen.findByRole("button", { name: /^Sort by Duration/ });
+  await user.click(screen.getByRole("button", { name: /^Sort by Duration/ }));
   await screen.findByRole("link", { name: "search-1" });
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByText("Invalid trace search cursor");

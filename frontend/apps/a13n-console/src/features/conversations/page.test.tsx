@@ -65,7 +65,7 @@ it("renders a full Session page from collection previews without per-row Thread 
           title: `Question ${index}`,
           created_at: "2026-09-09T00:00:00Z",
           updated_at: "2026-09-09T00:00:00Z",
-          run_count: index === 19 ? null : index + 1,
+          run_count: index === 19 ? 0 : index + 1,
           cost: null,
           unpriced_requests: 0,
           preview:

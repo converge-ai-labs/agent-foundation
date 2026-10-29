@@ -296,7 +296,13 @@ it("sorts through the Service, clears the previous cursor and keeps filters", as
       requests.push(url);
       const second = url.searchParams.has("cursor");
       return Response.json({
-        items: [{ ...session(second ? "Second" : "First"), cost: "0.12" }],
+        items: [
+          {
+            ...session(second ? "Second" : "First"),
+            cost: "0.12",
+            unpriced_requests: 1,
+          },
+        ],
         next_cursor: second ? null : "two",
       });
     },
@@ -313,6 +319,11 @@ it("sorts through the Service, clears the previous cursor and keeps filters", as
   );
   const user = userEvent.setup();
   await screen.findByText("First");
+  expect(
+    screen.getByRole("row", {
+      name: /Known subtotal; some model calls are unpriced/,
+    }),
+  ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByText("Second");
   await user.click(screen.getByRole("button", { name: "Sort by Cost" }));
@@ -321,10 +332,17 @@ it("sorts through the Service, clears the previous cursor and keeps filters", as
   expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
   expect(requests.at(-1)?.searchParams.get("q")).toBe("review");
   expect(requests.at(-1)?.searchParams.has("cursor")).toBe(false);
-  await user.click(screen.getByRole("button", { name: "Sort by Cost" }));
+  await user.click(
+    screen.getByRole("button", { name: "Sort by Cost, Descending" }),
+  );
   await waitFor(() =>
     expect(requests.at(-1)?.searchParams.get("direction")).toBe("asc"),
   );
+  expect(
+    screen
+      .getByRole("button", { name: "Sort by Cost, Ascending" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
   await user.click(screen.getByRole("button", { name: "Sort by Runs" }));
   await waitFor(() =>
     expect(requests.at(-1)?.searchParams.get("sort")).toBe("runs"),

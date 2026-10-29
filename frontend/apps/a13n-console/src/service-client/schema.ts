@@ -11011,11 +11011,8 @@ export interface components {
        * @enum {string}
        */
       purpose?: "conversation" | "memory_organization";
-      /**
-       * Run Count
-       * @default 0
-       */
-      run_count?: number;
+      /** Run Count */
+      run_count: number;
       /** Schedule Id */
       schedule_id?: string | null;
       /** Title */
@@ -11979,8 +11976,6 @@ export interface components {
      * @description Chronological history or a metric ranking, retaining each item's chronological number.
      */
     ThreadRunPage: {
-      /** First Number */
-      first_number: number;
       /** Items */
       items: components["schemas"]["ThreadRunItem"][];
       /** Next Cursor */

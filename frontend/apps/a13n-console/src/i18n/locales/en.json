@@ -3561,12 +3561,12 @@
   "Ascending": "Ascending",
   "Descending": "Descending",
   "Known subtotal; some model calls are unpriced.": "Known subtotal; some model calls are unpriced.",
-  "Known subtotal": "Known subtotal",
   "Sort": "Sort",
   "Recently updated": "Recently updated",
   "Oldest update": "Oldest update",
   "Most runs": "Most runs",
   "Fewest runs": "Fewest runs",
   "Highest cost": "Highest cost",
-  "Lowest cost": "Lowest cost"
+  "Lowest cost": "Lowest cost",
+  "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}"
 }

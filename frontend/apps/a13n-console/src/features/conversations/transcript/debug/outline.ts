@@ -109,7 +109,7 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
         { replace: true },
       );
     },
-    rankingLoading: ranking.isFetching,
+    rankingLoading: ranking.isPending || ranking.isFetchingNextPage,
     rankingError: ranking.error,
     retryRanking: () => {
       void ranking.refetch();

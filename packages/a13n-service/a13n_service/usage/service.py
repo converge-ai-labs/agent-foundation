@@ -5,7 +5,7 @@ populations independently before joining: a Run with many requests still counts 
 """
 
 from datetime import timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
@@ -177,10 +177,10 @@ async def _page(
         try:
             if len(position) != 2 or not all(isinstance(item, str) for item in position):
                 raise ValueError("position")
-            value = Decimal(str(position[0]))
-            if not value.is_finite() or (value < 0 and value != -1) or len(str(position[1])) > 128:
+            value = cursors.numeric_value(position[0])
+            if (value < 0 and value != -1) or len(str(position[1])) > 128:
                 raise ValueError("position")
-        except (ValueError, InvalidOperation):
+        except ValueError:
             raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
         statement = statement.where(or_(order_cost < value, (order_cost == value) & (key > position[1])))
     rows = (

@@ -108,19 +108,9 @@
   text-decoration: underline;
 }
 .sortButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  min-height: 28px;
   padding-inline: 4px;
   margin-inline: -4px;
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
-}
-.sortButton svg {
-  flex: none;
 }
 
 /* Filters ---------------------------------------------------------------- */

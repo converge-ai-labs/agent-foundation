@@ -19256,7 +19256,6 @@
             "type": "string"
           },
           "run_count": {
-            "default": 0,
             "title": "Run Count",
             "type": "integer"
           },
@@ -19306,6 +19305,7 @@
           "labels",
           "created_by_id",
           "last_run_id",
+          "run_count",
           "cost",
           "unpriced_requests",
           "version",
@@ -22300,10 +22300,6 @@
       "ThreadRunPage": {
         "description": "Chronological history or a metric ranking, retaining each item's chronological number.",
         "properties": {
-          "first_number": {
-            "title": "First Number",
-            "type": "integer"
-          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ThreadRunItem"
@@ -22342,8 +22338,7 @@
           "items",
           "next_cursor",
           "previous_cursor",
-          "total",
-          "first_number"
+          "total"
         ],
         "title": "ThreadRunPage",
         "type": "object"

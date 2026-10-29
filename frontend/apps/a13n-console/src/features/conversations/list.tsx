@@ -2,9 +2,6 @@ import { Button, MenuItem } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowRightIcon,
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ArrowsDownUpIcon,
   ChatsIcon,
   CopyIcon,
   PencilSimpleIcon,
@@ -20,6 +17,8 @@ import {
   Empty,
   Pagination,
   ResourceTable,
+  SortButton,
+  ariaSort,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -30,6 +29,7 @@ import {
 } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { costColumnFormat, exactCost } from "../../shared/cost";
+import { KnownSubtotal } from "../../shared/known-subtotal";
 import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
@@ -145,29 +145,15 @@ function SessionResults({
     field: NonNullable<SessionFilters["sort"]>,
     label: string,
   ) => {
-    const active = sort === field;
-    const Icon = !active
-      ? ArrowsDownUpIcon
-      : direction === "desc"
-        ? ArrowDownIcon
-        : ArrowUpIcon;
+    const activeDirection = sort === field ? direction : undefined;
     return {
-      ariaSort: active
-        ? direction === "asc"
-          ? ("ascending" as const)
-          : ("descending" as const)
-        : ("none" as const),
+      ariaSort: ariaSort(activeDirection),
       header: (
-        <button
-          type="button"
-          className={styles.sortButton}
-          data-active={active || undefined}
-          aria-label={t("Sort by {{field}}", { field: label })}
+        <SortButton
+          label={label}
+          direction={activeDirection}
           onClick={() => onSort(field)}
-        >
-          {label}
-          <Icon size={12} aria-hidden="true" />
-        </button>
+        />
       ),
     };
   };
@@ -199,11 +185,10 @@ function SessionResults({
                     onFilter={onFilter}
                     metrics={
                       <>
-                        {t("Runs")} {session.run_count ?? "—"} · {t("Cost")}{" "}
+                        {t("Runs")} {session.run_count} · {t("Cost")}{" "}
                         {cost(session.cost)}
-                        {session.cost != null && !!session.unpriced_requests
-                          ? "*"
-                          : ""}
+                        {session.cost !== null &&
+                          session.unpriced_requests > 0 && <KnownSubtotal />}
                       </>
                     }
                   />
@@ -246,9 +231,7 @@ function SessionResults({
                 dataColumn: "runs",
                 align: "right",
                 render: (session) => (
-                  <span className={styles.runCount}>
-                    {session.run_count ?? "—"}
-                  </span>
+                  <span className={styles.runCount}>{session.run_count}</span>
                 ),
               },
               {
@@ -267,7 +250,7 @@ function SessionResults({
                   >
                     {cost(session.cost)}
                     {session.cost != null && !!session.unpriced_requests && (
-                      <span aria-label={t("Known subtotal")}>*</span>
+                      <KnownSubtotal />
                     )}
                   </span>
                 ),

@@ -297,35 +297,6 @@ button.tag:hover .tagKey {
   font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
-.sortButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: inherit;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.sortButton svg {
-  opacity: 0.45;
-}
-.sortButton[data-active],
-.sortButton:hover {
-  color: var(--a13n-text);
-}
-.sortButton[data-active] svg,
-.sortButton:hover svg {
-  opacity: 1;
-}
-.sortButton:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: 4px;
-  border-radius: 3px;
-}
 @container (max-width: 560px) {
   .table tbody [data-column="cost"] {
     display: none;
