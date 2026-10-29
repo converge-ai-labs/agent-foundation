@@ -177,7 +177,18 @@ async def test_long_composer_text_preserves_order_metadata_and_survives_restart(
         assert text not in transcript
     scratch = tmp_path / "data/threads" / thread.thread_id / "tmp"
     os.utime(scratch, (1, 1))
+    pruned = Event()
+    prune = ThreadFiles.prune
+
+    async def observe_prune(self):
+        result = await prune(self)
+        pruned.set()
+        return result
+
+    monkeypatch.setattr(ThreadFiles, "prune", observe_prune)
     async with open_harness_ui_app(settings, configuration_path=path) as app:
+        with fail_after(5):
+            await pruned.wait()
         assert not scratch.exists()
         assert (await app.read_thread_attachment(thread_id=thread.thread_id, attachment_id=identifier))[
             1
