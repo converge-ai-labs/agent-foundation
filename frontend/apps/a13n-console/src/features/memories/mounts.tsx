@@ -13,7 +13,7 @@ import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, useSuggestedName } from "../../shared/forms";
+import { FormActions, SwitchField, useSuggestedName } from "../../shared/forms";
 import { memoryQueries } from "./api";
 
 type Mount = Schema["MemoryMount"];
@@ -144,17 +144,14 @@ export function MountForm({
         options={accessOptions(t)}
       />
       {record && (
-        <div className="grid gap-1">
-          <Label className="flex items-center gap-2">
-            <Switch checked={recall} onCheckedChange={setRecall} />
-            {t("Recall")}
-          </Label>
-          <p className="text-muted-foreground text-sm">
-            {t(
-              "Each run starts with the records closest to its input. Agents can still search.",
-            )}
-          </p>
-        </div>
+        <SwitchField
+          label={t("Recall")}
+          description={t(
+            "Each run starts with the records closest to its input. Agents can still search.",
+          )}
+          checked={recall}
+          onCheckedChange={setRecall}
+        />
       )}
       <ErrorNotice error={error} />
       <FormActions
@@ -224,6 +221,7 @@ export function MemoryMountRows({
                 {memory?.kind === "record" &&
                   (onRecallChange ? (
                     <Label className="flex items-center gap-2">
+                      <span aria-hidden="true">{t("Recall")}</span>
                       <Switch
                         aria-label={t("Recall for {{name}}", {
                           name: mount.name,
@@ -234,7 +232,6 @@ export function MemoryMountRows({
                           onRecallChange(mount.name, value)
                         }
                       />
-                      <span aria-hidden="true">{t("Recall")}</span>
                     </Label>
                   ) : (
                     <span>{t(recall ? "Recall" : "No recall")}</span>

@@ -2,9 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FormField,
   Input,
-  Label,
   ModalFrame,
-  Switch,
   Tabs,
   TabsList,
   TabsPanel,
@@ -21,7 +19,7 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/forms";
+import { FormActions, SwitchField, TextAreaField } from "../../shared/forms";
 import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import { useWorkspace } from "../../layout/workspace";
@@ -218,17 +216,15 @@ export function TemplateSettings({
         maxLength={2048}
         readOnly={!editable}
       />
-      <Label className="flex items-center gap-2">
-        <Switch
-          checked={archived}
-          disabled={!editable}
-          onCheckedChange={setArchived}
-        />
-        {t("Archived")}
-      </Label>
-      <p className={styles.muted}>
-        {t("Archived templates stay available to existing environments.")}
-      </p>
+      <SwitchField
+        label={t("Archived")}
+        description={t(
+          "Archived templates stay available to existing environments.",
+        )}
+        checked={archived}
+        disabled={!editable}
+        onCheckedChange={setArchived}
+      />
       <ErrorNotice error={save.error} retry={() => void reload()} />
       {editable && (
         <FormActions

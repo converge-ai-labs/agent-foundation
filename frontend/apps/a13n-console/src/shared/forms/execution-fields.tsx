@@ -102,7 +102,10 @@ export function ExecutionFields({
         readOnly={readOnly}
       />
       {readOnly ? (
-        <ReadOnlyField label={t(compact ? "Tool calls" : "Tool execution")}>
+        <ReadOnlyField
+          data-field-layout="setting"
+          label={t(compact ? "Tool calls" : "Tool execution")}
+        >
           {
             toolModes.find(
               (item) => item.value === (value.tools?.mode ?? "inherit"),
@@ -128,7 +131,10 @@ export function ExecutionFields({
         />
       )}
       {readOnly ? (
-        <ReadOnlyField label={t(compact ? "New messages" : "Steering")}>
+        <ReadOnlyField
+          data-field-layout="setting"
+          label={t(compact ? "New messages" : "Steering")}
+        >
           {
             steeringModes.find(
               (item) => item.value === (value.steering ?? "inherit"),
@@ -155,6 +161,7 @@ export function ExecutionFields({
       )}
       {readOnly ? (
         <ReadOnlyField
+          data-field-layout="setting"
           label={t(
             compact ? "Wait time (seconds)" : "Foreground wait (seconds)",
           )}
@@ -163,6 +170,7 @@ export function ExecutionFields({
         </ReadOnlyField>
       ) : (
         <FormField
+          data-field-layout="setting"
           label={t(
             compact ? "Wait time (seconds)" : "Foreground wait (seconds)",
           )}

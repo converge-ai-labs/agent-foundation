@@ -15,12 +15,12 @@ export function EnabledField({
   const { t } = useTranslation();
   return (
     <label className={styles.inlineStatus}>
+      {t("Enabled")}
       <Switch
         checked={checked}
         onCheckedChange={onCheckedChange}
         disabled={disabled}
       />
-      {t("Enabled")}
     </label>
   );
 }

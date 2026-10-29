@@ -1,0 +1,103 @@
+/* Choices size to their value, including filters and pickers outside forms. */
+:is(
+  [data-slot="select-trigger"],
+  [data-slot="select-button"],
+  [data-slot="combobox-trigger"][role="combobox"]
+) {
+  width: fit-content;
+  min-width: min(7.5rem, 100%);
+  max-width: min(28rem, 100%);
+  flex: none;
+  justify-self: end;
+}
+
+[data-slot="field"]:has(> .sr-only):has(> [role="combobox"]) {
+  align-items: flex-end;
+}
+
+/* A choice is a setting: keep its explanation beside the control. Hidden
+   labels belong to compact filters and never reserve a text column. */
+:is(
+    [data-slot="field"]:has(
+      > [data-slot="select-trigger"],
+      > [data-slot="select-button"],
+      > [data-slot="combobox-trigger"][role="combobox"]
+    ),
+    [data-slot="read-only-field"][data-field-kind="choice"],
+    [data-field-layout="setting"]
+  ):not([data-field-layout="stacked"]):not(:has(> .sr-only)) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(52%);
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 4px;
+
+  > :is(
+    [data-slot="field-label"],
+    [data-slot="field-label-row"],
+    [data-slot="read-only-label"]
+  ) {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+  > :is(
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    [data-slot="combobox-trigger"][role="combobox"],
+    [data-slot="read-only-value"],
+    [data-slot="input-control"]
+  ) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    justify-self: end;
+  }
+  &:not(:has(> [data-slot="field-description"]))
+    > :is([data-slot="field-label"], [data-slot="read-only-label"]) {
+    grid-row: 1 / span 2;
+  }
+  > [data-slot="input-control"] {
+    width: 8rem;
+    max-width: 100%;
+  }
+  > [data-slot="field-description"] {
+    grid-column: 1;
+    grid-row: 2;
+    margin: 0;
+  }
+  > [data-slot="field-error"] {
+    grid-column: 1 / -1;
+  }
+
+  /* Short numeric settings keep room for their explanation on small screens. */
+  @media (width < 640px) {
+    &[data-field-layout="setting"] {
+      > [data-slot="input-control"] {
+        grid-row: 1;
+      }
+      > [data-slot="field-description"] {
+        grid-column: 1 / -1;
+      }
+    }
+  }
+}
+
+/* Menu readability is independent of the width of the selected value. */
+[data-slot="select-list"] {
+  width: max-content;
+  min-width: var(--anchor-width);
+  max-width: min(32rem, var(--available-width));
+}
+[data-slot="combobox-surface"] {
+  width: max(20rem, var(--anchor-width));
+  min-width: min(var(--anchor-width), var(--available-width));
+  max-width: min(32rem, var(--available-width));
+}
+
+[data-slot="choice-option-label"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}

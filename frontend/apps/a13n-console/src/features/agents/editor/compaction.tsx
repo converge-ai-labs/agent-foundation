@@ -1,7 +1,7 @@
-import { FormField, Input, Switch } from "a13n-ui";
+import { FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { formSectionStyles } from "../../../shared/forms";
+import { formSectionStyles, SwitchField } from "../../../shared/forms";
 import type { AgentDraft } from "./draft";
 
 export function CompactionSection({
@@ -21,16 +21,16 @@ export function CompactionSection({
   );
   return (
     <div data-slot="compaction-fields" className={formSectionStyles.fieldRows}>
-      <FormField label={t("Enabled")} readOnly={readOnly}>
-        <Switch
-          checked={enabled}
-          value={t(enabled ? "On" : "Off")}
-          onCheckedChange={(enabled) =>
-            draft.setBackgroundCompaction({ ...policy, enabled })
-          }
-        />
-      </FormField>
+      <SwitchField
+        label={t("Enabled")}
+        readOnly={readOnly}
+        checked={enabled}
+        onCheckedChange={(enabled) =>
+          draft.setBackgroundCompaction({ ...policy, enabled })
+        }
+      />
       <FormField
+        data-field-layout="setting"
         label={t("Wait for compaction at (%)")}
         description={
           !error &&
