@@ -39,6 +39,10 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".github/workflows/ci-automation.yml",
         "proto/a13n-envd/eip/v1/artifacts/generated-files.json",
     ),
+    "test_welcome_contributor.py": (
+        ".github/workflows/welcome-contributor.yml",
+        ".github/workflows/ci-automation.yml",
+    ),
     "test_pr_labels.py": (".github/workflows/*.yml",),
     "test_ci_inputs.py": (
         ".github/workflows/ci-*.yml",
