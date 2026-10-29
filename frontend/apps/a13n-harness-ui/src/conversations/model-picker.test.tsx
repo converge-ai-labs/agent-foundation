@@ -212,7 +212,7 @@ it("keeps speed inside settings, distinguishes false from default, and resets on
   render(<Choices />);
   expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
   await user.click(button("Agent & Model settings"));
-  expect(button("Speed").textContent).toBe("SpeedDefault");
+  expect(button("Speed").textContent).toBe("SpeedFast");
   await user.click(button("Speed"));
   expect(button("Use model speed").getAttribute("title")).toContain("Fast");
   await user.click(button("Standard mode"));
@@ -223,13 +223,13 @@ it("keeps speed inside settings, distinguishes false from default, and resets on
   await user.click(button("Speed"));
   expect(button("Standard mode").getAttribute("aria-pressed")).toBe("true");
   await user.click(button("Use model speed"));
-  expect(button("Speed").textContent).toBe("SpeedDefault");
+  expect(button("Speed").textContent).toBe("SpeedFast");
   await user.click(button("Speed"));
   await user.click(button("Fast mode"));
   expect(button("Speed").textContent).toBe("SpeedFast");
   await user.click(button("Model"));
   await user.click(button("Other model"));
-  expect(button("Speed").textContent).toBe("SpeedDefault");
+  expect(button("Speed").textContent).toBe("SpeedStandard");
   await user.click(button("Speed"));
   expect((button("Fast mode") as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("No Fast support")).toBeTruthy();
@@ -342,9 +342,9 @@ it("changes Agent inside settings and clears model controls for the new inherite
     screen.getByLabelText("Agent: Reviewer. Model: Other model"),
   ).toBeTruthy();
   expect(button("Thinking").textContent).toBe("ThinkingDefault");
-  expect(button("Speed").textContent).toBe("SpeedDefault");
+  expect(button("Speed").textContent).toBe("SpeedStandard");
   await user.click(button("Agent"));
   await user.click(button(/^Writer/));
   expect(button("Thinking").textContent).toBe("ThinkingDefault");
-  expect(button("Speed").textContent).toBe("SpeedDefault");
+  expect(button("Speed").textContent).toBe("SpeedFast");
 });
