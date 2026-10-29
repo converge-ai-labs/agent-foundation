@@ -1,9 +1,10 @@
-import { Button, Label, ModalFrame, Switch } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
+import { SwitchField } from "../../../shared/forms";
 import { Composer } from "../composer";
 import styles from "./cards.module.css";
 
@@ -36,10 +37,13 @@ export function ContinueWithoutFeedback({
       closeLabel={t("Close")}
     >
       <div className={styles.continuation}>
-        <Label className={styles.cardSwitch}>
-          <Switch checked={confirmed} onCheckedChange={setConfirmed} />
-          {t("Reject pending approvals and leave other actions unanswered.")}
-        </Label>
+        <SwitchField
+          label={t(
+            "Reject pending approvals and leave other actions unanswered.",
+          )}
+          checked={confirmed}
+          onCheckedChange={setConfirmed}
+        />
         <Composer
           disabled={!confirmed}
           label={t("Resolve and continue")}

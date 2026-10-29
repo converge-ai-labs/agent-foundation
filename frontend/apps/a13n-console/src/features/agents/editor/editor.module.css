@@ -60,24 +60,6 @@
   border-bottom: 1px solid var(--a13n-border);
 }
 
-/* Model settings: parameters as label/control rows under the disclosure. */
-.modelParameter {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 240px);
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;
-}
-.modelParameter > label {
-  font-weight: 500;
-}
-@media (width < 480px) {
-  .modelParameter {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-}
-
 /* Shared surfaces and row insets keep separators flush with card edges. */
 .mediaSection [data-slot="settings-section-content"],
 .advancedBody > section > div {
@@ -201,41 +183,6 @@
   font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
-@media (min-width: 640px) {
-  .parameterSection [data-slot="field"]:not(:has(textarea)) {
-    display: grid;
-    grid-template-columns: minmax(140px, 1fr) minmax(180px, 1fr);
-    align-items: center;
-    gap: 8px 24px;
-  }
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"]):not(
-      :has(textarea)
-    ) {
-    row-gap: 4px;
-  }
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"])
-    > label {
-    grid-column: 1;
-    grid-row: 1;
-    align-self: end;
-  }
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"])
-    > :is(button, input, [data-slot="input-control"]) {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
-  }
-  .parameterSection [data-slot="field-description"] {
-    grid-column: 1;
-    grid-row: 2;
-    align-self: start;
-    margin: 0;
-  }
-}
-
 .advancedBody [data-slot="session-memory-fields"] > div {
   padding: 16px;
 }
@@ -270,32 +217,6 @@
   font-size: var(--a13n-text-xs);
   line-height: 18px;
 }
-@media (width < 640px) {
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"]):not(
-      :has(textarea)
-    ) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"])
-    > label {
-    grid-row: 1;
-  }
-  .parameterSection [data-slot="field-description"] {
-    grid-row: 2;
-    margin: 0;
-  }
-  .parameterSection
-    [data-slot="field"]:has(> [data-slot="field-description"])
-    > :is(button, [data-slot="input-control"]) {
-    grid-row: 3;
-    margin-top: 4px;
-  }
-}
-
 .searchFooter {
   display: flex;
   align-items: center;

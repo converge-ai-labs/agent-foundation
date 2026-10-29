@@ -109,7 +109,7 @@ export function ModelControlPanel({
         label="Speed"
         value={
           controls.fast == null
-            ? "Default"
+            ? speedLabel(model?.fast?.state)
             : speedLabel(
                 controls.fast === "ultrafast"
                   ? "ultrafast"

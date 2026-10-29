@@ -1,23 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../../layout/workspace";
+import { useClient } from "../../../../auth/context";
 import type { Schema } from "../../../../shared/api";
-import { runPath } from "../../api";
+import { conversationQueries, runPath } from "../../api";
 import { useThreadRuns } from "../thread-runs";
 import { runSection } from "./view";
 
-type Run = Schema["RunListItem"];
+type Run = Schema["ThreadRunItem"];
 type Thread = Schema["ThreadView"];
-
 export interface OutlineRun {
   run: Run;
-  thread: Thread;
   label: string;
+  cost: string | null;
+  calls: number;
+  unpriced: boolean;
 }
-
+export type RunSort = {
+  field: "order" | "cost" | "calls" | "duration";
+  direction: "asc" | "desc";
+};
 export interface RunOutline {
   nodes: OutlineRun[];
+  sorted: OutlineRun[];
+  sort: RunSort;
+  setSort(sort: RunSort): void;
   inView: string;
   label: string;
   total: number;
@@ -28,59 +37,116 @@ export interface RunOutline {
   hasNewer: boolean;
   loadOlder(): void;
   loadNewer(): void;
+  rankingLoading: boolean;
+  rankingError: unknown;
+  retryRanking(): void;
+  hasMore: boolean;
+  loadMore(): void;
   open(run: Run): void;
 }
 
-/** Both navigation presentations list only the current Thread's Runs. */
+/** Chronological navigation and the ranked list keep independent, bounded pages. */
 export function useRunOutline(thread: Thread, runId: string): RunOutline {
   const { t } = useTranslation();
-  const { basePath } = useWorkspace();
+  const { basePath, workspace } = useWorkspace();
   const navigate = useNavigate();
-  const [, setSearch] = useSearchParams();
+  const client = useClient();
+  const [search, setSearch] = useSearchParams();
+  const field = search.get("run_sort");
+  const sort: RunSort = {
+    field:
+      field === "cost" || field === "calls" || field === "duration"
+        ? field
+        : "order",
+    direction: search.get("run_direction") === "desc" ? "desc" : "asc",
+  };
   const pages = useThreadRuns(thread.id, runId);
+  const ranking = useInfiniteQuery({
+    ...conversationQueries(client, workspace.id).rankedRuns(
+      thread.id,
+      sort.field === "order" ? "cost" : sort.field,
+      sort.direction,
+    ),
+    enabled: sort.field !== "order",
+  });
   const { runs, number } = pages;
   const visible = useVisibleRun(runId);
-  // Inherited history can be visible above this branch; it is not a navigation target.
   const inView = runs.some((run) => run.id === visible) ? visible : runId;
-  const position = number(inView);
+  const node = (run: Run): OutlineRun => ({
+    run,
+    label: t("Run {{index}}", { index: run.number }),
+    cost: run.cost,
+    calls: run.model_calls,
+    unpriced: run.unpriced_requests > 0,
+  });
+  const nodes = runs.map(node);
+  const ranked = useMemo(() => {
+    const unique = new Map<string, Run>();
+    for (const page of ranking.data?.pages ?? [])
+      for (const run of page.items) unique.set(run.id, run);
+    return [...unique.values()];
+  }, [ranking.data]);
+  // Selecting a ranked Run may replace the chronological window. The ranking
+  // already owns the count and position, so it stays usable while that window loads.
+  const total =
+    sort.field === "order"
+      ? pages.total
+      : Math.max(pages.total, ranking.data?.pages[0]?.total ?? 0);
+  const position =
+    number(inView) ?? ranked.find((run) => run.id === inView)?.number ?? null;
+  const sorted =
+    sort.field === "order"
+      ? sort.direction === "asc"
+        ? nodes
+        : [...nodes].reverse()
+      : ranked.map(node);
   return {
     ...pages,
-    nodes: runs.map((run) => ({
-      run,
-      thread,
-      label: t("Run {{index}}", { index: number(run.id) }),
-    })),
+    total,
+    nodes,
+    sorted,
+    sort,
+    setSort(next) {
+      setSearch(
+        (previous) => {
+          const params = new URLSearchParams(previous);
+          params.set("run_sort", next.field);
+          params.set("run_direction", next.direction);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    rankingLoading: ranking.isPending || ranking.isFetchingNextPage,
+    rankingError: ranking.error,
+    retryRanking: () => {
+      void ranking.refetch();
+    },
+    hasMore: ranking.hasNextPage,
+    loadMore: () => {
+      void ranking.fetchNextPage();
+    },
     inView,
     label:
       position === null
         ? t("Runs")
         : t("Run {{index}} of {{total}}", {
             index: position,
-            total: pages.total,
+            total,
           }),
     open(run) {
       const loaded = runSection(run.id);
+      const params = new URLSearchParams(search);
+      params.delete("follow");
       if (loaded && !loaded.closest("[inert]")) {
-        setSearch(
-          (params) => {
-            params.delete("follow");
-            return params;
-          },
-          { replace: true },
-        );
+        setSearch(params, { replace: true });
         loaded.scrollIntoView({ block: "start", behavior: "smooth" });
-      } else
+      } else {
+        params.set("view", "debug");
         navigate(
-          runPath(
-            basePath,
-            {
-              session_id: run.session_id,
-              thread_id: thread.id,
-              run_id: run.id,
-            },
-            "debug",
-          ),
+          `${runPath(basePath, { session_id: run.session_id, thread_id: thread.id, run_id: run.id })}?${params}`,
         );
+      }
     },
   };
 }

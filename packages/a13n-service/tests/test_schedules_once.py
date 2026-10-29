@@ -80,9 +80,9 @@ async def test_concurrent_once_planning_recovers_and_completes_before_run(
         scope = Scope(row.workspace_id, row.session_id)
     async with short_session(service.runtime.storage) as session:
         observed = (await snapshots(session, [scope]))[scope]
-        assert observed.schedule.configuration.state == "completed"
-        assert observed.schedule.configuration.schedule.type == "once"
-        assert observed.schedule.progress.next_fire_at is None
+        assert observed.schedules[0].configuration.state == "completed"
+        assert observed.schedules[0].configuration.schedule.type == "once"
+        assert observed.schedules[0].progress.next_fire_at is None
     # Replay still returns the original resource despite its now elapsed time and completed state.
     replay = await service.client.post(f"{service.api}/schedules", json=body, headers=key)
     assert replay.status_code == 200 and replay.json()["state"] == "completed"

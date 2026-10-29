@@ -5,13 +5,13 @@
   table-layout: fixed;
 }
 .table [data-column="source"] {
-  width: 27%;
+  width: 24%;
 }
 .table [data-column="state"] {
   width: 128px;
 }
 .table [data-column="runs"] {
-  width: 64px;
+  width: 76px;
 }
 .table [data-column="activity"] {
   width: 120px;
@@ -237,7 +237,7 @@ button.tag:hover .tagKey {
     grid-template-columns: minmax(0, 1fr) auto 32px;
     align-items: center;
     gap: 6px 8px;
-    padding: 12px 0;
+    padding: 16px;
   }
   .table tbody td,
   .table tbody [data-column] {
@@ -285,5 +285,41 @@ button.tag:hover .tagKey {
     color: var(--a13n-secondary);
     font-size: var(--a13n-text-xs);
     line-height: 18px;
+  }
+}
+
+.table [data-column="cost"] {
+  width: 104px;
+}
+.cost {
+  font-family: var(--a13n-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--a13n-text-xs);
+  white-space: nowrap;
+}
+@container (max-width: 560px) {
+  .table tbody [data-column="cost"] {
+    display: none;
+  }
+}
+
+.mobileSort {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .mobileSort {
+    display: block;
+  }
+}
+
+.mobileMetrics {
+  display: none;
+}
+@container (max-width: 560px) {
+  .mobileMetrics {
+    display: block;
+    color: var(--a13n-secondary);
+    font-size: var(--a13n-text-2xs);
+    font-variant-numeric: tabular-nums;
   }
 }

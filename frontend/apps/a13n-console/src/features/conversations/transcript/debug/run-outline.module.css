@@ -20,50 +20,99 @@
     display: block;
   }
 }
+.panel[data-compact] {
+  display: block;
+  max-height: min(60dvh, 460px, calc(var(--available-height) - 12px));
+}
 .panelHead {
   position: sticky;
   top: 0;
   z-index: 1;
+  padding: 0 10px 6px;
+  background: var(--a13n-canvas);
+}
+.panel[data-compact] .panelHead {
+  background: var(--a13n-elevated);
+}
+.heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  padding: 0 8px;
-  background: var(--a13n-canvas);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
+  height: 36px;
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-xs);
   font-weight: 500;
+}
+.count {
+  margin-left: 6px;
+  color: var(--a13n-tertiary);
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-
-/* One Run ---------------------------------------------------------------- */
+.columns,
+.metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 60px;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+}
+.columns {
+  height: 26px;
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-2xs);
+}
+.columns > :not(:first-child),
+.metrics > :not(:first-child) {
+  text-align: right;
+  justify-content: flex-end;
+}
+.sortButton {
+  padding-block: 3px;
+}
+/* Identity above figures keeps the request readable and the metrics aligned. */
 .row {
   display: grid;
-  grid-template-columns: 6px auto minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+  gap: 4px;
   min-width: 0;
 }
-.menuRow {
-  font-size: var(--a13n-text-xs);
+.identity {
+  display: grid;
+  grid-template-columns: 6px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
-.menuRow[data-current] {
-  background: var(--a13n-selected);
+.metrics {
+  color: var(--a13n-secondary);
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cost {
+  color: var(--a13n-text-supporting);
+}
+.duration {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--a13n-tertiary);
 }
 .panelRow {
   width: 100%;
-  height: 30px;
-  padding: 0 8px;
+  min-height: 56px;
+  margin-bottom: 2px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   color: inherit;
   font: inherit;
   font-size: var(--a13n-text-xs);
+  line-height: 18px;
   text-align: left;
   cursor: pointer;
-  /* Scrolled into view, the current row clears the sticky head. */
-  scroll-margin-block: 32px 4px;
+  scroll-margin-block: 72px 4px;
 }
 .panelRow:hover {
   background: var(--a13n-hover);
@@ -108,13 +157,6 @@
   overflow: hidden;
   color: var(--a13n-secondary);
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.meta {
-  color: var(--a13n-tertiary);
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-2xs);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

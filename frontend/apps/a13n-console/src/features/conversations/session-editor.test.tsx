@@ -33,6 +33,8 @@ const session = {
   },
   version: 1,
   run_count: 0,
+  cost: null,
+  unpriced_requests: 0,
   last_run_id: null,
   preview: null,
   created_at: "2026-10-21T00:00:00Z",

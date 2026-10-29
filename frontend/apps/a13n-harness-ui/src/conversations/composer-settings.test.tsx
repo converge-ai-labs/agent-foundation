@@ -231,6 +231,50 @@ it.each([false, true])(
   },
 );
 
+it.each([
+  ["default", "Standard"],
+  ["off", "Standard"],
+  ["on", "Fast"],
+  ["ultrafast", "Ultrafast"],
+] as const)(
+  "resolves inherited speed %s as %s in the settings summary",
+  async (state, label) => {
+    const user = userEvent.setup();
+    const change = vi.fn();
+    render(
+      <ThreadRunChoices
+        catalog={{
+          ...catalog,
+          models: [
+            {
+              ...catalog.models![0],
+              fast: { supported: true, state, ultrafast_supported: true },
+            },
+          ],
+        }}
+        agentId="writer"
+        controls={{}}
+        disabled={false}
+        onAgentChange={() => {}}
+        onModelChange={() => {}}
+        onControlsChange={change}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    expect(screen.getByRole("button", { name: "Speed" }).textContent).toBe(
+      `Speed${label}`,
+    );
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    expect(
+      screen.getByRole("button", { name: "Use model speed" }).textContent,
+    ).toBe(`Model setting · ${label}`);
+    await user.click(screen.getByRole("button", { name: "Standard mode" }));
+    expect(change).toHaveBeenLastCalledWith({ fast: false });
+  },
+);
+
 it.each([false, true])(
   "distinguishes inherited and explicit agents with long names (mobile: %s)",
   async (onMobile) => {

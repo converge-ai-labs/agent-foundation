@@ -146,7 +146,7 @@ beforeEach(() => {
               : [],
             {
               total: navigation ? 6 : 0,
-              first_number: first,
+              number: first,
               next_cursor: first === 6 ? "older" : null,
               previous_cursor: null,
             },

@@ -375,6 +375,11 @@
             "title": "Subagents",
             "type": "object"
           },
+          "summarize": {
+            "default": false,
+            "title": "Summarize",
+            "type": "boolean"
+          },
           "tool_search": {
             "anyOf": [
               {
@@ -588,6 +593,11 @@
             },
             "title": "Subagents",
             "type": "object"
+          },
+          "summarize": {
+            "default": false,
+            "title": "Summarize",
+            "type": "boolean"
           },
           "tool_search": {
             "anyOf": [
@@ -3806,6 +3816,7 @@
           "model",
           "model_settings",
           "model_characteristics",
+          "summarize",
           "instructions",
           "toolsets",
           "skills",
@@ -18098,6 +18109,9 @@
             "title": "Stream Url",
             "type": "string"
           },
+          "target": {
+            "$ref": "#/components/schemas/ScheduleTarget"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -18120,6 +18134,7 @@
           "name",
           "schedule",
           "invocation",
+          "target",
           "id",
           "session_id",
           "stream_url",
@@ -18199,6 +18214,9 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ScheduleTarget"
           }
         },
         "required": [
@@ -18480,6 +18498,49 @@
         "title": "ScheduleStatus",
         "type": "object"
       },
+      "ScheduleTarget": {
+        "additionalProperties": false,
+        "description": "Omitted IDs create a session and, for thread mode, one empty reusable thread.",
+        "properties": {
+          "mode": {
+            "default": "new_thread",
+            "enum": [
+              "new_thread",
+              "thread"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "title": "ScheduleTarget",
+        "type": "object"
+      },
       "ScheduleTime": {
         "additionalProperties": false,
         "properties": {
@@ -18583,6 +18644,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ScheduleRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleTarget"
               },
               {
                 "type": "null"
@@ -19169,6 +19240,18 @@
       },
       "SessionView": {
         "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -19233,7 +19316,6 @@
             "type": "string"
           },
           "run_count": {
-            "default": 0,
             "title": "Run Count",
             "type": "integer"
           },
@@ -19259,6 +19341,10 @@
             ],
             "title": "Title"
           },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -19279,6 +19365,9 @@
           "labels",
           "created_by_id",
           "last_run_id",
+          "run_count",
+          "cost",
+          "unpriced_requests",
           "version",
           "created_at",
           "updated_at"
@@ -22080,16 +22169,200 @@
         "title": "ThreadReference",
         "type": "object"
       },
-      "ThreadRunPage": {
-        "description": "Newest first; first_number is the first item's 1-based chronological position in the thread.",
+      "ThreadRunItem": {
+        "description": "Bounded navigation metadata and recorded model usage within one Thread.",
         "properties": {
-          "first_number": {
-            "title": "First Number",
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
             "type": "integer"
           },
+          "cost": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Attempt Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_preview": {
+            "$ref": "#/components/schemas/RunInputPreview"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/Lineage"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "sealed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sealed At"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entry Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "session_id",
+          "thread_id",
+          "agent_id",
+          "agent_revision_id",
+          "principal_id",
+          "status",
+          "trigger",
+          "lineage",
+          "parent_run_id",
+          "source_entry_id",
+          "current_attempt_id",
+          "attempts",
+          "max_attempts",
+          "wait_reason",
+          "version",
+          "created_at",
+          "started_at",
+          "sealed_at",
+          "updated_at",
+          "input_preview",
+          "number",
+          "cost",
+          "model_calls",
+          "unpriced_requests"
+        ],
+        "title": "ThreadRunItem",
+        "type": "object"
+      },
+      "ThreadRunPage": {
+        "description": "Chronological history or a metric ranking, retaining each item's chronological number.",
+        "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/RunListItem"
+              "$ref": "#/components/schemas/ThreadRunItem"
             },
             "title": "Items",
             "type": "array"
@@ -22125,8 +22398,7 @@
           "items",
           "next_cursor",
           "previous_cursor",
-          "total",
-          "first_number"
+          "total"
         ],
         "title": "ThreadRunPage",
         "type": "object"
@@ -25543,6 +25815,7 @@
                 "model",
                 "model_settings",
                 "model_characteristics",
+                "summarize",
                 "instructions",
                 "toolsets",
                 "skills",
@@ -40197,6 +40470,7 @@
                 "model",
                 "model_settings",
                 "model_characteristics",
+                "summarize",
                 "instructions",
                 "toolsets",
                 "skills",
@@ -43671,6 +43945,35 @@
           },
           {
             "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "updated_at",
+              "enum": [
+                "updated_at",
+                "runs",
+                "cost"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Direction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -44077,7 +44380,7 @@
     },
     "/api/v1/sessions/{session_id}/stream": {
       "get": {
-        "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.",
+        "description": "The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`\nframes, plus `schedule` and `occurrence` state scoped to this session. Every connection starts from a snapshot.",
         "operationId": "session_stream",
         "parameters": [
           {
@@ -48064,7 +48367,7 @@
     },
     "/api/v1/threads/{thread_id}/runs": {
       "get": {
-        "description": "Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.",
+        "description": "Page chronological history from an anchor, or rank all Thread runs by a recorded metric.",
         "operationId": "list_thread_runs",
         "parameters": [
           {
@@ -48119,6 +48422,41 @@
                 }
               ],
               "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "cost",
+                    "calls",
+                    "duration"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Direction",
+              "type": "string"
             }
           },
           {

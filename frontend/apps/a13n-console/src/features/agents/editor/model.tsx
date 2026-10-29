@@ -201,6 +201,7 @@ export function ModelSettings({
         options={thinkingOptions}
       />
       <FormField
+        data-field-layout="setting"
         className={styles.modelParameter}
         label={t("Max output tokens")}
         readOnly={readOnly}

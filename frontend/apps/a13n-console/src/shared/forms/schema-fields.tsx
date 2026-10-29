@@ -1,8 +1,9 @@
-import { ChoiceField, FormField, Input, Switch, Textarea } from "a13n-ui";
+import { ChoiceField, FormField, Input, Textarea } from "a13n-ui";
 
-import { useId, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
+import { SwitchField } from "./switch-field";
 import styles from "./forms.module.css";
 import {
   fieldSchema,
@@ -374,34 +375,5 @@ function JsonField({
         }}
       />
     </FormField>
-  );
-}
-
-/** A yes/no setting is a switch row: the name and its effect, the switch at the right. */
-function SwitchField({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-}: {
-  label: string;
-  description?: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-}) {
-  const id = useId();
-  return (
-    <div className={styles.switchField}>
-      <div>
-        <label htmlFor={id}>{label}</label>
-        {description && <p id={`${id}-description`}>{description}</p>}
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        aria-describedby={description ? `${id}-description` : undefined}
-      />
-    </div>
   );
 }

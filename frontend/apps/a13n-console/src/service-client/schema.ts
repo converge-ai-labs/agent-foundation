@@ -2962,7 +2962,7 @@ export interface paths {
     /**
      * Session Stream
      * @description The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-     *     frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot.
+     *     frames, plus `schedule` and `occurrence` state scoped to this session. Every connection starts from a snapshot.
      */
     get: operations["session_stream"];
     put?: never;
@@ -3466,7 +3466,7 @@ export interface paths {
     };
     /**
      * List Thread Runs
-     * @description Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.
+     * @description Page chronological history from an anchor, or rank all Thread runs by a recorded metric.
      */
     get: operations["list_thread_runs"];
     put?: never;
@@ -4632,6 +4632,11 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
+      /**
+       * Summarize
+       * @default false
+       */
+      summarize?: boolean;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -4715,6 +4720,11 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
       };
+      /**
+       * Summarize
+       * @default false
+       */
+      summarize?: boolean;
       tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
@@ -5771,6 +5781,7 @@ export interface components {
       | "model"
       | "model_settings"
       | "model_characteristics"
+      | "summarize"
       | "instructions"
       | "toolsets"
       | "skills"
@@ -10636,6 +10647,7 @@ export interface components {
       state: components["schemas"]["ScheduleState"];
       /** Stream Url */
       stream_url: string;
+      target: components["schemas"]["ScheduleTarget"];
       /**
        * Updated At
        * Format: date-time
@@ -10676,6 +10688,7 @@ export interface components {
        * @enum {string}
        */
       state?: "paused" | "enabled";
+      target?: components["schemas"]["ScheduleTarget"];
     };
     /** ScheduleInvocation */
     "ScheduleInvocation-Input": {
@@ -10764,6 +10777,22 @@ export interface components {
       /** Session Id */
       session_id: string;
     };
+    /**
+     * ScheduleTarget
+     * @description Omitted IDs create a session and, for thread mode, one empty reusable thread.
+     */
+    ScheduleTarget: {
+      /**
+       * Mode
+       * @default new_thread
+       * @enum {string}
+       */
+      mode?: "new_thread" | "thread";
+      /** Session Id */
+      session_id?: string | null;
+      /** Thread Id */
+      thread_id?: string | null;
+    };
     /** ScheduleTime */
     ScheduleTime: {
       /**
@@ -10793,6 +10822,7 @@ export interface components {
       /** Name */
       name?: string | null;
       schedule?: components["schemas"]["ScheduleRule"] | null;
+      target?: components["schemas"]["ScheduleTarget"] | null;
     };
     /** SelectedTrace */
     SelectedTrace: {
@@ -10974,6 +11004,8 @@ export interface components {
     };
     /** SessionView */
     SessionView: {
+      /** Cost */
+      cost: string | null;
       /**
        * Created At
        * Format: date-time
@@ -10998,15 +11030,14 @@ export interface components {
        * @enum {string}
        */
       purpose?: "conversation" | "memory_organization";
-      /**
-       * Run Count
-       * @default 0
-       */
-      run_count?: number;
+      /** Run Count */
+      run_count: number;
       /** Schedule Id */
       schedule_id?: string | null;
       /** Title */
       title?: string | null;
+      /** Unpriced Requests */
+      unpriced_requests: number;
       /**
        * Updated At
        * Format: date-time
@@ -11901,14 +11932,71 @@ export interface components {
       subagent: string | null;
     };
     /**
+     * ThreadRunItem
+     * @description Bounded navigation metadata and recorded model usage within one Thread.
+     */
+    ThreadRunItem: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Attempts */
+      attempts: number;
+      /** Cost */
+      cost: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current Attempt Id */
+      current_attempt_id: string | null;
+      /** Id */
+      id: string;
+      input_preview: components["schemas"]["RunInputPreview"];
+      lineage: components["schemas"]["Lineage"];
+      /** Max Attempts */
+      max_attempts: number;
+      /** Model Calls */
+      model_calls: number;
+      /** Number */
+      number: number;
+      /** Parent Run Id */
+      parent_run_id: string | null;
+      /** Principal Id */
+      principal_id: string;
+      /** Sealed At */
+      sealed_at: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Source Entry Id */
+      source_entry_id: string | null;
+      /** Started At */
+      started_at: string | null;
+      status: components["schemas"]["RunStatus"];
+      /** Thread Id */
+      thread_id: string;
+      trigger: components["schemas"]["Trigger"];
+      /** Unpriced Requests */
+      unpriced_requests: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      wait_reason: components["schemas"]["WaitReason"] | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /**
      * ThreadRunPage
-     * @description Newest first; first_number is the first item's 1-based chronological position in the thread.
+     * @description Chronological history or a metric ranking, retaining each item's chronological number.
      */
     ThreadRunPage: {
-      /** First Number */
-      first_number: number;
       /** Items */
-      items: components["schemas"]["RunListItem"][];
+      items: components["schemas"]["ThreadRunItem"][];
       /** Next Cursor */
       next_cursor: string | null;
       /** Previous Cursor */
@@ -13131,6 +13219,7 @@ export interface operations {
           | "model"
           | "model_settings"
           | "model_characteristics"
+          | "summarize"
           | "instructions"
           | "toolsets"
           | "skills"
@@ -18347,6 +18436,7 @@ export interface operations {
           | "model"
           | "model_settings"
           | "model_characteristics"
+          | "summarize"
           | "instructions"
           | "toolsets"
           | "skills"
@@ -19388,6 +19478,8 @@ export interface operations {
         updated_after?: string | null;
         updated_before?: string | null;
         label?: string[];
+        sort?: "updated_at" | "runs" | "cost";
+        direction?: "asc" | "desc";
         limit?: number;
         cursor?: string | null;
       };
@@ -20807,6 +20899,8 @@ export interface operations {
         limit?: number;
         cursor?: string | null;
         anchor?: string | null;
+        sort?: ("cost" | "calls" | "duration") | null;
+        direction?: "asc" | "desc";
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */

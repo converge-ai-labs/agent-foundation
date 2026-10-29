@@ -153,7 +153,7 @@ GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal={ordinal}&field=result
 
 替换为返回的运行 ID、条目 ID 和该条目的实际 `ordinal`。精简条目读取默认从最早的 ordinal 开始，也可提供 `before` 或 `after`；按 `next_before` 或 `next_after` 继续，包括筛选后当前页为空的情况。未加筛选的详细读取会选择最新条目和完整尾部。
 
-Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，预览最多包含 200 个 Unicode 码点，且不接受 `view`。完整详情通过 `/runs/{run_id}` 读取。线程内运行分页还支持用 `anchor=<run_id>` 代替 `cursor`，返回 `total`、时间顺序编号 `first_number`（从 1 开始），以及指向较早运行的 `next_cursor` 和较新运行的 `previous_cursor`。Usage 汇总已经包含各运行的 `run_number`。
+Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，预览最多包含 200 个 Unicode 码点，且不接受 `view`。完整详情通过 `/runs/{run_id}` 读取。线程内运行分页还支持用 `anchor=<run_id>` 代替 `cursor`，返回 `total`、每条记录的时间顺序编号 `number`（从 1 开始），以及指向较早运行的 `next_cursor` 和较新运行的 `previous_cursor`。Usage 汇总已经包含各运行的 `run_number`。
 
 修订版本、模型、收件箱记录、显示条目、span 和单个运行详情支持 `view=compact`；省略时保留 `view=detailed`。精简列表默认十条记录。精简列表和运行发现分页都可能因共享的 10,000 字符响应预算提前结束。应跟随返回的继续读取值，而不是假设每页必有 `limit` 条记录。
 

@@ -47,7 +47,7 @@ def newest(pointer: TailPointer | None, limit: int) -> int:
 
 async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView]:
     """Views with each run's source input, which the Console shows as the request of that run."""
-    schedule_origins = await origins(session, (run.thread_id for run in runs))
+    schedule_origins = await origins(session, (run.id for run in runs if run.occurrence_trigger_entry_id is not None))
     sources = [run.source_entry_id for run in runs if run.source_entry_id is not None]
     payloads = (
         dict(
@@ -66,7 +66,7 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         RunView.model_validate(run).model_copy(
             update={
                 "input": payloads.get(run.source_entry_id or ""),
-                "schedule_origin": schedule_origins.get(run.thread_id),
+                "schedule_origin": schedule_origins.get(run.id),
             }
         )
         for run in runs

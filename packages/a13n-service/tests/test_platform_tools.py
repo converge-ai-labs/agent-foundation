@@ -295,6 +295,11 @@ async def test_composer_discovers_and_calls_message_text_search(service, scripte
             filters = {"agent_id": agent["id"]} if resource == "runs" else {}
             if resource == "runs":
                 assert "view" not in tool["inputSchema"]["properties"]
+            if resource == "sessions":
+                properties = tool["inputSchema"]["properties"]
+                assert properties["sort"]["enum"] == ["updated_at", "runs", "cost"]
+                assert properties["direction"]["enum"] == ["asc", "desc"]
+                filters = {"sort": "cost", "direction": "desc"}
             result = await call(http, service, "GET", f"/{resource}", text_query="南京 故障", **filters)
             assert result["status"] == 200, result
             assert [row["id"] for row in result["body"]["items"]] == [matching[field]]

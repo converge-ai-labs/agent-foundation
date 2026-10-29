@@ -131,7 +131,7 @@ async def session_stream(
     credential: Credential,
 ) -> StreamingResponse:
     """The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-    frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot."""
+    frames, plus `schedule` and `occurrence` state scoped to this session. Every connection starts from a snapshot."""
     reader = await stream.open_stream(runtime, credential, workspace_id, session_id)
     return StreamingResponse(
         stream.frames(request.app.state.session_hub, reader),
@@ -282,10 +282,20 @@ async def list_thread_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
     anchor: Annotated[str | None, Query(max_length=72)] = None,
+    sort: Literal["cost", "calls", "duration"] | None = None,
+    direction: Literal["asc", "desc"] = "desc",
 ) -> ThreadRunPage:
-    """Newest first, optionally starting at an anchor run; cursors page towards older or newer runs."""
+    """Page chronological history from an anchor, or rank all Thread runs by a recorded metric."""
     return await listings.list_thread_runs(
-        runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor, anchor=anchor
+        runtime.storage,
+        actor,
+        workspace_id,
+        thread_id,
+        limit=limit,
+        cursor=cursor,
+        anchor=anchor,
+        sort=sort,
+        direction=direction,
     )
 
 

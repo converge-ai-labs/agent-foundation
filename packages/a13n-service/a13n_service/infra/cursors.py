@@ -5,10 +5,11 @@ import hashlib
 import json
 from collections.abc import Callable, Sequence
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from pydantic import JsonValue
-from sqlalchemy import Select, literal, select, tuple_, union_all
+from sqlalchemy import ColumnElement, Select, literal, or_, select, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
@@ -44,6 +45,28 @@ def id_position(cursor: str | None, kind: str, owner: str, *, max_length: int = 
     if len(position) != 1 or not isinstance(position[0], str) or len(position[0]) > max_length:
         raise ServiceError("invalid_cursor", "Invalid collection cursor")
     return position[0]
+
+
+def numeric_value(value: JsonValue) -> Decimal:
+    """Bound numeric cursor magnitudes before sending untrusted values to PostgreSQL."""
+    try:
+        if not isinstance(value, str):
+            raise ValueError("number")
+        number = Decimal(value)
+        if not number.is_finite() or abs(number.adjusted()) > 64:
+            raise ValueError("magnitude")
+        return number
+    except (ValueError, InvalidOperation):
+        raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
+
+
+def metric_after(
+    metric: ColumnElement, value: Decimal | None, after: ColumnElement[bool], *, descending: bool
+) -> ColumnElement[bool]:
+    """Continue an exact numeric ordering; missing values follow every known value in either direction."""
+    if value is None:
+        return metric.is_(None) & after
+    return or_(metric < value if descending else metric > value, (metric == value) & after, metric.is_(None))
 
 
 def key_page[T](

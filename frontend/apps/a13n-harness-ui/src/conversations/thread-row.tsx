@@ -184,6 +184,22 @@ export function ThreadRow({
         data-nav-thread={sortable ? row.thread.thread_id : undefined}
         data-nav-source={drag?.moving === row.thread.thread_id || undefined}
       >
+        {disclosure && (
+          <button
+            type="button"
+            className={styles.threadDisclosure}
+            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-expanded={disclosure.expanded}
+            onClick={disclosure.onToggle}
+          >
+            <CaretRight
+              aria-hidden="true"
+              className={
+                disclosure.expanded ? styles.expandedChevron : undefined
+              }
+            />
+          </button>
+        )}
         <NavLink
           draggable={false}
           onPointerDown={
@@ -417,22 +433,6 @@ export function ThreadRow({
             )}
           </MenuPopup>
         </Menu>
-        {disclosure && (
-          <button
-            type="button"
-            className={styles.threadDisclosure}
-            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
-            aria-expanded={disclosure.expanded}
-            onClick={disclosure.onToggle}
-          >
-            <CaretRight
-              aria-hidden="true"
-              className={
-                disclosure.expanded ? styles.expandedChevron : undefined
-              }
-            />
-          </button>
-        )}
       </div>
       <ErrorNotice
         error={star.error || archive.error || fork.error || coordinator.error}

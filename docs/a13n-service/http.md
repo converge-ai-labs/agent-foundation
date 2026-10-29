@@ -153,7 +153,7 @@ GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal={ordinal}&field=result
 
 Substitute the returned run ID, item ID and that item's actual `ordinal`. Compact item reads begin at the oldest ordinal unless you supply `before` or `after`; follow `next_before` or `next_after`, including after an empty filtered page. Detailed unfiltered reads select the latest items and full tail.
 
-Run lists and lineage return metadata and `input_preview: {text, truncated}`, with at most 200 Unicode code points. They do not accept `view`. Read `/runs/{run_id}` for full details. Thread run pages additionally support `anchor=<run_id>` instead of `cursor`, report `total` and chronological `first_number` (starting at one), and supply cursors toward older (`next_cursor`) and newer (`previous_cursor`) runs. Usage summaries already include each run's `run_number`.
+Run lists and lineage return metadata and `input_preview: {text, truncated}`, with at most 200 Unicode code points. They do not accept `view`. Read `/runs/{run_id}` for full details. Thread run pages additionally support `anchor=<run_id>` instead of `cursor`, report `total` and each item's chronological `number` (starting at one), and supply cursors toward older (`next_cursor`) and newer (`previous_cursor`) runs. Usage summaries already include each run's `run_number`.
 
 Revisions, models, inbox entries, display items, spans and single-run detail support `view=compact`; omission keeps `view=detailed`. Compact lists default to ten records. Both compact lists and run discovery pages can stop early at the shared 10,000-character response budget. Follow their continuation values rather than assuming `limit` records will arrive.
 

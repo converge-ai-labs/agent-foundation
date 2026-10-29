@@ -115,6 +115,7 @@ class Source:
     options: RunOptions
     # The digest of the options as submitted, which inherited sources keep from the run they come from.
     options_digest: str
+    occurrence_trigger_entry_id: str | None = None
     entry: InboxEntryRow | None = None
     resume: Resume | None = None
     resumed_by_id: str | None = None
@@ -142,6 +143,7 @@ class Source:
                 update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
             ),
             options_digest=options.digest(),
+            occurrence_trigger_entry_id=entry.id if entry.schedule_occurrence_id is not None else None,
             entry=entry,
         )
 
@@ -186,6 +188,7 @@ class Source:
             revision_selection="inherited",
             options=RunOptions.model_validate(run.options),
             options_digest=run.options_digest,
+            occurrence_trigger_entry_id=run.occurrence_trigger_entry_id if trigger == "resume" else None,
             entry=entry,
             resume=resume,
             resumed_by_id=resumed_by_id,
@@ -345,6 +348,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         memory_mounts=memories,
         memory_cursors=inherited_cursors(parent, memories),
         source_entry_id=source.entry.id if source.entry is not None else None,
+        occurrence_trigger_entry_id=source.occurrence_trigger_entry_id,
         resume=source.resume.model_dump(mode="json") if source.resume is not None else None,
         resumed_by_id=source.resumed_by_id,
         request_key=source.request_key,

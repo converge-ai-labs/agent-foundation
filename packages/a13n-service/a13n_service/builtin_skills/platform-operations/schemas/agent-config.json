@@ -1436,6 +1436,11 @@
       "title": "Subagents",
       "type": "object"
     },
+    "summarize": {
+      "default": false,
+      "title": "Summarize",
+      "type": "boolean"
+    },
     "tool_search": {
       "anyOf": [
         {

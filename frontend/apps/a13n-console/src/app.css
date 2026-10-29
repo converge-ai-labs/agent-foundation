@@ -1,3 +1,5 @@
+@import "./shared/forms/setting-fields.css";
+
 /* Console emphasis stays one step above regular text, including shared UI. */
 :root {
   --font-weight-semibold: 500;

@@ -34,6 +34,8 @@ export function conversationKeys(workspaceId: string) {
       [...root, "thread-navigation", sessionId] as const,
     thread: (threadId: string) => [...root, "thread", threadId] as const,
     runs: (threadId: string) => [...root, "runs", threadId] as const,
+    rankedRuns: (threadId: string) =>
+      [...root, "ranked-runs", threadId] as const,
     inbox: (threadId: string) => [...root, "inbox", threadId] as const,
     /** One inbox entry; it changes with its Thread's inbox. */
     entry: (threadId: string, entryId: string) =>
@@ -334,6 +336,27 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
       }),
+    rankedRuns: (
+      thread_id: string,
+      sort: "cost" | "calls" | "duration",
+      direction: "asc" | "desc",
+    ) =>
+      infiniteQueryOptions({
+        queryKey: [...keys.rankedRuns(thread_id), { sort, direction }],
+        initialPageParam: undefined as string | undefined,
+        queryFn: ({ signal, pageParam }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}/runs", {
+              params: {
+                path: { thread_id },
+                query: { sort, direction, cursor: pageParam, limit: 50 },
+              },
+              signal,
+            })
+            .then(data),
+        getNextPageParam: (page) => page.next_cursor ?? undefined,
+      }),
     attempts: (run_id: string) =>
       queryOptions({
         queryKey: keys.attempts(run_id),
@@ -428,6 +451,7 @@ export function invalidateConversation(
               id === change.threadId &&
               isLiveRunPage(position, state.data)
             );
+          case "ranked-runs":
           case "thread":
           case "inbox":
             return !!change.threadId && id === change.threadId;
@@ -486,6 +510,22 @@ export function applyThreadState(
     );
     // A run's version moves with its attempts.
     if (held >= 0 && held < run.version) {
+      void cache.invalidateQueries(
+        { queryKey: keys.rankedRuns(run.thread_id) },
+        { cancelRefetch: false },
+      );
+      // Sealing fixes the row's final usage; refresh only pages containing it.
+      if (run.sealed_at)
+        void cache.invalidateQueries(
+          {
+            queryKey: keys.runs(run.thread_id),
+            predicate: ({ state }) =>
+              !!(state.data as Schema["ThreadRunPage"] | undefined)?.items.some(
+                (item) => item.id === run.id,
+              ),
+          },
+          { cancelRefetch: false },
+        );
       void cache.invalidateQueries({ queryKey: keys.attempts(run.id) });
       void cache.invalidateQueries(
         { queryKey: keys.usage({ run_id: run.id }) },
@@ -545,6 +585,7 @@ export function applyThreadState(
             id === current_run?.id ||
             id === last_run?.id)) ||
         (!!previous && kind === "inbox" && id === thread.id) ||
+        (kind === "ranked-runs" && id === thread.id && membershipChanged) ||
         (kind === "runs" &&
           id === thread.id &&
           membershipChanged &&

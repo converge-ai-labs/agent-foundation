@@ -86,19 +86,20 @@ async def test_thread_pages_anchor_and_bidirectional_cursors_do_not_skip_runs(se
         return response.json()
 
     latest = await page()
-    assert latest["total"] == latest["first_number"] == 8
+    assert latest["total"] == latest["items"][0]["number"] == 8
+    assert "first_number" not in latest
     assert latest["previous_cursor"] is None
     assert [item["id"] for item in latest["items"]] == ids[:5:-1]
     anchored = await page(anchor=ids[3])
-    assert anchored["first_number"] == 4 and anchored["total"] == 8
+    assert anchored["items"][0]["number"] == 4 and anchored["total"] == 8
     assert [item["id"] for item in anchored["items"]] == [ids[3], ids[2]]
     older = await page(cursor=anchored["next_cursor"])
-    assert older["first_number"] == 2 and older["next_cursor"] is None
+    assert older["items"][0]["number"] == 2 and older["next_cursor"] is None
     assert [item["id"] for item in older["items"]] == [ids[1], ids[0]]
     back = await page(cursor=older["previous_cursor"])
     assert back == anchored
     newer = await page(cursor=anchored["previous_cursor"])
-    assert newer["first_number"] == 6
+    assert newer["items"][0]["number"] == 6
     assert [item["id"] for item in newer["items"]] == [ids[5], ids[4]]
     assert await page(cursor=newer["previous_cursor"]) == latest
 
@@ -221,7 +222,7 @@ async def test_thread_counts_share_the_page_snapshot(service, scripted_model, ru
     assert response.status_code == 200, response.text
     page = response.json()
     assert [item["id"] for item in page["items"]] == [run_id]
-    assert page["total"] == page["first_number"] == 1
+    assert page["total"] == page["items"][0]["number"] == 1
     assert page["previous_cursor"] is None
     fresh = await service.client.get(f"{service.api}/threads/{thread_id}/runs")
     assert fresh.json()["total"] == 2

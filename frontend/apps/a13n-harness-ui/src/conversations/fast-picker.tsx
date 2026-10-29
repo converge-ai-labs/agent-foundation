@@ -35,7 +35,7 @@ export function FastPicker({
         disabled={disabled}
         onClick={() => onChange(null)}
       >
-        <span>Default</span>
+        <span>Model setting · {speedLabel(control?.state)}</span>
         {value == null && <Check aria-hidden />}
       </Button>
       <Button

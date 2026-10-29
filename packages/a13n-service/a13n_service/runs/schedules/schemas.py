@@ -69,6 +69,20 @@ class ScheduleInvocation(_Model):
         return value
 
 
+class ScheduleTarget(_Model):
+    """Omitted IDs create a session and, for thread mode, one empty reusable thread."""
+
+    mode: Literal["new_thread", "thread"] = "new_thread"
+    session_id: ObjectId | None = None
+    thread_id: ObjectId | None = None
+
+    @model_validator(mode="after")
+    def valid(self) -> Self:
+        if self.mode == "new_thread" and self.thread_id is not None:
+            raise ValueError("new_thread targets cannot specify thread_id")
+        return self
+
+
 class ScheduleConfig(_Model):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2048)
@@ -85,10 +99,12 @@ class ScheduleConfig(_Model):
 
 
 class ScheduleCreate(ScheduleConfig):
+    target: ScheduleTarget = Field(default_factory=ScheduleTarget, exclude_if=lambda value: value == ScheduleTarget())
     state: Literal["paused", "enabled"] = "paused"
 
 
 class ScheduleUpdate(_Model):
+    target: ScheduleTarget | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2048)
     labels: Labels | None = None
@@ -104,6 +120,7 @@ class ScheduleUpdate(_Model):
 
 
 class Schedule(ScheduleConfig):
+    target: ScheduleTarget
     id: str
     session_id: str
     stream_url: str

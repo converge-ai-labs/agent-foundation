@@ -191,6 +191,7 @@ export function ComboboxPopup({
         sideOffset={sideOffset}
       >
         <span
+          data-slot="combobox-surface"
           className={cn(
             "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding shadow-overlay transition-[scale,opacity]",
             className,

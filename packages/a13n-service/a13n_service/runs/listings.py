@@ -2,8 +2,9 @@
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Literal
 
-from sqlalchemy import Select, func, literal, select, true, tuple_
+from sqlalchemy import Select, case, func, literal, select, true, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 
@@ -11,9 +12,10 @@ from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError, invalid, not_found
 from a13n_service.runs.previews import input_text
-from a13n_service.runs.schemas import RunInputPreview, RunListItem, RunPage, RunQuery, ThreadRunPage
+from a13n_service.runs.schemas import RunInputPreview, RunListItem, RunPage, RunQuery, ThreadRunItem, ThreadRunPage
 from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.usage import run_metrics
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
@@ -96,6 +98,8 @@ async def list_thread_runs(
     limit: int,
     cursor: str | None,
     anchor: str | None = None,
+    sort: Literal["cost", "calls", "duration"] | None = None,
+    direction: Literal["asc", "desc"] = "desc",
 ) -> ThreadRunPage:
     """Start at the newest run or an anchor; page in either direction without loading intervening runs."""
     if cursor is not None and anchor is not None:
@@ -110,6 +114,10 @@ async def list_thread_runs(
         ):
             raise not_found("thread", thread_id)
         scoped = (RunRow.workspace_id == scope.workspace_id, RunRow.thread_id == thread_id)
+        if sort is not None:
+            if anchor is not None:
+                raise invalid("anchor", "metric sorting starts at its first ranked page")
+            return await _ranked_page(session, scope.workspace_id, thread_id, sort, direction, cursor, limit)
         owner = cursors.query_owner(scope.workspace_id, thread_id)
         statement = query().where(*scoped)
         order = tuple_(RunRow.created_at, RunRow.id)
@@ -117,9 +125,9 @@ async def list_thread_runs(
         if cursor is not None:
             position = cursors.decode(cursor, "thread_runs", owner)
             try:
-                direction, timestamp, key = position
+                cursor_direction, timestamp, key = position
                 if (
-                    direction not in ("older", "newer")
+                    cursor_direction not in ("older", "newer")
                     or not isinstance(timestamp, str)
                     or not isinstance(key, str)
                     or len(key) > 72
@@ -130,7 +138,7 @@ async def list_thread_runs(
                     raise ValueError("timestamp")
             except (TypeError, ValueError):
                 raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
-            newer = direction == "newer"
+            newer = cursor_direction == "newer"
             boundary = tuple_(literal(time), literal(key))
             statement = statement.where(order > boundary if newer else order < boundary)
         elif anchor is not None:
@@ -170,7 +178,8 @@ async def list_thread_runs(
         ).all()
         total, number = result[0][1:]
         rows = [row[0] for row in result if row[0] is not None]
-        values = await views(session, rows)
+        numbers = [number + index if newer else number - index for index in range(len(rows))]
+        values = await _thread_views(session, rows, numbers)
         count = reads.fit_count(values)
         rows, values = rows[:count], values[:count]
         if newer:
@@ -184,10 +193,108 @@ async def list_thread_runs(
         return ThreadRunPage(
             items=values,
             total=total,
-            first_number=number,
             previous_cursor=cursor_at("newer", rows[0]) if rows and number < total else None,
             next_cursor=cursor_at("older", rows[-1]) if rows and number > len(rows) else None,
         )
+
+
+async def _thread_views(session: AsyncSession, rows: Sequence[RunRow], numbers: list[int]) -> list[ThreadRunItem]:
+    if not rows:
+        return []
+    metrics = {
+        row.run_id: row
+        for row in (
+            await session.execute(run_metrics(rows[0].workspace_id).where(RunRow.id.in_([run.id for run in rows])))
+        ).mappings()
+    }
+    return [
+        ThreadRunItem(
+            **view.model_dump(),
+            number=number,
+            cost=metrics[view.id].cost if view.id in metrics else None,
+            model_calls=metrics[view.id].model_calls if view.id in metrics else 0,
+            unpriced_requests=metrics[view.id].unpriced_requests if view.id in metrics else 0,
+        )
+        for view, number in zip(await views(session, rows), numbers, strict=True)
+    ]
+
+
+async def _ranked_page(
+    session: AsyncSession,
+    workspace_id: str,
+    thread_id: str,
+    sort: Literal["cost", "calls", "duration"],
+    direction: Literal["asc", "desc"],
+    cursor: str | None,
+    limit: int,
+) -> ThreadRunPage:
+    """Rank the Thread in SQL, then hydrate only one metadata page; unknown values always come last."""
+    scoped = (RunRow.workspace_id == workspace_id, RunRow.thread_id == thread_id)
+    numbered = (
+        select(
+            RunRow.id,
+            func.row_number().over(order_by=(RunRow.created_at, RunRow.id)).label("number"),
+            func.count().over().label("total"),
+        )
+        .where(*scoped)
+        .cte("numbered_runs")
+    )
+    statement = query().join(numbered, numbered.c.id == RunRow.id)
+    if sort == "duration":
+        metric = case(
+            (
+                (RunRow.status != "waiting") & RunRow.sealed_at.is_not(None),
+                func.extract("epoch", RunRow.sealed_at - RunRow.started_at),
+            )
+        )
+    else:
+        metrics = run_metrics(workspace_id).where(RunRow.thread_id == thread_id).subquery()
+        statement = statement.outerjoin(metrics, metrics.c.run_id == RunRow.id)
+        metric = metrics.c.cost if sort == "cost" else func.coalesce(metrics.c.model_calls, 0)
+    owner = cursors.query_owner(workspace_id, {"thread_id": thread_id, "sort": sort, "direction": direction})
+    descending = direction == "desc"
+    chronology = tuple_(RunRow.created_at, RunRow.id)
+    if cursor:
+        position = cursors.decode(cursor, "thread_run_ranking", owner)
+        try:
+            if (
+                len(position) != 3
+                or not isinstance(position[1], str)
+                or not isinstance(position[2], str)
+                or len(position[2]) > 72
+            ):
+                raise ValueError("position")
+            time = datetime.fromisoformat(position[1])
+            if time.tzinfo is None:
+                raise ValueError("timestamp")
+        except ValueError:
+            raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
+        value = None if position[0] is None else cursors.numeric_value(position[0])
+        after = chronology > tuple_(literal(time), literal(position[2]))
+        statement = statement.where(cursors.metric_after(metric, value, after, descending=descending))
+    result = (
+        await session.execute(
+            statement.add_columns(metric, numbered.c.number, numbered.c.total)
+            .order_by((metric.desc() if descending else metric.asc()).nulls_last(), RunRow.created_at, RunRow.id)
+            .limit(limit + 1)
+        )
+    ).all()
+    page = result[:limit]
+    values = await _thread_views(session, [row[0] for row in page], [row[2] for row in page])
+    count = reads.fit_count(values)
+    following = None
+    if count and (len(result) > limit or count < len(page)):
+        row, value, _, _ = page[count - 1]
+        following = cursors.encode(
+            "thread_run_ranking", owner, None if value is None else str(value), row.created_at.isoformat(), row.id
+        )
+    total = result[0][3] if result else await session.scalar(select(func.count()).select_from(RunRow).where(*scoped))
+    return ThreadRunPage(
+        items=values[:count],
+        total=total or 0,
+        next_cursor=following,
+        previous_cursor=None,
+    )
 
 
 async def lineage(

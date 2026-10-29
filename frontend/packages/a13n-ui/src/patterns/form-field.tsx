@@ -35,6 +35,7 @@ export function FormField({
   className,
   ...props
 }: Omit<ComponentProps<typeof Field>, "children"> & {
+  "data-field-layout"?: "stacked" | "setting";
   label: ReactNode;
   labelAction?: ReactNode;
   description?: ReactNode;
@@ -57,6 +58,7 @@ export function FormField({
   if (readOnly || children.props.readOnly) {
     return (
       <ReadOnlyField
+        data-field-layout={props["data-field-layout"]}
         label={label}
         hideLabel={hideLabel}
         description={description}

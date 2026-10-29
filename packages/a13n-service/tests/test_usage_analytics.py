@@ -1,5 +1,7 @@
 """Workspace aggregates observe current facts, independent Run populations and query-bound pages."""
 
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -85,6 +87,25 @@ async def read(service, path="overview", **params):  # type: ignore[no-untyped-d
     response = await service.client.get(f"{service.api}/usage/{path}", params={**WINDOW, **params})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def assert_invalid_numeric_cursors(service, path, params, cursor):
+    """An opaque cursor is still untrusted input: reject invalid positions before SQL."""
+    position = json.loads(base64.urlsafe_b64decode(cursor))
+    for index, value in (
+        (2, "1e999999"),
+        (2, "1e-999999"),
+        (2, "NaN"),
+        (2, "Infinity"),
+        (2, 1),
+        (len(position) - 1, "x" * 129),
+    ):
+        malformed = position.copy()
+        malformed[index] = value
+        token = base64.urlsafe_b64encode(json.dumps(malformed).encode()).decode()
+        response = await service.client.get(path, params={**params, "cursor": token})
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["code"] == "invalid_cursor"
 
 
 async def test_overview_and_groups_use_distinct_populations(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -276,6 +297,7 @@ async def test_cost_order_and_cursor_scope(service, scripted_model, runs_kit):  
             break
     assert found == [*sorted(ids[:2]), *ids[2:]]
     cursor = (await read(service, "agents", limit=1))["next_cursor"]
+    await assert_invalid_numeric_cursors(service, f"{service.api}/usage/agents", WINDOW, cursor)
     for path, fields in (("models", {}), ("agents", {"end": "2026-09-05T00:00:00Z"}), ("agents", {"cursor": "bad"})):
         response = await service.client.get(
             f"{service.api}/usage/{path}", params={**WINDOW, "cursor": cursor, **fields}
@@ -663,3 +685,140 @@ async def test_member_with_only_runs_is_counted_without_model_usage(service, scr
     assert Decimal(member["usage"]["cost"]) == 0
     assert member["runs"] == {"runs": 1, "average_duration_seconds": 25}
     assert (await read(service, "models", principal_id=member["principal_id"]))["items"] == []
+
+
+async def test_session_metric_sorting_pages_exact_totals_and_keeps_unknown_last(service, scripted_model, runs_kit):
+    agent = await runs_kit.create_agent(service, scripted_model)
+    expected = []
+    for cost in (Decimal("0.10000000000000000001"), Decimal("0.1"), Decimal("0.1"), Decimal(0), None):
+        records = [("scripted", 10, 0, 0, cost, START)]
+        if cost == Decimal("0.1"):
+            records.append(("scripted", 10, 0, 0, None, START))
+        run_id, _ = await observed_run(service, runs_kit, agent, records=records)
+        run = (await service.client.get(f"{service.api}/runs/{run_id}")).json()
+        expected.append((run["session_id"], cost, 1))
+    empty = (await service.client.post(f"{service.api}/sessions", json={"title": "Empty"})).json()
+    expected.append((empty["id"], None, 0))
+    await runs_kit.start_thread(service, agent, "Second run", session_id=expected[0][0])
+    expected[0] = (*expected[0][:2], 2)
+
+    for field, position in (("cost", 1), ("runs", 2)):
+        for direction in ("asc", "desc"):
+
+            def order(item, position=position, direction=direction):
+                value = item[position]
+                return value is None, (value or 0) * (-1 if direction == "desc" else 1), item[0]
+
+            wanted = sorted(expected, key=order)
+            cursor = None
+            actual = []
+            while True:
+                params = {"sort": field, "direction": direction, "limit": 2}
+                if cursor:
+                    params["cursor"] = cursor
+                response = await service.client.get(f"{service.api}/sessions", params=params)
+                assert response.status_code == 200, response.text
+                page = response.json()
+                actual.extend(page["items"])
+                cursor = page["next_cursor"]
+                if not cursor:
+                    break
+                wrong = await service.client.get(
+                    f"{service.api}/sessions",
+                    params={**params, "cursor": cursor, "direction": "asc" if direction == "desc" else "desc"},
+                )
+                assert wrong.status_code == 400
+            assert [item["id"] for item in actual] == [item[0] for item in wanted]
+            for item, (_, cost, count) in zip(actual, wanted, strict=True):
+                assert (Decimal(item["cost"]) if item["cost"] is not None else None) == cost
+                assert item["run_count"] == count
+                if cost == Decimal("0.1"):
+                    assert item["unpriced_requests"] == 1
+    filtered = await service.client.get(f"{service.api}/sessions", params={"sort": "cost", "q": "Empty"})
+    assert [item["id"] for item in filtered.json()["items"]] == [empty["id"]]
+    params = {"sort": "cost", "limit": 1}
+    first = (await service.client.get(f"{service.api}/sessions", params=params)).json()
+    await assert_invalid_numeric_cursors(service, f"{service.api}/sessions", params, first["next_cursor"])
+
+
+async def test_thread_metric_ranking_is_global_exact_and_bounded(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    thread_id = None
+    expected = []
+    for cost, calls, seconds in (
+        (Decimal("0.10000000000000000001"), 1, 15),
+        (Decimal("0.1"), 2, 40),
+        (Decimal("0.1"), 2, 40),
+        (Decimal(0), 1, 5),
+        (None, 1, 30),
+    ):
+        records = [("scripted", 10, 0, 0, cost, START)]
+        records += [("scripted", 10, 0, 0, None, START)] * (calls - 1)
+        run_id, _ = await observed_run(service, runs_kit, agent, records=records, thread_id=thread_id, seconds=seconds)
+        run = (await service.client.get(f"{service.api}/runs/{run_id}")).json()
+        thread_id = run["thread_id"]
+        expected.append({"id": run_id, "cost": cost, "calls": calls, "duration": seconds, "number": len(expected) + 1})
+    pending = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Not yet started"))
+    expected.append({"id": pending.json()["run"]["id"], "cost": None, "calls": 0, "duration": None, "number": 6})
+    path = f"{service.api}/threads/{thread_id}/runs"
+    for field in ("cost", "calls", "duration"):
+        for direction in ("asc", "desc"):
+
+            def order(item, field=field, direction=direction):
+                value = item[field]
+                return value is None, (value or 0) * (-1 if direction == "desc" else 1), item["number"]
+
+            wanted = sorted(expected, key=order)
+            actual, cursor = [], None
+            while True:
+                params = {"sort": field, "direction": direction, "limit": 2}
+                if cursor:
+                    params["cursor"] = cursor
+                response = await service.client.get(path, params=params)
+                assert response.status_code == 200, response.text
+                page = response.json()
+                assert page["total"] == 6 and len(page["items"]) <= 2
+                assert page["previous_cursor"] is None
+                actual.extend(page["items"])
+                cursor = page["next_cursor"]
+                if not cursor:
+                    break
+                mismatch = await service.client.get(
+                    path, params={**params, "cursor": cursor, "direction": "asc" if direction == "desc" else "desc"}
+                )
+                assert mismatch.status_code == 400
+            assert [item["id"] for item in actual] == [item["id"] for item in wanted]
+            for item, expected_item in zip(actual, wanted, strict=True):
+                assert item["number"] == expected_item["number"]
+                assert item["model_calls"] == expected_item["calls"]
+                assert (Decimal(item["cost"]) if item["cost"] is not None else None) == expected_item["cost"]
+                assert "input" not in item
+    assert (await service.client.get(path, params={"sort": "cost", "anchor": expected[0]["id"]})).status_code == 400
+    chronological = (await service.client.get(path, params={"anchor": expected[2]["id"], "limit": 2})).json()
+    assert [item["number"] for item in chronological["items"]] == [3, 2]
+    for field in ("cost", "calls", "duration"):
+        params = {"sort": field, "limit": 1}
+        first = (await service.client.get(path, params=params)).json()
+        await assert_invalid_numeric_cursors(service, path, params, first["next_cursor"])
+
+
+async def test_duration_ranking_keeps_sealed_waiting_runs_last(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    finished, _ = await observed_run(service, runs_kit, agent, seconds=40)
+    thread_id = (await runs_kit.get_run(service, finished))["thread_id"]
+    submitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Pick a color"))
+    waiting_id = submitted.json()["run"]["id"]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    await (await runs_kit.attempt(service))
+    waiting = await runs_kit.get_run(service, waiting_id)
+    assert waiting["status"] == "waiting" and waiting["sealed_at"] is not None
+    path = f"{service.api}/threads/{thread_id}/runs"
+    for direction in ("asc", "desc"):
+        params = {"sort": "duration", "direction": direction, "limit": 1}
+        first = (await service.client.get(path, params=params)).json()
+        assert [run["id"] for run in first["items"]] == [finished]
+        second = (await service.client.get(path, params={**params, "cursor": first["next_cursor"]})).json()
+        assert [run["id"] for run in second["items"]] == [waiting_id]
+        assert second["next_cursor"] is None

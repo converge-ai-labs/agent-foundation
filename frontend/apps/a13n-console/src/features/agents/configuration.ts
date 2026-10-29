@@ -20,6 +20,7 @@ const sectionFields = {
   environment: ["default_environment_template_id"],
   execution: ["execution"],
   compaction: ["background_compaction"],
+  summarize: ["summarize"],
 } as const;
 export type EditorSection = keyof typeof sectionFields | "advanced";
 const commonFields = new Set<string>([...Object.values(sectionFields).flat()]);
@@ -69,6 +70,7 @@ export function buildConfig(
     | "default_environment_template_id"
     | "execution"
     | "background_compaction"
+    | "summarize"
   >,
   advanced: string,
 ): AgentConfig {

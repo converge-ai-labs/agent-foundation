@@ -25,10 +25,14 @@ class ScheduleRow(Stamped, Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "id", "session_id"),
-        UniqueConstraint("session_id"),
         UniqueConstraint("workspace_id", "created_by_id", "create_request_key"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "session_id"], ["sessions.workspace_id", "sessions.id"]),
+        ForeignKeyConstraint(
+            ["workspace_id", "session_id", "thread_id"],
+            ["threads.workspace_id", "threads.session_id", "threads.id"],
+            name="fk_schedules_target_thread",
+        ),
         *(
             ForeignKeyConstraint(
                 ["id", pointer],
@@ -61,6 +65,7 @@ class ScheduleRow(Stamped, Base):
         CheckConstraint("(state = 'paused') = (pause_reason IS NOT NULL)", name="pause_reason"),
         CheckConstraint("(state = 'archived') = (archived_at IS NOT NULL)", name="archived"),
         CheckConstraint("max_lateness_seconds BETWEEN 60 AND 86400", name="lateness"),
+        Index("ix_schedules_session_id", "session_id"),
         Index("ix_schedules_workspace_created", "workspace_id", "created_at", "id"),
         Index("ix_schedules_due", "next_fire_at", "id", postgresql_where=text("state = 'enabled'")),
         rules(
@@ -69,9 +74,9 @@ class ScheduleRow(Stamped, Base):
             CREATE FUNCTION guard_schedule() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF OLD.state = 'archived' OR
-                   ROW(NEW.session_id, NEW.principal_id, NEW.authority, NEW.create_request_key, NEW.create_request_digest)
+                   ROW(NEW.principal_id, NEW.authority, NEW.create_request_key, NEW.create_request_digest)
                    IS DISTINCT FROM
-                   ROW(OLD.session_id, OLD.principal_id, OLD.authority, OLD.create_request_key, OLD.create_request_digest)
+                   ROW(OLD.principal_id, OLD.authority, OLD.create_request_key, OLD.create_request_digest)
                 THEN RAISE EXCEPTION 'schedule identity, authority and archived state are immutable'; END IF;
                 IF OLD.state = 'completed' AND NEW.state NOT IN ('completed', 'archived')
                 THEN RAISE EXCEPTION 'completed schedules cannot restart'; END IF;
@@ -89,6 +94,7 @@ class ScheduleRow(Stamped, Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     session_id: Mapped[str]
+    thread_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str]
     description: Mapped[str | None]
     labels: Mapped[dict] = mapped_column(JSONB)
@@ -117,18 +123,19 @@ class OccurrenceRow(Stamped, Base):
     __tablename__ = "schedule_occurrences"
     KIND: ClassVar[str] = "schedule_occurrence"
     __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "session_id"], ["sessions.workspace_id", "sessions.id"]),
         UniqueConstraint("schedule_id", "id"),
+        UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
-        UniqueConstraint("thread_id"),
         UniqueConstraint("entry_id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
-            ["workspace_id", "schedule_id", "session_id"],
-            ["schedules.workspace_id", "schedules.id", "schedules.session_id"],
+            ["workspace_id", "schedule_id"],
+            ["schedules.workspace_id", "schedules.id"],
         ),
         ForeignKeyConstraint(
-            ["workspace_id", "session_id", "id", "thread_id"],
-            ["threads.workspace_id", "threads.session_id", "threads.schedule_occurrence_id", "threads.id"],
+            ["workspace_id", "session_id", "thread_id"],
+            ["threads.workspace_id", "threads.session_id", "threads.id"],
             name="fk_schedule_occurrences_thread",
             use_alter=True,
             deferrable=True,
@@ -183,6 +190,7 @@ class OccurrenceRow(Stamped, Base):
         Index(
             "uq_schedule_occurrences_pending", "schedule_id", unique=True, postgresql_where=text("status = 'pending'")
         ),
+        Index("ix_schedule_occurrences_session", "workspace_id", "session_id", "created_at", "id"),
         Index("ix_schedule_occurrences_history", "schedule_id", "created_at", "id"),
         Index(
             "ix_schedule_occurrences_pending",
@@ -195,12 +203,12 @@ class OccurrenceRow(Stamped, Base):
             CREATE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF (OLD.status <> 'pending' AND NOT (OLD.status = 'submitted' AND NEW.status = 'completed')) OR
-                   ROW(NEW.id, NEW.organization_id, NEW.workspace_id, NEW.schedule_id, NEW.session_id,
+                   ROW(NEW.id, NEW.organization_id, NEW.workspace_id, NEW.schedule_id,
                        NEW.trigger, NEW.scheduled_at, NEW.covered_from_at, NEW.schedule_version, NEW.snapshot,
                        NEW.principal_id, NEW.authority, NEW.requested_by_id, NEW.request_key, NEW.request_digest,
                        NEW.deadline_at, NEW.created_at)
                    IS DISTINCT FROM
-                   ROW(OLD.id, OLD.organization_id, OLD.workspace_id, OLD.schedule_id, OLD.session_id,
+                   ROW(OLD.id, OLD.organization_id, OLD.workspace_id, OLD.schedule_id,
                        OLD.trigger, OLD.scheduled_at, OLD.covered_from_at, OLD.schedule_version, OLD.snapshot,
                        OLD.principal_id, OLD.authority, OLD.requested_by_id, OLD.request_key, OLD.request_digest,
                        OLD.deadline_at, OLD.created_at)
@@ -208,10 +216,10 @@ class OccurrenceRow(Stamped, Base):
                 IF NEW.status = 'completed' AND OLD.status <> 'submitted'
                 THEN RAISE EXCEPTION 'only submitted occurrences can complete'; END IF;
                 IF OLD.status = 'submitted' AND
-                   ROW(NEW.thread_id, NEW.entry_id, NEW.finished_at, NEW.reason, NEW.dispatch_attempts,
+                   ROW(NEW.session_id, NEW.thread_id, NEW.entry_id, NEW.finished_at, NEW.reason, NEW.dispatch_attempts,
                        NEW.next_attempt_at, NEW.last_error)
                    IS DISTINCT FROM
-                   ROW(OLD.thread_id, OLD.entry_id, OLD.finished_at, OLD.reason, OLD.dispatch_attempts,
+                   ROW(OLD.session_id, OLD.thread_id, OLD.entry_id, OLD.finished_at, OLD.reason, OLD.dispatch_attempts,
                        OLD.next_attempt_at, OLD.last_error)
                 THEN RAISE EXCEPTION 'submitted occurrence evidence is immutable'; END IF;
                 RETURN NEW;

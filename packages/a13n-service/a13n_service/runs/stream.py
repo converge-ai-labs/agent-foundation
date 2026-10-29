@@ -7,7 +7,7 @@ run and attempt are current.
 
 Each Control process has one `SessionHub`. For the sessions that have readers it shares one blocking XREAD over
 their threads and, every `control.stream_refresh_seconds` or sooner when a reader meets a run it does not follow,
-reads their state and each reader's authority once. Schedule-owned Sessions also send compact
+reads their state and each reader's authority once. Sessions with Schedule targets or occurrence history also send compact
 `schedule` / `occurrence` state. Every Thread uses the same output frames:
 
 - `thread`: a thread's current state, whenever it changes;
@@ -631,7 +631,7 @@ def _metadata(snapshot: observation.Snapshot | None) -> dict[str, str]:
     if snapshot is None:
         return {}
     return {
-        "schedule": _frame("schedule", snapshot.schedule),
+        **{item.schedule_id: _frame("schedule", item) for item in snapshot.schedules},
         **{item.occurrence.id: _frame("occurrence", item) for item in snapshot.occurrences},
     }
 

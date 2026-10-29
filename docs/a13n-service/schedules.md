@@ -3,7 +3,7 @@ title: Schedules
 description: Preview a schedule, test one trigger, then enable recurring or one-time agent work.
 ---
 
-Use a schedule to send fixed text or JSON to an agent at a future time or on a recurring timetable. Each trigger creates a new thread with independent conversation history. All triggers belong to the schedule's dedicated session, where you can follow their output.
+Use a schedule to send fixed text or JSON to an agent at a future time or on a recurring timetable. Choose a new thread per trigger or reuse one thread with its conversation history. You can select an existing session/thread or create one when saving the schedule.
 
 Start with an agent that already completes the task interactively. You need workspace `write` and `run` permissions to create a schedule. Test one manual trigger before enabling automatic work.
 
@@ -17,7 +17,7 @@ For a daily morning report, open **Schedules → Create schedule** in Console:
 4. Create the schedule; it starts paused. Select **Run once**, then **View output** to inspect the agent's result and handle any approval or input request.
 5. After the test finishes, select **Enable**. Check the next trigger time and inspect the first automatic result.
 
-After saving, open the detail page to check the target agent, selected revision and fixed session. Read every saved text or JSON input part in order, separately from the description. The session link opens execution history, or an empty session before the first trigger. If editing is unavailable, the page explains whether the schedule is archived or completed, you are not its creator, or your workspace permissions are insufficient.
+After saving, open the detail page to check the target agent, selected revision and current target. Read every saved text or JSON input part in order, separately from the description. The session link opens execution history, or an empty session before the first trigger. If editing is unavailable, the page explains whether the schedule is archived or completed, you are not its creator, or your workspace permissions are insufficient.
 
 Cron expressions have five fields. During daylight-saving changes, a missing local time does not fire; a repeated local time maps to two instants, each subject to the overlap rule below. Preview verifies the chosen calendar; execution still depends on service scanning and run admission.
 
@@ -25,7 +25,9 @@ Only the creator can edit, enable or manually dispatch a schedule. Another membe
 
 A schedule saves its creator's execution authorization. Signing out, credential expiry and revoking the original API key do not stop it. **Pause or archive the schedule to stop future submissions.** Disabling the principal or revoking its execution access also stops them. Tool approval remains in effect.
 
-Time or invocation changes cancel input still awaiting submission. Pause and archive also cancel pending input, while already submitted input and runs continue. Maximum lateness limits submission time, not run completion.
+Target-only changes keep pending input and the timetable. Historical messages stay in their actual session/thread. Time or invocation changes cancel input still awaiting submission. Pause and archive also cancel pending input, while already submitted input and runs continue. Maximum lateness limits submission time, not run completion.
+
+The **Delivery target** section selects **New thread each time** or **Reuse one thread**. Enter an existing session ID for new threads, or an existing thread ID for repeated messages. Leave IDs empty to create the selected resources when saving. New sessions start with Memory disabled; existing sessions keep their settings. Memory remains editable. Explicit invocation memory mounts apply only when creating a thread. Scheduled messages wait for the next run and do not resolve approval waits.
 
 ## One-time schedules
 
@@ -49,11 +51,11 @@ Open the schedule detail page and select a trigger, called an **occurrence**. Fo
 | Run                    | Shows output, tool calls and waiting requests                                                 |
 | Occurrence `completed` | Root-thread execution ended; inspect `execution_outcome` for success, failure or cancellation |
 
-`skipped`, `failed` and `cancelled` occurrence statuses describe submission outcomes. For completed execution, `completion_run_id` identifies the first root-thread run that completed, failed or was cancelled; `completed_at` records its end time. `finished_at` remains the submission finish time. Waiting and attempt retries leave execution unfinished.
+`skipped`, `failed` and `cancelled` occurrence statuses describe submission outcomes. For completed execution, `completion_run_id` identifies the run that completed, failed or was cancelled for this trigger message, including waiting/resume successors; `completed_at` records its end time. `finished_at` remains the submission finish time. Waiting and attempt retries leave execution unfinished.
 
-The scheduler avoids overlap while an earlier occurrence is pending submission or its root thread has no completed, failed or cancelled run. A waiting run remains busy across resumes. Submitted input without a run also remains busy, even if that input was rejected or withdrawn; archiving its thread alone does not finish it.
+The scheduler avoids overlap while an earlier occurrence is pending submission or its trigger message execution has not completed, failed or been cancelled. A waiting run remains busy across resumes. Submitted input without a run also remains busy, even if that input was rejected or withdrawn; archiving its thread alone does not finish it.
 
-Once a qualifying root-thread run ends, later conversation, forks and child work do not delay the next trigger or reopen the occurrence. Inputs added to the same thread retain its schedule origin; explicit forks and independent threads do not. Missed recurring times are coalesced to the latest due time. Transient submission failures retry within the lateness and attempt limits; execution failure does not repost the input.
+Once a qualifying root-thread run ends, later conversation, forks and child work do not delay the next trigger or reopen the occurrence. Only the trigger message and its waiting/resume successors retain this schedule origin; subsequent messages, child runs and forks do not. Missed recurring times are coalesced to the latest due time. Transient submission failures retry within the lateness and attempt limits; execution failure does not repost the input.
 
 ## Use the HTTP API
 
@@ -71,7 +73,9 @@ Use the ordinary [workspace and authentication headers](http.md#workspace). Repl
 }
 ```
 
-`agent_revision_id` is required: use `null` to follow the current default. The response includes the schedule `id`, fixed `session_id`, `stream_url` and ETag. First creation returns 201; replaying the same body and key returns the existing schedule with 200. Keep the key if the response is lost.
+To reuse a thread, add `"target": {"mode": "thread", "thread_id": "THREAD_ID"}`. To create threads in an existing session, use `"target": {"mode": "new_thread", "session_id": "SESSION_ID"}`. `{"mode": "thread"}` creates an empty fixed thread and a new session when saving. PATCH accepts the same target object. Pending new-thread submissions use their recorded session. Pending fixed-thread submissions use the schedule’s current thread because no thread is reserved before submission. Actual session/thread/entry IDs are recorded when submitted.
+
+`agent_revision_id` is required: use `null` to follow the current default. The response includes the schedule `id`, current `session_id` and resolved `target`, `stream_url` and ETag. First creation returns 201; replaying the same body and key returns the existing schedule with 200. Keep the key if the response is lost.
 
 For one-time work, replace the `schedule` object with a future offset-aware timestamp:
 
@@ -116,6 +120,6 @@ Connect to the returned `stream_url`, `/api/v1/sessions/{session_id}/stream`, wi
 
 Each connection starts with current plan state, compact occurrence summaries and every thread in the session, then follows changes and live output. Completed, child and independent threads remain visible regardless of age. Use paginated history for browsing, occurrence detail for the full invocation and run items for saved output.
 
-The stream synchronizes current state; brief intermediate states can coalesce. After reconnecting, refresh the visible history page and selected thread, entry, run and output. Console does this automatically.
+Occurrence events belong to the session recorded on each occurrence, including after the schedule changes target. The stream synchronizes current state; brief intermediate states can coalesce. After reconnecting, refresh the visible history page and selected thread, entry, run and output. The Console schedule detail page uses manual **Refresh**, without a live subscription.
 
 For completion notifications, select **Add Webhook** on the detail page or configure **Settings → Webhooks** as a workspace administrator. Subscribe to `schedule_occurrence.completed` and inspect `execution_outcome`. `schedule.completed` marks the end of one-time scheduling, not execution. [Webhooks](files-and-webhooks.md#webhooks) also cover skips, submission failures, cancellations and automatic pauses.

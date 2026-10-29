@@ -87,10 +87,10 @@ it("draws only the current thread's runs and marks the active Run", async () => 
   show();
   const list = within(await screen.findByRole("navigation", { name: "Runs" }));
   await list.findByText("Write the marker");
-  const rows = list.getAllByRole("button");
+  const rows = list.getAllByRole("button", { name: /^Run \d/ });
   expect(rows.map((row) => row.textContent)).toEqual([
-    "Run 1Review the release12s",
-    "Run 2Write the markerstate.waiting",
+    expect.stringContaining("Run 1Review the release"),
+    expect.stringContaining("Run 2Write the marker"),
   ]);
   expect(rows[1]?.getAttribute("aria-current")).toBe("true");
   expect(rows[0]?.hasAttribute("aria-current")).toBe(false);
@@ -107,7 +107,7 @@ it.each([
       await screen.findByRole("navigation", { name: "Runs" }),
     );
     await list.findByText(text);
-    expect(list.getAllByRole("button")).toHaveLength(1);
+    expect(list.getAllByRole("button", { name: /^Run \d/ })).toHaveLength(1);
     expect(list.queryByText("Review the release")).toBeNull();
     expect(list.queryByText("Root thread")).toBeNull();
   },
@@ -117,7 +117,7 @@ it("opens a current-thread run that is not on the page", async () => {
   show();
   const list = within(await screen.findByRole("navigation", { name: "Runs" }));
   await list.findByText("Review the release");
-  await userEvent.setup().click(list.getAllByRole("button")[0]!);
+  await userEvent.setup().click(list.getByRole("button", { name: /^Run 1/ }));
   expect(
     await screen.findByText(
       "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
@@ -145,7 +145,7 @@ it("opens a deep run without walking thousands of pages and numbers both directi
       return Response.json(
         fixtureRunPage([run(first), run(first - 1)], {
           total: 10000,
-          first_number: first,
+          number: first,
           next_cursor: cursor === "older" ? "oldest" : "older",
           previous_cursor: cursor === "newer" ? "newest" : "newer",
         }),
@@ -200,7 +200,7 @@ it("repairs a page that shrinks after sealing without refetching older history",
       return Response.json(
         fixtureRunPage(ids.map(run), {
           total: 10,
-          first_number: ids[0]!,
+          number: ids[0]!,
           next_cursor: `older${ids.at(-1)}`,
           previous_cursor: cursor === "anchor" ? null : "newer",
         }),
@@ -248,7 +248,7 @@ it("refreshes a loaded newest cursor page when another Run arrives", async () =>
       return Response.json(
         fixtureRunPage(ids.map(run), {
           total,
-          first_number: ids[0]!,
+          number: ids[0]!,
           next_cursor: `older${ids.at(-1)}`,
           previous_cursor: cursor === "anchor" ? "newer4" : null,
         }),
@@ -311,7 +311,7 @@ it("keeps the requested selection while a retained Run is inert and lets the rea
         {} as IntersectionObserver,
       ),
     );
-    const rows = list.getAllByRole("button");
+    const rows = list.getAllByRole("button", { name: /^Run \d/ });
     expect(rows[1]?.getAttribute("aria-current")).toBe("true");
     await userEvent.setup().click(rows[0]!);
     expect(

@@ -2,9 +2,7 @@ import {
   Button,
   ChoiceField,
   DisclosureSection,
-  Label,
   SegmentedControl,
-  Switch,
 } from "a13n-ui";
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -20,7 +18,7 @@ import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
-import { JsonView, TextAreaField } from "../../../shared/forms";
+import { JsonView, SwitchField, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
 import { DesktopAssistance } from "./desktop-assistance";
 import { ProviderConfiguration } from "./provider-configuration";
@@ -319,18 +317,16 @@ export function RunFeedback({
               {["complete", "respond"].includes(answer.action) && (
                 <>
                   {answer.action === "respond" && (
-                    <Label className={styles.cardSwitch}>
-                      <Switch
-                        checked={!!answer.structured}
-                        onCheckedChange={(checked) =>
-                          change(action.tool_call_id, {
-                            ...answer,
-                            structured: checked === true,
-                          })
-                        }
-                      />
-                      {t("Structured response")}
-                    </Label>
+                    <SwitchField
+                      label={t("Structured response")}
+                      checked={!!answer.structured}
+                      onCheckedChange={(checked) =>
+                        change(action.tool_call_id, {
+                          ...answer,
+                          structured: checked === true,
+                        })
+                      }
+                    />
                   )}
                   <TextAreaField
                     label={t(

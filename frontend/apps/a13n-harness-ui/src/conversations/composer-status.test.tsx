@@ -19,7 +19,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 it.each([
-  ["default", "Provider default"],
+  ["default", "Standard"],
+  ["off", "Standard"],
+  ["on", "Fast"],
   ["ultrafast", "Ultrafast"],
 ] as const)(
   "ticks the exact current receipt and paints live context and speed %s without waiting for a saved transcript",

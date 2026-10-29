@@ -22,7 +22,7 @@ from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.tables import OccurrenceRow
 from a13n_service.runs.schemas import ScheduleOrigin
-from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
+from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunRow
 from a13n_service.runs.webhooks import lifecycle_transition, notify_subscribers
 
 logger = get_logger(__name__)
@@ -44,8 +44,8 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
         candidates = (
             await session.execute(
                 select(RunRow, OccurrenceRow.schedule_id, OccurrenceRow.id)
-                .join(ThreadRow, ThreadRow.id == RunRow.thread_id)
-                .outerjoin(OccurrenceRow, OccurrenceRow.id == ThreadRow.schedule_occurrence_id)
+                .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.occurrence_trigger_entry_id)
+                .outerjoin(OccurrenceRow, OccurrenceRow.id == InboxEntryRow.schedule_occurrence_id)
                 .where(RunRow.status == "accepted", RunRow.available_at <= current, checkpoints.claimable())
                 .order_by(RunRow.available_at, RunRow.id)
                 .limit(limit)
@@ -54,7 +54,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
         ).all()
         runs = [run for run, _, _ in candidates]
         schedule_origins = {
-            run.thread_id: ScheduleOrigin(schedule_id=schedule_id, occurrence_id=occurrence_id)
+            run.id: ScheduleOrigin(schedule_id=schedule_id, occurrence_id=occurrence_id)
             for run, schedule_id, occurrence_id in candidates
             if schedule_id is not None and occurrence_id is not None
         }
@@ -133,7 +133,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                     ["run.running", "run_attempt.leased"],
                     at=current,
                     attempt=attempt,
-                    schedule_origin=schedule_origins.get(run.thread_id),
+                    schedule_origin=schedule_origins.get(run.id),
                 )
             )
             if previous is not None:

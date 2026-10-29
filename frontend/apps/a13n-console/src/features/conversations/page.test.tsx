@@ -65,7 +65,9 @@ it("renders a full Session page from collection previews without per-row Thread 
           title: `Question ${index}`,
           created_at: "2026-09-09T00:00:00Z",
           updated_at: "2026-09-09T00:00:00Z",
-          run_count: index === 19 ? null : index + 1,
+          run_count: index === 19 ? 0 : index + 1,
+          cost: null,
+          unpriced_requests: 0,
           preview:
             index === 19
               ? null
@@ -115,6 +117,7 @@ it("renders a full Session page from collection previews without per-row Thread 
     "Source",
     "Status",
     "Runs",
+    "Cost",
     "Updated",
     "Session actions",
   ]);
@@ -185,6 +188,8 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
             updated_at: "2026-09-09T00:00:00Z",
             preview: null,
             run_count: 0,
+            cost: null,
+            unpriced_requests: 0,
           },
         ],
         next_cursor: null,

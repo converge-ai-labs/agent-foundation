@@ -31,6 +31,11 @@ from a13n_service.tenancy.authorize import Principal
 def view(row: ScheduleRow) -> Schedule:
     return Schedule.model_validate(
         {
+            "target": {
+                "mode": "thread" if row.thread_id else "new_thread",
+                "session_id": row.session_id,
+                "thread_id": row.thread_id,
+            },
             "id": row.id,
             "session_id": row.session_id,
             "workspace_id": row.workspace_id,
@@ -63,17 +68,8 @@ async def find(session: AsyncSession, workspace_id: str, schedule_id: str, *, lo
 
 
 def unfinished_occurrence() -> ColumnElement[bool]:
-    """A submitted occurrence ends at its root Thread's first non-waiting terminal Run."""
-    finished = exists(
-        select(RunRow.id)
-        .where(
-            RunRow.workspace_id == OccurrenceRow.workspace_id,
-            RunRow.thread_id == OccurrenceRow.thread_id,
-            RunRow.status.in_(("completed", "failed", "cancelled")),
-        )
-        .correlate(OccurrenceRow)
-    )
-    return and_(OccurrenceRow.status == "submitted", ~finished)
+    """Submission stays busy until its own execution records durable completion."""
+    return OccurrenceRow.status == "submitted"
 
 
 async def has_unfinished(session: AsyncSession, row: ScheduleRow) -> bool:

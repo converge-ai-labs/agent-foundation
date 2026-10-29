@@ -1,13 +1,7 @@
-import { Button } from "a13n-ui";
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ArrowsDownUpIcon,
-} from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { ResourceTable } from "../../shared/collection";
+import { ResourceTable, SortButton, ariaSort } from "../../shared/collection";
 import { CopyButton, Identifier } from "../../shared/identity";
 import { InlineLoading, Timestamp } from "../../shared/feedback";
 import { UNKNOWN } from "../../shared/unknown";
@@ -39,15 +33,10 @@ export function TraceTable({
     `${basePath}/traces/${encodeURIComponent(id)}`;
   const sortHeader = (field: ObservationSort["field"], label: string) => {
     const active = sort.field === field;
-    const Icon = !active
-      ? ArrowsDownUpIcon
-      : sort.direction === "asc"
-        ? ArrowUpIcon
-        : ArrowDownIcon;
     return (
-      <Button
-        variant="ghost"
-        size="sm"
+      <SortButton
+        label={t(label)}
+        direction={active ? sort.direction : undefined}
         className={styles.sortButton}
         title={t("Sorts all matching traces in the selected time range.")}
         onClick={() =>
@@ -56,18 +45,9 @@ export function TraceTable({
             direction: active && sort.direction === "desc" ? "asc" : "desc",
           })
         }
-      >
-        {t(label)}
-        <Icon size={12} aria-hidden="true" />
-      </Button>
+      />
     );
   };
-  const ariaSort = (field: ObservationSort["field"]) =>
-    sort.field !== field
-      ? ("none" as const)
-      : sort.direction === "asc"
-        ? ("ascending" as const)
-        : ("descending" as const);
   return (
     <ResourceTable
       items={items}
@@ -108,7 +88,9 @@ export function TraceTable({
           label: t("Duration"),
           align: "right",
           dataColumn: "duration",
-          ariaSort: ariaSort("duration"),
+          ariaSort: ariaSort(
+            sort.field === "duration" ? sort.direction : undefined,
+          ),
           header: sortHeader("duration", "Duration"),
           render: (item) => <Duration observation={item} />,
         },
@@ -116,7 +98,9 @@ export function TraceTable({
           label: t("Cost"),
           align: "right",
           dataColumn: "cost",
-          ariaSort: ariaSort("cost"),
+          ariaSort: ariaSort(
+            sort.field === "cost" ? sort.direction : undefined,
+          ),
           header: sortHeader("cost", "Cost"),
           render: (item) =>
             costs ? (
@@ -134,7 +118,9 @@ export function TraceTable({
         {
           label: t("Started"),
           dataColumn: "started",
-          ariaSort: ariaSort("started"),
+          ariaSort: ariaSort(
+            sort.field === "started" ? sort.direction : undefined,
+          ),
           header: sortHeader("started", "Started"),
           render: (item) => <Timestamp value={item.started_at} />,
         },

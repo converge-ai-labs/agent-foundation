@@ -77,6 +77,8 @@ const session = (text: string) => ({
   created_by_id: "usr_test",
   last_run_id: null,
   run_count: 1,
+  cost: null,
+  unpriced_requests: 0,
   preview: null,
   version: 1,
   created_at: "2026-09-20T00:00:00Z",
@@ -282,5 +284,69 @@ it("finds readable identity and narrows by source and labels without navigating 
   expect(
     screen.queryByRole("menuitem", { name: "Edit session details" }),
   ).toBeNull();
+  cache.clear();
+});
+
+it("sorts through the Service, clears the previous cursor and keeps filters", async () => {
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      requests.push(url);
+      const second = url.searchParams.has("cursor");
+      return Response.json({
+        items: [
+          {
+            ...session(second ? "Second" : "First"),
+            cost: "0.12",
+            unpriced_requests: 1,
+          },
+        ],
+        next_cursor: second ? null : "two",
+      });
+    },
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={["/?q=review"]}>
+        <SessionList />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await screen.findByText("First");
+  expect(
+    screen.getByRole("row", {
+      name: /Known subtotal; some model calls are unpriced/,
+    }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Second");
+  await user.click(screen.getByRole("button", { name: "Sort by Cost" }));
+  await screen.findByText("First");
+  expect(requests.at(-1)?.searchParams.get("sort")).toBe("cost");
+  expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
+  expect(requests.at(-1)?.searchParams.get("q")).toBe("review");
+  expect(requests.at(-1)?.searchParams.has("cursor")).toBe(false);
+  await user.click(
+    screen.getByRole("button", { name: "Sort by Cost, Descending" }),
+  );
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("direction")).toBe("asc"),
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Sort by Cost, Ascending" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Sort by Runs" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("sort")).toBe("runs"),
+  );
+  expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
   cache.clear();
 });

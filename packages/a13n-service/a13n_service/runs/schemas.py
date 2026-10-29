@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
@@ -446,6 +447,8 @@ class SessionQuery(_Frozen):
     updated_after: AwareDatetime | None = None
     updated_before: AwareDatetime | None = None
     label: tuple[str, ...] = Field(default=(), max_length=8)
+    sort: Literal["updated_at", "runs", "cost"] = "updated_at"
+    direction: Literal["asc", "desc"] = "desc"
     limit: PageLimit = 50
     cursor: str | None = None
 
@@ -473,7 +476,9 @@ class SessionView(BaseModel):
     labels: dict[str, str]
     created_by_id: str
     last_run_id: str | None
-    run_count: int = 0
+    run_count: int
+    cost: Decimal | None
+    unpriced_requests: int
     memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
     purpose: Literal["conversation", "memory_organization"] = "conversation"
     preview: SessionPreview | None = None
@@ -678,12 +683,22 @@ class RunPage(BaseModel):
     next_cursor: str | None
 
 
-class ThreadRunPage(RunPage):
-    """Newest first; first_number is the first item's 1-based chronological position in the thread."""
+class ThreadRunItem(RunListItem):
+    """Bounded navigation metadata and recorded model usage within one Thread."""
 
+    number: int
+    cost: Decimal | None
+    model_calls: int
+    unpriced_requests: int
+
+
+class ThreadRunPage(BaseModel):
+    """Chronological history or a metric ranking, retaining each item's chronological number."""
+
+    items: list[ThreadRunItem]
+    next_cursor: str | None
     previous_cursor: str | None
     total: int
-    first_number: int
 
 
 class RunAgent(BaseModel):
