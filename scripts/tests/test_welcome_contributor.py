@@ -46,8 +46,17 @@ const github = {
     }},
     issues: {
       listForRepo: 'history', listComments: 'comments',
-      createComment: async args => calls.push({action: 'create', ...args}),
+      createComment: async args => {
+        calls.push({action: 'create', ...args});
+        if (input.error === 'create') throw new Error('API unavailable');
+        return {data: {id: 1234}};
+      },
     },
+    reactions: {createForIssueComment: async args => {
+      calls.push({action: 'react', ...args});
+      if (input.error === 'react') throw new Error('API unavailable');
+      return {data: {id: 5678}};
+    }},
   },
 };
 const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
@@ -92,6 +101,14 @@ def test_first_pr_welcomes_fork_authors_and_drafts_with_approved_copy(draft):
         pr={"draft": draft, "head": {"repo": {"full_name": "new-contributor/repo"}}},
     )
     assert output["error"] is None
+    assert [call["action"] for call in output["calls"]][-2:] == ["create", "react"]
+    assert output["calls"][-1] == {
+        "action": "react",
+        "owner": "owner",
+        "repo": "repo",
+        "comment_id": 1234,
+        "content": "hooray",
+    }
     [comment] = creations(output)
     assert (comment["owner"], comment["repo"], comment["issue_number"]) == ("owner", "repo", 42)
     assert comment["body"].startswith(MARKER)
@@ -160,10 +177,19 @@ def test_pr_closed_before_job_starts_is_not_welcomed():
 def test_rerun_is_idempotent_and_human_markers_are_not_trusted():
     body = creations(welcome())[0]["body"]
     human = {"user": {"login": "someone"}, "body": body}
-    bot = {"user": {"login": "github-actions[bot]"}, "body": body}
+    bot = {"id": 999, "user": {"login": "github-actions[bot]"}, "body": body}
     assert len(creations(welcome(comments=[human]))) == 1
     unrelated = [{"user": {"login": "github-actions[bot]"}, "body": "Different report"}] * 100
-    assert creations(welcome(comments=[*unrelated, human, bot])) == []
+    rerun = welcome(comments=[*unrelated, human, bot])
+    assert creations(rerun) == []
+    assert rerun["error"] is None
+    assert rerun["calls"][-1] == {
+        "action": "react",
+        "owner": "owner",
+        "repo": "repo",
+        "comment_id": 999,
+        "content": "hooray",
+    }
     assert creations(welcome(comments=[{**bot, "body": MARKER + "\nOld welcome copy"}])) == []
     assert len(creations(welcome(comments=[{"user": None, "body": None}]))) == 1
 
@@ -173,6 +199,23 @@ def test_api_failure_stops_before_publishing(method):
     output = welcome(error=method)
     assert output["error"] == "API unavailable"
     assert creations(output) == []
+
+
+def test_comment_failure_does_not_attempt_a_reaction():
+    output = welcome(error="create")
+    assert output["error"] == "API unavailable"
+    assert all(call["action"] != "react" for call in output["calls"])
+
+
+def test_reaction_failure_can_be_retried_without_posting_another_welcome():
+    failed = welcome(error="react")
+    assert failed["error"] == "API unavailable"
+    [created] = creations(failed)
+    retry = welcome(comments=[{"id": 1234, "user": {"login": "github-actions[bot]"}, "body": created["body"]}])
+    assert retry["error"] is None
+    assert creations(retry) == []
+    assert retry["calls"][-1]["action"] == "react"
+    assert retry["calls"][-1]["comment_id"] == 1234
 
 
 def test_untrusted_pr_content_is_not_evaluated_or_echoed_and_default_branch_is_used():
@@ -185,7 +228,7 @@ def test_untrusted_pr_content_is_not_evaluated_or_echoed_and_default_branch_is_u
 def test_workflow_is_metadata_only_and_registered_in_automation_ci():
     config = workflow()
     assert config["on"] == {"pull_request_target": {"types": ["opened"]}}
-    assert config["permissions"] == {"pull-requests": "write"}
+    assert config["permissions"] == {"pull-requests": "write", "issues": "write"}
     assert config["concurrency"] == {
         "group": "welcome-contributor-${{ github.event.pull_request.number }}",
         "cancel-in-progress": "false",

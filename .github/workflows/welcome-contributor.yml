@@ -9,6 +9,7 @@ env:
 
 permissions:
   pull-requests: write
+  issues: write # Required by the issue-comment reactions endpoint.
 
 concurrency:
   group: welcome-contributor-${{ github.event.pull_request.number }}
@@ -43,8 +44,8 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo, issue_number: pr.number, per_page: 100,
             });
-            if (comments.some(comment =>
-              comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker))) return;
+            const existing = comments.find(comment =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker));
 
             const repository = `${context.repo.owner}/${context.repo.repo}`;
             const branch = encodeURIComponent(context.payload.repository.default_branch);
@@ -66,6 +67,10 @@ jobs:
               '',
               'Glad to have you here!',
             ].join('\n');
-            await github.rest.issues.createComment({
+            const comment = existing ?? (await github.rest.issues.createComment({
               ...context.repo, issue_number: pr.number, body,
+            })).data;
+            // Reuse the welcome on reruns; adding the same reaction is idempotent.
+            await github.rest.reactions.createForIssueComment({
+              ...context.repo, comment_id: comment.id, content: 'hooray',
             });
