@@ -6,7 +6,7 @@ Agent Foundation is built on Harness, an embeddable agent execution foundation. 
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read the sections relevant to the requested change and handoff.
 - [DEVELOPMENT.md](DEVELOPMENT.md) owns code quality principles and component engineering standards. Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) to features, bug fixes, refactoring, and reviews; read the component rules and owning specifications relevant to the change.
-- For changes affecting browser presentation or interaction, including shared components and UI review fixtures, first follow [frontend agent guidance](frontend/AGENTS.md) and read its applicable shared and product design contracts. Validation scales with the change; the guidance does not require a full visual audit for a small edit.
+- Before changing browser UI, shared components, or UI review fixtures, read and follow the [shared design system](spec/frontend/design-system.md) and applicable product guide: [Console](spec/frontend/console-design-guidelines.md) or [Harness WebUI](spec/a13n-harness-ui/webui/06-design-guidelines.md). For interaction changes, also read the behavior contract linked by that guide; for shared changes, check affected consumers.
 - [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
 - [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
 - `docs/` contains Markdown user documentation and its `meta.json` navigation; the Fumadocs site in `frontend/apps/a13n-docs` publishes it. [Documentation Changes](CONTRIBUTING.md#documentation-changes) owns authoring conventions.
@@ -50,5 +50,7 @@ Retain these constraints and read [DEVELOPMENT.md](DEVELOPMENT.md) for the full 
 ## Validation
 
 Follow [CONTRIBUTING.md](CONTRIBUTING.md#local-validation) for validation scope, required gates, and Make targets. Reuse successful checks whose relevant inputs remain unchanged. Report commands, outcomes, and unavailable checks accurately; do not claim a gate passed when it did not run.
+
+For visual changes, inspect affected rendered states and viewport sizes. Small copy or style edits need a focused check; exhaustive visual audits and full suites are not routine prerequisites.
 
 Choose local validation from the changed behavior and its actual dependency impact. Use `make verify VERIFY_ARGS=--dry-run` to inspect automatic selection, or run focused Make targets/test files directly when the necessary scope is already known. Review broad fallbacks before executing them. Include downstream tests when a shared behavior or contract affects them; a shared-package path alone does not require all consumer suites. Reuse passing checks and stop once the affected risks are covered. Do not add full suites, builds, image smoke tests, or impact-map recording merely for handoff or because a file is included in a shipped artifact. CI retains the complete applicable gates. See the owning validation policy for cache controls and cases requiring broader checks.

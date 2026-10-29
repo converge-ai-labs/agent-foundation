@@ -18,7 +18,7 @@ WebUI is the project-centric collaborative browser surface of Harness UI. Truste
 
 ## Reading Paths
 
-Read `00` for the product, `04` for interaction and `06` for visual presentation. `06` specializes the [shared frontend foundation](../../frontend/design-system.md); the [frontend agent guide](../../../frontend/AGENTS.md) owns proportional editing and validation workflow. Read `01` for page awareness and pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
+Read `00` for the product, `04` for interaction and `06` for visual presentation. `06` specializes the [shared frontend foundation](../../frontend/design-system.md). Read `01` for page awareness and pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
 
 [MCP Apps Host](../09-mcp-apps.md) owns inline tool-result Apps, retained originals, trusted interaction confirmations and separate-origin sandboxing.
 

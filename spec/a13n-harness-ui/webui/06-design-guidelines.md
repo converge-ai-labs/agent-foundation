@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document owns Harness presentation. The [shared design system](../../frontend/design-system.md) owns common primitives and accessibility; [workbench interaction](04-workbench-interaction.md) owns behavior and state. [Frontend agent guidance](../../../frontend/AGENTS.md) governs proportional validation. Console dimensions and layouts do not apply here.
+This document owns Harness presentation. The [shared design system](../../frontend/design-system.md) owns common primitives and accessibility; [workbench interaction](04-workbench-interaction.md) owns behavior and state. Console dimensions and layouts do not apply here.
 
 Harness is compact, quiet and softly contrasted. Settings supply the grouping and label/value language across editors, dialogs, Activity and chat options. Cursor informs density and restraint; it is not an external authority over accepted Harness behavior.
 

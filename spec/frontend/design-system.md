@@ -2,7 +2,7 @@
 
 ## Scope and Ownership
 
-This document owns common visual foundations and `a13n-ui` primitives. Product guides own dimensions and page anatomy; behavior contracts own application state. [Frontend agent guidance](../../frontend/AGENTS.md) owns proportional implementation and validation.
+This document owns common visual foundations and `a13n-ui` primitives. Product guides own dimensions and page anatomy; behavior contracts own application state.
 
 | Owner                                                                                                                                  | Scope                                                      |
 | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |

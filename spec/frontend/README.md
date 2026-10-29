@@ -10,4 +10,4 @@ The [repository model](../repository-model.md#frontend-workspace) owns workspace
 | [Harness WebUI design](../a13n-harness-ui/webui/06-design-guidelines.md)  | Harness visual language, compact workbench, conversation details and overlays                                |
 | [Harness workbench](../a13n-harness-ui/webui/04-workbench-interaction.md) | Harness journeys, placement, interaction and recovery                                                        |
 
-Read the shared foundation and affected product guide for visual changes, and the owning behavior sections for interaction changes. [Frontend agent guidance](../../frontend/AGENTS.md) explains how to apply them with proportionate inspection and validation. Component READMEs document implementation usage rather than competing design rules.
+Read the shared foundation and affected product guide for visual changes, and the owning behavior sections for interaction changes. Component READMEs document implementation usage rather than competing design rules.

@@ -2,7 +2,7 @@
 
 This private English-only React application provides collaborative chats, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
 
-Before UI changes, read the [Harness WebUI design guidelines](../../../spec/a13n-harness-ui/webui/06-design-guidelines.md) and follow the [frontend agent guide](../../AGENTS.md). [Workbench interaction](../../../spec/a13n-harness-ui/webui/04-workbench-interaction.md) owns behavior and recovery.
+[Harness WebUI design](../../../spec/a13n-harness-ui/webui/06-design-guidelines.md) owns presentation; [workbench interaction](../../../spec/a13n-harness-ui/webui/04-workbench-interaction.md) owns behavior and recovery.
 
 The browser consumes the Python App's HTTP, summary realtime and page-presence WebSocket APIs. It does not own agent execution or import the Service SDK. Comment UI is disabled without removing backend records or APIs; historical captured references remain readable. Native Files and read-only Git Changes open beside Chat, with a resizable terminal panel below. Terminal sessions use server-owned POSIX PTYs under the same native computer-sharing gate. These panels operate on the listener Host, not the Agent's selected Environment.
 

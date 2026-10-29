@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document owns Console presentation. The [shared design system](design-system.md) owns common primitives and accessibility; [Console](console.md) owns behavior and authority. [Frontend guidance](../../frontend/AGENTS.md) governs proportional validation. The [composition catalog](../../frontend/apps/a13n-console/src/shared/README.md) documents implementation APIs. Harness has its own design contract.
+This document owns Console presentation. The [shared design system](design-system.md) owns common primitives and accessibility; [Console](console.md) owns behavior and authority. The [composition catalog](../../frontend/apps/a13n-console/src/shared/README.md) documents implementation APIs. Harness has its own design contract.
 
 Console is a quiet management and execution interface: names, status and the next action lead; identifiers and diagnostics remain secondary. Resource screens share list, detail, editor and settings anatomies.
 
