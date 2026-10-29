@@ -12,7 +12,6 @@ from sqlalchemy import (
     BigInteger,
     ColumnElement,
     DateTime,
-    Numeric,
     RowMapping,
     Select,
     and_,
@@ -31,6 +30,7 @@ from a13n_service.infra.errors import ServiceError, not_found
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.tables import RunRow, UsageRecordRow
+from a13n_service.runs.usage import model_cost
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 from a13n_service.tenancy.tables import PrincipalRow
@@ -58,13 +58,9 @@ from a13n_service.usage.schemas import (
 )
 
 
-def _model_cost() -> ColumnElement:
-    return UsageRecordRow.record["request_usage"]["cost"].astext.cast(Numeric)
-
-
 def _model_totals() -> Select:
     usage = UsageRecordRow.record["request_usage"]
-    cost = _model_cost()
+    cost = model_cost()
     return select(
         func.count().label("requests"),
         *(
@@ -91,44 +87,6 @@ def _model_query(workspace_id: str, window: UsageWindow) -> Select:
             .exists()
         )
     return statement
-
-
-def session_costs(workspace_id: str) -> Select:
-    """Recorded model cost per Session, using the same contributions as its usage detail."""
-    return (
-        select(
-            RunRow.session_id,
-            func.sum(_model_cost()).label("cost"),
-            func.count().filter(_model_cost().is_(None)).label("unpriced_requests"),
-        )
-        .select_from(UsageRecordRow)
-        .join(RunRow, RunRow.id == UsageRecordRow.run_id)
-        .where(
-            UsageRecordRow.workspace_id == workspace_id,
-            RunRow.workspace_id == workspace_id,
-            UsageRecordRow.record["kind"].astext == "model",
-        )
-        .group_by(RunRow.session_id)
-    )
-
-
-def run_metrics(workspace_id: str) -> Select:
-    """Only the recorded figures needed by the Thread navigator, scoped before aggregation."""
-    return (
-        select(
-            RunRow.id.label("run_id"),
-            func.sum(_model_cost()).label("cost"),
-            func.count().label("model_calls"),
-            func.count().filter(_model_cost().is_(None)).label("unpriced_requests"),
-        )
-        .join(UsageRecordRow, UsageRecordRow.run_id == RunRow.id)
-        .where(
-            RunRow.workspace_id == workspace_id,
-            UsageRecordRow.workspace_id == workspace_id,
-            UsageRecordRow.record["kind"].astext == "model",
-        )
-        .group_by(RunRow.id)
-    )
 
 
 def _run_query(workspace_id: str, window: UsageWindow) -> Select:

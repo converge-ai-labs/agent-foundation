@@ -27,9 +27,9 @@ from a13n_service.runs.schemas import (
 )
 from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
+from a13n_service.runs.usage import session_costs
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
-from a13n_service.usage.service import session_costs
 
 PREVIEW_INPUT = 256
 PREVIEW_OUTPUT = 512

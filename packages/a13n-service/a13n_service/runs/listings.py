@@ -16,9 +16,9 @@ from a13n_service.runs.previews import input_text
 from a13n_service.runs.schemas import RunInputPreview, RunListItem, RunPage, RunQuery, ThreadRunItem, ThreadRunPage
 from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.usage import run_metrics
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
-from a13n_service.usage.service import run_metrics
 
 FIELDS = tuple(name for name in RunListItem.model_fields if name != "input_preview")
 
