@@ -519,3 +519,24 @@ it("saves plugin edits and updates only the renamed or removed discovery members
   });
   expect(draft.current.initial.plugins).toEqual([plugin, other]);
 });
+
+it("keeps summarize opt-in and preserves the context reminder policy", () => {
+  const draft = draftFor({
+    model_characteristics: { proactive_context_management_threshold: null },
+  });
+  expect(draft.current.summarize).toBe(false);
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setSummarize(true));
+  expect(draft.current.dirty).toBe(true);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok).toBe(true);
+  if (built.ok) {
+    expect(built.config.summarize).toBe(true);
+    expect(
+      built.config.model_characteristics
+        ?.proactive_context_management_threshold,
+    ).toBeNull();
+  }
+  act(() => draft.current.setSummarize(false));
+  expect(draft.current.dirty).toBe(false);
+});

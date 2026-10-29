@@ -14,6 +14,7 @@ from a13n_harness import AbstractHarnessPlugin
 from a13n_harness.capabilities import (
     CompactionCapability,
     FileContextCapability,
+    HandoffCapability,
     SubagentCapability,
     UserInteractionCapability,
 )
@@ -414,6 +415,99 @@ def test_background_compaction_build_preserves_policy_and_keeps_children_synchro
         item for item in child_built.definition.capabilities if isinstance(item, CompactionCapability)
     ]
     assert async_capability.background is False and async_capability.operator is None
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_summarize_selection_controls_tools_and_continues_from_saved_summary(enabled):
+    from a13n_harness import HarnessState, RunBindings
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    selected = config(
+        summarize=enabled,
+        model_characteristics={"context_window_tokens": 10000},
+        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+    )
+    child = resolved(HELPER, HELPER_REVISION, config(summarize=not enabled))
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+    )
+    executable = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    assert any(isinstance(item, HandoffCapability) for item in executable.definition.capabilities) is enabled
+    assert (
+        any(isinstance(item, HandoffCapability) for item in executable.definition.subagents[0].agent.capabilities)
+        is not enabled
+    )
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(str(messages))
+        assert ("summarize" in {tool.name for tool in info.function_tools}) is enabled
+        if enabled and len(seen) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize", json_args='{"content":"Keep the release decision."}', tool_call_id="summary"
+                )
+            }
+        else:
+            yield "Continuing."
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    bindings = RunBindings.embedded(model_resolver=model_resolver)
+    result = await executable.run("Finish the release", bindings=bindings)
+    assert result.output_or_raise() == "Continuing."
+    assert len(seen) == (2 if enabled else 1)
+    assert result.state is not None
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    continued = await executable.run("Continue", previous_state=restored, bindings=bindings)
+    assert continued.output_or_raise() == "Continuing."
+    if enabled:
+        assert "Keep the release decision." in seen[-2]
+        assert "Keep the release decision." in seen[-1]
+
+
+async def test_summarize_survives_service_checkpoint_and_next_run(executing, scripted_model, runs_kit):
+    agent = await runs_kit.create_agent(executing, scripted_model, summarize=True)
+    summary = "The release decision is to keep the existing API."
+    scripted_model.call("summarize", {"content": summary}, call_id="summary")
+    scripted_model.say("Continuing after summary.")
+    submitted = await runs_kit.start_thread(executing, agent, "Prepare the release")
+    run = await runs_kit.sealed(executing, submitted["run"]["id"])
+    assert run["status"] == "completed" and run["output"] == "Continuing after summary."
+    await scripted_model.request()
+    after_summary = await scripted_model.request()
+    assert summary in str(runs_kit.user_texts(after_summary))
+
+    scripted_model.say("The API stays unchanged.")
+    response = await runs_kit.submit(executing, run["thread_id"], runs_kit.message(agent, "What did we decide?"))
+    assert response.status_code == 201, response.text
+    continued = await runs_kit.sealed(executing, response.json()["run"]["id"])
+    assert continued["status"] == "completed"
+    restored = await scripted_model.request()
+    assert summary in str(runs_kit.user_texts(restored))
+
+
+async def test_summarize_revision_roundtrip_and_client_tool_collision(service):
+    model = await create_model(service)
+    enabled = await create_agent(service, "summarizer", model, summarize=True)
+    revision = await service.client.get(
+        f"{service.api}/agents/{enabled['id']}/revisions/{enabled['default_revision_id']}"
+    )
+    assert revision.status_code == 200, revision.text
+    assert revision.json()["config"]["summarize"] is True
+    client = {"name": "summarize", "description": "Client summary", "parameters_json_schema": {"type": "object"}}
+    for enabled in (False, True):
+        response = await service.client.post(
+            f"{service.api}/agents",
+            json={"name": "Client summary", "config": {"model": model, "summarize": enabled, "client_tools": [client]}},
+        )
+        assert response.status_code == (400 if enabled else 201), response.text
+        if enabled:
+            assert response.json()["error"]["details"]["field"] == "client_tools.0.name"
 
 
 @pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])

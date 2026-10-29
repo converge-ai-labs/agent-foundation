@@ -38,6 +38,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     CompactionCapability,
     FileContextCapability,
+    HandoffCapability,
     SubagentCapability,
     SubagentOperator,
     UserInteractionCapability,
@@ -353,6 +354,8 @@ class _Host:
         if (web := toolsets.web_tools(config.toolsets)) is not None:
             sources["web"] = WebCapability(toolsets.web_configuration(web))
             features.append(sources["web"])
+        if config.summarize:
+            features.append(HandoffCapability())
         if config.user_questions:
             features.append(UserInteractionCapability())
         if (client := definition.client_toolset(config)) is not None:

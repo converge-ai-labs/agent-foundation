@@ -1,8 +1,8 @@
-import { Badge } from "a13n-ui";
+import { Badge, FormField, Switch } from "a13n-ui";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
-import { ExecutionFields } from "../../../shared/forms";
+import { ExecutionFields, formSectionStyles } from "../../../shared/forms";
 import { ErrorToast } from "../../../shared/feedback";
 import {
   DetailLayout,
@@ -357,6 +357,29 @@ export function AgentEditor({
                   mark={mark("toolSearch")}
                   error={toolSearchValidation}
                 />
+              </Section>
+              <Section
+                title={t("Context summary")}
+                description={t(
+                  "Let the agent write a summary and continue from a fresh context.",
+                )}
+                actions={mark("summarize")}
+              >
+                <div className={formSectionStyles.fieldRows}>
+                  <FormField
+                    label={t("Summarize tool")}
+                    description={t(
+                      "Automatic context compaction remains available when this tool is off.",
+                    )}
+                    readOnly={configurationReadonly}
+                  >
+                    <Switch
+                      checked={draft.summarize}
+                      value={t(draft.summarize ? "On" : "Off")}
+                      onCheckedChange={draft.setSummarize}
+                    />
+                  </FormField>
+                </div>
               </Section>
               <Section
                 title={t("Background compaction")}

@@ -3552,5 +3552,9 @@
   "Archived schedules cannot be edited.": "Archived schedules cannot be edited.",
   "Schedules that have finished cannot be edited.": "Schedules that have finished cannot be edited.",
   "Only the account that created this schedule can edit it. You are signed in with a different account.": "Only the account that created this schedule can edit it. You are signed in with a different account.",
-  "Editing this schedule requires both write and run permissions in this workspace.": "Editing this schedule requires both write and run permissions in this workspace."
+  "Editing this schedule requires both write and run permissions in this workspace.": "Editing this schedule requires both write and run permissions in this workspace.",
+  "Context summary": "Context summary",
+  "Summarize tool": "Summarize tool",
+  "Let the agent write a summary and continue from a fresh context.": "Let the agent write a summary and continue from a fresh context.",
+  "Automatic context compaction remains available when this tool is off.": "Automatic context compaction remains available when this tool is off."
 }

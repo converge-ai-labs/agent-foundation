@@ -3552,5 +3552,9 @@
   "Archived schedules cannot be edited.": "计划已归档，无法编辑。",
   "Schedules that have finished cannot be edited.": "计划已结束，无法编辑。",
   "Only the account that created this schedule can edit it. You are signed in with a different account.": "只有创建此计划的账号可以编辑。当前登录账号与创建者不同。",
-  "Editing this schedule requires both write and run permissions in this workspace.": "编辑此计划需要同时拥有当前工作区的写入和运行权限。"
+  "Editing this schedule requires both write and run permissions in this workspace.": "编辑此计划需要同时拥有当前工作区的写入和运行权限。",
+  "Context summary": "上下文摘要",
+  "Summarize tool": "摘要工具",
+  "Let the agent write a summary and continue from a fresh context.": "允许 agent 编写摘要，并从新的上下文继续执行。",
+  "Automatic context compaction remains available when this tool is off.": "关闭此工具后，自动上下文压缩仍然可用。"
 }

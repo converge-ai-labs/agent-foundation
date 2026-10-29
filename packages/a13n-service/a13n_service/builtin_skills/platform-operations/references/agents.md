@@ -25,6 +25,8 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 ## Configure context compaction
 
+`summarize` defaults to false. Enable it to offer the explicit `summarize` tool, which lets the Agent write a continuation summary and resume from fresh context. Each child uses its own Revision's setting. `model_characteristics.proactive_context_management_threshold` controls the reminder (default 0.65; null disables reminders while keeping the tool). Automatic compaction is independent. An enabled tool reserves `summarize`, so a client tool cannot use that name.
+
 `background_compaction` belongs to the Agent Revision and defaults to `{enabled: false, blocking_threshold: 0.95}`. Enable it for background summaries on ordinary threads. Inline and asynchronous children compact synchronously. The blocking threshold accepts values greater than zero and at most one; counted input at or above this share of the context window waits for existing work or compacts synchronously if none exists. Output reserve can require blocking earlier. The common compaction trigger remains independent. Disabling generation preserves delivery of retained results.
 
 ## Configure tool discovery
