@@ -20,7 +20,6 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView, SwitchField, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
-import { DesktopAssistance } from "./desktop-assistance";
 import { ProviderConfiguration } from "./provider-configuration";
 import { callWait } from "../lifecycle";
 import { waitingLabel } from "./entry-language";
@@ -205,24 +204,6 @@ export function RunFeedback({
                 />
               </ActionCard>
             );
-          if (
-            action.category === "call" &&
-            action.tool_name === "request_desktop_assistance"
-          )
-            return (
-              <ActionCard key={action.tool_call_id} action={action}>
-                <DesktopAssistance
-                  runId={run.id}
-                  callId={action.tool_call_id}
-                  onResolved={(value) =>
-                    change(action.tool_call_id, {
-                      action: "returned",
-                      value: JSON.stringify(value),
-                    })
-                  }
-                />
-              </ActionCard>
-            );
           if (questions)
             return (
               <ActionCard key={action.tool_call_id} action={action}>
@@ -346,9 +327,7 @@ export function RunFeedback({
           );
         })}
         <div className={styles.cardsFooter}>
-          {!actions.some(
-            (action) => action.tool_name === "request_desktop_assistance",
-          ) && continuation}
+          {continuation}
           <Button
             type="submit"
             variant="default"
@@ -380,8 +359,6 @@ function ActionCard({
   const { t } = useTranslation();
   const approval = action.category === "approval";
   const question = !approval && action.tool_name === "ask_user_question";
-  const desktop =
-    !approval && action.tool_name === "request_desktop_assistance";
   const provider = !approval && action.tool_name === "configure_provider";
   const risk = approval ? approvalDetails(action.presentation).risk : undefined;
   return (
@@ -403,9 +380,7 @@ function ActionCard({
               ? t("The agent has a question")
               : provider
                 ? t("Configure provider")
-                : desktop
-                  ? t("Desktop assistance requested")
-                  : waitingLabel(callWait(action.tool_name), t)}
+                : waitingLabel(callWait(action.tool_name), t)}
         </h3>
         {action.tool_name && !provider && (
           <code className={styles.cardTool}>{action.tool_name}</code>

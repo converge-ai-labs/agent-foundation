@@ -57,7 +57,7 @@ a13n_service/
     requests.py  schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
-    desktop_assistance/  tables  schemas  service  routes  admission  execution  takeover  tools  maintenance
+      desktop/        target control, Computer admission, viewers, freshness and handback delivery
     findings/         tables  schemas  service  analysis  preset  tools  routes: diagnosis and coverage
     memories/         tables  schemas  routes  mounts  execution
 

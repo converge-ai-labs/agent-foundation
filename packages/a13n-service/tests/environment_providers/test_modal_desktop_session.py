@@ -1,7 +1,7 @@
 """Request-local Modal transport reuse preserves guest fencing and cleanup."""
 
 import json
-from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -11,17 +11,17 @@ import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
-from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.environment import desktop_access as wire
 from a13n_service.providers.environments.modal import provider
 from a13n_service.providers.environments.modal.configuration import ModalRecipe
-from a13n_service.runs.desktop_assistance import service
+from a13n_service.runs.environments.desktop import access
 
 GENERATION = "a" * 32
+EXPIRES = (datetime.now(UTC) + timedelta(seconds=60)).timestamp()
 REQUESTS = (
     wire.Describe(),
-    wire.Renew(generation=GENERATION, id="dgrant_test", epoch=3, ttl_seconds=60),
-    wire.Grant(generation=GENERATION, id="dgrant_test", epoch=3, mode="control", ttl_seconds=60),
+    wire.Renew(generation=GENERATION, id="dgrant_test", epoch=3, expires_at=EXPIRES),
+    wire.Grant(generation=GENERATION, id="dgrant_test", epoch=3, mode="control", expires_at=EXPIRES),
 )
 HANDBACK = (
     wire.Inspect(operation="revoke", generation=GENERATION, id="dgrant_test", epoch=3),
@@ -80,7 +80,7 @@ def cloud(monkeypatch):
             elif isinstance(request, wire.Describe):
                 envelope = wire.Envelope(
                     result=wire.Description(
-                        protocol_version=1,
+                        protocol_version=2,
                         generation=GENERATION,
                         port=6081,
                         max_ttl_seconds=60,
@@ -143,7 +143,7 @@ def cloud(monkeypatch):
             runtime=None,
         )
 
-    monkeypatch.setattr(service, "open_provider", open_provider)
+    monkeypatch.setattr(access, "open_provider", open_provider)
     fixture.target = SimpleNamespace(recipe=recipe.model_dump(), environment_id="env-fixed", state=state)
     return fixture
 
@@ -151,7 +151,7 @@ def cloud(monkeypatch):
 @pytest.mark.anyio
 async def test_request_reuses_one_validated_target_but_next_request_is_independent(cloud):
     for identity in ("dtop-first", "dtop-second"):
-        async with service.access_dispatch(None, cloud.target, operation_id=identity) as send:
+        async with access.connection(None, cloud.target, operation_id=identity) as send:
             for request in REQUESTS:
                 await send(request)
             assert not cloud.clients[-1].closed
@@ -172,7 +172,7 @@ async def test_failed_or_cancelled_renewal_cleans_up_without_replacement_or_gran
     error = TimeoutError if failure == "timeout" else EnvironmentProviderError
     with pytest.raises(error):
         with anyio.fail_after(0.1):
-            async with service.access_dispatch(None, cloud.target, operation_id="dtop-failed") as send:
+            async with access.connection(None, cloud.target, operation_id="dtop-failed") as send:
                 for request in REQUESTS:
                     await send(request)
     assert len(cloud.clients) == len(cloud.sandboxes) == cloud.lookup.await_count == 1
@@ -182,110 +182,11 @@ async def test_failed_or_cancelled_renewal_cleans_up_without_replacement_or_gran
     assert [request.operation for _, request in cloud.calls] == ["describe", "renew"]
 
 
-@pytest.fixture
-def continuation(cloud, monkeypatch):
-    row = SimpleNamespace(state="consumed", successor_id="run-successor", generation=GENERATION)
-    session = SimpleNamespace(get=AsyncMock(return_value=row))
-    active = False
-
-    @asynccontextmanager
-    async def transaction(storage):
-        nonlocal active
-        active = True
-        try:
-            yield session
-        finally:
-            active = False
-
-    original_lookup = cloud.lookup.side_effect
-
-    async def lookup(*args, **kwargs):
-        assert not active, "Provider I/O must run outside the transaction"
-        return await original_lookup(*args, **kwargs)
-
-    cloud.lookup.side_effect = lookup
-    monkeypatch.setattr(service, "transaction", transaction)
-    monkeypatch.setattr(service, "lock_owner", AsyncMock())
-    monkeypatch.setattr(service, "lock", AsyncMock(return_value=SimpleNamespace(holder_id="dassist-test")))
-    return SimpleNamespace(
-        row=row, runtime=SimpleNamespace(storage=None), lease=SimpleNamespace(run_id="run-successor")
-    )
-
-
-@pytest.mark.anyio
-async def test_continuation_reuses_target_only_within_each_check(cloud, continuation):
-    for _ in range(2):
-        await service.verify_continuation(continuation.runtime, continuation.lease, cloud.target)
-    assert len(cloud.clients) == len(cloud.sandboxes) == cloud.lookup.await_count == 2
-    for client, target in zip(cloud.clients, cloud.sandboxes, strict=True):
-        assert client.closed
-        target.get_tags.aio.assert_awaited_once()
-        target.poll.aio.assert_awaited_once()
-        target.detach.aio.assert_awaited_once()
-        assert [request.operation for sandbox, request in cloud.calls if sandbox is target] == ["describe", "settle"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("generation", [None, "b" * 32])
-async def test_continuation_generation_conflict_keeps_service_error_and_skips_settle(cloud, continuation, generation):
-    continuation.row.generation = generation
-    with pytest.raises(ServiceError) as error:
-        await service.verify_continuation(continuation.runtime, continuation.lease, cloud.target)
-    assert error.value.details["reason"] == "desktop_generation_changed"
-    assert [request.operation for _, request in cloud.calls] == ["describe"]
-    assert cloud.clients[0].closed
-    cloud.sandboxes[0].detach.aio.assert_awaited_once()
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("field,value", [("state", "human_control"), ("successor_id", "run-other")])
-async def test_continuation_only_checks_consumed_assistance_for_this_successor(cloud, continuation, field, value):
-    setattr(continuation.row, field, value)
-    await service.verify_continuation(continuation.runtime, continuation.lease, cloud.target)
-    assert not cloud.clients
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "operation,failure,invalid_reply",
-    [
-        ("describe", "endpoint_unavailable", None),
-        ("describe", "timeout", None),
-        ("settle", "stale_generation", None),
-        ("settle", None, {"input_cleanup_complete": False}),
-        ("settle", None, {"generation": "b" * 32}),
-        ("settle", "timeout", None),
-    ],
-)
-async def test_continuation_failure_or_timeout_cleans_up_and_blocks_resume(
-    cloud, continuation, operation, failure, invalid_reply
-):
-    cloud.failure_operation, cloud.failure, cloud.invalid_reply = operation, failure, invalid_reply
-    with pytest.raises(TimeoutError if failure == "timeout" else EnvironmentProviderError):
-        with anyio.fail_after(0.1):
-            await service.verify_continuation(continuation.runtime, continuation.lease, cloud.target)
-    assert len(cloud.clients) == cloud.lookup.await_count == 1
-    assert cloud.clients[0].closed
-    cloud.sandboxes[0].detach.aio.assert_awaited_once()
-    assert [request.operation for _, request in cloud.calls] == (
-        ["describe"] if operation == "describe" else ["describe", "settle"]
-    )
-
-
-@pytest.mark.anyio
-async def test_continuation_cleanup_failure_blocks_resume_and_closes_client(cloud, continuation):
-    cloud.cleanup_failure = True
-    with pytest.raises(EnvironmentProviderError):
-        await service.verify_continuation(continuation.runtime, continuation.lease, cloud.target)
-    assert cloud.clients[0].closed
-    cloud.sandboxes[0].detach.aio.assert_awaited_once()
-
-
 @pytest.mark.anyio
 async def test_wrong_target_owner_is_rejected_before_any_guest_command(cloud):
     cloud.mismatched_tags = True
     with pytest.raises(EnvironmentProviderError):
-        async with service.access_dispatch(None, cloud.target, operation_id="dtop-owner") as send:
+        async with access.connection(None, cloud.target, operation_id="dtop-owner") as send:
             await send(REQUESTS[0])
     assert not cloud.calls
     cloud.sandboxes[0].poll.aio.assert_not_awaited()
@@ -293,23 +194,26 @@ async def test_wrong_target_owner_is_rejected_before_any_guest_command(cloud):
 
 
 @pytest.mark.anyio
-async def test_other_providers_keep_per_operation_dispatch(monkeypatch):
-    dispatch = AsyncMock()
-    open_provider = AsyncMock(side_effect=AssertionError("Scoped opening is Modal-only"))
-    monkeypatch.setattr(service, "dispatch", dispatch)
-    monkeypatch.setattr(service, "open_provider", open_provider)
-    target = SimpleNamespace(state=EnvironmentState(provider_key="e2b", state_version="1", state={}))
-    async with service.access_dispatch(None, target, operation_id="dtop-other") as send:
+async def test_other_providers_share_one_connection_for_the_exchange(monkeypatch):
+    provider = SimpleNamespace(desktop_access=AsyncMock(), close=AsyncMock())
+    opening = AsyncMock(return_value=provider)
+    monkeypatch.setattr(access, "open_provider", opening)
+    target = SimpleNamespace(
+        recipe={},
+        environment_id="env-test",
+        state=EnvironmentState(provider_key="e2b", state_version="1", state={}),
+    )
+    async with access.connection(None, target, operation_id="dtop-other") as send:
         for request in (*REQUESTS, *HANDBACK):
             await send(request)
-    assert [call.args[2] for call in dispatch.await_args_list] == [*REQUESTS, *HANDBACK]
-    assert all(call.kwargs == {"operation_id": "dtop-other"} for call in dispatch.await_args_list)
-    open_provider.assert_not_awaited()
+    assert [call.kwargs["request"] for call in provider.desktop_access.await_args_list] == [*REQUESTS, *HANDBACK]
+    opening.assert_awaited_once()
+    provider.close.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_handback_revokes_every_grant_then_settles_on_one_validated_target(cloud):
-    async with service.access_dispatch(None, cloud.target, operation_id="dtop-handback") as send:
+    async with access.connection(None, cloud.target, operation_id="dtop-handback") as send:
         for request in HANDBACK:
             await send(request)
         assert not cloud.clients[0].closed
@@ -339,7 +243,7 @@ async def test_handback_failure_stops_sequence_and_releases_the_pinned_target(cl
     cloud.failure_operation, cloud.failure, cloud.invalid_reply = operation, failure, invalid_reply
     with pytest.raises(TimeoutError if failure == "timeout" else EnvironmentProviderError):
         with anyio.fail_after(0.1):
-            async with service.access_dispatch(None, cloud.target, operation_id="dtop-handback-failure") as send:
+            async with access.connection(None, cloud.target, operation_id="dtop-handback-failure") as send:
                 for request in HANDBACK:
                     await send(request)
     assert len(cloud.clients) == len(cloud.sandboxes) == cloud.lookup.await_count == 1

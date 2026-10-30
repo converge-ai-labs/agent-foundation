@@ -1,0 +1,40 @@
+.trigger {
+  justify-self: end;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.status strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.status span,
+.hint {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.screen {
+  height: min(55vh, 560px);
+  min-height: 220px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.screen[hidden] {
+  display: none;
+}

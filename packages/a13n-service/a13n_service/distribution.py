@@ -89,17 +89,18 @@ from a13n_service.runs.browsers.tables import (
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
 from a13n_service.runs.compactions import sweep as compaction_sweep
-from a13n_service.runs.desktop_assistance.maintenance import sweep as desktop_assistance_sweep
-from a13n_service.runs.desktop_assistance.routes import router as desktop_assistance_router
-from a13n_service.runs.desktop_assistance.tables import (
-    DesktopAssistanceRow,
-    DesktopExecutionRow,
-    DesktopTargetRow,
-    DesktopViewerRow,
-)
 from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
 from a13n_service.runs.environments.daytona_snapshots import DaytonaDesktopSnapshotRow
+from a13n_service.runs.environments.desktop.delivery import handbacks as desktop_handbacks
+from a13n_service.runs.environments.desktop.maintenance import sweep as desktop_control_sweep
+from a13n_service.runs.environments.desktop.routes import router as desktop_control_router
+from a13n_service.runs.environments.desktop.tables import (
+    ComputerOperationRow,
+    DesktopBlockedRow,
+    DesktopControlRow,
+    DesktopViewerRow,
+)
 from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
@@ -311,6 +312,7 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
                 "child_result": child_results(runtime),
                 "tool_result": tool_results(runtime),
                 "browser_handback": handbacks(runtime),
+                "desktop_handback": desktop_handbacks(runtime),
                 "email": mail,
                 MEMORY_PURGE: MemoryPurger(runtime),
                 CLEANUP: partial(clean, runtime),
@@ -407,9 +409,9 @@ OSS = Distribution(
         ModalDesktopImageRow,
         DaytonaDesktopSnapshotRow,
         VercelDesktopSnapshotRow,
-        DesktopExecutionRow,
-        DesktopTargetRow,
-        DesktopAssistanceRow,
+        ComputerOperationRow,
+        DesktopBlockedRow,
+        DesktopControlRow,
         DesktopViewerRow,
         ThreadEnvironmentRow,
         ThreadMemoryRow,
@@ -447,7 +449,7 @@ OSS = Distribution(
         environment_templates_router,
         environments_router,
         browsers_router,
-        desktop_assistance_router,
+        desktop_control_router,
         memories_router,
         memory_spaces_router,
         thread_memories_router,
@@ -464,7 +466,7 @@ OSS = Distribution(
         _reconcile_compactions,
         _reconcile_tool_executions,
         _prune_tool_results,
-        desktop_assistance_sweep,
+        desktop_control_sweep,
         browser_sweep,
         browser_control_sweep,
         _expire_credentials,

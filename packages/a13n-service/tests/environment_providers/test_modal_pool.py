@@ -12,7 +12,7 @@ from a13n_harness.providers.environment.modal.pool import TransportPool
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential, ModalRuntime
 from a13n_service.providers.environment import desktop_access as wire
 from a13n_service.providers.environments.modal import provider
-from a13n_service.runs.desktop_assistance import service
+from a13n_service.runs.environments.desktop import access
 
 from .test_modal_desktop_session import HANDBACK, REQUESTS
 from .test_modal_desktop_session import cloud as cloud
@@ -34,7 +34,7 @@ async def pooled(cloud, monkeypatch):
     async def open_provider(runtime, target):
         return await provider(configuration=fixture.runtime.configuration, credential=None, runtime=fixture.runtime)
 
-    monkeypatch.setattr(service, "open_provider", open_provider)
+    monkeypatch.setattr(access, "open_provider", open_provider)
     try:
         yield fixture
     finally:
@@ -42,14 +42,14 @@ async def pooled(cloud, monkeypatch):
 
 
 async def describe(cloud, identity="dtop-test"):
-    async with service.access_dispatch(None, cloud.target, operation_id=identity) as send:
+    async with access.connection(None, cloud.target, operation_id=identity) as send:
         return await send(wire.Describe())
 
 
 @pytest.mark.anyio
 async def test_requests_share_transport_but_revalidate_owner_and_liveness(cloud, pooled):
     for identity, requests in (("dtop-grant", REQUESTS), ("dtop-return", HANDBACK)):
-        async with service.access_dispatch(None, cloud.target, operation_id=identity) as send:
+        async with access.connection(None, cloud.target, operation_id=identity) as send:
             for request in requests:
                 await send(request)
         assert not cloud.clients[0].closed
@@ -101,7 +101,7 @@ async def test_failure_or_cancellation_retires_transport_without_command_replay(
     cloud.failure, cloud.failure_operation = failure, "renew"
     with pytest.raises(TimeoutError if failure == "timeout" else EnvironmentProviderError):
         with anyio.fail_after(0.1):
-            async with service.access_dispatch(None, cloud.target, operation_id="dtop-failed") as send:
+            async with access.connection(None, cloud.target, operation_id="dtop-failed") as send:
                 for request in REQUESTS:
                     await send(request)
     assert [request.operation for _, request in cloud.calls] == ["describe", "describe", "renew"]
@@ -188,7 +188,7 @@ async def test_cleanup_failure_still_closes_client_and_discards_unusable_sandbox
 @pytest.mark.anyio
 async def test_busy_capacity_fails_without_closing_active_borrower(cloud, pooled):
     pooled.pool.capacity = 1
-    async with service.access_dispatch(None, cloud.target, operation_id="dtop-first") as send:
+    async with access.connection(None, cloud.target, operation_id="dtop-first") as send:
         await send(wire.Describe())
         pooled.runtime = replace(pooled.runtime, account=("provider-second", 1, "credential-first"))
         with pytest.raises(EnvironmentProviderError):
@@ -284,7 +284,7 @@ async def test_real_sdk_reuses_client_task_id_and_router_but_reads_tags_and_poll
 @pytest.mark.anyio
 async def test_independent_desktop_revoke_dispatch_also_borrows_cached_transport(cloud, pooled):
     await describe(cloud)
-    resource = await service.open_provider(None, cloud.target)
+    resource = await access.open_provider(None, cloud.target)
     try:
         await resource.desktop_access(
             cloud.target.recipe,
@@ -302,7 +302,7 @@ async def test_independent_desktop_revoke_dispatch_also_borrows_cached_transport
 
 @pytest.mark.anyio
 async def test_shutdown_retires_active_transport_and_borrower_performs_cleanup(cloud, pooled):
-    async with service.access_dispatch(None, cloud.target, operation_id="dtop-shutdown") as send:
+    async with access.connection(None, cloud.target, operation_id="dtop-shutdown") as send:
         await send(wire.Describe())
         await pooled.pool.close()
         assert not cloud.clients[0].closed

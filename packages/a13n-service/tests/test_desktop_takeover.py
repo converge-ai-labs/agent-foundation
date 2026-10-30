@@ -1,537 +1,519 @@
-"""User takeover crosses real execution, HTTP and SQL boundaries without a fabricated tool call."""
+"""Computer-only takeover crosses the real Run, HTTP and checkpoint paths."""
 
 import asyncio
+import json
+from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness.environment.models import EnvironmentAvailability, EnvironmentPermissionSet
+from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_service.infra.db import transaction
-from a13n_service.runs.desktop_assistance import maintenance
-from a13n_service.runs.desktop_assistance.tables import DesktopExecutionRow
+from a13n_service.infra.http import etag
+from a13n_service.runs.environments import execution
+from a13n_service.runs.environments.desktop import control
+from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+from sqlalchemy import select
 
-from .test_desktop_assistance import control, post, waiting
+from . import environments_support as support
+from .test_desktop_control import begin
+from .test_desktop_control import desktop as desktop
 
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("winner", ["user_before_dispatch", "user_during_discovery", "agent"])
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
-async def test_simultaneous_assistance_and_takeover_keep_one_resumable_wait(
-    service, scripted_model, runs_kit, monkeypatch, winner, provider_key
-):
-    from a13n_service.providers.environment import desktop_access as wire
-    from a13n_service.runs.desktop_assistance import service as assistance
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
-    from sqlalchemy import select
+@pytest.fixture
+async def connected(desktop, monkeypatch):
+    permissions = EnvironmentPermissionSet(operations={"environment.computer.observe", "environment.computer.click"})
+    monkeypatch.setattr(
+        support,
+        "DESCRIPTOR",
+        support.DESCRIPTOR.model_copy(
+            update={"operation_families": frozenset({"computer"}), "permissions": permissions}
+        ),
+    )
+    monkeypatch.setattr(
+        support.FakeExecution,
+        "availability",
+        property(lambda self: EnvironmentAvailability(status="available", ready_families=frozenset({"computer"}))),
+    )
 
-    first, endpoint = await waiting(
-        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
+    computer = AsyncMock()
+    monkeypatch.setattr(
+        support.FakeExecution, "operations", property(lambda self: EnvironmentOperations(computer=computer))
     )
-    generate, entered, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    scripted_model.call(
-        "request_desktop_assistance", {"mount": "workspace", "reason": "Choose the file"}, call_id="help", gate=generate
-    )
+    monkeypatch.setattr(support.FakeConnector, "provider_key", property(lambda self: "e2b"))
+    monkeypatch.setattr(support.FakeExecution, "provider_key", property(lambda self: "e2b"))
+
+    async def connector(runtime, target, **kwargs):
+        support.BACKEND.instances[target.environment_id] = "running"
+        return support.FakeConnector(target.environment_id, target.state)
+
+    monkeypatch.setattr(execution, "execution_connector", connector)
+    return desktop
+
+
+async def test_blocked_computer_does_not_pause_model_or_other_tools(service, connected, scripted_model, runs_kit):
+    first, environment_id, actor, *_ = connected
+    gate = asyncio.Event()
+    scripted_model.call("computer_observe", {}, call_id="blocked", gate=gate)
+    scripted_model.call("tool_execution_info", {}, call_id="unrelated")
+    scripted_model.say("Other work completed while the human controls the desktop.")
     running = await runs_kit.attempt(service)
+    try:
+        request = await asyncio.wait_for(scripted_model.request(), 10)
+        assert "request_desktop_assistance" not in str(request)
+        human = await begin(service, connected)
+        assert human.control == "human"
+        gate.set()
+        await asyncio.wait_for(running, 15)
+        run = await runs_kit.get_run(service, first["run"]["id"])
+        assert run["status"] == "completed" and run["pending"] is None, run.get("failure")
+        items = await runs_kit.items(service, run["id"])
+        results = {
+            item["content"]["toolCallId"]: item["content"]["result"]
+            for item in items["items"]
+            if item["kind"] == "tool_call"
+        }
+        assert "human control" in results["blocked"], results
+        assert "unrelated" in results
+        async with transaction(service.runtime.storage) as session:
+            registrations = list(await session.scalars(select(DesktopBlockedRow)))
+            assert len(registrations) == 1 and registrations[0].run_id == run["id"], items
+        current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+        assert current.control == "human"
+        await control.handback(
+            service.runtime,
+            actor,
+            service.tenant.workspace_id,
+            environment_id,
+            if_match=etag(current.id, current.version),
+        )
+    finally:
+        gate.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+
+async def test_takeover_without_computer_use_does_not_register_a_recipient(
+    service, connected, scripted_model, runs_kit
+):
+    first, environment_id, actor, *_ = connected
+    human = await begin(service, connected)
+    scripted_model.say("Please help with the desktop. I have finished other work.")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, first["run"]["id"])
+    assert run["status"] == "completed", run.get("failure")
+    async with transaction(service.runtime.storage) as session:
+        assert not list(await session.scalars(select(DesktopBlockedRow)))
+    returned = await control.handback(
+        service.runtime,
+        actor,
+        service.tenant.workspace_id,
+        environment_id,
+        if_match=etag(human.id, human.version),
+    )
+    assert returned.control == "automation"
+    assert not [
+        entry
+        for entry in await runs_kit.inbox(service, first["run"]["thread_id"])
+        if entry["kind"] == "desktop_handback"
+    ]
+
+
+async def accepted_handback(service, connected, scripted_model, runs_kit):
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.environments.desktop.delivery import handbacks
+    from a13n_service.runs.execute import execute
+
+    from .test_desktop_control import returned_notice
+
+    origin, _, notice = await returned_notice(service, connected)
+    scripted_model.say("Other work finished")
+    await execute(service.runtime, origin, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
+    assert (await runs_kit.get_run(service, origin.run_id))["status"] == "completed"
     await scripted_model.request()
-    user_view = await open_desktop(service, first["run"])
-    assert (await post(service, user_view, "view", control(user_view))).status_code == 200
-    if winner == "user_during_discovery":
+    await handbacks(service.runtime)(notice)
+    (lease,) = await claim(service.runtime, worker_id="notice-worker", worker_build="test", limit=1)
+    return lease
 
-        async def slow_discovery(*args, **kwargs):
-            entered.set()
-            await release.wait()
-            return await endpoint.dispatch(*args, **kwargs)
 
-        monkeypatch.setattr(assistance, "dispatch", slow_discovery)
-    elif winner == "agent":
-        original = assistance.request_assistance
+@pytest.mark.parametrize("retake_at", ["before_read", "before_commit"])
+async def test_obsolete_handback_is_discarded_across_checkpoint_recovery(
+    service, connected, scripted_model, runs_kit, monkeypatch, retake_at
+):
+    from a13n_service.runs import checkpoints
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.execute import execute
+    from a13n_service.runs.tables import InboxEntryRow, RunRow
 
-        async def reserved(*args, **kwargs):
-            result = await original(*args, **kwargs)
-            entered.set()
-            await release.wait()
+    lease = await accepted_handback(service, connected, scripted_model, runs_kit)
+    if retake_at == "before_read":
+        await begin(service, connected)
+    else:
+        publish = checkpoints.publish_checkpoint
+        retaken = False
+
+        async def retake_before_commit(*args, **kwargs):
+            nonlocal retaken
+            result = await publish(*args, **kwargs)
+            if not retaken:
+                retaken = True
+                await begin(service, connected)
             return result
 
-        monkeypatch.setattr(assistance, "request_assistance", reserved)
-    if winner != "user_before_dispatch":
-        generate.set()
-        await asyncio.wait_for(entered.wait(), 10)
-    requested = await post(service, user_view, "request-control", {})
-    if winner == "agent":
-        assert requested.status_code == 409, requested.text
-        assert requested.json()["error"]["details"]["reason"] == "desktop_agent_assistance_pending"
-        # Stale tabs may retry either entry; neither can create another controller.
-        for action in ("request-control", "control"):
-            assert (await post(service, user_view, action, control(user_view))).status_code == 409
-        reopened = await service.client.post(
-            f"{service.api}/runs/{first['run']['id']}/desktop-control",
-            json={"mount": "workspace", "reason": "Retry"},
+        monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
+    await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
+    run = await runs_kit.get_run(service, lease.run_id)
+    assert run["status"] == "accepted", run.get("failure")
+    async with transaction(service.runtime.storage) as session:
+        registration = (await session.scalars(select(DesktopBlockedRow))).one()
+        entry = await session.get_one(InboxEntryRow, registration.entry_id)
+        assert entry.status == "failed" and entry.failure["code"] == "desktop_notice_stale"
+    (recovered,) = await claim(service.runtime, worker_id="replacement", worker_build="test", limit=1)
+    assert recovered.run_id == lease.run_id
+    await execute(service.runtime, recovered, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
+    run = await runs_kit.get_run(service, lease.run_id)
+    assert run["status"] == "completed", run.get("failure")
+    assert run["usage_at_seal"]["requests"] == 0
+    assert (await runs_kit.get_thread(service, lease.thread_id))["current_run_id"] is None
+    async with transaction(service.runtime.storage) as session:
+        pointer = checkpoints.require_compatible(await session.get_one(RunRow, lease.run_id))
+    state = await checkpoints.load_state(service.runtime.objects, pointer)
+    assert "Human control ended for desktop" not in str(state.harness.message_history)
+
+
+async def test_committed_handback_is_historical_and_retake_still_blocks_computer(
+    service, connected, scripted_model, runs_kit
+):
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.execute import execute
+    from a13n_service.runs.tables import InboxEntryRow
+
+    lease = await accepted_handback(service, connected, scripted_model, runs_kit)
+    gate = asyncio.Event()
+    scripted_model.call("computer_observe", {}, call_id="retaken", gate=gate)
+    scripted_model.say("The human has control again; unrelated work is done.")
+    running = asyncio.create_task(
+        execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
+    )
+    try:
+        request = await asyncio.wait_for(scripted_model.request(), 10)
+        assert "Human control ended for desktop on mount" in str(request["messages"])
+        async with transaction(service.runtime.storage) as session:
+            registration = (await session.scalars(select(DesktopBlockedRow))).one()
+            assert (await session.get_one(InboxEntryRow, registration.entry_id)).status == "consumed"
+        await begin(service, connected)
+        gate.set()
+        await asyncio.wait_for(running, 15)
+        run = await runs_kit.get_run(service, lease.run_id)
+        assert run["status"] == "completed", run.get("failure")
+        items = await runs_kit.items(service, lease.run_id)
+        result = next(
+            item["content"]["result"]
+            for item in items["items"]
+            if item["kind"] == "tool_call" and item["content"]["toolCallId"] == "retaken"
         )
-        assert reopened.status_code == 409 and "desktop_agent_assistance_pending" in reopened.text
-    else:
-        assert requested.status_code == 200 and requested.json()["state"] == "preparing", requested.text
-    assert not any(isinstance(call, wire.Grant) and call.mode == "control" for call in endpoint.calls)
-    assert (await post(service, user_view, "control", control(user_view))).status_code == 409
-    generate.set()
-    release.set()
-    await asyncio.wait_for(running, 15)
-    monkeypatch.setattr(assistance, "dispatch", endpoint.dispatch)
-    # The old read-only panel can release its grant after the other origin wins.
-    assert (await post(service, user_view, "disconnect", control(user_view))).status_code == 200
-    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
-    run = await runs_kit.get_run(service, first["run"]["id"])
-    assert run["status"] == "waiting", run
-    async with transaction(service.runtime.storage) as session:
-        execution = await session.get(DesktopExecutionRow, run["id"])
-        assert execution.inflight == 0 and not execution.uncertain
-        rows = (
-            await session.scalars(select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == run["id"]))
-        ).all()
-        targets = (
-            await session.scalars(select(DesktopTargetRow).where(DesktopTargetRow.holder_id.in_([r.id for r in rows])))
-        ).all()
-        assert len(targets) == 1
-        owner = next(row for row in rows if row.id == targets[0].holder_id)
-        assert owner.cause == ("agent" if winner == "agent" else "user")
-        assert owner.state == "awaiting_user"
-        assert len(rows) == (2 if winner == "agent" else 1)
-    if winner == "agent":
-        assert run["wait_reason"] == "call" and run["pending"]["desktop_control_id"] is None
-        assert [item["tool_call_id"] for item in run["pending"]["calls"]] == ["help"]
-        view = (await service.client.get(f"{service.api}/runs/{run['id']}/desktop-assistance/help")).json()
-    else:
-        assert run["wait_reason"] == "desktop_control" and not run["pending"]["calls"]
-        view = requested.json()
-    granted = await post(service, view, "control", control(view))
-    assert granted.status_code == 200, granted.text
-    view = granted.json()["assistance"]
-    assert (
-        await post(service, view, "control", control(view, session_id="different_browser_00001"))
-    ).status_code == 409
-    completed = await post(service, view, "complete", control(view))
-    assert completed.status_code == 200, completed.text
-    answers = {"help": {"status": "returned", "value": completed.json()["outcome"]}} if winner == "agent" else {}
-    response = await service.client.post(
-        f"{service.api}/runs/{run['id']}/resume", json={"calls": answers, "approvals": {}}, headers=runs_kit.fresh_key()
-    )
-    assert response.status_code == 201, response.text
-    scripted_model.say("The task can continue after handback.")
-    await (await runs_kit.attempt(service))
-    assert (await runs_kit.get_run(service, response.json()["id"]))["status"] == "completed"
-    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
+        assert "human control" in result
+        async with transaction(service.runtime.storage) as session:
+            assert len(list(await session.scalars(select(DesktopBlockedRow)))) == 2
+    finally:
+        gate.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
 
 
-async def open_desktop(service, run):
-    result = await service.client.post(
-        f"{service.api}/runs/{run['id']}/desktop-control", json={"mount": "workspace", "reason": "User correction"}
-    )
-    assert result.status_code == 200, result.text
-    return result.json()
-
-
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
-async def test_takeover_during_generation_skips_stale_tool_then_resumes(
-    service, scripted_model, runs_kit, monkeypatch, provider_key
+async def test_human_control_allows_real_files_shell_and_new_codeact_scripts(
+    service, connected, scripted_model, runs_kit, monkeypatch, tmp_path
 ):
-    first, endpoint = await waiting(
-        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
+    from dataclasses import replace
+    from pathlib import Path
+
+    from a13n_harness.capabilities import CodeActCapability
+    from a13n_harness.providers.catalog import ProviderCatalog
+    from a13n_harness.providers.environment.direct_local.configuration import (
+        DirectLocalEnvironmentConfiguration,
+        DirectLocalRootConfiguration,
+        DirectLocalShellProfile,
     )
-    gate = asyncio.Event()
-    scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    assert view["state"] == "viewing" and view["tool_call_id"] is None
-    await maintenance.reconcile(service.runtime, view["id"])
-    response = await service.client.get(f"{service.api}/runs/{first['run']['id']}/desktop-control")
-    assert response.json()["state"] == "viewing"
-    assert (await post(service, view, "view", control(view))).status_code == 200
-    assert (await post(service, view, "control", control(view))).status_code == 409
-    requested = await post(service, view, "request-control", {})
-    assert requested.status_code == 200, requested.text
-    assert requested.json()["state"] == "preparing"
-    assert (await post(service, view, "control", control(view))).status_code == 409
-    gate.set()
-    await asyncio.wait_for(running, 15)
-    run = await runs_kit.get_run(service, first["run"]["id"])
-    assert run["status"] == "waiting", run
-    assert run["wait_reason"] == "desktop_control"
-    assert run["pending"] == {"calls": [], "approvals": [], "desktop_control_id": view["id"]}
-    assert scripted_model.requests.empty(), "No model request may follow the pause fence"
-    resume = {"approvals": {}, "calls": {}}
-    denied = await service.client.post(
-        f"{service.api}/runs/{run['id']}/resume", json=resume, headers=runs_kit.fresh_key()
+    from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
+    from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+    from a13n_service.runs.host import Host
+    from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+
+    class ProgramTools(AbstractCapability):
+        def get_ordering(self):
+            return CapabilityOrdering(wrapped_by=(CodeActCapability,))
+
+        def get_wrapper_toolset(self, toolset):
+            return CodeActPolicyToolset(
+                wrapped=toolset,
+                policy=CodeActToolPolicy(
+                    tools={name: True for name in ("view", "shell_exec", "shell_info", "shell_input", "shell_wait")}
+                ),
+            )
+
+    capabilities = Host.capabilities
+
+    def with_codeact(self, agent, *, retain_tools=False):
+        return [*capabilities(self, agent, retain_tools=retain_tools), ProgramTools(), CodeActCapability()]
+
+    monkeypatch.setattr(Host, "capabilities", with_codeact)
+    # The real local facets represent this fixture's managed e2b target, including
+    # the provider identity carried by process and output handles.
+    monkeypatch.setattr(DirectLocalExecution, "provider_key", property(lambda self: "e2b"))
+    local = DirectLocalExecution(
+        DirectLocalEnvironmentConfiguration(
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),),
+        ),
+        environment_id=connected[1],
     )
-    assert denied.status_code == 409
-    claimed = await post(service, view, "control", control(view))
-    assert claimed.status_code == 200, claimed.text
-    view = claimed.json()["assistance"]
-    # Dropping a controller closes its input but does not answer the pause.
-    assert (await post(service, view, "disconnect", control(view))).status_code == 200
-    assert (await runs_kit.get_run(service, run["id"]))["status"] == "waiting"
-    completed = await post(service, view, "complete", control(view))
-    assert completed.status_code == 200, completed.text
-    await maintenance.reconcile(service.runtime, view["id"])
-    result = await service.client.post(
-        f"{service.api}/runs/{run['id']}/resume", json=resume, headers=runs_kit.fresh_key()
-    )
-    assert result.status_code == 201, result.text
-    scripted_model.say("I will inspect the changed desktop before further operations.")
-    await (await runs_kit.attempt(service))
-    successor = await runs_kit.get_run(service, result.json()["id"])
-    assert successor["status"] == "completed", successor
-    history = str(await scripted_model.request())
-    assert "Not executed: the user requested desktop control" in history
-    assert "The user returned desktop control" in history
-    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
-    # Once observation/replanning released the reservation, later cleanup must not
-    # rewrite the accepted handback outcome just because its source Run is old.
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
-
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopAssistanceRow, view["id"])
-        assert row.state == "consumed"
-        target = await session.get(DesktopTargetRow, row.target_key)
-        target.holder_id = None
-        outcome = row.outcome
-    await maintenance.reconcile(service.runtime, view["id"])
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopAssistanceRow, view["id"])
-        assert row.state == "consumed" and row.outcome == outcome
-
-
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
-async def test_unknown_tool_work_prevents_takeover(service, scripted_model, runs_kit, monkeypatch, provider_key):
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key)
-    gate = asyncio.Event()
-    scripted_model.say("done", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopExecutionRow, first["run"]["id"])
-        row.uncertain = True
-    response = await post(service, view, "request-control", {})
-    assert response.status_code == 409, response.text
-    assert "desktop_background_work_unconfirmed" in response.text
-    gate.set()
-    await running
-
-
-async def test_readonly_cleanup_does_not_pause_or_settle_active_agent(service, scripted_model, runs_kit, monkeypatch):
-    from datetime import timedelta
-
-    from a13n_service.infra.db import now
-    from a13n_service.providers.environment import desktop_access as wire
-    from a13n_service.runs.desktop_assistance import execution
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow
-
-    first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    gate = asyncio.Event()
-    scripted_model.say("Continue without interruption", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    assert (await post(service, view, "view", control(view))).status_code == 200
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopAssistanceRow, view["id"])
-        row.deadline = await now(session) - timedelta(seconds=1)
-        counter = await session.get(DesktopExecutionRow, first["run"]["id"])
-        counter.inflight = 1
-    endpoint.fail_revoke = True
-    with pytest.raises(RuntimeError):
-        await maintenance.reconcile(service.runtime, view["id"])
-    async with transaction(service.runtime.storage) as session:
-        assert await execution.request(session, first["run"]["id"]) is None
-    endpoint.fail_revoke = False
-    await maintenance.reconcile(service.runtime, view["id"])
-    assert not any(isinstance(call, wire.Settle) for call in endpoint.calls)
-    async with transaction(service.runtime.storage) as session:
-        counter = await session.get(DesktopExecutionRow, first["run"]["id"])
-        counter.inflight = 0
-    gate.set()
-    await running
-    assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "completed"
-
-
-@pytest.mark.parametrize("tool_count", [1, 2])
-async def test_admitted_tool_drains_and_is_not_replayed(service, scripted_model, runs_kit, monkeypatch, tool_count):
-    from a13n_service.runs.boundaries import Boundaries
-
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    entered, release = asyncio.Event(), asyncio.Event()
-    before = Boundaries.before_tool_execute
-    count = 0
-
-    # Execution runs the before-hooks inside the desktop fence, so a held hook holds an admitted tool.
-    async def slow(self, ctx, *, call, tool_def, args):
-        nonlocal count
-        count += 1
-        if count == tool_count:
-            entered.set()
-        await release.wait()
-        return await before(self, ctx, call=call, tool_def=tool_def, args=args)
-
-    monkeypatch.setattr(Boundaries, "before_tool_execute", slow)
-    scripted_model._script(
-        {
-            "deltas": [
-                {
-                    "tool_calls": [
-                        {
-                            "index": index,
-                            "id": f"admitted-{index}",
-                            "type": "function",
-                            "function": {"name": "tool_execution_info", "arguments": "{}"},
-                        }
-                        for index in range(tool_count)
-                    ]
-                }
-            ],
-            "interval": 0,
-            "finish": "tool_calls",
-            "gate": None,
-            "to": None,
-        }
-    )
-    running = await runs_kit.attempt(service)
-    await asyncio.wait_for(entered.wait(), 10)
-    view = await open_desktop(service, first["run"])
-    assert (await post(service, view, "request-control", {})).status_code == 200
-    assert (await post(service, view, "control", control(view))).status_code == 409
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopExecutionRow, first["run"]["id"])
-        assert row.inflight == tool_count
-    release.set()
-    await asyncio.wait_for(running, 10)
-    run = await runs_kit.get_run(service, first["run"]["id"])
-    assert run["wait_reason"] == "desktop_control", run
-    completed = await post(service, view, "complete", control(view))
-    assert completed.status_code == 200, completed.text
-    resumed = await service.client.post(
-        f"{service.api}/runs/{run['id']}/resume", json={"approvals": {}, "calls": {}}, headers=runs_kit.fresh_key()
-    )
-    assert resumed.status_code == 201, resumed.text
-    scripted_model.say("Continue with preserved tool results")
-    await (await runs_kit.attempt(service))
-    assert count == tool_count
-    assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
-
-
-async def test_completed_run_with_uncertain_work_cannot_grant_control(service, scripted_model, runs_kit, monkeypatch):
-    # Request while generation is active, then simulate the worker's transient-failure release.
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    gate = asyncio.Event()
-    scripted_model.say("done", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    assert (await post(service, view, "request-control", {})).status_code == 200
-    # Make the remaining work uncertain before the safe boundary.
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopExecutionRow, first["run"]["id"])
-        row.uncertain = True
-    # A final answer may finish the task, but must never grant control over uncertain work.
-    gate.set()
-    await running
-    response = await post(service, view, "control", control(view))
-    assert response.status_code == 409, response.text
-
-
-async def test_worker_loss_after_request_never_replays_the_task(service, scripted_model, runs_kit, monkeypatch):
-    from a13n_service.runs.seal import LeaseExpirer
-    from a13n_service.runs.tables import AttemptRow
-    from sqlalchemy import update
-
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    scripted_model.say("lost", gate=asyncio.Event())
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    assert (await post(service, view, "request-control", {})).status_code == 200
-    running.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await running
-    async with transaction(service.runtime.storage) as session:
-        await session.execute(
-            update(AttemptRow)
-            .where(AttemptRow.run_id == first["run"]["id"])
-            .values(lease_expires_at=AttemptRow.created_at)
+    await local.open(execution_id="desktop-local-facets")
+    try:
+        computer = AsyncMock()
+        descriptor = local.descriptor.model_copy(
+            update={
+                "operation_families": local.descriptor.operation_families | {"computer"},
+                "permissions": EnvironmentPermissionSet(
+                    operations=local.descriptor.permissions.operations
+                    | {
+                        "environment.computer.observe",
+                        "environment.computer.click",
+                    }
+                ),
+            }
         )
-    await LeaseExpirer(service.runtime, batch=10)()
-    run = await runs_kit.get_run(service, first["run"]["id"])
-    assert run["status"] == "failed", run
-    assert run["failure"]["code"] == "desktop_pause_attempt_lost"
-    assert (await post(service, view, "control", control(view))).status_code == 409
-
-
-async def test_task_tree_is_explicitly_refused_without_partial_pause(service, scripted_model, runs_kit, monkeypatch):
-    first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    gate = asyncio.Event()
-    scripted_model.say("done", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopExecutionRow, first["run"]["id"])
-        row.supported = False
-    denied = await post(service, view, "request-control", {})
-    assert denied.status_code == 409 and "desktop_task_tree_unsupported" in denied.text
-    assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "running"
-    gate.set()
-    await running
-
-
-async def test_expired_user_control_requires_cleanup_and_explicit_resume(
-    service, scripted_model, runs_kit, monkeypatch
-):
-    from datetime import timedelta
-
-    from a13n_service.infra.db import now
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow
-
-    first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
-    gate = asyncio.Event()
-    scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    view = await open_desktop(service, first["run"])
-    assert (await post(service, view, "request-control", {})).status_code == 200
-    gate.set()
-    await asyncio.wait_for(running, 15)
-    claimed = await post(service, view, "control", control(view))
-    assert claimed.status_code == 200
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopAssistanceRow, view["id"])
-        row.deadline = await now(session) - timedelta(seconds=1)
-    endpoint.fail_revoke = True
-    with pytest.raises(RuntimeError):
-        await maintenance.reconcile(service.runtime, view["id"])
-    path = f"{service.api}/runs/{first['run']['id']}/resume"
-    body = {"calls": {}, "approvals": {}}
-    denied = await service.client.post(path, json=body, headers=runs_kit.fresh_key())
-    assert denied.status_code == 409
-    endpoint.fail_revoke = False
-    await maintenance.reconcile(service.runtime, view["id"])
-    assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "waiting"
-    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
-    resumed = await service.client.post(path, json=body, headers=runs_kit.fresh_key())
-    assert resumed.status_code == 201, resumed.text
-    scripted_model.say("Observe the changed desktop before further operations.")
-    await (await runs_kit.attempt(service))
-    assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
-
-
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
-async def test_initial_view_discovers_once_and_does_not_pause(
-    service, scripted_model, runs_kit, monkeypatch, provider_key
-):
-    from a13n_service.providers.environment import desktop_access as wire
-
-    first, endpoint = await waiting(
-        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
-    )
-    path = f"{service.api}/runs/{first['run']['id']}/desktop-control/view"
-    body = {"mount": "workspace", "reason": "View only", "session_id": "browser_session_000001"}
-    for _ in range(2):
-        endpoint.calls.clear()
-        response = await service.client.post(path, json=body)
+        monkeypatch.setattr(support, "DESCRIPTOR", descriptor)
+        definition = service.runtime.registry.get("environment", "e2b")
+        replacement = replace(
+            definition, execution=replace(definition.execution, describe_environment=lambda recipe: descriptor)
+        )
+        registry = replace(
+            service.runtime.registry,
+            environments=ProviderCatalog(
+                replacement if item.type == "e2b" else item for item in service.runtime.registry.environments.values()
+            ),
+        )
+        service.runtime = replace(service.runtime, registry=registry)
+        service.app.state.runtime = service.runtime
+        monkeypatch.setattr(support.FakeExecution, "execution_id", property(lambda self: "desktop-local-facets"))
+        monkeypatch.setattr(
+            support.FakeExecution,
+            "availability",
+            property(
+                lambda self: EnvironmentAvailability(
+                    status="available",
+                    ready_families=descriptor.operation_families,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            support.FakeExecution,
+            "operations",
+            property(
+                lambda self: replace(
+                    local.operations,
+                    computer=computer,
+                )
+            ),
+        )
+        first = connected[0]["run"]
+        # Change the desired mount through its API, then freeze it in a normal successor.
+        await service.client.post(f"{service.api}/runs/{first['id']}/interrupt")
+        thread = await runs_kit.get_thread(service, first["thread_id"])
+        mount = {"permission_ceiling": descriptor.permissions.model_dump(mode="json")}
+        response = await service.client.patch(
+            f"{service.api}/threads/{thread['id']}/environments/workspace",
+            json=mount,
+            headers=runs_kit.if_match(thread),
+        )
         assert response.status_code == 200, response.text
-        assert response.headers["cache-control"] == "no-store"
-        access = response.json()
-        assert access["mode"] == "view" and access["assistance"]["state"] == "viewing"
-        assert [call.operation for call in endpoint.calls] == ["describe", "grant"]
-        assert isinstance(endpoint.calls[-1], wire.Grant) and endpoint.calls[-1].mode == "view"
-        assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "accepted"
-    assert len(endpoint.grants) == 1
-    assert (
-        await post(
-            service, access["assistance"], "disconnect", control(access["assistance"], session_id=body["session_id"])
+        response = await runs_kit.submit(
+            service,
+            thread["id"],
+            runs_kit.message(
+                {"id": first["agent_id"]},
+                "Continue with files and commands",
+            ),
         )
-    ).status_code == 200
-
-
-@pytest.mark.parametrize(
-    "failure", ["readonly", "revocation", "route", "target", "generation", "grant", "cleanup", "superseded", "timeout"]
-)
-async def test_initial_view_fails_closed_and_releases_scope(service, scripted_model, runs_kit, monkeypatch, failure):
-    from contextlib import asynccontextmanager
-
-    from a13n_service.providers.environment import desktop_access as wire
-    from a13n_service.runs.desktop_assistance import service as assistance
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow
-    from a13n_service.runs.environments.tables import EnvironmentRow
-    from sqlalchemy import select
-
-    first, endpoint = await waiting(
-        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key="modal"
-    )
-    closed = False
-
-    @asynccontextmanager
-    async def scoped(runtime, selected, *, operation_id):
-        async def send(request):
-            if isinstance(request, wire.Grant) and failure == "grant":
-                raise RuntimeError("Grant outcome unknown")
-            reply = await endpoint.dispatch(runtime, selected, request, operation_id=operation_id)
-            if isinstance(request, wire.Grant) and failure == "timeout":
-                await asyncio.Event().wait()
-            if isinstance(request, wire.Describe):
-                if failure in {"readonly", "revocation", "route"}:
-                    field, value = {
-                        "readonly": ("read_only_enforced", False),
-                        "revocation": ("revocation_fences_grants", False),
-                        "route": ("websocket_url", "ws://external.example/"),
-                    }[failure]
-                    return reply.model_copy(update={field: value})
-                if failure == "target":
-                    async with transaction(runtime.storage) as session:
-                        env = await session.get(EnvironmentRow, selected.environment_id)
-                        handle = dict(env.handle)
-                        handle["state"] = {
-                            **handle["state"],
-                            "state": {**handle["state"]["state"], "target_id": "replacement"},
-                        }
-                        env.handle = handle
-                if failure == "generation":
-                    # A previously opened context must not adopt a new generation.
-                    async with transaction(runtime.storage) as session:
-                        row = await session.scalar(
-                            select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
-                        )
-                        row.generation = "b" * 32
-            if isinstance(request, wire.Grant) and failure == "superseded":
-                async with transaction(runtime.storage) as session:
-                    row = await session.scalar(
-                        select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
-                    )
-                    row.operation_id = "different-operation"
-            return reply
-
+        assert response.status_code == 201, response.text
+        thread = await runs_kit.get_thread(service, thread["id"])
+        run_id = thread["current_run_id"]
+        await begin(service, connected)
+        scripted_model.call(
+            "write", {"file_path": "/workspace/proof.txt", "content": "before\n"}, call_id="write-proof"
+        )
+        scripted_model.call(
+            "shell_exec", {"command": "printf 'after\\n' >> proof.txt", "cwd": "/workspace"}, call_id="shell-proof"
+        )
+        scripted_model.call(
+            "run_code", {"code": "print(await view(file_path='/workspace/proof.txt'))"}, call_id="code-proof"
+        )
+        scripted_model.call(
+            "run_code",
+            {
+                "code": "\n".join(
+                    [
+                        "started = await shell_exec(command='read line; printf \\\"%s\\\\n\\\" \\\"$line\\\"', cwd='/workspace')",
+                        "print(started)",
+                        "process_id = started['process_id']",
+                        "print(await shell_info(process_id=process_id))",
+                        "print(await shell_input(process_id=process_id, data='process-control-proof\\n', close_stdin=True))",
+                        "print(await shell_wait(process_id=process_id, timeout_seconds=5))",
+                    ]
+                )
+            },
+            call_id="process-proof",
+        )
+        running = await runs_kit.attempt(service)
         try:
-            yield send
+            async with asyncio.timeout(30):
+                while True:
+                    request = await scripted_model.request()
+                    receipts = [
+                        message["content"]
+                        for message in request["messages"]
+                        if message.get("tool_call_id") == "process-proof"
+                    ]
+                    if receipts:
+                        break
+            receipt = json.loads(receipts[0])
+            if receipt.get("type") == "tool_execution_receipt":
+                scripted_model.call(
+                    "tool_execution_wait",
+                    {"execution_id": receipt["execution_id"], "timeout_seconds": 30},
+                    call_id="process-result",
+                )
+            scripted_model.call("computer_observe", {}, call_id="blocked")
+            scripted_model.say("File and shell work finished while Computer remains blocked.")
+            await asyncio.wait_for(running, 40)
         finally:
-            nonlocal closed
-            closed = True
-            if failure == "cleanup":
-                raise RuntimeError("Cleanup unconfirmed")
-
-    if failure == "generation":
-        await open_desktop(service, first["run"])
-        endpoint.calls.clear()
-    monkeypatch.setattr(assistance, "access_dispatch", scoped)
-    if failure == "timeout":
-        monkeypatch.setattr(assistance, "_ACCESS_TIMEOUT_SECONDS", 1)
-    response = await service.client.post(
-        f"{service.api}/runs/{first['run']['id']}/desktop-control/view",
-        json={"mount": "workspace", "reason": "View only", "session_id": "browser_session_000001"},
-    )
-    assert response.status_code >= 400, response.text
-    assert closed
-    assert "websocket_url" not in response.text and "test-pass" not in response.text
-    if failure in {"readonly", "revocation", "route", "target", "generation"}:
-        assert not endpoint.grants
-    async with transaction(service.runtime.storage) as session:
-        row = await session.scalar(
-            select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
+            if not running.done():
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+        run = await runs_kit.get_run(service, run_id)
+        items = await runs_kit.items(service, run_id)
+        results = [item["content"] for item in items["items"] if item["kind"] == "tool_call"]
+        assert run["status"] == "completed", (
+            str(run.get("failure")) + "\n" + "\n".join(str(item.get("result")) for item in results)
         )
-        if failure in {"generation", "grant", "cleanup", "timeout"}:
-            assert row.state == "blocked" and row.outcome is None
+        assert (tmp_path / "proof.txt").exists(), "\n".join(str(item.get("result")) for item in results)
+        assert (tmp_path / "proof.txt").read_text() == "before\nafter\n", "\n".join(
+            str(item.get("result")) for item in results
+        )
+        assert any(item["toolCallName"] == "run_code" and "after" in str(item["result"]) for item in results), results
+        assert any(item["toolCallId"] == "blocked" and "human control" in str(item["result"]) for item in results)
+        process = [item["result"] for item in results if item["toolCallId"] in {"process-proof", "process-result"}]
+        assert "process-control-proof" in str(process) and "exited" in str(process), process
+        computer.observe.assert_not_awaited()
+    finally:
+        await local.close()
+
+
+@pytest.mark.parametrize("settled", [False, True])
+async def test_handback_reaches_live_child_without_resurrecting_settled_child(
+    service, connected, scripted_model, runs_kit, settled, caplog
+):
+    from a13n_service.infra import outbox
+    from a13n_service.runs.environments.desktop.delivery import handbacks
+    from a13n_service.runs.tables import RunRow
+
+    from .test_runs_children import _child_run
+
+    first, environment_id, actor, *_ = connected
+    response = await service.client.post(f"{service.api}/runs/{first['run']['id']}/interrupt")
+    assert response.status_code == 200, response.text
+    from .conftest import add_agent
+
+    worker = await add_agent(
+        service, "worker", "scripted", instructions="Role: worker", toolsets={"computer": {"enabled": True}}
+    )
+    coordinator = await add_agent(
+        service,
+        "coordinator",
+        "scripted",
+        instructions="Role: coordinator",
+        subagent_mode="async",
+        subagents={
+            "helper": {"agent_id": worker["id"], "description": "Desktop work", "environment": {"mode": "shared"}}
+        },
+    )
+    scripted_model.call(
+        "delegate", {"subagent_name": "helper", "prompt": "Use the desktop"}, call_id="spawn", to="Role: coordinator"
+    )
+    scripted_model.say("Delegated", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(
+        service,
+        coordinator,
+        "Delegate the desktop work",
+        environments=[
+            {
+                "name": "workspace",
+                "environment_id": environment_id,
+                "permission_ceiling": {"operations": ["environment.computer.observe"]},
+            }
+        ],
+    )
+    await (await runs_kit.attempt(service))
+    child = await _child_run(service, submitted["run"]["id"])
+    while not scripted_model.requests.empty():
+        await scripted_model.request()
+    human = await begin(service, connected)
+    gate = asyncio.Event()
+    scripted_model.call("computer_observe", {}, call_id="child-blocked", to="Role: worker")
+    scripted_model.call("tool_execution_info", {}, call_id="child-info", gate=gate, to="Role: worker")
+    scripted_model.say("Other work finished", to="Role: worker")
+    scripted_model.say("Handback received", to="Role: worker")
+    running = await runs_kit.attempt(service)
+    try:
+        await asyncio.wait_for(scripted_model.request(), 10)
+        blocked = await asyncio.wait_for(scripted_model.request(), 10)
+        assert "human control" in str(blocked["messages"])
+        if settled:
+            gate.set()
+            await asyncio.wait_for(running, 15)
+            assert (await runs_kit.get_run(service, child.id))["status"] == "completed"
+        await control.handback(
+            service.runtime,
+            actor,
+            service.tenant.workspace_id,
+            environment_id,
+            if_match=etag(human.id, human.version),
+        )
+        (notice,) = await outbox.claim(
+            service.runtime.storage, "desktop_handback", owner="child-test", limit=10, lease_seconds=60, max_attempts=12
+        )
+        await handbacks(service.runtime)(notice)
+        entries = [
+            entry for entry in await runs_kit.inbox(service, child.thread_id) if entry["kind"] == "desktop_handback"
+        ]
+        assert len(entries) == (0 if settled else 1)
+        gate.set()
+        await asyncio.wait_for(running, 15)
+        finished = await runs_kit.get_run(service, child.id)
+        assert finished["status"] == "completed", json.dumps(
+            [record.exception_details for record in caplog.records if record.getMessage() == "Attempt failed"],
+            indent=2,
+        )
+        if not settled:
+            (entry,) = [
+                entry for entry in await runs_kit.inbox(service, child.thread_id) if entry["kind"] == "desktop_handback"
+            ]
+            assert entry["status"] == "consumed" and entry["assigned_run_id"] == child.id
+            requests = [await scripted_model.request() for _ in range(scripted_model.requests.qsize())]
+            assert any("Human control ended for desktop on mount" in str(item["messages"]) for item in requests)
+        assert (await runs_kit.get_thread(service, child.thread_id))["current_run_id"] is None
+        async with transaction(service.runtime.storage) as session:
+            assert len(list(await session.scalars(select(RunRow).where(RunRow.thread_id == child.thread_id)))) == 1
+            (registration,) = list(await session.scalars(select(DesktopBlockedRow)))
+            assert registration.thread_id == child.thread_id
+            assert registration.suppressed is settled
+    finally:
+        gate.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)

@@ -21,8 +21,6 @@ from a13n_service.runs.environments.adapters import provider_identity
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 
-from ..test_desktop_assistance import control, post
-from ..test_desktop_takeover import open_desktop
 from .desktop_access_rfb import RFB
 
 pytestmark = [
@@ -93,6 +91,7 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
         agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
         scripted_model.call("computer_observe", {}, call_id="observe_before")
         scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
+        scripted_model.say("I can continue other work while the desktop is controlled.")
         first = await runs_kit.start_thread(
             service,
             agent,
@@ -113,34 +112,54 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
         items = await runs_kit.items(service, first["run"]["id"])
         observed = next(item for item in items["items"] if item["content"].get("toolCallId") == "observe_before")
         assert observed["content"]["tool_images"]
-        view = await open_desktop(service, first["run"])
-        assert (await post(service, view, "control", control(view))).status_code == 409
-        requested = await post(service, view, "request-control", {})
+        root = f"{service.api}/environments/{environment_id}"
+        current = await service.client.get(root + "/desktop-control")
+        requested = await service.client.post(
+            root + "/desktop-control/takeover",
+            json={"thread_id": first["run"]["thread_id"]},
+            headers={"If-Match": current.headers["etag"]},
+        )
         assert requested.status_code == 200, requested.text
-        assert requested.json()["state"] == "preparing"
+        assert requested.json()["control"] == "human"
         gate.set()
         await asyncio.wait_for(running, 120)
         run = await runs_kit.get_run(service, first["run"]["id"])
-        assert run["status"] == "waiting" and run["wait_reason"] == "desktop_control", run.get("failure")
-        claimed = await post(service, view, "control", control(view))
-        assert claimed.status_code == 200
+        assert run["status"] == "completed", run.get("failure")
+        claimed = await service.client.post(root + "/desktop-viewer", json={"mode": "control"})
+        assert claimed.status_code == 200, claimed.text
         access = claimed.json()
-        view = access["assistance"]
         controller = await asyncio.to_thread(RFB, access["websocket_url"], access["password"])
         assert (await asyncio.to_thread(controller.frame))["pixel_bytes"] > 0
         await asyncio.to_thread(controller.pointer, 300, 300)
-        completed = await post(service, view, "complete", control(view))
-        assert completed.status_code == 200, completed.text
-        assert await asyncio.to_thread(controller.closed)
-        resumed = await service.client.post(
-            f"{service.api}/runs/{run['id']}/resume", json={"calls": {}, "approvals": {}}, headers=runs_kit.fresh_key()
+        current = await service.client.get(root + "/desktop-control")
+        completed = await service.client.post(
+            root + "/desktop-control/handback",
+            headers={"If-Match": current.headers["etag"]},
         )
-        assert resumed.status_code == 201, resumed.text
+        assert completed.status_code == 200, completed.text
+        assert completed.json()["control"] == "automation"
+        assert await asyncio.to_thread(controller.closed)
+        from a13n_service.infra import outbox
+        from a13n_service.runs.environments.desktop.delivery import handbacks
+        from a13n_service.runs.tables import ThreadRow
+
+        (notice,) = await outbox.claim(
+            service.runtime.storage,
+            "desktop_handback",
+            owner="live-test",
+            limit=1,
+            lease_seconds=60,
+            max_attempts=12,
+        )
+        await handbacks(service.runtime)(notice)
+        async with transaction(service.runtime.storage) as session:
+            thread = await session.get_one(ThreadRow, run["thread_id"])
+            successor_id = thread.current_run_id
         scripted_model.call("computer_observe", {}, call_id="observe_after")
         scripted_model.say("The desktop was observed again after the user returned control.")
         running = await runs_kit.attempt(service, runtime=attempt_runtime)
         await asyncio.wait_for(running, 180)
-        successor = await runs_kit.get_run(service, resumed.json()["id"])
+        successor = await runs_kit.get_run(service, successor_id)
         assert successor["status"] == "completed", successor.get("failure")
         items = await runs_kit.items(service, successor["id"])
         observed = next(item for item in items["items"] if item["content"].get("toolCallId") == "observe_after")
@@ -149,7 +168,7 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
             json.dumps(
                 {
                     "real_envd_observation": True,
-                    "safe_pause": True,
+                    "computer_only_block_without_pause": True,
                     "real_rfb_control": True,
                     "revocation_disconnect": True,
                     "successor_reobserved_and_completed": True,

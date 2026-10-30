@@ -165,6 +165,7 @@
         },
         "browser_control_max_seconds": {
           "default": 3600,
+          "maximum": 31536000,
           "minimum": 1,
           "title": "Browser Control Max Seconds",
           "type": "integer"
@@ -180,6 +181,32 @@
           "maximum": 604800,
           "minimum": 60,
           "title": "Browser Notice Seconds",
+          "type": "integer"
+        },
+        "desktop_control_min_seconds": {
+          "default": 60,
+          "minimum": 1,
+          "title": "Desktop Control Min Seconds",
+          "type": "integer"
+        },
+        "desktop_control_max_seconds": {
+          "default": 3600,
+          "maximum": 31536000,
+          "minimum": 1,
+          "title": "Desktop Control Max Seconds",
+          "type": "integer"
+        },
+        "desktop_control_seconds": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Desktop Control Seconds",
+          "type": "integer"
+        },
+        "desktop_notice_seconds": {
+          "default": 86400,
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Desktop Notice Seconds",
           "type": "integer"
         },
         "subscriptions": {
@@ -1146,6 +1173,7 @@
         "child_result",
         "tool_result",
         "browser_handback",
+        "desktop_handback",
         "email",
         "memory_purge",
         "checkpoint_cleanup"

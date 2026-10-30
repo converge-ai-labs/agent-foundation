@@ -16,7 +16,6 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.runs.desktop_assistance.admission import admit_mounts
 from a13n_service.runs.environments.lifecycle import require_usable_state, reserve
 from a13n_service.runs.environments.schemas import (
     DEFAULT_MOUNT_PERMISSIONS,
@@ -181,16 +180,13 @@ async def reserve_primary(
     await session.flush()
 
 
-async def freeze_mounts(
-    session: AsyncSession, thread: ThreadRow, *, principal_id: str, resume_run_id: str | None = None
-) -> list[dict]:
+async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_id: str) -> list[dict]:
     """The mount set a new run uses: the thread's desired mounts, each usable by the run's principal. The caller
     holds the thread lock; environments lock in ID order."""
     mounts = await desired_mounts(session, thread.id)
-    environments = await lock_environments(
+    await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
-    await admit_mounts(session, environments, resume_run_id=resume_run_id)
     return [
         EnvironmentMount(
             name=mount.name,
@@ -269,6 +265,9 @@ async def remove_mount(
         mount = await session.get(ThreadEnvironmentRow, (thread.id, name))
         if mount is None:
             raise not_found("mount", name)
+        from a13n_service.runs.environments.desktop.delivery import suppress
+
+        await suppress(session, thread.id, mount_name=name)
         await session.delete(mount)
         _audit(session, actor, thread, "delete", name, mount.environment_id)
         await refresh_version(session, thread)
@@ -295,7 +294,12 @@ async def update_mount(
         if mount is None:
             raise not_found("mount", name)
         await lock_environments(session, scope.workspace_id, [mount.environment_id], principal_id=actor.id)
-        mount.permission_ceiling = body.permission_ceiling.model_dump(mode="json")
+        ceiling = body.permission_ceiling.model_dump(mode="json")
+        if mount.permission_ceiling != ceiling:
+            from a13n_service.runs.environments.desktop.delivery import suppress
+
+            await suppress(session, thread.id, mount_name=name)
+        mount.permission_ceiling = ceiling
         await session.flush()
         _audit(
             session,

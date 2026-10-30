@@ -54,7 +54,7 @@ from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow, ToolExecutionRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ToolExecutionRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -89,11 +89,16 @@ _CERTAINTY: dict[EnvironmentProviderOutcomeCertainty, Certainty] = {
 def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
     """Whether the instance is in active use: an accepted or running run's frozen mounts name it, or a desktop
     context holds the reservation of its native target under any alias."""
-    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
+    from a13n_service.runs.environments.desktop.identity import TARGET_FIELDS
+    from a13n_service.runs.environments.desktop.tables import (
+        ComputerOperationRow,
+        DesktopBlockedRow,
+        DesktopControlRow,
+        DesktopViewerRow,
+    )
 
     held = aliased(EnvironmentRow)
     candidate = aliased(EnvironmentRow)
-    from a13n_service.runs.desktop_assistance.admission import TARGET_FIELDS
 
     same_target = (
         held.handle["state"]["provider_key"].astext == candidate.handle["state"]["provider_key"].astext
@@ -104,13 +109,31 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
             for provider, field in TARGET_FIELDS.items()
         )
     )
+    holds_desktop = (
+        exists().where(DesktopControlRow.environment_id == held.id, DesktopControlRow.control != "automation")
+        | exists().where(ComputerOperationRow.environment_id == held.id, ComputerOperationRow.settled_at.is_(None))
+        | exists().where(
+            DesktopViewerRow.environment_id == held.id, DesktopViewerRow.expires_at > func.clock_timestamp()
+        )
+        # Keep the target until delivery/incorporation resolves eligibility or TTL.
+        | exists().where(
+            DesktopBlockedRow.mount["environment_id"].astext == held.id,
+            DesktopBlockedRow.suppressed.is_(False),
+            DesktopBlockedRow.expires_at > func.clock_timestamp(),
+            or_(
+                DesktopBlockedRow.entry_id.is_(None),
+                exists().where(
+                    InboxEntryRow.id == DesktopBlockedRow.entry_id,
+                    InboxEntryRow.status.in_(["pending", "assigned"]),
+                ),
+            ),
+        )
+    )
     held_target = exists(
-        select(DesktopAssistanceRow.id)
-        .join(DesktopTargetRow, DesktopTargetRow.holder_id == DesktopAssistanceRow.id)
-        .join(held, held.id == DesktopAssistanceRow.environment_id)
+        select(held.id)
         .join(candidate, same_target)
-        .where(candidate.id == environment_id)
-        .correlate_except(DesktopAssistanceRow, DesktopTargetRow, held, candidate)
+        .where(candidate.id == environment_id, holds_desktop)
+        .correlate_except(held, candidate)
     )
     return (
         exists().where(

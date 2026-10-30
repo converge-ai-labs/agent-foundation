@@ -77,7 +77,7 @@ make image-check-sandbox-desktop
 
 Root 桌面启动器监督以 `sandbox` 身份运行的 Xvfb/Openbox，创建 Xauthority cookie 并关闭 X11 TCP 监听。必需的桌面进程退出会让容器失败。X11 支持按键事件，尚不支持字面 Unicode `type_text`。
 
-人工访问需单独启用。设置 `desktop_assistance: true`，并提供浏览器可访问、路由到容器 6081 端口的 `desktop_viewer_url`。Service 开启镜像的 `A13N_DESKTOP_ACCESS` supervisor；运维者提供 viewer 路由和 TLS。权限和交还控制的流程见[桌面协助](../a13n-service/environments.md#agent-requested-desktop-assistance)。
+人工访问需单独启用。设置 `desktop_assistance: true`，并提供浏览器可访问、路由到容器 6081 端口的 `desktop_viewer_url`。Service 开启镜像的 `A13N_DESKTOP_ACCESS` supervisor；运维者提供 viewer 路由和 TLS。权限和交还控制的流程见[桌面控制](../a13n-service/environments.md#desktop-access-prerequisites)。
 
 ## 配合 Host 运行
 

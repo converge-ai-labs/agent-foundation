@@ -323,12 +323,23 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
     from a13n_harness.environment.models import EnvironmentAction
     from a13n_harness.tool_execution import execution_cleanup
     from a13n_service.runs.attempts import AuthorityRevoked, LeaseLost
-    from a13n_service.runs.desktop_assistance.admission import operation as guard
+    from a13n_service.runs.environments.execution import Source
+    from a13n_service.runs.schemas import EnvironmentMount
     from a13n_service.runs.tables import ToolExecutionRow
 
     from .test_platform_tools import set_role
 
     _, lease = await _origin(service, scripted_model, runs_kit)
+    source = Source(
+        runtime=service.runtime,
+        lease=lease,
+        principal=None,
+        authority=None,
+        mount=EnvironmentMount(name="workspace", environment_id="test-environment"),
+        descriptor=None,
+        provider_key="test",
+        state=None,
+    )
     entered, finish = asyncio.Event(), asyncio.Event()
 
     async def operation():
@@ -340,18 +351,14 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
                 EnvironmentAction.PROCESS_WAIT,
                 EnvironmentAction.PROCESS_RELEASE,
             ):
-                async with guard(service.runtime, lease, "test-environment", None, action):
+                async with source.operation_guard(action):
                     pass
             with pytest.raises(AuthorityRevoked):
-                async with guard(service.runtime, lease, "test-environment", None, EnvironmentAction.PROCESS_START):
+                async with source.operation_guard(EnvironmentAction.PROCESS_START):
                     pytest.fail("revocation must still block new effects")
             with pytest.raises(LeaseLost):
-                async with guard(
-                    service.runtime,
-                    replace(lease, token="wrong-owner"),
-                    "test-environment",
-                    None,
-                    EnvironmentAction.PROCESS_KILL,
+                async with replace(source, lease=replace(lease, token="wrong-owner")).operation_guard(
+                    EnvironmentAction.PROCESS_KILL
                 ):
                     pytest.fail("cleanup must retain token fencing")
             async with transaction(service.runtime.storage) as session:
@@ -362,7 +369,7 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
                 set(),
             )
             with pytest.raises(LeaseLost):
-                async with guard(service.runtime, lease, "test-environment", None, EnvironmentAction.PROCESS_KILL):
+                async with source.operation_guard(EnvironmentAction.PROCESS_KILL):
                     pytest.fail("cleanup must retain expiry fencing")
             # Restore test ownership only so the invocation can publish its assertions.
             async with transaction(service.runtime.storage) as session:

@@ -141,7 +141,11 @@ class EIPComputerOperations:
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
             observation = request.observation
             if (observation.execution_id, observation.observed_generation) != (self._execution_id, self._generation):
-                raise EnvironmentError("Computer observation is stale", code="environment_stale_mount")
+                raise EnvironmentError(
+                    "Computer observation is stale",
+                    code="environment_stale_mount",
+                    details={"dispatch_stage": "pre_dispatch"},
+                )
         if isinstance(request, ComputerClick):
             result = await invoke(
                 client.computer_click(
@@ -178,8 +182,22 @@ class EIPComputerOperations:
                 )
             )
         elif isinstance(request, ComputerScroll):
-            if request.unit == "steps" and "steps" not in (await self.describe()).scroll_units:
-                raise EnvironmentError("Provider does not support step scrolling", code="environment_unsupported")
+            if request.unit == "steps":
+                try:
+                    description = await self.describe()
+                except EnvironmentError as error:
+                    raise EnvironmentError(
+                        "Could not check step scrolling support",
+                        code=error.code,
+                        retry_hint=error.retry_hint,
+                        details={**error.details, "dispatch_stage": "pre_dispatch"},
+                    ) from error
+                if "steps" not in description.scroll_units:
+                    raise EnvironmentError(
+                        "Provider does not support step scrolling",
+                        code="environment_unsupported",
+                        details={"dispatch_stage": "pre_dispatch"},
+                    )
             result = await invoke(
                 client.computer_scroll(
                     eip.ComputerScrollParams(
@@ -201,7 +219,11 @@ class EIPComputerOperations:
                 client.computer_press_keys(eip.ComputerPressKeysParams(context=context, keys=request.keys))
             )
         else:
-            raise EnvironmentError("Unsupported computer input", code="environment_request_invalid")
+            raise EnvironmentError(
+                "Unsupported computer input",
+                code="environment_request_invalid",
+                details={"dispatch_stage": "pre_dispatch"},
+            )
         return ComputerActionResult(
             receipt=convert_receipt(
                 result.receipt, session=self._session, execution_id=self._execution_id, generation=self._generation
