@@ -209,7 +209,7 @@ background_compaction:
   blocking_threshold: 0.95
 ```
 
-The ordinary trigger is 90% context occupancy. Background work requires verified spare capacity. At 95% counted input occupancy, the Run waits for existing work or compacts synchronously; output reserves can require an earlier wait. `blocking_threshold` accepts values greater than zero and at most one. Unknown/insufficient capacity selects synchronous work when none is running; background failure also falls back to synchronous work under current usage limits. Children compact synchronously.
+The ordinary trigger is 90% context occupancy, measured from the latest model response's usage. Below the 95% blocking line, the Run can continue while compaction runs. At or above that line, it waits for existing work or compacts synchronously if the trigger is reached. Neither native token counting nor explicit `max_tokens` is required. `blocking_threshold` accepts values greater than zero and at most one. Setting the trigger at or above the blocking line leaves no asynchronous interval: a 98% trigger waits until 98%, then selects synchronous compaction. Background failure falls back to synchronous work when the trigger is still reached, under current usage limits. Children compact synchronously.
 
 A completed summary is saved before use, then applied at a safe model boundary or restored by a later Run with its new input. Idle history is not rewritten merely because a summary finished. Restart restores completed results without replaying interrupted summary requests.
 

@@ -315,20 +315,22 @@ Implement the operator before adding the returned Capability to the builder:
 3. Save the ready result before notifying. Reconcile interrupted work after process loss rather than assuming a saved record recreates execution.
 4. Apply through an ordinary Run and retire the operation only after the resulting checkpoint commits.
 
-Harness summarizes a complete history prefix and retains later messages, including tool results and steering. Foreground progress requires native token counting, a known context window, and an explicit `max_tokens` output reserve. The default trigger remains 90%; counted input must stay strictly below the 95% blocking line, and the whole request must fit with its reserve. `blocking_threshold` accepts values above zero through one. Background mode defaults off; `background=True` enables its default policy.
+Harness summarizes a complete history prefix and retains later messages, including tool results and steering. Both thresholds use the latest model response's usage, as synchronous compaction does. Background progress requires neither native token counting nor an explicit `max_tokens`. The default trigger is 90%, and the default blocking line is 95%. `blocking_threshold` accepts values above zero through one. Background mode defaults off; `background=True` enables its default policy.
 
-| At a model boundary                                             | Action                                           |
-| --------------------------------------------------------------- | ------------------------------------------------ |
-| Trigger reached, no operation, verified headroom                | Submit background work and continue              |
-| Trigger reached, no operation, unknown or insufficient headroom | Compact synchronously                            |
-| Operation running, verified headroom                            | Continue                                         |
-| Operation running, unknown or insufficient headroom             | Wait for that operation                          |
-| Failed operation and compaction still needed                    | Try synchronous recovery                         |
-| Ready, applicable result                                        | Replace the matching prefix; preserve the suffix |
+The trigger gates new compaction. If you set the trigger to 98% and leave the blocking line at 95%, Harness continues until 98%, then compacts synchronously. There is no asynchronous interval. The same applies when the thresholds are equal. Without valid latest usage, Harness starts no proactive compaction. An absolute token trigger with no resolved window selects synchronous compaction when reached.
 
-Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and continues only with verified capacity, except that enabled context recovery allows one ordinary request after a native summary overflow to establish whether lossy reconstruction is needed. Each failed operation gets at most one bounded retry sequence per Run. A fitting replacement may proceed above the blocking line. A known oversized replacement fails instead of trimming recent work. Summary calls retain their usage and admission limits.
+| At a model boundary                                         | Action                                           |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| Trigger reached, no operation, usage below blocking line    | Submit background work and continue              |
+| Trigger reached, no operation, blocking line reached        | Compact synchronously                            |
+| Operation running, usage below blocking line or unavailable | Continue                                         |
+| Operation running, blocking line reached                    | Wait for that operation                          |
+| Failed operation and trigger reached                        | Try synchronous recovery                         |
+| Ready, applicable result                                    | Replace the matching prefix; preserve the suffix |
 
-If continuation is blocked, `compaction_capacity_unavailable` reports the attempt count and failure type, or explains that the request budget cannot cover a summary and the pending ordinary request. It preserves the original exception as its cause without including provider response bodies. Retry in a new Run for a transient failure; increase the request limit when the diagnostic identifies insufficient budget.
+Successful synchronous recovery marks the failed operation `skipped` for acknowledgement after checkpoint commit. Failed recovery preserves history and returns the original request, just like synchronous compaction. Each failed operation gets at most one bounded retry sequence per Run. Cancellation and Host refusal propagate. Summary calls retain their usage and admission limits.
+
+Latest usage is a lagging signal: new tool results and inputs can still exceed the provider's window. Ordinary model admission and context recovery handle native overflow. Applied summaries proceed to ordinary dispatch without rechecking pre-compaction or summary-generation usage; the next model response supplies fresh usage.
 
 When a result becomes ready between Runs, use this integration fragment. `executable`, `bindings`, `latest_state`, `result`, `state_store`, and `retire_operation` come from your Host; `committed_state` must be the State your checkpoint store actually selected and committed:
 

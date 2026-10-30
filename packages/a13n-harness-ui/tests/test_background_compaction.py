@@ -13,18 +13,22 @@ from a13n_harness_ui.storage.database import open_database, short_session, trans
 from a13n_harness_ui.storage.models import CompactionRecord
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.anyio
 
 
-def _input(operation_id: str = "compact-test") -> CompactionInput:
+def _input(operation_id: str = "compact-test", *, tokens: int = 0) -> CompactionInput:
     return CompactionInput.create(
         operation_id=operation_id,
         thread_id="thread_test",
         run_id="run-test",
         model_name="test",
         provider_name="function",
-        messages=[ModelRequest(parts=[UserPromptPart("old history")]), ModelResponse(parts=[TextPart("answer")])],
+        messages=[
+            ModelRequest(parts=[UserPromptPart("old history")]),
+            ModelResponse(parts=[TextPart("answer")], usage=RequestUsage(input_tokens=tokens)),
+        ],
         parameters=ModelRequestParameters(),
     )
 
@@ -274,10 +278,10 @@ async def test_concurrent_owners_admit_one_generation(tmp_path: Path) -> None:
         await asyncio.gather(*(owner.close() for owner in owners))
 
 
-@pytest.mark.parametrize("outcome", ["ready", "stale", "failed"])
+@pytest.mark.parametrize("outcome", ["ready", "stale", "failed", "failed_without_usage"])
 async def test_native_marker_prepares_settlement_without_consuming_result(tmp_path: Path, outcome: str) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder
-    from a13n_harness.capabilities.context import CompactionCapability
+    from a13n_harness.capabilities.context import CompactionCapability, CompactionPolicy
     from a13n_harness.compaction import compaction_disposition
     from pydantic_ai.models.function import FunctionModel
 
@@ -287,10 +291,10 @@ async def test_native_marker_prepares_settlement_without_consuming_result(tmp_pa
     async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
         repository = CompactionRepository(database.sessions)
         owner = BackgroundCompaction(repository, tmp_path)
-        input = _input()
+        input = _input("compaction-settlement", tokens=9000 if outcome == "failed" else 0)
 
         async def generate(input):
-            if outcome == "failed":
+            if outcome.startswith("failed"):
                 raise RuntimeError("background unavailable")
             return await _summary(input)
 
@@ -306,7 +310,9 @@ async def test_native_marker_prepares_settlement_without_consuming_result(tmp_pa
                 AgentSpec(),
                 output_type=str,
                 model=FunctionModel(stream_function=model),
-                capabilities=(CompactionCapability(background=True, operator=operator),),
+                capabilities=(
+                    CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator),
+                ),
             )
             .run(
                 "current input",
@@ -314,7 +320,14 @@ async def test_native_marker_prepares_settlement_without_consuming_result(tmp_pa
                 compaction_result=await owner.restore(state),
             )
         )
+        assert result.output_or_raise() == "done"
         assert result.state is not None
+        if outcome == "failed_without_usage":
+            assert await compaction_disposition(result.state, basis=input.basis) is None
+            assert await repository.settlement(result.state) is None
+            assert await repository.get(state.thread_id) == ready
+            await owner.close()
+            return
         assert await compaction_disposition(result.state, basis=input.basis) == (
             "applied" if outcome == "ready" else "skipped"
         )
