@@ -2134,3 +2134,6 @@ dl.detailGrid > .detailLongRow dd {
   margin: 0 auto 8px;
   flex-shrink: 0;
 }
+.conversationFeedback:empty {
+  display: none;
+}
