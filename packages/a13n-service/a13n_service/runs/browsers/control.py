@@ -163,7 +163,8 @@ async def return_control(session: AsyncSession, row: BrowserRow, current: dateti
             )
             return
     # Changing intent fences publication immediately; an active claim still owns its I/O window.
-    row.control_due_at = None
+    if row.control != "returning":
+        row.control_due_at = None
     row.control = "returning"
     row.viewer = None
 
@@ -249,7 +250,7 @@ async def controller_allowed(session: AsyncSession, runtime: Runtime, row: Brows
     return True
 
 
-async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> None:
+async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str, lease: datetime | None = None) -> None:
     claim = new_object_id("bclaim")
     async with transaction(runtime.storage) as session:
         row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
@@ -279,6 +280,15 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                 ):
                     return
         if row.status != "ready" or row.control == "automation":
+            return
+        # Only the dispatcher that leased an already-due retry may bypass its reservation.
+        if (
+            row.control == "returning"
+            and row.failure == "browser_viewer_revoke_failed"
+            and row.control_due_at is not None
+            and row.control_due_at > current
+            and row.control_due_at != lease
+        ):
             return
         if row.claim_until is not None and row.claim_until > current:
             return
@@ -383,6 +393,7 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                 row.control_due_at = current
             return
         if failure is not None:
+            row.control_due_at = current + timedelta(seconds=runtime.settings.providers.operation_scan_seconds)
             return
         row.viewer_revoked = True
         if row.human_baseline is not None and row.controller_thread_id is not None:

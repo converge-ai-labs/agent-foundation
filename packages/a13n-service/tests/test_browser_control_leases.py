@@ -290,6 +290,9 @@ async def test_long_control_registration_starts_notice_ttl_only_after_verified_r
         registration = (await session.scalars(select(BrowserBlockedRow))).one()
         assert registration.expires_at is None and not registration.suppressed
     supplier.fail_revoke = False
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.control_due_at = await now(session)
     await control.reconcile(replica(), browser["workspace_id"], browser["id"])
     async with transaction(service.runtime.storage) as session:
         registration = (await session.scalars(select(BrowserBlockedRow))).one()
@@ -537,7 +540,7 @@ async def test_background_dispatcher_progresses_with_sixteen_slow_items(service,
     seen = []
     slow = {item["id"] for item in [browser, *others[:15]]}
 
-    async def reconcile(runtime, workspace_id, browser_id):
+    async def reconcile(runtime, workspace_id, browser_id, lease):
         seen.append(browser_id)
         if browser_id in slow:
             if slow.issubset(seen):
@@ -721,7 +724,7 @@ async def test_background_due_precedes_fresh_null_work(service, runs_kit, monkey
     seen = []
     done = asyncio.Event()
 
-    async def reconcile(runtime, workspace_id, browser_id):
+    async def reconcile(runtime, workspace_id, browser_id, lease):
         seen.append(browser_id)
         done.set()
 
@@ -765,3 +768,51 @@ async def test_dispatcher_shutdown_cancels_owned_work_and_stops_admission(servic
     await dispatcher()
     assert not dispatcher.inflight
     assert (await read(service.runtime, browser)).control_due_at > datetime.now(UTC)
+
+
+@pytest.mark.parametrize("release", [False, True])
+async def test_failed_revoke_cools_down_all_reconcile_paths(
+    service, runs_kit, scripted_model, replica, monkeypatch, release
+):
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.execute import execute
+
+    supplier, browser = await setup(service, runs_kit)
+    run, _ = await bound_run(service, runs_kit, scripted_model, browser)
+    await command(service, runs_kit, browser["id"], "takeover", thread_id=run.thread_id)
+    scripted_model.say("Done")
+    await execute(service.runtime, run, AttemptControl())
+    calls = 0
+    original = supplier.revoke_viewer
+
+    async def revoke(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise TimeoutError("revoke failed")
+        return await original(*args)
+
+    monkeypatch.setattr(supplier, "revoke_viewer", revoke)
+    assert (await command(service, runs_kit, browser["id"], "handback"))["control"] == "returning"
+    row = await read(service.runtime, browser)
+    due = row.control_due_at
+    assert row.claim_id is None and due > datetime.now(UTC) + timedelta(seconds=20)
+    await control.reconcile(replica(), browser["workspace_id"], browser["id"])
+    await command(service, runs_kit, browser["id"], "handback")
+    dispatcher = maintenance.ControlMaintenance(replica())
+    await dispatcher()
+    await asyncio.gather(*dispatcher.inflight)
+    assert calls == 1 and (await read(service.runtime, browser)).control_due_at == due
+    if release:
+        path = f"{service.api}/browsers/{browser['id']}"
+        current = (await service.client.get(path)).json()
+        response = await service.client.post(f"{path}/release", headers=runs_kit.if_match(current))
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] in {"deleting", "deleted"}
+    else:
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(BrowserRow, browser["id"])
+            row.control_due_at = await now(session) - timedelta(seconds=1)
+        await dispatcher()
+        await asyncio.gather(*dispatcher.inflight)
+        assert calls == 2 and (await read(service.runtime, browser)).control == "automation"

@@ -223,7 +223,8 @@ class Control(Section):
     inbox_bytes: int = Field(default=2097152, ge=1024, le=16777216)
     # Browser-wide control intent includes draining; applications renew while human input is needed.
     browser_control_min_seconds: int = Field(default=60, ge=1)
-    browser_control_max_seconds: int = Field(default=3600, ge=1)
+    # Match the one-year bound used for other long-lived service durations.
+    browser_control_max_seconds: int = Field(default=3600, ge=1, le=31536000)
     browser_control_seconds: int = Field(default=300, ge=1)
     # Starts only when viewer revocation and inventory synchronization complete successfully.
     browser_notice_seconds: int = Field(default=86400, ge=60, le=604800)

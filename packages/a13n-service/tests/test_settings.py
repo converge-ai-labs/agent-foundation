@@ -267,3 +267,15 @@ def test_browser_control_policy_file_and_environment(tmp_path, monkeypatch, clea
     monkeypatch.setenv("A13N_CONTROL__BROWSER_CONTROL_SECONDS", "9001")
     with pytest.raises(ValueError, match=r"control\.browser_control_min_seconds"):
         load_settings(config)
+
+
+def test_browser_control_max_rejects_unrepresentable_durations(tmp_path, clean_environment):
+    config = tmp_path / "browser-limit.toml"
+    config.write_text("[control]\nbrowser_control_max_seconds = 31536000\n")
+    assert load_settings(config).control.browser_control_max_seconds == 31536000
+    config.write_text("[control]\nbrowser_control_max_seconds = 31536001\n")
+    with pytest.raises(ValueError, match="browser_control_max_seconds"):
+        load_settings(config)
+    config.write_text("[control]\nbrowser_control_max_seconds = 999999999999999999999\n")
+    with pytest.raises(ValueError, match="browser_control_max_seconds"):
+        load_settings(config)

@@ -92,7 +92,7 @@ class ControlMaintenance:
 
     async def _one(self, workspace_id: str, browser_id: str, generation: int, episode: int, lease) -> None:
         try:
-            await control.reconcile(self.runtime, workspace_id, browser_id)
+            await control.reconcile(self.runtime, workspace_id, browser_id, lease)
         except Exception as error:
             logger.warning(
                 "Browser control maintenance failed",
