@@ -49,6 +49,7 @@ class Browser(BaseModel):
     control: ControlStatus
     generation: int
     episode: int
+    control_expires_at: datetime | None
     idle_seconds: int | None
     expires_at: datetime | None
     failure: str | None
@@ -65,6 +66,14 @@ class BrowserPage(BaseModel):
 class Takeover(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     thread_id: ObjectId
+    lease_seconds: int | None = Field(default=None, ge=60, le=3600)
+
+
+class RenewControl(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    generation: int = Field(ge=1)
+    episode: int = Field(ge=1)
+    lease_seconds: int | None = Field(default=None, ge=60, le=3600)
 
 
 class Viewer(BaseModel):

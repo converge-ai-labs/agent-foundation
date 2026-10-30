@@ -33,6 +33,7 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Browse
     current = await now(session)
     if (
         registration.suppressed
+        or registration.expires_at is None
         or registration.expires_at <= current
         or row is None
         or row.status != "ready"

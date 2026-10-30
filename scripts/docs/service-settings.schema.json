@@ -157,6 +157,20 @@
           "title": "Inbox Bytes",
           "type": "integer"
         },
+        "browser_control_seconds": {
+          "default": 300,
+          "maximum": 3600,
+          "minimum": 60,
+          "title": "Browser Control Seconds",
+          "type": "integer"
+        },
+        "browser_notice_seconds": {
+          "default": 86400,
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Browser Notice Seconds",
+          "type": "integer"
+        },
         "subscriptions": {
           "default": 32,
           "maximum": 1000,
@@ -1120,6 +1134,7 @@
         "webhook",
         "child_result",
         "tool_result",
+        "browser_handback",
         "email",
         "memory_purge",
         "checkpoint_cleanup"

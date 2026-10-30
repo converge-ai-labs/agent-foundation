@@ -104,13 +104,14 @@ Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service �
 
 ## 接管并归还控制权
 
-对于支持 viewer 的托管资源，接入应用通过直接 HTTP 调用实现下列流程。接管、归还和交互视图访问不进入 MCP 发现。
+对于支持 viewer 的托管资源，接入应用通过直接 HTTP 调用实现下列流程。接管、续期、归还和交互视图访问不进入 MCP 发现。
 
-1. 读取浏览器的当前 ETag，带 `If-Match` 和 `{"thread_id": "<bound-thread-id>"}` 调用 `POST /api/v1/browsers/{id}/takeover`。
+1. 读取浏览器的当前 ETag，带 `If-Match` 和 `{"thread_id": "<bound-thread-id>", "lease_seconds": 300}` 调用 `POST /api/v1/browsers/{id}/takeover`。 控制租约从 Service 关闭准入时开始计时，包含 draining 阶段。
 2. 查询浏览器，直到 `control` 变为 `human`。`draining` 表示 Service 已关闭浏览器工具准入，正在等待此前获准的工作结束。结果未知的调用不会因超时被当作成功完成。
 3. 以控制方主体调用 `POST /api/v1/browsers/{id}/viewer`。返回的 URL 是敏感信息，请遵守有效期和响应的 `no-store` 策略。
-4. 完成人工操作后，读取新的 ETag，带 `If-Match` 调用 `POST /api/v1/browsers/{id}/handback`。
-5. 等待 `control: "automation"`。Service 会先撤销交互视图输入、同步精确标签页并使旧引用失效，再开放工具。
+4. 应用认为用户仍在操作时，向 `POST /api/v1/browsers/{id}/renew` 发送响应中的 `generation`、`episode` 和可选的 `lease_seconds`。在 `control_expires_at` 前续期，包括 draining 阶段。续期不需要 `If-Match`。控制方必须仍有浏览器权限和工作区 `run` 权限。
+5. 完成人工操作后，读取新的 ETag，带 `If-Match` 调用 `POST /api/v1/browsers/{id}/handback`。
+6. 等待 `control: "automation"`。Service 会先撤销交互视图输入、同步精确标签页并使旧引用失效，再开放工具。
 
 如果接管仍停留在 `draining`，且能够确认尚未分派任何 viewer grant，可在活跃 claim 结束后通过归还取消意图。取消会抑制待处理的归还通知，不会宣称浏览器已可用。结果未知的调用仍阻止工具；借用者结束后，可显式释放资源标识。如果 viewer grant 可能已经发生，归还仍须正常撤销它。
 
@@ -118,4 +119,12 @@ Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service �
 
 归还只向实际发生过受阻调用的 thread 发送内部可用性通知。现有 inbox 和 run 边界决定何时纳入该通知。等待审批的 run 继续等待，失败或取消的 run 保留原有的显式继续规则。停止或归档 thread 会抑制其待处理通知。受阻或结果未知的操作绝不会自动重放。
 
-交互视图过期或 provider 被禁用会撤销视图访问，但不会自动将控制权交还自动化。请显式请求归还。撤销失败时，浏览器工具继续被阻止，直到清理成功。
+Service 默认控制租期为 300 秒。请求接受 60–3600 秒；省略 `lease_seconds` 时使用部署配置 `control.browser_control_seconds`。每次成功续期返回实际截止时间，取原截止时间与数据库当前时间加请求租期中的较晚者。较短的续期请求不会缩短控制时间。每个请求都是新的 keepalive，不是幂等键重放。响应丢失后先读取当前浏览器，只做有界重试，不要无限重试。过期或 returning 的周期不能复活；必须等待归还完成后重新接管。
+
+应用自行判断用户是否仍在操作。Service 不根据 viewer 打开状态或浏览器连接推断活动。应用停止续期后，控制租约到期，Service 按显式归还的安全流程收尾。Provider 被禁用、控制方失权、交互视图过期或无法维持输入授权也会触发归还。撤销或清点失败时，工具保持阻止，状态停留在 `returning`，直到清理成功。浏览器丢失不会产生可用性通知。
+
+应用续期只更新 PostgreSQL。Control 角色的维护流程会在 provider 的实际授权到期前，延长同一 viewer grant。Viewer URL 可能早于 `control_expires_at` 过期；必须同时遵守两个期限，并按需重新获取当前 viewer。Provider 的输入授权寿命不足以覆盖维护窗口时，Service 会安全归还，不承诺无限维持人工控制。Provider adapter 必须实现 `ensure_viewer(state, grant_id, *, expires_at)`，保证截止时间单调，以及撤销永久阻止重新授权，包括尚未完成的请求和现有输入连接。
+
+请求可到达任意 Service API 副本。PostgreSQL 行锁和数据库时间决定续期与到期、归还的先后。Control 副本持久认领 supplier 工作，在 I/O 期间释放事务，发布结果前重新检查 claim、generation、episode、阶段和截止时间。Claim 过期允许其他副本接续，不表示旧 supplier 调用已经停止。外部输入安全依赖 provider 对同一 grant 的单调保证和永久撤销屏障。不需要 sticky session 或进程本地计时器。
+
+受阻调用登记跟随当前控制周期，包括长时间 draining 和 returning，不会仅因过去 24 小时而过期。验证归还成功后，Service 在排入通知的同一事务中开始有限通知期限（`control.browser_notice_seconds`，默认 86400 秒）。投递和消费时重新验证当前权限、绑定和周期；重试不会重复创建通知。

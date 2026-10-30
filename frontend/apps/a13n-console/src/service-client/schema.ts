@@ -583,6 +583,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/browsers/{browser_id}/renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew Browser Control */
+    post: operations["renew_browser_control"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/browsers/{browser_id}/takeover": {
     parameters: {
       query?: never;
@@ -5695,6 +5712,8 @@ export interface components {
     /** Browser */
     Browser: {
       control: components["schemas"]["ControlStatus"];
+      /** Control Expires At */
+      control_expires_at: string | null;
       /**
        * Created At
        * Format: date-time
@@ -10373,6 +10392,15 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /** RenewControl */
+    RenewControl: {
+      /** Episode */
+      episode: number;
+      /** Generation */
+      generation: number;
+      /** Lease Seconds */
+      lease_seconds?: number | null;
+    };
     /** Request */
     Request: {
       /** Mount */
@@ -12055,6 +12083,8 @@ export interface components {
     };
     /** Takeover */
     Takeover: {
+      /** Lease Seconds */
+      lease_seconds?: number | null;
       /** Thread Id */
       thread_id: string;
     };
@@ -14376,6 +14406,37 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  renew_browser_control: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenewControl"];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {

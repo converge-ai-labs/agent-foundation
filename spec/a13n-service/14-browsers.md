@@ -8,7 +8,7 @@ A provider account, reserved Browser identity, live supplier allocation, borrowe
 
 ## Resource and binding
 
-A Browser stores its workspace, source, nullable provider, creation recipe, backend identity, lifecycle status, generation, control episode and retention policy. Managed sources require a provider; external sources have no provider account. Supplier handles, external connection material and viewer data are encrypted and excluded from ordinary resource representations. Public reads expose source, nullable provider ID, status, control, generation, episode, supplier expiry and a classified failure code.
+A Browser stores its workspace, source, nullable provider, creation recipe, backend identity, lifecycle status, generation, control episode and retention policy. Managed sources require a provider; external sources have no provider account. Supplier handles, external connection material and viewer data are encrypted and excluded from ordinary resource representations. Public reads expose source, nullable provider ID, status, control, generation, episode, control expiry, supplier expiry and a classified failure code.
 
 A Thread has at most one desired Browser binding:
 
@@ -80,18 +80,25 @@ Control is Browser-wide and gates every browser tool, including reads and waits.
 stateDiagram-v2
     automation --> draining: authorized takeover
     draining --> human: admitted work settled and viewer granted
-    human --> returning: explicit handback
+    draining --> returning: expiry/failure after possible viewer grant
+    human --> returning: handback, lease expiry or unavailable authority/viewer
     returning --> automation: viewer revoked and tabs synchronized
     draining --> automation: cancel before possible viewer grant
 ```
 
-Takeover closes admission durably before waiting for already-admitted calls. Known completion settles an operation; worker loss, unknown protocol outcome or failure to persist ownership leaves it unsettled. Lease expiry alone never proves the browser action stopped. No viewer input grant is published while such operations remain unresolved.
+Takeover closes admission durably before waiting for already-admitted calls. In the same transaction it starts a finite control lease, including time spent draining. Applications decide whether a person is active and renew while control is needed; Service infers no activity from viewer traffic. `lease_seconds` accepts 60–3600 seconds; omission uses `control.browser_control_seconds` (default 300). The API returns the actual `control_expires_at`.
 
-A blocked call returns immediately, identifies that no browser action executed and registers its Thread for handback. Repeated blocks coalesce per Browser generation, episode and Thread while the registration remains active, retaining the originating execution provenance. A new actual blocked call after suppression or expiry creates a fresh registration identity and provenance; earlier queued hints cannot refer to that new obligation. Requesting takeover alone does not register a recipient. The Agent is directed to continue unrelated work or finish without polling.
+Renewal requires the current controller, current `run` and provider authorization, and the exact generation and episode. It is valid only in unexpired `draining` or `human` control. Under the Browser row lock, database `clock_timestamp()` is read after lock acquisition and the deadline becomes `max(old_deadline, database_now + accepted_duration)`. Renewal neither adds duration to the old deadline, shortens it, revives an expired episode, nor reopens returning control. Generation and episode identify the control cycle; renewal requires no `If-Match`, because concurrent valid keepalives combine monotonically. Takeover and explicit handback retain their existing `If-Match` preconditions. Each accepted renew request is a new keepalive, not an `Idempotency-Key` replay; a transport retry may move the deadline from its later acceptance time. Clients read the current Browser after a lost response and use bounded retries within the same still-valid episode.
 
-Only the controlling principal obtains the sensitive viewer URL. Viewer expiry, provider disablement or lost controller authority triggers revocation, while control stays human until explicit handback. Revocation failure remains visible and keeps automation blocked. An authorized caller can hand back even when the controlling Thread is idle or has no tabs. While draining, handback can cancel intent only when no viewer grant could have been dispatched and no lifecycle/control claim is active. The durable pre-grant baseline and viewer must both be absent. Cancellation suppresses blocked registrations without a browser-available event; unknown operations keep admission closed, while explicit retirement can terminate the Browser identity without settling that history. Once a grant is possible, handback retains the revocation path.
+All API and control replicas arbitrate through PostgreSQL, without sticky sessions or an authoritative process-local timer. Expiry, explicit handback and loss of controller/provider authority enter the same safe return path. Renewal losing that row-lock race is refused. Maintenance on every control replica uses the existing bounded rotating sweep and Browser claim tokens. It commits claims before supplier I/O, then reacquires the row lock and checks claim identity and deadline, generation, episode, state and control deadline before publishing. An expired claim permits recovery, not proof that old supplier I/O stopped. Supplier idempotence, monotonic grant expiry and permanent revocation fencing remain necessary even when overlapping calls cannot publish stale database results.
 
-Handback first revokes every input connection for the grant, then synchronizes exact tab ownership and valid selections, invalidates references, and reopens automation. It stages recipient outbox intents in that transition's transaction. A later takeover advances the episode and suppresses unincorporated notices from earlier episodes.
+Known completion settles an operation; worker loss, unknown protocol outcome or failure to persist ownership leaves it unsettled. Lease expiry alone never proves the browser action stopped. No viewer input grant is published while such operations remain unresolved.
+
+A blocked call returns immediately, identifies that no browser action executed and registers its Thread for handback. Repeated blocks coalesce per Browser generation, episode and Thread while the registration remains active, retaining the originating execution provenance. A new actual blocked call after suppression creates a fresh registration identity and provenance; earlier queued hints cannot refer to that new obligation. Requesting takeover alone does not register a recipient. The Agent is directed to continue unrelated work or finish without polling.
+
+Only the controlling principal obtains the sensitive viewer URL, while both the control lease and supplier input grant are valid. Its exposed expiry is the earlier deadline. Supplier grant expiry covers actual input connections, not just a URL signature, and is independent of the Service control lease. Application renewal changes only PostgreSQL intent; maintenance calls `ensure_viewer` ahead of supplier expiry under the same grant identity. An adapter may return a shorter actual grant lifetime. If that lifetime cannot cover a bounded maintenance window, or expiry, renewal failure, provider disablement or lost controller authority makes input unavailable, Service safely returns control. Revocation failure remains visible in `returning` and keeps automation blocked. Expired sensitive viewer reads fail even before maintenance scans the row. An authorized caller can hand back even when the controlling Thread is idle or has no tabs. While draining, handback can cancel intent only when no viewer grant could have been dispatched and no lifecycle/control claim is active. The durable pre-grant baseline and viewer must both be absent. Cancellation suppresses blocked registrations without a browser-available event; unknown operations keep admission closed, while explicit retirement can terminate the Browser identity without settling that history. Once a grant is possible, handback retains the revocation path.
+
+Handback first revokes every input connection for the grant, then synchronizes exact tab ownership and valid selections, invalidates references, and reopens automation. Unsuppressed blocked registrations follow their current generation and episode throughout draining, human control and returning, without a pre-handback 24-hour timeout. Their null expiry denotes an active control-lifecycle obligation, not an independently immortal notification. Successful handback sets `control.browser_notice_seconds` (default 86400) of delivery/consumption TTL and stages outbox intents atomically. Renewal does not rewrite registrations. Cancel-before-grant suppresses them and resource loss invalidates them without an availability notice. A later takeover advances the episode and suppresses unincorporated notices from earlier episodes.
 
 ## Handback input and durable observation
 
@@ -109,16 +116,16 @@ Rejecting a notice preserves the same checkpoint cut's completed tools, inline c
 
 A deployment registers trusted Browser Provider definitions under kind `browser`. Each supplies account/credential schemas, a creation recipe schema, backend identity and a factory. `supports_viewer` defaults to false. The built-in distribution has no live Browser supplier; registered types are the deployment's inventory.
 
-| Operation                        | Required meaning                                                         |
-| -------------------------------- | ------------------------------------------------------------------------ |
-| `create(allocation_id, recipe)`  | Create under the stable Service allocation identity                      |
-| `inspect(allocation_id, state)`  | Find that allocation without creating, restarting or replacing it        |
-| `delete(allocation_id, state)`   | Idempotently confirm termination, including uncertain creation           |
-| `connect(state)`                 | Borrow a browser-level Chromium CDP connection; closing disconnects only |
-| `grant_viewer(state, grant_id)`  | Idempotently grant input under the exact durable grant identity          |
-| `revoke_viewer(state, grant_id)` | Revoke existing and pending input connections under that identity        |
+| Operation                                        | Required meaning                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------ |
+| `create(allocation_id, recipe)`                  | Create under the stable Service allocation identity                      |
+| `inspect(allocation_id, state)`                  | Find that allocation without creating, restarting or replacing it        |
+| `delete(allocation_id, state)`                   | Idempotently confirm termination, including uncertain creation           |
+| `connect(state)`                                 | Borrow a browser-level Chromium CDP connection; closing disconnects only |
+| `ensure_viewer(state, grant_id, expires_at=...)` | Create or extend the same input grant toward an absolute UTC deadline    |
+| `revoke_viewer(state, grant_id)`                 | Revoke existing and pending input connections under that identity        |
 
-Successful deletion fences late creation under the allocation identity. Successful revocation fences late grants under the grant identity. An adapter must establish those guarantees before advertising support; hiding a viewer button or merely rejecting new connections is insufficient. Errors distinguish not-dispatched, known and unknown outcomes and expose only classified codes. Protected state contains supplier connection details, never public metadata or model input.
+Successful deletion fences late creation under the allocation identity. `ensure_viewer` is the single initial-grant and renewal operation: retries and out-of-order requests never duplicate or shorten a grant, and may read back an expiry already extended by a newer request. It never grants beyond the greatest requested absolute deadline or reopens an expired or revoked identity. Service compares returned expiry with its current durable control deadline, not a stale request's deadline, and never replaces a newer viewer observation with an older one. Successful revocation fences late and pending ensures under the grant identity and revokes all existing input connections. An adapter must establish those guarantees before advertising support; hiding a viewer button or merely rejecting new connections is insufficient. Errors distinguish not-dispatched, known and unknown outcomes and expose only classified codes. Protected state contains supplier connection details, never public metadata or model input.
 
 Credential rotation retains backend identity. Backend/account identity changes fail closed for existing Browsers, including cleanup; restoring the original account configuration is required to manage the original allocation. Disabled accounts refuse new use while retaining authorized cleanup. Native browser file paths refer to the supplier host. Download inspection follows the same tab scope; upload currently refuses because no authorized provider transfer boundary is exposed. Browser and Environment filesystems are independent.
 
@@ -126,23 +133,26 @@ Credential rotation retains backend identity. Backend/account identity changes f
 
 All paths below are relative to `/api/v1` and use [API scope and preconditions](10-api.md).
 
-| Operation                             | Authority and result                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------- |
-| `POST /browsers`                      | Workspace `run`; reserve managed identity, optionally prepare                 |
-| `POST /browsers/attach`               | Workspace `run`; register external CDP identity, optionally verify            |
-| `GET /browsers`, `GET /browsers/{id}` | Workspace `read`; metadata only, no allocation; list omits deleted rows       |
-| `POST /browsers/{id}/prepare`         | Workspace `run`; converge on readiness                                        |
-| `POST /browsers/{id}/release`         | Workspace `write`, Browser `If-Match`; borrower-safe release                  |
-| `GET /threads/{id}/browser`           | Workspace `read`; desired binding or null                                     |
-| `PUT /threads/{id}/browser`           | Workspace `run`, Thread `If-Match`; set binding or detach with null           |
-| `POST /browsers/{id}/takeover`        | Authorized browser control, Browser `If-Match`; body names controlling Thread |
-| `POST /browsers/{id}/handback`        | Authorized browser control, Browser `If-Match`; explicit transition           |
-| `POST /browsers/{id}/viewer`          | Authorized controller; sensitive URL, expiry and episode with `no-store`      |
+| Operation                             | Authority and result                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `POST /browsers`                      | Workspace `run`; reserve managed identity, optionally prepare                                                    |
+| `POST /browsers/attach`               | Workspace `run`; register external CDP identity, optionally verify                                               |
+| `GET /browsers`, `GET /browsers/{id}` | Workspace `read`; metadata only, no allocation; list omits deleted rows                                          |
+| `POST /browsers/{id}/prepare`         | Workspace `run`; converge on readiness                                                                           |
+| `POST /browsers/{id}/release`         | Workspace `write`, Browser `If-Match`; borrower-safe release                                                     |
+| `GET /threads/{id}/browser`           | Workspace `read`; desired binding or null                                                                        |
+| `PUT /threads/{id}/browser`           | Workspace `run`, Thread `If-Match`; set binding or detach with null                                              |
+| `POST /browsers/{id}/takeover`        | Authorized browser control, Browser `If-Match`; body names controlling Thread                                    |
+| `POST /browsers/{id}/renew`           | Current controller with `run`; generation, episode and optional lease duration; DB-only keepalive, no `If-Match` |
+| `POST /browsers/{id}/handback`        | Authorized browser control, Browser `If-Match`; explicit transition                                              |
+| `POST /browsers/{id}/viewer`          | Authorized controller; sensitive URL, expiry and episode with `no-store`                                         |
 
-Metadata and lifecycle management routes have explicit external MCP admission. Takeover, handback and viewer access remain direct HTTP control operations. Browser resources have no internal platform-operation admission. Provider accounts use the existing resource CRUD and credential rules under `/browser-providers`.
+Metadata and lifecycle management routes have explicit external MCP admission. Takeover, renewal, handback and viewer access remain direct HTTP control operations. Browser resources have no internal platform-operation admission. Provider accounts use the existing resource CRUD and credential rules under `/browser-providers`.
 
 The control role reconciles bounded rotating batches for lifecycle, idle expiry, viewer revocation and control completion. Worker attempts borrow native clients; retained tool ownership keeps resources alive through late invocation completion. Existing outbox delivery and Thread advancement own notifications. No additional browser execution queue or Agent loop exists.
 
 ## Compatibility
+
+Renewable control adds a nullable control deadline and makes blocked-registration expiry nullable. Existing control episodes without a deadline fail closed into safe handback on reconciliation; they are not granted indefinite control. Deployments coordinate control/worker and viewer-adapter upgrades before enabling this contract. The provider interface uses `ensure_viewer` rather than a compatibility grant/renew pair.
 
 The schema change adds Browser provider/resource, binding, target ownership, selection, operation and blocked-registration tables, nullable frozen Run selection, and the new internal trigger/inbox/outbox kind. Existing Browser rows receive source `managed`; provider IDs become nullable only for external sources. Older workers cannot execute external sources, so the source extension requires coordinated control and worker rollout before attachment is enabled. Old Runs without a binding remain browser-free. Deployments update control and worker code together before enabling browser workloads; older readers cannot interpret the new closed-enum values. Application rollback or forward repair is preferred once Browser facts exist; schema downgrade refuses to erase those facts.

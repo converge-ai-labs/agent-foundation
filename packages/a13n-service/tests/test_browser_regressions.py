@@ -23,7 +23,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("cause", ["rebind", "stop", "expiry", "valid"])
-async def test_new_block_renews_only_inactive_registration(service, runs_kit, scripted_model, cause):
+async def test_new_block_replaces_only_suppressed_registration(service, runs_kit, scripted_model, cause):
     _, browser = await setup(service, runs_kit)
     agent = await runs_kit.create_agent(service, scripted_model)
     first, binding = await bound_run(service, runs_kit, scripted_model, browser, agent=agent)
@@ -69,9 +69,11 @@ async def test_new_block_renews_only_inactive_registration(service, runs_kit, sc
     async with transaction(service.runtime.storage) as session:
         registration = (await session.scalars(select(BrowserBlockedRow))).one()
         assert not registration.suppressed
-        assert registration.expires_at > datetime.now(UTC)
-        assert registration.run_id == (first.run_id if cause == "valid" else second.run_id)
-        assert (registration.id == old_id) == (cause == "valid")
+        # Active obligations follow the episode, even if a pre-upgrade finite TTL elapsed.
+        assert registration.expires_at is None or cause == "expiry"
+        original = cause in {"valid", "expiry"}
+        assert registration.run_id == (first.run_id if original else second.run_id)
+        assert (registration.id == old_id) == original
         registration_id = registration.id
     await command(service, runs_kit, browser["id"], "handback")
     (notice,) = await outbox.claim(

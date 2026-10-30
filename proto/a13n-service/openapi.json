@@ -2944,6 +2944,18 @@
           "control": {
             "$ref": "#/components/schemas/ControlStatus"
           },
+          "control_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Expires At"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3050,6 +3062,7 @@
           "control",
           "generation",
           "episode",
+          "control_expires_at",
           "idle_seconds",
           "expires_at",
           "failure",
@@ -16703,6 +16716,40 @@
         ],
         "type": "string"
       },
+      "RenewControl": {
+        "additionalProperties": false,
+        "properties": {
+          "episode": {
+            "minimum": 1.0,
+            "title": "Episode",
+            "type": "integer"
+          },
+          "generation": {
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "lease_seconds": {
+            "anyOf": [
+              {
+                "maximum": 3600.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Seconds"
+          }
+        },
+        "required": [
+          "generation",
+          "episode"
+        ],
+        "title": "RenewControl",
+        "type": "object"
+      },
       "Request": {
         "additionalProperties": false,
         "properties": {
@@ -21883,6 +21930,19 @@
       "Takeover": {
         "additionalProperties": false,
         "properties": {
+          "lease_seconds": {
+            "anyOf": [
+              {
+                "maximum": 3600.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Seconds"
+          },
           "thread_id": {
             "maxLength": 41,
             "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
@@ -28144,6 +28204,84 @@
           "browsers"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/browsers/{browser_id}/renew": {
+      "post": {
+        "operationId": "renew_browser_control",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "browser_id",
+            "required": true,
+            "schema": {
+              "title": "Browser Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewControl"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Browser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Renew Browser Control",
+        "tags": [
+          "browsers"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/browsers/{browser_id}/takeover": {

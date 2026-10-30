@@ -2,7 +2,7 @@
 
 [Schedule management](13-schedules.md#management-api) adds HTTP configuration, preview, status and paginated trigger history. These routes intentionally have no MCP admission.
 
-[Browsers](14-browsers.md#api-and-runtime) adds Browser lifecycle, desired Thread binding and human-control APIs. Metadata and lifecycle management have external MCP admission; takeover, handback and viewer access remain direct HTTP operations.
+[Browsers](14-browsers.md#api-and-runtime) adds Browser lifecycle, desired Thread binding and human-control APIs. Metadata and lifecycle management have external MCP admission; takeover, renewal, handback and viewer access remain direct HTTP operations. Renewal requires explicit generation and episode as control-cycle identity preconditions, not `If-Match`; its row-locked monotonic extension does not overwrite a representation. Each accepted renewal is a new keepalive, not keyed replay. Takeover and handback retain their Browser `If-Match` requirements.
 
 ## Design position
 

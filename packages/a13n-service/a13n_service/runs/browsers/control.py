@@ -1,6 +1,6 @@
 """Browser-wide human control, with durable gates before any supplier input grant."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import anyio
 from sqlalchemy import select, update
@@ -16,7 +16,7 @@ from a13n_service.providers.browser.definition import BrowserProvider, ViewerGra
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import BrowserProviderRow
 from a13n_service.runs.browsers import lifecycle, service
-from a13n_service.runs.browsers.schemas import Browser, Takeover, Viewer
+from a13n_service.runs.browsers.schemas import Browser, RenewControl, Takeover, Viewer
 from a13n_service.runs.browsers.tables import (
     BrowserBlockedRow,
     BrowserRow,
@@ -56,6 +56,9 @@ async def takeover(
             raise conflict("browser", row.id, "browser_viewer_unsupported")
         if row.control != "automation":
             raise conflict("browser", row.id, "browser_control_pending")
+        row.control_expires_at = await now(session) + timedelta(
+            seconds=body.lease_seconds or runtime.settings.control.browser_control_seconds
+        )
         row.control = "draining"
         row.episode += 1
         row.controller_id, row.controller_thread_id = actor.id, thread.id
@@ -88,23 +91,87 @@ async def handback(
         require_viewer(row)
         if row.control == "automation":
             return Browser.model_validate(row)
-        # The baseline is persisted under the claim/control fence before grant dispatch.
-        # Cancel only an unclaimed intent that cannot have granted input, even if ready.
-        if row.control == "draining" and row.human_baseline is None and row.viewer is None:
-            if row.claim_until is not None and row.claim_until > await now(session):
-                raise conflict("browser", browser_id, "browser_operation_pending")
+        await return_control(session, row, await now(session), explicit=True)
+        service.audit(session, actor, row, "handback")
+    await reconcile(runtime, workspace_id, browser_id)
+    return await service.get(runtime, actor, workspace_id, browser_id)
+
+
+async def renew(runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str, body: RenewControl) -> Browser:
+    """Each accepted keepalive extends from database time, never from the old deadline."""
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
+        lifecycle.usable(row)
+        require_viewer(row)
+        await lifecycle.authorize_use(session, actor, row, scope)
+        current = await now(session)
+        if (
+            row.generation != body.generation
+            or row.episode != body.episode
+            or row.controller_id != actor.id
+            or row.control not in {"draining", "human"}
+        ):
+            raise conflict("browser", browser_id, "browser_control_changed")
+        if row.control_expires_at is None or row.control_expires_at <= current:
+            raise conflict("browser", browser_id, "browser_control_expired")
+        if (row.expires_at is not None and row.expires_at <= current) or not await controller_allowed(
+            session, runtime, row
+        ):
+            raise conflict("browser", browser_id, "browser_control_unavailable")
+        if row.control == "human":
+            grant = Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer)) if row.viewer else None
+            if grant is None or grant.expires_at <= current:
+                raise conflict("browser", browser_id, "browser_viewer_expired")
+        row.control_expires_at = max(
+            row.control_expires_at,
+            current + timedelta(seconds=body.lease_seconds or runtime.settings.control.browser_control_seconds),
+        )
+        await session.flush()
+        result = Browser.model_validate(row)
+    return result
+
+
+async def return_control(session: AsyncSession, row: BrowserRow, current: datetime, *, explicit: bool = False) -> None:
+    """Shared manual/expiry intent; only a proven pre-grant cancellation avoids revocation."""
+    active_claim = row.claim_until is not None and row.claim_until > current
+    if row.control == "draining" and row.human_baseline is None and row.viewer is None:
+        if active_claim and explicit:
+            raise conflict("browser", row.id, "browser_operation_pending")
+        if not active_claim:
             row.control = "automation"
+            row.control_expires_at = None
             row.viewer_id = row.controller_id = row.controller_thread_id = None
+            row.claim_id = row.claim_until = None
             row.observation_epoch += 1
             await session.execute(
                 update(BrowserBlockedRow).where(BrowserBlockedRow.browser_id == row.id).values(suppressed=True)
             )
-        else:
-            # Cleanup remains available even when the provider account has been disabled.
-            row.control = "returning"
-        service.audit(session, actor, row, "handback")
-    await reconcile(runtime, workspace_id, browser_id)
-    return await service.get(runtime, actor, workspace_id, browser_id)
+            return
+    # Changing intent fences publication immediately; an active claim still owns its I/O window.
+    row.control = "returning"
+    row.viewer = None
+
+
+def owns_claim(row: BrowserRow, claim: str, generation: int, episode: int, phase: str, current: datetime) -> bool:
+    return (
+        row.claim_id == claim
+        and row.claim_until is not None
+        and row.claim_until > current
+        and row.generation == generation
+        and row.episode == episode
+        and row.status == "ready"
+        and row.control == phase
+    )
+
+
+def renewal_window(runtime: Runtime) -> timedelta:
+    # A bounded supplier call and a nominal sweep interval; backlog can still force safe handback.
+    return timedelta(
+        seconds=2 * runtime.settings.providers.operation_seconds
+        + 10
+        + runtime.settings.providers.operation_scan_seconds
+    )
 
 
 async def viewer(runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str) -> Viewer:
@@ -117,10 +184,19 @@ async def viewer(runtime: Runtime, actor: Principal, workspace_id: str, browser_
         if row.expires_at is not None and row.expires_at <= await now(session):
             raise conflict("browser", row.id, "browser_expired")
         await resolve_provider(session, actor, BrowserProviderRow, scope, row.provider_id)
-        if row.control != "human" or row.controller_id != actor.id or row.viewer is None:
+        current = await now(session)
+        if (
+            row.control != "human"
+            or row.controller_id != actor.id
+            or row.viewer is None
+            or row.control_expires_at is None
+            or row.control_expires_at <= current
+            or not await controller_allowed(session, runtime, row)
+        ):
             raise conflict("browser", row.id, "browser_viewer_unavailable")
         value = Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer))
-        if value.expires_at <= await now(session):
+        value.expires_at = min(value.expires_at, row.control_expires_at)
+        if value.expires_at <= current:
             raise conflict("browser", row.id, "browser_viewer_expired")
         return value
 
@@ -160,74 +236,110 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
         current = await now(session)
         if await lifecycle.expire(session, row):
             return
+        if row.control == "automation":
+            return
+        if row.control in {"draining", "human"}:
+            previous = (
+                Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer)) if row.viewer else None
+            )
+            reason = None
+            if row.control_expires_at is None or row.control_expires_at <= current:
+                reason = "browser_control_expired"
+            elif not await controller_allowed(session, runtime, row):
+                reason = "browser_controller_unavailable"
+            elif row.control == "human" and (previous is None or previous.expires_at <= current):
+                reason = "browser_viewer_expired"
+            if reason is not None:
+                row.failure = reason
+                await return_control(session, row, current)
+            elif row.control == "human":
+                assert previous is not None and row.control_expires_at is not None
+                if previous.expires_at >= row.control_expires_at or previous.expires_at > current + renewal_window(
+                    runtime
+                ):
+                    return
         if row.status != "ready" or row.control == "automation":
             return
         if row.claim_until is not None and row.claim_until > current:
             return
-        if row.control in {"draining", "human"}:
-            expired = (
-                row.viewer is not None
-                and Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer)).expires_at <= current
-            )
-            allowed = await controller_allowed(session, runtime, row)
-            if row.control == "human" and (row.viewer_revoked or (row.viewer is not None and allowed and not expired)):
-                return
-            if not allowed or expired:
-                # Revoke human input, but keep browser tools gated until an explicit handback.
-                row.control = "human"
-                row.viewer = None
-        if row.control != "human" and await lifecycle.unsettled(session, row.id):
+        if row.control == "draining" and await lifecycle.unsettled(session, row.id):
             row.failure = "browser_operations_unsettled"
             return
         selected = await lifecycle.target(session, runtime, row)
         assert selected.account is not None
-        phase, episode, grant_id = row.control, row.episode, row.viewer_id
+        phase, generation, episode, grant_id = row.control, row.generation, row.episode, row.viewer_id
         assert grant_id is not None and selected.state is not None
+        deadline = row.control_expires_at
         baseline = row.human_baseline
         owner = row.controller_thread_id
         row.claim_id = claim
-        row.claim_until = current + timedelta(seconds=runtime.settings.providers.operation_seconds + 15)
+        # Provider open and operation each have a separate budget; close is shielded for 10s.
+        row.claim_until = current + timedelta(seconds=2 * runtime.settings.providers.operation_seconds + 25)
     granted: ViewerGrant | None = None
     pages: set[str] = set()
     failure = None
     try:
         async with lifecycle.open_provider(runtime, selected.account) as provider:
             with anyio.fail_after(runtime.settings.providers.operation_seconds):
-                if phase == "draining":
+                if phase in {"draining", "human"}:
+                    assert deadline is not None
                     if not selected.account.enabled:
                         raise conflict("browser", browser_id, "browser_provider_disabled")
-                    if baseline is None:
+                    if phase == "draining" and baseline is None:
                         pages = await inventory(provider, selected.state)
-                        async with transaction(runtime.storage) as session:
-                            row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
-                            if row.claim_id != claim or row.control != phase or row.episode != episode:
-                                return
+                    async with transaction(runtime.storage) as session:
+                        row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
+                        current = await now(session)
+                        if not owns_claim(row, claim, generation, episode, phase, current):
+                            return
+                        if row.control_expires_at is None or row.control_expires_at <= current:
+                            await return_control(session, row, current)
+                            return
+                        if phase == "draining" and baseline is None:
                             row.human_baseline = sorted(pages)
-                    granted = await provider.grant_viewer(selected.state, grant_id)
+                        deadline = row.control_expires_at
+                    granted = await provider.ensure_viewer(selected.state, grant_id, expires_at=deadline)
                 else:
                     await provider.revoke_viewer(selected.state, grant_id)
                     if phase == "returning":
                         pages = await inventory(provider, selected.state)
     except Exception:
-        failure = "browser_viewer_grant_failed" if phase == "draining" else "browser_viewer_revoke_failed"
+        failure = "browser_viewer_grant_failed" if phase in {"draining", "human"} else "browser_viewer_revoke_failed"
     async with transaction(runtime.storage) as session:
         await lifecycle.lock_owners(session, (owner,) if owner is not None else ())
         row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
-        if row.claim_id != claim:
+        current = await now(session)
+        if not owns_claim(row, claim, generation, episode, phase, current):
+            # Clear only our still-current claim, never a replacement claimant's token.
+            if row.claim_id == claim and row.claim_until is not None and row.claim_until > current:
+                row.claim_id = row.claim_until = None
             return
         row.claim_id = row.claim_until = None
-        # A concurrent handback changes intent, never publishes a late grant or opens the gate.
-        if row.status != "ready" or row.control != phase or row.episode != episode:
-            return
         row.failure = failure
-        if failure is not None:
-            return
-        if phase == "human":
-            row.viewer_revoked = True
-            row.viewer = None
-            return
-        if phase == "draining":
+        if phase in {"draining", "human"}:
+            if failure is None:
+                assert granted is not None and row.control_expires_at is not None
+                if row.control_expires_at <= current:
+                    failure = "browser_control_expired"
+                elif not await controller_allowed(session, runtime, row):
+                    failure = "browser_controller_unavailable"
+                elif granted.expires_at <= current or granted.expires_at > row.control_expires_at:
+                    failure = "browser_viewer_expired"
+                elif granted.expires_at < row.control_expires_at and granted.expires_at <= current + renewal_window(
+                    runtime
+                ):
+                    failure = "browser_viewer_lifetime_short"
+            if failure is not None:
+                row.failure = failure
+                await return_control(session, row, current)
+                return
             assert granted is not None
+            # Never replace a newer grant observation with an older URL/expiry.
+            previous = (
+                Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer)) if row.viewer else None
+            )
+            if previous is not None and previous.expires_at > granted.expires_at:
+                return
             row.viewer = lifecycle.protect(
                 runtime,
                 row,
@@ -240,6 +352,9 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
             )
             row.control = "human"
             return
+        if failure is not None:
+            return
+        row.viewer_revoked = True
         if row.human_baseline is not None and row.controller_thread_id is not None:
             for target_id in pages - set(row.human_baseline):
                 await session.execute(
@@ -264,6 +379,7 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
         row.viewer = row.human_baseline = None
         row.viewer_id = row.controller_id = row.controller_thread_id = None
         row.control = "automation"
+        row.control_expires_at = None
         row.observation_epoch += 1
         row.last_used_at = await now(session)
         for registration in await session.scalars(
@@ -272,9 +388,11 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                 BrowserBlockedRow.generation == row.generation,
                 BrowserBlockedRow.episode == episode,
                 BrowserBlockedRow.suppressed.is_(False),
-                BrowserBlockedRow.expires_at > row.last_used_at,
             )
         ):
+            registration.expires_at = row.last_used_at + timedelta(
+                seconds=runtime.settings.control.browser_notice_seconds
+            )
             await enqueue_once(
                 session,
                 organization_id=row.organization_id,

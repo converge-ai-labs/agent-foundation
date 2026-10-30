@@ -104,13 +104,14 @@ Each thread selects a tab independently of native browser focus. If its selected
 
 ## Take over and return control
 
-For managed sources with viewer support, an integrating application implements this sequence with direct HTTP calls. Takeover, handback and viewer access are excluded from MCP discovery.
+For managed sources with viewer support, an integrating application implements this sequence with direct HTTP calls. Takeover, renewal, handback and viewer access are excluded from MCP discovery.
 
-1. Read the browser's current ETag and call `POST /api/v1/browsers/{id}/takeover` with `If-Match` and `{"thread_id": "<bound-thread-id>"}`.
+1. Read the browser's current ETag and call `POST /api/v1/browsers/{id}/takeover` with `If-Match` and `{"thread_id": "<bound-thread-id>", "lease_seconds": 300}`. The control lease starts when Service closes the admission gate, including time spent draining.
 2. Read the browser until `control` becomes `human`. `draining` means Service has closed browser-tool admission and is waiting for previously admitted work to settle. Unknown completion is not treated as success after a timeout.
 3. As the controlling principal, call `POST /api/v1/browsers/{id}/viewer`. Treat the returned URL as a secret. Respect its expiry and the response's `no-store` policy.
-4. Finish the human work. Read a fresh ETag and call `POST /api/v1/browsers/{id}/handback` with `If-Match`.
-5. Wait for `control: "automation"`. Service revokes viewer input, synchronizes exact tabs and invalidates old references before reopening tools.
+4. While the application considers the person active, send `POST /api/v1/browsers/{id}/renew` with the returned `generation`, `episode` and optional `lease_seconds`. Renew before `control_expires_at`, including while draining. No `If-Match` is needed for renewal. The same controller must retain browser and workspace `run` permission.
+5. Finish the human work. Read a fresh ETag and call `POST /api/v1/browsers/{id}/handback` with `If-Match`.
+6. Wait for `control: "automation"`. Service revokes viewer input, synchronizes exact tabs and invalidates old references before reopening tools.
 
 If takeover remains `draining` before any possible viewer grant, handback can cancel that intent once its active claim ends. Cancellation suppresses pending handback notifications rather than claiming the browser is available. Unknown calls still block tools; after borrowers end, explicitly release the identity to retire it. If a viewer grant may have occurred, handback must revoke it normally.
 
@@ -118,4 +119,12 @@ Human control blocks every browser tool on that browser, including reads and wai
 
 Handback delivers an internal availability notification only to threads whose calls were actually blocked. The existing inbox and run boundaries determine when it is incorporated. Waiting approvals stay waiting, and failed or cancelled runs keep their normal explicit-continuation rules. Stopping or archiving a thread suppresses its pending notifications. Blocked or uncertain actions are never replayed automatically.
 
-Viewer expiry or provider disablement revokes viewer access but does not implicitly return control to automation. Request handback explicitly. If revocation fails, browser tools remain blocked until cleanup succeeds.
+Service defaults to a 300-second control lease. Requests accept 60–3600 seconds; omitting `lease_seconds` uses deployment `control.browser_control_seconds`. Each accepted renewal returns the actual deadline and extends it to the later of the existing deadline and database time plus the requested duration. A shorter renewal cannot shorten control. Each request is a new keepalive, not an idempotency-key replay. After a lost response, read the current browser and use bounded retries; do not retry indefinitely. An expired or returning episode cannot be revived. Take over again only after verified handback.
+
+The application decides whether the person is still active. Service does not infer activity from an open viewer or browser connection. If the application stops renewing, control expires and Service starts the same safe handback as an explicit request. Provider disablement, loss of controller authority, viewer expiry or failure to maintain viewer input also starts handback. If revocation or inventory fails, tools remain blocked in `returning` until cleanup succeeds. A lost browser does not generate an availability notification.
+
+Application renewal updates PostgreSQL only. Control-role maintenance extends the provider's same viewer grant before its actual expiry. The viewer URL can expire earlier than `control_expires_at`; respect both and fetch the current viewer as needed. Providers whose input lifetime cannot cover the maintenance window cause safe handback rather than indefinite control. Provider adapters must implement `ensure_viewer(state, grant_id, *, expires_at)` with monotonic deadlines and permanent revocation fencing, including pending requests and existing input connections.
+
+Requests may reach any Service API replica. PostgreSQL row locks and database time decide renewal versus expiry or handback. Control replicas claim supplier work durably, release the transaction during I/O, and recheck the claim, generation, episode, phase and deadline before publishing results. Expired claims allow recovery; they do not stop an old supplier call. The provider's same-grant monotonicity and revocation fence protect external input. No sticky session or process-local timer is required.
+
+A blocked-call registration follows its current control episode, including prolonged draining and returning. It does not expire merely because 24 hours elapsed. Verified handback starts a finite notification lifetime (`control.browser_notice_seconds`, default 86400) in the same transaction that queues delivery. Delivery and consumption recheck current authority, binding and episode; retries do not create duplicate notifications.

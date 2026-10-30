@@ -54,14 +54,21 @@ class BrowserProvider(Protocol):
         """Borrow a browser-level CDP connection; close disconnects, not terminates."""
         ...
 
-    async def grant_viewer(self, state: dict[str, JsonValue], grant_id: str) -> ViewerGrant:
-        """Idempotently grant human input under the exact durable grant identity."""
+    async def ensure_viewer(self, state: dict[str, JsonValue], grant_id: str, *, expires_at: datetime) -> ViewerGrant:
+        """Create or extend the same input grant toward an absolute UTC deadline.
+
+        Replays and out-of-order calls never shorten or duplicate the grant. The
+        returned expiry covers all input connections, not only the viewer URL.
+        Never grant input past the greatest requested deadline, or reopen an
+        expired/revoked grant. A newer ensure may already have extended the expiry
+        returned to an older caller. Revocation permanently fences pending ensures.
+        """
         ...
 
     async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str) -> None:
         """Confirm all input connections are revoked, including uncertain grants.
 
-        Revocation permanently fences this grant identity: a late grant request
+        Revocation permanently fences this grant identity: a late ensure request
         must not reopen it. Providers without that guarantee cannot offer viewers.
         """
         ...

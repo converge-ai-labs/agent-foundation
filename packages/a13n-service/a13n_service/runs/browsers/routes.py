@@ -10,6 +10,7 @@ from a13n_service.runs.browsers.schemas import (
     BrowserBinding,
     BrowserCreate,
     BrowserPage,
+    RenewControl,
     Takeover,
     Viewer,
 )
@@ -96,6 +97,18 @@ async def takeover_browser(
     if_match: IfMatch = None,
 ) -> Browser:
     return tagged(response, await control.takeover(runtime, actor, workspace_id, browser_id, body, if_match=if_match))
+
+
+@router.post("/browsers/{browser_id}/renew", openapi_extra={"x-a13n-mcp": False})
+async def renew_browser_control(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    browser_id: str,
+    body: RenewControl,
+) -> Browser:
+    return tagged(response, await control.renew(runtime, actor, workspace_id, browser_id, body))
 
 
 @router.post("/browsers/{browser_id}/handback", openapi_extra={"x-a13n-mcp": False})

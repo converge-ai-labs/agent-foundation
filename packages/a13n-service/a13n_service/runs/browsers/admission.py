@@ -1,7 +1,6 @@
 """Browser-only durable admission. Unknown calls never become drained by lease expiry."""
 
 from dataclasses import dataclass
-from datetime import timedelta
 
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
@@ -71,7 +70,7 @@ async def admit(
                     BrowserBlockedRow.thread_id == lease.thread_id,
                 )
             )
-            if registration is not None and (registration.suppressed or registration.expires_at <= current):
+            if registration is not None and registration.suppressed:
                 # A new actual block establishes new provenance. Old queued hints must keep referring
                 # to the retired identity, never to a renewed registration under another Run's authority.
                 await session.delete(registration)
@@ -86,7 +85,7 @@ async def admit(
                         run_id=run.id,
                         generation=row.generation,
                         episode=row.episode,
-                        expires_at=current + timedelta(hours=24),
+                        expires_at=None,
                     )
                 )
         else:

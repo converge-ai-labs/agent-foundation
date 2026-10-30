@@ -310,6 +310,7 @@ async def reconcile(
             row.handle = row.viewer = row.human_baseline = None
             row.viewer_id = row.controller_id = row.controller_thread_id = None
             row.control = "automation"
+            row.control_expires_at = None
         elif phase == "ready" and live is None:
             await mark_lost(session, row, "browser_lost")
         else:

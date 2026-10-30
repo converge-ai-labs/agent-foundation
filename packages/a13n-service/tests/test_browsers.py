@@ -47,6 +47,7 @@ class Supplier:
         self.connections = []
         self.protocol_calls = []
         self.grants = set()
+        self.viewer_deadlines = {}
         self.revoked = set()
         self.lose_create = False
         self.fail_revoke = False
@@ -105,11 +106,14 @@ class Supplier:
         assert method in {"Page.enable", "Runtime.enable"}, method
         return {}
 
-    async def grant_viewer(self, state, grant_id):
-        if grant_id in self.revoked:
-            raise ValueError("revoked grants cannot reopen")
+    async def ensure_viewer(self, state, grant_id, *, expires_at):
+        if grant_id in self.revoked or (
+            grant_id in self.viewer_deadlines and self.viewer_deadlines[grant_id] <= datetime.now(UTC)
+        ):
+            raise ValueError("expired or revoked grants cannot reopen")
         self.grants.add(grant_id)
-        return ViewerGrant("https://viewer.example/secret", {}, datetime.now(UTC) + timedelta(minutes=5))
+        self.viewer_deadlines[grant_id] = max(expires_at, self.viewer_deadlines.get(grant_id, expires_at))
+        return ViewerGrant("https://viewer.example/secret", {}, self.viewer_deadlines[grant_id])
 
     async def revoke_viewer(self, state, grant_id):
         if self.fail_revoke:
@@ -487,7 +491,7 @@ async def test_release_unknown_create_cleans_original_identity(service, runs_kit
 
 
 @pytest.mark.parametrize("cause", ["provider_disabled", "viewer_expired"])
-async def test_viewer_revocation_does_not_silently_hand_back(service, runs_kit, scripted_model, cause):
+async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_kit, scripted_model, cause):
     from a13n_service.resources.providers.tables import BrowserProviderRow
 
     supplier, browser = await setup(service, runs_kit)
@@ -510,8 +514,8 @@ async def test_viewer_revocation_does_not_silently_hand_back(service, runs_kit, 
     assert not supplier.grants
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
-        assert row.control == "human" and row.viewer_revoked and row.viewer is None
-    # Explicit handback remains available after disablement; cleanup does not need new-use permission.
+        assert row.control == "automation" and row.viewer_revoked and row.viewer is None
+    # Handback remains idempotent after disablement; cleanup does not need new-use permission.
     current = await command(service, runs_kit, browser["id"], "handback")
     assert current["control"] == "automation"
 

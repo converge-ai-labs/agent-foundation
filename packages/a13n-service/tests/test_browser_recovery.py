@@ -176,13 +176,13 @@ async def test_persisted_baseline_requires_revoke_not_cancellation(service, runs
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
 
-    async def uncertain_grant(state, grant_id):
+    async def uncertain_grant(state, grant_id, *, expires_at):
         supplier.grants.add(grant_id)
         raise TimeoutError("unknown grant outcome")
 
-    monkeypatch.setattr(supplier, "grant_viewer", uncertain_grant)
+    monkeypatch.setattr(supplier, "ensure_viewer", uncertain_grant)
     current = await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-    assert current["control"] == "draining" and supplier.grants
+    assert current["control"] == "returning" and supplier.grants
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.human_baseline is not None and row.viewer is None

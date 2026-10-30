@@ -61,6 +61,7 @@ class BrowserRow(Stamped, Base):
     idle_seconds: Mapped[int | None]
     control: Mapped[str] = mapped_column(default="automation")
     episode: Mapped[int] = mapped_column(default=0)
+    control_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     controller_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     controller_thread_id: Mapped[str | None] = mapped_column(ForeignKey("threads.id"))
     viewer_id: Mapped[str | None]
@@ -143,4 +144,5 @@ class BrowserBlockedRow(Base):
     episode: Mapped[int]
     suppressed: Mapped[bool] = mapped_column(default=False)
     entry_id: Mapped[str | None] = mapped_column(ForeignKey("inbox_entries.id"))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Null while the current control episode is active; delivery TTL starts at verified handback.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
