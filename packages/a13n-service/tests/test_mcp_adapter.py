@@ -159,6 +159,32 @@ def test_error_schema_is_generated_once_per_assembly_and_isolated_per_tool() -> 
         assert generate.call_count == 2
 
 
+def test_tool_schema_selection_preserves_openapi_and_independent_nested_schemas() -> None:
+    app = FastAPI()
+
+    @app.patch("/items/{item_id}", operation_id="update_item", openapi_extra=ADMIT)
+    async def update(item_id: str, body: Nested, if_match: str | None = Header(None)) -> Nested:
+        return body
+
+    @app.get("/excluded")
+    async def excluded() -> dict:
+        return {}
+
+    original = deepcopy(app.openapi())
+    first = tools(app)["update_item"]
+    second = tools(app)["update_item"]
+    expected = second.model_dump()
+    assert app.openapi() == original
+    assert set(first.parameters["properties"]) == {"item_id", "if_match", "request_body"}
+    first.parameters["properties"]["request_body"].clear()
+    assert first.output_schema is not None
+    first.output_schema["properties"]["body"]["anyOf"].clear()
+    first.output_schema["$defs"].clear()
+    assert second.model_dump() == expected
+    assert app.openapi() == original
+    assert tools(app)["update_item"].model_dump() == expected
+
+
 def test_assembly_rejects_invalid_admission_and_names_are_order_independent() -> None:
     app = FastAPI()
 

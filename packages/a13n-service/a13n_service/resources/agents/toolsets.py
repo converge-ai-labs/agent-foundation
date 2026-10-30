@@ -25,6 +25,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, St
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
+from a13n_service.infra.schema import model_schema
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
@@ -140,7 +141,7 @@ class _Tool:
             default_enabled=self.default_enabled,
             # A selection starts with `inherit`, which takes this default.
             default_permission=self.default_permission,
-            config_schema=self.config.model_json_schema(),
+            config_schema=model_schema(self.config),
             supported_permissions=_PERMISSIONS,
             resource_selector=None
             if self.operation is None
@@ -166,7 +167,7 @@ class _Toolset:
             description=self.description,
             default_enabled=self.default_enabled,
             platform=self.platform,
-            config_schema=self.config.model_json_schema(),
+            config_schema=model_schema(self.config),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
         )
 

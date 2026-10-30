@@ -47,7 +47,6 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_ci_inputs.py": (
         ".github/workflows/ci-*.yml",
         ".github/workflows/images.yml",
-        ".github/service-test-durations.json",
     ),
     "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),

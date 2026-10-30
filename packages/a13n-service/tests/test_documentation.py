@@ -74,6 +74,8 @@ def test_cached_editable_install_owns_index_and_refreshes_inputs(tmp_path: Path)
         **os.environ,
         "UV_CACHE_DIR": str(tmp_path / "cache"),
         "UV_PROJECT_ENVIRONMENT": str(tmp_path / "installed"),
+        # Test editable-wheel reuse independently of the host filesystem's reflink support.
+        "UV_LINK_MODE": "copy",
     }
 
     def sync(*, offline: bool = True) -> None:
