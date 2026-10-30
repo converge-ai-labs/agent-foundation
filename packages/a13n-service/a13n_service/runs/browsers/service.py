@@ -140,7 +140,9 @@ async def release(
         require_match(if_match, row.id, row.version)
         if row.status == "deleted":
             return Browser.model_validate(row)
-        if row.status != "lost" and await lifecycle.in_use(session, row):
+        # Explicit retirement fences future use; it does not claim unknown calls completed.
+        # Idle release retains the default unsettled-operation gate.
+        if row.status != "lost" and await lifecycle.in_use(session, row, include_unsettled=False):
             raise conflict("browser", browser_id, "browser_in_use")
         if row.claim_until is not None and row.claim_until > await now(session):
             raise conflict("browser", browser_id, "browser_operation_pending")

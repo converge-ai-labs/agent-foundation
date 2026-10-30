@@ -268,7 +268,7 @@ async def test_external_paid_call_refusal_precedes_connection(
         assert not await lifecycle.unsettled(session, browser["id"])
 
 
-async def test_external_unsettled_operation_blocks_release_after_run_exit(
+async def test_external_unsettled_operation_allows_terminal_release_after_run_exit(
     service, runs_kit, scripted_model, external_connect
 ):
     browser = await attach(service, runs_kit)
@@ -284,9 +284,12 @@ async def test_external_unsettled_operation_blocks_release_after_run_exit(
     response = await service.client.post(
         f"{service.api}/browsers/{browser['id']}/release", headers=runs_kit.if_match(current)
     )
-    assert response.status_code == 409 and "browser_in_use" in response.text
-    await admission.settle(service.runtime, permit)
-    assert (await command(service, runs_kit, browser["id"], "release"))["status"] == "deleted"
+    assert response.status_code == 200 and response.json()["status"] == "deleted", response.text
+    async with transaction(service.runtime.storage) as session:
+        from a13n_service.runs.browsers.tables import BrowserOperationRow
+
+        assert (await session.get_one(BrowserOperationRow, permit.id)).settled_at is None
+        assert (await session.get_one(BrowserRow, browser["id"])).handle is None
     external_connect[1].assert_not_awaited()
 
 
@@ -349,3 +352,41 @@ async def test_external_mcp_registration_and_release(service, runs_kit, external
         )
         assert released["status"] == 200 and released["body"]["status"] == "deleted"
     external_connect[1].assert_not_awaited()
+
+
+async def test_ready_external_maintenance_does_not_probe(service, runs_kit, external_connect):
+    _, connect = external_connect
+    browser = await attach(service, runs_kit, prepare=True)
+    connect.reset_mock()
+    for _ in range(3):
+        await maintenance.maintain(service.runtime, browser["workspace_id"], browser["id"])
+    connect.assert_not_awaited()
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.status == "ready" and row.claim_id is None
+    await command(service, runs_kit, browser["id"], "prepare")
+    connect.assert_awaited_once()
+
+
+async def test_external_reconnect_retires_each_connection_once(
+    service, runs_kit, scripted_model, external_connect, invocation
+):
+    supplier, _ = external_connect
+    browser = await attach(service, runs_kit, prepare=True)
+    supplier.connections.clear()
+    lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
+    async with execution.open_backend(service.runtime, lease, binding, invocation, frozenset({"tabs"})) as backend:
+        for _ in range(3):
+            permit = await admission.admit(service.runtime, lease, binding)
+            native = await backend._connect(permit)
+            await admission.settle(service.runtime, permit)
+            native.browser.disconnected = True
+        permit = await admission.admit(service.runtime, lease, binding)
+        await backend._connect(permit)
+        await admission.settle(service.runtime, permit)
+        assert len(supplier.connections) == 4
+        for old in supplier.connections[:-1]:
+            old.client.stop.assert_awaited_once()
+        supplier.connections[-1].client.stop.assert_not_awaited()
+    for connection in supplier.connections:
+        connection.client.stop.assert_awaited_once()

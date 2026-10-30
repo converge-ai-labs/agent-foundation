@@ -40,7 +40,8 @@ async def maintain(runtime: Runtime, workspace_id: str, browser_id: str) -> None
                 target_id=row.id,
                 details={"reason": "idle"},
             )
-    await lifecycle.reconcile(runtime, workspace_id, browser_id, inspect_ready=True)
+        inspect_ready = row.source == "managed"
+    await lifecycle.reconcile(runtime, workspace_id, browser_id, inspect_ready=inspect_ready)
     await control.reconcile(runtime, workspace_id, browser_id)
 
 

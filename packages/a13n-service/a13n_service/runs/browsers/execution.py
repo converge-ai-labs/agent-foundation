@@ -51,30 +51,38 @@ class Backend:
         self.lock = asyncio.Lock()
         self.epoch: int | None = None
         self.selected: str | None = None
+        self.connection = AsyncExitStack()
+        self.stack.push_async_callback(self._disconnect)
+
+    async def _disconnect(self) -> None:
+        if self.native is not None:
+            self.native.retire()
+        await self.connection.aclose()
+        self.native = None
+        self.epoch = None
 
     async def _connect(self, permit: admission.Permit) -> CdpBrowserBackend:
         selected = await lifecycle.ready_target(
             self.runtime, self.lease.workspace_id, self.binding.browser_id, configuration=permit.configuration
         )
         if self.native is not None and not self.native.browser.connected:
-            self.native.retire()
-            await self.native.browser.close()
-            self.native = None
-            self.epoch = None
+            await self._disconnect()
         if self.native is None:
             assert selected.state is not None
-            with anyio.fail_after(self.runtime.settings.providers.operation_seconds):
-                if selected.account is None:
-                    browser = await lifecycle.connect_external(
-                        self.runtime, selected.state, self.runtime.endpoint_policy.for_run(permit.configuration)
-                    )
-                else:
-                    provider = await self.stack.enter_async_context(
-                        lifecycle.open_provider(self.runtime, selected.account)
-                    )
-                    browser = await provider.connect(selected.state)
-            self.stack.push_async_callback(browser.close)
-            self.native = CdpBrowserBackend(browser, fallback_selection=False)
+            async with AsyncExitStack() as connection:
+                with anyio.fail_after(self.runtime.settings.providers.operation_seconds):
+                    if selected.account is None:
+                        browser = await lifecycle.connect_external(
+                            self.runtime, selected.state, self.runtime.endpoint_policy.for_run(permit.configuration)
+                        )
+                    else:
+                        provider = await connection.enter_async_context(
+                            lifecycle.open_provider(self.runtime, selected.account)
+                        )
+                        browser = await provider.connect(selected.state)
+                connection.push_async_callback(browser.close)
+                self.native = CdpBrowserBackend(browser, fallback_selection=False)
+                self.connection = connection.pop_all()
         return self.native
 
     async def _sync(self, native: CdpBrowserBackend, permit: admission.Permit) -> None:

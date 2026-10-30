@@ -88,9 +88,11 @@ async def handback(
         require_viewer(row)
         if row.control == "automation":
             return Browser.model_validate(row)
-        # No viewer can have been granted before readiness. Cancel that control intent
-        # without waiting for allocation recovery or claiming a live availability event.
-        if row.status in {"reserved", "creating"}:
+        # The baseline is persisted under the claim/control fence before grant dispatch.
+        # Cancel only an unclaimed intent that cannot have granted input, even if ready.
+        if row.control == "draining" and row.human_baseline is None and row.viewer is None:
+            if row.claim_until is not None and row.claim_until > await now(session):
+                raise conflict("browser", browser_id, "browser_operation_pending")
             row.control = "automation"
             row.viewer_id = row.controller_id = row.controller_thread_id = None
             row.observation_epoch += 1
@@ -198,7 +200,7 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                         pages = await inventory(provider, selected.state)
                         async with transaction(runtime.storage) as session:
                             row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
-                            if row.claim_id != claim or row.control != phase:
+                            if row.claim_id != claim or row.control != phase or row.episode != episode:
                                 return
                             row.human_baseline = sorted(pages)
                     granted = await provider.grant_viewer(selected.state, grant_id)

@@ -222,6 +222,29 @@ jobs:
         if: matrix.name == 'checks'
         run: make dev-state-check
 
+      - name: Set up Chrome for Testing
+        if: startsWith(matrix.name, 'tests-')
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+
+      - name: Allow the test browser to create sandbox namespaces
+        if: startsWith(matrix.name, 'tests-')
+        shell: bash
+        env:
+          BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          # Match Harness native tests: allow this executable, preserving Chromium's sandbox.
+          sudo tee /etc/apparmor.d/service-chrome-testing >/dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile service-chrome-testing "$BROWSER_EXECUTABLE" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/service-chrome-testing
+
       - name: Test a13n Service
         if: startsWith(matrix.name, 'tests-')
         # Separate runners shorten the critical path without increasing per-runner contention.
@@ -229,6 +252,7 @@ jobs:
         timeout-minutes: 15
         env:
           TEST_TARGETS: ${{ matrix.targets }}
+          BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           targets=()
           while IFS= read -r target; do
@@ -238,6 +262,7 @@ jobs:
             -n 3 --dist loadgroup --max-worker-restart=0 \
             -vv --tb=short --durations=30 -r a \
             --junitxml=test-results/service.xml \
+            --browser-executable="$BROWSER_EXECUTABLE" \
             -o faulthandler_timeout=120 \
             -o faulthandler_exit_on_timeout=true \
             "${targets[@]}"

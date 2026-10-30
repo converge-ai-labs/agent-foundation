@@ -67,7 +67,7 @@ jq -n --arg agent "$AGENT_ID" \
     -H 'Content-Type: application/json' --data-binary @-
 ```
 
-4. Follow the returned entry and run using [Read the result](connect-application.md#read-the-result). Run completion leaves the external process and pages alive. Wait until active borrowers and unsettled calls have ended before releasing.
+4. Follow the returned entry and run using [Read the result](connect-application.md#read-the-result). Run completion leaves the external process and pages alive. Wait until active borrowers have ended before releasing.
 5. Detach the desired binding with JSON `null` and a fresh thread ETag if future runs should no longer borrow it. Detachment does not close pages.
 6. Read a fresh browser ETag and release Service access. Release erases encrypted connection material, including an attachment that was never prepared; it leaves the external process, tabs and login state intact.
 
@@ -90,11 +90,11 @@ Network failure reports `browser_connection_failed` without declaring the instan
 | `idle_seconds: 1800`                                          | Managed default. Release after eligible idle time. Accepts 60–604800 seconds.       |
 | `idle_seconds: null`                                          | External default. Retain until explicit release or managed supplier expiry.         |
 
-Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation.
+Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation. After a managed create fails, preparation inspects the original identity. It retries creation only when the provider confirms the request was not dispatched. If it remains unresolved, explicitly release it for supplier-fenced cleanup, then reserve and bind a new browser.
 
 Active runs, unsettled browser calls, human control and valid pending handback notifications prevent idle release. Supplier expiry can still end the session. A `lost` or `deleted` browser does not automatically restart. Create and bind another browser when replacement is intended.
 
-Run completion and binding detachment leave the browser and its tabs alive. To release Service access, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Managed release terminates the supplier session without saving a resumable profile. External release leaves the existing browser alive.
+Run completion and binding detachment leave the browser and its tabs alive. To release Service access, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Managed release terminates the supplier session without saving a resumable profile. External release leaves the existing browser alive. Explicit release can retire an automation-controlled identity after its borrowers and active claims end, even if an old call's outcome remains unknown. That history stays unknown; external actions may still be running. The retired identity cannot be reused. A desired binding to a lost or deleted browser blocks later runs until you explicitly detach it or bind another browser.
 
 ## Choose tab access
 
@@ -111,6 +111,8 @@ For managed sources with viewer support, an integrating application implements t
 3. As the controlling principal, call `POST /api/v1/browsers/{id}/viewer`. Treat the returned URL as a secret. Respect its expiry and the response's `no-store` policy.
 4. Finish the human work. Read a fresh ETag and call `POST /api/v1/browsers/{id}/handback` with `If-Match`.
 5. Wait for `control: "automation"`. Service revokes viewer input, synchronizes exact tabs and invalidates old references before reopening tools.
+
+If takeover remains `draining` before any possible viewer grant, handback can cancel that intent once its active claim ends. Cancellation suppresses pending handback notifications rather than claiming the browser is available. Unknown calls still block tools; after borrowers end, explicitly release the identity to retire it. If a viewer grant may have occurred, handback must revoke it normally.
 
 Human control blocks every browser tool on that browser, including reads and waits. Other tools, model work and other browsers continue. A blocked tool returns immediately and registers its thread for handback; the agent should continue unrelated work or finish rather than poll.
 

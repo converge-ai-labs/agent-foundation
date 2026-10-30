@@ -67,7 +67,7 @@ jq -n --arg agent "$AGENT_ID" \
     -H 'Content-Type: application/json' --data-binary @-
 ```
 
-4. 按[读取结果](connect-application.md#read-the-result)跟踪返回的 entry 和 run。Run 完成后，外部进程及页面保持存活。等待活跃借用和未结算调用结束后再释放。
+4. 按[读取结果](connect-application.md#read-the-result)跟踪返回的 entry 和 run。Run 完成后，外部进程及页面保持存活。等待活跃借用结束后再释放。
 5. 如果后续 run 不应继续借用，使用新的 thread ETag 和 JSON `null` 解除期望绑定。解除绑定不会关闭页面。
 6. 读取新的浏览器 ETag，释放 Service 访问权限。释放会清除加密连接信息，包括从未准备过的接入资源；外部进程、标签页及登录状态保持不变。
 
@@ -90,11 +90,11 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/browsers/$BROWSER_ID/release
 | `idle_seconds: 1800`                                             | 托管默认值。达到可释放的空闲时长后释放；允许 60–604800 秒。 |
 | `idle_seconds: null`                                             | 外部默认值。保留到显式释放或托管供应商会话过期。            |
 
-准备与保留策略相互独立。读取浏览器资源的 `status`、`control`、`expires_at` 和 `failure`。`reserved` 表示尚无就绪的分配；`creating` 表示准备结果未确定；`ready` 表示已确认活跃会话。元数据读取不会触发分配，并发准备会收敛到同一分配。
+准备与保留策略相互独立。读取浏览器资源的 `status`、`control`、`expires_at` 和 `failure`。`reserved` 表示尚无就绪的分配；`creating` 表示准备结果未确定；`ready` 表示已确认活跃会话。元数据读取不会触发分配，并发准备会收敛到同一分配。托管创建失败后，准备会检查原标识。只有供应商确认请求未分派时，才会重试创建。如果结果持续未确定，应显式释放以完成供应商清理隔离，再预留并绑定新浏览器。
 
 活跃 run、尚未结算的浏览器调用、人工控制和有效的待处理归还通知会阻止空闲释放。供应商到期仍可能终止会话。`lost` 或 `deleted` 的浏览器不会自动重启。需要替换时，创建并绑定另一个浏览器。
 
-Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service 访问权限，先读取浏览器的当前 ETag，再带 `If-Match` 调用 `POST /api/v1/browsers/{id}/release`。活跃使用导致释放不安全时，Service 会拒绝请求。托管释放会终止供应商会话，不保存可恢复的 profile。外部释放保留已有浏览器。
+Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service 访问权限，先读取浏览器的当前 ETag，再带 `If-Match` 调用 `POST /api/v1/browsers/{id}/release`。活跃使用导致释放不安全时，Service 会拒绝请求。托管释放会终止供应商会话，不保存可恢复的 profile。外部释放保留已有浏览器。借用者及活跃 claim 结束后，显式释放可以终止处于自动化控制的资源标识，即使旧调用的结果仍未知。历史仍保持未知；外部操作可能仍在运行。已释放的标识不能重用。期望绑定指向 lost 或 deleted 浏览器时，后续 run 会被拒绝，必须显式解除绑定或绑定另一个浏览器。
 
 ## 选择标签页访问范围
 
@@ -111,6 +111,8 @@ Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service �
 3. 以控制方主体调用 `POST /api/v1/browsers/{id}/viewer`。返回的 URL 是敏感信息，请遵守有效期和响应的 `no-store` 策略。
 4. 完成人工操作后，读取新的 ETag，带 `If-Match` 调用 `POST /api/v1/browsers/{id}/handback`。
 5. 等待 `control: "automation"`。Service 会先撤销交互视图输入、同步精确标签页并使旧引用失效，再开放工具。
+
+如果接管仍停留在 `draining`，且能够确认尚未分派任何 viewer grant，可在活跃 claim 结束后通过归还取消意图。取消会抑制待处理的归还通知，不会宣称浏览器已可用。结果未知的调用仍阻止工具；借用者结束后，可显式释放资源标识。如果 viewer grant 可能已经发生，归还仍须正常撤销它。
 
 人工控制期间，该浏览器的所有浏览器工具都会被阻止，包括读取和等待。其他工具、模型工作和其他浏览器继续运行。受阻工具立即返回，并登记其 thread 为归还通知接收方；agent 应继续无关工作或结束，而不是轮询。
 

@@ -22,7 +22,8 @@ from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
 
 GUIDANCE = (
     "The browser is under human control. This call did not execute. "
-    "A handback notice is registered for this Thread. Continue unrelated work or finish the turn; "
+    "A handback notice is registered for this Thread if control returns with verified availability. "
+    "Cancellation before viewer grant suppresses that notice. Continue unrelated work or finish the turn; "
     "do not poll or retry. After handback, observe afresh and decide the next action."
 )
 
