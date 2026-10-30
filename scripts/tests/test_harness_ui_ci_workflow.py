@@ -91,13 +91,11 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
     assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
     assert int(arguments[arguments.index("--workers") + 1]) == 3
-    assert "--shard ${{ matrix.shard }} 2" in tests["run"]
-    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
-    assert by_name["Type-check UI"]["if"] == "matrix.shard == 1"
-    assert by_name["Test native command lifecycle"]["if"] == "matrix.shard == 1"
-    assert (
-        by_name["Retain UI test reports"]["with"]["name"] == "ui-python-${{ matrix.shard }}-${{ github.run_attempt }}"
-    )
+    assert "--shard" not in arguments
+    assert "strategy" not in jobs["tests"]
+    assert "if" not in by_name["Type-check UI"]
+    assert "if" not in by_name["Test native command lifecycle"]
+    assert by_name["Retain UI test reports"]["with"]["name"] == "ui-python-${{ github.run_attempt }}"
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     options = shlex.split(tests["env"]["PYTEST_ADDOPTS"])

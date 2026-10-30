@@ -18,7 +18,7 @@ from .test_coordinators import coordinator_configuration, create_coordinator
 from .test_restart_recovery import release_during_shutdown
 from .test_thread_collaboration import controller
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_followup_setting_persists_without_running(tmp_path: Path) -> None:

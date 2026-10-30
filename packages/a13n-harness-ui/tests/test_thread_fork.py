@@ -16,7 +16,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_fork_preserves_saved_conversation_work_and_files_and_continues_independently(

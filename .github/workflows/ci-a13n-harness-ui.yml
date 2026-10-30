@@ -190,14 +190,10 @@ jobs:
               - 'scripts/tests/test_prepare_a13n_harness_ui_assets.py'
 
   tests:
-    name: UI Python tests (${{ matrix.shard }}/2)
+    name: UI Python tests
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -224,7 +220,6 @@ jobs:
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
       - name: Type-check UI
-        if: matrix.shard == 1
         run: >-
           uv run --locked --no-sync pyright
           packages/a13n-harness-ui/a13n_harness_ui
@@ -242,11 +237,9 @@ jobs:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 3
-          --shard ${{ matrix.shard }} 2
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
-        if: matrix.shard == 1
         timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest --junitxml=test-results/native-lifecycle.xml
@@ -257,7 +250,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-python-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: ui-python-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 
