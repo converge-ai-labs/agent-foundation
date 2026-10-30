@@ -69,6 +69,7 @@ export function Desktop({
   busy,
   activity = "",
   onReconnectControl,
+  onControlActivity,
   scale = "fit",
   actions,
 }: {
@@ -78,6 +79,7 @@ export function Desktop({
   busy: boolean;
   activity?: string;
   onReconnectControl?: () => void;
+  onControlActivity?: () => void;
   scale?: BrowserScale;
   actions?: ReactNode;
 }) {
@@ -152,6 +154,29 @@ export function Desktop({
   const message =
     activity || (currentConnection ? connectionState.status : initialStatus);
   inputAllowed.current = interactive && !!controlToken;
+  const activityCallback = useRef(onControlActivity);
+  activityCallback.current = onControlActivity;
+  useEffect(() => {
+    const root = host.current;
+    if (!root) return;
+    const activity = (event: Event) => {
+      if (event.isTrusted && inputAllowed.current && !editing.current) {
+        activityCallback.current?.();
+      }
+    };
+    const types = [
+      "pointerdown",
+      "pointermove",
+      "wheel",
+      "keydown",
+      "compositionend",
+      "input",
+    ];
+    for (const type of types) root.addEventListener(type, activity, true);
+    return () => {
+      for (const type of types) root.removeEventListener(type, activity, true);
+    };
+  }, []);
   useEffect(() => {
     if (connected && canControl && controlToken && !busy && !editing.current) {
       textInput.current?.focus();

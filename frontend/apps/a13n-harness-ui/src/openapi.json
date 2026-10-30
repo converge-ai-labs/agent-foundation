@@ -2048,7 +2048,56 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BrowserCommand"
+                "$ref": "#/components/schemas/BrowserHandbackRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/renew-control": {
+      "post": {
+        "summary": "Renew Browser Control",
+        "operationId": "renew_browser_control_api_threads__thread_id__browser_renew_control_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserAccessRequest"
               }
             }
           }
@@ -10033,6 +10082,22 @@
             ],
             "title": "Control",
             "default": "agent"
+          },
+          "control_episode": {
+            "type": "integer",
+            "title": "Control Episode",
+            "default": 0
+          },
+          "control_remaining_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Remaining Seconds"
           },
           "url": {
             "type": "string",
@@ -25258,6 +25323,28 @@
           "preset"
         ],
         "title": "BrowserViewportRequest",
+        "type": "object"
+      },
+      "BrowserHandbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "control_episode": {
+            "minimum": 0,
+            "title": "Control Episode",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "control_episode"
+        ],
+        "title": "BrowserHandbackRequest",
         "type": "object"
       },
       "BrowserAccessRequest": {

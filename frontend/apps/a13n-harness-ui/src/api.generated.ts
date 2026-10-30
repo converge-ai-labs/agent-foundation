@@ -818,6 +818,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/browser/renew-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Renew Browser Control */
+        post: operations["renew_browser_control_api_threads__thread_id__browser_renew_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/browser/access": {
         parameters: {
             query?: never;
@@ -3371,6 +3388,13 @@ export interface components {
              * @enum {string}
              */
             control?: "agent" | "human";
+            /**
+             * Control Episode
+             * @default 0
+             */
+            control_episode?: number;
+            /** Control Remaining Seconds */
+            control_remaining_seconds?: number | null;
             /**
              * Url
              * @default
@@ -8968,6 +8992,13 @@ export interface components {
             control_token?: string;
             preset: components["schemas"]["BrowserPreset"];
         };
+        /** BrowserHandbackRequest */
+        BrowserHandbackRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Control Episode */
+            control_episode: number;
+        };
         /** BrowserAccessRequest */
         BrowserAccessRequest: {
             /** Session Id */
@@ -10988,7 +11019,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BrowserCommand"];
+                "application/json": components["schemas"]["BrowserHandbackRequest"];
             };
         };
         responses: {
@@ -10999,6 +11030,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserControl"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_browser_control_api_threads__thread_id__browser_renew_control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
                 };
             };
             /** @description Validation Error */

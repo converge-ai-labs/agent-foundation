@@ -44,6 +44,7 @@ from a13n_harness_ui.browser import (
     BrowserAccessRequest,
     BrowserCommand,
     BrowserControl,
+    BrowserHandbackRequest,
     BrowserState,
     BrowserViewportRequest,
 )
@@ -1177,10 +1178,20 @@ def create_webui(
         return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=True)
 
     @server.post(
-        "/api/threads/{thread_id}/browser/handback", response_model=BrowserControl, openapi_extra=_body(BrowserCommand)
+        "/api/threads/{thread_id}/browser/handback",
+        response_model=BrowserControl,
+        openapi_extra=_body(BrowserHandbackRequest),
     )
     async def handback_browser(thread_id: str, request: Request) -> BrowserControl:
-        return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=False)
+        return await app().control_browser(thread_id, await _document(request, BrowserHandbackRequest), human=False)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/renew-control",
+        response_model=BrowserState,
+        openapi_extra=_body(BrowserAccessRequest),
+    )
+    async def renew_browser_control(thread_id: str, request: Request) -> BrowserState:
+        return await app().renew_browser_control(thread_id, await _document(request, BrowserAccessRequest))
 
     @server.post(
         "/api/threads/{thread_id}/browser/access",

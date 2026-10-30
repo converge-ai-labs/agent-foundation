@@ -42,6 +42,7 @@ from a13n_harness_ui.browser import (
     BrowserAccessRequest,
     BrowserCommand,
     BrowserControl,
+    BrowserHandbackRequest,
     BrowserState,
     BrowserViewportRequest,
     HostBrowsers,
@@ -1909,6 +1910,10 @@ class HarnessUiApp:
         async with self._operation():
             return await self.browsers().access(thread_id, request)
 
+    async def renew_browser_control(self, thread_id: str, request: BrowserAccessRequest) -> BrowserState:
+        async with self._operation():
+            return await self.browsers().renew_control(thread_id, request)
+
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():
             return await self.browsers().setup(thread_id)
@@ -1931,7 +1936,12 @@ class HarnessUiApp:
 
     async def control_browser(self, thread_id: str, command: BrowserCommand, *, human: bool) -> BrowserControl:
         async with self._operation():
-            return await self.browsers().control(thread_id, command.session_id, human=human)
+            return await self.browsers().control(
+                thread_id,
+                command.session_id,
+                human=human,
+                episode=command.control_episode if isinstance(command, BrowserHandbackRequest) else None,
+            )
 
     async def create_host_terminal(self, request: TerminalCreate) -> TerminalView:
         async with self._operation():

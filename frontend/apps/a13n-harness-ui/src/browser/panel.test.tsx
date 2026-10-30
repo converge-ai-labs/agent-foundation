@@ -21,6 +21,7 @@ vi.mock("./desktop", () => ({
     actions,
     busy,
     onReconnectControl,
+    onControlActivity,
   }: {
     threadId: string;
     controlToken: string;
@@ -28,10 +29,12 @@ vi.mock("./desktop", () => ({
     actions?: React.ReactNode;
     busy: boolean;
     onReconnectControl: () => void;
+    onControlActivity: () => void;
   }) => (
     <>
       {actions}
       <button onClick={onReconnectControl}>Reconnect control</button>
+      <button onClick={onControlActivity}>Control activity</button>
       <div data-testid="stream" data-scale={scale} data-busy={busy}>
         {threadId}:{controlToken || "readonly"}
       </div>
@@ -66,6 +69,8 @@ function show({
     status,
     page_count: status === "ready" ? pageCount : 0,
     control,
+    control_episode: 7,
+    control_remaining_seconds: 300,
     url: "https://example.com",
     viewport: "desktop",
     resize_available: resizeAvailable,
@@ -246,7 +251,7 @@ it.each(["linux", "macos"])(
       "/api/threads/{thread_id}/browser/handback",
       {
         params: { path: { thread_id: "thread-b" } },
-        body: { session_id: "binding-a" },
+        body: { session_id: "binding-a", control_episode: 7 },
       },
     );
   },
@@ -474,7 +479,9 @@ it("pauses Mac automation for local operation and resumes it without remote take
   await screen.findByRole("button", { name: "Pause automation" });
   expect(client.POST).toHaveBeenLastCalledWith(
     "/api/threads/{thread_id}/browser/handback",
-    expect.objectContaining({ body: { session_id: "binding-a" } }),
+    expect.objectContaining({
+      body: { session_id: "binding-a", control_episode: 7 },
+    }),
   );
 });
 
@@ -526,4 +533,36 @@ it("renews control directly on explicit reconnect without a handback gap", async
     "/api/threads/{thread_id}/browser/take-control",
     "/api/threads/{thread_id}/browser/take-control",
   ]);
+});
+
+it("renews on controller activity and sends the observed episode on handback", async () => {
+  const { client } = show();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Take control" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("stream").textContent).toContain("controller-a"),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Control activity" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Control activity" }),
+  );
+  await waitFor(() =>
+    expect(
+      client.POST.mock.calls.filter(([url]) => url.endsWith("renew-control")),
+    ).toHaveLength(1),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Hand back to Agent" }),
+  );
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.stringMatching(/handback$/),
+      expect.objectContaining({
+        body: { session_id: "binding-a", control_episode: 7 },
+      }),
+    ),
+  );
 });
