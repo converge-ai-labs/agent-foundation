@@ -131,10 +131,10 @@ Auxiliary inference uses the selected Model's own settings and normal Host crede
 
 ## MCP Servers
 
-Files under `mcp/` use lower-case `.yaml` or `.json`. Either format accepts one canonical reusable MCP server:
+Files under `mcp/` use lower-case `.yaml` or `.json`. New MCP resources, templates, and examples use schema version 2. Either format accepts one canonical reusable MCP server:
 
 ```yaml
-schema_version: "1"
+schema_version: "2"
 kind: mcp_server
 id: mcp-github
 name: GitHub
@@ -146,10 +146,11 @@ transport:
       env: GITHUB_TOKEN
 ```
 
-Either format also accepts a top-level `mcpServers` object with no other top-level fields:
+Either format also accepts a top-level `mcpServers` object alongside `schema_version`, with no other top-level fields:
 
 ```json
 {
+  "schema_version": "2",
   "mcpServers": {
     "local": {
       "command": "python",
@@ -164,7 +165,7 @@ Either format also accepts a top-level `mcpServers` object with no other top-lev
 }
 ```
 
-Each named entry normalizes to a version-1 `mcp_server` resource. Its name is preserved for display; its ID lowercases the name, replaces runs outside `[a-z0-9]` with `-`, trims surrounding hyphens, and adds `mcp-` unless already present. If no ASCII alphanumeric characters remain, the suffix is the first 12 lowercase hex characters of the original name's UTF-8 SHA-256 digest. Names are non-empty and at most 256 characters; resulting IDs meet the ordinary 128-character resource ID constraint. Normalized-name collisions and cross-file ID duplicates reject the candidate, with no precedence rule.
+Each named entry normalizes to an `mcp_server` resource using the wrapper's schema version. Its name is preserved for display; its ID lowercases the name, replaces runs outside `[a-z0-9]` with `-`, trims surrounding hyphens, and adds `mcp-` unless already present. If no ASCII alphanumeric characters remain, the suffix is the first 12 lowercase hex characters of the original name's UTF-8 SHA-256 digest. Names are non-empty and at most 256 characters; resulting IDs meet the ordinary 128-character resource ID constraint. Normalized-name collisions and cross-file ID duplicates reject the candidate, with no precedence rule.
 
 Entries use `command`, optional `args`/`env`, or `url`/optional `headers`, never both transports. Optional `type` is `stdio` for commands or `http`/`streamable-http` for remote servers; omission infers the type. `args` and `env` normalize to `arguments` and `environment`. Unknown fields, including `disabled` and legacy SSE transport selection, fail explicitly. Discovery never enables a server. This compatibility surface does not claim every client's configuration dialect or OAuth workflow.
 
@@ -189,6 +190,12 @@ class RemoteTransport(BaseModel):
 Literal environment/header credentials are permitted in user-owned source files, but not copied into normalized resources, configuration display, or Run compositions. Remote URLs remain credential-free HTTPS values. Plain HTTP is permitted only for a literal loopback host and only when `headers` is empty; Harness UI never sends secret-backed headers over plaintext transport. Redirects cannot weaken this rule or forward configured headers to another origin. Command arguments and environment names are bounded. An MCP file has no global `enabled` flag. An Agent or Thread exact selection enables it as generic MCP. In WebUI, enabled `webui.mcp_apps.servers` independently adds App servers to every root and child Agent; effective selection is the ordered, deduplicated union of generic and App server IDs. CLI/local mode uses only generic MCP selections.
 
 Every Run creates fresh native MCP Toolset projections. The root `mcp` mapping owns additive lifetime and protocol policy: `host_owned_servers` defaults to `[]`, with unique existing server IDs, and `protocol_overrides` defaults to `{}`, with existing server IDs mapped to `auto`, `legacy`, or `2026-07-28`. Lifetime policy does not select servers or enable tools. Each recipe captures `host_owned` and `protocol`; historical recipes without these fields default to Run-local and `auto`, while enabled Apps retain their prior Host-owned behavior. Empty policy defaults do not alter historical serialized values. Ordinary clients remain logical-Run-local; opted-in and enabled [MCP Apps](09-mcp-apps.md) projections borrow the owning Thread/server client across Runs under [runtime ownership](05-runtime-subagents-and-surfaces.md#mcp-client-ownership-and-human-input). SDK `auto` prefers supported modern Core behavior and retains upstream legacy negotiation. The Core protocol date, SDK major, Apps UI wire version and Foundation schema version are independent axes. MCP process handles, sessions and resolved credentials never enter managed snapshot files, SQLite or continuation state. MCP Apps retain the original public tool descriptor, upstream App result payload and resource as immutable presentation objects, with small references on actual tool returns; these snapshots are not live discovery or execution authority. Removing a server from generic selection does not remove it while WebUI Apps still selects it. Removing it from Apps selection prevents new App admission; an independently selected generic Host-owned consumer can continue to retain its own eligible binding. Removing it from both selections removes it from later Run compositions; re-enabling the same resource uses its current file definition.
+
+### MCP Tool Selection
+
+An MCP resource may restrict its tools with `tools: [name, ...]`, using exact server-native names of 1–128 characters, without applying catalog-key syntax. Omitted or null `tools` enables the full discovered inventory, including later additions; an empty list enables none. A selected list never automatically grows. Missing selected names remain selected but unavailable; remaining tools can still run. This resource-wide restriction applies to every root and child using the server, intersects Agent canonical target allowlists, and filters the callable target directory before direct model definitions, tool-search controls, or CodeAct exposure. MCP Apps admission checks the current server restriction for both the original App tool and each requested tool.
+
+Version-2 resources support both unrestricted and selected tools. A `mcpServers` wrapper stores `tools` beside each server's transport fields. Version-1 resources and unversioned wrappers remain readable with unrestricted defaults; non-null `tools` requires version 2. Explicit versioning prevents an older reader from silently ignoring an execution restriction. Immutable MCP recipes capture the selected names; historical recipes omit the field and remain unrestricted. Changes affect subsequent Run captures, while App admission continues to use current authority.
 
 ## Agent Resources
 
@@ -255,7 +262,7 @@ Once initialized, a Thread stores exact lists. Later Agent or global-default sel
 
 Captured groups use the fixed Harness proxy. `tool_search.config.mode` is omitted or `proxy`; configuration accepts control names and result limits. The selected plan is captured, inherited by Markdown children, and reconstructed with the groups. Discovery and exhaustive listing never promote targets into model schemas. Canonical target allowlists and local execution remain in force.
 
-An Agent may declare `tool_search.groups`, a mapping from group names to `description`, `mcp_servers`, `harness_plugins`, and `capabilities` (selected capability keys), plus optional `tool_search.config` matching Harness `ProxyToolSearchConfig`. These are presentation selections, not reusable resource definitions or source activation. There is no global, Project, or Thread grouping override. Content Plugins contribute skills/subagents, not Harness Plugin tool sources.
+An Agent may declare `tool_search.groups`, a mapping from group names to `description`, `mcp_servers`, `harness_plugins`, and `capabilities` (selected capability keys), plus optional `tool_search.config` matching Harness `ProxyToolSearchConfig`. These are presentation selections, not reusable resource definitions or source activation. `tool_search.enabled` defaults to true; false preserves the authored groups and proxy settings while presenting enabled tools directly. There is no global, Project, or Thread grouping override. Content Plugins contribute skills/subagents, not Harness Plugin tool sources.
 
 Each referenced source must exist in the configured catalog with the specified kind and may belong to at most one group. At capture time, membership intersects the node's enabled source IDs. Configured but disabled sources remain dormant and are never enabled by grouping. Unlisted enabled sources remain direct. A group can mix selected local Capabilities, MCP sources, and several exact Harness Plugin instances. An absent or empty mapping preserves direct behavior; groups with no surviving prepared tools expose no controls. Duplicate local tools in a group fail rather than gaining implicit aliases.
 

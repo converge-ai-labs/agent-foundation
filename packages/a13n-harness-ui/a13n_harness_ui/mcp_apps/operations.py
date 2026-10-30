@@ -114,7 +114,7 @@ class AppOperations:
             raise HarnessUiError("Close an App View before activating another.", code="mcp_app_view_limit")
         original = await self.snapshots.read(reference)
         owner = await self.owners.resolve(reference.thread_id)
-        owner.require_tool(reference.tool_name)
+        owner.require_tool(reference.tool_name, reference.server_id)
         recipe = owner.recipe(reference.server_id)
         transport, effective, _ = await prepare_mcp_transport(recipe, self.configuration_root)
         connection = await self.snapshots.connections.acquire(
@@ -167,8 +167,8 @@ class AppOperations:
         if self._closed or view.closed:
             raise HarnessUiError("The App View is closed.", code="mcp_app_view_closed")
         owner = await self.owners.resolve(view.value.reference.thread_id)
-        owner.require_tool(name)
-        owner.require_tool(view.value.reference.tool_name)
+        owner.require_tool(name, view.value.reference.server_id)
+        owner.require_tool(view.value.reference.tool_name, view.value.reference.server_id)
         recipe = owner.recipe(view.value.reference.server_id)
         connection = view.connection
         connection.require_admission()
@@ -177,8 +177,8 @@ class AppOperations:
         # Directory/credential I/O can outlive a View or a policy change. Resolve
         # mutable Host authority last; no further await occurs before admission.
         owner = await self.owners.resolve(view.value.reference.thread_id)
-        owner.require_tool(name)
-        owner.require_tool(view.value.reference.tool_name)
+        owner.require_tool(name, view.value.reference.server_id)
+        owner.require_tool(view.value.reference.tool_name, view.value.reference.server_id)
         if (
             owner.recipe(recipe.server_id) != recipe
             or self.snapshots.connections.get(owner.thread_id, recipe.server_id) is not connection

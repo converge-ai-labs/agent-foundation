@@ -39,6 +39,70 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
+it("renders inline and display math with accessible source and scrollable display regions", () => {
+  const view = render(
+    <MessageText
+      text={String.raw`Inline $E = mc^2$.
+
+$$
+\frac{1}{2} + \sqrt{x}
+$$
+
+~~~math
+\sum_{i=1}^{n} i
+~~~
+`}
+    />,
+  );
+  expect(view.container.querySelectorAll(".katex")).toHaveLength(3);
+  expect(view.container.querySelectorAll("math")).toHaveLength(3);
+  expect(view.container.querySelector("annotation")?.textContent).toBe(
+    "E = mc^2",
+  );
+  expect(screen.getAllByRole("region", { name: "Math formula" })).toHaveLength(
+    2,
+  );
+  for (const region of screen.getAllByRole("region", { name: "Math formula" }))
+    expect(region.tabIndex).toBe(0);
+});
+
+it("keeps escaped dollars, inline code and ordinary code fences literal", () => {
+  const source = "\\$5 and \\$10; `$x$`\n\n```latex\n$E = mc^2$\n```";
+  const view = render(<MessageText text={source} />);
+  expect(view.container.querySelector(".katex")).toBeNull();
+  expect(view.container.textContent).toContain("$5 and $10; $x$");
+  expect(view.container.querySelector("pre code")?.textContent).toBe(
+    "$E = mc^2$\n",
+  );
+});
+
+it("recovers from incomplete streamed math and keeps malformed formulas readable", () => {
+  const view = render(<MessageText text={"Before $\\frac{1}"} />);
+  expect(view.container.textContent).toContain("Before");
+  view.rerender(<MessageText text={"Before $\\frac{1}{2}$ after"} />);
+  expect(view.container.querySelector(".katex")).not.toBeNull();
+  view.rerender(<MessageText text={"$\\frac{$\n\nStill readable"} />);
+  expect(view.container.querySelector(".katex-error")?.textContent).toBe(
+    "\\frac{",
+  );
+  expect(screen.getByText("Still readable")).toBeTruthy();
+});
+
+it("does not allow math to create links, remote images or trusted HTML", () => {
+  const view = render(
+    <MessageText
+      text={String.raw`$\href{https://example.com}{link}$
+
+$\includegraphics{https://example.com/image.png}$
+
+$\htmlClass{injected}{x}$
+
+<script>alert(1)</script>`}
+    />,
+  );
+  expect(view.container.querySelector("a, img, script, .injected")).toBeNull();
+});
+
 it("opens same-instance Host file links in the workbench and leaves external links separate", () => {
   const open = vi.fn();
   render(

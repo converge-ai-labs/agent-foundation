@@ -110,6 +110,29 @@ def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -
     assert set(exported["entries"]) == set(catalog)
 
 
+def test_bundled_catalog_includes_new_upstream_models() -> None:
+    entry = get_default_pricing_catalog()["openai:gpt-6.1-terra"]
+
+    assert entry.source == "genai_prices"
+    assert entry.context_window == 1_050_000
+    assert {component.price_key for rule in entry.rules for component in rule.prices} >= {
+        "input_mtok",
+        "output_mtok",
+        "cache_read_mtok",
+    }
+
+
+def test_bundled_catalog_preserves_upstream_dated_price_changes() -> None:
+    capability = CatalogModelCostCapability(catalog=get_default_pricing_catalog())
+
+    before = capability.quote(_cost_input("mistral-small-latest", "mistral", datetime(2026, 3, 15, 23, tzinfo=UTC)))
+    after = capability.quote(_cost_input("mistral-small-latest", "mistral", datetime(2026, 3, 16, tzinfo=UTC)))
+
+    assert before is not None and before.cost_usd == Decimal("0.4")
+    assert after is not None and after.cost_usd == Decimal("0.75")
+    assert before.rule_id != after.rule_id
+
+
 def test_catalog_preserves_genai_and_overlay_time_window_pricing() -> None:
     capability = CatalogModelCostCapability()
 

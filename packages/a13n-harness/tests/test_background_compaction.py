@@ -61,11 +61,11 @@ async def _pending_checkpoint(state, *, result, state_store=None):
     )
 
 
-def _previous():
+def _previous(tokens=9000):
     return HarnessState.new(
         message_history=(
             ModelRequest(parts=[UserPromptPart("old history")]),
-            ModelResponse(parts=[TextPart("old answer")], usage=RequestUsage(input_tokens=9000)),
+            ModelResponse(parts=[TextPart("old answer")], usage=RequestUsage(input_tokens=tokens)),
         )
     )
 
@@ -271,15 +271,12 @@ class _Operator(CompactionOperator):
 
 class _CountingModel(FunctionModel):
     async def count_tokens(self, messages, model_settings, model_request_parameters):
-        # Includes fresh overlays and tool outputs, not response usage.
-        assert any("agent-context" in str(value) for value in _user_values(messages))
-        return RequestUsage(input_tokens=100)
+        pytest.fail("compaction must not count tokens")
 
 
 def _build(operator, stream, *, counting=True, extra=()):
     return HarnessBuilder().build(
         AgentSpec(
-            model_settings={"max_tokens": 100},
             model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
         ),
         output_type=str,
@@ -428,7 +425,7 @@ async def test_failed_operation_falls_back_once_and_acknowledges_on_next_run(cou
     assert operator.submissions == 0
 
 
-async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
+async def test_blocking_usage_waits_and_waiter_cancellation_preserves_work():
     operator = _Operator()
     requests = []
 
@@ -436,7 +433,7 @@ async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
         requests.append(messages)
         yield "done"
 
-    previous = _previous()
+    previous = _previous(tokens=9500)
     await operator.submit(_input(previous))
     executable = _build(operator, stream, counting=False)
     task = asyncio.create_task(executable.run("input", previous_state=previous))
@@ -597,43 +594,30 @@ async def test_retry_budget_is_bounded_by_captured_request_allowance():
     assert calls == 1
 
 
-@pytest.mark.parametrize("too_large_after", [False, True])
-async def test_capacity_guard_waits_for_same_operation_and_rejects_oversized_merge(too_large_after):
+@pytest.mark.parametrize("overflow_after", [False, True])
+async def test_blocking_usage_waits_then_dispatches_merge_with_native_overflow_recovery(overflow_after):
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
     operator = _Operator()
     requests = []
 
-    class LargeModel(FunctionModel):
-        async def count_tokens(self, messages, model_settings, model_request_parameters):
-            compacted = any(isinstance(msg, ModelResponse) and msg.metadata == {"keep": "compact"} for msg in messages)
-            return RequestUsage(input_tokens=100 if compacted and not too_large_after else 9999)
-
     async def stream(messages, info):
-        requests.append(messages)
-        yield "done"
+        requests.append(deepcopy(messages))
+        if overflow_after and len(requests) == 1:
+            raise ModelContextWindowExceededError("test", "merged suffix too large")
+        yield "fallback summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(
-            model_settings={"max_tokens": 100},
-            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
-        ),
-        model=LargeModel(stream_function=stream),
-        output_type=str,
-        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator),),
-    )
-    previous = _previous()
+    executable = _build(operator, stream)
+    previous = _previous(tokens=9500)
     await operator.submit(_input(previous))
     run = asyncio.create_task(executable.run("input", previous_state=previous))
     await asyncio.wait_for(operator.waiting.wait(), 3)
     assert not requests
     operator.release.set()
-    if too_large_after:
-        with pytest.raises(DefinitionError) as error:
-            await run
-        assert error.value.code == "compaction_capacity_exceeded"
-        assert not requests
-    else:
-        result = await run
-        assert result.output_or_raise() == "done"
+    result = await run
+    assert result.output_or_raise() == "done"
+    assert "background summary" in str(requests[0])
+    assert len(requests) == (3 if overflow_after else 1)
     assert operator.submissions == 1
 
 
@@ -876,8 +860,7 @@ async def test_state_restoration_uses_current_discovery_and_codeact_tools():
     assert "async def double" not in snapshots[0][1].instructions
 
 
-@pytest.mark.parametrize("too_large", [False, True])
-async def test_state_restoration_checks_capacity_after_current_projection_and_media(too_large):
+async def test_state_restoration_dispatches_current_projection_and_media_without_counting():
     from a13n_harness.capabilities import FileMemoryCapability, FileMount
     from pydantic_ai.messages import VideoUrl
 
@@ -890,24 +873,18 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
         update={"message_history_json": encode_messages([*previous.message_history, *delta])}
     )
     compacted = await _pending_checkpoint(previous, result=CompactionResult.from_summary(input.basis, "summary"))
-    counted = []
     requests = []
-
-    class CountingModel(FunctionModel):
-        async def count_tokens(self, messages, model_settings, model_request_parameters):
-            counted.append(deepcopy(messages))
-            assert "fresh memory" in str(messages)
-            assert "video_url_requires_materialization" in str(messages)
-            assert not any(
-                isinstance(value, VideoUrl)
-                for values in _user_values(messages)
-                if isinstance(values, list)
-                for value in values
-            )
-            return RequestUsage(input_tokens=10000 if too_large else 100)
 
     async def stream(messages, info):
         requests.append(messages)
+        assert "fresh memory" in str(messages)
+        assert "video_url_requires_materialization" in str(messages)
+        assert not any(
+            isinstance(value, VideoUrl)
+            for values in _user_values(messages)
+            if isinstance(values, list)
+            for value in values
+        )
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -915,7 +892,7 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
             model_settings={"max_tokens": 100},
             model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
         ),
-        model=CountingModel(stream_function=stream),
+        model=_CountingModel(stream_function=stream),
         output_type=str,
         capabilities=(
             FileMemoryCapability(
@@ -923,18 +900,12 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
             ),
         ),
     )
-    if too_large:
-        with pytest.raises(DefinitionError) as error:
-            await executable.run("continue", previous_state=compacted)
-        assert error.value.code == "compaction_capacity_exceeded"
-        assert not requests
-    else:
-        result = await executable.run("continue", previous_state=compacted)
-        assert result.output_or_raise() == "done"
-        assert "video_url_requires_materialization" in str(requests[0])
-        assert "video_url_requires_materialization" not in str(result.state.message_history)
-        assert "https://example.com/video.mp4" in str(result.state.message_history)
-    assert len(counted) == 1
+    result = await executable.run("continue", previous_state=compacted)
+    assert result.output_or_raise() == "done"
+    assert "video_url_requires_materialization" in str(requests[0])
+    assert "video_url_requires_materialization" not in str(result.state.message_history)
+    assert "https://example.com/video.mp4" in str(result.state.message_history)
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize(
@@ -1267,7 +1238,7 @@ async def test_joint_resume_defers_exact_approval_then_applies_on_later_run():
 
 @pytest.mark.parametrize("capacity", ["room", "tight", "unknown"])
 @pytest.mark.parametrize("triggered", [False, True])
-async def test_no_operation_chooses_background_only_with_verified_headroom(capacity, triggered):
+async def test_no_operation_does_not_use_native_counting_for_mode_selection(capacity, triggered):
     operator = _Operator()
     previous = _previous()
     if not triggered:
@@ -1296,14 +1267,10 @@ async def test_no_operation_chooses_background_only_with_verified_headroom(capac
     )
     result = await executable.run("current input", previous_state=previous)
     assert result.output_or_raise() == "done"
-    synchronous = triggered and capacity != "room"
-    assert len(requests) == (2 if synchronous else 1)
-    assert operator.submissions == int(triggered and capacity == "room")
-    assert ("old history" not in _user_values(result.state.message_history)) is synchronous
+    assert len(requests) == 1
+    assert operator.submissions == int(triggered)
+    assert "old history" in _user_values(result.state.message_history)
     assert _user_values(result.state.message_history).count("current input") == 1
-    if synchronous:
-        assert any("agent-context" in str(v) for v in _user_values(requests[-1]))
-        assert result.usage.requests == 2
     if operator.task is not None:
         operator.release.set()
         await operator.task
@@ -1311,7 +1278,7 @@ async def test_no_operation_chooses_background_only_with_verified_headroom(capac
 
 @pytest.mark.parametrize("counting", [False, True])
 async def test_wait_failure_uses_current_history_for_synchronous_fallback(counting):
-    previous = _previous()
+    previous = _previous(tokens=9500)
 
     class FailingOperator(_Operator):
         async def wait(self, thread_id, operation_id):
@@ -1375,16 +1342,11 @@ async def test_failed_foreground_fallback_is_bounded_and_preserves_history(count
             yield "done"
 
     executable = _build(operator, stream, counting=counting, extra=(Capability(id="step", tools=[step]),))
-    if counting:
-        result = await executable.run("continue", previous_state=previous)
-        assert result.output_or_raise() == "done"
-        assert "old history" in _user_values(result.state.message_history)
-        assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
-        assert ordinary == 2
-    else:
-        with pytest.raises(DefinitionError, match="could not free"):
-            await executable.run("continue", previous_state=previous)
-        assert ordinary == 0
+    result = await executable.run("continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert "old history" in _user_values(result.state.message_history)
+    assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
+    assert ordinary == 2
     assert summaries == 1 and operator.submissions == 0
 
 
@@ -1403,13 +1365,9 @@ async def test_foreground_fallback_respects_remaining_request_budget(counting):
         yield "done"
 
     executable = _build(operator, stream, counting=counting)
-    if counting:
-        result = await executable.run("continue", previous_state=previous, usage_limits=UsageLimits(request_limit=1))
-        assert result.output_or_raise() == "done"
-    else:
-        with pytest.raises(DefinitionError, match="could not free"):
-            await executable.run("continue", previous_state=previous, usage_limits=UsageLimits(request_limit=1))
-    assert len(requests) == int(counting)
+    result = await executable.run("continue", previous_state=previous, usage_limits=UsageLimits(request_limit=1))
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 1
     assert operator.submissions == 0
 
 
@@ -1473,9 +1431,7 @@ async def test_synchronous_compaction_retries_detached_history_with_backoff(monk
 
 @pytest.mark.parametrize("request_limit, attempts", [(1, 0), (2, 1), (3, 2), (10, 3)])
 @pytest.mark.parametrize("counting", [False, True])
-async def test_compaction_retry_exhaustion_preserves_budget_and_reports_cause(
-    monkeypatch, request_limit, attempts, counting
-):
+async def test_compaction_retry_exhaustion_preserves_budget_and_history(monkeypatch, request_limit, attempts, counting):
     previous = _previous()
     operator = _Operator()
     operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
@@ -1499,31 +1455,13 @@ async def test_compaction_retry_exhaustion_preserves_budget_and_reports_cause(
         yield "done"
 
     executable = _build(operator, stream, counting=counting)
-    if counting:
-        result = await executable.run(
-            "continue", previous_state=previous, usage_limits=UsageLimits(request_limit=request_limit)
-        )
-        assert result.output_or_raise() == "done"
-        assert result.usage.requests == attempts + 1
-        assert "old history" in _user_values(result.state.message_history)
-    else:
-        with pytest.raises(DefinitionError) as caught:
-            await executable.run(
-                "continue", previous_state=previous, usage_limits=UsageLimits(request_limit=request_limit)
-            )
-        error = caught.value
-        assert error.code == "compaction_capacity_unavailable"
-        assert error.details == {"summary_attempts": attempts}
-        assert "unverified capacity" in str(error)
-        assert "private provider detail" not in str(error)
-        if attempts:
-            assert f"after {attempts} attempt(s) (ModelConnectionError)" in str(error)
-            assert error.__cause__ is failure
-            assert error.retry_hint == "new_run"
-        else:
-            assert "remaining request budget" in str(error)
-            assert error.__cause__ is None
-    assert calls == attempts and ordinary == int(counting)
+    result = await executable.run(
+        "continue", previous_state=previous, usage_limits=UsageLimits(request_limit=request_limit)
+    )
+    assert result.output_or_raise() == "done"
+    assert result.usage.requests == attempts + 1
+    assert "old history" in _user_values(result.state.message_history)
+    assert calls == attempts and ordinary == 1
     assert delays == list(range(max(0, attempts - 1)))
     assert operator.submissions == 0
     assert await compaction_disposition(previous, basis=operator.operation.input.basis) is None
@@ -1540,27 +1478,27 @@ async def test_synchronous_compaction_does_not_retry_permanent_failure_or_refusa
 
     async def stream(messages, info):
         nonlocal calls
-        calls += 1
-        raise failure
-        yield "unreachable"
+        if _COMPACTION_PROMPT in _user_values(messages):
+            calls += 1
+            raise failure
+        yield "done"
 
     executable = _build(_Operator(), stream, counting=False)
-    expected = ModelCallCheckError if isinstance(failure, ModelCallCheckError) else DefinitionError
-    with pytest.raises(expected) as caught:
-        await executable.run("continue", previous_state=_previous())
-    assert calls == 1
-    if isinstance(failure, ModelHTTPError):
-        assert "HTTP 401" in str(caught.value)
-        assert "private detail" not in str(caught.value)
-        assert caught.value.__cause__ is failure
-    else:
+    if isinstance(failure, ModelCallCheckError):
+        with pytest.raises(ModelCallCheckError) as caught:
+            await executable.run("continue", previous_state=_previous(tokens=9500))
         assert caught.value is failure
+    else:
+        result = await executable.run("continue", previous_state=_previous(tokens=9500))
+        assert result.output_or_raise() == "done"
+        assert "old history" in _user_values(result.state.message_history)
+    assert calls == 1
 
 
 async def test_cancel_during_compaction_backoff_preserves_history(monkeypatch):
     calls = 0
     backing_off = asyncio.Event()
-    previous = _previous()
+    previous = _previous(tokens=9500)
     before = encode_messages(previous.message_history)
 
     def delay(attempt):
@@ -1646,13 +1584,12 @@ async def test_failed_operation_below_trigger_continues_without_fallback():
         (9501, 100, 0.95, True),
         (9200, 100, 0.92, True),
         (9500, 100, 0.99, False),
-        (9400, 1000, 0.95, True),
+        (9400, 1000, 0.95, False),
+        (9400, None, 0.95, False),
     ],
 )
-async def test_background_blocking_threshold_is_distinct_from_physical_capacity(
-    running, tokens, reserve, threshold, blocked
-):
-    previous = _previous()
+async def test_background_blocking_uses_response_usage_not_output_reserve(running, tokens, reserve, threshold, blocked):
+    previous = _previous(tokens=tokens)
 
     class Operator(_Operator):
         async def wait(self, thread_id, operation_id):
@@ -1668,22 +1605,16 @@ async def test_background_blocking_threshold_is_distinct_from_physical_capacity(
         operator.operation = CompactionOperation(input=_input(previous), status="running")
     requests = []
 
-    class Model(FunctionModel):
-        async def count_tokens(self, messages, model_settings, model_request_parameters):
-            compacted = any(isinstance(m, ModelResponse) and m.metadata == {"keep": "compact"} for m in messages)
-            # Applied summaries need physical fit, not headroom below the policy line.
-            return RequestUsage(input_tokens=min(tokens, 10000 - reserve) if compacted else tokens)
-
     async def stream(messages, info):
         requests.append(deepcopy(messages))
         yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
 
     executable = HarnessBuilder().build(
         AgentSpec(
-            model_settings={"max_tokens": reserve},
+            model_settings={} if reserve is None else {"max_tokens": reserve},
             model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
         ),
-        model=Model(stream_function=stream),
+        model=_CountingModel(stream_function=stream),
         output_type=str,
         capabilities=(
             CompactionCapability(
@@ -1798,3 +1729,120 @@ async def test_context_recovery_reuses_only_applicable_background_native_overflo
     assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is not None
     assert await compaction_disposition(result.state, basis=input.basis) == "skipped"
     assert operator.submissions == 0
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+@pytest.mark.parametrize(
+    "trigger,tokens,mode",
+    [
+        (0.90, 8999, "continue"),
+        (0.90, 9000, "background"),
+        (0.90, 9499, "background"),
+        (0.90, 9500, "sync"),
+        (0.95, 9499, "continue"),
+        (0.95, 9500, "sync"),
+        (0.98, 9500, "continue"),
+        (0.98, 9799, "continue"),
+        (0.98, 9800, "sync"),
+    ],
+)
+async def test_trigger_gates_new_work_even_at_or_above_blocking_line(absolute, trigger, tokens, mode):
+    operator = _Operator()
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000, compact_threshold=trigger)
+        ),
+        model=_CountingModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=int(trigger * 10000)) if absolute else None,
+                background=True,
+                operator=operator,
+            ),
+        ),
+    )
+    result = await executable.run("continue", previous_state=_previous(tokens=tokens))
+    assert result.output_or_raise() == "done"
+    assert operator.submissions == int(mode == "background")
+    assert len(requests) == (2 if mode == "sync" else 1)
+    assert not operator.waiting.is_set()
+    if operator.task is not None:
+        operator.release.set()
+        await operator.task
+
+
+@pytest.mark.parametrize("status", [None, "running", "failed", "ready"])
+async def test_missing_latest_usage_neither_starts_nor_blocks_but_ready_still_applies(status):
+    previous = _previous(tokens=0)
+    operator = _Operator()
+    if status is not None:
+        input = _input(previous)
+        operator.operation = CompactionOperation(
+            input=input,
+            status=status,
+            result=CompactionResult.from_summary(input.basis, "ready summary") if status == "ready" else None,
+            error_code="interrupted" if status == "failed" else None,
+        )
+
+    async def stream(messages, info):
+        assert _COMPACTION_PROMPT not in _user_values(messages)
+        assert ("ready summary" in str(messages)) is (status == "ready")
+        yield "done"
+
+    result = await _build(operator, stream).run("continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert not operator.waiting.is_set() and operator.submissions == 0
+
+
+@pytest.mark.parametrize("tokens", [7999, 8000])
+async def test_absolute_trigger_without_window_selects_synchronous_compaction(tokens):
+    operator = _Operator()
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(messages)
+        yield "summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=_CountingModel(stream_function=stream),
+        output_type=str,
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator),),
+    )
+    result = await executable.run("continue", previous_state=_previous(tokens=tokens))
+    assert result.output_or_raise() == "done"
+    assert len(requests) == (2 if tokens == 8000 else 1)
+    assert operator.submissions == 0
+
+
+async def test_restoration_ignores_precompaction_suffix_usage_until_fresh_response():
+    previous = _previous()
+    input = _input(previous)
+    delta = [
+        ModelRequest(parts=[UserPromptPart("later input")]),
+        ModelResponse(parts=[TextPart("later answer")], usage=RequestUsage(input_tokens=9900)),
+    ]
+    previous = previous.model_copy(
+        update={"message_history_json": encode_messages([*previous.message_history, *delta])}
+    )
+    compacted = await _pending_checkpoint(previous, result=CompactionResult.from_summary(input.basis, "saved summary"))
+    operator = _Operator()
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        assert _COMPACTION_PROMPT not in _user_values(messages)
+        assert "later answer" in str(messages)
+        yield "done"
+
+    result = await _build(operator, stream).run("continue", previous_state=compacted)
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 1 and operator.submissions == 0
+    assert "saved summary" in str(requests[0])

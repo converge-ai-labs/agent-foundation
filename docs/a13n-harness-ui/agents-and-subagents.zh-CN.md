@@ -265,9 +265,11 @@ Agent 有大量工具时，可使用分组。模型通过固定代理发现和�
 | 可选 `tool_search.config` | 代理控件名称和结果限制；`mode` 省略或设为 `proxy`                   |
 | Agent `tools` 允许列表    | 填写 `knowledge__lookup` 等规范目标名，不能只填写代理的 `call_tool` |
 
-重命名分组会改变规范目标名，需更新相应允许列表。分组保留工具执行权限和 CodeAct 适用条件。发现操作不会向后续请求添加成员 schema。独立 Agent 子级使用自己的分组；Markdown 子级继承父级方案。分组需在 YAML 中编辑，WebUI 尚不支持。变更应用于后续 Run。
+重命名分组会改变规范目标名，需更新相应允许列表。分组保留工具执行权限和 CodeAct 适用条件。发现操作不会向后续请求添加成员 schema。独立 Agent 子级使用自己的分组；Markdown 子级继承父级方案。详细分组可通过 YAML 编辑，WebUI 提供搜索开关和 MCP 服务选择。变更应用于后续 Run。
 
 代理控件和执行细节参见 [ToolSearch](../a13n-harness/tool-search.md)。旧配置应将 `mode: native` 改为 `proxy`，并移除 `strategy`。
+
+WebUI 的 Agent 设置提供 **Search tools on demand** 开关和 MCP 服务选择。关闭时写入 `tool_search.enabled: false`，保留已有分组以便重新开启。详细描述、插件和 Capability 分组仍可通过 Advanced configuration 编辑，后续 Run 生效。
 
 ## Agent 文件参考
 

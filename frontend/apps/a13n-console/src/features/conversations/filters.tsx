@@ -28,6 +28,7 @@ import {
 } from "../../shared/local-date-time";
 import type { SessionFilters } from "./api";
 import { zoneOffset } from "./format";
+import filterStyles from "../../shared/forms/filter-popover.module.css";
 import styles from "./conversations.module.css";
 import listStyles from "./session-list.module.css";
 
@@ -464,10 +465,10 @@ function UpdatedFilter({
       <PopoverPopup
         aria-label={t("Updated")}
         align="end"
-        className={styles.updatedPopup}
+        className={`${styles.updatedPopup} ${filterStyles.popup}`}
       >
-        <div className={styles.updatedBody}>
-          <div className={styles.presets}>
+        <div className={filterStyles.body}>
+          <div className={filterStyles.presets}>
             {presets.map((preset) => (
               <Button
                 key={preset.days}
@@ -488,7 +489,7 @@ function UpdatedFilter({
               </Button>
             ))}
           </div>
-          <div className={styles.updatedFields}>
+          <div className={filterStyles.dates}>
             <DateTimeField
               label={t("Start time")}
               value={start}
@@ -505,12 +506,12 @@ function UpdatedFilter({
               {t("Choose a valid time range.")}
             </p>
           )}
-          <div className={styles.updatedFooter}>
+          <div className={filterStyles.footer}>
             {/* The fields read in the browser's zone; its full name is a hover away. */}
             <span title={Intl.DateTimeFormat().resolvedOptions().timeZone}>
               {zoneOffset(undefined, i18n.resolvedLanguage)}
             </span>
-            <div className={styles.updatedActions}>
+            <div className={filterStyles.actions}>
               <Button
                 variant="ghost"
                 size="sm"
@@ -523,6 +524,7 @@ function UpdatedFilter({
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={invalid}
                 onClick={() => {
                   onChange(

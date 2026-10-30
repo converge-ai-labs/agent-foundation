@@ -44,12 +44,14 @@ from a13n_harness_ui.browser import (
     BrowserAccessRequest,
     BrowserCommand,
     BrowserControl,
+    BrowserHandbackRequest,
     BrowserState,
     BrowserViewportRequest,
 )
 from a13n_harness_ui.browser_capture import WindowPreview
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
+from a13n_harness_ui.configuration.mcp_tools import McpToolDescriptor, McpToolSelection, McpToolSettings
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
@@ -1176,10 +1178,20 @@ def create_webui(
         return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=True)
 
     @server.post(
-        "/api/threads/{thread_id}/browser/handback", response_model=BrowserControl, openapi_extra=_body(BrowserCommand)
+        "/api/threads/{thread_id}/browser/handback",
+        response_model=BrowserControl,
+        openapi_extra=_body(BrowserHandbackRequest),
     )
     async def handback_browser(thread_id: str, request: Request) -> BrowserControl:
-        return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=False)
+        return await app().control_browser(thread_id, await _document(request, BrowserHandbackRequest), human=False)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/renew-control",
+        response_model=BrowserState,
+        openapi_extra=_body(BrowserAccessRequest),
+    )
+    async def renew_browser_control(thread_id: str, request: Request) -> BrowserState:
+        return await app().renew_browser_control(thread_id, await _document(request, BrowserAccessRequest))
 
     @server.post(
         "/api/threads/{thread_id}/browser/access",
@@ -1667,6 +1679,22 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    @server.get("/api/mcp/{server_id}/tools", response_model=McpToolSettings)
+    async def mcp_tools_settings(server_id: str) -> McpToolSettings:
+        return await app().mcp_tool_settings(server_id)
+
+    @server.post("/api/mcp/{server_id}/tools/discover", response_model=tuple[McpToolDescriptor, ...])
+    async def mcp_tools_discover(server_id: str) -> tuple[McpToolDescriptor, ...]:
+        return await app().discover_mcp_tools(server_id)
+
+    @server.put(
+        "/api/mcp/{server_id}/tools", response_model=ConfigurationPublication, openapi_extra=_body(McpToolSelection)
+    )
+    async def mcp_tools_select(server_id: str, request: Request) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(
+            await app().select_mcp_tools(server_id, await _document(request, McpToolSelection))
+        )
 
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:

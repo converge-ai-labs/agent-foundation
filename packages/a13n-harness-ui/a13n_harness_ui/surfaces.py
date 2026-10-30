@@ -774,6 +774,7 @@ class AgentSummary(SurfaceModel):
     name: str = Field(min_length=1, max_length=256)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_path: str = Field(min_length=1, max_length=4096)
+    tool_search_mcp_servers: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 
 class SelectableResourceSummary(SurfaceModel):
@@ -782,6 +783,7 @@ class SelectableResourceSummary(SurfaceModel):
     kind: Literal["harness_plugin", "environment_run_extension", "mcp_server"]
     implementation_key: str | None = Field(default=None, min_length=1, max_length=200)
     source_path: str = Field(min_length=1, max_length=4096)
+    selected_tool_count: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
 
 
 class ModelSummary(SurfaceModel):

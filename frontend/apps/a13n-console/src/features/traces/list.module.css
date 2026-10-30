@@ -135,7 +135,7 @@
   text-align: center;
 }
 .metadataPopup {
-  width: min(440px, calc(100vw - 24px));
+  width: min(400px, calc(100vw - 24px));
 }
 .filterPopover {
   display: grid;
@@ -155,15 +155,11 @@
 .metadataRow [data-slot="select-trigger"] {
   width: 100%;
 }
-.popoverFooter {
-  display: flex;
+.metadataFooter {
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
+}
+.metadataFooter > span {
+  flex: 1 1 180px;
 }
 /* The add action lines up with the fields' text, not the popover edge. */
 .addFilter {
@@ -187,14 +183,6 @@
 .metricPopup {
   width: min(340px, calc(100vw - 24px));
 }
-.metricForm {
-  display: grid;
-  gap: 20px;
-}
-.metricTitle {
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-}
 .metricSection {
   min-width: 0;
   padding: 0;
@@ -202,7 +190,7 @@
 }
 .metricLegend {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
@@ -223,10 +211,6 @@
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
-}
-.metricActions {
-  display: flex;
-  gap: 4px;
 }
 .rangeError {
   margin-top: 8px;

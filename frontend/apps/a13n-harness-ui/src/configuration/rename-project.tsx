@@ -6,7 +6,7 @@ import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
-import { DraftContext } from "./sources";
+import { DraftContext } from "./drafts";
 import styles from "../shell/workbench.module.css";
 
 export function RenameProject({

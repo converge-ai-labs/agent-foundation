@@ -198,15 +198,19 @@ def reconstruct(
     for fragment in fragments:
         categories[fragment.kind] = categories.get(fragment.kind, 0) + len(fragment.text)
     before = sum(categories.values())
+    header = "# Context recovery\n" + WARNING
+    notices = _LOSS + _RESUME
+    if latest is None:
+        notices += "\nTask-start provenance is unavailable; unclassified inputs below are not asserted task anchors.\n"
     # Paths are indivisible: an overlong reference is omitted, never fabricated by truncation.
     reference = (
         f"\nRetained original history: {retained_reference}\n"
         if retained_reference is not None and len(retained_reference) <= 1024
         else "\n" + _clip(preservation, 256) + "\n"
     )
-    fixed = "# Context recovery\n" + WARNING + reference + _LOSS + _RESUME
-    if latest is None:
-        fixed += "\nTask-start provenance is unavailable; unclassified inputs below are not asserted task anchors.\n"
+    if len(header + reference + notices) > max_chars:
+        reference = "\nRetained history reference omitted to fit the recovery budget.\n"
+    fixed = header + reference + notices
     remaining = max_chars - len(fixed)
     selected: list[tuple[tuple[int, int], str]] = []
     omitted = 0

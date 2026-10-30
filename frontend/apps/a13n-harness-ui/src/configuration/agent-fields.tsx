@@ -1,3 +1,4 @@
+import { ToolSearchFields } from "./tool-search";
 import { ModelIdentity } from "../shell/model-identity";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import {
@@ -230,6 +231,7 @@ export function AgentFields({
       {connections && (
         <SettingsSection title="Connections">{connections}</SettingsSection>
       )}
+      <ToolSearchFields source={source} onChange={onChange} />
       <SettingsSection variant="grouped" title="Delegation">
         {children.map((item, index) => (
           <SettingsRow

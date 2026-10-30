@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -43,6 +43,12 @@ export function BrowserPanel({
   const [pending, setPending] = useState("");
   const busy = !!pending;
   const [scale, setScale] = useState<BrowserScale>("fit");
+  const [now, setNow] = useState(() => Date.now());
+  const lastRenewal = useRef(0);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const [error, setError] = useState("");
   const [authority, setAuthority] = useState<{
     threadId: string;
@@ -87,6 +93,21 @@ export function BrowserPanel({
     retry: false,
   });
   const refresh = () => queries.invalidateQueries({ queryKey: ["browser"] });
+  const renewControl = () => {
+    if (!threadId || !session?.session_id || !controlToken) return;
+    const now = Date.now();
+    if (now - lastRenewal.current < 10000) return;
+    lastRenewal.current = now;
+    void result(
+      client.POST("/api/threads/{thread_id}/browser/renew-control", {
+        params: { path: { thread_id: threadId } },
+        body: { session_id: session.session_id, control_token: controlToken },
+      }),
+    ).then(
+      () => refresh(),
+      () => refresh(),
+    );
+  };
   const command = async (
     kind: "start" | "reset" | "close" | "take-control" | "handback",
   ) => {
@@ -134,7 +155,13 @@ export function BrowserPanel({
       }
       if (kind === "handback") {
         const value = await result(
-          client.POST("/api/threads/{thread_id}/browser/handback", path),
+          client.POST("/api/threads/{thread_id}/browser/handback", {
+            ...path,
+            body: {
+              ...path.body,
+              control_episode: session?.control_episode ?? 0,
+            },
+          }),
         );
         queries.setQueryData(["browser", threadId], value.state);
         setAuthority(null);
@@ -206,6 +233,17 @@ export function BrowserPanel({
     !busy &&
     !!(error || session?.error || session?.status === "failed");
   const human = session?.control === "human";
+  const remaining = session?.control_remaining_seconds;
+  const seconds =
+    remaining == null
+      ? null
+      : Math.max(0, Math.ceil(remaining - (now - state.dataUpdatedAt) / 1000));
+  const leaseLabel =
+    seconds === null
+      ? ""
+      : seconds === 0
+        ? "Returning control…"
+        : `Auto handback in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const mac = session?.platform === "macos";
   const transfer = human && !mac && !controlToken;
   const handback = human && !transfer;
@@ -363,10 +401,15 @@ export function BrowserPanel({
       )}
       {ready ? (
         <>
+          {human && leaseLabel && (
+            <p className={styles.notice} role="status">
+              {leaseLabel}
+            </p>
+          )}
           {session.platform === "macos" && (
             <p className={styles.notice}>
               {human
-                ? "Automation paused. Operate this browser on the Mac, then resume here."
+                ? "Automation paused. Native Mac input does not renew the timer; resume here when finished."
                 : "Read-only window preview. Pause automation before operating this browser on the Mac."}
             </p>
           )}
@@ -386,6 +429,7 @@ export function BrowserPanel({
                     : ""
             }
             onReconnectControl={() => void command("take-control")}
+            onControlActivity={renewControl}
             scale={scale}
             actions={actions}
           />

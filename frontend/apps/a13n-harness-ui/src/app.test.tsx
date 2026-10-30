@@ -567,17 +567,36 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
               content_available: false,
               content: null,
             })
-          : fixture(request),
+          : /^\/api\/mcp\/mcp-(one|two)\/tools$/.test(
+                new URL(request.url).pathname,
+              )
+            ? json({
+                server_id: new URL(request.url).pathname.split("/")[3],
+                name: "Private MCP server",
+                resource_digest: "a",
+                tools: null,
+              })
+            : fixture(request),
       ),
     ),
   );
   render(<BrowserApp />);
+  const connection = await screen.findByText("Server connection");
+  expect(connection.closest("details")?.open).toBe(false);
+  expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+  await userEvent.click(connection);
   await screen.findByRole("heading", {
-    name: "Saved configuration is hidden",
+    name: "Saved connection details are hidden",
   });
-  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  const connectionDetails = within(connection.closest("details")!);
+  expect(connectionDetails.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(screen.queryByLabelText("YAML source")).toBeNull();
+  const toolSaves = await screen.findAllByRole("button", { name: "Save" });
+  expect(toolSaves).toHaveLength(2);
+  for (const button of toolSaves)
+    expect(button).toHaveProperty("disabled", true);
   expect(screen.getByRole("button", { name: "Replace file" })).toBeTruthy();
-  expect(screen.getByText(/mcp-one, mcp-two/)).toBeTruthy();
+  expect(connectionDetails.getByText(/mcp-one, mcp-two/)).toBeTruthy();
 });
 
 it("reopens an unpublished resource draft without treating it as a missing server source", async () => {

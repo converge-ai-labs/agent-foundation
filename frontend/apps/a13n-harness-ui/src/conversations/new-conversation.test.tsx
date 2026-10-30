@@ -1484,7 +1484,10 @@ it("shows saved content with a reconnect notice when the initial live connection
   focusUnavailable = true;
   mount(`/threads/${id}`);
   await screen.findByRole("textbox", { name: "Shared prompt" });
-  expect(await screen.findByText(/Reconnecting live updates/)).toBeTruthy();
+  // Allow the 1.5-second quiet period before the connection status appears.
+  expect(
+    await screen.findByText(/Reconnecting live updates/, {}, { timeout: 3000 }),
+  ).toBeTruthy();
   expect(screen.queryByText("Opening chat…")).toBeNull();
 });
 

@@ -652,3 +652,15 @@ async def test_app_input_wait_retains_view_and_publishes_only_terminal_result(ap
         assert "inputRequired" not in str(terminal.result)
     assert connection.connected
     assert (await operations.snapshots.read(reference)).snapshot.result["structuredContent"]["count"] == 1
+
+
+async def test_app_calls_obey_server_tool_selection(apps) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    path = operations.configuration_root / "mcp/docs.yaml"
+    resource = yaml.safe_load(path.read_text())
+    resource.update(schema_version="2", tools=["counter"])
+    path.write_text(yaml.safe_dump(resource))
+    await _accept(operations)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="server-denied", name="reset"))
+    assert (await _settle(operations, view.view_id, "server-denied")).status == "failed"

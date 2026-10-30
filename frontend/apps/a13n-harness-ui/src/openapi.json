@@ -2048,7 +2048,56 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BrowserCommand"
+                "$ref": "#/components/schemas/BrowserHandbackRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/renew-control": {
+      "post": {
+        "summary": "Renew Browser Control",
+        "operationId": "renew_browser_control_api_threads__thread_id__browser_renew_control_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserAccessRequest"
               }
             }
           }
@@ -4284,6 +4333,135 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoginCallbackInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/{server_id}/tools": {
+      "get": {
+        "summary": "Mcp Tools Settings",
+        "operationId": "mcp_tools_settings_api_mcp__server_id__tools_get",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpToolSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Mcp Tools Select",
+        "operationId": "mcp_tools_select_api_mcp__server_id__tools_put",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPublication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpToolSelection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/{server_id}/tools/discover": {
+      "post": {
+        "summary": "Mcp Tools Discover",
+        "operationId": "mcp_tools_discover_api_mcp__server_id__tools_discover_post",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/McpToolDescriptor"
+                  },
+                  "title": "Response Mcp Tools Discover Api Mcp  Server Id  Tools Discover Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -8642,6 +8820,14 @@
             "maxLength": 4096,
             "minLength": 1,
             "title": "Source Path"
+          },
+          "tool_search_mcp_servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Search Mcp Servers",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -8657,6 +8843,11 @@
         "properties": {
           "config": {
             "$ref": "#/components/schemas/ToolSearchConfig"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
           },
           "groups": {
             "additionalProperties": {
@@ -9891,6 +10082,22 @@
             ],
             "title": "Control",
             "default": "agent"
+          },
+          "control_episode": {
+            "type": "integer",
+            "title": "Control Episode",
+            "default": 0
+          },
+          "control_remaining_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Remaining Seconds"
           },
           "url": {
             "type": "string",
@@ -15529,6 +15736,78 @@
         ],
         "title": "McpIntegrationView"
       },
+      "McpToolDescriptor": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "input_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Input Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "input_schema"
+        ],
+        "title": "McpToolDescriptor"
+      },
+      "McpToolName": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "McpToolSettings": {
+        "properties": {
+          "resource_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Resource Digest"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolName"
+                },
+                "type": "array",
+                "maxItems": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "server_id": {
+            "type": "string",
+            "title": "Server Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_digest",
+          "tools",
+          "server_id",
+          "name"
+        ],
+        "title": "McpToolSettings"
+      },
       "MemoryAgentSource": {
         "properties": {
           "kind": {
@@ -18650,6 +18929,18 @@
             "maxLength": 4096,
             "minLength": 1,
             "title": "Source Path"
+          },
+          "selected_tool_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Tool Count"
           }
         },
         "additionalProperties": false,
@@ -25034,6 +25325,28 @@
         "title": "BrowserViewportRequest",
         "type": "object"
       },
+      "BrowserHandbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "control_episode": {
+            "minimum": 0,
+            "title": "Control Episode",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "control_episode"
+        ],
+        "title": "BrowserHandbackRequest",
+        "type": "object"
+      },
       "BrowserAccessRequest": {
         "additionalProperties": false,
         "properties": {
@@ -25736,6 +26049,37 @@
           "callback_url"
         ],
         "title": "LoginCallbackInput",
+        "type": "object"
+      },
+      "McpToolSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Resource Digest",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolName"
+                },
+                "maxItems": 1024,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "required": [
+          "resource_digest",
+          "tools"
+        ],
+        "title": "McpToolSelection",
         "type": "object"
       },
       "ResourceMutationRequest": {

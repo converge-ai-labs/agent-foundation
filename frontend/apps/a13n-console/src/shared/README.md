@@ -55,6 +55,7 @@ Fields and form chrome that several features share.
 - `HeaderFields`, `serializeHeaders` — extra HTTP header rows.
 - `FormSection` — configuration groups with a heading outside one outlined field body and an optional `actions` slot beside the heading. Peer groups are separated by whitespace. Single-value fields use aligned label/control columns; `formSectionStyles.fieldRows` reuses that layout in an unbordered nested editor. Repeated column editors can retain their table-like layout with `data-field-layout="stacked"`.
 - `DateTimeField`, `ImagePicker`, `FileUpload` — the non-text controls.
+- `filter-popover.module.css` — compact filter form composition: one popup inset, aligned date rows that stack when narrow, preset actions, and a quiet footer without an extra framed section. Used by time ranges, session filters, and trace filters.
 - `ProviderEnabled`, `ProviderKeyLink` — provider editors. The enable switch is a settings row, so it sits in the editor's group beside the credential row.
 - `useSuggestedName` — a name that follows selections until the user edits it.
 - `validation` — the shared Ajv instance and the console's validators.

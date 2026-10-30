@@ -2,6 +2,9 @@ import { memo, useContext, type ComponentPropsWithoutRef } from "react";
 import { useGuestAccess } from "../transport/context";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
@@ -57,6 +60,15 @@ const components: Components = {
   img: ({ alt }) => <span>[Image: {alt || "attachment"}]</span>,
   pre: MarkdownPre,
   table: MarkdownTable,
+  span: ({ node: _node, className, ...props }) => (
+    <span
+      {...props}
+      className={className}
+      {...(className === "katex-display"
+        ? { role: "region", "aria-label": "Math formula", tabIndex: 0 }
+        : {})}
+    />
+  ),
   figure: ({ node, children, ...props }) => {
     const path = node?.properties.dataHostMediaPath;
     return typeof path === "string" ? (
@@ -77,11 +89,14 @@ export const MessageText = memo(function MessageText({
     <MarkdownSource value={text}>
       <div className={styles.markdown}>
         <Markdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={
             guest
-              ? []
-              : [[linkedMediaPreviews, { currentHref: window.location.href }]]
+              ? [rehypeKatex]
+              : [
+                  rehypeKatex,
+                  [linkedMediaPreviews, { currentHref: window.location.href }],
+                ]
           }
           skipHtml
           components={components}

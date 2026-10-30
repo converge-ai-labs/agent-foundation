@@ -1,5 +1,5 @@
 import { ModelIdentity } from "../shell/model-identity";
-import { createContext, useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
@@ -24,6 +24,7 @@ import {
 import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
+import { McpTools } from "./mcp-tools";
 import { ResourceFields } from "./fields";
 import {
   readDocument,
@@ -46,14 +47,7 @@ import {
   SettingsTextField as TextField,
 } from "../shell/settings";
 
-export type SourceDraft = {
-  content: string;
-  base: string | null;
-  digest: string | null;
-  replacement: boolean;
-};
-// Deliberately memory-only. Kept above the auth gate so reauthentication does not discard edits.
-export const DraftContext = createContext<Map<string, SourceDraft>>(new Map());
+import { DraftContext, type SourceDraft } from "./drafts";
 
 export function NewResourceButton({
   kind,
@@ -303,7 +297,7 @@ export function SourcesPage({
                 <span className={styles.tag}>Read only</span>
               )}
               {source.writable && !source.content_available && (
-                <span className={styles.tag}>Replacement only</span>
+                <span className={styles.tag}>Connection hidden</span>
               )}
               {!kinds && (
                 <span className={styles.kind}>
@@ -440,20 +434,6 @@ export function SourceDocument({
   );
   const [notice, setNotice] = useState("");
   const [modelReady, setModelReady] = useState(false);
-  const kind = readDocument(draft?.content ?? "")?.get("kind");
-  const [back, backLabel] =
-    kind === "agent"
-      ? ["/settings/agents", "Agents"]
-      : kind === "model"
-        ? ["/settings/models", "Models"]
-        : kind === "device"
-          ? ["/settings/environments?tab=devices", "Devices"]
-          : kind === "environment_profile" ||
-              kind === "environment_run_extension"
-            ? ["/settings/environments?tab=profiles", "Environments"]
-            : kind === "mcp_server" || kind === "harness_plugin"
-              ? ["/settings/connections", "Connections"]
-              : ["/settings/resources", "Configuration files"];
   const [deleting, setDeleting] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const source = useQuery({
@@ -467,7 +447,41 @@ export function SourceDocument({
       ),
     enabled: !!path && !isNew,
   });
-  const dirty = !!draft && draft.content !== draft.base;
+  const selectors = useSelectors();
+  const sourceInfo = source.data;
+  const mcpName =
+    sourceInfo?.resource_kind === "mcp_server"
+      ? sourceInfo.resource_ids
+          .map(
+            (id) =>
+              selectors.data?.mcp_servers.find(
+                (item) => item.resource_id === id,
+              )?.name ?? id,
+          )
+          .join(", ")
+      : undefined;
+  const kind =
+    readDocument(draft?.content ?? "")?.get("kind") ??
+    sourceInfo?.resource_kind;
+  const [back, backLabel] =
+    kind === "agent"
+      ? ["/settings/agents", "Agents"]
+      : kind === "model"
+        ? ["/settings/models", "Models"]
+        : kind === "device"
+          ? ["/settings/environments?tab=devices", "Devices"]
+          : kind === "environment_profile" ||
+              kind === "environment_run_extension"
+            ? ["/settings/environments?tab=profiles", "Environments"]
+            : kind === "mcp_server" || kind === "harness_plugin"
+              ? ["/settings/connections", "Connections"]
+              : ["/settings/resources", "Configuration files"];
+  // Hidden MCP connections have an empty placeholder with no editable base.
+  // Only an explicit replacement turns that placeholder into a source draft.
+  const dirty =
+    !!draft &&
+    (isNew || draft.replacement || draft.base !== null) &&
+    draft.content !== draft.base;
   const sharedDraft = drafts.get(path);
   useEffect(() => {
     // Quick actions can publish this source while its clean editor stays mounted.
@@ -588,6 +602,7 @@ export function SourceDocument({
                 ? `Add ${resourceLabel}`
                 : String(
                     readDocument(draft?.content ?? "")?.get("name") ||
+                      mcpName ||
                       path ||
                       "Configuration",
                   ))
@@ -629,29 +644,38 @@ export function SourceDocument({
           </Button>
         </div>
       )}
+      {source.data?.resource_kind === "mcp_server" &&
+        !draft?.replacement &&
+        source.data.resource_ids.map((id) => (
+          <McpTools key={id} serverId={id} />
+        ))}
       {source.data && !source.data.content_available && !draft?.replacement && (
-        <Panel title="Saved configuration is hidden">
-          <p>
-            Saved MCP configuration may contain secrets. Replacing it overwrites
-            the whole file, including {source.data.resource_ids.join(", ")}.
-            Existing secrets and unknown fields cannot be recovered here.
-          </p>
-          {writable && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                update({
-                  content: "",
-                  base: null,
-                  digest: source.data!.source_digest,
-                  replacement: true,
-                })
-              }
-            >
-              Replace file
-            </Button>
-          )}
-        </Panel>
+        <details className={layout.groupDisclosure}>
+          <summary>Server connection</summary>
+          <Panel title="Saved connection details are hidden">
+            <p>
+              Tool selections are saved separately. Replacing the connection
+              overwrites the whole file, including{" "}
+              {source.data.resource_ids.join(", ")}. Existing secrets and
+              unknown fields cannot be recovered here.
+            </p>
+            {writable && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  update({
+                    content: "",
+                    base: null,
+                    digest: source.data!.source_digest,
+                    replacement: true,
+                  })
+                }
+              >
+                Replace file
+              </Button>
+            )}
+          </Panel>
+        </details>
       )}
       {canEdit && (
         <div className={styles.configurationForm}>

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 
 import pytest
-from a13n_harness import ContextRecoveryPolicy, HarnessBuilder, RunBindings
+from a13n_harness import ContextRecoveryPolicy, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness._context_recovery import DEFAULT_RECOVERY_CHARS, WARNING, mark_input, reconstruct
 from a13n_harness.capabilities.context import CompactionCapability
 from a13n_harness.content import content_items, input_request, merge_request_history
@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     TextPart,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -66,6 +67,64 @@ def test_reconstruction_total_budget_and_huge_inputs(budget: int) -> None:
     assert first.omitted > 0
     assert "could not be retained" in first.prompt
     assert "Immediate root-cause investigation" in first.prompt
+
+
+@pytest.mark.parametrize(
+    "budget,reference_chars,kept",
+    [(2048, 992, True), (2048, 993, False), (2048, 1024, False), (4096, 1024, True), (2048, 1025, False)],
+)
+def test_legacy_reconstruction_budgets_the_complete_retained_reference(
+    budget: int, reference_chars: int, kept: bool
+) -> None:
+    reference = ("/" + "segment/" * 128 + "history.txt")[:reference_chars]
+    messages = [ModelRequest(parts=[UserPromptPart("legacy task")])]
+    rebuilt = reconstruct(messages, max_chars=budget, retained_reference=reference)
+    assert len(rebuilt.prompt) <= budget
+    assert WARNING in rebuilt.prompt
+    assert "provenance is unavailable" in rebuilt.prompt
+    assert "## Resume instructions" in rebuilt.prompt
+    if kept:
+        assert f"Retained original history: {reference}\n" in rebuilt.prompt
+    else:
+        assert "Retained original history:" not in rebuilt.prompt
+        assert reference[:128] not in rebuilt.prompt
+        if reference_chars <= 1024:
+            assert "history reference omitted" in rebuilt.prompt
+
+
+@pytest.mark.anyio
+async def test_legacy_run_recovers_with_a_long_retained_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness._context_recovery as recovery
+
+    reference = "/" + "segment/" * 127 + "history"
+    calls: list[list[ModelMessage]] = []
+
+    async def retained(*args, **kwargs):
+        return reference, "retained"
+
+    monkeypatch.setattr(recovery, "preserve_history", retained)
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        calls.append(deepcopy(messages))
+        if len(calls) <= 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        yield "resumed"
+
+    previous = HarnessState.new(message_history=[ModelRequest(parts=[UserPromptPart("legacy task")])])
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        context_recovery=ContextRecoveryPolicy(max_history_chars=2048),
+    )
+    result = await executable.run(None, previous_state=previous)
+    assert result.output_or_raise() == "resumed"
+    assert len(calls) == 3
+    assert "history reference omitted" in str(calls[-1])
+    state = result.state.agent_context_state.get(recovery.CONTEXT_RECOVERY_STATE_ID)
+    assert state is not None and isinstance(state.data, dict)
+    assert state.data["after_chars"] <= 2048
+    assert state.data["outcome"] == "resumed"
 
 
 @pytest.mark.anyio

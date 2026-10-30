@@ -66,7 +66,7 @@ Expand a Project for its five most recently updated root conversations. **Show m
 
 Use a conversation's **…** menu to rename, star, share, inspect, archive, or delete it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.
 
-**Delete chat** is also available in chat details and in **Archived**. Confirming permanently removes the chat and its subagent history for everyone. Stop active work first. Delete a Coordinator's worker chats before deleting the Coordinator. Live and Memory chats cannot be deleted, and shared-link guests cannot delete chats. Project files and independent forks are kept. Thread files are cleaned up on a best-effort basis; shared immutable history objects remain on disk. This operation has no undo and is not secure disk erasure.
+**Delete chat** is also available in chat details and in **Archived**. Confirming permanently removes the chat and its subagent history for everyone. Stop active work first. Delete a Coordinator's worker chats before deleting the Coordinator. Live and Memory chats cannot be deleted, and shared-link guests cannot delete chats. Project files and independent forks are kept. Thread files are cleaned up on a best-effort basis. Automatic background maintenance runs at startup and hourly to reclaim root checkpoints and their exclusive payloads for Threads with recorded permanent deletions. Cleanup is best-effort and failures do not stop the App. Existing Threads' saved checkpoint history, shared immutable history objects, incomplete payloads, and objects without a deletion record remain on disk. This operation has no undo and is not secure disk erasure.
 
 Drag a Project's handle to reorder it, or use the menu's Move and Reset actions. With the keyboard, focus the handle, press Space, use Up/Down, and press Enter to save or Escape to cancel. Project order and expansion are browser-local; renaming changes only the display name. Active work appears first, and completion updates navigation time.
 
@@ -204,6 +204,18 @@ Inputs, applied steering, and Agent text remain chronological. **Execution detai
 ## Saved output
 
 Reopen a conversation to read saved history and retained attachments. Child results are available through the inspection panel; historical feedback captures remain ordinary attachments. Viewing and expanding history changes only your view, not Agent context or execution.
+
+### Math formulas
+
+Messages and Markdown file previews render LaTeX math. Use `$E = mc^2$` for an inline formula. For a display formula, put `$$` on separate lines:
+
+```text
+$$
+\frac{1}{2} + \sqrt{x}
+$$
+```
+
+A fenced `math` block also renders a display formula. Long display formulas scroll horizontally with keyboard access. Invalid formulas keep readable source, and copying a message preserves its original Markdown. Escape a literal dollar sign as `\$`; ordinary code spans and fences remain source text.
 
 ## Interactive MCP tool results
 

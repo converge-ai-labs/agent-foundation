@@ -818,6 +818,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/browser/renew-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Renew Browser Control */
+        post: operations["renew_browser_control_api_threads__thread_id__browser_renew_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/browser/access": {
         parameters: {
             query?: never;
@@ -1672,6 +1689,41 @@ export interface paths {
         put?: never;
         /** Submit Login Callback */
         post: operations["submit_login_callback_api_auth_logins__session_id__callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Tools Settings */
+        get: operations["mcp_tools_settings_api_mcp__server_id__tools_get"];
+        /** Mcp Tools Select */
+        put: operations["mcp_tools_select_api_mcp__server_id__tools_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/{server_id}/tools/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Tools Discover */
+        post: operations["mcp_tools_discover_api_mcp__server_id__tools_discover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2835,10 +2887,20 @@ export interface components {
             model_id?: string | null;
             /** Source Path */
             source_path: string;
+            /**
+             * Tool Search Mcp Servers
+             * @default []
+             */
+            tool_search_mcp_servers?: string[];
         };
         /** AgentToolSearch */
         AgentToolSearch: {
             config?: components["schemas"]["ToolSearchConfig"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
             /** Groups */
             groups?: {
                 [key: string]: components["schemas"]["AgentToolSearchGroup"];
@@ -3326,6 +3388,13 @@ export interface components {
              * @enum {string}
              */
             control?: "agent" | "human";
+            /**
+             * Control Episode
+             * @default 0
+             */
+            control_episode?: number;
+            /** Control Remaining Seconds */
+            control_remaining_seconds?: number | null;
             /**
              * Url
              * @default
@@ -5335,6 +5404,29 @@ export interface components {
             /** Retired */
             retired: boolean;
         };
+        /** McpToolDescriptor */
+        McpToolDescriptor: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Input Schema */
+            input_schema: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        McpToolName: string;
+        /** McpToolSettings */
+        McpToolSettings: {
+            /** Resource Digest */
+            resource_digest: string;
+            /** Tools */
+            tools: components["schemas"]["McpToolName"][] | null;
+            /** Server Id */
+            server_id: string;
+            /** Name */
+            name: string;
+        };
         /**
          * MemoryAgentSource
          * @description Application-owned organizer; not a selectable Agent resource.
@@ -6408,6 +6500,8 @@ export interface components {
             implementation_key?: string | null;
             /** Source Path */
             source_path: string;
+            /** Selected Tool Count */
+            selected_tool_count?: number | null;
         };
         /** SessionAffinityPreset */
         SessionAffinityPreset: {
@@ -8898,6 +8992,13 @@ export interface components {
             control_token?: string;
             preset: components["schemas"]["BrowserPreset"];
         };
+        /** BrowserHandbackRequest */
+        BrowserHandbackRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Control Episode */
+            control_episode: number;
+        };
         /** BrowserAccessRequest */
         BrowserAccessRequest: {
             /** Session Id */
@@ -9136,6 +9237,13 @@ export interface components {
              * Format: password
              */
             callback_url: string;
+        };
+        /** McpToolSelection */
+        McpToolSelection: {
+            /** Resource Digest */
+            resource_digest: string;
+            /** Tools */
+            tools: components["schemas"]["McpToolName"][] | null;
         };
         /**
          * ResourceMutationRequest
@@ -10911,7 +11019,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BrowserCommand"];
+                "application/json": components["schemas"]["BrowserHandbackRequest"];
             };
         };
         responses: {
@@ -10922,6 +11030,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserControl"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_browser_control_api_threads__thread_id__browser_renew_control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
                 };
             };
             /** @description Validation Error */
@@ -12600,6 +12743,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_settings_api_mcp__server_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_select_api_mcp__server_id__tools_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpToolSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_tools_discover_api_mcp__server_id__tools_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolDescriptor"][];
                 };
             };
             /** @description Validation Error */

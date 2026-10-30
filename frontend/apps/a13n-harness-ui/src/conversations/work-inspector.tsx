@@ -61,8 +61,10 @@ export function WorkInspector({
   activity,
   onUseGoal,
   status,
+  connectionStatus,
 }: {
   status?: ReactNode;
+  connectionStatus?: ReactNode;
   threadId: string;
   display: FocusDisplay;
   connected?: boolean;
@@ -218,6 +220,7 @@ export function WorkInspector({
               })}
             </MenuPopup>
           </Menu>
+          <div className={styles.connection}>{connectionStatus}</div>
           {status && <div className={styles.status}>{status}</div>}
         </div>
         <DialogPopup

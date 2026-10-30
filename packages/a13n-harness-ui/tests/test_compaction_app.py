@@ -136,9 +136,7 @@ async def test_app_retains_background_result_then_delivers_with_current_input(
         agent.read_text() + "capabilities:\n  - capability: compaction\n    configuration:\n      trigger_tokens: 10\n"
     )
     model_path = tmp_path / "models/primary.yaml"
-    model_path.write_text(
-        model_path.read_text() + "settings: {max_tokens: 100}\nmodel_characteristics: {context_window_tokens: 10000}\n"
-    )
+    model_path.write_text(model_path.read_text() + "model_characteristics: {context_window_tokens: 10000}\n")
     started, release = asyncio.Event(), asyncio.Event()
     requests: list[str] = []
     summaries = 0
@@ -158,7 +156,7 @@ async def test_app_retains_background_result_then_delivers_with_current_input(
 
     class CountingModel(FunctionModel):
         async def count_tokens(self, messages, model_settings, model_request_parameters):
-            return RequestUsage(input_tokens=100)
+            pytest.fail("background compaction must not require native counting or max_tokens")
 
     async def resolve(self, model_id, *, thread_id):
         return CountingModel(function=background, stream_function=foreground)
@@ -239,9 +237,7 @@ async def test_app_recovers_failed_background_in_next_run_and_commits_retirement
         agent.read_text() + "capabilities:\n  - capability: compaction\n    configuration:\n      trigger_tokens: 10\n"
     )
     model_path = tmp_path / "models/primary.yaml"
-    model_path.write_text(
-        model_path.read_text() + "settings: {max_tokens: 100}\nmodel_characteristics: {context_window_tokens: 10000}\n"
-    )
+    model_path.write_text(model_path.read_text() + "model_characteristics: {context_window_tokens: 10000}\n")
     started = asyncio.Event()
     background_calls = 0
     fallback_calls = 0

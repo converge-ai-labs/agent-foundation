@@ -265,7 +265,7 @@ Groups can also select `harness_plugins` by resource ID and `capabilities` by en
 | Optional `tool_search.config` | Proxy control names and result limits; `mode` omitted or `proxy`                   |
 | Agent `tools` allowlist       | Canonical targets such as `knowledge__lookup`, not only the proxy's `call_tool`    |
 
-Renaming a group changes its canonical target names; update matching allowlists. Grouping preserves tool execution permissions and CodeAct eligibility. Discovery does not add member schemas to later requests. Independent Agent children use their own groups; Markdown children inherit the parent's plan. Edit groups in YAML; WebUI group editing is unavailable. Changes apply to later Runs.
+Renaming a group changes its canonical target names; update matching allowlists. Grouping preserves tool execution permissions and CodeAct eligibility. Discovery does not add member schemas to later requests. Independent Agent children use their own groups; Markdown children inherit the parent's plan. In WebUI Agent settings, use **Search tools on demand** and select MCP servers. Switching it off writes `tool_search.enabled: false` and preserves the groups for re-enabling. Detailed group descriptions, plugin and Capability membership remain editable in Advanced configuration. Changes apply to later Runs.
 
 See [ToolSearch](../a13n-harness/tool-search.md) for proxy controls and execution details. For older configurations, replace `mode: native` with `proxy` and remove `strategy`.
 

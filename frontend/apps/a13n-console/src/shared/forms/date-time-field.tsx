@@ -13,6 +13,7 @@ import {
 import { CalendarDotsIcon } from "@phosphor-icons/react";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import filterStyles from "./filter-popover.module.css";
 import { formatLocalDateTime, parseLocalDateTime } from "../local-date-time";
 
 const hours = Array.from({ length: 24 }, (_, index) => {
@@ -124,10 +125,11 @@ export function DateTimeField({
         <PopoverPopup
           align="start"
           aria-label={label}
-          className="w-auto min-w-fit max-w-[calc(100vw-2rem)] [&_[data-slot=popover-viewport]]:p-4"
+          className={`${filterStyles.popup} w-[304px] min-w-0 max-w-[calc(100vw-1.5rem)]`}
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <Calendar
+              className="self-center [--cell-size:--spacing(9)] sm:[--cell-size:--spacing(8)]"
               mode="single"
               selected={day}
               onSelect={setDay}
@@ -203,9 +205,6 @@ export function DateTimeField({
                 />
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            </p>
             {day && !valid && (
               <p role="alert" className="text-sm text-destructive">
                 {t("This local time does not exist. Choose another time.")}
@@ -218,35 +217,39 @@ export function DateTimeField({
                 )}
               </p>
             )}
-            <div className="flex justify-end gap-2 border-t pt-3">
-              {clearable && (
+            <div className={filterStyles.footer}>
+              <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+              <div className={filterStyles.actions}>
+                {clearable && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      onValueChange("");
+                      setOpen(false);
+                    }}
+                  >
+                    {t("Clear")}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"
-                  variant="ghost"
+                  variant="outline"
+                  disabled={!valid || past}
                   onClick={() => {
-                    onValueChange("");
+                    if (futureOnly && valid && valid.getTime() <= Date.now()) {
+                      setNow(Date.now());
+                      return;
+                    }
+                    onValueChange(draft);
                     setOpen(false);
                   }}
                 >
-                  {t("Clear")}
+                  {t("Apply")}
                 </Button>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                disabled={!valid || past}
-                onClick={() => {
-                  if (futureOnly && valid && valid.getTime() <= Date.now()) {
-                    setNow(Date.now());
-                    return;
-                  }
-                  onValueChange(draft);
-                  setOpen(false);
-                }}
-              >
-                {t("Apply")}
-              </Button>
+              </div>
             </div>
           </div>
         </PopoverPopup>

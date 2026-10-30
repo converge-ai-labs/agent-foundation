@@ -116,6 +116,7 @@ class HarnessUiMCP(MCP[AgentContext]):
             id=self._recipe.server_id,
             native=False,
             local=toolset,
+            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
         )
         ctx.deps._record_run_capability(cache_id, replacement)
         return replacement

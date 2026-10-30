@@ -55,6 +55,7 @@ VIEWPORTS = (
     BrowserViewport(preset="phone-landscape", label="Phone landscape", width=844, height=390),
 )
 VIEWPORT_BY_PRESET = {viewport.preset: viewport for viewport in VIEWPORTS}
+CONTROL_LEASE_SECONDS = 300
 
 
 class BrowserState(SurfaceModel):
@@ -63,6 +64,8 @@ class BrowserState(SurfaceModel):
     status: Literal["disabled", "starting", "enabled", "ready", "stopped", "failed"] = "disabled"
     page_count: int = 0
     control: Literal["agent", "human"] = "agent"
+    control_episode: int = 0
+    control_remaining_seconds: float | None = None
     url: str = ""
     error: str | None = None
     viewport: BrowserPreset = "desktop"
@@ -72,6 +75,10 @@ class BrowserState(SurfaceModel):
 
 class BrowserCommand(SurfaceModel):
     session_id: str = Field(min_length=1, max_length=80)
+
+
+class BrowserHandbackRequest(BrowserCommand):
+    control_episode: int = Field(ge=0)
 
 
 class BrowserAccessRequest(BrowserCommand):
@@ -169,6 +176,9 @@ class HostBrowsers:
         self.released.set()
         self.human_thread = ""
         self.control_token = ""
+        self.control_deadline: float | None = None
+        self.lease_task: asyncio.Task[None] | None = None
+        self.control_episode = 0
         self.tickets: dict[str, tuple[str, str, int, bool, float]] = {}
         self.connections: dict[VncConnection | WindowPreview, str] = {}
         self.controller: VncConnection | None = None
@@ -197,6 +207,10 @@ class HostBrowsers:
             status=item.status,
             page_count=len(item.scope.targets) if item.scope else 0,
             control="human" if self.human_thread else "agent",
+            control_episode=self.control_episode,
+            control_remaining_seconds=(
+                max(0, self.control_deadline - time.monotonic()) if self.control_deadline is not None else None
+            ),
             url=item.page.url if item.page else "",
             error=item.error,
             viewport=item.viewport,
@@ -316,6 +330,7 @@ class HostBrowsers:
             raise
 
     def failed(self, reason: str) -> None:
+        self.clear_lease()
         self.handback.stop()
         self.runtime_failed = True
         self.startup_error = reason
@@ -673,7 +688,35 @@ class HostBrowsers:
         if selected and item.scope:
             await item.scope.tabs("select", target=selected.target)
 
+    def clear_lease(self) -> None:
+        self.control_episode += 1
+        task, self.lease_task = self.lease_task, None
+        self.control_deadline = None
+        if task and task is not asyncio.current_task():
+            task.cancel()
+
+    async def expire_control(self, episode: int) -> None:
+        while episode == self.control_episode and self.control_deadline is not None:
+            await asyncio.sleep(max(0, self.control_deadline - time.monotonic()))
+            async with self.control_lock:
+                if episode != self.control_episode or self.control_deadline is None:
+                    return
+                if time.monotonic() >= self.control_deadline:
+                    await self.release()
+                    return
+
+    async def renew_control(self, thread_id: str, request: BrowserAccessRequest) -> BrowserState:
+        await self.authorize(thread_id)
+        async with self.control_lock:
+            self.require_control(thread_id, request.session_id, request.control_token)
+            if self.control_deadline is None or time.monotonic() >= self.control_deadline:
+                raise failure("Human control has expired.", "control_conflict")
+            self.control_deadline = time.monotonic() + CONTROL_LEASE_SECONDS
+            return self.state(thread_id)
+
     async def release(self) -> None:
+        if self.control_deadline is not None:
+            self.control_deadline = min(self.control_deadline, time.monotonic())
         previous = self.human_thread
         try:
             await self.revoke()
@@ -703,11 +746,14 @@ class HostBrowsers:
             self.failed("Browser handback failed. Start the browser again.")
             raise
         finally:
+            self.clear_lease()
             self.human_thread = ""
             self.released.set()
         self.handback.released()
 
-    async def control(self, thread_id: str, binding: str, *, human: bool) -> BrowserControl:
+    async def control(self, thread_id: str, binding: str, *, human: bool, episode: int | None = None) -> BrowserControl:
+        if episode is None:
+            episode = self.control_episode
         await self.authorize(thread_id)
         async with self.control_lock:
             item = self.checked(thread_id, binding)
@@ -745,6 +791,9 @@ class HostBrowsers:
                     # native input is settled and the new window is focused.
                     self.human_thread = thread_id
                     self.control_token = secrets.token_urlsafe(24)
+                    self.clear_lease()
+                    self.control_deadline = time.monotonic() + CONTROL_LEASE_SECONDS
+                    self.lease_task = asyncio.create_task(self.expire_control(self.control_episode))
                     if self.runtime:
                         for page in self.runtime.pages.values():
                             page.invalidate()
@@ -765,6 +814,8 @@ class HostBrowsers:
                         self.failed("Browser takeover cleanup failed. Start the browser again.")
                     raise
             else:
+                if episode != self.control_episode:
+                    raise failure("Browser control has changed. Refresh and try again.", "control_conflict")
                 await self.release()
             return BrowserControl(state=self.state(thread_id), control_token=self.control_token)
 
@@ -856,6 +907,7 @@ class HostBrowsers:
         return HostBrowserBackend(self, thread_id, binding)
 
     async def close_runtime(self) -> None:
+        self.clear_lease()
         self.generation += 1
         self.controller = None
         self.control_token = ""

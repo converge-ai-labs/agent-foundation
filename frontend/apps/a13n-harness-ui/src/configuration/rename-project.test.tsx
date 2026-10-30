@@ -13,7 +13,7 @@ import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { RenameProject } from "./rename-project";
-import { DraftContext, type SourceDraft } from "./sources";
+import { DraftContext, type SourceDraft } from "./drafts";
 
 const path = "projects/custom-name.yaml";
 let content: string;

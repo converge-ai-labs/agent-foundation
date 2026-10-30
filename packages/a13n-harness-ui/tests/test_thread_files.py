@@ -196,8 +196,19 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
             await app.submit_thread(thread_id=thread_id, prompt=ComposerInput(()))
     scratch = tmp_path / "data/threads" / thread_id / "tmp"
     _expire(scratch)
+    pruned = Event()
+    prune = ThreadFiles.prune
+
+    async def observe_prune(self):
+        result = await prune(self)
+        pruned.set()
+        return result
+
+    monkeypatch.setattr(ThreadFiles, "prune", observe_prune)
     async with open_harness_ui_app(settings, configuration_path=path) as app:
-        assert not scratch.exists()  # Automatic startup janitor.
+        with fail_after(5):
+            await pruned.wait()
+        assert not scratch.exists()  # Automatic background startup janitor.
         assert all(item.is_dir() for item in retained)
         for item in retained:
             metadata, data = await app.read_thread_attachment(thread_id=thread_id, attachment_id=item.name)

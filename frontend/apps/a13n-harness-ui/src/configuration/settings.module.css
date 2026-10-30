@@ -1,7 +1,5 @@
 .utilityLink {
-  margin-top: 24px;
   color: var(--a13n-secondary);
-  font-size: 14px;
 }
 .formWidth {
   width: 100%;
@@ -71,11 +69,6 @@
 .hint {
   color: var(--a13n-secondary);
   font-size: 14px;
-}
-@media (max-width: 1000px) {
-  .utilityLink {
-    margin-top: 0;
-  }
 }
 @media (max-width: 600px) {
   .configurationFiles > header {

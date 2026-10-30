@@ -143,7 +143,6 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
             return request_context
         from a13n_harness.capabilities.context import (
-            _compaction_request_fits,
             _project_compaction_media,
             _restore_compacted_state,
         )
@@ -172,10 +171,6 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
             prepared = _replace_messages(request_context, committed)
         if restoring_compaction:
             prepared = await _project_compaction_media(ctx, prepared)
-            if await _compaction_request_fits(ctx, prepared) is False:
-                raise DefinitionError(
-                    "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
-                )
         return prepared
 
 

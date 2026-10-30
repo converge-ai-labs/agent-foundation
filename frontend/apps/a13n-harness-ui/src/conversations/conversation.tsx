@@ -52,7 +52,7 @@ import {
   ConversationUnavailable,
   isUnavailableChat,
 } from "./conversation-unavailable";
-import { LiveConnectionNotice } from "./live-connection";
+import { LiveConnectionStatus } from "./live-connection";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { inputSource, conversationTitle } from "./local-input";
@@ -642,12 +642,14 @@ function ConversationContent({
     />
   ) : !disconnected && history.isPending && !history.data && !showLive ? (
     <span role="status">Loading messages…</span>
-  ) : !disconnected && connection !== "Live" ? (
-    <LiveConnectionNotice
-      connection={connection}
-      reconnections={reconnections}
-    />
   ) : null;
+  const connectionStatus =
+    !disconnected && !feedback ? (
+      <LiveConnectionStatus
+        connection={connection}
+        reconnections={reconnections}
+      />
+    ) : null;
   if (unavailable)
     return (
       <ConversationUnavailable
@@ -940,6 +942,7 @@ function ConversationContent({
         {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
+            connectionStatus={connectionStatus}
             status={
               !guest && thread && !thread.archived ? (
                 <ComposerStatus
@@ -975,6 +978,9 @@ function ConversationContent({
                 : undefined
             }
           />
+        )}
+        {readOnly && connectionStatus && (
+          <div className={styles.conversationFeedback}>{connectionStatus}</div>
         )}
         {(!canCompose || thread?.archived) && feedback && (
           <div className={styles.conversationFeedback}>{feedback}</div>

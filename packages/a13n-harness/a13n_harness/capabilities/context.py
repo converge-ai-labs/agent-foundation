@@ -15,7 +15,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import ModelRetry, ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ModelContextWindowExceededError, ModelHTTPError, ToolFailed
+from pydantic_ai.exceptions import ModelContextWindowExceededError, ToolFailed
 from pydantic_ai.messages import (
     BaseToolReturnPart,
     CapabilityEvent,
@@ -870,7 +870,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self._depth = 0
         self._failed_fallback_id: str | None = None
         self._summary_failure: Exception | None = None
-        self._summary_attempts = 0
         self._primary_request: ModelRequestContext | None = None
         self._summary_request: ModelRequestContext | None = None
 
@@ -969,12 +968,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             if marker.disposition == "applied":
                 request = _replace_messages(request, messages)
         request = await _restore_compacted_state(ctx, request)
-        request = await _project_compaction_media(ctx, request)
-        if await _compaction_request_fits(ctx, request) is False:
-            raise DefinitionError(
-                "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
-            )
-        return request
+        return await _project_compaction_media(ctx, request)
 
     async def _background_history(
         self,
@@ -989,12 +983,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
             if snapshot is None or not snapshot[2]:
                 return request
-            if (
-                await _compaction_request_fits(
-                    ctx, request, blocking_threshold=self.background_policy.blocking_threshold
-                )
-                is not True
-            ):
+            blocking = _compaction_snapshot(
+                ctx, request.messages, None, threshold=self.background_policy.blocking_threshold
+            )
+            if blocking is None or blocking[2]:
                 return await self._foreground_fallback(ctx, request)
             limits = ctx.usage_limits
             if (
@@ -1058,15 +1050,13 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     _CompactionState(operation_id=basis.operation_id, basis_digest=basis.digest, disposition="skipped"),
                     version="1",
                 )
-            if await _compaction_request_fits(ctx, request) is False:
-                return await self._foreground_fallback(ctx, request)
-            return request
+            return await self._foreground_fallback(ctx, request)
         if operation.status == "failed":
             return await self._foreground_fallback(ctx, request, failed=operation)
-        if (
-            await _compaction_request_fits(ctx, request, blocking_threshold=self.background_policy.blocking_threshold)
-            is True
-        ):
+        blocking = _compaction_snapshot(
+            ctx, request.messages, None, threshold=self.background_policy.blocking_threshold
+        )
+        if blocking is None or not blocking[2]:
             return request
         completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
         if completed.input != operation.input:
@@ -1101,9 +1091,8 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             self._summary_failure = ModelContextWindowExceededError(request.model.model_name, "Compaction overflow")
             self._summary_request = request
             return request
-        fits = await _compaction_request_fits(ctx, request)
         snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
-        if fits is True and (snapshot is None or not snapshot[2]):
+        if snapshot is None or not snapshot[2]:
             return request
         # One failed-operation fallback per Run, not a new retry loop on every turn.
         if failed is not None and self._failed_fallback_id == failed.input.basis.operation_id:
@@ -1111,47 +1100,14 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         else:
             if failed is not None:
                 self._failed_fallback_id = failed.input.basis.operation_id
-            prepared = await self._compact_history(ctx, request, force=fits is not True, failed=failed)
-        if prepared is request:
-            if context_recovery_enabled(ctx) and isinstance(self._summary_failure, ModelContextWindowExceededError):
-                # A summary-only overflow is not permission to discard history.
-                # Send the ordinary request once, without retrying this summary.
-                return request
-            if fits is not True:
-                cause = self._summary_failure
-                if cause is not None:
-                    detail = type(cause).__name__
-                    if isinstance(cause, ModelHTTPError):
-                        detail += f", HTTP {cause.status_code}"
-                    reason = f"summary generation failed after {self._summary_attempts} attempt(s) ({detail})"
-                    guidance = "Retry the run or check the model provider."
-                elif not _compaction_has_request_budget(ctx):
-                    reason = "the remaining request budget cannot cover a summary and the pending ordinary request"
-                    guidance = "Increase the request limit or retry in a new run."
-                else:
-                    reason = "no replacement summary was produced"
-                    guidance = "Retry compaction in a new run."
-                capacity = "exceeds the model window" if fits is False else "has unverified capacity"
-                raise DefinitionError(
-                    f"Compaction could not free context capacity: {reason}. "
-                    f"Original history was preserved but {capacity}; the ordinary request was not sent. {guidance}",
-                    code="compaction_capacity_unavailable",
-                    details={"summary_attempts": self._summary_attempts},
-                    retry_hint="new_run"
-                    if cause is not None and is_recoverable_model_failure(cause)
-                    else "dependency_change",
-                ) from cause
-        else:
+            prepared = await self._compact_history(ctx, request, failed=failed)
+        if prepared is not request:
             # Background mode runs inside the ordinary projection coordinator.
-            # Full synchronous replacement needs fresh overlays before counting.
+            # Full synchronous replacement needs fresh overlays before dispatch.
             for capability in ctx.capabilities.values():
                 if isinstance(capability, ModelContextCoordinatorCapability):
                     prepared = await capability.before_model_request(ctx, prepared)
             prepared = await _project_compaction_media(ctx, prepared)
-            if await _compaction_request_fits(ctx, prepared) is False:
-                raise DefinitionError(
-                    "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
-                )
         return prepared
 
     async def _compact_history(
@@ -1185,7 +1141,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return request_context
         self._summary_failure = None
         self._summary_request = request_context
-        self._summary_attempts = 0
         if not _compaction_has_request_budget(ctx):
             # Optional compaction needs a summary request and the pending ordinary request.
             return request_context
@@ -1210,7 +1165,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 from a13n_harness.tools.discovery import retain_discovery
 
                 for attempt in range(_COMPACTION_MAX_ATTEMPTS):
-                    self._summary_attempts = attempt + 1
                     try:
                         summary = await _compact_with_same_agent(ctx, request_context)
                         break
@@ -1333,7 +1287,7 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
 
     discovery, names = await retain_discovery(ctx, request, restore=True)
     # Compaction leaves the discovery slot immediately after the summary.
-    messages = [*ctx.messages[:2], *discovery, *ctx.messages[2:]]
+    messages = _mark_current_restored_boundary([*ctx.messages[:2], *discovery, *ctx.messages[2:]])
     replacement = _replace_context_history(
         replace(ctx, messages=messages, discovered_tool_names=ctx.discovered_tool_names | names),
         request,
@@ -1373,37 +1327,6 @@ async def _project_compaction_media(ctx: RunContext[AgentContext], request: Mode
         if isinstance(capability, ImageFilterCapability | VideoUrlCapability):
             request = await capability.before_model_request(ctx, request)
     return request
-
-
-async def _compaction_request_fits(
-    ctx: RunContext[AgentContext],
-    request: ModelRequestContext,
-    *,
-    blocking_threshold: float | None = None,
-) -> bool | None:
-    """Use native counting on the actual outgoing request, never lagging usage.
-
-    Unknown counting/window/output reserve conservatively blocks overlap. Native
-    provider limits still govern dispatch when exact counting is unavailable.
-    """
-    window = request.model.context_window
-    if window is None and ctx.deps.model_characteristics is not None:
-        window = ctx.deps.model_characteristics.context_window_tokens
-    reserve = (request.model_settings or {}).get("max_tokens")
-    if window is None or not isinstance(reserve, int) or reserve <= 0:
-        return None
-    try:
-        async with asyncio.timeout(5):
-            usage = await request.model.count_tokens(
-                request.messages,
-                request.model_settings,
-                request.model_request_parameters,
-            )
-    except (NotImplementedError, TimeoutError):
-        return None
-    return usage.input_tokens + reserve <= window and (
-        blocking_threshold is None or usage.input_tokens < window * blocking_threshold
-    )
 
 
 def _replace_context_history(
@@ -1608,6 +1531,10 @@ def _xml_attribute(value: str) -> str:
 
 def _latest_request_tokens(messages: list[ModelMessage]) -> int | None:
     for message in reversed(messages):
+        # Retained suffix responses still describe the pre-compaction history.
+        # Wait for ordinary model usage after the restored request boundary.
+        if isinstance(message, ModelRequest) and (message.metadata or {}).get(_RESTORED_BOUNDARY_METADATA_KEY):
+            return None
         if isinstance(message, ModelResponse) and message.usage is not None:
             request_tokens = message.usage.total_tokens
             return request_tokens if request_tokens > 0 else None
@@ -1630,6 +1557,8 @@ def _compaction_snapshot(
     ctx: RunContext[AgentContext],
     messages: list[ModelMessage],
     policy: CompactionPolicy | None,
+    *,
+    threshold: float | None = None,
 ) -> tuple[int, int, bool] | None:
     request_tokens = _latest_request_tokens(messages)
     if request_tokens is None:
@@ -1642,7 +1571,8 @@ def _compaction_snapshot(
         from a13n_harness.spec import HarnessModelCharacteristics
 
         characteristics = HarnessModelCharacteristics()
-    threshold = characteristics.compact_threshold
+    if threshold is None:
+        threshold = characteristics.compact_threshold
     context_window = ctx.model.context_window
     if context_window is None:
         context_window = characteristics.context_window_tokens

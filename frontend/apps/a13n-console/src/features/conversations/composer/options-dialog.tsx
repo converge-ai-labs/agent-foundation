@@ -342,6 +342,7 @@ export function RunOptionsDialog({
             </Button>
             <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 try {
                   options.build();
@@ -435,79 +436,79 @@ export function RunOptionsDialog({
               />
             </FormField>
           </DisclosureSection>
-        </div>
-        {newThread && (
-          <DisclosureSection
-            className={styles.settingsGroup}
-            title={t("Conversation setup")}
-            defaultOpen={
-              !!focus && ["agent", "environment", "memories"].includes(focus)
-            }
-          >
-            <p className={styles.settingsHint}>
-              {t("Agent, environment and memories for the new conversation.")}
-            </p>
-            {showAgent && (
-              <ChoiceField
-                id="run-option-agent"
-                placeholder={t("Inherit")}
-                value={options.agent || "inherit"}
-                onValueChange={(value) => {
-                  options.setAgent(value === "inherit" ? "" : value);
-                  options.setRevision("");
-                  options.setLabels((previous) => ({
-                    ...previous,
-                    agent: choices.data?.agents.find(
-                      (item) => item.id === value,
-                    )?.name,
-                  }));
-                }}
-                label={t("Agent")}
-                options={[
-                  { value: "inherit", label: t("Inherit") },
-                  ...(choices.data?.agents ?? []).map((agent) => ({
-                    value: agent.id,
-                    label: agent.name,
-                  })),
-                ]}
-              />
-            )}
-            <FormField
-              label={t("Environment")}
-              description={t(
-                "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.",
-              )}
+          {newThread && (
+            <DisclosureSection
+              className={styles.settingsGroup}
+              title={t("Conversation setup")}
+              defaultOpen={
+                !!focus && ["agent", "environment", "memories"].includes(focus)
+              }
             >
-              <SearchPicker
-                id="run-option-environment"
+              <p className={styles.settingsHint}>
+                {t("Agent, environment and memories for the new conversation.")}
+              </p>
+              {showAgent && (
+                <ChoiceField
+                  id="run-option-agent"
+                  placeholder={t("Inherit")}
+                  value={options.agent || "inherit"}
+                  onValueChange={(value) => {
+                    options.setAgent(value === "inherit" ? "" : value);
+                    options.setRevision("");
+                    options.setLabels((previous) => ({
+                      ...previous,
+                      agent: choices.data?.agents.find(
+                        (item) => item.id === value,
+                      )?.name,
+                    }));
+                  }}
+                  label={t("Agent")}
+                  options={[
+                    { value: "inherit", label: t("Inherit") },
+                    ...(choices.data?.agents ?? []).map((agent) => ({
+                      value: agent.id,
+                      label: agent.name,
+                    })),
+                  ]}
+                />
+              )}
+              <FormField
                 label={t("Environment")}
-                placeholder={t("Search environments")}
-                emptyMessage={t("No matching environments")}
-                value={options.environment}
-                groups={[
-                  { label: t("Environment"), options: environmentOptions },
-                ]}
-                onValueChange={(value) => {
-                  options.setEnvironment(value);
-                  options.setLabels((previous) => ({
-                    ...previous,
-                    environment: environmentOptions.find(
-                      (option) => option.value === value,
-                    )?.label,
-                  }));
-                }}
-              />
-            </FormField>
-            {selectedEnvironment && open && (
-              <WorkingDirectory
-                key={selectedEnvironment.id}
-                value={options.workingDirectory}
-                onChange={options.setWorkingDirectory}
-              />
-            )}
-            {open && <MemoryOptions options={options} focus={focus} />}
-          </DisclosureSection>
-        )}
+                description={t(
+                  "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.",
+                )}
+              >
+                <SearchPicker
+                  id="run-option-environment"
+                  label={t("Environment")}
+                  placeholder={t("Search environments")}
+                  emptyMessage={t("No matching environments")}
+                  value={options.environment}
+                  groups={[
+                    { label: t("Environment"), options: environmentOptions },
+                  ]}
+                  onValueChange={(value) => {
+                    options.setEnvironment(value);
+                    options.setLabels((previous) => ({
+                      ...previous,
+                      environment: environmentOptions.find(
+                        (option) => option.value === value,
+                      )?.label,
+                    }));
+                  }}
+                />
+              </FormField>
+              {selectedEnvironment && open && (
+                <WorkingDirectory
+                  key={selectedEnvironment.id}
+                  value={options.workingDirectory}
+                  onChange={options.setWorkingDirectory}
+                />
+              )}
+              {open && <MemoryOptions options={options} focus={focus} />}
+            </DisclosureSection>
+          )}
+        </div>
         <ErrorNotice error={validation} />
       </div>
     </ModalFrame>

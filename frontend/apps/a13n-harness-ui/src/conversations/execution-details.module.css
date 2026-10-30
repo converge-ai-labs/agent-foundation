@@ -1,5 +1,7 @@
 .preview {
   display: grid;
+  /* Let the excerpt shrink instead of sizing the track to the full tool input. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   width: 100%;
   min-height: 44px;

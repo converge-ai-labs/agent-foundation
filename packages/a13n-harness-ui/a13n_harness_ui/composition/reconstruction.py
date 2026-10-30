@@ -428,7 +428,7 @@ class AgentReconstructor:
                 },
                 config=node.tool_search.config,
             )
-            if node.tool_search is not None
+            if node.tool_search is not None and node.tool_search.enabled
             else None
         )
         if node.children:

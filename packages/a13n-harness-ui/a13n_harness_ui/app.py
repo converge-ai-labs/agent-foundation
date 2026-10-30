@@ -42,6 +42,7 @@ from a13n_harness_ui.browser import (
     BrowserAccessRequest,
     BrowserCommand,
     BrowserControl,
+    BrowserHandbackRequest,
     BrowserState,
     BrowserViewportRequest,
     HostBrowsers,
@@ -70,6 +71,14 @@ from a13n_harness_ui.configuration import (
     load_harness_ui_configuration,
     mutate_configuration_source,
     preview_external_subagent_import,
+)
+from a13n_harness_ui.configuration.mcp_tools import (
+    McpToolDescriptor,
+    McpToolSelection,
+    McpToolSettings,
+    discover_tools,
+    selection_mutation,
+    tool_settings,
 )
 from a13n_harness_ui.configuration.models import BrowserConfiguration, DeviceResource, PairedDeviceAuthentication
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
@@ -734,6 +743,31 @@ class HarnessUiApp:
                     continue
                 self._configuration_fingerprint = fingerprint
                 await self._reload_configuration_from_path()
+
+    async def mcp_tool_settings(self, server_id: str) -> McpToolSettings:
+        async with self._operation():
+            return await to_thread.run_sync(
+                tool_settings, self._require_configuration_path(), await self._configurations.current(), server_id
+            )
+
+    async def discover_mcp_tools(self, server_id: str) -> tuple[McpToolDescriptor, ...]:
+        async with self._operation():
+            source = await self._configurations.current()
+            return await discover_tools(source, server_id, self._require_configuration_path().parent)
+
+    async def select_mcp_tools(self, server_id: str, request: McpToolSelection) -> ConfigurationMutationResult:
+        async with self._operation(), self._configuration_lock:
+            source = await self._configurations.current()
+            path = self._require_configuration_path()
+            relative_path, mutation = await to_thread.run_sync(selection_mutation, path, source, server_id, request)
+            result = await mutate_configuration_source(
+                path,
+                relative_path,
+                mutation,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            return await self._accept_mutation(result)
 
     async def configuration_sources(self) -> ConfigurationSourceCatalog:
         """List the accepted generation, not a live filesystem or credential inventory."""
@@ -1876,6 +1910,10 @@ class HarnessUiApp:
         async with self._operation():
             return await self.browsers().access(thread_id, request)
 
+    async def renew_browser_control(self, thread_id: str, request: BrowserAccessRequest) -> BrowserState:
+        async with self._operation():
+            return await self.browsers().renew_control(thread_id, request)
+
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():
             return await self.browsers().setup(thread_id)
@@ -1898,7 +1936,12 @@ class HarnessUiApp:
 
     async def control_browser(self, thread_id: str, command: BrowserCommand, *, human: bool) -> BrowserControl:
         async with self._operation():
-            return await self.browsers().control(thread_id, command.session_id, human=human)
+            return await self.browsers().control(
+                thread_id,
+                command.session_id,
+                human=human,
+                episode=command.control_episode if isinstance(command, BrowserHandbackRequest) else None,
+            )
 
     async def create_host_terminal(self, request: TerminalCreate) -> TerminalView:
         async with self._operation():
@@ -2071,19 +2114,28 @@ class HarnessUiApp:
                 get_logger(__name__).warning("Read model maintenance failed", extra={"error_type": type(exc).__name__})
             await sleep(30)
 
-    async def _prune_compactions_periodically(self) -> None:
-        while True:
+    async def _prune_storage(self) -> None:
+        """Independent maintenance failures never cancel the App's task group."""
+        for kind, prune in (
+            ("scratch", self._thread_files.prune),
+            ("compaction", self._prune_compactions),
+            ("checkpoint", self._store.checkpoints.prune),
+        ):
             try:
-                if self._compaction is not None:
-                    await self._compaction.prune(self._settings.storage.compaction_retention_seconds)
+                await prune()
             except Exception as exc:
-                get_logger(__name__).warning("Compaction pruning failed", extra={"error_type": type(exc).__name__})
-            await sleep(3600)
+                get_logger(__name__).warning(
+                    "Storage pruning failed", extra={"kind": kind, "error_type": type(exc).__name__}
+                )
 
-    async def _prune_thread_files_periodically(self) -> None:
+    async def _prune_compactions(self) -> None:
+        if self._compaction is not None:
+            await self._compaction.prune(self._settings.storage.compaction_retention_seconds)
+
+    async def _prune_storage_periodically(self) -> None:
         while True:
+            await self._prune_storage()
             await sleep(3600)
-            await self._thread_files.prune()
 
     async def _prepare_input(
         self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
@@ -3467,7 +3519,6 @@ async def open_harness_ui_app(
             )
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
-            await thread_files.prune()
             devices = DeviceConnections(api_keys=ApiKeyStore(store.layout.root / "auth.json"))
             resources.push_async_callback(devices.close)
             device_configuration = await configurations.current()
@@ -3817,8 +3868,7 @@ async def open_harness_ui_app(
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)
                     background.start_soon(app.subscription_usage.poll)
-                    background.start_soon(app._prune_thread_files_periodically)
-                    background.start_soon(app._prune_compactions_periodically)
+                    background.start_soon(app._prune_storage_periodically)
                     background.start_soon(app._maintain_read_models)
                     if host_mode == "webui":
                         background.start_soon(environment_monitoring.run)

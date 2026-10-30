@@ -77,7 +77,7 @@ Service summarizes older conversation context as it grows. Synchronous compactio
 {"background_compaction": {"enabled": true, "blocking_threshold": 0.95}}
 ```
 
-Ordinary threads can then continue while a summary is generated, provided the current request fits. At the blocking threshold, the run waits for existing work or compacts synchronously. Output reserve may require waiting earlier. A ready summary can apply in this run or a later run of the same thread; disabling new background work still permits retained summaries to apply. Inline and asynchronous subagents compact synchronously.
+Ordinary threads can then continue while a summary is generated, using the latest model response's usage to select the mode. At the blocking threshold, the run waits for existing work or compacts synchronously if the compaction trigger is reached. A trigger at or above the blocking threshold leaves no asynchronous interval. Native token counting and explicit output reserves are not required for background progress. A ready summary can apply in this run or a later run of the same thread; disabling new background work still permits retained summaries to apply. Inline and asynchronous subagents compact synchronously.
 
 Summary requests count toward the originating run's request budget, and their usage may arrive after that run ends. Interrupting a run leaves its background summary running. Archiving the thread retires it; forks do not inherit pending summaries.
 

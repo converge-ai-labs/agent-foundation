@@ -29,6 +29,19 @@ it("does not guess a document on invalid or markdown input", () => {
   expect(() => updateDocument("not: [valid", ["name"], "new")).toThrow();
 });
 
+it("creates MCP templates with schema v2 and unrestricted tool access", () => {
+  expect(parse(template("mcp_server", "mcp-docs"))).toEqual({
+    schema_version: "2",
+    kind: "mcp_server",
+    id: "mcp-docs",
+    name: "Untitled",
+    transport: { command: "", arguments: [] },
+  });
+  expect(parse(template("agent", "agent-test")).schema_version).toBe("1");
+  expect(parse(template("model", "model-test")).schema_version).toBe("1");
+  expect(parse(template("project", "project-test")).schema_version).toBe("1");
+});
+
 it("creates a Device template with references instead of credential bytes or Sessions", () => {
   expect(parse(template("device", "device-build"))).toEqual({
     schema_version: "1",

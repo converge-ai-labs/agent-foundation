@@ -366,9 +366,19 @@
   margin-top: 0;
 }
 
+.connection {
+  container: connection-slot / inline-size;
+  flex: 1;
+  min-width: 32px;
+}
 .status {
   margin-left: auto;
   flex-shrink: 0;
+}
+@media (pointer: coarse) {
+  .connection {
+    min-width: 44px;
+  }
 }
 @container activity-strip (max-width: 680px) {
   .shortcuts > button:not(.more) {

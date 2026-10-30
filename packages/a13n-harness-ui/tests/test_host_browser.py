@@ -1156,3 +1156,126 @@ async def test_handback_notifies_only_tool_blocked_threads_after_native_release(
         await wait_all_tasks_blocked()
         assert delivered == ["thread-b"]
         browsers.handback.stop()
+
+
+async def test_control_lease_expires_after_controller_disconnect(browsers, monkeypatch):
+    from a13n_harness_ui import browser as module
+
+    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.05)
+    identity = browsers.state("thread-a").session_id
+    await browsers.control("thread-a", identity, human=True)
+    writer = Mock(wait_closed=AsyncMock())
+    browsers.controller = writer
+    browsers.connections[writer] = "thread-a"
+    await browsers.disconnect(writer)
+    assert not browsers.control_token and not browsers.released.is_set()
+    await asyncio.wait_for(browsers.released.wait(), 1)
+    assert browsers.state("thread-a").control == "agent"
+    assert browsers.state("thread-a").control_remaining_seconds is None
+
+
+async def test_control_lease_renewal_and_late_request(browsers, monkeypatch):
+    from a13n_harness_ui import browser as module
+
+    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.12)
+    identity = browsers.state("thread-a").session_id
+    control = await browsers.control("thread-a", identity, human=True)
+    request = BrowserAccessRequest(session_id=identity, control_token=control.control_token)
+    await asyncio.sleep(0.07)
+    renewed = await browsers.renew_control("thread-a", request)
+    assert renewed.control_remaining_seconds > 0.1
+    await asyncio.sleep(0.07)
+    assert not browsers.released.is_set()
+    await asyncio.wait_for(browsers.released.wait(), 1)
+    with pytest.raises(HarnessUiError):
+        await browsers.renew_control("thread-a", request)
+
+
+async def test_expired_control_cannot_renew_before_timer_finishes(browsers):
+    import time
+
+    identity = browsers.state("thread-a").session_id
+    control = await browsers.control("thread-a", identity, human=True)
+    request = BrowserAccessRequest(session_id=identity, control_token=control.control_token)
+    browsers.control_deadline = time.monotonic() - 1
+    assert browsers.control_token == control.control_token
+    assert browsers.lease_task and not browsers.lease_task.done()
+    with pytest.raises(HarnessUiError, match="expired"):
+        await browsers.renew_control("thread-a", request)
+    assert browsers.control_token == control.control_token and not browsers.released.is_set()
+
+
+async def test_old_episode_cannot_release_transferred_control(browsers):
+    first = browsers.state("thread-a").session_id
+    second = browsers.state("thread-b").session_id
+    control = await browsers.control("thread-a", first, human=True)
+    old_episode = browsers.control_episode
+    await browsers.control("thread-b", second, human=True)
+    await browsers.expire_control(old_episode)
+    assert browsers.human_thread == "thread-b" and not browsers.released.is_set()
+    with pytest.raises(HarnessUiError):
+        await browsers.renew_control(
+            "thread-a", BrowserAccessRequest(session_id=first, control_token=control.control_token)
+        )
+    await browsers.control("thread-b", second, human=False)
+    assert browsers.released.is_set()
+
+
+async def test_lease_expiry_keeps_barrier_during_input_drain(browsers, monkeypatch):
+    from a13n_harness_ui import browser as module
+
+    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.05)
+    identity = browsers.state("thread-a").session_id
+    await browsers.control("thread-a", identity, human=True)
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def settle():
+        entered.set()
+        await finish.wait()
+
+    browsers.desktop.settle_input = AsyncMock(side_effect=settle)
+    await asyncio.wait_for(entered.wait(), 1)
+    assert not browsers.released.is_set()
+    state = browsers.state("thread-a")
+    assert state.control == "human" and state.control_remaining_seconds == 0
+    finish.set()
+    await asyncio.wait_for(browsers.released.wait(), 1)
+
+
+async def test_stale_handback_does_not_release_transferred_episode(browsers):
+    first = browsers.state("thread-a").session_id
+    second = browsers.state("thread-b").session_id
+    old = (await browsers.control("thread-a", first, human=True)).state.control_episode
+    await browsers.control("thread-b", second, human=True)
+    with pytest.raises(HarnessUiError):
+        await browsers.control("thread-a", first, human=False, episode=old)
+    assert browsers.human_thread == "thread-b" and not browsers.released.is_set()
+    current = browsers.state("thread-a").control_episode
+    await browsers.control("thread-a", first, human=False, episode=current)
+    assert browsers.released.is_set()
+
+
+async def test_expiry_notifies_only_blocked_threads_after_handback(browsers, monkeypatch):
+    from a13n_harness_ui import browser as module
+    from a13n_harness_ui.browser_handback import HANDBACK
+    from anyio import create_task_group
+
+    monkeypatch.setattr(module, "CONTROL_LEASE_SECONDS", 0.05)
+    delivered = []
+    notice = asyncio.Event()
+
+    async def deliver(thread, prompt, current):
+        assert browsers.released.is_set() and current()
+        delivered.append((thread, prompt))
+        notice.set()
+        return True
+
+    browsers.handback.deliver = deliver
+    async with create_task_group() as group:
+        browsers.handback.start(group)
+        await browsers.control("thread-a", browsers.state("thread-a").session_id, human=True)
+        browsers.handback.blocked("thread-b")
+        browsers.handback.blocked("thread-b")
+        await asyncio.wait_for(notice.wait(), 1)
+        assert delivered == [("thread-b", HANDBACK)]
+        browsers.handback.stop()
