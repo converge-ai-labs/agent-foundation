@@ -65,6 +65,11 @@ async def test_login_session_cookie_csrf_origin_and_logout(service) -> None:  # 
         created = await client.post("/api/v1/users/me/keys", json=body, headers={"x-csrf-token": csrf})
         assert created.status_code == 201, created.text
         bearer = {"authorization": "Bearer " + created.json()["secret"]}
+        # Public paths permit anonymous access but validate an explicitly presented credential.
+        assert (await client.get("/healthz")).status_code == 200
+        public = await client.get("/healthz", headers=bearer)
+        assert public.status_code == 200 and public.headers["cache-control"] == "no-store"
+        assert (await client.get("/healthz", headers={"authorization": "Bearer invalid"})).status_code == 401
         logout = await client.post("/api/v1/auth/logout", headers={"x-csrf-token": csrf})
         assert logout.status_code == 204
         # The request's own session renewal comes first, so the logout's expiry of the cookie is what stays.
@@ -308,7 +313,7 @@ async def test_replacement_authenticator_keeps_management(serve) -> None:  # typ
             grants = await client.get(f"/api/v1/workspaces/{created.json()['id']}/grants")
             assert grants.status_code == 200
             assert (await client.get("/api/v1/auth/session")).status_code == 403
-            # Long-lived requests such as thread streams re-check through the installed authenticator.
+            # Long-lived requests such as session streams re-check through the installed authenticator.
             access = service.runtime.access
             headers = [(b"x-test-principal", principal_id.encode())]
             live = await access.authenticator.authenticate(

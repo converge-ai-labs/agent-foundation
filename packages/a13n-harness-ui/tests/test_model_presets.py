@@ -22,7 +22,9 @@ from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 async def test_every_offered_provider_constructs_native_model_with_selected_endpoint(provider, monkeypatch) -> None:
 
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
-    endpoint = "https://example.invalid/custom/v1"
+    endpoint = (
+        "https://example.invalid/custom/ai" if provider.route == "cloudflare" else "https://example.invalid/custom/v1"
+    )
     model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
     model_name = "openai/test-model" if provider.route == "openrouter" else "test-model"
     recipe = ResolvedModelRecipe(
@@ -39,6 +41,8 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         from pydantic_ai.models.xai import XaiModel
 
         assert isinstance(model, XaiModel)
+    elif provider.route == "cloudflare":
+        assert str(model.provider.base_url).rstrip("/") == f"{endpoint}/v1"
     elif provider.transport == "openai-client":
         assert str(model.client.base_url).rstrip("/") == endpoint
     else:
@@ -248,6 +252,7 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
         ("openai-responses", "gpt-5"),
         ("openai-responses", "gpt-4.1"),
         ("anthropic", "claude-sonnet-4-5"),
+        ("anthropic", "claude-haiku-4-5"),
         ("anthropic", "claude-sonnet-4-6"),
         ("anthropic", "claude-sonnet-5-5"),
         ("anthropic", "claude-haiku-5-5"),
@@ -329,8 +334,19 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", native_request)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
+        authored_settings = preset.settings
+        if provider == "anthropic":
+            from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
+
+            authored_settings = prepare_model(
+                ModelRecipeRequest(
+                    connection=provider,
+                    model_id=model_id,
+                    authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
+                )
+            ).settings
         settings = {
-            **preset.settings,
+            **authored_settings,
             "extra_headers": {"X-Passthrough": "native"},
             "extra_body": {"fixture_payload": {"password": "  schema-value  ", "nullable": None}},
         }
@@ -374,13 +390,20 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
             assert payload["max_output_tokens"] == 65536
     else:
         assert payload["thinking"]["display"] == "summarized"
-        assert payload["max_tokens"] == (16384 if preset.key == "interleaved" else 32768)
-        if preset.key == "interleaved":
-            assert payload["thinking"]["budget_tokens"] == 8192
-            assert "interleaved-thinking-2025-05-14" in requests[0].headers["anthropic-beta"]
-        else:
+        assert payload["max_tokens"] == (32768 if preset.key == "adaptive" else 16384)
+        betas = requests[0].headers.get("anthropic-beta", "").split(",")
+        assert "context-1m-2025-08-07" not in betas
+        assert "context-management-2025-06-27" not in betas
+        assert ("interleaved-thinking-2025-05-14" in betas) is (preset.key == "interleaved")
+        if preset.key == "adaptive":
             assert payload["thinking"]["type"] == "adaptive"
             assert payload["output_config"]["effort"] == "high"
+        else:
+            assert payload["thinking"]["type"] == "enabled"
+            assert payload["thinking"]["budget_tokens"] == 8192
+            assert "output_config" not in payload
+        assert "cache_control" not in payload
+        assert payload["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
 
 
 @pytest.mark.anyio
@@ -547,7 +570,11 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     for value in (
         "api",
         provider.route,
-        *(("",) if provider.transport != "xai" else ()),
+        *(
+            (provider.base_url or "https://api.cloudflare.com/client/v4/accounts/" + "a" * 32 + "/ai",)
+            if provider.transport != "xai"
+            else ()
+        ),
         "new",
         "env:TEST_KEY",
     ):
@@ -699,7 +726,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
 @pytest.mark.parametrize(
     "route,authentication,base_url,kinds",
     [
-        ("openai-codex:gpt-5.6-sol", "codex_subscription", None, ["web_search", "image_generation"]),
+        ("openai-codex:gpt-5.6-sol", "codex_subscription", None, ["web_search"]),
         ("grok:grok-4.6", "grok_subscription", None, ["web_search"]),
         ("grok:grok-4.6", "api_key", None, []),
         ("openai-responses:gpt-5.4", "api_key", None, ["web_search", "image_generation"]),
@@ -778,3 +805,19 @@ def test_reviewed_hosted_model_suggestions_use_endpoint_context(provider, model_
 
     assert model_id in API_MODEL_SUGGESTIONS[provider]
     assert known_context_window(provider, model_id, API_PROVIDER_BY_ROUTE[provider].base_url) == context
+
+
+@pytest.mark.parametrize("base_url", [None, "https://gateway.example/ai/v1", "https://gateway.example/v1"])
+def test_cloudflare_recipe_rejects_missing_or_incorrect_api_root(base_url):
+    with pytest.raises(CompositionError, match="configuration"):
+        PydanticAiModelAdapter().validate(
+            route="cloudflare:openai/gpt-5.4",
+            settings={},
+            model_cfg={"base_url": base_url} if base_url is not None else {},
+        )
+
+
+def test_cloudflare_authoring_uses_documented_token_variable():
+    from a13n_harness_ui.model_authoring import model_connection
+
+    assert model_connection("cloudflare").credential_env == "CLOUDFLARE_API_TOKEN"

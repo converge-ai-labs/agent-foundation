@@ -1,0 +1,66 @@
+.sidebar {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 12px;
+  background: var(--sidebar);
+}
+
+.sidebar[hidden] {
+  display: none;
+}
+
+.resizeHandle {
+  position: absolute;
+  inset-block: 0;
+  right: -4px;
+  width: 8px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+
+.resizeHandle::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 2px;
+  background: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.resizeHandle:hover::before,
+.resizeHandle[data-resizing]::before {
+  opacity: 0.25;
+}
+
+.resizeHandle:focus-visible::before {
+  background: var(--ring);
+  opacity: 1;
+}
+
+.dragShield {
+  position: fixed;
+  inset: 0;
+  cursor: col-resize;
+  user-select: none;
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resizeHandle::before {
+    transition: none;
+  }
+}

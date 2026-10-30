@@ -74,6 +74,7 @@ export function refreshThread(
       "usage",
       "context-usage",
       "mcp-inputs",
+      "tool-executions",
     ],
     checkpoint: [
       "work",
@@ -82,9 +83,10 @@ export function refreshThread(
       "usage",
       "context-usage",
       "mcp-inputs",
+      "tool-executions",
     ],
     usage: ["usage", "context-usage"],
-    children: ["work", "children", "child-review"],
+    children: ["work", "children", "child-review", "tool-executions"],
     work: ["work"],
   };
   scheduleRefresh(client, (query) => {

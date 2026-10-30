@@ -36,11 +36,17 @@ Capability availability and Capability grant are distinct. The Harness assigns e
 | Mandatory Harness infrastructure           | Exact Harness-created concrete types                                                                     | Framework authority; never declarative or caller-replaceable |
 | `RunBindings.capabilities`                 | Exact documented invocation-policy and upstream MCP types                                                | Current-run policy and native MCP composition                |
 
-A type is denied from every unlisted source. Supplying `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, or `client_toolsets` does not select a feature or grant tool access. The selected feature Capability consumes its current-run dependency and applies its configuration. Required missing dependencies and unsupported orphan bindings fail before model/tool work. `None` means no override; an empty skill selection or client-toolset tuple is an explicit empty selection. Mandatory infrastructure and run-only authority types never enter the declarative custom-type catalog. A definition or plugin instance cannot use `for_run()` to replace itself with a run-only reserved type or ID, and a run attachment cannot launder itself into definition or mandatory infrastructure.
+A type is denied from every unlisted source. Supplying `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, `browser_backend`, or `client_toolsets` does not select a feature or grant tool access. The selected feature Capability consumes its current-run dependency and applies its configuration. Required missing dependencies and unsupported orphan bindings fail before model/tool work. `None` means no override; an empty skill selection or client-toolset tuple is an explicit empty selection. Mandatory infrastructure and run-only authority types never enter the declarative custom-type catalog. A definition or plugin instance cannot use `for_run()` to replace itself with a run-only reserved type or ID, and a run attachment cannot launder itself into definition or mandatory infrastructure.
 
-`ToolProxyCapability` is an explicitly supported code-first presentation contribution from either `AgentDefinition.capabilities` or an Agent-bound plugin's `get_capabilities()`. Its grouped source tree remains subject to the original source checks; grouping does not authorize reserved infrastructure or run-only capabilities. It is not a run attachment or a built-in declarative type. [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns composition and presentation behavior.
+`ToolSearchCapability` is an explicitly supported code-first presentation contribution from either `AgentDefinition.capabilities` or an Agent-bound plugin's `get_capabilities()`. Its grouped source tree remains subject to the original source checks; grouping does not authorize reserved infrastructure or run-only capabilities. It is not a run attachment or a built-in declarative type. [Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns composition and presentation behavior.
 
 Bare Pydantic `CapabilityFunc` values are not accepted in `AgentDefinition`, plugin contributions, or `RunBindings`. Pydantic resolves such a function once per native Agent run, while one logical Harness run can contain several native recovery attempts. Support requires a future Harness-bound form that resolves once per logical run, validates the complete result tree, memoizes it, and reuses the exact result across every attempt. Concrete `AbstractCapability` instances are the current contract.
+
+## Opt-in Native Loop Detection
+
+Harness supports upstream `pydantic_ai_harness.DetectLoops` as a definition Capability and as `AgentSpec.capabilities` data under its native `DetectLoops` name. Availability does not enable it by default. Native constructor configuration, pattern detection, ordering, nudges, and code-first callbacks remain upstream-owned.
+
+Detection observes Model responses and their tool results within one native attempt. Compaction inside that attempt preserves the detector's recorded progress; continuation and model-recovery attempts start fresh, without restoring detector counters from `HarnessState`. CodeAct runner calls are observable, while host calls inside a runner program are not separate Model-level calls. Expected polling requires suitable thresholds or disabled checks. Nudges provide guidance; usage limits remain the hard budget. The native error action ends with the ordinary failed Agent-run result and does not trigger transport recovery.
 
 ## Application Dependencies
 
@@ -88,6 +94,11 @@ Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec`
 Two passive process-local publications let independently authored Capabilities describe run facts without introducing another lifecycle or lookup plane:
 
 ```python
+@dataclass(frozen=True, slots=True)
+class RequestContext:
+    headers: Mapping[str, str]
+
+
 @dataclass(frozen=True, slots=True)
 class SkillPath:
     name: str
@@ -142,6 +153,7 @@ class AgentContext:
     plugins: BoundPluginContext
     subagents: SubagentCollection
     metadata: Mapping[str, JsonValue]
+    request_context: RequestContext
     model_context: ModelContextMiddleware | None
     skill_paths: RunSkillPaths
     tool_metadata: ToolRuntimeMetadata
@@ -196,7 +208,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 ## MCP Context Headers
 
-For compact local MCP discovery, code-first `ToolProxyCapability` accepts a `ToolProxyGroup` descriptor whose source is the MCP Capability, not a definition-time extracted Toolset. It preserves this header lifecycle and requires local-only MCP execution. [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its discovery and call contract.
+For compact local MCP discovery, code-first `ToolSearchCapability` accepts a `ToolSearchGroup` descriptor whose source is the MCP Capability, not a definition-time extracted Toolset. It preserves this header lifecycle and requires local-only MCP execution. [Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns its discovery and call contract.
 
 `ContextualMCP` resolves outbound headers during Pydantic Capability run binding, before the returned fresh upstream `MCP` exposes either a provider-native `MCPServerTool` or a local `MCPToolset`. A code-first caller supplies any trusted sync or async `MCPHeadersFactory`. `MCPContextHeaders` is the shared declarative implementation backed by `MCPContextHeadersConfig` and exact header bindings.
 

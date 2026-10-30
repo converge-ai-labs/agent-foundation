@@ -9,9 +9,9 @@ import asyncio
 import base64
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from copy import deepcopy
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,32 +20,43 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-import uvicorn
+from a13n_service import api_tools as api_tools_module
 from a13n_service import app as app_module
 from a13n_service.app import build_app, open_runtime
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
 from a13n_service.mcp import build_mcp
 from a13n_service.migrations.runner import heads
+from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import AttemptControl
+from a13n_service.runs.checkpoints import TailPointer
 from a13n_service.runs.claim import claim
+from a13n_service.runs.display import Tail
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.stream import stream_key
 from a13n_service.runs.tables import RunRow
-from a13n_service.settings import Database, ProcessRole, Settings
+from a13n_service.settings import Database, LocalProvisioning, ProcessRole, Provisioning, Settings
 from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
 from argon2 import PasswordHasher
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
+from fastmcp.utilities.openapi import HTTPRoute
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.core.config import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
+
+from .http_support import serve_http
+
+# Real collector interoperability owns explicit native/container prerequisites.
+# Opt in before collection so the ordinary Service suite retains its no-skips contract.
+collect_ignore = [] if os.environ.get("A13N_COLLECTOR_TEST") == "1" else ["test_monitoring_collectors_live.py"]
 
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"
@@ -183,30 +194,50 @@ async def tenant(runtime: Runtime) -> Bootstrapped:
 
 @pytest.fixture(scope="session")
 def service_app() -> Callable[..., FastAPI]:
-    """Compile the fixed OSS contract once per worker, not once per database-backed test.
+    """Compile fixed OSS definitions once per worker.
 
-    Only schema data is reused; applications, MCP tools and lifespans remain independent. Extensions and
-    direct build_app calls (including contract tests) still compile their own contracts through production code.
+    JSON snapshots restore independent OpenAPI and parsed MCP schemas without repeatedly compiling them.
+    Only definitions and migration head IDs are reused; apps, tools, runtimes and lifespans are always fresh.
+    Extensions and direct build_app calls still use the unpatched production builders.
     """
-    schema: dict[str, Any] | None = None
+    schema: str | None = None
+    operations: list[str] | None = None
+    expected = heads(OSS)
 
-    def build(distribution: Distribution = OSS, *, role: ProcessRole = "control", settings: Settings) -> FastAPI:
+    def build(
+        distribution: Distribution = OSS,
+        *,
+        role: ProcessRole = "control",
+        settings: Settings,
+        console: Path = app_module.CONSOLE,
+    ) -> FastAPI:
         if distribution is not OSS or role == "worker":
-            return build_app(distribution, role=role, settings=settings)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
         def assemble(app: FastAPI, config: Settings, routes: Sequence[APIRoute]) -> StarletteWithLifespan:
             nonlocal schema
             if schema is not None:
-                app.openapi_schema = deepcopy(schema)
-            mcp = build_mcp(app, config, routes)
+                app.openapi_schema = json.loads(schema)
+            parse = api_tools_module.parse_openapi_to_http_routes
+
+            def parsed(document: dict[str, Any]) -> list[HTTPRoute]:
+                nonlocal operations
+                if operations is None:
+                    operations = [route.model_dump_json(by_alias=True) for route in parse(document)]
+                return [HTTPRoute.model_validate_json(route) for route in operations]
+
+            with pytest.MonkeyPatch.context() as patch:
+                patch.setattr(api_tools_module, "parse_openapi_to_http_routes", parsed)
+                mcp = build_mcp(app, config, routes)
             if schema is None:
-                schema = deepcopy(app.openapi())
+                schema = json.dumps(app.openapi())
             return mcp
 
         # Assembly is synchronous: restore the production builder before entering any asynchronous lifespan.
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(app_module, "build_mcp", assemble)
-            return build_app(distribution, role=role, settings=settings)
+            patch.setattr(app_module, "heads", lambda _: expected)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
     return build
 
@@ -214,7 +245,7 @@ def service_app() -> Callable[..., FastAPI]:
 @asynccontextmanager
 async def _serve(
     settings: Settings, role: ProcessRole, service_app: Callable[..., FastAPI], distribution: Distribution = OSS
-) -> AsyncIterator[SimpleNamespace]:
+) -> AsyncGenerator[SimpleNamespace]:
     app = service_app(distribution, role=role, settings=settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -268,13 +299,59 @@ async def executing(settings: Settings, service_app: Callable[..., FastAPI]) -> 
         yield served
 
 
+@asynccontextmanager
+async def _skill_service(settings: Settings, service_app: Callable[..., FastAPI], role: ProcessRole):
+    """Opt-in real primary environments for tests whose custom agents read builtin skills."""
+    settings = settings.model_copy(
+        update={
+            "provisioning": Provisioning(
+                local=LocalProvisioning(
+                    enabled=True,
+                    root=settings.objects.root.parent / "skill-environments",
+                )
+            ),
+            "worker": settings.worker.model_copy(update={"scan_seconds": 0.05, "authority_seconds": 0.05}),
+            "control": settings.control.model_copy(update={"scan_seconds": 0.05, "stream_refresh_seconds": 0.1}),
+        }
+    )
+    async with _serve(settings, role, service_app) as served:
+        provider = await served.client.post(
+            f"{served.api}/environment-providers",
+            json={"type": "local", "name": "Skill files"},
+        )
+        assert provider.status_code == 201, provider.text
+        template = await served.client.post(
+            f"{served.api}/environment-templates",
+            json={
+                "name": "Skill files",
+                "provider_id": provider.json()["id"],
+                "config": {"recipe": {"root": {"path": str(settings.provisioning.local.root)}}},
+            },
+        )
+        assert template.status_code == 201, template.text
+        served.skill_template_id = template.json()["id"]
+        yield served
+
+
+@pytest.fixture
+async def skill_service(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
+    async with _skill_service(settings, service_app, "control") as served:
+        yield served
+
+
+@pytest.fixture
+async def skill_executing(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
+    async with _skill_service(settings, service_app, "all") as served:
+        yield served
+
+
 class ScriptedModel:
     """An OpenAI-compatible Chat Completions endpoint answering each request with the next scripted turn.
 
     Runs execute through the real provider adapter, HTTP client and endpoint policy. `requests` receives each
     request body as it arrives; a turn with a `gate` answers only once the test sets it. A turn scripted `to` a
     marker answers only a request whose body contains it, so concurrent agents each get their own turns. A reply
-    said in several pieces streams them as separate chunks, `interval` seconds apart.
+    said in several pieces streams them as separate chunks; `chunk_gate` holds the chunks after the first.
     """
 
     def __init__(self) -> None:
@@ -283,12 +360,18 @@ class ScriptedModel:
         self.requests: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.url = ""
         app = FastAPI()
-        app.post("/v1/chat/completions")(self._complete)
+        app.post("/v1/chat/completions", response_model=None)(self._complete)
         self.app = app
 
-    def say(self, *pieces: str, gate: asyncio.Event | None = None, to: str | None = None, interval: float = 0) -> None:
+    def say(
+        self,
+        *pieces: str,
+        gate: asyncio.Event | None = None,
+        to: str | None = None,
+        chunk_gate: asyncio.Event | None = None,
+    ) -> None:
         deltas = [{"content": piece} for piece in pieces]
-        self._script({"deltas": deltas, "interval": interval, "finish": "stop", "gate": gate, "to": to})
+        self._script({"deltas": deltas, "chunk_gate": chunk_gate, "finish": "stop", "gate": gate, "to": to})
 
     def call(
         self,
@@ -301,7 +384,7 @@ class ScriptedModel:
     ) -> None:
         function = {"name": name, "arguments": json.dumps(arguments)}
         delta = {"tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": function}]}
-        self._script({"deltas": [delta], "interval": 0, "finish": "tool_calls", "gate": gate, "to": to})
+        self._script({"deltas": [delta], "chunk_gate": None, "finish": "tool_calls", "gate": gate, "to": to})
 
     async def request(self) -> dict[str, Any]:
         return await asyncio.wait_for(self.requests.get(), timeout=10)
@@ -320,7 +403,7 @@ class ScriptedModel:
                 self.scripted.clear()
                 await self.scripted.wait()
 
-    async def _complete(self, request: Request) -> StreamingResponse:
+    async def _complete(self, request: Request) -> StreamingResponse | JSONResponse:
         body = await request.json()
         self.requests.put_nowait(body)
         turn = await self._next(json.dumps(body))
@@ -328,11 +411,29 @@ class ScriptedModel:
             await turn["gate"].wait()
         base = {"id": "chatcmpl-scripted", "object": "chat.completion.chunk", "created": 0, "model": "scripted"}
         deltas = [{"role": "assistant", **turn["deltas"][0]}, *turn["deltas"][1:]]
+        if not body.get("stream", False):
+            message: dict[str, Any] = {
+                "role": "assistant",
+                "content": "".join(delta.get("content", "") for delta in deltas),
+            }
+            calls = [call for delta in deltas for call in delta.get("tool_calls", [])]
+            if calls:
+                message["tool_calls"] = [
+                    {"id": call["id"], "type": "function", "function": call["function"]} for call in calls
+                ]
+            return JSONResponse(
+                {
+                    **base,
+                    "object": "chat.completion",
+                    "choices": [{"index": 0, "message": message, "finish_reason": turn["finish"]}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17},
+                }
+            )
 
         async def stream() -> AsyncIterator[str]:
             for index, delta in enumerate(deltas):
-                if index and turn["interval"]:
-                    await asyncio.sleep(turn["interval"])
+                if index and turn["chunk_gate"] is not None:
+                    await turn["chunk_gate"].wait()
                 yield f"data: {json.dumps({**base, 'choices': [{'index': 0, 'delta': delta}]})}\n\n"
             ending = [
                 {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": turn["finish"]}]},
@@ -344,28 +445,27 @@ class ScriptedModel:
 
 
 @asynccontextmanager
-async def listening(app: Any) -> AsyncIterator[str]:
+async def listening(app: Any) -> AsyncGenerator[str]:
     """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters).
 
     Responses still streaming when the block exits, such as a gated model turn, are cancelled after 0.1 s.
     """
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=0.1
-    )
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.01)
-    try:
-        yield f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
-    finally:
-        server.should_exit = True
-        await task
+    async with serve_http(app, lifespan="off") as url:
+        yield url
 
 
 @pytest.fixture
 def listen() -> Any:
     return listening
+
+
+@asynccontextmanager
+async def platform_runtime(service: SimpleNamespace, runtime: Runtime | None = None) -> AsyncGenerator[Runtime]:
+    """`runtime`, by default the service's, whose runs reach their platform tools at the service served on loopback."""
+    base = runtime or service.runtime
+    async with listening(service.app) as url:
+        server = base.settings.server.model_copy(update={"control_url": url})
+        yield replace(base, settings=base.settings.model_copy(update={"server": server}))
 
 
 @pytest.fixture
@@ -386,6 +486,19 @@ QUESTION = {
     "options": [{"label": "red", "description": "Red"}, {"label": "blue", "description": "Blue"}],
     "multiSelect": False,
 }
+
+
+# Custom agents read the builtin guide from their primary environment; use skill_service/skill_executing.
+GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
+LOOKUP: dict[str, Any] = {
+    "builtin_skills": ["platform-operations"],
+    "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
+}
+
+
+def lookup(model: ScriptedModel, *, call_id: str, gate: asyncio.Event | None = None, to: str | None = None) -> None:
+    """Script a call that reads the builtin platform guide, the tool an agent configured with `LOOKUP` has."""
+    model.call("view", {"file_path": GUIDE}, call_id=call_id, gate=gate, to=to)
 
 
 async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
@@ -414,6 +527,8 @@ async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
 
 
 async def add_agent(service: SimpleNamespace, name: str, model: str, **config: Any) -> dict[str, Any]:
+    if hasattr(service, "skill_template_id"):
+        config.setdefault("default_environment_template_id", service.skill_template_id)
     agent = await service.client.post(
         f"{service.api}/agents", json={"name": name.title(), "config": {"model": model, **config}}
     )
@@ -497,6 +612,19 @@ async def sealed(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
     return run
 
 
+async def streamed_text(runtime: Runtime, thread_id: str, text: str) -> None:
+    """Wait for an actual text delta, including output already published before subscribing."""
+    key, after = stream_key(thread_id), "0-0"
+    async with asyncio.timeout(10):
+        while True:
+            for _, entries in await runtime.redis.xread({key: after}, count=128):
+                for entry_id, fields in entries:
+                    after = entry_id
+                    if "event" in fields and json.loads(fields["event"]).get("delta") == text:
+                        return
+            await asyncio.sleep(0.05)
+
+
 async def checkpointed(service: SimpleNamespace, run_id: str) -> None:
     """Wait until the run committed its first checkpoint: the one before its first model call."""
     async with asyncio.timeout(10):
@@ -512,6 +640,14 @@ async def items(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
     response = await service.client.get(f"{service.api}/runs/{run_id}/items")
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def tail(service: SimpleNamespace, run_id: str) -> Tail:
+    """The run's committed display tail: the stream position it covers and its Redis resume hint."""
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        pointer = TailPointer.model_validate(run.tail) if run.tail is not None else None
+    return await checkpoints.load_tail(service.runtime.objects, pointer)
 
 
 def texts(listing: dict[str, Any]) -> list[tuple[str | None, str]]:
@@ -561,7 +697,7 @@ type Frame = tuple[str, str | None, Any]
 
 
 @asynccontextmanager
-async def frames(url: str, headers: dict[str, str]) -> AsyncIterator[AsyncIterator[Frame]]:
+async def frames(url: str, headers: dict[str, str]) -> AsyncGenerator[AsyncIterator[Frame]]:
     """SSE frames as (event, id, data)."""
     async with httpx2.AsyncClient(timeout=20) as client, client.stream("GET", url, headers=headers) as response:
         assert response.status_code == 200
@@ -598,6 +734,9 @@ def runs_kit() -> SimpleNamespace:
     return SimpleNamespace(
         SEALED=SEALED,
         QUESTION=QUESTION,
+        GUIDE=GUIDE,
+        LOOKUP=LOOKUP,
+        lookup=lookup,
         create_model=create_model,
         add_agent=add_agent,
         create_agent=create_agent,
@@ -613,10 +752,13 @@ def runs_kit() -> SimpleNamespace:
         sealed=sealed,
         checkpointed=checkpointed,
         items=items,
+        tail=tail,
         texts=texts,
         user_texts=user_texts,
         attempt=attempt,
+        platform_runtime=platform_runtime,
         pause_sweeps=pause_sweeps,
+        streamed_text=streamed_text,
         bearer=bearer,
         frames=frames,
         until=until,

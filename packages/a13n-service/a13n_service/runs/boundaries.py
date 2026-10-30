@@ -6,12 +6,14 @@ Parallel tools share one completion. Only the primary native run stages checkpoi
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
+from a13n_harness.capabilities import CompactionCapability, HandoffCapability
+from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapRunHandler
@@ -26,7 +28,7 @@ from a13n_service.runs.display import Snapshot, open_tool_calls
 class Staged:
     """One immutable checkpoint cut and its pre-effect completion signal."""
 
-    at: Literal["model", "tool"]
+    at: Literal["input", "model", "tool"]
     state: HarnessState
     cursors: dict[str, str | None]
     display: Snapshot
@@ -46,12 +48,15 @@ class Boundaries(AbstractCapability[AgentContext]):
         self._completed: asyncio.Future[None] | None = None
         self._closed = False
         self.staged_length = -1
+        self.wait_for_model = False
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
+        return CapabilityOrdering(
+            position="innermost", wrapped_by=(ModelContextCoordinatorCapability, CompactionCapability)
+        )
 
     @asynccontextmanager
-    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncIterator[None]:
+    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncGenerator[None]:
         """Own the serial writer; failure cancels execution and wakes tool waiters."""
         try:
             async with asyncio.TaskGroup() as tasks:
@@ -104,6 +109,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         owner = self.primary is None
         if owner:
             self.primary = ctx.run_id
+            # A preempted request may restart with the same message count but new steering input.
+            self.staged_length = -1
             self.accepting_steers = True
         try:
             try:
@@ -118,13 +125,6 @@ class Boundaries(AbstractCapability[AgentContext]):
                 # Steering can read attachments through the still-entered Environment.
                 await self.drain()
             return result
-        except asyncio.CancelledError:
-            if owner and self._writer is not None:
-                # Public iteration tears down the native scope before leaving process().
-                # Stop I/O here rather than waiting on a writer cancelled only by that exit.
-                self._writer.cancel()
-                await asyncio.gather(self._writer, return_exceptions=True)
-            raise
         finally:
             if owner:
                 self.accepting_steers = False
@@ -134,7 +134,11 @@ class Boundaries(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if ctx.run_id == self.primary:
-            await self._stage(ctx, ctx.messages, "model")
+            completed = await self._stage(ctx, ctx.messages, "model")
+            if self.wait_for_model or ctx.deps.context_recovery_pending:
+                # Commit replacement history and its consumed allowance under the
+                # existing lease fence before any recovery request can dispatch.
+                await asyncio.shield(completed)
         return request_context
 
     async def before_tool_execute(
@@ -146,11 +150,13 @@ class Boundaries(AbstractCapability[AgentContext]):
         return args
 
     async def _stage(
-        self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["model", "tool"]
+        self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["input", "model", "tool"]
     ) -> asyncio.Future[None]:
         if self._closed:
             raise asyncio.CancelledError
-        if len(messages) == self.staged_length:
+        # Only parallel tools share a cut. A model boundary can replace equal-length
+        # history or write a compaction disposition without changing message count.
+        if at == "tool" and len(messages) == self.staged_length:
             assert self._completed is not None
             return self._completed
         # Reserve before the first await: parallel tools wait for the same cut.
@@ -167,3 +173,29 @@ class Boundaries(AbstractCapability[AgentContext]):
             completed.cancel()
             raise
         return completed
+
+
+class InputBoundary(AbstractCapability[AgentContext]):
+    """Commit revocable input before any context transform can derive a summary from it."""
+
+    id = "a13n.service.input-boundary"
+
+    def __init__(self, boundaries: Boundaries, pending: Callable[[list[ModelMessage]], bool]) -> None:
+        self.boundaries = boundaries
+        self.pending = pending
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(
+            # Handoff is outermost; join its tier before applying relative ordering.
+            position="outermost",
+            wraps=(HandoffCapability, CompactionCapability, ModelContextCoordinatorCapability),
+            wrapped_by=(InputCapability,),
+        )
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        if ctx.run_id == self.boundaries.primary and self.pending(ctx.messages):
+            completed = await self.boundaries._stage(ctx, ctx.messages, "input")
+            await asyncio.shield(completed)
+        return request_context

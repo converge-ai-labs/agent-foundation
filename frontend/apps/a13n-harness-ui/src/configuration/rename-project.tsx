@@ -6,7 +6,7 @@ import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
-import { DraftContext } from "./sources";
+import { DraftContext } from "./drafts";
 import styles from "../shell/workbench.module.css";
 
 export function RenameProject({
@@ -62,7 +62,7 @@ export function RenameProject({
         document.get("kind") !== "project"
       )
         throw new Error(
-          "Project source changed or is unavailable. Open Project settings to review it.",
+          "Project settings changed or couldn't be loaded. Open them to review.",
         );
       const content = updateDocument(latest.content!, ["name"], name.trim());
       const publication = await result(
@@ -94,7 +94,6 @@ export function RenameProject({
     <ModalFrame
       open
       title="Rename project"
-      description="Change the display name without changing folders, project identity, or conversations."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -123,16 +122,30 @@ export function RenameProject({
           <p role="status">Reading project…</p>
         )}
         {dirty && (
-          <p>
-            There are unsaved changes in Project settings. Save or discard those
-            changes before renaming here.
-          </p>
+          <p>Save or discard your project changes before renaming it here.</p>
         )}
         {sources.isSuccess &&
           (!path || (source.isSuccess && !editable && !dirty)) && (
             <p>This project source is unavailable or read only.</p>
           )}
-        <div className={styles.actions}>
+        <div className={styles.dialogActions} data-a13n-form-actions>
+          {!save.isPending && (
+            <Link
+              className={styles.dialogSecondaryAction}
+              to={`/projects/${encodeURIComponent(projectId)}`}
+              onClick={close}
+            >
+              Project settings
+            </Link>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={close}
+          >
+            Cancel
+          </Button>
           <Button
             type="submit"
             loading={save.isPending}
@@ -145,22 +158,6 @@ export function RenameProject({
           >
             Save name
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={save.isPending}
-            onClick={close}
-          >
-            Cancel
-          </Button>
-          {!save.isPending && (
-            <Link
-              to={`/projects/${encodeURIComponent(projectId)}`}
-              onClick={close}
-            >
-              Project settings
-            </Link>
-          )}
         </div>
       </form>
     </ModalFrame>

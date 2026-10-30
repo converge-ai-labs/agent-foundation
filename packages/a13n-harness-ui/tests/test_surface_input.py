@@ -45,6 +45,10 @@ def test_surface_hint_preserves_native_parts_and_uses_hidden_xml(surface):
     assert "For the response to this input" in element.text
     if surface == "webui":
         assert "static diagrams" in element.text
+        assert "LaTeX math renders with KaTeX" in element.text
+        assert "$...$ for inline math" in element.text
+        assert "$$ on separate lines" in element.text
+        assert "fenced math blocks" in element.text
         assert "interactive callbacks are not supported" in element.text
         assert "/threads/{root_thread_id}?native=files&native_path=" in element.text
         assert "/threads/{root_thread_id}?native=files&native_path=" in hint.content

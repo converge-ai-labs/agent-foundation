@@ -177,7 +177,18 @@ async def test_long_composer_text_preserves_order_metadata_and_survives_restart(
         assert text not in transcript
     scratch = tmp_path / "data/threads" / thread.thread_id / "tmp"
     os.utime(scratch, (1, 1))
+    pruned = Event()
+    prune = ThreadFiles.prune
+
+    async def observe_prune(self):
+        result = await prune(self)
+        pruned.set()
+        return result
+
+    monkeypatch.setattr(ThreadFiles, "prune", observe_prune)
     async with open_harness_ui_app(settings, configuration_path=path) as app:
+        with fail_after(5):
+            await pruned.wait()
         assert not scratch.exists()
         assert (await app.read_thread_attachment(thread_id=thread.thread_id, attachment_id=identifier))[
             1
@@ -398,3 +409,49 @@ async def test_slow_steering_file_save_does_not_retarget_next_run(tmp_path, monk
             assert (await app.wait_root_operation(next_receipt.receipt_id)).status is RootOperationStatus.completed
         assert not _references(observed[-1])
         assert "Second input" in _text_parts(observed[-1])
+
+
+@pytest.mark.anyio
+async def test_context_recovery_history_and_warning_survive_root_completion_and_restart(tmp_path, monkeypatch):
+    from a13n_harness_ui.interactive.history import restore_transcript
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from pydantic_ai.exceptions import ModelContextWindowExceededError
+
+    calls = 0
+    observed = []
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        observed.append(deepcopy(messages))
+        if calls <= 2:
+            raise ModelContextWindowExceededError("test", "window exceeded")
+        return ModelResponse(parts=[TextPart("Recovered answer")])
+
+    async with _app(tmp_path, monkeypatch, _function_model(model), threshold=None) as (app, path, settings):
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Complete the original task " * 500)
+        result = await app.wait_root_operation(receipt.receipt_id)
+        assert result.status is RootOperationStatus.completed, result.failure
+        assert calls == 3
+        retained = list((tmp_path / "data" / "threads" / thread.thread_id / "history").glob("recovery-*.txt"))
+        assert len(retained) == 1
+        assert "Complete the original task" in retained[0].read_text()
+        assert str(retained[0]) in str(observed[-1])
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        page = await app.get_thread_transcript(thread_id=thread.thread_id)
+        warnings = [part for entry in page.entries for part in entry.parts if part.kind == "other"]
+        assert warnings
+        assert all("Immediate root-cause investigation" in (part.text or "") for part in warnings)
+        assert any("resumed" in (part.text or "") for part in warnings)
+        renderer = StreamRenderer(Status())
+        restore_transcript(renderer, page)
+        text = "".join(block.source for block in renderer.transcript.blocks.values())
+        assert "Immediate root-cause investigation" in text
+        assert "Recovered answer" in text
+        renderer.transcript.close()
+        assert retained[0].is_file()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Continue")
+        result = await app.wait_root_operation(receipt.receipt_id)
+        assert result.status is RootOperationStatus.completed, result.failure
+        assert retained[0].is_file()

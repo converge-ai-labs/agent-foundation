@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from a13n_envd_client import EIPDeviceConnection, EIPSession, HttpTransport
+from a13n_envd_client import EIPDeviceConnection, HttpTransport
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult, ErrorType
 from a13n_envd_client.errors import EIPMethodError
 from pydantic import BaseModel
 
-from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSessionBinding
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
@@ -24,6 +24,7 @@ from a13n_harness.environment.envd_policy import (
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
@@ -81,6 +82,7 @@ class HttpEnvdProviderRuntime:
                 transport = HttpTransport(
                     configuration.endpoint,
                     self.credential.token.get_secret_value(),
+                    extra_headers={key: value.get_secret_value() for key, value in self.credential.headers.items()},
                     verify=self.verify,
                     request_timeout=configuration.request_timeout,
                     allow_plaintext_private_link=configuration.allow_plaintext_private_link,
@@ -120,16 +122,19 @@ class HttpEnvdProviderRuntime:
         working_directory: str | None = None,
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-    ) -> AsyncIterator[EIPSession]:
+        session_recovery: EnvdSessionRecovery | None = None,
+    ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
-        async with DeviceEIPSessionSource(device).open_session(
+        async with DeviceEIPSessionSource(
+            device, target=self.configuration.endpoint, session_recovery=session_recovery
+        ).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,
             egress=await resolve_egress(egress, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
-            yield session
+            yield EIPSessionBinding(session, device.descriptor)
 
     async def close(self) -> None:
         if self._close_task is None:
@@ -175,6 +180,7 @@ def _construct(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> ExecutionBackend:
     if not isinstance(configuration, RemoteEnvdEnvironmentConfiguration) or runtime is None:
         raise TypeError("HTTP Envd requires RemoteEnvdEnvironmentConfiguration and HttpEnvdProviderRuntime")
@@ -187,6 +193,7 @@ def _construct(
         state=state,
         session_context=runtime.open_session(
             expected_device_id=data.device_id,
+            session_recovery=session_recovery,
             working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             egress=configuration.egress,

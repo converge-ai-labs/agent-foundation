@@ -8,8 +8,8 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder } from "@phosphor-icons/react";
-import { SearchPicker } from "a13n-ui";
+import { Folder } from "@phosphor-icons/react";
+import { Button, SearchPicker } from "a13n-ui";
 import {
   useProjects,
   useSelectors,
@@ -43,6 +43,34 @@ export function newConversationPath(
   return `/new?project=${encodeURIComponent(projectId ?? "")}${coordinatorThreadId ? `&coordinator=${encodeURIComponent(coordinatorThreadId)}` : ""}`;
 }
 
+async function checkConversation(
+  transport: Transport,
+  threadId: string,
+  draft: NewDraft,
+  signal?: AbortSignal,
+) {
+  try {
+    signal?.throwIfAborted();
+    await result(
+      transport.client.GET("/api/threads/{thread_id}", {
+        params: { path: { thread_id: threadId } },
+        signal,
+      }),
+    );
+    signal?.throwIfAborted();
+    draft.created = true;
+    return true;
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (!(error instanceof ApiError) || error.code !== "thread_missing")
+      throw error;
+    draft.attempted = false;
+    return false;
+  } finally {
+    draft.save();
+  }
+}
+
 // Creation and admission remain separate. Resolve a lost creation acknowledgement
 // by its retained identity, never by allocating another Thread or replaying Send.
 export async function ensureConversation(
@@ -54,25 +82,12 @@ export async function ensureConversation(
   if (draft.created) return;
   const create = async () => {
     if (draft.attempted) {
-      try {
-        await result(
-          transport.client.GET("/api/threads/{thread_id}", {
-            params: { path: { thread_id: threadId } },
-          }),
-        );
-        draft.created = true;
-        throw new Error(
-          "This conversation already exists. Open it to review its settings before sending your retained input.",
-        );
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          draft.attempted = false;
-          throw new Error(
-            "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
-          );
-        }
-        throw error;
-      }
+      const found = await checkConversation(transport, threadId, draft);
+      throw new Error(
+        found
+          ? "This chat already exists. Open it and check its settings before sending your saved input."
+          : "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
+      );
     }
     draft.attempted = true;
     draft.save();
@@ -92,7 +107,7 @@ export async function ensureConversation(
       );
       if (created.thread_id !== threadId)
         throw new Error(
-          "The conversation acknowledgement was incomplete. Send again to check its identity.",
+          "Couldn't confirm the chat was created. Send again to check.",
         );
       draft.created = true;
     } catch (error) {
@@ -139,10 +154,12 @@ function NewConversation({
 }) {
   const { threadId } = draft;
   const active = useRef(true);
+  const reviewController = useRef<AbortController | null>(null);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
+      reviewController.current?.abort();
     };
   }, []);
   const transport = useTransport();
@@ -184,6 +201,29 @@ function NewConversation({
       if (draft.created && error && active.current) openConversation();
     },
   });
+  const review = useMutation({
+    mutationFn: async () => {
+      const controller = new AbortController();
+      reviewController.current = controller;
+      // A creation started before navigating away still owns this identity.
+      // Wait for it instead of reading absence while its POST is in flight.
+      if (draft.pending) await draft.pending;
+      controller.signal.throwIfAborted();
+      return (
+        draft.created ||
+        checkConversation(transport, threadId, draft, controller.signal)
+      );
+    },
+    onSuccess: (found) => {
+      if (found) {
+        void refreshThreadLists(queries);
+        openConversation();
+      }
+    },
+  });
+  const unknownSubmission = composerDraft.submission.kind === "unknown";
+  const choicesDisabled =
+    preparing || review.isPending || draft.attempted || unknownSubmission;
   const [search, setSearch] = useSearchParams();
   const requestedProject = search.get("project");
   const requestedOwner = search.get("coordinator");
@@ -191,9 +231,7 @@ function NewConversation({
     // Home resumes the slot; explicit creation links select Project and ownership.
     if (
       (requestedProject === null && requestedOwner === null) ||
-      preparing ||
-      draft.attempted ||
-      composerDraft.submission.kind === "unknown"
+      choicesDisabled
     ) {
       if (
         requestedProject !== (draft.defaults.project_id ?? "") ||
@@ -231,13 +269,13 @@ function NewConversation({
   }, [
     requestedProject,
     requestedOwner,
-    preparing,
+    choicesDisabled,
     draft,
     composerDraft,
     setSearch,
   ]);
   const change = (patch: Schema<"NewThreadDefaults">) => {
-    if (preparing || draft.attempted) return;
+    if (choicesDisabled) return;
     draft.defaults = { ...defaults, ...patch };
     setDefaults(draft.defaults);
     draft.save();
@@ -261,8 +299,6 @@ function NewConversation({
   const effectiveEnvironment = selectors.data?.environments.find(
     (item) => item.profile_id === effective?.environment_profile_id,
   );
-  const choicesDisabled =
-    preparing || draft.attempted || composerDraft.submission.kind === "unknown";
   const ownerAvailable =
     !ownerId ||
     (!owner.isError &&
@@ -311,37 +347,20 @@ function NewConversation({
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Preparing your conversation…"
+      label="Preparing your chat…"
       onContinue={() => setShowAvailable(true)}
     >
-      <section className={styles.page} aria-label="New conversation">
-        <div className={styles.welcome}>
-          <Robot aria-hidden="true" />
-          <h1>
-            What would you like to build
-            {project ? (
-              <>
-                {" "}
-                in <span>{project.name}</span>
-              </>
-            ) : (
-              ""
-            )}
-            ?
-          </h1>
-        </div>
+      <section className={styles.page} aria-label="New chat">
         <div className={styles.inputArea}>
+          <h1 className={styles.welcome}>What can I help with?</h1>
           <ConversationTranscript
             entries={[]}
             blocks={[]}
             localInputs={composerDraft.localInputs}
             threadId={threadId}
           />
-          <fieldset
-            className={styles.context}
-            disabled={preparing || draft.attempted}
-          >
-            <legend className={styles.srOnly}>Conversation settings</legend>
+          <fieldset className={styles.context} disabled={choicesDisabled}>
+            <legend className={styles.srOnly}>Chat settings</legend>
             <div className={styles.location}>
               <Folder aria-hidden="true" />
               <SearchPicker
@@ -376,6 +395,46 @@ function NewConversation({
               />
             </div>
           </fieldset>
+          {choicesDisabled && (
+            <div className={styles.projectNotice}>
+              <div role="status">
+                <strong>Project changes are paused</strong>
+                <p>
+                  {preparing
+                    ? "Sending your first message. Wait until it finishes before changing projects."
+                    : unknownSubmission
+                      ? "Open the chat to check delivery before changing projects."
+                      : draft.created
+                        ? "This draft belongs to an existing chat. Open it to continue."
+                        : "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here."}
+                </p>
+              </div>
+              {!preparing &&
+                (draft.created || unknownSubmission ? (
+                  <Link
+                    to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
+                  >
+                    Open saved draft
+                  </Link>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={review.isPending}
+                    onClick={() => review.mutate()}
+                  >
+                    {review.isPending ? "Checking chat…" : "Check chat status"}
+                  </Button>
+                ))}
+              <ErrorNotice error={review.error} />
+            </div>
+          )}
+          {!choicesDisabled && review.isSuccess && !review.data && (
+            <p className={styles.recoveryStatus} role="status">
+              No chat found. You can change projects now. Your input is saved
+              here.
+            </p>
+          )}
           <Composer
             autoFocus={pageReady}
             threadId={threadId}
@@ -400,15 +459,22 @@ function NewConversation({
                     locked: draft.attempted,
                   }
             }
-            canRun={!!preview.data && !preview.error && ownerAvailable}
+            canRun={
+              !!preview.data &&
+              !preview.error &&
+              ownerAvailable &&
+              !review.isPending
+            }
             unavailableReason={
-              !ownerAvailable
-                ? "The Coordinator must be available in this Project. Retry or remove the assignment."
-                : preview.isPending
-                  ? "Updating conversation settings…"
-                  : preview.error
-                    ? "Review conversation settings before sending."
-                    : undefined
+              review.isPending
+                ? "Checking the previous creation attempt…"
+                : !ownerAvailable
+                  ? "The coordinator must be available in this project. Retry or remove the assignment."
+                  : preview.isPending
+                    ? "Updating chat settings…"
+                    : preview.error
+                      ? "Review chat settings before sending."
+                      : undefined
             }
             profile={profile}
             unauthorized={unauthorized}
@@ -465,10 +531,8 @@ function NewConversation({
               !isReadyAttachment(id) && !composerDraft.uploads.has(key),
           ) && (
             <p role="alert">
-              Some attachments are unavailable. Local files are not saved across
-              reloads, and uploaded files belong to their original conversation.
-              Remove unavailable attachments and attach the files again before
-              sending.
+              Reattach missing files before sending. Local attachments are lost
+              on reload; uploaded files stay with their original chat.
             </p>
           )}
           <ErrorNotice
@@ -482,11 +546,6 @@ function NewConversation({
               void projects.refetch();
             }}
           />
-          {draft.created && !preparing && (
-            <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
-              Open conversation with retained input
-            </Link>
-          )}
           {(preview.error || setup.data?.needed) && (
             <Link className={styles.setup} to="/setup">
               Continue setup

@@ -93,7 +93,10 @@ async def legacy_run(service, scripted_model, runs_kit):
         state_pointer = StatePointer.model_validate(row.checkpoint)
         organization_id = row.organization_id
     tail = await checkpoints.load_tail(service.runtime.objects, tail_pointer)
-    state_bytes = await checkpoints.load(service.runtime.objects, state_pointer)
+    state = json.loads(await checkpoints.load(service.runtime.objects, state_pointer))
+    state["format"] = 1
+    state.pop("envd_sessions")
+    state_bytes = json.dumps(state).encode()
     old_display = {
         "items": [item.model_dump(mode="json", exclude={"ordinal", "content_refs"}) for item in tail.items],
         "position": tail.position.model_dump(),
@@ -158,8 +161,10 @@ async def test_conversion_restores_run_and_items_apis_preserves_state_and_is_rep
     before = await runtime.objects.keys("orgs", limit=1000)
     with pytest.raises(RuntimeError, match="migrate-run-objects"):
         await run_objects.require_current(runtime.storage)
+    # The run view never reads display pointers; its items need the converted tail.
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
     with pytest.raises(ValidationError):
-        await runs_kit.get_run(service, run_id)
+        await runs_kit.items(service, run_id)
     assert await run_objects.migrate(runtime.storage, runtime.objects, backup_dir=backup) == 1
     assert not backup.exists() and await runtime.objects.keys("orgs", limit=1000) == before
     assert await pointers(service, run_id) == (legacy_run["tail"], legacy_run["state"])

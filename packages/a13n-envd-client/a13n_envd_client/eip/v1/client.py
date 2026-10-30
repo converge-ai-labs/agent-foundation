@@ -11,9 +11,13 @@ from .methods import (
     COMPUTER_MOVE,
     COMPUTER_OBSERVE,
     COMPUTER_PRESS_KEYS,
+    COMPUTER_READ_CLIPBOARD,
     COMPUTER_SCROLL,
     COMPUTER_TYPE_TEXT,
+    COMPUTER_WRITE_CLIPBOARD,
+    COMPUTER_ZOOM,
     DEVICE_DESCRIBE,
+    DEVICE_METRICS,
     DIRECTORY_LIST,
     EGRESS_UPDATE,
     ENVIRONMENT_DESCRIBE,
@@ -66,10 +70,18 @@ from .models import (
     ComputerObserveParams,
     ComputerObserveResult,
     ComputerPressKeysParams,
+    ComputerReadClipboardParams,
+    ComputerReadClipboardResult,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerWriteClipboardParams,
+    ComputerWriteClipboardResult,
+    ComputerZoomParams,
+    ComputerZoomResult,
     DeviceDescribeParams,
     DeviceDescribeResult,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
     DirectoryListParams,
     DirectoryListResult,
     EgressUpdateParams,
@@ -181,14 +193,26 @@ class EIPClient:
     async def computer_press_keys(self, params: ComputerPressKeysParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_PRESS_KEYS, params)
 
+    async def computer_read_clipboard(self, params: ComputerReadClipboardParams) -> ComputerReadClipboardResult:
+        return await self._requester.request(COMPUTER_READ_CLIPBOARD, params)
+
     async def computer_scroll(self, params: ComputerScrollParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_SCROLL, params)
 
     async def computer_type_text(self, params: ComputerTypeTextParams) -> ComputerActionResult:
         return await self._requester.request(COMPUTER_TYPE_TEXT, params)
 
+    async def computer_write_clipboard(self, params: ComputerWriteClipboardParams) -> ComputerWriteClipboardResult:
+        return await self._requester.request(COMPUTER_WRITE_CLIPBOARD, params)
+
+    async def computer_zoom(self, params: ComputerZoomParams) -> ComputerZoomResult:
+        return await self._requester.request(COMPUTER_ZOOM, params)
+
     async def device_describe(self, params: DeviceDescribeParams) -> DeviceDescribeResult:
         return await self._requester.request(DEVICE_DESCRIBE, params)
+
+    async def device_metrics(self, params: DeviceMetricsParams) -> DeviceMetricsResult:
+        return await self._requester.request(DEVICE_METRICS, params)
 
     async def directory_list(self, params: DirectoryListParams) -> DirectoryListResult:
         return await self._requester.request(DIRECTORY_LIST, params)

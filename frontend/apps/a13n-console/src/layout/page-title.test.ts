@@ -23,9 +23,11 @@ it("names the destination behind a workspace path", () => {
 
 it.each([
   ["/workspace/design/models", "Models"],
+  ["/workspace/design/api-keys", "API keys"],
   ["/workspace/design/sessions/sess_1", "Sessions"],
   ["/workspace/design/settings/members", "Members"],
   ["/settings/profile", "Profile"],
+  ["/settings/language", "Language"],
   ["/organization/settings/workspaces", "Workspaces"],
 ])("uses only the page name for %s in the browser tab", (path, title) => {
   renderHook(() => usePageTitle("Product lab"), {

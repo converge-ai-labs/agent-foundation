@@ -8,9 +8,12 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
+from a13n_harness import AgentContext
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from a13n_harness.output_schema import structured_output_type
 from a13n_harness.tools import ToolPermissions, ToolPermissionSetting, source_tool_id, source_tool_prefix
 from a13n_harness.tools.client import ClientToolsetDefinition
+from pydantic_ai.capabilities import AbstractCapability
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
@@ -114,6 +117,26 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
             )
     rules.update((source_tool_id(CLIENT_TOOLSET_ID, tool.name), tool.permission) for tool in config.client_tools)
     return ToolPermissions(rules=rules)
+
+
+def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[AgentContext]]) -> ToolSearchPlan | None:
+    """Bind presentation to the same source instances the host contributes to this agent."""
+    selected = config.tool_search
+    if selected is None:
+        return None
+    return ToolSearchPlan(
+        config=selected.config,
+        groups={
+            name: ToolSearchSelection(
+                description=group.description,
+                capabilities=tuple(sources[source] for source in group.connections)
+                + tuple(sources[source] for source in group.capabilities if source in sources)
+                + ((sources["platform"],) if group.platform else ()),
+                plugins=group.plugins,
+            )
+            for name, group in selected.groups.items()
+        },
+    )
 
 
 def declared_permissions(config: AgentConfig) -> set[ToolPermissionSetting]:

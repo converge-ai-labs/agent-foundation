@@ -14,6 +14,8 @@ export interface StepUsage {
   cacheWriteTokens: number;
   costUsd: string | null;
   pricingStatus: string | null;
+  /** Stable backend contribution identity; timing metrics come from the usage API. */
+  recordId: string | null;
 }
 /**
  * A usage record proves a response was committed; it does not prove the
@@ -65,7 +67,6 @@ function decimal(value: unknown): string | null {
 function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
-
 function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
   const recordId = text(record.record_id);
   if (!recordId) return null;
@@ -84,6 +85,7 @@ function modelRecord(record: Record<string, unknown>): ModelUsageRecord | null {
       cacheWriteTokens: count(usage.cache_write_tokens),
       costUsd: decimal(usage.cost),
       pricingStatus: text(record.pricing_status),
+      recordId,
     },
   };
 }
@@ -118,6 +120,7 @@ function providerRecord(
       cacheWriteTokens: 0,
       costUsd: decimal(usage.cost),
       pricingStatus: null,
+      recordId: null,
     },
   };
 }

@@ -1,10 +1,20 @@
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
+import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
+import { ContextWindow } from "../../context-window";
+import { useRequestMetrics } from "../../queries";
+import { ErrorNotice } from "../../../../shared/feedback";
 import { formatCost } from "../../../../shared/cost";
 import { Patch } from "../../../../shared/diff";
-import { formatDuration, formatTokens, resultExcerpt } from "../../format";
+import {
+  formatDuration,
+  formatSpeed,
+  formatTokens,
+  resultExcerpt,
+  tokenFigures,
+} from "../../format";
 import type {
   ActionEntry,
   ContentEntry,
@@ -12,9 +22,9 @@ import type {
   OtherEntry,
   TimelineEntry,
 } from "../../timeline";
-import type { StepUsage } from "../../usage";
+import { MessageAuthor } from "../../message-author";
 import { readQuestions } from "../questions";
-import { workState } from "../entry-language";
+import { entryWait, waitingLabel, workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
 import type { RunScope } from "./scope";
 import {
@@ -32,10 +42,12 @@ export function EntryPane({
   entry: TimelineEntry;
   scope: RunScope;
 }) {
-  if (entry.kind === "model") return <ModelPane entry={entry} />;
+  if (entry.kind === "model")
+    return <ModelPane entry={entry} runId={scope.run.id} />;
   if (
     entry.kind === "reasoning" ||
     entry.kind === "guidance" ||
+    entry.kind === "hidden" ||
     entry.kind === "reply"
   )
     return <ContentPane entry={entry} />;
@@ -49,9 +61,10 @@ function isAction(entry: TimelineEntry): entry is ActionEntry {
   return "arguments" in entry;
 }
 
-function ModelPane({ entry }: { entry: ModelEntry }) {
+function ModelPane({ entry, runId }: { entry: ModelEntry; runId: string }) {
   const { t } = useTranslation();
   const usage = entry.usage;
+  const metrics = useRequestMetrics(runId, usage?.recordId);
   const reasoning = entry.children.filter(
     (child): child is ContentEntry => child.kind === "reasoning",
   );
@@ -70,10 +83,23 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
           usage &&
             entry.reportedUsage &&
             t("{{tokens}} out", { tokens: formatTokens(usage.outputTokens) }),
-          cachedShare(usage) !== null &&
-            t("{{percent}}% cached", { percent: cachedShare(usage) }),
+          usage &&
+            tokenFigures(t, {
+              input: usage.inputTokens,
+              output: usage.outputTokens,
+              cached: usage.cacheReadTokens,
+            }).cache,
           usage?.costUsd ? formatCost(usage.costUsd) : null,
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
+          metrics.data?.time_to_first_chunk_seconds != null &&
+            t("{{duration}} to first token", {
+              duration: formatDuration(
+                metrics.data.time_to_first_chunk_seconds * 1000,
+              ),
+            }),
+          metrics.data?.output_tokens_per_second != null
+            ? formatSpeed(t, metrics.data.output_tokens_per_second)
+            : null,
           entry.contextTokens
             ? t("{{tokens}} context", {
                 tokens: formatTokens(entry.contextTokens),
@@ -82,9 +108,20 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
           entry.stopReason &&
             t("stop {{reason}}", { reason: entry.stopReason }),
           entry.errorCode,
+          entry.errorStatus !== null &&
+            t("HTTP {{status}}", { status: entry.errorStatus }),
         ]}
         action={<RawDialog title={t("Model request")} value={entry} />}
       />
+      <ErrorNotice error={metrics.error} retry={() => void metrics.refetch()} />
+      {entry.errorDetail && (
+        <PaneSection label={t("Error")}>
+          <pre className={styles.paneCode}>{entry.errorDetail}</pre>
+        </PaneSection>
+      )}
+      {usage?.recordId && (
+        <ContextWindow scope={{ record_id: usage.recordId }} />
+      )}
       <PaneSection label={t("Response")}>
         {reasoning.length || calls.length || replies.length ? (
           <div className={styles.responseBody}>
@@ -133,13 +170,6 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
   );
 }
 
-/** Cache reads as a share of everything the request read, or null when unreported. */
-function cachedShare(usage: StepUsage | null) {
-  if (!usage?.cacheReadTokens) return null;
-  const total = usage.inputTokens;
-  return total ? Math.round((usage.cacheReadTokens / total) * 100) : null;
-}
-
 function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
   const { t } = useTranslation();
   const questions = entry.hitl
@@ -151,14 +181,15 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
         facts={[
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
           entry.outcome ??
-            t(`state.${entry.state}`, { defaultValue: entry.state }),
+            (entry.waitingReason
+              ? waitingLabel(entryWait(entry), t)
+              : t(`state.${entry.state}`, { defaultValue: entry.state })),
           entry.callCount !== null
             ? t("{{count}} inner calls", { count: entry.callCount })
             : null,
           entry.providerUsage?.costUsd
             ? formatCost(entry.providerUsage.costUsd)
             : null,
-          entry.waitingReason,
         ]}
         action={<RawDialog title={entry.name ?? t("Entry")} value={entry} />}
       />
@@ -174,7 +205,6 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
           <Link to={scope.child.path}>
             {t("Open {{name}} in full", { name: entry.name ?? t("subagent") })}
           </Link>
-          <span>{t("{{count}} runs", { count: scope.child.runs })}</span>
         </p>
       )}
       {entry.hitl && (
@@ -269,9 +299,30 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   return (
     <div className={styles.pane}>
+      {/* Guidance is someone's message; its author is part of the record. */}
+      {entry.kind === "guidance" && !entry.steeringSource && (
+        <MessageAuthor entryId={entry.sourceId} plain />
+      )}
+      {entry.kind === "hidden" && (
+        <p className={styles.paneNote}>
+          {t("The model read this input. Chat does not show it.")}
+        </p>
+      )}
       <div className={styles.reasoningProse}>
         {entry.text ? (
-          <StoredContent itemId={entry.id} field="text" value={entry.text} />
+          <StoredContent
+            itemId={entry.id}
+            field="text"
+            value={entry.text}
+            // Producers tag hidden input for the model; Markdown would drop it.
+            renderValue={
+              entry.kind === "hidden"
+                ? (value) => (
+                    <pre className={styles.paneCode}>{String(value)}</pre>
+                  )
+                : undefined
+            }
+          />
         ) : (
           <p className={styles.paneNote}>{t("No text was retained.")}</p>
         )}
@@ -286,12 +337,15 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
   );
 }
 
+const observationsPerPage = 20;
+
 function OtherPane({ entry }: { entry: OtherEntry }) {
   const { t, i18n } = useTranslation();
+  const [visibleCount, setVisibleCount] = useState(observationsPerPage);
   return (
     <div className={styles.pane}>
       <ul className={styles.observations}>
-        {entry.observations.map((observation) => (
+        {entry.observations.slice(0, visibleCount).map((observation) => (
           <li key={observation.id}>
             <code>{observation.name}</code>
             {observation.occurredAt && (
@@ -310,6 +364,18 @@ function OtherPane({ entry }: { entry: OtherEntry }) {
           </li>
         ))}
       </ul>
+      {visibleCount < entry.observations.length && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            setVisibleCount((count) => count + observationsPerPage)
+          }
+        >
+          {t("Load more")}
+        </Button>
+      )}
     </div>
   );
 }

@@ -10,6 +10,11 @@ use crate::{
     filesystem::PathError,
 };
 
+#[cfg(windows)]
+pub(crate) use crate::windows_path::canonicalize;
+#[cfg(not(windows))]
+pub(crate) use std::fs::canonicalize;
+
 pub(crate) fn path_style() -> PathStyle {
     if cfg!(windows) {
         PathStyle::Windows
@@ -104,7 +109,7 @@ pub(crate) fn from_native(path: &Path) -> Result<String, PathError> {
 }
 
 pub(crate) fn resolve_directory(path: &str) -> Result<PathBuf, PathError> {
-    let native = fs::canonicalize(to_native(path)?).map_err(PathError::from_io)?;
+    let native = canonicalize(to_native(path)?).map_err(PathError::from_io)?;
     if !fs::metadata(&native).map_err(PathError::from_io)?.is_dir() {
         return Err(PathError::NotRegular);
     }

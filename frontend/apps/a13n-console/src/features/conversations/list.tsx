@@ -1,7 +1,13 @@
-import { Button } from "a13n-ui";
+import { Button, MenuItem } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChatsIcon, PlusIcon } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import {
+  ArrowRightIcon,
+  ChatsIcon,
+  CopyIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -10,8 +16,9 @@ import {
   CollectionFooter,
   Empty,
   Pagination,
-  ResourceIdentity,
   ResourceTable,
+  SortButton,
+  ariaSort,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -20,19 +27,31 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { UNKNOWN } from "../../shared/unknown";
+import type { Schema } from "../../shared/api";
+import { costColumnFormat, exactCost } from "../../shared/cost";
+import { KnownSubtotal } from "../../shared/known-subtotal";
+import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
-import { conversationQueries, type SessionFilters } from "./api";
-import { SessionFilterBar, readSessionFilters } from "./filters";
-import styles from "./conversations.module.css";
+import {
+  conversationQueries,
+  isConsoleSession,
+  type SessionFilters,
+} from "./api";
+import {
+  SessionFilterBar,
+  readSessionFilters,
+  useSessionAgents,
+} from "./filters";
+import { sessionPath, sessionTitle } from "./session-identity";
+import { SessionEditor } from "./session-editor";
+import styles from "./session-list.module.css";
 
-/** Without workspace notifications, the list refreshes itself this often. */
 const REFRESH_MS = 15_000;
 
 export function SessionList() {
-  const { t } = useTranslation();
-  const { can, basePath } = useWorkspace();
+  const { t } = useTranslation(),
+    { can, basePath } = useWorkspace();
   const [search, setSearch] = useSearchParams();
   const filters = readSessionFilters(search);
   const create = can("run") && (
@@ -44,11 +63,39 @@ export function SessionList() {
   return (
     <Page
       title={t("Sessions")}
-      description={t("Every conversation your workspace has run, and why.")}
+      description={t(
+        "Find a session, follow its progress, or trace it back to the source.",
+      )}
       actions={create}
       toolbar={<SessionFilterBar search={search} setSearch={setSearch} />}
     >
-      <SessionResults filters={filters} create={create} />
+      <SessionResults
+        filters={filters}
+        onSort={(sort) =>
+          setSearch((previous) => {
+            const next = new URLSearchParams(previous);
+            const active = (filters.sort ?? "updated_at") === sort;
+            next.set("sort", sort);
+            next.set(
+              "direction",
+              active && (filters.direction ?? "desc") === "desc"
+                ? "asc"
+                : "desc",
+            );
+            return next;
+          })
+        }
+        create={create}
+        onFilter={(key, value) =>
+          setSearch((previous) => {
+            const next = new URLSearchParams(previous);
+            if (key === "label") {
+              if (!next.getAll(key).includes(value)) next.append(key, value);
+            } else next.set(key, value);
+            return next;
+          })
+        }
+      />
     </Page>
   );
 }
@@ -56,20 +103,26 @@ export function SessionList() {
 function SessionResults({
   filters,
   create,
+  onFilter,
+  onSort,
 }: {
   filters: SessionFilters;
   create: ReactNode;
+  onFilter: (key: "application" | "label", value: string) => void;
+  onSort: (sort: NonNullable<SessionFilters["sort"]>) => void;
 }) {
   const { t } = useTranslation(),
     { workspace, basePath, can } = useWorkspace(),
     navigate = useNavigate(),
     client = useClient(),
     page = useCursor(filters);
+  const [editing, setEditing] = useState<Schema["SessionView"]>();
   const sessions = useQuery({
     ...conversationQueries(client, workspace.id).sessions(page.cursor, filters),
     placeholderData: keepPreviousData,
     refetchInterval: REFRESH_MS,
   });
+  const agents = useSessionAgents();
   if (sessions.isPending) return <Loading variant="table" columns={4} />;
   if (!sessions.data)
     return (
@@ -79,113 +132,182 @@ function SessionResults({
       />
     );
   const items = sessions.data.items;
-  const sessionPath = (id: string) =>
-    `${basePath}/sessions/${id}${filters.q && filters.q !== id ? `/threads/${encodeURIComponent(filters.q)}` : ""}`;
-  const filtered = Object.values(filters).some((value) =>
+  const agentImages = new Map(
+    agents.data?.map((agent) => [agent.id, agent.image_url]),
+  );
+  const path = (id: string) => sessionPath(basePath, id, filters.q);
+  const { sort = "updated_at", direction = "desc", ...filterValues } = filters;
+  const filtered = Object.values(filterValues).some((value) =>
     Array.isArray(value) ? value.length > 0 : !!value,
   );
+  const cost = costColumnFormat(items.map((item) => item.cost));
+  const sortColumn = (
+    field: NonNullable<SessionFilters["sort"]>,
+    label: string,
+  ) => {
+    const activeDirection = sort === field ? direction : undefined;
+    return {
+      ariaSort: ariaSort(activeDirection),
+      header: (
+        <SortButton
+          label={label}
+          direction={activeDirection}
+          onClick={() => onSort(field)}
+        />
+      ),
+    };
+  };
   return (
     <>
       <ErrorNotice error={sessions.error} />
       {items.length ? (
-        <ResourceTable
-          items={items}
-          caption={t("Sessions")}
-          // The collection opens a session to inspect it: that is the Debug level.
-          onRowActivate={(session) =>
-            navigate(`${sessionPath(session.id)}?view=debug`)
-          }
-          columns={[
-            {
-              label: t("Session"),
-              tone: "primary",
-              render: (session) => (
-                <ResourceIdentity
-                  name={session.preview?.input_text || t("No request text")}
-                  resourceId={session.id}
-                  icon={
-                    <AgentAvatar
-                      name={session.preview?.agent_name ?? t("Session")}
-                      id={session.id}
-                      className={styles.sessionAvatar}
-                    />
-                  }
-                  description={[
-                    session.preview?.agent_name,
-                    session.run_count === null ||
-                    session.run_count === undefined
-                      ? undefined
-                      : t("{{count}} runs", { count: session.run_count }),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                />
-              ),
-            },
-            {
-              label: t("Status"),
-              render: (session) =>
-                session.preview ? (
-                  <StatePill state={session.preview.status} />
-                ) : (
-                  UNKNOWN
+        <div className={styles.collection}>
+          <ResourceTable
+            items={items}
+            caption={t("Sessions")}
+            className={styles.table}
+            onRowActivate={(session) =>
+              navigate(`${path(session.id)}?view=debug`)
+            }
+            columns={[
+              {
+                label: t("Session"),
+                tone: "primary",
+                dataColumn: "identity",
+                render: (session) => (
+                  <SessionIdentity
+                    session={session}
+                    agentImage={
+                      session.preview &&
+                      agentImages.get(session.preview.agent_id)
+                    }
+                    href={`${path(session.id)}?view=debug`}
+                    onFilter={onFilter}
+                    metrics={
+                      <>
+                        {t("Runs")} {session.run_count} · {t("Cost")}{" "}
+                        {cost(session.cost)}
+                        {session.cost !== null &&
+                          session.unpriced_requests > 0 && <KnownSubtotal />}
+                      </>
+                    }
+                  />
                 ),
-            },
-            {
-              label: t("Trigger"),
-              tone: "muted",
-              render: (session) =>
-                session.preview
-                  ? t(`trigger.${session.preview.trigger}`, {
-                      defaultValue: session.preview.trigger,
-                    })
-                  : UNKNOWN,
-            },
-            {
-              label: t("Updated"),
-              tone: "muted",
-              align: "right",
-              render: (session) => (
-                <Timestamp value={session.updated_at} relative />
-              ),
-            },
-            {
-              label: t("Actions"),
-              align: "right",
-              render: (session) => (
-                <div className="flex items-center gap-2">
-                  {can("run") && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      render={
-                        <Link to={`${sessionPath(session.id)}?view=chat`} />
-                      }
-                    >
-                      {t("Continue conversation")}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    render={
-                      <Link to={`${sessionPath(session.id)}?view=debug`} />
+              },
+              {
+                label: t("Source"),
+                dataColumn: "source",
+                render: (session) => (
+                  <SessionSource session={session} onFilter={onFilter} />
+                ),
+              },
+              {
+                label: t("Status"),
+                dataColumn: "state",
+                render: (session) => (
+                  <div
+                    className={styles.state}
+                    title={
+                      session.preview
+                        ? t(`trigger.${session.preview.trigger}`, {
+                            defaultValue: session.preview.trigger,
+                          })
+                        : undefined
                     }
                   >
-                    {t("Inspect execution")}
-                  </Button>
-                </div>
-              ),
-            },
-          ]}
-        />
+                    {session.preview ? (
+                      <StatePill state={session.preview.status} />
+                    ) : (
+                      <span className={styles.unspecified}>
+                        {t("Not started")}
+                      </span>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                label: t("Runs"),
+                ...sortColumn("runs", t("Runs")),
+                dataColumn: "runs",
+                align: "right",
+                render: (session) => (
+                  <span className={styles.runCount}>{session.run_count}</span>
+                ),
+              },
+              {
+                label: t("Cost"),
+                ...sortColumn("cost", t("Cost")),
+                dataColumn: "cost",
+                align: "right",
+                render: (session) => (
+                  <span
+                    className={styles.cost}
+                    title={
+                      session.unpriced_requests
+                        ? t("Known subtotal; some model calls are unpriced.")
+                        : exactCost(session.cost)
+                    }
+                  >
+                    {cost(session.cost)}
+                    {session.cost != null && !!session.unpriced_requests && (
+                      <KnownSubtotal />
+                    )}
+                  </span>
+                ),
+              },
+              {
+                label: t("Updated"),
+                ...sortColumn("updated_at", t("Updated")),
+                dataColumn: "activity",
+                render: (session) => (
+                  <span className={styles.activity}>
+                    <Timestamp value={session.updated_at} relative />
+                  </span>
+                ),
+              },
+            ]}
+            rowMenuLabel={t("Session actions")}
+            rowMenu={(session) => (
+              <>
+                <MenuItem
+                  render={<Link to={`${path(session.id)}?view=debug`} />}
+                >
+                  <ArrowRightIcon aria-hidden="true" />
+                  {t("Inspect execution")}
+                </MenuItem>
+                {can("run") && isConsoleSession(session) && (
+                  <MenuItem
+                    render={<Link to={`${path(session.id)}?view=chat`} />}
+                  >
+                    <ChatsIcon aria-hidden="true" />
+                    {t("Continue thread")}
+                  </MenuItem>
+                )}
+                {can("run") && isConsoleSession(session) && (
+                  <MenuItem onClick={() => setEditing(session)}>
+                    <PencilSimpleIcon aria-hidden="true" />
+                    {t("Edit session details")}
+                  </MenuItem>
+                )}
+                <MenuItem
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(session.id)
+                  }
+                >
+                  <CopyIcon aria-hidden="true" />
+                  {t("Copy session ID")}
+                </MenuItem>
+              </>
+            )}
+          />
+        </div>
       ) : (
         <Empty
           icon={<ChatsIcon aria-hidden="true" />}
           title={t(filtered ? "No matching sessions" : "No sessions yet")}
           description={t(
             filtered
-              ? "Change or clear the search and filters."
+              ? "Try a title, source, external ID, or words from the session."
               : "Start a session to talk with an agent in this workspace.",
           )}
           action={!filtered && create}
@@ -200,6 +322,149 @@ function SessionResults({
       >
         <Pagination page={page} next={sessions.data.next_cursor} />
       </CollectionFooter>
+      {editing && (
+        <SessionEditor
+          key={editing.id}
+          session={editing}
+          onClose={() => setEditing(undefined)}
+        />
+      )}
     </>
+  );
+}
+
+const VISIBLE_LABELS = 2;
+
+/** The latest Run's Agent is the row's face; labels narrow the list in place. */
+function SessionIdentity({
+  session,
+  agentImage,
+  href,
+  onFilter,
+  metrics,
+}: {
+  session: Schema["SessionView"];
+  agentImage?: string | null;
+  href: string;
+  metrics: ReactNode;
+  onFilter: (key: "application" | "label", value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const title = sessionTitle(session);
+  const agent = session.preview;
+  const labels = Object.entries(session.labels).filter(
+    ([key]) => !key.startsWith("a13n."),
+  );
+  const hidden = labels.slice(VISIBLE_LABELS);
+  return (
+    <div className={styles.identity}>
+      {agent ? (
+        <AgentAvatar
+          name={agent.agent_name}
+          id={agent.agent_id}
+          url={agentImage}
+          className={styles.avatar}
+        />
+      ) : (
+        <span className={styles.avatar} aria-hidden="true">
+          <ChatsIcon size={16} />
+        </span>
+      )}
+      <div className={styles.identityText}>
+        <Link
+          className={styles.title}
+          data-untitled={!title || undefined}
+          to={href}
+          title={title ?? undefined}
+        >
+          {title ?? t("Untitled session")}
+        </Link>
+        <div className={styles.metadata}>
+          {agent && (
+            <span className={styles.agent} title={agent.agent_name}>
+              {agent.agent_name}
+            </span>
+          )}
+          {labels.length > 0 && (
+            <span className={styles.tags}>
+              {labels.slice(0, VISIBLE_LABELS).map(([key, value]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={styles.tag}
+                  title={`${key}: ${value}`}
+                  aria-label={t("Filter by {{label}}", {
+                    label: `${key}: ${value}`,
+                  })}
+                  onClick={() => onFilter("label", `${key}:${value}`)}
+                >
+                  {value ? (
+                    <>
+                      <span className={styles.tagKey}>{key}</span> {value}
+                    </>
+                  ) : (
+                    key
+                  )}
+                </button>
+              ))}
+              {hidden.length > 0 && (
+                <span
+                  className={styles.tag}
+                  title={hidden
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join("\n")}
+                >
+                  +{hidden.length}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+        <span className={styles.mobileMetrics}>{metrics}</span>
+      </div>
+      {/* The identifier stays one hover away, as in every other collection. */}
+      <ResourceReference
+        id={session.id}
+        idLabel={t("Session ID")}
+        idCopyLabel={t("Copy session ID")}
+      />
+    </div>
+  );
+}
+
+/** The named conversation leads; its application is the caption that filters. */
+function SessionSource({
+  session,
+  onFilter,
+}: {
+  session: Schema["SessionView"];
+  onFilter: (key: "application", value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const origin = session.origin;
+  if (!origin)
+    return (
+      <span className={styles.unspecified} title={t("Not specified")}>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{t("Not specified")}</span>
+      </span>
+    );
+  return (
+    <div className={styles.source}>
+      {origin.name && (
+        <span className={styles.sourceName} title={origin.name}>
+          {origin.name}
+        </span>
+      )}
+      <button
+        type="button"
+        className={styles.application}
+        data-lead={!origin.name || undefined}
+        onClick={() => onFilter("application", origin.application)}
+        title={t("Filter by {{label}}", { label: origin.application })}
+      >
+        {origin.application}
+      </button>
+    </div>
   );
 }

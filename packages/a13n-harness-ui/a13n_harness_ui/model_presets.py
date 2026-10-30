@@ -49,6 +49,7 @@ API_PROVIDERS = (
     ApiProvider(
         "vercel", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", "VERCEL_AI_GATEWAY_API_KEY", "openai-client"
     ),
+    ApiProvider("cloudflare", "Cloudflare AI Gateway", "", "CLOUDFLARE_API_TOKEN"),
     ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
     ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai", supports_session_affinity=False),
 )
@@ -113,6 +114,7 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "fireworks": ("accounts/fireworks/models/ember-1", "accounts/fireworks/models/gpt-oss-120b"),
     "cerebras": ("gpt-oss-120b", "qwen-3.8-27b"),
     "sambanova": ("MiniMax-M2.7", "DeepSeek-V3.1", "Meta-Llama-3.3-70B-Instruct", "gpt-oss-120b"),
+    "cloudflare": ("openai/gpt-5.4", "anthropic/claude-sonnet-4.6", "google/gemini-3-flash"),
     "vercel": ("anthropic/claude-sonnet-5.5", "openai/gpt-6.1-sol", "moonshotai/kimi-k3"),
     "grok": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
     "xai": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
@@ -289,7 +291,14 @@ _OUTPUT_PRESET_MODELS: dict[str, frozenset[str]] = {
 }
 _OUTPUT_TOKEN_BUDGETS = {
     "openai": {"low": 16384, "medium": 32768, "high": 65536, "xhigh": 65536},
-    "anthropic": {"adaptive": 32768, "interleaved": 16384, "low": 16384, "medium": 32768, "high": 32768},
+    "anthropic": {
+        "adaptive": 32768,
+        "extended": 16384,
+        "interleaved": 16384,
+        "low": 16384,
+        "medium": 32768,
+        "high": 32768,
+    },
     # Native Gemini 2.5 high thinking uses 24,576 tokens; leave room for the answer.
     "google": {"low": 16384, "medium": 32768, "high": 32768},
     "deepseek": {"thinking": 32768},
@@ -405,6 +414,8 @@ def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...
     if provider == "anthropic":
         from pydantic_ai.profiles.anthropic import anthropic_model_profile
 
+        profile = anthropic_model_profile(model_id) or {}
+        default = SettingsPreset("default", "Provider defaults", "No explicit thinking configuration", {})
         adaptive = SettingsPreset(
             "adaptive",
             "Adaptive thinking",
@@ -415,28 +426,26 @@ def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...
                 "max_tokens": 16384,
             },
         )
-        interleaved = SettingsPreset(
-            "interleaved",
-            "Interleaved extended thinking",
-            "Compatible Claude models · 8,192 thinking tokens; return summaries",
+        if profile.get("anthropic_supports_adaptive_thinking"):
+            # Adaptive thinking interleaves automatically. Do not recommend the
+            # deprecated budget mode or beta headers on these models.
+            return (adaptive, default)
+        if not profile.get("supports_thinking"):
+            return (default,)
+        # Haiku 4.5 and Claude 3.7 support budget thinking, not interleaving.
+        interleaved = not model_id.startswith(("claude-haiku-", "claude-3-"))
+        extended = SettingsPreset(
+            "interleaved" if interleaved else "extended",
+            "Interleaved extended thinking" if interleaved else "Extended thinking",
+            "8,192 thinking tokens; return thinking summaries",
             {
                 "anthropic_thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
-                "anthropic_betas": ["interleaved-thinking-2025-05-14"],
-                # Also retain this baseline for custom IDs: the explicit 8,192
-                # thinking budget must not fall back to the adapter's 4,096 cap.
+                **({"anthropic_betas": ["interleaved-thinking-2025-05-14"]} if interleaved else {}),
+                # The explicit budget must not fall back to the adapter's 4,096 cap.
                 "max_tokens": 16384,
             },
         )
-        profile = anthropic_model_profile(model_id) or {}
-        anthropic_choices = (
-            (adaptive, interleaved) if profile.get("anthropic_supports_adaptive_thinking") else (interleaved, adaptive)
-        )
-        if profile.get("anthropic_disallows_budget_thinking") or model_id == "claude-haiku-5-5":
-            anthropic_choices = (adaptive,)
-        return (
-            *anthropic_choices,
-            SettingsPreset("default", "Provider defaults", "No explicit thinking configuration", {}),
-        )
+        return (extended, default)
     if provider in {"openai", "openai-responses", "openai-chat", "google", "openrouter"}:
         supports_reasoning = True
         if provider.startswith("openai"):

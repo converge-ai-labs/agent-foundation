@@ -16,6 +16,8 @@ Explain the transition naturally. Do not mention context windows or token limits
 - Only a simple follow-up or minor adjustment remains.
 </when-not-to-summarize>
 <before-summarizing>
+- Call `summarize` directly as the only tool call in its response, outside CodeAct. Complete other calls and inspect their results before writing the summary.
+- Wait for retained CodeAct runners to finish and inspect their results before authoring a fresh summary. Do not reissue their work.
 - Reconcile stale notes and task statuses first.
 - Preserve the user's intent, completed work, key decisions, unresolved work, relevant past interactions, and immediate next step.
 - Preserve the SKILL.md paths and brief roles of skills actually used that remain relevant to unfinished work. Include supporting file paths only when needed for the immediate next step.

@@ -239,3 +239,29 @@ async def stack(stores: Stores, tmp_path: Path, request: pytest.FixtureRequest) 
                     if request.node.stash.get(FAILED, False):
                         for process in [service.control, *service.workers]:
                             print(f"--- {process.role} {process.log.name} ---\n{process.tail()}")
+
+
+@pytest.fixture
+async def skill_environment_template(stack: Stack) -> str:
+    """A real primary filesystem for custom Agents that read the builtin skill."""
+    provider = expect(
+        await stack.api.client.post("/api/v1/environment-providers", json={"type": "local", "name": "Skill files"}),
+        201,
+    )
+    template = expect(
+        await stack.api.client.post(
+            "/api/v1/environment-templates",
+            json={
+                "name": "Skill files",
+                "provider_id": provider["id"],
+                "config": {
+                    "recipe": {
+                        "root": {"path": str(stack.directory / "skill-environments")},
+                        "allowed_environment_keys": ["MODE"],
+                    }
+                },
+            },
+        ),
+        201,
+    )
+    return template["id"]

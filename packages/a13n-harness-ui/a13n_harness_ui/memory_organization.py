@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -78,23 +78,41 @@ class OrganizationStore(DirectoryFileStore):
             self._observe(path, current.version)
             return current
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         async with self._effects:
             self._observe(path, expected)
             try:
-                version = await super().write(path, text, expected=expected, origin=origin)
+                version = await super().write(path, text, expected=expected, origin=origin, dependencies=dependencies)
             except MemoryStoreError:
                 self.conflicted = True
                 raise
             self.expected[path] = version
             return version
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         async with self._effects:
             self._observe(source, expected)
             self._observe(destination, None)
             try:
-                version = await super().move(source, destination, expected=expected, origin=origin)
+                version = await super().move(
+                    source, destination, expected=expected, origin=origin, dependencies=dependencies
+                )
             except MemoryStoreError:
                 self.conflicted = True
                 raise
@@ -102,11 +120,18 @@ class OrganizationStore(DirectoryFileStore):
             self.expected[destination] = version
             return version
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None:
         async with self._effects:
             self._observe(path, expected)
             try:
-                await super().delete(path, expected=expected, origin=origin)
+                await super().delete(path, expected=expected, origin=origin, dependencies=dependencies)
             except MemoryStoreError:
                 self.conflicted = True
                 raise

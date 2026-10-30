@@ -1,13 +1,15 @@
 """Vercel execution implementation."""
 
-import json
-import math
+from collections.abc import AsyncIterator
+from typing import BinaryIO
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.native.configuration import NamedTargetState
 from a13n_harness.providers.environment.native.environment import NativeExecution
 from a13n_harness.providers.environment.native.errors import failure
+from a13n_harness.providers.environment.native.transfers import CHUNK_BYTES, gzip_file
+from a13n_harness.providers.environment.vercel.commands import command
 from a13n_harness.providers.environment.vercel.shared import (
     SandboxResponse,
     VercelEnvironmentConfiguration,
@@ -31,53 +33,29 @@ class VercelExecution(VercelReference, NativeExecution[VercelEnvironmentConfigur
         identity = f"{response.sandbox.name}:{response.sandbox.createdAt}"
         await self.open_operations(self.execute, identity, execution_id, incarnation=response.session.id)
 
-    async def execute(self, argv: list[str], timeout: float) -> str:
+    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
         assert self.session
-        output: list[str] = []
-        size = 0
         async with self.transport().stream(
             "POST",
-            f"/v2/sandboxes/sessions/{self.session.id}/cmd",
-            body={
-                "command": argv[0],
-                "args": argv[1:],
-                "env": {},
-                "sudo": False,
-                "wait": True,
-                "logs": True,
-                "timeout": math.ceil(timeout * 1000),
-            },
+            f"/v2/sandboxes/sessions/{self.session.id}/fs/read",
+            body={"path": path, "cwd": self.config.root},
+            mutation=False,
         ) as response:
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                event = json.loads(line)
-                if "command" in event:
-                    code = event["command"].get("exitCode")
-                    if code is not None:
-                        if type(code) is not int:
-                            raise ValueError("Invalid native exit code")
-                        if code != 0:
-                            raise failure(
-                                self.provider_key,
-                                "provider_command_failed",
-                                Category.PROVIDER_FAILURE,
-                                certainty=Certainty.KNOWN,
-                            )
-                        return "".join(output)
-                elif event.get("stream") == "stdout":
-                    data = event["data"]
-                    size += len(data.encode())
-                    if size > 24 * 1024 * 1024:
-                        raise failure(
-                            self.provider_key,
-                            "provider_response_invalid",
-                            Category.UNKNOWN_OUTCOME,
-                            certainty=Certainty.UNKNOWN,
-                        )
-                    output.append(data)
-                elif event.get("stream") == "error":
-                    break
-        raise failure(
-            self.provider_key, "provider_unknown_outcome", Category.UNKNOWN_OUTCOME, certainty=Certainty.UNKNOWN
-        )
+            if "application/octet-stream" not in response.headers.get("content-type", ""):
+                raise EnvironmentError("Invalid file response.", code="environment_provider_failure")
+            async for chunk in response.aiter_bytes(CHUNK_BYTES):
+                yield chunk
+
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None:
+        assert self.session
+        async with self.transport().stream(
+            "POST",
+            f"/v2/sandboxes/sessions/{self.session.id}/fs/write",
+            headers={"Content-Type": "application/gzip", "x-cwd": "/"},
+            content=gzip_file(path, source, mode),
+        ):
+            pass
+
+    async def execute(self, argv: list[str], timeout: float) -> str:
+        assert self.session
+        return await command(self, self.session.id, argv, timeout=timeout)

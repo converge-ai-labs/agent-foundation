@@ -52,19 +52,32 @@ it("preserves a failed draft and its command key until the retry succeeds", asyn
   expect(submit).toHaveBeenCalledTimes(2);
   expect(submit.mock.calls[0]).toEqual(submit.mock.calls[1]);
 });
-it("sends on Enter while preserving newlines and IME composition", async () => {
-  const submit = vi.fn().mockResolvedValue(undefined);
-  const input = mount(submit);
-  fireEvent.change(input, { target: { value: "A message" } });
-  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
-  expect(submit).not.toHaveBeenCalled();
-  fireEvent.keyDown(input, { key: "Enter" });
-  await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-  expect(submit.mock.calls[0]![0].content).toEqual([
-    { type: "text", text: "A message" },
-  ]);
-});
+it.each(["metaKey", "ctrlKey"])(
+  "sends with %s + Enter while preserving newlines and IME composition",
+  async (modifier) => {
+    const submit = vi.fn().mockResolvedValue(undefined);
+    const input = mount(submit);
+    const user = userEvent.setup();
+    await user.type(input, "A message{Enter}Second line");
+    expect((input as HTMLTextAreaElement).value).toBe("A message\nSecond line");
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      [modifier]: true,
+      shiftKey: true,
+    });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      [modifier]: true,
+      isComposing: true,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter", [modifier]: true });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0]![0].content).toEqual([
+      { type: "text", text: "A message\nSecond line" },
+    ]);
+  },
+);
 it("retains message and attachment drafts when closing the attachment dialog", async () => {
   const user = userEvent.setup(),
     submit = vi.fn().mockResolvedValue(undefined);

@@ -1,12 +1,27 @@
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
-import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  ArrowSquareOut,
+  ArrowsClockwise,
+  Check,
+  Copy,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
+import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
+import { CredentialKeys } from "./credential-keys";
+import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
+import { copyText } from "../platform";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -22,18 +37,26 @@ export function ProviderAccount({
   inline = false,
   onReady,
   onIdentity,
+  accountId,
 }: {
   connection: Schema<"AccountConnection">;
   inline?: boolean;
+  accountId?: string;
   onReady?: (ready: boolean) => void;
   onIdentity?: (identity: string) => void;
 }) {
   const { provider, label, login_methods: loginMethods } = connection;
+  const nativeAccountId =
+    accountId ??
+    (provider === "codex" || provider === "grok"
+      ? `acct-${provider}-default`
+      : undefined);
+  const accountKey = nativeAccountId ?? provider;
   const { client } = useTransport();
   const queries = useQueryClient();
   const [session, setSession] = useState<string | null>(
     () =>
-      queries.getQueryData<Schema<"LoginStatus">>(["login", provider])
+      queries.getQueryData<Schema<"LoginStatus">>(["login", accountKey])
         ?.session_id ?? null,
   );
   const activeLogin = useQuery({
@@ -43,11 +66,22 @@ export function ProviderAccount({
   });
   useEffect(() => {
     const status = activeLogin.data;
-    if (status?.provider === provider && status.session_id !== session) {
-      queries.setQueryData(["login", provider], status);
+    if (
+      status?.provider === provider &&
+      (!nativeAccountId || status.account_id === nativeAccountId) &&
+      status.session_id !== session
+    ) {
+      queries.setQueryData(["login", accountKey], status);
       setSession(status.session_id);
     }
-  }, [activeLogin.data, provider, queries, session]);
+  }, [
+    activeLogin.data,
+    provider,
+    accountKey,
+    nativeAccountId,
+    queries,
+    session,
+  ]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
 
@@ -59,14 +93,21 @@ export function ProviderAccount({
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const account = useQuery({
-    queryKey: ["account", provider],
+    queryKey: ["account", accountKey],
     queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/auth/accounts/{provider}", {
-          params: { path: { provider } },
-          signal,
-        }),
-      ),
+      nativeAccountId
+        ? result(
+            client.GET("/api/subscriptions/accounts/{account_id}", {
+              params: { path: { account_id: nativeAccountId } },
+              signal,
+            }),
+          )
+        : result(
+            client.GET("/api/auth/accounts/{provider}", {
+              params: { path: { provider } },
+              signal,
+            }),
+          ),
   });
   const sources = useQuery({
     queryKey: ["account-sources", provider],
@@ -88,7 +129,7 @@ export function ProviderAccount({
         }),
       ),
     onSuccess: (status) => {
-      queries.setQueryData(["account", provider], status);
+      queries.setQueryData(["account", accountKey], status);
       void queries.invalidateQueries({
         queryKey: ["account-sources", provider],
       });
@@ -96,7 +137,7 @@ export function ProviderAccount({
     },
   });
   const login = useQuery({
-    queryKey: ["login", provider],
+    queryKey: ["login", accountKey],
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/auth/logins/{session_id}", {
@@ -116,14 +157,19 @@ export function ProviderAccount({
     mutationFn: (allowAccountSwitch: boolean) =>
       result(
         client.POST("/api/auth/logins", {
-          body: { provider, method, allow_account_switch: allowAccountSwitch },
+          body: {
+            provider,
+            method,
+            account_id: nativeAccountId,
+            allow_account_switch: allowAccountSwitch,
+          },
         }),
       ),
     onSuccess: (status) => {
       setSwitchOpen(false);
       setCallbackUrl("");
       setCallbackSent(false);
-      queries.setQueryData(["login", provider], status);
+      queries.setQueryData(["login", accountKey], status);
       setSession(status.session_id);
       queries.setQueryData(["active-login"], status);
     },
@@ -152,17 +198,23 @@ export function ProviderAccount({
         }),
       ),
     onSuccess: (status) => {
-      queries.setQueryData(["login", provider], status);
+      queries.setQueryData(["login", accountKey], status);
       void queries.invalidateQueries({ queryKey: ["active-login"] });
     },
   });
   const logout = useMutation({
     mutationFn: () =>
-      result(
-        client.DELETE("/api/auth/accounts/{provider}", {
-          params: { path: { provider } },
-        }),
-      ),
+      nativeAccountId
+        ? result(
+            client.POST("/api/subscriptions/accounts/{account_id}/logout", {
+              params: { path: { account_id: nativeAccountId } },
+            }),
+          )
+        : result(
+            client.DELETE("/api/auth/accounts/{provider}", {
+              params: { path: { provider } },
+            }),
+          ),
     onSuccess: () => {
       setLogoutOpen(false);
       setSession(null);
@@ -171,13 +223,14 @@ export function ProviderAccount({
   });
   useEffect(() => {
     if (login.data?.state === "succeeded") {
-      void queries.invalidateQueries({ queryKey: ["account", provider] });
+      void queries.invalidateQueries({ queryKey: ["subscriptions"] });
+      void queries.invalidateQueries({ queryKey: ["account", accountKey] });
       void queries.invalidateQueries({ queryKey: ["setup"] });
       void queries.invalidateQueries({
         queryKey: ["account-sources", provider],
       });
     }
-  }, [login.data?.state, queries, provider]);
+  }, [login.data?.state, queries, provider, accountKey]);
   const ready =
     !!account.data?.usable ||
     (account.data?.availability === "available" &&
@@ -206,7 +259,7 @@ export function ProviderAccount({
   async function copyCode() {
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopiedCode(code);
       setCopyFailed(false);
     } catch {
@@ -214,6 +267,32 @@ export function ProviderAccount({
       setCopyFailed(true);
     }
   }
+  const accountActions = (
+    <div className={styles.actions}>
+      <Button
+        variant="outline"
+        loading={start.isPending}
+        disabled={!!activeLogin.data?.session_id || !loginMethods.length}
+        onClick={() => start.mutate(false)}
+      >
+        {account.data?.usable ? "Reconnect account" : "Connect account"}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Refresh status"
+        title="Refresh status"
+        onClick={() => void account.refetch()}
+      >
+        <ArrowsClockwise aria-hidden />
+      </Button>
+      {account.data?.availability === "available" && (
+        <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
+          Log out account
+        </Button>
+      )}
+    </div>
+  );
   const content = (
     <>
       <ErrorNotice
@@ -230,33 +309,56 @@ export function ProviderAccount({
       />
       {!active && (
         <>
-          <p className={accountStyles.accountStatus}>
-            {account.isPending
-              ? "Checking account…"
-              : account.data?.usable
-                ? "Connected"
-                : ready
-                  ? "Account available · refreshes on first use"
-                  : "Not connected"}
-            {!inline &&
-              account.data?.availability === "available" &&
-              ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
-          </p>
-          {account.data?.account_id && (
-            <p>
-              {account.data.account_id} ·{" "}
-              {account.data.shared_with_cli
-                ? "Shared Copilot CLI file"
-                : "Host account"}
-            </p>
+          <div className={accountStyles.accountHeader}>
+            <div className={accountStyles.identity}>
+              <p className={accountStyles.accountStatus}>
+                {account.isPending
+                  ? "Checking account…"
+                  : account.data?.usable
+                    ? "Connected"
+                    : ready
+                      ? "Account available · refreshes on first use"
+                      : "Not connected"}
+                {account.data?.availability === "available" &&
+                  ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
+              </p>
+              {account.data?.account_id && (
+                <p>
+                  Account: {account.data.account_id} ·{" "}
+                  {account.data.shared_with_cli
+                    ? `Shared with ${label} CLI`
+                    : "Host account"}
+                </p>
+              )}
+              {account.data?.expires_at && (
+                <p className={accountStyles.help}>
+                  Session expires{" "}
+                  {new Date(account.data.expires_at).toLocaleString()}
+                  {account.data.required_action === "refresh"
+                    ? " · refreshes on first use"
+                    : ""}
+                </p>
+              )}
+              {account.data?.message && (
+                <p role="status">{account.data.message}</p>
+              )}
+            </div>
+            {accountActions}
+          </div>
+          {!inline && provider === "copilot" && (
+            <CopilotAllowance
+              key={identity}
+              identity={identity}
+              ready={ready}
+            />
           )}
-          {account.data?.message && <p role="status">{account.data.message}</p>}
+          {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
-              <summary>Choose account source</summary>
+              <summary>Account source</summary>
               <p>
-                A selection replaces this server's binding. Missing credentials
-                never fall back to another account.
+                Choosing an account replaces this server's selection. If its
+                credentials are missing, no other account is used.
               </p>
               <div className={styles.actions}>
                 {sources.data?.map((candidate) => (
@@ -278,14 +380,11 @@ export function ProviderAccount({
                   variant="outline"
                   onClick={() => void sources.refetch()}
                 >
-                  Find saved accounts
+                  Find accounts
                 </Button>
               </div>
               {!sources.isPending && !sources.data?.length && (
-                <p>
-                  No supported saved accounts found. Connect an account to use
-                  native device login.
-                </p>
+                <p>No saved accounts found. Connect an account to sign in.</p>
               )}
             </details>
           )}
@@ -293,18 +392,23 @@ export function ProviderAccount({
             {loginMethods.length > 1 && (
               <details className={accountStyles.advanced}>
                 <summary>Advanced login options</summary>
-                <div className={styles.stack}>
+                <SettingsSection>
                   <ChoiceField
                     label="Login method"
+                    description={
+                      method === "browser"
+                        ? "The browser must reach this server. For remote servers, use a device code or paste the full ChatGPT callback URL."
+                        : undefined
+                    }
                     value={method}
                     options={loginMethods.map((method) => ({
                       value: method,
                       label:
                         method === "device"
-                          ? "Device code (recommended for remote servers)"
+                          ? "Device code"
                           : method === "manual_callback"
-                            ? "Paste the complete callback URL"
-                            : "Automatic browser callback",
+                            ? "Paste callback URL"
+                            : "Browser callback",
                     }))}
                     onValueChange={(value) =>
                       setMethod(
@@ -312,15 +416,7 @@ export function ProviderAccount({
                       )
                     }
                   />
-                  {method === "browser" && (
-                    <p className={accountStyles.help}>
-                      The callback must reach the server's loopback listener.
-                      For a remote host or container, paste the complete
-                      callback URL for ChatGPT, or use device login where
-                      supported.
-                    </p>
-                  )}
-                </div>
+                </SettingsSection>
               </details>
             )}
             {activeLogin.data?.provider &&
@@ -330,25 +426,6 @@ export function ProviderAccount({
                   that connection to finish or cancel it.
                 </p>
               )}
-            <div className={styles.actions}>
-              <Button
-                loading={start.isPending}
-                disabled={
-                  !!activeLogin.data?.session_id || !loginMethods.length
-                }
-                onClick={() => start.mutate(false)}
-              >
-                {account.data?.usable ? "Reconnect account" : "Connect account"}
-              </Button>
-              <Button variant="outline" onClick={() => void account.refetch()}>
-                Refresh status
-              </Button>
-              {account.data?.availability === "available" && (
-                <Button variant="outline" onClick={() => setLogoutOpen(true)}>
-                  Log out account
-                </Button>
-              )}
-            </div>
           </div>
         </>
       )}
@@ -397,8 +474,7 @@ export function ProviderAccount({
                   </div>
                   {copyFailed && (
                     <p role="status">
-                      Could not copy automatically. Select and copy the code
-                      above.
+                      Couldn't copy. Select the code above and copy it manually.
                     </p>
                   )}
                 </li>
@@ -418,11 +494,11 @@ export function ProviderAccount({
                 className={accountStyles.advanced}
                 open={method === "manual_callback" || undefined}
               >
-                <summary>Callback cannot reach this server?</summary>
+                <summary>Callback can't reach this server?</summary>
                 <div className={styles.stack}>
                   <p>
                     {login.data.message ??
-                      "After authorizing, copy the complete URL from the browser address bar, even if the browser shows a connection error. It contains a one-time code; do not share it."}
+                      "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code."}
                   </p>
                   <FormField label="Complete callback URL">
                     <Input
@@ -477,19 +553,30 @@ export function ProviderAccount({
         </section>
       )}
       <p className={accountStyles.help}>
-        Shared by everyone on this server. Connecting does not verify model
-        access.
+        This account is shared by everyone on this server.
       </p>
       <ModalFrame
         open={switchOpen}
         onOpenChange={setSwitchOpen}
         title="Allow account switching?"
-        description="The next login may replace this provider's saved account on the server for everyone using it."
-        closeLabel="Cancel"
+        description="Signing in may replace this provider's account for everyone on this server."
+        closeLabel="Close"
         footer={
-          <Button loading={start.isPending} onClick={() => start.mutate(true)}>
-            Allow switch and log in
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={start.isPending}
+              onClick={() => setSwitchOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={start.isPending}
+              onClick={() => start.mutate(true)}
+            >
+              Switch and log in
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={start.error} />
@@ -500,20 +587,31 @@ export function ProviderAccount({
         title={`Log out of ${provider}?`}
         description={
           provider === "chatgpt"
-            ? "Clear the selected Host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
-            : account.data?.source_id?.startsWith("native:")
-              ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
-              : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+            ? "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in."
+            : nativeAccountId
+              ? "Sign out of this saved account? The original CLI login and other accounts are kept."
+              : account.data?.source_id?.startsWith("native:")
+                ? "Sign everyone out of this account on this server. Other accounts, models and agents are kept. GitHub authorization stays active."
+                : "Sign out of this local account, including the official CLI and other servers sharing it. Other accounts, models, agents and this browser login are kept. Provider authorization stays active."
         }
-        closeLabel="Cancel"
+        closeLabel="Close"
         footer={
-          <Button
-            variant="destructive"
-            loading={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            Log out
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={logout.isPending}
+              onClick={() => setLogoutOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={logout.isPending}
+              onClick={() => logout.mutate()}
+            >
+              Log out
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={logout.error} />
@@ -521,120 +619,15 @@ export function ProviderAccount({
     </>
   );
   return inline ? (
-    <div className={styles.stack}>{content}</div>
+    <div className={accountStyles.inlineAccount}>{content}</div>
   ) : (
     <Panel title={`${label} account`}>{content}</Panel>
   );
 }
 
-export function CredentialKeys() {
-  const { client } = useTransport();
-  const queries = useQueryClient();
-  const [reference, setReference] = useState("key-primary");
-  const [secret, setSecret] = useState("");
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [saved, setSaved] = useState("");
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
-  });
-  const save = useMutation({
-    mutationFn: (body: Schema<"ApiKeyInput">) =>
-      result(client.PUT("/api/auth/keys", { body })),
-    onSuccess: (_, body) => {
-      setSecret("");
-      setSaved(`Saved ${body.credential_ref}.`);
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  const remove = useMutation({
-    mutationFn: (reference: string) =>
-      result(
-        client.DELETE("/api/auth/keys/{reference}", {
-          params: { path: { reference } },
-        }),
-      ),
-    onSuccess: () => {
-      setDeleting(null);
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  return (
-    <Panel title="Model API keys">
-      <p>
-        Keys are stored on the server. Model resources use a credential
-        reference; these keys are separate from your browser's instance access
-        key.
-      </p>
-      <ErrorNotice error={keys.error || save.error || remove.error} />
-      <form
-        className={styles.stack}
-        onSubmit={(event) => {
-          event.preventDefault();
-          setSaved("");
-          save.mutate({ credential_ref: reference, key: secret });
-        }}
-      >
-        <div className={styles.formGrid}>
-          <TextField
-            label="Saved key name"
-            value={reference}
-            onChange={setReference}
-          />
-          <TextField
-            label="Provider API key"
-            type="password"
-            value={secret}
-            onChange={setSecret}
-          />
-        </div>
-        <Button
-          type="submit"
-          loading={save.isPending}
-          disabled={!secret || !reference}
-        >
-          Save key
-        </Button>
-      </form>
-      {saved && <p role="status">{saved}</p>}
-      <div className={styles.resourceList}>
-        {keys.data?.map((key) => (
-          <div className={styles.resourceRow} key={key.credential_ref}>
-            <strong>{key.credential_ref}</strong>
-            <Button
-              variant="ghost"
-              onClick={() => setDeleting(key.credential_ref)}
-            >
-              Remove
-            </Button>
-          </div>
-        ))}
-      </div>
-      <ModalFrame
-        open={!!deleting}
-        onOpenChange={(open) => {
-          if (!open) setDeleting(null);
-        }}
-        title="Remove saved key?"
-        description="Models referencing this credential will need a replacement key before their next run."
-        closeLabel="Cancel"
-        footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => remove.mutate(deleting!)}
-          >
-            Remove key
-          </Button>
-        }
-      >
-        <p>{deleting}</p>
-        <ErrorNotice error={remove.error} />
-      </ModalFrame>
-    </Panel>
-  );
-}
 export function AccountsPage() {
+  const [params] = useSearchParams();
+  const tab = params.get("tab") ?? "accounts";
   const { client } = useTransport();
   const choices = useQuery({
     queryKey: ["model-choices"],
@@ -642,21 +635,63 @@ export function AccountsPage() {
       result(client.GET("/api/models/choices", { signal })),
   });
   return (
-    <>
-      <PageHeader title="Accounts & API keys" />
-      <div className={styles.twoColumns}>
-        <ErrorNotice error={choices.error} />
-        {choices.data?.connections?.map(
-          (connection) =>
-            connection.account && (
+    <div className={accountStyles.page}>
+      <PageHeader
+        title="Accounts & API keys"
+        description="Connect the accounts and API keys your models use."
+      />
+      <nav
+        className={`${accountStyles.tabs} a13n-scrollbar`}
+        aria-label="Account settings"
+      >
+        {[
+          ["accounts", "Subscription accounts"],
+          ["groups", "Account groups"],
+          ["keys", "API keys"],
+        ].map(([value, label]) => (
+          <Link
+            key={value}
+            to={`?tab=${value}`}
+            aria-current={tab === value ? "page" : undefined}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <ErrorNotice error={choices.error} />
+      {tab !== "groups" && tab !== "keys" && (
+        <SubscriptionAccounts
+          connections={
+            choices.data?.connections?.flatMap((item) =>
+              item.account ? [item.account] : [],
+            ) ?? []
+          }
+          renderConnection={(connection) => (
+            <ProviderAccount
+              key={connection.provider}
+              connection={connection}
+              inline
+            />
+          )}
+          renderLogin={(account) => {
+            const connection = choices.data?.connections?.find(
+              (item) => item.account?.provider === account.provider,
+            )?.account;
+            return connection ? (
               <ProviderAccount
-                key={connection.id}
-                connection={connection.account}
+                key={account.id}
+                connection={connection}
+                accountId={account.id}
+                inline
               />
-            ),
-        )}
-      </div>
-      <CredentialKeys />
-    </>
+            ) : null;
+          }}
+        />
+      )}
+      {tab === "groups" && <AccountGroups />}
+      {tab === "keys" && (
+        <CredentialKeys connections={choices.data?.connections ?? []} />
+      )}
+    </div>
   );
 }

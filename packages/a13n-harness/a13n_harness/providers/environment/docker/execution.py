@@ -15,7 +15,6 @@ from a13n_harness.environment.models import (
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._guest_files import GuestFiles
-from a13n_harness.providers.environment._guest_ports import GuestPorts
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore, create_retention_root
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
@@ -77,7 +76,6 @@ class DockerExecution(DockerReference, ExecutionBackend):
                 shell=self.processes,
                 processes=self.processes,
                 outputs=self.retention,
-                ports=GuestPorts(self.commands),
             )
             self._availability = EnvironmentAvailability(
                 status="available", ready_families=self.descriptor.operation_families

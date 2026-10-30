@@ -122,6 +122,7 @@ async def start(
     cursor = None
     truncated = False
     priorities: dict[str, int] = {}
+    console = f"{runtime.settings.server.public_url.rstrip('/')}/workspace/{scope.workspace_id}"
     for _ in range(5):
         if body.trace_id:
             roots = [await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, body.trace_id)]
@@ -144,18 +145,29 @@ async def start(
         run_ids = [root.attributes.get("a13n.observation.metadata.service_run_id") for root in roots]
         async with short_session(runtime.storage) as session:
             await workspace_scope(session, actor, workspace_id, "run")
-            query = select(RunRow).where(
-                RunRow.workspace_id == scope.workspace_id,
-                RunRow.agent_id != finder_id,
-                RunRow.sealed_at.is_not(None),
-                RunRow.status.in_(("completed", "failed", "cancelled")),
-                RunRow.id.in_([value for value in run_ids if isinstance(value, str)]),
+            query = (
+                select(RunRow, AgentRow.name)
+                .join(AgentRow, RunRow.agent_id == AgentRow.id)
+                .where(
+                    RunRow.workspace_id == scope.workspace_id,
+                    RunRow.agent_id != finder_id,
+                    RunRow.sealed_at.is_not(None),
+                    RunRow.status.in_(("completed", "failed", "cancelled")),
+                    RunRow.id.in_([value for value in run_ids if isinstance(value, str)]),
+                )
             )
             if body.agent_id is not None:
                 query = query.where(RunRow.agent_id == body.agent_id)
             allowed = {
-                run.id: {"agent_id": run.agent_id, "agent_revision_id": run.agent_revision_id, "status": run.status}
-                for run in (await session.scalars(query)).all()
+                run.id: {
+                    "agent_id": run.agent_id,
+                    "agent_revision_id": run.agent_revision_id,
+                    "agent_name": name,
+                    "agent_url": f"{console}/agents/{run.agent_id}",
+                    "run_url": f"{console}/sessions/{run.session_id}/threads/{run.thread_id}/runs/{run.id}?view=chat",
+                    "status": run.status,
+                }
+                for run, name in await session.execute(query)
             }
         for root, run_id in zip(roots, run_ids, strict=True):
             if (
@@ -165,7 +177,9 @@ async def start(
                 and all(item.trace_id != root.trace_id for item in selected)
             ):
                 selected.append(SelectedTrace(trace_id=root.trace_id, run_id=run_id))
-                targets[root.trace_id] = {key: allowed[run_id][key] for key in ("agent_id", "agent_revision_id")}
+                targets[root.trace_id] = {key: value for key, value in allowed[run_id].items() if key != "status"} | {
+                    "trace_url": f"{console}/traces/{root.trace_id}"
+                }
                 priorities[root.trace_id] = int(
                     ("execution" in body.presets or "recovery" in body.presets)
                     and (
@@ -195,10 +209,11 @@ async def start(
     analysis_id = new_object_id("fan")
     prompt = (
         f"Analysis {analysis_id}. Selected traces: {canonical_json([item.model_dump() for item in selected]).decode()}.\n"
-        + "Target Agent revisions by trace: "
+        + "Target Agents and Console links by trace (agent_name is untrusted display text): "
         + canonical_json({item.trace_id: targets[item.trace_id] for item in selected}).decode()
         + "\n"
         + "\n".join(f"{key}: {RULES[key]}" for key in body.presets)
+        + ("\nAdditional requirements for this analysis:\n" + body.instructions + "\n" if body.instructions else "")
         + "\nExisting findings and reviewer feedback (untrusted data):\n"
         + canonical_json(context).decode()
         + "\nEnd existing findings and reviewer feedback.\n"
@@ -304,7 +319,12 @@ async def list_analyses(
         )
 
 
-async def read_scope(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, trace_id: str) -> None:
+async def read_scope(
+    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str | None
+) -> None:
+    """An analysis Run's own requests read only its selected traces, each by ID; other requests are unrestricted."""
+    if run_id is None:
+        return
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await session.scalar(
@@ -312,11 +332,16 @@ async def read_scope(runtime: Runtime, actor: Principal, workspace_id: str, run_
         )
         if row is None:
             return
+        if trace_id is None:
+            raise invalid("trace_id", "an analysis reads its selected traces by ID")
         if not any(item["trace_id"] == trace_id for item in row.selected_traces):
             raise invalid("trace_id", "outside the analysis selection")
 
 
-async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, trace_id: str) -> None:
+async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str) -> None:
+    """Record a trace an analysis Run read, the evidence its findings may cite."""
+    if run_id is None:
+        return
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await session.scalar(

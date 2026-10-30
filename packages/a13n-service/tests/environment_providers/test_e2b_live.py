@@ -14,7 +14,6 @@ from a13n_harness.environment.commands import (
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
-    PortTarget,
     ShellCommand,
 )
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -209,8 +208,8 @@ async def test_unsupported_guarantees_fail_before_start(sandbox):
         with pytest.raises(EnvironmentError) as error:
             await processes.start(command)
         assert error.value.code == "environment_unsupported"
-    port = await sandbox.environment.operations.ports.inspect(PortTarget(port=54321))
-    assert port.status == "not_listening"
+    assert sandbox.environment.operations.ports is None
+    assert sandbox.environment.operations.computer is None
 
 
 async def test_observation_capacity_is_adapter_local(sandbox):

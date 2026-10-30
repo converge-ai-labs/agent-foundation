@@ -130,6 +130,7 @@ export function ModelPricing({
   }
   return (
     <DisclosureSection
+      className={styles.pricingSection}
       title={t("Pricing")}
       summary={
         value
@@ -159,7 +160,7 @@ export function ModelPricing({
             <tbody>
               {tiers.map((tier, index) => (
                 <tr key={index}>
-                  <td>
+                  <td data-label={index > 0 ? t("Input length") : undefined}>
                     {index === 0 ? (
                       <span>{t("Base price")}</span>
                     ) : (
@@ -192,7 +193,7 @@ export function ModelPricing({
                     )}
                   </td>
                   {rateFields.map(([key, label]) => (
-                    <td key={key}>
+                    <td key={key} data-label={t(label)}>
                       <Input
                         type="number"
                         min={0}

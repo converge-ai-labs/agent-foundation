@@ -16,13 +16,14 @@ from pathlib import Path
 import httpx
 import pytest
 from a13n_harness.environment.models import COMPUTER_ACTIONS, EnvironmentPermissionSet
+from a13n_harness.tools._output import tool_execution_value
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
 from PIL import Image
 from pydantic_ai import BinaryContent
-from pydantic_ai.messages import ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from .test_device_runtime import HEADERS, TOKEN, app_listener, resource
@@ -66,6 +67,16 @@ async def desktop(tmp_path):
         await stack.enter_async_context(process("Xvfb", ":99", "-screen", "0", "1024x768x24", "-nolisten", "tcp"))
         await wait_until(lambda: Path("/tmp/.X11-unix/X99").exists())
         await stack.enter_async_context(process("openbox"))
+        # Tk's fullscreen request needs a ready window manager, not just its process.
+        async with asyncio.timeout(15):
+            while True:
+                probe = await asyncio.create_subprocess_exec(
+                    "xprop", "-root", "_NET_SUPPORTING_WM_CHECK", stdout=asyncio.subprocess.PIPE
+                )
+                output, _ = await probe.communicate()
+                if probe.returncode == 0 and b"window id #" in output:
+                    break
+                await asyncio.sleep(0.02)
         fixture = Path(__file__).resolve().parents[3] / "dev/fixtures/linux-desktop/desktop.py"
         await stack.enter_async_context(process("/usr/bin/python3", str(fixture), str(state)))
         await wait_until(lambda: state.exists() and json.loads(state.read_text())["ready"])
@@ -105,12 +116,13 @@ async def test_real_x11_desktop_reaches_model_and_saved_webui_image(tmp_path, mo
     images = []
     calls = [
         ("computer_describe", {"alias": "desktop"}),
-        ("computer_observe", {"alias": "desktop", "max_dimension": 1024}),
-        ("computer_click", {"point": {"x": 100, "y": 120}}),
+        ("computer_observe", {"alias": "desktop", "max_dimension": 512}),
+        ("computer_zoom", {"region": {"left": 25, "top": 40, "right": 125, "bottom": 90}}),
+        ("computer_click", {"point": {"x": 50, "y": 60}}),
         ("computer_press_keys", {"alias": "desktop", "keys": ["a"]}),
-        ("computer_scroll", {"point": {"x": 400, "y": 300}, "delta_y": 3, "delta_x": 2, "unit": "steps"}),
-        ("computer_drag", {"start": {"x": 400, "y": 400}, "end": {"x": 600, "y": 500}, "duration_ms": 200}),
-        ("computer_observe", {"alias": "desktop", "max_dimension": 1024}),
+        ("computer_scroll", {"point": {"x": 200, "y": 150}, "delta_y": 3, "delta_x": 2, "unit": "steps"}),
+        ("computer_drag", {"start": {"x": 200, "y": 200}, "end": {"x": 300, "y": 250}, "duration_ms": 200}),
+        ("computer_observe", {"alias": "desktop", "max_dimension": 512}),
     ]
 
     async def model(messages, info):
@@ -124,34 +136,35 @@ async def test_real_x11_desktop_reaches_model_and_saved_webui_image(tmp_path, mo
             if isinstance(part, ToolReturnPart)
         ]
         if returns:
-            result = returns[-1].content
+            result = tool_execution_value(returns[-1].content, returns[-1].metadata)
             assert result["ok"], result
             if steps == 1:
                 assert result["scroll_units"] == ["steps"]
                 assert result["targets"][0]["width"] == 1024
-            if "observation_id" in result:
-                reference = result["observation_id"]
-                binaries = [
-                    part
-                    for message in messages
-                    if message.kind == "request"
-                    for prompt in message.parts
-                    if isinstance(prompt, UserPromptPart) and not isinstance(prompt.content, str)
-                    for part in prompt.content
-                    if isinstance(part, BinaryContent)
-                ]
+            if "observation_id" in result or "source_observation_id" in result:
+                if "source_observation_id" in result:
+                    assert result["source_observation_id"] == reference
+                    assert "observation_id" not in result
+                else:
+                    reference = result["observation_id"]
+                binaries = [part for part in returns[-1].content if isinstance(part, BinaryContent)]
                 images.append(binaries[-1].data)
                 decoded = Image.open(BytesIO(images[-1]))
-                assert decoded.size == (1024, 768)
-                red, green, _blue = decoded.getpixel((70, 100))
-                assert (red > green) if len(images) == 1 else (green > red)
+                if "source_observation_id" in result:
+                    assert decoded.size == (200, 100)
+                    red, green, _blue = decoded.getpixel((20, 20))
+                    assert red > green
+                else:
+                    assert decoded.size == (512, 384)
+                    red, green, _blue = decoded.getpixel((35, 50))
+                    assert (red > green) if len(images) == 1 else (green > red)
             elif steps > 2:
                 assert result["effect"] == "executed" and result["input_cleanup_complete"], result
         if steps == len(calls):
             yield "Verified real X11 screenshot, click, physical key, wheel steps and drag."
             return
         name, args = calls[steps]
-        if name in ("computer_click", "computer_scroll", "computer_drag"):
+        if name in ("computer_zoom", "computer_click", "computer_scroll", "computer_drag"):
             args = {**args, "observation_id": reference}
         steps += 1
         yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"x11-{steps}")}
@@ -190,7 +203,7 @@ async def test_real_x11_desktop_reaches_model_and_saved_webui_image(tmp_path, mo
                 receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Verify the X11 desktop.")
                 live_images = []
                 async with asyncio.timeout(60):
-                    while len(live_images) < 2:
+                    while len(live_images) < 3:
                         event = await watch.events.receive()
                         if event.payload and event.payload.get("name") == "a13n.harness-ui.tool_images":
                             live_images.append(event.payload["value"]["event"])
@@ -215,4 +228,4 @@ async def test_real_x11_desktop_reaches_model_and_saved_webui_image(tmp_path, mo
                     url = f"/api/threads/{attachment['thread_id']}/attachments/{identifier}"
                     response = await api.get(url)
                     assert response.status_code == 200 and response.content == image
-            assert images[0] != images[1]
+            assert images[0] != images[2]

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.mcp_runtime.inputs import McpInputResponse
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import RootOperationStatus
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -235,7 +236,7 @@ async def test_child_input_scope_and_sticky_retention_are_not_parent_selection(t
             pass
 
         task = asyncio.create_task(
-            connection.client.call_app_tool(
+            HostToolset(connection).call_app_tool(
                 "confirm", {}, authorize=authorize, operation=Operation(run_id="run-child", tool_call_id="child-call")
             )
         )
@@ -246,7 +247,7 @@ async def test_child_input_scope_and_sticky_retention_are_not_parent_selection(t
         with pytest.raises(HarnessUiError, match="unavailable"):
             await app.respond_mcp_input(unrelated.thread_id, request.request_id, answer)
         await app.respond_mcp_input(parent.thread_id, request.request_id, answer)
-        assert not (await task).is_error
+        assert not (await task)["isError"]
 
         # A child owns its saved generic selection, not today's parent route.
         await app._store.threads.update_configuration(
@@ -264,3 +265,70 @@ async def test_child_input_scope_and_sticky_retention_are_not_parent_selection(t
         )
         await app._mcp_app_owners.retire_unselected(app._mcp_connections)
         assert connection.retired
+
+
+@pytest.mark.parametrize("retained", [False, True])
+async def test_human_input_answers_original_call_after_foreground_detaches(tmp_path, monkeypatch, retained):
+    root = input_configuration(tmp_path, retained=retained)
+    root.write_text(root.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
+    stage = 0
+    execution_id = None
+    received = asyncio.Event()
+    values = []
+
+    async def model(messages, info):
+        nonlocal stage, execution_id
+        current = stage
+        stage += 1
+        if current == 0:
+            name = next(
+                tool.name for tool in info.function_tools if tool.name.endswith("confirm") and "legacy" not in tool.name
+            )
+            yield {0: DeltaToolCall(name=name, json_args="{}", tool_call_id="original-confirm")}
+        elif current == 1:
+            part = next(part for message in messages for part in message.parts if isinstance(part, ToolReturnPart))
+            execution_id = part.content["execution_id"]
+            yield "Awaiting your answer"
+        elif current == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="tool_execution_result",
+                    json_args=json.dumps({"execution_id": execution_id}),
+                    tool_call_id="retrieval",
+                )
+            }
+        else:
+            values.extend(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_call_id == "retrieval"
+            )
+            received.set()
+            yield "Confirmed"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=root, mcp_input_enabled=True
+    ) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Confirm")
+        async with asyncio.timeout(15):
+            operation = await app.wait_root_operation(receipt.receipt_id)
+            assert operation.status is RootOperationStatus.completed
+            request = await pending(app, thread.thread_id)
+            assert request.tool_call_id == "original-confirm"
+            record = await app._tool_executions.runtime.info(thread.thread_id, execution_id)
+            assert request.run_id == record.run_id
+            assert await app.active_root_operation(thread.thread_id) is None
+            await app.respond_mcp_input(
+                thread.thread_id, request.request_id, McpInputResponse(action="accept", content={"name": "Ada"})
+            )
+            await received.wait()
+            while (active := await app.active_root_operation(thread.thread_id)) is not None:
+                await app.wait_root_operation(active.receipt.receipt_id)
+        assert stage == 4 and "Ada" in str(values)
+        assert (await app._tool_executions.runtime.info(thread.thread_id, execution_id)).delivery_acknowledged

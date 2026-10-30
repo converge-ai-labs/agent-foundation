@@ -1,62 +1,71 @@
 ---
 title: Service
 sidebarTitle: Overview
-description: A self-hosted platform that runs agents for people and applications through Console and an HTTP API.
+description: Build an agent in Console, share it with your team, and run it from your application.
 ---
 
-Service manages workspaces, access, agents and their revisions, and conversations; runs continue after clients disconnect. [Get started](get-started.md) with a local deployment and your first agent.
+Service runs agents for your team and applications. Build an agent in Console, try it in a conversation, then call the same agent through the HTTP API. Service manages access, saves conversation history, and keeps accepted work running when a client disconnects.
 
 ## Start here
 
-| Your situation                          | Guide                                              |
-| --------------------------------------- | -------------------------------------------------- |
-| Set up Service and get a first response | [Deploy and try locally](get-started.md)           |
-| Your team already runs Service          | [Use an existing platform](use-platform.md)        |
-| Call an agent from your application     | [Connect your application](connect-application.md) |
+Choose the path that matches what you already have:
 
-## Concepts
+| Starting point                         | Follow this guide                                  | Finish with                                                      |
+| -------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
+| Docker and a model provider account    | [Deploy Service locally](get-started.md)           | A running Console and your first agent response                  |
+| Access to your team's Service          | [Use Console](use-platform.md)                     | A conversation you can return to and continue                    |
+| A working agent to use in your product | [Connect your application](connect-application.md) | An authenticated application that submits work and reads results |
 
-- **Organization and workspace:** an organization manages members; each workspace contains its own agents, resources and conversations.
-- **Agent and revision:** configuration changes create immutable revisions; a run uses the agent's default revision unless the message pins another.
-- **Session, thread and run:** a session groups related threads; a thread holds one history and its inbox; each run advances that thread.
-- **Provider and environment:** providers are configured accounts for models, environments, connectors, web tools and memory; a thread can mount an environment for file and terminal work.
+## Build an agent for your work
 
-[Core concepts](../overview/core-concepts.md) follows one conversation through these pieces.
+Start with one model and instructions. For example, create an agent that turns project notes into concrete next steps. Test its response before adding more resources.
 
-## How the pieces fit
+| Add this when the task needs it                   | Guide                                    |
+| ------------------------------------------------- | ---------------------------------------- |
+| Help creating or changing the agent configuration | [Agent Composer](agent-composer.md)      |
+| A different model or provider account             | [Models](models.md)                      |
+| Business-system actions or MCP tools              | [Tools and connections](tools.md)        |
+| Reusable procedures and supporting files          | [Skills](skills.md)                      |
+| Files, commands, or a desktop                     | [Environments](environments.md)          |
+| Knowledge shared across conversations             | [Memory Spaces](memory.md#memory-spaces) |
+
+Composer proposes resource changes for your approval. Enter provider credentials in its [private configuration cards](agent-composer.md#configure-a-provider).
+
+## Work in conversations
+
+Send a request, inspect the reply, and follow up in the same thread. A **session** groups related threads; a **thread** holds a conversation's history; each **run** advances that history with a saved agent revision.
 
 ```mermaid
 flowchart TB
-    Client["Console or API client"] -->|"Submit input"| Control["Control: authorize and accept"]
-    Control -->|"Store inbox and run"| Postgres[(PostgreSQL)]
-    Postgres -->|"Claim"| Worker["Worker: run Harness"]
-    Worker -->|"Checkpoints and files"| Objects[(Object store)]
-    Worker --> External["Models, tools and environments"]
-    Worker -->|"Live events"| Redis[(Redis)]
-    Redis -->|"Live output"| Control
-    Control -->|"Thread stream"| Client
+    Agent["Choose an agent"] --> Input["Send a request"]
+    Input --> Work["Follow replies and tools"]
+    Work --> Decision["Answer questions or approvals"]
+    Decision --> Work
+    Work --> Result["Read the result"]
+    Result --> Continue["Continue or branch"]
 
-    class Client app
-    class Control,Worker a13n
-    class Postgres,Objects,Redis store
-    class External ext
+    class Agent,Work a13n
+    class Input,Decision,Continue app
+    class Result success
 ```
 
-1. A client sends a message. Service adds it to the thread's inbox and starts a run when no run is active or waiting on the thread.
-2. A worker executes the run with Harness, saves its progress and streams live output to the client.
-3. The run completes with a result, fails, is cancelled, or waits for an approval, client tool result or answer. Waiting requires an explicit resume; ordinary messages stay in the inbox. See [Agents, threads and runs](agents-and-runs.md) to continue the conversation.
+Use Chat for the conversation and Debug for execution details, configuration, usage, and cost. Return to saved threads to continue, or create a branch to try a different direction.
 
-Control and worker are roles of one executable; a single process can run both. See [Operate the Service](operations.md).
+When a run waits for your input, complete every pending question and approval, then select **Submit responses**. API clients send the complete batch through `/resume`. [Use Console](use-platform.md) walks through these actions; [Agents, threads and runs](agents-and-runs.md) explains how they affect execution.
 
-## Guides
+## Connect your application
 
-- [Get started](get-started.md): deploy, connect a model and send a first message; [use Console](use-platform.md) on an existing deployment.
-- [Identity and access](identity.md): workspaces, members, API keys and service accounts.
-- [Agents, threads and runs](agents-and-runs.md): configure agents, then start, follow and resume runs; [Agent Composer](agent-composer.md) can help build agents.
-- [Resources](resources.md): discover [models](models.md), [tools and connections](tools.md), [skills](skills.md), [environments](environments.md), [memory](memory.md), and [files and webhooks](files-and-webhooks.md).
-- [HTTP conventions](http.md), [API reference](api-reference/index.md) and [SDKs and CLI](sdks.md): build an integration.
-- [Configuration](configuration.md), [operations](operations.md), [monitoring](monitoring.md) and [settings reference](configuration-reference.md): run a deployment.
+Open an agent's **Connect to app** action to get its ID and your Service URL. Follow [Connect your application](connect-application.md) to create credentials, send a first message, read live output, and continue the thread. Use an [SDK or remote CLI](sdks.md), or call the [HTTP API](http.md) directly.
 
-## Interfaces
+For other integrations, connect an MCP client to the [Service MCP endpoint](mcp.md) to inspect and configure workspace resources. Use [webhooks](files-and-webhooks.md) to deliver execution events to your application.
 
-Console and the API share one origin; API operations use `/api/v1`. The `a13n-service` executable runs the server and operator commands. See the [Service specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-service/00-overview.md) for accepted contracts.
+## Operate a shared deployment
+
+An **organization** manages members. A **workspace** holds agents, resources, and conversations. Assign [roles](identity.md#roles) to control who can run agents, build resources, or administer access.
+
+- [Configuration](configuration.md): connect storage, providers, and deployment services.
+- [Operations](operations.md): deploy, upgrade, back up, and recover Service.
+- [Monitoring](monitoring.md): investigate usage, traces, and failed requests or runs.
+- [Settings reference](configuration-reference.md) and [API reference](api-reference/index.md): look up exact fields and operations.
+
+Console and the API share one origin. The `a13n-service` executable can run control and worker roles together or separately; use the [operations guide](operations.md) when sizing a deployment.

@@ -288,7 +288,7 @@ it("renders a custom conditional credential with nested secrets and a numeric va
   mountCustom();
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Access" }));
-  await user.click(await screen.findByRole("option", { name: "private" }));
+  await user.click(await screen.findByRole("option", { name: "Private" }));
   await user.click(screen.getByRole("button", { name: "Replace" }));
   expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
   expect(screen.getByLabelText("Revision").getAttribute("type")).toBe("number");

@@ -3,7 +3,8 @@
 A run writes its objects under `orgs/{org}/runs/{run}/{kind}/{attempt}/`, each to a new key and compressed with
 zstd, so a key never recurs:
 
-- `state` and `tail`: a checkpoint's state and the display items not yet in a page, replaced by each checkpoint;
+- `state`: a new execution state for each checkpoint;
+- `tail`: the display items not yet in a page, reusing the last committed object when its bytes are unchanged;
 - `pages`: display history pages, kept with the run once its page catalog records them;
 - `contents` and `subagents`: large binary content and ended inline subagent states the Harness saves through
   the run's state store, kept while the run's checkpoint references them.
@@ -23,11 +24,12 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
+from a13n_harness.environment.session_recovery import EnvdSessionState
 from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, defer
 
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import conflict
@@ -35,17 +37,21 @@ from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, new_key
 from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, prepare, settle
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import inbox
-from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
+from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.contents import ContentObject, Contents, decode, live_continuation
 from a13n_service.runs.display import Page, Snapshot, StreamPosition, Tail
-from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
+from a13n_service.runs.search import vector
+from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow, ThreadRow
 from a13n_service.runs.usage import UsageReport, ingest
 
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-# Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 1
+# Format 2 adds the private search retention ledger; 3 adds Session hints;
+# 4 adds private App originals with separate authorization bindings.
+# New workers read older formats; old workers skip newer checkpoints. Upgrade readers first.
+FORMAT = 4
+READABLE_FORMATS = (1, 2, 3, 4)
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -109,14 +115,27 @@ class PageRef(_Frozen):
 
 
 class RunState(_Frozen):
-    format: Literal[1] = FORMAT
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+    format: Literal[1, 2, 3, 4] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
     # The Harness deferred requests of a waiting outcome, which the successor's resume answers.
     deferred: JsonValue = None
-    # The resume's optional ordinary input has reached a model request in this checkpoint.
+    # A model request in this checkpoint carried the run's initial input: a resume's optional ordinary input and any
+    # turn reminder. Every other run's input reaches its first request before its first checkpoint.
     resume_input_consumed: bool = False
+    # Private same-Run attachment hints, never inherited by a successor Run.
+    envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
+
+    def to_json_bytes(self) -> bytes:
+        """Serialize the complete checkpoint, reusing the Harness's encoded history."""
+        if type(self) is not RunState or type(self.harness) is not HarnessState:
+            return self.model_dump_json().encode()
+        harness = self.harness.to_json_bytes()
+        envelope = self.model_dump_json(exclude={"harness"}).encode()
+        return b"".join((envelope[:-1], b',"harness":', harness, b"}"))
 
 
 def run_prefix(organization_id: str, run_id: str) -> str:
@@ -155,8 +174,8 @@ def claimable() -> ColumnElement[bool]:
     """Runs this build claims: those whose checkpoint has a format no newer than its own. A run without one yet
     starts from its parent's, so that one decides, and a run without either always qualifies.
 
-    A newer format waits for a newer worker during a rolling deploy. An older one no build reads again, since
-    `FORMAT` only moves on with a plan for outstanding checkpoints, so this build claims it to fail it.
+    A newer format waits for a newer worker during a rolling deploy. Supported older formats remain readable;
+    an unsupported older format is claimed so `require_compatible` can fail it explicitly.
     """
     parent = aliased(RunRow)
     newer_parent = exists().where(parent.id == RunRow.parent_run_id, parent.checkpoint["format"].as_integer() > FORMAT)
@@ -167,7 +186,7 @@ def require_compatible(run: RunRow) -> StatePointer | None:
     """The run's checkpoint pointer, if it has one, in a format this build reads."""
     if run.checkpoint is None:
         return None
-    if (pointer := StatePointer.model_validate(run.checkpoint)).format != FORMAT:
+    if (pointer := StatePointer.model_validate(run.checkpoint)).format not in READABLE_FORMATS:
         raise conflict("run", run.id, "checkpoint_incompatible")
     return pointer
 
@@ -183,7 +202,10 @@ async def load_tail(objects: ObjectStore, pointer: TailPointer | None, *, hydrat
         return Tail()
     tail = Tail.model_validate_json(await load(objects, pointer))
     if hydrate:
-        refs = {ref.id: ref for ref in tail.refs}
+        needed = {ref.id for item in tail.items for ref in item.content_refs.values()}
+        if tail.continuation_ref is not None:
+            needed.add(tail.continuation_ref.id)
+        refs = {ref.id: ref for ref in tail.refs if ref.id in needed}
         values = {identifier: decode(await load(objects, ref), ref) for identifier, ref in refs.items()}
         for item in tail.items:
             for field, ref in item.content_refs.items():
@@ -239,6 +261,9 @@ class DisplayWrite(_Frozen):
 
     tail: TailPointer
     pages: tuple[PageRef, ...]
+    search_terms: tuple[str, ...] | None = None
+    # Transient publication bytes; callers retain them only after the pointer commits.
+    tail_bytes: bytes | None = Field(default=None, exclude=True, repr=False)
 
 
 async def _all(writes: Sequence[Awaitable[ObjectRef]]) -> list[ObjectRef]:
@@ -253,18 +278,20 @@ async def _all(writes: Sequence[Awaitable[ObjectRef]]) -> list[ObjectRef]:
     return refs
 
 
-def _display_writes(runtime: Runtime, lease: Lease, snapshot: Snapshot) -> list[Awaitable[ObjectRef]]:
-    """The writes of a display snapshot: its tail, then its pages."""
-    return [
-        _publish(runtime, lease, "tail", snapshot.tail.model_dump_json().encode()),
-        *(_publish(runtime, lease, "pages", page.model_dump_json().encode()) for page in snapshot.pages),
-    ]
+def _display_writes(
+    runtime: Runtime, lease: Lease, snapshot: Snapshot, tail_bytes: bytes, reused_tail: TailPointer | None
+) -> list[Awaitable[ObjectRef]]:
+    """Publish changed tail bytes and every new page; state is always written independently."""
+    tail = [] if reused_tail is not None else [_publish(runtime, lease, "tail", tail_bytes)]
+    return [*tail, *(_publish(runtime, lease, "pages", page.model_dump_json().encode()) for page in snapshot.pages)]
 
 
-def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
-    tail, *pages = refs
-    return DisplayWrite(
-        tail=TailPointer(
+def _display_write(
+    snapshot: Snapshot, refs: list[ObjectRef], tail_bytes: bytes, reused_tail: TailPointer | None
+) -> DisplayWrite:
+    if reused_tail is None:
+        tail, *refs = refs
+        reused_tail = TailPointer(
             key=tail.key,
             digest=tail.digest,
             size=tail.size,
@@ -273,7 +300,10 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
             first=snapshot.tail.first,
             count=snapshot.tail.first + len(snapshot.tail.items) - 1,
             refs=snapshot.tail.refs,
-        ),
+        )
+    return DisplayWrite(
+        tail=reused_tail,
+        tail_bytes=tail_bytes,
         pages=tuple(
             PageRef(
                 key=ref.key,
@@ -283,7 +313,7 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
                 last=page.items[-1].ordinal,
                 refs=page.refs,
             )
-            for ref, page in zip(pages, snapshot.pages, strict=True)
+            for ref, page in zip(refs, snapshot.pages, strict=True)
         ),
     )
 
@@ -329,10 +359,19 @@ async def publish_display(
     *,
     contents: Contents | None = None,
     control: AttemptControl | None = None,
+    previous_tail: TailPointer | None = None,
+    previous_tail_bytes: bytes | None = None,
 ) -> DisplayWrite:
     """Write a display snapshot outside any session."""
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
-    return _display_write(snapshot, await _all(_display_writes(runtime, lease, snapshot)))
+    tail_bytes = snapshot.tail.model_dump_json().encode()
+    reused_tail = previous_tail if tail_bytes == previous_tail_bytes else None
+    return _display_write(
+        snapshot,
+        await _all(_display_writes(runtime, lease, snapshot, tail_bytes, reused_tail)),
+        tail_bytes,
+        reused_tail,
+    )
 
 
 async def publish_checkpoint(
@@ -343,13 +382,17 @@ async def publish_checkpoint(
     *,
     contents: Contents | None = None,
     control: AttemptControl | None = None,
+    previous_tail: TailPointer | None = None,
+    previous_tail_bytes: bytes | None = None,
 ) -> tuple[StatePointer, DisplayWrite]:
     """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
+    tail_bytes = snapshot.tail.model_dump_json().encode()
+    reused_tail = previous_tail if tail_bytes == previous_tail_bytes else None
     written, *display = await _all(
         [
-            _publish(runtime, lease, "state", state.model_dump_json().encode()),
-            *_display_writes(runtime, lease, snapshot),
+            _publish(runtime, lease, "state", state.to_json_bytes()),
+            *_display_writes(runtime, lease, snapshot, tail_bytes, reused_tail),
         ]
     )
     pointer = StatePointer(
@@ -361,12 +404,14 @@ async def publish_checkpoint(
         attempt=state.attempt,
         refs=state.harness.refs,
     )
-    return pointer, _display_write(snapshot, display)
+    return pointer, _display_write(snapshot, display, tail_bytes, reused_tail)
 
 
 def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) -> None:
     """Make a written tail the run's and add its pages to the catalog, in the caller's fenced transaction."""
     run.tail = display.tail.model_dump(mode="json")
+    if display.search_terms is not None:
+        run.search_vector = vector(display.search_terms)
     session.add_all(
         RunItemPageRow(
             run_id=run.id,
@@ -380,6 +425,36 @@ def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) ->
             refs=[ref.model_dump(mode="json") for ref in page.refs],
         )
         for page in display.pages
+    )
+
+
+async def lock(session: AsyncSession, lease: Lease) -> tuple[ThreadRow, RunRow, AttemptRow, datetime]:
+    """Keep the lease locks, without reloading immutable inputs unused by checkpoint/steer/seal writes."""
+    return await lock_thread_lease(
+        session,
+        lease,
+        thread_options=[
+            defer(column, raiseload=True)
+            for column in (
+                ThreadRow.message_history,
+                ThreadRow.execution,
+                ThreadRow.mcp_headers,
+                ThreadRow.subagent,
+                ThreadRow.labels,
+            )
+        ],
+        # Keep memory_mounts loaded: its server default makes eager_defaults fetch it again on UPDATE.
+        run_options=[
+            defer(column, raiseload=True)
+            for column in (
+                RunRow.revision_selection,
+                RunRow.authority,
+                RunRow.mcp_headers,
+                RunRow.environment_mounts,
+                RunRow.resume,
+                RunRow.labels,
+            )
+        ],
     )
 
 

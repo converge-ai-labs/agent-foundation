@@ -82,7 +82,8 @@
 .editor {
   display: grid;
   gap: 12px;
-  padding: 16px;
+  /* Lines the editor up with the file header's path. */
+  padding: 16px 18px;
 }
 .editor textarea {
   min-height: min(480px, calc(100dvh - 380px));
@@ -94,14 +95,15 @@
 /* History ----------------------------------------------------------------- */
 .historyFilters {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .historyFilters > :first-child {
-  flex: 0 1 320px;
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 160px;
+  max-width: min(100%, 360px);
 }
 .runFilter {
   display: inline-flex;
@@ -120,12 +122,96 @@
 .revision {
   font-variant-numeric: tabular-nums;
 }
+.revisionGroup {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.revisionRow.revisionRow {
+  background: transparent;
+}
+/* Both row actions read as one quiet pair. */
+.revisionActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.revisionActions button {
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.revisionActions button:hover,
+.revisionActions button[aria-expanded="true"] {
+  color: var(--a13n-text);
+}
 .revisionDiff {
   padding: 0 12px 12px;
+}
+.revisionDiff > div {
+  background: transparent;
+}
+@media (max-width: 600px) {
+  .revisionRow.revisionRow {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px 12px;
+  }
+  .revisionRow > :last-child {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 
 /* Records ------------------------------------------------------------------ */
 .recordText {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Record source ------------------------------------------------------------ */
+.sources {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.sourceWarning {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.source {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.source h3 {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+}
+.sourceLead {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+}
+.sourceFacts {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 24px;
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+}
+.sourceFacts dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.sourceFacts dd {
+  min-width: 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }

@@ -14,6 +14,9 @@ from a13n_envd_client.eip.v1 import (
     EIP_TRANSFER_WINDOW_CHUNKS,
     ComputerObserveParams,
     ComputerObserveResult,
+    ComputerRegion,
+    ComputerZoomParams,
+    ComputerZoomResult,
     ContentDigest,
     DataFrame,
     DataFrameKind,
@@ -46,7 +49,7 @@ from a13n_envd_client.errors import (
 from a13n_envd_client.requester import SessionRequester, TransferChannel
 
 
-class _EIPReader[Opened: (FileReaderOpenResult, ComputerObserveResult)](ABC):
+class _EIPReader[Opened: (FileReaderOpenResult, ComputerObserveResult, ComputerZoomResult)](ABC):
     """Shared framed reader lifecycle for files and immutable observations."""
 
     def __init__(
@@ -94,24 +97,35 @@ class _EIPReader[Opened: (FileReaderOpenResult, ComputerObserveResult)](ABC):
         if self._entered:
             raise EIPSessionStateError("reader context cannot be entered more than once")
         self._entered = True
+        acquisition = asyncio.create_task(self._acquire(), name="eip-reader-acquire")
         try:
-            self._opened, self._max_bytes = await self._open()
-            handle = self._opened.reader.root
-            self._channel = self._requester.register_transfer(
-                handle,
-                direction="read",
-                inbound_frames=EIP_TRANSFER_WINDOW_CHUNKS + 1,
-            )
+            await asyncio.shield(acquisition)
+            channel = self._require_channel()
             await self._requester.send_data_frame(
-                self._channel,
-                DataFrame(kind=DataFrameKind.ATTACH, session_id=self._requester.session_id, handle=handle),
+                channel,
+                DataFrame(kind=DataFrameKind.ATTACH, session_id=channel.session_id, handle=channel.handle),
             )
-            attached = await self._channel.receive()
+            attached = await channel.receive()
             _expect_frame(attached, DataFrameKind.ATTACHED, offset=0)
             return self
         except BaseException:
-            await _ignore_cleanup_failure(self._abandon())
+            await _ignore_cleanup_failure(self._abandon_after_acquisition(acquisition))
             raise
+
+    async def _acquire(self) -> None:
+        # Cancellation of the caller must not discard a late successful reader.
+        self._opened, self._max_bytes = await self._open()
+        self._channel = self._requester.register_transfer(
+            self._opened.reader.root,
+            direction="read",
+            inbound_frames=EIP_TRANSFER_WINDOW_CHUNKS + 1,
+        )
+
+    async def _abandon_after_acquisition(self, acquisition: asyncio.Task[None]) -> None:
+        try:
+            await acquisition
+        finally:
+            await self._abandon()
 
     def __aiter__(self) -> Self:
         if not self._entered:
@@ -318,6 +332,38 @@ class EIPComputerObservationReader(_EIPReader[ComputerObserveResult]):
         super()._verify_completion(completion)
         if completion.produced_bytes != self.opened.size_bytes:
             raise EIPProtocolError("observation byte count differs from its immutable size")
+
+
+class EIPComputerZoomReader(_EIPReader[ComputerZoomResult]):
+    """A fresh detail image; closing its reader leaves the source geometry intact."""
+
+    def __init__(
+        self,
+        requester: SessionRequester,
+        client: EIPClient,
+        *,
+        observation_id: str,
+        region: ComputerRegion,
+        max_dimension: int = 1280,
+    ) -> None:
+        self._params = ComputerZoomParams(
+            context=_new_context(), observation_id=observation_id, region=region, max_dimension=max_dimension
+        )
+        super().__init__(requester, client, self._params.context)
+
+    async def _open(self) -> tuple[ComputerZoomResult, int]:
+        opened = await self._client.computer_zoom(self._params)
+        return opened, opened.size_bytes
+
+    async def _close(self, reader: FileReaderHandle) -> FileReaderCloseResult:
+        return await self._client.computer_close_observation(
+            FileReaderCloseParams(context=_new_context(), reader=reader)
+        )
+
+    def _verify_completion(self, completion: FileReadCompletion) -> None:
+        super()._verify_completion(completion)
+        if completion.produced_bytes != self.opened.size_bytes:
+            raise EIPProtocolError("zoom byte count differs from its immutable size")
 
 
 class EIPFileWriter:

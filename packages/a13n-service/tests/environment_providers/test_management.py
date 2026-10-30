@@ -107,7 +107,7 @@ def definition(*, configure=lambda target: None):
         targets.append(target)
         return target
 
-    def construct_execution(*, configuration, environment_id, state, runtime):
+    def construct_execution(*, configuration, environment_id, state, runtime, session_recovery=None):
         assert runtime is not None
         target = Execution(state, runtime)
         configure(target)

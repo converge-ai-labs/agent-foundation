@@ -1,12 +1,11 @@
 .panel {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  flex: 1;
   position: relative;
-  min-height: 120px;
+  min-height: 0;
   min-width: 0;
   gap: 8px;
-  border-top: 1px solid var(--a13n-border);
   padding: 8px 16px 12px;
   overflow: hidden;
 }
@@ -29,20 +28,8 @@
   justify-content: space-between;
 }
 .header strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-}
-.resizeHandle {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 5px;
-  cursor: ns-resize;
-  touch-action: none;
-  z-index: 1;
-}
-.resizeHandle:hover,
-.resizeHandle:focus-visible {
-  background: var(--a13n-accent);
 }
 .sessionBar {
   flex-shrink: 0;
@@ -52,7 +39,7 @@
 }
 .identity,
 .screen small {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--a13n-secondary);
   overflow-wrap: anywhere;
 }
@@ -64,13 +51,13 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 6px;
+  gap: 8px;
   min-height: 0;
   min-width: 0;
 }
 .controlBar {
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 14px;
 }
 .connectionStatus {
   display: flex;
@@ -79,7 +66,7 @@
   gap: 8px;
 }
 .actions {
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .actions button[aria-pressed="true"] {
@@ -87,7 +74,7 @@
 }
 .message {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .viewport {
@@ -109,27 +96,21 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   margin-bottom: 16px;
 }
 .empty {
   padding: 16px 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: 14px;
   max-width: 620px;
 }
 @media (max-width: 700px) {
-  .panel {
-    flex: 1 1 0 !important;
-  }
-  .resizeHandle {
-    display: none;
-  }
   .header {
     align-items: start;
   }
   .actions {
-    gap: 2px;
+    gap: 4px;
   }
 }
 

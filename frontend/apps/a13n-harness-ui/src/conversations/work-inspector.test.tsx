@@ -10,13 +10,16 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { TransportContext } from "../transport/context";
+import { GuestAccessContext, TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import { FocusDisplay } from "./stream";
-import { WorkInspector, TaskList } from "./work-inspector";
+import { WorkInspector } from "./work-inspector";
+import { TaskList } from "./work-lists";
 import { Child } from "./details";
+import { ToolExecutions } from "./tool-executions";
 import { refreshThread } from "./refresh";
 import { ChildControlsProvider } from "./child-controls";
+import { DebugProvider } from "../shell/debug";
 
 afterEach(cleanup);
 const task = {
@@ -34,7 +37,9 @@ function harness(GET: ReturnType<typeof vi.fn>, POST = vi.fn()) {
       <TransportContext
         value={{ client: { GET, POST } } as unknown as Transport}
       >
-        <ChildControlsProvider>{children}</ChildControlsProvider>
+        <DebugProvider>
+          <ChildControlsProvider>{children}</ChildControlsProvider>
+        </DebugProvider>
       </TransportContext>
     </QueryClientProvider>
   );
@@ -83,7 +88,7 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
               }
             : null,
         },
-        children: { running: 1, active: 1 },
+        children: { running: 1, succeeded: 4, active: 1 },
       },
     }),
   );
@@ -110,19 +115,41 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     ),
   ).toBe(true);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
-  await screen.findByText("task-before");
+  await user.click(
+    await screen.findByRole("button", { name: "Inspect tasks" }),
+  );
+  await screen.findAllByText("Task outside this list");
+  expect(screen.queryByText("task-before")).toBeNull();
   const summary = screen
     .getAllByText("Checking output")
     .find((element) => element.tagName === "SUMMARY")!;
   fireEvent.click(summary);
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
+  expect(screen.getByText("task-before")).toBeTruthy();
   expect(screen.getByText("task-after")).toBeTruthy();
-  await user.keyboard("{Escape}");
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Inspect tasks" }),
+    ),
+  );
   await user.click(screen.getByRole("button", { name: "Inspect notes" }));
   await screen.findByText("Decision");
-  expect(screen.getByText(/not a saved checkpoint/)).toBeTruthy();
+  await user.hover(screen.getByRole("button", { name: "About activity" }));
+  expect(await screen.findByText(/Not saved yet/)).toBeTruthy();
   expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
-  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
   run = "run-two";
   display.reset();
   refreshThread(setup.queries, "root", "lifecycle");
@@ -141,6 +168,105 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   );
   expect(screen.getByText("Checking output")).toBeTruthy();
 });
+it.each([false, true])(
+  "opens overflow views by keyboard and restores focus (guest: %s)",
+  async (guest) => {
+    const GET = vi.fn(
+      async (
+        _path: string,
+        options: { params: { query: { include: string[] } } },
+      ) => ({
+        data: {
+          thread_id: "root",
+          epoch: "epoch",
+          revision: 1,
+          source: "saved",
+          tasks: { total: 0 },
+          notes: {
+            total: 1,
+            page: options.params.query.include.includes("notes")
+              ? { notes: [{ key: "Decision", value: "Keep the draft" }] }
+              : null,
+          },
+          children: { active: 0, succeeded: 5 },
+        },
+      }),
+    );
+    const display = new FocusDisplay();
+    display.processes.result(
+      "run-one",
+      "shell_exec",
+      { command: "pnpm dev" },
+      { process_id: "process-one", status: { phase: "running" } },
+    );
+    render(
+      <GuestAccessContext
+        value={
+          guest
+            ? {
+                title: "Shared chat",
+                grant: {
+                  share_id: "share-one",
+                  scope: "thread",
+                  target_id: "root",
+                  permission: "view",
+                  created_at: "2026-01-01T00:00:00Z",
+                  expires_at: "2027-01-01T00:00:00Z",
+                },
+              }
+            : null
+        }
+      >
+        <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />
+      </GuestAccessContext>,
+      harness(GET),
+    );
+    const user = userEvent.setup();
+    const more = screen.getByRole("button", { name: "More activity" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Inspect notes" }).textContent,
+      ).toContain("1"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Inspect subagents" }).textContent,
+    ).toBe("Subagents");
+    expect(more.textContent.includes("1")).toBe(!guest);
+    expect(GET).toHaveBeenCalledTimes(1);
+    more.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menuitem", { name: /Notes/ });
+    if (guest) {
+      expect(
+        screen.queryByRole("menuitem", { name: /Processes|Tools/ }),
+      ).toBeNull();
+    }
+    await user.keyboard("{Home}{ArrowDown}{Enter}");
+    await screen.findByText("Decision");
+    expect(
+      screen
+        .getByRole("button", { name: "Inspect notes" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      GET.mock.calls.some(([, options]) =>
+        options.params.query.include.includes("tasks"),
+      ),
+    ).toBe(false);
+    if (guest) {
+      expect(
+        screen.queryByRole("button", { name: "Inspect processes" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Inspect tools" }),
+      ).toBeNull();
+    }
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  },
+);
+
 it("orders active tasks first and distinguishes unavailable from empty", () => {
   const view = render(
     <TaskList
@@ -257,6 +383,13 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   );
   fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+  expect(POST.mock.calls[0]).toEqual([
+    "/api/threads/{thread_id}/children/{execution_id}/steer",
+    {
+      params: { path: { thread_id: "root", execution_id: "control-one" } },
+      body: { prompt: "Check once" },
+    },
+  ]);
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker · running"));
@@ -272,11 +405,11 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     ).disabled,
   ).toBe(true);
   reject(new TypeError("Acknowledgement lost"));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   view.rerender(<div>Closed again</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker · running"));
-  await screen.findByText(/Acknowledgement unavailable/);
+  await screen.findByText(/Couldn't confirm delivery/);
   expect(
     (
       screen.getByRole("textbox", {
@@ -387,8 +520,22 @@ it("inspects observed processes in place, updates status and discloses missing o
     screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).toContain("1");
   fireEvent.click(screen.getByText("pnpm dev"));
+  expect(screen.queryByText("process-one")).toBeNull();
+  expect(screen.queryByText("run-one")).toBeNull();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
   expect(screen.getByText("process-one")).toBeTruthy();
   expect(screen.getByText("run-one")).toBeTruthy();
+  fireEvent.keyDown(window, {
+    code: "KeyD",
+    ctrlKey: true,
+    metaKey: true,
+    altKey: true,
+  });
   display.processes.status("run-one", "process-one", "exited", 3);
   view.rerender(
     <WorkInspector
@@ -404,6 +551,103 @@ it("inspects observed processes in place, updates status and discloses missing o
     screen.getByRole("button", { name: "Inspect processes" }).textContent,
   ).not.toContain("1");
   expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
-  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Close activity" }));
   await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
+});
+
+it("inspects retained tools without consuming results and cancels the exact child execution", async () => {
+  let item = {
+    execution_id: "tool-one",
+    thread_id: "child",
+    run_id: "run-one",
+    tool_call_id: "call-one",
+    tool_name: "lookup",
+    status: "running",
+    created_at: "2026-10-20T00:00:00Z",
+    available_actions: ["cancel"],
+  } as Schema<"ToolExecutionView">;
+  const GET = vi.fn(async () => ({ data: [item] }));
+  const POST = vi.fn(async () => ({ data: item }));
+  const setup = harness(GET, POST);
+  render(<ToolExecutions threadId="child" rootThreadId="root" />, setup);
+  fireEvent.click(await screen.findByText("lookup"));
+  expect(screen.getByText("Not available")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel execution" }));
+  await screen.findByText(/Cancellation requested/);
+  expect(POST).toHaveBeenCalledWith(
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel",
+    {
+      params: { path: { thread_id: "child", execution_id: "tool-one" } },
+    },
+  );
+  item = {
+    ...item,
+    status: "succeeded",
+    result_available: true,
+    available_actions: [],
+  };
+  refreshThread(setup.queries, "root", "checkpoint");
+  await screen.findByText("Available to agent");
+  expect(screen.queryByRole("button", { name: "Cancel execution" })).toBeNull();
+  expect(POST).toHaveBeenCalledOnce();
+  expect(GET.mock.calls.length).toBeGreaterThan(1);
+});
+
+it("shares one open inspector with Goal and forgets a cleared Goal selection", async () => {
+  const GET = vi.fn(async () => ({
+    data: {
+      thread_id: "root",
+      epoch: "epoch",
+      sequence: 1,
+      revision: 1,
+      source: "saved",
+      tasks: { total: 0, completed: 0 },
+      notes: { total: 0 },
+      children: {},
+    },
+  }));
+  const setup = harness(GET);
+  const props = {
+    threadId: "root",
+    display: new FocusDisplay(),
+    reconcile: vi.fn(),
+  };
+  const goal = { objective: "Confirm the result", status: "verified" } as const;
+  const view = render(<WorkInspector {...props} goal={goal} />, setup);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  await screen.findByRole("heading", { name: "Verified by the Agent" });
+  await user.click(
+    await screen.findByRole("button", { name: "Inspect tasks" }),
+  );
+  await screen.findByRole("heading", { name: "Chat activity" });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", { name: "Verified by the Agent" }),
+    ).toBeNull(),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  await screen.findByRole("heading", { name: "Verified by the Agent" });
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "Chat activity" })).toBeNull(),
+  );
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  view.rerender(<WorkInspector {...props} />);
+  expect(screen.queryByRole("button", { name: /Inspect Goal:/ })).toBeNull();
+  view.rerender(<WorkInspector {...props} goal={goal} />);
+  expect(
+    screen.queryByRole("heading", { name: "Verified by the Agent" }),
+  ).toBeNull();
 });

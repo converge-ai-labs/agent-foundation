@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
+from a13n_harness.providers.environment.direct_local.protected_files import LocalFileProtection, protect_local_files
 from alembic.util.exc import CommandError
 from anyio import CancelScope, Lock, Semaphore, fail_after, move_on_after, to_thread
 from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
@@ -60,16 +62,21 @@ class Database:
 async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator[Database]:
     """Migrate, open, verify, and close one file-backed SQLite database."""
 
-    migrator = DatabaseMigrator(path, busy_timeout_seconds=settings.busy_timeout_seconds)
+    # Native search/preview runs in this process too. Opening and closing these
+    # files outside SQLite can drop SQLite's POSIX locks, even for binary reads.
+    path = path.resolve()
+    protection = _protect_database_files(path)
+    engine: AsyncEngine | None = None
     try:
-        await to_thread.run_sync(migrator.upgrade)
-    except (CommandError, DatabaseSchemaError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
-        raise StoreIntegrityError(
-            "Harness UI metadata migration failed.",
-            code="database_migration_failed",
-        ) from exc
-    engine = _create_engine(path, settings)
-    try:
+        migrator = DatabaseMigrator(path, busy_timeout_seconds=settings.busy_timeout_seconds)
+        try:
+            await to_thread.run_sync(_run_protected, path, migrator.upgrade)
+        except (CommandError, DatabaseSchemaError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
+            raise StoreIntegrityError(
+                "Harness UI metadata migration failed.",
+                code="database_migration_failed",
+            ) from exc
+        engine = _create_engine(path, settings)
         database = Database(
             engine=engine,
             sessions=DatabaseSessions(engine),
@@ -83,8 +90,17 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
             ) from exc
         yield database
     finally:
-        with move_on_after(settings.cleanup_timeout_seconds, shield=True):
-            await engine.dispose()
+        if engine is None:
+            protection.close()
+        else:
+            # dispose() closes idle connections only, and resets the pool's
+            # counters. Inspect outstanding checkouts before disposal. Retain
+            # protection for this process if handles may have escaped cleanup.
+            checked_out = cast(AsyncAdaptedQueuePool, engine.pool).checkedout()
+            with move_on_after(settings.cleanup_timeout_seconds, shield=True):
+                await engine.dispose()
+                if checked_out == 0:
+                    protection.close()
 
 
 @asynccontextmanager
@@ -128,7 +144,19 @@ async def check_database(database: Database, *, timeout_seconds: float = 20.0) -
     with fail_after(timeout_seconds):
         async with database.engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
-    await to_thread.run_sync(DatabaseMigrator(database.engine.url.database or "").verify_current)
+    path = Path(database.engine.url.database or "").resolve()
+    await to_thread.run_sync(_run_protected, path, DatabaseMigrator(path).verify_current)
+
+
+def _protect_database_files(path: Path) -> LocalFileProtection:
+    return protect_local_files(Path(f"{path}{suffix}") for suffix in ("", "-wal", "-shm", "-journal"))
+
+
+def _run_protected(path: Path, operation: Callable[[], None]) -> None:
+    # Direct asyncio Task.cancel() can abandon an AnyIO worker. Its SQLite
+    # handles must stay protected until the operation actually closes them.
+    with closing(_protect_database_files(path)):
+        operation()
 
 
 def _create_engine(path: Path, settings: StorageSettings) -> AsyncEngine:

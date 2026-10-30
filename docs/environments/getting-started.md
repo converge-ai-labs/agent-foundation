@@ -1,12 +1,14 @@
 ---
 title: Environments quickstart
 sidebarTitle: Quickstart
-description: Read and write a file without Harness, a model, Docker, or a cloud account.
+description: Open a local workspace, write a file, read it back, and close the execution.
 ---
+
+This example uses Direct Local to operate on a temporary directory. It needs Python 3.13 and `uv`; it uses no model, daemon, Docker installation, or cloud account.
 
 ## Install from this checkout
 
-The examples track `main`. Use Python 3.13 and the repository lockfile:
+Clone the repository and install Harness using its lockfile. If you already have a checkout, run the final command from its root:
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -14,11 +16,13 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-Environment execution is part of `a13n-harness`; no Agent or model is required. Its `docker`, `e2b`, and `modal` extras provide the optional vendor SDKs.
+The execution APIs are part of `a13n-harness`. Optional vendor SDKs live in its `docker`, `e2b`, and `modal` extras; the local example needs none of them.
 
 ## Run a complete file example
 
-Save this as `environment_example.py`, then run `uv run python environment_example.py`:
+1. Save the following program as `environment_example.py` in the repository root.
+2. Run `uv run python environment_example.py`.
+3. Check that it prints `Hello from Environment` and exits successfully.
 
 ```python
 import asyncio
@@ -48,20 +52,24 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Connector construction and validation perform no I/O. `open()` returns one ready, independent execution; context exit releases its owned resources. Direct Local uses an existing Host directory and preserves it on close. The application owns this example's temporary directory and deletes it afterward.
+Read the program in three stages:
 
-`/hello.txt` is a logical path in this Environment. Direct Local shares the Host account; directory mapping does not provide OS isolation.
+1. `TemporaryDirectory` creates the Host directory. The connector describes it without performing I/O.
+2. `await connector.open()` opens a ready execution. Its file operator maps logical `/hello.txt` to `workspace / "hello.txt"`.
+3. Leaving the async context closes the execution. The following assertion proves the file still exists; the outer `TemporaryDirectory` block removes it afterward.
+
+Direct Local uses the Host account. Its directory mapping is a path interface, not OS isolation. For a sandboxed target, continue to [backend selection](index.md#choose-a-backend).
 
 ## Use the connector with Harness
 
-Wrap the connector in a Host source. Each Run opens a fresh execution only on first use; already opened executions are not Run inputs:
+To expose this workspace to an Agent, use the [complete Harness source example](../a13n-harness/environments.md#supply-a-source). It supplies a Host-owned `PreparedSource` and enables `DynamicEnvironmentCapability` for file tools.
 
-Use the Host-owned `PreparedSource` implementation from the [Harness environment guide](../a13n-harness/environments.md#supply-a-source). It returns the prepared connector on first use.
+Within an async application that already defines those objects, pass the source to the Run:
 
 ```python
 result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
-This fragment assumes the directory still exists and `executable` enables `DynamicEnvironmentCapability`. Harness opens an execution on first use and closes it at Run exit. Supplying an Environment alone does not expose tools to the model.
+Keep the target directory alive until the Run finishes. In the program above, that means running the Agent inside the `TemporaryDirectory` block. Harness opens a fresh execution on first use and closes it at Run exit; the capability supplies the tools the model can call.
 
-Continue with [Lifecycle and state](lifecycle.md), [Operations](operations.md), and [Harness integration](../a13n-harness/environments.md).
+Next, use [Operations](operations.md) for file APIs, [Lifecycle and state](lifecycle.md) for target reuse, or [Harness integration](../a13n-harness/environments.md) for the full Agent workflow.

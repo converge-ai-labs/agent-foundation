@@ -11,6 +11,7 @@ import { Button } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { DebugId } from "../shell/debug";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 
@@ -135,15 +136,14 @@ export function DecisionForm({
     <section className={styles.decision} aria-label="Pending decisions">
       <h2>Your response is needed</h2>
       <p>
-        Submit the responses you want to provide, or send a message to continue.
-        Unanswered requests are denied, not approved. Another participant may
-        resolve this request set first.
+        Answer below or send a message to continue. Unanswered requests are
+        denied.
       </p>
       {remaining !== null && (
         <p role="status" aria-live="off">
           {expired
-            ? "Response window ended. Waiting for the server to confirm the outcome."
-            : `Submit within ${remaining}s. On timeout, the server continues without answers or approvals, even if you leave this page. Unsubmitted answers are discarded.`}
+            ? "Time to respond has ended. Waiting for the result."
+            : `${remaining}s left. Work continues without unsubmitted answers or approvals when time expires, even if you leave.`}
         </p>
       )}
       <form
@@ -189,17 +189,17 @@ export function DecisionForm({
         <ErrorNotice error={send.error} />
         {send.isSuccess && (
           <p role="status">
-            Response accepted; execution has not been confirmed. Operation:{" "}
-            {send.data.receipt_id}
+            Response accepted; execution has not been confirmed.{" "}
+            <DebugId label="Operation" value={send.data.receipt_id} />
           </p>
         )}
         {unknown && (
           <p role="status">
-            Acknowledgement unavailable. Refresh the pending request; this
-            response will not be retried automatically.
+            Couldn't confirm delivery. Refresh the request to check. Your
+            response won't be resent automatically.
           </p>
         )}
-        <div>
+        <div className={styles.decisionActions}>
           {!singleApproval && (
             <Button
               type="submit"
@@ -213,6 +213,9 @@ export function DecisionForm({
             Refresh request
           </Button>
         </div>
+        <p className={styles.settingsHint}>
+          Another participant may respond first.
+        </p>
       </form>
     </section>
   );

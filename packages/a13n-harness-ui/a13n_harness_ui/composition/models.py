@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from typing import Literal, Self, get_args, get_origin
 
-from a13n_harness import RunConfiguration
+from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
-    AgentToolProxy,
+    AgentToolSearch,
+    BackgroundCompactionConfiguration,
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
+    SubscriptionGroupResource,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.model_thinking import ThinkingSelection
@@ -55,6 +57,7 @@ class ResolvedModelRecipe(CompositionModel):
     model_id: str = Field(min_length=1, max_length=128)
     route: str = Field(min_length=3, max_length=512)
     authentication: ModelAuthentication
+    subscription_group: SubscriptionGroupResource | None = Field(default=None, exclude_if=lambda value: value is None)
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model_characteristics: ModelCharacteristics | None = None
@@ -77,6 +80,7 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Historical recipes were all generically selected, including Apps-enabled ones.
     generic_selected: bool = Field(default=True, exclude_if=lambda value: value)
@@ -119,7 +123,7 @@ class ResolvedEnvironmentBinding(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown", "memory"]
+    source_kind: Literal["agent", "markdown", "memory", "live"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
     system_prompt: tuple[str, ...] = Field(default=(), max_length=16)
@@ -132,7 +136,7 @@ class ResolvedAgentNode(CompositionModel):
     # Up to 128 generic servers plus 128 independently selected WebUI Apps.
     mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
-    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="before")
@@ -177,11 +181,16 @@ class ResolvedRunComposition(CompositionModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
+    background_compaction: BackgroundCompactionConfiguration = Field(
+        default_factory=lambda: BackgroundCompactionConfiguration(enabled=False),
+        exclude_if=lambda value: value == BackgroundCompactionConfiguration(enabled=False),
+    )
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     run_configuration: RunConfiguration = Field(
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )
+    tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None

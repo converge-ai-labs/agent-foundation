@@ -106,8 +106,10 @@ def test_envd_client_reference_covers_every_generated_method() -> None:
     assert documented == set(METHODS)
 
 
-def test_ui_command_reference_covers_registered_commands_and_options() -> None:
-    text = (ROOT / "docs/a13n-harness-ui/command-reference.md").read_text(encoding="utf-8")
+@pytest.mark.parametrize("locale", ["en", "zh-CN"])
+def test_ui_command_reference_covers_registered_commands_and_options(locale: str) -> None:
+    suffix = ".zh-CN" if locale == "zh-CN" else ""
+    text = (DOCS / f"a13n-harness-ui/command-reference{suffix}.md").read_text(encoding="utf-8")
     sections = dict(re.findall(r"^### `([^`]+)`\n(.*?)(?=^### |^## |\Z)", text, re.MULTILINE | re.DOTALL))
 
     def visit(group: click.Group, prefix: str = "") -> None:
@@ -123,7 +125,8 @@ def test_ui_command_reference_covers_registered_commands_and_options() -> None:
                         assert option in sections[path], (path, option)
 
     visit(cli)
-    global_options = text.split("### Global options", 1)[1].split("## Commands", 1)[0]
+    global_heading = "### 全局选项" if locale == "zh-CN" else "### Global options"
+    global_options = re.split(r"^## ", text.split(global_heading, 1)[1], maxsplit=1, flags=re.MULTILINE)[0]
     for parameter in cli.params:
         if isinstance(parameter, click.Option) and not parameter.hidden:
             for option in (*parameter.opts, *parameter.secondary_opts):
@@ -195,6 +198,30 @@ def test_service_generated_references_match_current_definitions() -> None:
 
     schema = json.loads((ROOT / "scripts/docs/service-settings.schema.json").read_text(encoding="utf-8"))
     assert schema == Settings.model_json_schema()
+
+
+@pytest.mark.parametrize("folder", ["environments", "a13n-service"])
+def test_translated_configuration_references_preserve_fields_and_constraints(folder: str) -> None:
+    def fields(path: Path) -> dict[str, list[tuple[str, str]]]:
+        text = path.read_text(encoding="utf-8")
+        sections: dict[str, list[tuple[str, str]]] = {}
+        for name, body in re.findall(r"^## `([^`]+)`\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL):
+            rows = []
+            for line in body.splitlines():
+                if not re.match(r"^\|\s*`", line):
+                    continue
+                cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line)[1:-1]]
+                assert len(cells) == 4, (path, name, line)
+                constraints = cells[-1].replace("默认值由模型工厂计算", "default from model factory")
+                rows.append((cells[0], constraints))
+            sections[name] = rows
+        assert sections, path
+        return sections
+
+    canonical = fields(DOCS / folder / "configuration-reference.md")
+    translated = fields(DOCS / folder / "configuration-reference.zh-CN.md")
+    assert list(translated) == list(canonical)
+    assert translated == canonical
 
 
 def test_service_configuration_examples_match_settings() -> None:

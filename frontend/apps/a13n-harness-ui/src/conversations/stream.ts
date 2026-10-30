@@ -12,12 +12,15 @@ import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
 import {
   sourceText,
+  parsed,
   type AppliedEdit,
   type ToolView,
 } from "./tool-presentation";
 
 export type DisplayBlock = {
+  durationMs?: number;
   id: string;
+  shellCommand?: string;
   toolCallId?: string;
   kind:
     "assistant" | "user" | "thinking" | "tool" | "activity" | "media" | "task";
@@ -55,7 +58,7 @@ export type FocusFrame =
   | (Schema<"FocusEventFrame"> & { kind: "event" })
   | (Schema<"ResetFrame"> & { kind: "reset" });
 export function focusFrame(value: unknown): FocusFrame {
-  if (!object(value)) throw new Error("Invalid conversation stream frame.");
+  if (!object(value)) throw new Error("Invalid chat stream frame.");
   if (
     value.kind === "snapshot" &&
     object(value.snapshot) &&
@@ -83,7 +86,7 @@ export function focusFrame(value: unknown): FocusFrame {
     return value as FocusFrame;
   if (value.kind === "reset" && typeof value.reason === "string")
     return value as FocusFrame;
-  throw new Error("Invalid conversation stream frame.");
+  throw new Error("Invalid chat stream frame.");
 }
 
 class RootRunChanged extends Error {}
@@ -115,6 +118,8 @@ export class FocusDisplay {
   snapshot?: Schema<"ThreadFocusSnapshot">;
   cursor?: string;
   runId?: string;
+  // Live-only notification, retained across reconnect snapshots for once-per-Run reveal.
+  browserActivityRunId?: string;
   baseContinuation?: string | null;
   blocks = new Map<string, DisplayBlock>();
   private items = new Map<string, DisplayItem>();
@@ -226,7 +231,7 @@ export class FocusDisplay {
       if (!this.ready)
         throw new Error("Live output arrived before replay was ready.");
       if (frame.event.epoch !== this.snapshot?.epoch)
-        throw new Error("Conversation stream epoch changed.");
+        throw new Error("Chat stream epoch changed.");
       if (frame.event.sequence <= this.sequence) return;
       if (
         frame.event.run_kind === "root" &&
@@ -236,7 +241,7 @@ export class FocusDisplay {
         // observer's finite prefix instead of assigning the previous Run's base.
         this.cursor = undefined;
         throw new RootRunChanged(
-          "Root Run changed; reload its focused snapshot.",
+          "This chat changed. Reload to see the latest.",
         );
       }
       this.sequence = frame.event.sequence; // Global sequences are sparse within one Thread.
@@ -248,6 +253,19 @@ export class FocusDisplay {
         return;
       }
       this.foldRoot(frame.event);
+      const item = frame.event.item && this.items.get(frame.event.item.id);
+      const args = parsed(item?.content.arguments);
+      if (
+        item?.kind === "tool_call" &&
+        !item.content.provider &&
+        !item.content.subagentRunId &&
+        (item.content.toolCallName === "browser_navigate" ||
+          (item.content.toolCallName === "browser_tabs" &&
+            object(args) &&
+            (args.action === "new" || args.action === "select"))) &&
+        item.content.outcome === "success"
+      )
+        this.browserActivityRunId = frame.event.run_id;
     }
   }
   private foldRoot(event: Schema<"LiveEvent">) {
@@ -482,7 +500,16 @@ export class FocusDisplay {
       type === "TOOL_CALL_END"
     ) {
       const block = this.blocks.get(key);
-      if (block) this.blocks.set(key, { ...block, done: true });
+      if (block)
+        this.blocks.set(key, {
+          ...block,
+          done: true,
+          shellCommand: this.processes.command(
+            scope ?? "",
+            block.name ?? "",
+            block.text,
+          ),
+        });
     } else if (type === "TOOL_CALL_START") {
       this.blocks.set(key, {
         id: key,
@@ -511,6 +538,11 @@ export class FocusDisplay {
       };
       this.blocks.set(key, {
         ...block,
+        shellCommand: this.processes.command(
+          scope ?? "",
+          block.name ?? "",
+          block.text,
+        ),
         result:
           typeof payload.content === "string" ? payload.content : undefined,
         resultParts: readContentParts(payload.content),
@@ -547,7 +579,7 @@ export class FocusDisplay {
           string(payload.message) ||
           (outcome === "interrupt"
             ? "A response is needed before execution can continue."
-            : "Execution finished. Inspect the operation receipt for continuation and Environment outcomes."),
+            : "Run finished. Open its details to check follow-ups and environment results."),
       });
     } else if (
       type === "SUBAGENT_STARTED" ||
@@ -635,6 +667,9 @@ export class FocusDisplay {
       this.recovery = { ...this.recovery, state: "resumed" };
     const block: DisplayBlock = {
       id: item.id,
+      durationMs: item.ended_at
+        ? Math.max(0, Date.parse(item.ended_at) - Date.parse(item.started_at))
+        : undefined,
       kind:
         item.kind === "tool_call"
           ? "tool"
@@ -665,13 +700,21 @@ export class FocusDisplay {
       block.failure = object(content.failure)
         ? string(content.failure.message)
         : undefined;
-      block.retry = content.retry === true;
+      block.retry = content.retry === true || content.outcome === "retried";
       block.images = content.tool_images as
         Schema<"ToolImageView">[] | undefined;
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
       block.edit = content.applied_edit as AppliedEdit | undefined;
       block.imageUnavailable = content.tool_image_unavailable === true;
       block.provider = string(content.provider) || undefined;
+      if (!block.provider)
+        block.shellCommand = this.processes.command(
+          block.subagentRunId
+            ? `${this.runId}:${block.subagentRunId}`
+            : (this.runId ?? ""),
+          block.name,
+          block.text,
+        );
       if (this.runId && item.state !== "in_progress")
         this.processes.result(
           block.subagentRunId
@@ -723,6 +766,11 @@ export class FocusDisplay {
     const setBlock = (key: string, block: DisplayBlock) =>
       this.blocks.set(key, {
         ...block,
+        shellCommand: this.processes.command(
+          scope ?? "",
+          block.name ?? "",
+          block.text,
+        ),
         ...(subagentRunId ? { subagentRunId } : {}),
       });
     const value = object(event.value) ? event.value : {};
@@ -740,6 +788,19 @@ export class FocusDisplay {
         source.phase,
         source.exit_code,
       );
+      return;
+    }
+    if (
+      name === "a13n.harness.recovery" &&
+      payload.type === "context_recovery"
+    ) {
+      const key = `${scope}:context-recovery`;
+      setBlock(key, {
+        id: key,
+        kind: "activity",
+        text: `${string(payload.warning)} Outcome: ${string(payload.outcome)}.`,
+        metadata: { "a13n.recovery": "context_recovery" },
+      });
       return;
     }
     if (
@@ -951,16 +1012,18 @@ export class FocusDisplay {
           toolCallId: string(part.tool_call_id),
           result: sourceText(part.content),
           done: true,
-          retry: part.part_kind === "retry-prompt",
+          retry:
+            part.part_kind === "retry-prompt" || part.outcome === "retried",
           outcome:
             part.outcome === "failed" ||
             part.outcome === "denied" ||
             part.outcome === "interrupted" ||
+            part.outcome === "retried" ||
             part.outcome === "success"
               ? part.outcome
               : undefined,
           failure:
-            part.part_kind === "retry-prompt"
+            part.part_kind === "retry-prompt" || part.outcome === "retried"
               ? sourceText(part.content) || "Tool input validation failed."
               : undefined,
         });

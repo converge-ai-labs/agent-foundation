@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -26,20 +27,26 @@ from a13n_harness.environment.commands import (
 )
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileIgnoreMode,
     FileMetadata,
+    FileMkdirOperation,
     FileMutationResult,
+    FileOperation,
     FileOperator,
     FilePatchResult,
     FileQueryRequest,
+    FileRemoveOperation,
+    FileStatOperation,
     FileTextMatch,
     FileTextResult,
     FileTextSearchRequest,
     FileTextSearchResult,
     FileWriteMode,
     FileWriteResult,
+    FileWriteTextOperation,
 )
 from a13n_harness.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
@@ -166,21 +173,28 @@ __all__ = [
     "EnvironmentSnapshot",
     "EnvironmentSource",
     "EnvironmentState",
+    "FileArchive",
+    "FileBatchValue",
     "FileCopyResult",
     "FileEntriesResult",
     "FileIgnoreMode",
     "FileMetadata",
+    "FileMkdirOperation",
     "FileMutationResult",
+    "FileOperation",
     "FileOperator",
     "FilePatchResult",
     "FileQueryRequest",
+    "FileRemoveOperation",
     "FileScopeSelection",
+    "FileStatOperation",
     "FileTextMatch",
     "FileTextResult",
     "FileTextSearchRequest",
     "FileTextSearchResult",
     "FileWriteMode",
     "FileWriteResult",
+    "FileWriteTextOperation",
     "OpaqueOutputCursor",
     "OpaqueOutputReference",
     "OpaqueProcessHandle",

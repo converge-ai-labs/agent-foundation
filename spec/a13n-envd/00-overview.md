@@ -6,7 +6,7 @@
 
 The Host selects an immutable Device execution identity, Sandbox and egress mode. A Session has a fixed default working directory and owns its operations, processes, output and transfers. Its working directory supplies defaults, not confinement: restricted grants constrain the complete worker, while disabled Sandbox retains native filesystem authority. Envd owns the worker lifecycle; the Host owns the outer account, container or VM and product authorization.
 
-Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness opens a provider-neutral Environment execution through a connector fixed to the Host-selected environment; it does not select Devices or own their sockets. Direct Local, Docker and native cloud Providers use their own operation and lifecycle contracts.
+Envd is not an Agent runtime, product authorization service, provisioner, scheduler or durable execution database. Harness opens a provider-neutral Environment execution through a connector fixed to the Host-selected environment; it does not select Devices or own their sockets. Native Local, Docker, and E2B provide Files & Shell under the [execution backend boundary](../a13n-harness/08b-environment-providers.md#execution-backend-boundary). Envd is the general execution path, including OS sandbox and Egress execution policy enforcement, Computer use, and metrics collection. Target lifecycle and bootstrap remain outside Envd.
 
 ## Architecture
 

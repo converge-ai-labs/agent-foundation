@@ -16,9 +16,13 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
     RetryPromptPart,
+    SystemPromptPart,
     TextContent,
     ToolAvailabilityDeltaPart,
+    ToolCallPart,
+    ToolReturnPart,
     UserContent,
     UserPromptPart,
 )
@@ -134,29 +138,40 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
             return request_context
-        request = _classify_request(ctx, request_context.messages)
-        if request is None:
-            return request_context
+        from a13n_harness.capabilities.context import (
+            _project_compaction_media,
+            _restore_compacted_state,
+        )
 
-        projection = await _project_model_context(ctx, request)
-        original_request = request_context.messages[-1]
-        assert isinstance(original_request, ModelRequest)
-        committed = _commit_projection(request_context.messages, request, projection)
-        _persist_projection(ctx.messages, original_request, committed, request, projection)
-        # Observe only freshly produced overlay content. Native user input and
-        # delivered steering have their own event boundaries, never history replay.
-        for event in input_events(
-            [
-                ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
-                for block in projection.blocks
-            ],
-            source="context",
-            input_id=f"context-{ctx.run_id}-{ctx.run_step}",
-        ):
-            await ctx.emit(event)
-        return _replace_messages(request_context, committed)
+        restored = await _restore_compacted_state(ctx, request_context)
+        restoring_compaction = restored is not request_context
+        request_context = restored
+        request = _classify_request(ctx, request_context.messages)
+        prepared = request_context
+        if request is not None:
+            projection = await _project_model_context(ctx, request)
+            original_request = request_context.messages[-1]
+            assert isinstance(original_request, ModelRequest)
+            committed = _commit_projection(request_context.messages, request, projection)
+            _persist_projection(ctx.messages, original_request, committed, request, projection)
+            # Observe only freshly produced overlays, never history replay.
+            for event in input_events(
+                [
+                    ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
+                    for block in projection.blocks
+                ],
+                source="context",
+                input_id=f"context-{ctx.run_id}-{ctx.run_step}",
+            ):
+                await ctx.emit(event)
+            prepared = _replace_messages(request_context, committed)
+        if restoring_compaction:
+            prepared = await _project_compaction_media(ctx, prepared)
+        return prepared
 
 
 async def _project_model_context(
@@ -205,7 +220,11 @@ def _classify_request(
     if not messages or not isinstance(messages[-1], ModelRequest):
         return None
     final = messages[-1]
-    if any(isinstance(part, RetryPromptPart) for part in final.parts):
+    if any(
+        isinstance(part, RetryFeedbackPart | RetryPromptPart)
+        or (isinstance(part, ToolReturnPart) and part.outcome == "retried")
+        for part in final.parts
+    ):
         return None
 
     tool_results = tuple(part for part in final.parts if isinstance(part, BaseToolReturnPart))
@@ -305,10 +324,18 @@ def _commit_projection(
         # in the outgoing request (for example ToolAvailabilityDeltaPart).
         # Preserve the same preamble position before the canonical native part.
         input_index = next(
-            index
-            for index, part in enumerate(original_parts)
-            if isinstance(part[0], (UserPromptPart, ToolAvailabilityDeltaPart))
+            (
+                index
+                for index, part in enumerate(original_parts)
+                if isinstance(part[0], UserPromptPart | ToolAvailabilityDeltaPart)
+            ),
+            None,
         )
+        if input_index is None:
+            # A system-only enqueue renders as user text on fallback providers.
+            input_index = next(
+                index for index, part in enumerate(original_parts) if isinstance(part[0], SystemPromptPart)
+            )
     else:
         input_index = len(original_parts)
 
@@ -359,7 +386,7 @@ def _is_deferred_result_boundary(ctx: RunContext[AgentContext], messages: list[M
     resume = ctx.deps.deferred_resume
     if resume is None or not messages or not isinstance(messages[-1], ModelRequest):
         return False
-    expected = {part.tool_call_id for part in (*resume.requests.calls, *resume.requests.approvals)}
+    expected = {part.model_call.tool_call_id for part in (*resume.requests.calls, *resume.requests.approvals)}
     integrated = {
         part.tool_call_id for part in messages[-1].parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)
     }
@@ -370,9 +397,21 @@ def _requires_exact_history(messages: list[ModelMessage]) -> bool:
     if messages and isinstance(messages[-1], ModelResponse) and messages[-1].state == "suspended":
         return True
     pending: set[str] = set()
+    previous_response_calls: set[str] = set()
     for message in messages:
         if isinstance(message, ModelResponse):
             pending.update(part.tool_call_id for part in message.parts if isinstance(part, BaseToolCallPart))
+            previous_response_calls = {part.tool_call_id for part in message.parts if isinstance(part, ToolCallPart)}
+        else:
+            if any(
+                isinstance(part, RetryFeedbackPart) or (isinstance(part, RetryPromptPart) and part.tool_name is None)
+                for part in message.parts
+            ):
+                # A model-level retry rejects the preceding response before function-tool dispatch.
+                # Its generated ID does not match those calls. Older and provider-native calls
+                # still need their own results; a retry before a response retires no calls.
+                pending.difference_update(previous_response_calls)
+            previous_response_calls.clear()
         # Provider-executed native tools return inside ModelResponse, not ModelRequest.
         pending.difference_update(
             part.tool_call_id for part in message.parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)

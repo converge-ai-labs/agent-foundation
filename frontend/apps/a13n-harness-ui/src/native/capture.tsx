@@ -95,7 +95,7 @@ export function CaptureContext({
     try {
       if (!draft.synchronized || draft.replacement)
         throw new Error(
-          "Reconnect the conversation's shared input before capturing context.",
+          "Reconnect the chat's shared input before capturing context.",
         );
       if (attachmentSelections(draft.doc).length >= 8)
         throw new Error("Remove an attachment first (limit: eight).");
@@ -112,11 +112,11 @@ export function CaptureContext({
         draft.replacement
       )
         throw new Error(
-          "The shared draft was replaced during capture. Rejoin before adding context again.",
+          "The shared draft changed. Rejoin it before attaching this content.",
         );
       if (attachmentSelections(draft.doc).length >= 8)
         throw new Error(
-          "The shared input now has eight attachments. Remove one before adding context again.",
+          "The draft already has eight attachments. Remove one to add this content.",
         );
       const attachment = captured.attachment;
       queries.setQueryData(
@@ -128,7 +128,7 @@ export function CaptureContext({
         setMessage(
           compact
             ? "Added to chat."
-            : "Added to the conversation. Review it before sending.",
+            : "Added to the chat. Review it before sending.",
         );
     } catch (failure) {
       if (currentThread.current === threadId) setError(failure);
@@ -165,7 +165,7 @@ export function CaptureContext({
           onClick={() => void capture()}
           loading={pending}
         >
-          {range ? "Add selected lines to message" : "Add to message"}
+          {range ? "Attach selection" : "Add to message"}
         </Button>
         {rangesSupported && (
           <label className={styles.check}>
@@ -184,7 +184,7 @@ export function CaptureContext({
             disabled={!threadId || disabled || pending}
             onClick={() => void capture(selection)}
           >
-            Add selection to message
+            Attach selection
           </Button>
         )}
       </div>
@@ -204,25 +204,25 @@ export function CaptureContext({
       )}
       {text && !rangesSupported && (
         <small>
-          This source contains nonstandard line separators. Use whole-source
-          capture; editor line numbers cannot identify the API's lines exactly.
+          This file uses unusual line breaks. Attach the whole file so the
+          selection stays accurate.
         </small>
       )}
       <small>
         {threadId
-          ? "Adds a saved copy to this conversation; it does not send a message."
-          : "Open a conversation to add file context."}
+          ? "Adds a saved copy to this chat; it does not send a message."
+          : "Open a chat to add file context."}
       </small>
       {disabled && (
         <small>
-          Save and refresh your file before capturing its reviewed disk content.
+          Save and refresh the file before attaching its saved content.
         </small>
       )}
       {message && (
         <div className={styles.actions}>
           <p role="status">{message}</p>
           <Button size="sm" variant="ghost" onClick={returnToChat}>
-            Return to conversation
+            Return to chat
           </Button>
         </div>
       )}

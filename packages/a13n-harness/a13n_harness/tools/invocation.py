@@ -5,19 +5,26 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import hashlib
-from collections.abc import AsyncIterable, Generator, Mapping
+from collections.abc import AsyncIterable, Awaitable, Callable, Generator, Mapping
 from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import CallToolsNode, RunContext, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed
+from pydantic_ai.capabilities import (
+    AbstractCapability,
+    AgentNode,
+    CapabilityOrdering,
+    ValidatedToolArgs,
+    WrapToolExecuteHandler,
+)
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
+from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
@@ -27,16 +34,21 @@ from a13n_harness._json import (
     dump_json_bytes,
     project_json,
 )
+from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
 )
+from a13n_harness.tools._retained_toolsets import invocation_scopes, retain_dynamic_toolsets
 from a13n_harness.tools._source import tool_call_source_scope
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
@@ -165,7 +177,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         accepted = ctx.deps._deferred_input
         resume = accepted.pending if accepted is not None else None
         if isinstance(node, CallToolsNode) and resume is not None and not resume.recovery:
-            await record_approval_denials(resume.requests, resume.results, context=ctx.deps)
+            await record_approval_denials(resume.requests.target_requests(), resume.results, context=ctx.deps)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
             recovery.native_results = node.tool_call_results
@@ -189,6 +201,9 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         # before any context Capability can replace that history.
         if ctx.deps._deferred_input is not None:
             ctx.deps._deferred_input.reconcile(ctx.messages)
+            ctx.deps._deferred_input.calls.clear()
+            ctx.deps._deferred_input.metadata.clear()
+        await ctx.deps._tool_executions.reconcile(ctx.deps.tool_execution, ctx.deps.thread_id, ctx.messages)
         ctx.deps._tool_permission_checks.clear()
         ctx.deps._tool_pending_approvals.clear()
         # Recovery applies only before the model makes its next decision.
@@ -205,6 +220,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         tool_def: ToolDefinition,
         args: str | dict[str, Any],
     ) -> str | dict[str, Any]:
+        capture_tool_call(ctx, call, tool_def)
         if permission_mode(ctx, tool_def) == "deny":
             raise ToolFailed("Tool invocation is denied by its permission configuration.")
         return args
@@ -238,6 +254,23 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         # retain their structured values until the outer runner returns.
         return _render_tool_return(result) if isinstance(result, ToolReturn) else result
 
+    async def wrap_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+        handler: WrapToolExecuteHandler,
+    ) -> Any:
+        result = await handler(args)
+        # Retire provenance only after the complete execution chain returns:
+        # inner wrappers can still defer after after_tool_execute has run.
+        # External completion bypasses execution and retains its marker.
+        if (state := ctx.deps._deferred_input) is not None:
+            state.metadata.get(call.tool_call_id, {}).pop("a13n.harness.deferred-function-id", None)
+        return result
+
     async def handle_deferred_tool_calls(
         self,
         ctx: RunContext[AgentContext],
@@ -254,12 +287,25 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                     **requests.metadata.get(call.tool_call_id, {}),
                     **captured,
                 }
+        from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
         for call in requests.calls:
             definition = ctx.tools.get(call.tool_name)
-            if definition is not None and definition.kind in {"function", "unapproved"}:
-                requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = (
-                    tool_identity(definition).tool_id
-                )
+            if definition is not None and definition.kind == "external":
+                marker = (definition.metadata or {}).get(CLIENT_TOOL_MARKER_KEY)
+                if marker is not None:
+                    requests.metadata.setdefault(call.tool_call_id, {})[CLIENT_TOOL_MARKER_KEY] = {
+                        "declared_name": marker["declared_name"],
+                        "toolset_id": marker["toolset_id"],
+                    }
+            state = ctx.deps._deferred_input
+            function_id = (
+                state.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")
+                if state is not None
+                else None
+            )
+            if function_id is not None:
+                requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = function_id
         if ctx.deps.deferred_tools_supported:
             return None
         message = "Deferred tool interaction is unavailable for this Run."
@@ -285,6 +331,28 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
 class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     """Normalize definitions, authorize managed calls, and bound function results."""
 
+    _context: AgentContext | None = field(default=None, repr=False)
+    _scope: RetainedScope | None = field(default=None, repr=False)
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
+        wrapped = self.wrapped
+        if ctx.deps.tool_execution is not None and ctx.deps._tool_executions.enabled:
+            wrapped = retain_dynamic_toolsets(wrapped)
+        return replace(self, wrapped=await wrapped.for_run(ctx), _context=ctx.deps, _scope=None)
+
+    async def __aenter__(self) -> Self:
+        if self._context is None or self._context.tool_execution is None or not self._context._tool_executions.enabled:
+            return await super().__aenter__()
+        self._scope = RetainedScope(self.wrapped)
+        await self._scope.ready()
+        return self
+
+    async def __aexit__(self, *args: Any) -> bool | None:
+        if self._scope is None:
+            return await super().__aexit__(*args)
+        await self._scope.close()
+        return None
+
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         _validate_final_toolset_wrapper_order(self.wrapped)
         _validate_client_run_attachment(ctx)
@@ -295,6 +363,12 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         for name, tool in tools.items():
             tool = identify_tool(tool)
+            source = tool.toolset
+            while isinstance(source, WrapperToolset):
+                source = source.wrapped
+            if isinstance(source, MCPToolset):
+                # Preserve server schemas without inferring provider strict-mode support.
+                tool = replace(tool, tool_def=replace(tool.tool_def, strict=False))
             tool_def = tool.tool_def
             metadata_values = tool_def.metadata or {}
             reserved_present = HARNESS_TOOL_METADATA_KEY in metadata_values
@@ -364,6 +438,33 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         ctx: RunContext[AgentContext],
         tool: ToolsetTool[AgentContext],
     ) -> Any:
+        state = ctx.deps._tool_executions
+        if ctx.usage_limits is not None:
+            projected = replace(ctx.usage, tool_calls=ctx.usage.tool_calls + state.usage_pending + 1)
+            ctx.usage_limits.check_before_tool_call(projected)
+        state.usage_pending += 1
+        call_id = ctx.tool_call_id or name
+        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
+        if callable(mode):
+            mode = mode(tool_args)
+        unsupported = not _OWNED_TOOL_EXECUTION.get() and (
+            mode not in {"owned", "owned_auto", "control", "process"}
+            or (mode in {"owned", "owned_auto"} and self._scope is None)
+        )
+        if unsupported:
+            ctx.deps._tool_executions.block_handoff(call_id)
+        try:
+            return await self._authorize_and_call(name, tool_args, ctx, tool)
+        finally:
+            # Native ToolManager records success immediately after this return.
+            # Reserving here covers nested and foreground calls with one ledger.
+            state.usage_pending -= 1
+            if unsupported:
+                ctx.deps._tool_executions.unblock_handoff(call_id)
+
+    async def _authorize_and_call(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
         tool = identify_tool(tool)
         check = await check_permission(ctx, tool.tool_def, tool_args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
@@ -399,13 +500,17 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         metadata_values = tool_def.metadata or {}
         raw_metadata = metadata_values.get(HARNESS_TOOL_METADATA_KEY)
         if raw_metadata is None:
-            result = await self._call_observed(name, tool_args, ctx, tool)
-            return await _apply_result_policy(
-                result,
-                _UNMANAGED_OUTPUT_POLICY,
-                context=ctx.deps,
-                reject_non_json=False,
-            )
+
+            async def unmanaged() -> Any:
+                result = await self._call_observed(name, tool_args, ctx, tool)
+                return await _apply_result_policy(
+                    result,
+                    _UNMANAGED_OUTPUT_POLICY,
+                    context=ctx.deps,
+                    reject_non_json=False,
+                )
+
+            return await self._execute_owned(unmanaged, ctx, tool, tool_args)
         managed = normalize_harness_tool_metadata(raw_metadata)
         policy = _resolve_policy(ctx) or _DEFAULT_INVOCATION_POLICY
 
@@ -444,6 +549,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             }
             raise ApprovalRequired(metadata=metadata)
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
+        return await self._execute_owned(
+            lambda: self._call_managed(name, prepared, ctx, tool, managed, policy), ctx, tool, tool_args
+        )
+
+    async def _call_managed(
+        self,
+        name: str,
+        prepared: _PreparedInvocation,
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+        managed: HarnessToolMetadata,
+        policy: InvocationPolicyCapability,
+    ) -> Any:
+        invocation = prepared.context
         leases: list[CredentialLease] = []
         lease_stack = AsyncExitStack()
         grant = None
@@ -517,6 +636,81 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             return safe_result
         finally:
             await lease_stack.aclose()
+
+    async def _execute_owned(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+        tool_args: dict[str, Any],
+    ) -> Any:
+        runtime = ctx.deps.tool_execution
+        state = ctx.deps._tool_executions
+        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
+        if callable(mode):
+            mode = mode(tool_args)
+        if mode in {"control", "process"}:
+            state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
+        sequential = tool.tool_def.sequential or (
+            ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
+        )
+        from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
+
+        if (
+            _NESTED_TOOL_EXECUTION.get()
+            or _OWNED_TOOL_EXECUTION.get()
+            or runtime is None
+            or not state.enabled
+            or mode == "control"
+        ):
+            return await operation()
+        if self._scope is None or mode not in {"owned", "owned_auto"}:
+            return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
+        assert ctx.tool_call_id is not None
+        resources = AsyncExitStack()
+        resources.push_async_callback(state.retain())
+        try:
+            resources.push_async_callback(self._scope.retain())
+            for scope in invocation_scopes(tool, ctx):
+                resources.push_async_callback(scope.retain())
+        except BaseException:
+            await resources.aclose()
+            raise
+
+        if (tool.tool_def.metadata or {}).get("a13n.codeact.runner") is True:
+            state.history_calls.add(ctx.tool_call_id)
+            resources.callback(state.history_calls.discard, ctx.tool_call_id)
+        release = resources.aclose
+
+        try:
+            record = runtime.admit(
+                operation,
+                thread_id=ctx.deps.thread_id,
+                run_id=ctx.deps.run_id,
+                tool_call_id=ctx.tool_call_id,
+                tool_name=tool.tool_def.name,
+                release=release,
+                sequential=sequential,
+            )
+        except BaseException:
+            await release()
+            raise
+        state.calls[ctx.tool_call_id] = record
+        state.unblock_handoff(ctx.tool_call_id)
+        try:
+            result = await state.wait_foreground(
+                runtime, ctx.deps.thread_id, record.execution_id, automatic=mode == "owned_auto"
+            )
+        except asyncio.CancelledError:
+            result = await runtime.result(ctx.deps.thread_id, record.execution_id)
+        if result is not None and result.record.result_available:
+            return state.delivered_result(ctx.tool_call_id, result.record, result.result)
+        if result is not None and result.retry_prompt is not None:
+            raise ModelRetry(result.retry_prompt)
+        if result is not None and result.record.terminal:
+            raise ToolFailed(result.record.error or f"Tool execution {result.record.status}.")
+        runtime.release_foreground(ctx.deps.thread_id, record.execution_id)
+        return state.receipt(result.record if result is not None else record)
 
     async def _call_observed(
         self,
@@ -730,16 +924,16 @@ async def _emit_best_effort(
 def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
     from a13n_harness.tools.surface import ToolSurfaceToolset
     from a13n_harness.toolsets.codeact import CodeActToolset
-    from a13n_harness.toolsets.tool_proxy import ToolProxySurfaceToolset
+    from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset
 
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
-    if isinstance(current, ToolProxySurfaceToolset):
+    if isinstance(current, ToolSearchSurfaceToolset):
         current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(
-            "Only CodeAct and ToolProxy may wrap the mandatory tool surface inside the execution boundary.",
+            "Only CodeAct and ToolSearch may wrap the mandatory tool surface inside the execution boundary.",
             code="tool_surface_order_invalid",
             details={"toolset_type": type(current).__name__},
         )
@@ -777,7 +971,16 @@ def _validate_client_marker(tool_name: str, metadata: Mapping[str, Any]) -> None
     marker = metadata.get(CLIENT_TOOL_MARKER_KEY)
     if marker is None:
         return
-    if not isinstance(marker, Mapping) or marker.get("declared_name") != tool_name:
+    from a13n_harness.tools.tool_search import PROXY_MEMBERSHIP_KEY, ToolSearchMembership, grouped_tool_name
+
+    membership = metadata.get(PROXY_MEMBERSHIP_KEY)
+    declared = marker.get("declared_name") if isinstance(marker, Mapping) else None
+    grouped = (
+        isinstance(membership, ToolSearchMembership)
+        and membership.tool == declared
+        and grouped_tool_name(membership.group, membership.tool) == tool_name
+    )
+    if not isinstance(marker, Mapping) or (declared != tool_name and not grouped):
         raise DefinitionError(
             "A client tool was renamed after its declaration was materialized.",
             code="client_tool_name_changed",
@@ -797,7 +1000,8 @@ def _validate_resume_surface(
     if requests is None or ctx.run_step != 0 or ctx.run_id != ctx.deps._model_recovery.attempt_id:
         return
     results = resume.results if resume is not None else recovery.results if recovery is not None else None
-    for call in requests.calls:
+    for item in requests.calls:
+        call = item.target_call
         name = call.tool_name
         tool = tools.get(name)
         function_id = requests.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")
@@ -805,17 +1009,29 @@ def _validate_resume_surface(
             tool is None
             and function_id is None
             and results is not None
-            and isinstance(results.calls.get(call.tool_call_id), ToolFailed)
+            and isinstance(
+                results.calls.get(call.tool_call_id if resume is not None else item.model_call.tool_call_id), ToolFailed
+            )
         )
-        matches = negative_closure or (
-            tool is not None
-            and (
-                (tool.tool_def.kind == "external" and function_id is None)
-                or (
-                    function_id is not None
-                    and tool.tool_def.kind in {"function", "unapproved"}
-                    and tool_identity(tool.tool_def).tool_id == function_id
-                )
+        if negative_closure:
+            # Recording an absent external target's failure needs no current
+            # dispatcher, including when its caller was a proxy.
+            continue
+        validate_forwarded_call(item, tools)
+        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
+            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
+        from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
+        retained_marker = requests.metadata.get(call.tool_call_id, {}).get(CLIENT_TOOL_MARKER_KEY)
+        current_marker = (tool.tool_def.metadata or {}).get(CLIENT_TOOL_MARKER_KEY) if tool is not None else None
+        if retained_marker != current_marker:
+            raise DefinitionError("The pending client declaration changed.", code="deferred_surface_mismatch")
+        matches = tool is not None and (
+            (tool.tool_def.kind == "external" and function_id is None)
+            or (
+                function_id is not None
+                and tool.tool_def.kind in {"function", "unapproved"}
+                and tool_identity(tool.tool_def).tool_id == function_id
             )
         )
         if not matches:
@@ -825,8 +1041,12 @@ def _validate_resume_surface(
                 details={"tool_name": name},
             )
 
-    for request in requests.approvals:
+    for item in requests.approvals:
+        validate_forwarded_call(item, tools)
+        request = item.target_call
         tool = tools.get(request.tool_name)
+        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
+            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
         if tool is None or tool.tool_def.kind not in {"function", "unapproved"}:
             raise DefinitionError(
                 "The current tool surface does not match the pending approval.",

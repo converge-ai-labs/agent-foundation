@@ -22,7 +22,12 @@ from a13n_harness import (
     ModelRecoveryPolicy,
     RunBindings,
 )
+from a13n_harness._context_history import (
+    _COMPACTION_PROMPT,
+    _previous_assistant_reference,
+)
 from a13n_harness.capabilities import (
+    CodeActCapability,
     CompactionCapability,
     CompactionPolicy,
     FileContextCapability,
@@ -34,10 +39,6 @@ from a13n_harness.capabilities import (
     WorkingStateCapability,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
-)
-from a13n_harness.capabilities.context import (
-    _COMPACTION_PROMPT,
-    _previous_assistant_reference,
 )
 from a13n_harness.environment import (
     EnvironmentAction,
@@ -76,6 +77,9 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
+    RetryInfo,
+    RetryPromptPart,
     TextContent,
     TextPart,
     ThinkingPart,
@@ -484,8 +488,6 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order(png_image_
 async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     tool_choice: str | None, codeact_enabled: bool
 ) -> None:
-    from a13n_harness.capabilities import CodeActCapability
-
     calls: list[tuple[list[ModelMessage], AgentInfo]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -697,6 +699,211 @@ async def test_compaction_resumes_after_completed_native_tools(tool_name: str) -
         for message in result.state.message_history
         for part in message.parts
     )
+
+
+async def test_compaction_resumes_after_codeact_rejects_a_streamed_tool_batch() -> None:
+    compactions = 0
+    ordinary = 0
+    executed: list[str] = []
+    requests: list[list[ModelMessage]] = []
+    old_history = "Synthetic historical context. " * 10_000
+
+    class UsageModel(FunctionModel):
+        @asynccontextmanager
+        async def request_stream(self, messages, model_settings, model_request_parameters, run_context=None):
+            first_request = ordinary == 0
+            async with super().request_stream(
+                messages, model_settings, model_request_parameters, run_context
+            ) as response:
+                # FunctionModel streams do not estimate input usage from their messages.
+                if first_request:
+                    response.usage.input_tokens = 21_000
+                yield response
+
+    def inspect_sample() -> str:
+        executed.append("inspected")
+        return "Synthetic sample result"
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal compactions, ordinary
+        del info
+        requests.append(deepcopy(messages))
+        if _COMPACTION_PROMPT in _user_text(messages):
+            compactions += 1
+            assert executed == []
+            assert any(
+                isinstance(part, UserPromptPart) and "only executable tool call" in str(part.content)
+                for message in messages
+                for part in message.parts
+            )
+            assert {
+                part.tool_call_id
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
+            } == {"rejected-code", "rejected-inspection"}
+            yield "Summary: inspect the synthetic sample. The rejected tool batch was not executed."
+            return
+        ordinary += 1
+        if ordinary == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code", json_args='{"code":"inspect_sample()"}', tool_call_id="rejected-code"
+                ),
+                1: DeltaToolCall(name="inspect_sample", json_args="{}", tool_call_id="rejected-inspection"),
+            }
+        elif ordinary == 2:
+            yield {0: DeltaToolCall(name="inspect_sample", json_args="{}", tool_call_id="accepted-inspection")}
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(old_history)]),
+            # Usage is first reported by the rejected streamed response below.
+            ModelResponse(parts=[TextPart("Earlier answer")]),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=UsageModel(stream_function=stream),
+        capabilities=(
+            CodeActCapability(),
+            Capability(id="sample", tools=[inspect_sample]),
+            CompactionCapability(CompactionPolicy(trigger_tokens=20_000)),
+        ),
+    )
+    result = await executable.run("Continue the inspection", bindings=RunBindings.embedded(), previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert compactions == 1
+    assert executed == ["inspected"]
+    assert ordinary == 3
+    assert old_history not in _user_text(requests[-1])
+    assert result.state is not None
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    resumed = await executable.run("Continue again", bindings=RunBindings.embedded(), previous_state=restored)
+    assert resumed.output_or_raise() == "done"
+    assert compactions == 1
+    assert executed == ["inspected"]
+    assert old_history not in _user_text(requests[-1])
+
+
+async def test_compaction_after_restore_uses_native_repair_of_older_function_calls() -> None:
+    requests: list[list[ModelMessage]] = []
+    old_history = "Synthetic historical context. " * 10_000
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        requests.append(deepcopy(messages))
+        if _COMPACTION_PROMPT in _user_text(messages):
+            assert any(
+                isinstance(part, ToolReturnPart)
+                and part.tool_call_id == "older-pending"
+                and part.outcome == "interrupted"
+                for message in messages
+                for part in message.parts
+            )
+            yield "Summary: the older tool call was interrupted."
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(old_history)]),
+            ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="older-pending")]),
+            ModelRequest(parts=[UserPromptPart("Continue after the interruption")]),
+            ModelResponse(parts=[TextPart("Earlier answer")], usage=RequestUsage(input_tokens=21_000)),
+        )
+    )
+    restored = HarnessState.model_validate_json(previous.model_dump_json())
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=20_000)),),
+    )
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=restored)
+
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 2
+    assert _COMPACTION_PROMPT in _user_text(requests[0])
+    assert old_history not in _user_text(requests[-1])
+
+
+@pytest.mark.parametrize("older_pending", [False, True])
+@pytest.mark.parametrize("tool_retry", [False, True])
+@pytest.mark.parametrize("native", [False, True])
+def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool, native: bool) -> None:
+    history: list[ModelMessage] = []
+    if older_pending:
+        history.append(ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="older-pending")]))
+        history.append(ModelRequest(parts=[UserPromptPart("Another input")]))
+    rejected = ModelResponse(
+        parts=[
+            ToolCallPart("run_code", {"code": "1 + 1"}, tool_call_id="rejected-code"),
+            ToolCallPart("lookup", {}, tool_call_id="rejected-lookup"),
+        ]
+    )
+    history.extend(
+        [
+            rejected,
+            ModelRequest(
+                parts=[
+                    (
+                        ToolReturnPart("lookup", "Retry the response", "rejected-lookup", outcome="retried")
+                        if tool_retry
+                        else RetryFeedbackPart("Retry the response", retry=RetryInfo(cause="model_retry"))
+                    )
+                    if native
+                    else RetryPromptPart(
+                        "Retry the response",
+                        tool_name="lookup" if tool_retry else None,
+                        tool_call_id="rejected-lookup" if tool_retry else "model-retry",
+                    )
+                ]
+            ),
+            ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="later-call")]),
+            ModelRequest(parts=[ToolReturnPart("lookup", "done", tool_call_id="later-call")]),
+        ]
+    )
+    # This raw-history guard does not perform Pydantic AI's outgoing/start-of-run repair.
+    # Serialization alone also leaves the calls unchanged; actual Run restoration repairs older calls.
+    before = deepcopy(history)
+    assert _requires_exact_history(history) is (older_pending or tool_retry)
+    assert history == before
+    restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(history))
+    assert _requires_exact_history(restored) is (older_pending or tool_retry)
+
+
+@pytest.mark.parametrize("native_completed", [False, True])
+def test_model_retry_preserves_unresolved_native_tools(native_completed: bool) -> None:
+    history: list[ModelMessage] = [
+        ModelResponse(
+            parts=[
+                NativeToolCallPart("web_search", {}, tool_call_id="native-call"),
+                *(
+                    [NativeToolReturnPart("web_search", "result", tool_call_id="native-call")]
+                    if native_completed
+                    else []
+                ),
+                ToolCallPart("lookup", {}, tool_call_id="rejected-call"),
+            ]
+        ),
+        ModelRequest(parts=[RetryPromptPart("Retry the response", tool_call_id="model-retry")]),
+    ]
+
+    assert _requires_exact_history(history) is (not native_completed)
+
+
+def test_model_retry_before_a_response_keeps_pending_calls() -> None:
+    history: list[ModelMessage] = [
+        ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="pending-call")]),
+        ModelRequest(parts=[UserPromptPart("Another input")]),
+        ModelRequest(parts=[RetryPromptPart("Retry before requesting a response", tool_call_id="model-retry")]),
+    ]
+
+    assert _requires_exact_history(history)
 
 
 async def test_compaction_preserves_native_provider_cache_prefixes() -> None:
@@ -1052,14 +1259,18 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
     assert "Original task" in _user_text(list(result.all_messages()))
 
 
-async def test_compaction_preserves_outer_request_limit() -> None:
-    calls = 0
+@pytest.mark.parametrize("request_limit", [0, 1, 2, None])
+async def test_compaction_preserves_outer_request_limit(request_limit: int | None) -> None:
+    calls: list[str] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal calls
-        del messages, info
-        calls += 1
-        yield "unexpected"
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "done"
 
     previous = HarnessState.new(
         message_history=(
@@ -1077,18 +1288,78 @@ async def test_compaction_preserves_outer_request_limit() -> None:
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    result = await executable.run(
+    events: list[HarnessEvent] = []
+    async with executable.stream(
         "Continue",
         bindings=RunBindings.embedded(),
         previous_state=previous,
-        usage_limits=UsageLimits(request_limit=0),
+        usage_limits=UsageLimits(request_limit=request_limit),
+    ) as run:
+        result = await _consume_run(run, events)
+
+    if request_limit == 0:
+        assert result.status == "failed"
+        assert result.failure is not None
+        assert result.failure.code == "usage_limit_exceeded"
+        assert calls == []
+    else:
+        assert result.output_or_raise() == "done"
+        assert calls == (["answer"] if request_limit == 1 else ["summary", "answer"])
+    assert result.usage.requests == len(calls)
+    if request_limit in (0, 1):
+        from a13n_harness.capabilities.context import CompactionSummaryEvent, ContextRestoredEvent
+
+        assert "Original task" in _user_text(list(result.all_messages()))
+        assert not any(isinstance(item.event, (CompactionSummaryEvent, ContextRestoredEvent)) for item in events)
+        assert not any(
+            isinstance(item.event, HarnessExtensionEvent)
+            and item.event.kind == "context"
+            and str(item.event.payload.get("type", "")).startswith("compaction_")
+            for item in events
+        )
+
+
+async def test_compaction_leaves_last_request_after_current_run_usage() -> None:
+    calls: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "long response " * 2_000 if len(calls) == 1 else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    assert result.status == "failed"
-    assert result.failure is not None
-    assert result.failure.code == "usage_limit_exceeded"
-    assert result.usage.requests == 0
-    assert calls == 0
+    @executable._agent.output_validator
+    def validate_output(output: str) -> str:
+        if output != "done":
+            raise ModelRetry("Try again")
+        return output
+
+    events: list[HarnessEvent] = []
+    async with executable.stream(
+        "Original task", bindings=RunBindings.embedded(), usage_limits=UsageLimits(request_limit=2)
+    ) as run:
+        result = await _consume_run(run, events)
+
+    assert result.output_or_raise() == "done"
+    assert calls == ["answer", "answer"]
+    assert result.usage.requests == 2
+    snapshots = [
+        item.event.payload
+        for item in events
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "context_snapshot"
+    ]
+    assert any(snapshot["request_tokens"] >= 2_000 for snapshot in snapshots)
+    assert "Original task" in _user_text(list(result.all_messages()))
 
 
 async def test_compaction_fails_open_on_blank_summary() -> None:
@@ -1325,6 +1596,139 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
     assert len(content.split("\n[File context", 1)[0].strip()) <= 127
 
 
+@pytest.mark.parametrize("root_guidance", [False, True])
+async def test_project_guidance_discovers_only_entrypoints_in_the_selected_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root_guidance: bool
+) -> None:
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+
+    workspace = tmp_path / "selected"
+    workspace.mkdir()
+    (tmp_path / "AGENTS.md").write_text("ANCESTOR BODY")
+    if root_guidance:
+        (workspace / "AGENTS.md").write_text("ROOT BODY")
+    for relative in (".agents/skills", "backend/.agents/skills", "frontend", "backend/deeper", ".hidden"):
+        (workspace / relative).mkdir(parents=True, exist_ok=True)
+    for relative in ("backend", "frontend", "backend/deeper", ".hidden"):
+        (workspace / relative / "AGENTS.md").write_text("CHILD BODY")
+    (workspace / "backend/.agents/skills/SKILL.md").write_text("INVALID SKILL BODY")
+    reads = []
+    read_text = LocalFileOperator.read_text
+
+    async def read(self, path, **kwargs):
+        reads.append(path)
+        return await read_text(self, path, **kwargs)
+
+    monkeypatch.setattr(LocalFileOperator, "read_text", read)
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(_user_text(messages))
+        assert "<available-skills>" not in (info.instructions or "")
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(FileContextCapability(),),
+    )
+    await executable.run(
+        "Work on backend",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path, default_working_directory="/selected")),
+    )
+    text = seen[0]
+    payload = json.loads(text.split("<project-guidance>\n", 1)[1].split("\n</project-guidance>", 1)[0].splitlines()[-1])
+    assert payload == {
+        "agents_md": ["/workspace/selected/backend/AGENTS.md", "/workspace/selected/frontend/AGENTS.md"],
+        "skill_directories": [".agents/skills", "/workspace/selected/backend/.agents/skills"],
+        "incomplete": False,
+    }
+    assert ("ROOT BODY" in text) is root_guidance
+    assert "ANCESTOR BODY" not in text and "CHILD BODY" not in text and "INVALID SKILL BODY" not in text
+    assert reads == ["/selected/AGENTS.md"]
+
+
+async def test_project_guidance_can_be_disabled_without_disabling_root_contents(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("ROOT BODY")
+    (tmp_path / "child").mkdir()
+    (tmp_path / "child/AGENTS.md").write_text("CHILD BODY")
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(_user_text(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(FileContextCapability(FileContextConfiguration(include_project_guidance=False)),),
+    )
+    await executable.run("go", bindings=RunBindings.embedded(environment=_local_binding(tmp_path)))
+    assert "ROOT BODY" in seen[0] and "project-guidance" not in seen[0] and "CHILD BODY" not in seen[0]
+
+
+async def _project_guidance_text(root: Path) -> str:
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(_user_text(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(FileContextCapability(),),
+    )
+    await executable.run("go", bindings=RunBindings.embedded(environment=_local_binding(root)))
+    return seen[0].split("<project-guidance>\n", 1)[1].split("\n</project-guidance>", 1)[0]
+
+
+@pytest.mark.parametrize("count,long_names", [(65, False), (60, True)])
+async def test_project_guidance_bounds_scanning_and_output(tmp_path: Path, count: int, long_names: bool) -> None:
+    for index in range(count):
+        name = f"project-{index:02d}" + ("项目" * 30 if long_names else "")
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "AGENTS.md").write_text("BODY")
+        (directory / ".agents/skills").mkdir(parents=True)
+    text = await _project_guidance_text(tmp_path)
+    assert text is not None and len(text.encode()) <= 8 * 1024
+    payload = json.loads(text.splitlines()[-1])
+    assert payload["incomplete"] is True
+    assert 0 < len(payload["agents_md"]) <= 64
+    assert all(path.endswith("/AGENTS.md") for path in payload["agents_md"])
+    assert all(path.endswith("/.agents/skills") for path in payload["skill_directories"])
+
+
+async def test_project_guidance_marks_failed_probes_and_skips_symlink_children(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+
+    for name in ("allowed", "denied"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "AGENTS.md").write_text("BODY")
+    try:
+        (tmp_path / "linked").symlink_to(tmp_path / "allowed", target_is_directory=True)
+    except OSError:
+        pass  # Windows may not allow symlink creation without Developer Mode.
+    original = LocalFileOperator.stat
+
+    async def stat(self, path):
+        if "/denied/" in path:
+            raise EnvironmentError("denied", code="environment_permission_denied")
+        return await original(self, path)
+
+    monkeypatch.setattr(LocalFileOperator, "stat", stat)
+    text = await _project_guidance_text(tmp_path)
+    assert text is not None
+    payload = json.loads(text.splitlines()[-1])
+    assert payload["agents_md"] == ["/workspace/allowed/AGENTS.md"]
+    assert payload["incomplete"] is True
+
+
 async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
     tmp_path: Path,
 ) -> None:
@@ -1334,6 +1738,7 @@ async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and
     (workspace / "extra.md").write_text("Explicit file guidance", encoding="utf-8")
     (workspace / "src").mkdir()
     (workspace / "src" / "module.py").write_text("value = 1", encoding="utf-8")
+    (workspace / "src" / "AGENTS.md").write_text("LOCAL BODY", encoding="utf-8")
     seen: list[list[ModelMessage]] = []
 
     async def inspect_workspace() -> str:
@@ -1385,6 +1790,7 @@ async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and
     assert '"path":"/workspace/project/src/module.py"' in input_text
     assert "Default repository guidance" in input_text
     assert "Explicit file guidance" in input_text
+    assert "<project-guidance>" in input_text and "LOCAL BODY" not in input_text
     assert '<note key="decision">Keep prefix</note>' in input_text
     assert '<context-reminder source="a13n.handoff">' not in input_text
 
@@ -1393,6 +1799,7 @@ async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and
     assert "Workspace file outline (content not loaded)" not in tool_results_text
     assert "Default repository guidance" not in tool_results_text
     assert "Explicit file guidance" not in tool_results_text
+    assert "<project-guidance>" not in tool_results_text
     assert '<notes source="a13n-harness">' not in tool_results_text
     assert '"latest_request_tokens":' in tool_results_text
     assert '"context_window_tokens":200000' in tool_results_text
@@ -1425,6 +1832,8 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
         ),
     )
     (tmp_path / "AGENTS.md").write_text("Repository guidance v2")
+    (tmp_path / "new-project").mkdir()
+    (tmp_path / "new-project/AGENTS.md").write_text("NEW PROJECT BODY")
     second = await executable.run(
         "Continue",
         bindings=RunBindings.embedded(
@@ -1440,6 +1849,9 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
     assert ModelMessagesTypeAdapter.dump_json([seen[1][0]]) == ModelMessagesTypeAdapter.dump_json([seen[0][0]])
     assert "Repository guidance v1" in second_text
     assert "Repository guidance v2" in second_text
+    assert "/workspace/new-project/AGENTS.md" not in first_text
+    assert "/workspace/new-project/AGENTS.md" in second_text
+    assert "NEW PROJECT BODY" not in second_text
     assert '"tenant":"alpha"' in second_text
     assert '"tenant":"beta"' in second_text
     assert "secret" not in second_text
@@ -1459,7 +1871,7 @@ def _user_text(messages: list[ModelMessage]) -> str:
     return "\n".join(text)
 
 
-async def test_concurrent_handoff_summaries_accept_one_state_transition() -> None:
+async def test_concurrent_handoff_summaries_are_rejected_before_state_transition() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1501,8 +1913,7 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         for event in events
         if isinstance(event.event, FunctionToolResultEvent) and event.event.part.tool_name == "summarize"
     ]
-    assert len(tool_results) == 2
-    assert sum(part.outcome == "failed" for part in tool_results) == 1
+    assert tool_results == []
     context_payloads = [
         event.event.payload
         for event in events
@@ -1510,21 +1921,12 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         and event.event.kind == "context"
         and str(event.event.payload.get("type", "")).startswith("handoff_")
     ]
-    assert [payload["type"] for payload in context_payloads] == [
-        "handoff_started",
-        "handoff_prepared",
-        "handoff_completed",
-    ]
-    assert len({payload["operation_id"] for payload in context_payloads}) == 1
+    assert context_payloads == []
     from a13n_harness.toolsets.events import HandoffSummaryEvent
 
-    summaries = [item.event for item in events if isinstance(item.event, HandoffSummaryEvent)]
-    assert len(summaries) == 1
-    assert summaries[0].operation_id == context_payloads[1]["operation_id"]
-    assert summaries[0].tool_call_id in {"summary-concurrent-1", "summary-concurrent-2"}
-    restored_text = str(calls[1])
-    assert summaries[0].summary in _user_text(calls[1])
-    assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)
+    assert not any(isinstance(item.event, HandoffSummaryEvent) for item in events)
+    assert "Handoff must be the only executable tool call in a model response." in str(calls[1])
+    assert "start" in _user_text(calls[1])
 
 
 async def test_compaction_preserves_the_effective_request_model() -> None:

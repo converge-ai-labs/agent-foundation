@@ -10,16 +10,18 @@ import json
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import overload
 
 from a13n_harness.observation import redact_json
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import select
 
-from a13n_service.infra import cursors
+from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError, invalid, not_found
 from a13n_service.infra.telemetry import correlation_attributes
 from a13n_service.providers.traces import Span, SpanPage, SpanQuery, TraceBackendType, TraceProvider
+from a13n_service.runs import trace_reads
 from a13n_service.runs.tables import AttemptRow
 from a13n_service.runs.threads import get_run
 from a13n_service.tenancy.access import workspace_scope
@@ -43,6 +45,7 @@ class TraceBackend(BaseModel):
     queryable_since: datetime | None
 
 
+@overload
 async def list_attempt_spans(
     storage: Storage,
     traces: TraceProvider | None,
@@ -53,7 +56,52 @@ async def list_attempt_spans(
     *,
     limit: int,
     cursor: str | None,
-) -> SpanPage:
+    selection: None = None,
+) -> SpanPage: ...
+
+
+@overload
+async def list_attempt_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    attempt_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection,
+) -> trace_reads.SpanReadPage: ...
+
+
+@overload
+async def list_attempt_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    attempt_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage: ...
+
+
+async def list_attempt_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    attempt_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage:
     """Every span the attempt's Harness run recorded, including its inline child runs."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -68,7 +116,64 @@ async def list_attempt_spans(
     )
     ended = attempt.finished_at or datetime.now(UTC)
     query = SpanQuery(correlation, attempt.created_at - CLOCK_SKEW, ended + CLOCK_SKEW, limit)
-    return await _read(_available(traces), query, cursor=cursor)
+    return await _read(_available(traces), query, cursor=cursor, selection=selection)
+
+
+@overload
+async def list_traces(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    *,
+    session_id: str | None,
+    thread_id: str | None,
+    run_id: str | None,
+    attributes: Sequence[str],
+    started_after: datetime | None,
+    started_before: datetime | None,
+    limit: int,
+    cursor: str | None,
+    selection: None = None,
+) -> SpanPage: ...
+
+
+@overload
+async def list_traces(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    *,
+    session_id: str | None,
+    thread_id: str | None,
+    run_id: str | None,
+    attributes: Sequence[str],
+    started_after: datetime | None,
+    started_before: datetime | None,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection,
+) -> trace_reads.SpanReadPage: ...
+
+
+@overload
+async def list_traces(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    *,
+    session_id: str | None,
+    thread_id: str | None,
+    run_id: str | None,
+    attributes: Sequence[str],
+    started_after: datetime | None,
+    started_before: datetime | None,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage: ...
 
 
 async def list_traces(
@@ -85,7 +190,8 @@ async def list_traces(
     started_before: datetime | None,
     limit: int,
     cursor: str | None,
-) -> SpanPage:
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage:
     """Trace roots, one per attempt; the window defaults to the last day.
 
     Each of `attributes`, a `key:value` selector, matches one string attribute of the root span exactly.
@@ -100,7 +206,9 @@ async def list_traces(
         scope.organization_id, scope.workspace_id, session_id=session_id, thread_id=thread_id, run_id=run_id
     )
     query = SpanQuery({**selected, **correlation}, after, before, limit, roots=True)
-    return await _read(_available(traces), query, cursor=cursor, requested=(started_after, started_before))
+    return await _read(
+        _available(traces), query, cursor=cursor, requested=(started_after, started_before), selection=selection
+    )
 
 
 async def get_trace(
@@ -112,7 +220,93 @@ async def get_trace(
     page = await _read(_available(traces), query, cursor=None)
     if not page.items:
         raise not_found("trace", trace_id)
+    assert isinstance(page.items[0], Span)
     return page.items[0]
+
+
+async def get_trace_span(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    span_id: str,
+) -> Span:
+    """One full observation, selected by both trace and span after workspace authorization."""
+    span = await find_trace_span(storage, traces, actor, workspace_id, trace_id, span_id)
+    if span is None:
+        raise not_found("span", span_id)
+    return span
+
+
+async def find_trace_span(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    span_id: str,
+) -> Span | None:
+    """The one observation the backend query selects by trace and span, never a page of its neighbours.
+
+    A response over the backend bound then means this observation alone exceeds it.
+    """
+    scope = await _read_scope(storage, actor, workspace_id)
+    query = replace(_trace_query(scope, trace_id, 1), span_id=span_id)
+    try:
+        page = await _read(_available(traces), query, cursor=None)
+    except ServiceError as error:
+        if error.code != "payload_too_large":
+            raise
+        limit = error.details.get("limit")
+        message = f"span {span_id} alone exceeds the {limit} byte trace response limit; inspect it in the trace backend"
+        raise ServiceError("payload_too_large", message, {**error.details, "kind": "span", "id": span_id}) from error
+    if not page.items:
+        return None
+    assert isinstance(page.items[0], Span)
+    return page.items[0]
+
+
+@overload
+async def list_trace_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: None = None,
+) -> SpanPage: ...
+
+
+@overload
+async def list_trace_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection,
+) -> trace_reads.SpanReadPage: ...
+
+
+@overload
+async def list_trace_spans(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    *,
+    limit: int,
+    cursor: str | None,
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage: ...
 
 
 async def list_trace_spans(
@@ -124,10 +318,11 @@ async def list_trace_spans(
     *,
     limit: int,
     cursor: str | None,
-) -> SpanPage:
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage:
     scope = await _read_scope(storage, actor, workspace_id)
     query = _trace_query(scope, trace_id, limit)
-    return await _read(_available(traces), query, cursor=cursor)
+    return await _read(_available(traces), query, cursor=cursor, selection=selection)
 
 
 async def describe_backend(
@@ -182,21 +377,42 @@ async def _read(
     *,
     cursor: str | None,
     requested: tuple[datetime | None, datetime | None] = (None, None),
-) -> SpanPage:
+    selection: trace_reads.Selection | None = None,
+) -> SpanPage | trace_reads.SpanReadPage:
     """One page of matching spans; the cursor keeps the backend's position and the first page's resolved window.
 
     `requested` is the window as given; a cursor continues only the same request, so a changed window is refused.
     """
     owner = cursors.query_owner(sorted(query.attributes.items()), query.trace_id, query.roots, requested)
+    if selection is not None:
+        owner = cursors.query_owner(owner, selection.model_dump())
     if cursor is not None:
         position, after, before = _decode(cursor, owner)
         query = replace(query, cursor=position, started_after=after, started_before=before)
-    page = await provider.query(query)
-    items = [_redact(span) for span in page.items if _matches(span, query)]
+    values: list[trace_reads.SpanSummary | trace_reads.SpanOverview | Span] = []
+    if selection is not None and selection.view == "overview":
+        query = replace(query, include_content=False)
+    while True:
+        page = await provider.query(query)
+        items = [_redact(span) for span in page.items if _matches(span, query)]
+        if selection is None:
+            break
+        selected = [span for span in items if selection.matches(span)]
+        if selection.view == "overview":
+            values = [trace_reads.overview(span) for span in selected]
+            break
+        values = [trace_reads.summary(span) if selection.view == "compact" else span for span in selected]
+        # Retry with a smaller backend page before returning anything. Its own cursor then remains exact.
+        count = reads.fit_count(values)
+        if count == len(values):
+            break
+        query = replace(query, limit=max(1, min(count, query.limit - 1)))
     next_cursor = None
     if page.next_cursor is not None:
         resolved = (query.started_after.isoformat(), query.started_before.isoformat())
         next_cursor = cursors.encode("spans", owner, page.next_cursor, *resolved)
+    if selection is not None:
+        return trace_reads.SpanReadPage(items=values, next_cursor=next_cursor)
     return SpanPage(items=items, next_cursor=next_cursor)
 
 
@@ -217,6 +433,7 @@ def _matches(span: Span, query: SpanQuery) -> bool:
     return (
         all(_text(span.attributes.get(key)) == value for key, value in query.attributes.items())
         and (query.trace_id is None or span.trace_id == query.trace_id)
+        and (query.span_id is None or span.id == query.span_id)
         and not (query.roots and span.parent_id is not None)
     )
 

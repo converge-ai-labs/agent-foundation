@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Button } from "a13n-ui";
 import { Panel } from "./ui";
+import styles from "./workbench.module.css";
 
 type InstallPrompt = Event & {
   prompt: () => Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -93,8 +94,8 @@ export function InstallSettings() {
   return (
     <Panel title="Install Harness UI">
       <p>
-        Open this workspace from your desktop or home screen in its own window.
-        The Harness UI server must still be running and reachable.
+        Open Harness from your desktop or home screen. The server must stay
+        running and connected.
       </p>
       {install?.standalone ? (
         <p>Running in an app window.</p>
@@ -115,7 +116,7 @@ export function InstallSettings() {
               </Button>
             </div>
           )}
-          <details>
+          <details className={styles.details}>
             <summary>Manual installation</summary>
             <p>
               Use your browser's Install app or Add to Home Screen option, when

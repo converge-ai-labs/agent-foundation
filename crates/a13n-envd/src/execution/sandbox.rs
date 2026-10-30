@@ -25,7 +25,7 @@ pub(crate) fn command(
     managed: bool,
     ca: Option<&str>,
 ) -> io::Result<Command> {
-    let Sandbox::Restricted { grants } = sandbox else {
+    let Sandbox::Restricted { grants, .. } = sandbox else {
         return Err(io::Error::other(
             "restricted launch requires Sandbox grants",
         ));

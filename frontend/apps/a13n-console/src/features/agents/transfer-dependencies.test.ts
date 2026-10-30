@@ -368,3 +368,33 @@ it("checks default memory mounts and remaps only the memory", async () => {
     { name: "prefs", memory_id: "mem_local", access: "write" },
   ]);
 });
+
+it("remaps grouped membership together with its selected connection", () => {
+  const config = {
+    model: "test",
+    connection_tools: [{ connection_id: "con_source" }],
+    tool_search: {
+      config: { mode: "proxy" as const },
+      groups: {
+        knowledge: {
+          description: "Lookup",
+          connections: ["con_source"],
+          plugins: ["audit"],
+        },
+      },
+    },
+  };
+  const dependency = agentDependencies(config).find(
+    (item) => item.kind === "connection",
+  )!;
+  const replaced = dependency.replace("con_target");
+  expect(replaced.connection_tools).toEqual([{ connection_id: "con_target" }]);
+  expect(replaced.tool_search?.groups?.knowledge).toEqual({
+    description: "Lookup",
+    connections: ["con_target"],
+    plugins: ["audit"],
+  });
+  expect(config.tool_search.groups.knowledge.connections).toEqual([
+    "con_source",
+  ]);
+});

@@ -9,14 +9,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-from a13n_envd_client.eip.v1 import GrantAccess, RestrictedSandbox, SandboxGrant
+from a13n_envd_client.eip.v1 import DisabledSandbox, GrantAccess, RestrictedSandbox, SandboxGrant
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.computer import ComputerDescription
 from a13n_harness.environment.envd_policy import EnvdNetworkConfiguration
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
     LocalEnvdShellProfile,
+    local_envd_native_path,
+    local_envd_path,
 )
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
@@ -38,22 +41,22 @@ def create_sandbox_runtime(
     launch: LocalEnvdLaunchConfiguration | None = None,
     project_access: GrantAccess = GrantAccess.READ_WRITE,
 ) -> LocalEnvdProviderRuntime:
-    """Build an inert Device owner; broad roots cannot expose Host private state."""
-    if sys.platform not in {"linux", "darwin"}:
+    """Build an inert Device owner with platform-native filesystem grants."""
+    launch = launch or LocalEnvdLaunchConfiguration(
+        sandbox=RestrictedSandbox(mode="restricted", grants=(), full_disk_read=sys.platform == "win32"),
+        egress=EnvdNetworkConfiguration(mode="inherit"),
+    )
+    if isinstance(launch.sandbox, RestrictedSandbox) and sys.platform not in {"linux", "darwin", "win32"}:
         raise _unavailable("Local Sandbox is not available on this platform.")
     canonical = tuple(dict.fromkeys(root.resolve(strict=True) for root in roots))
     if not canonical or any(not root.is_dir() for root in canonical):
         raise _unavailable("Sandbox roots must be existing directories.")
-    launch = launch or LocalEnvdLaunchConfiguration(
-        sandbox=RestrictedSandbox(mode="restricted", grants=()),
-        egress=EnvdNetworkConfiguration(mode="deny"),
-    )
     grants = []
     thread_root = None if thread_files_root is None else thread_files_root.resolve(strict=True)
     if isinstance(launch.sandbox, RestrictedSandbox):
         # Only the adapter's own Thread directories bypass the protected-state
         # check. Explicit grants cannot authorize arbitrary application state.
-        for root in (*canonical, *(Path(grant.path) for grant in launch.sandbox.grants)):
+        for root in (*canonical, *(local_envd_native_path(grant.path) for grant in launch.sandbox.grants)):
             root = root.resolve(strict=True)
             if root == thread_root and root in canonical:
                 continue
@@ -67,24 +70,108 @@ def create_sandbox_runtime(
                 for name, access in (("attachments", GrantAccess.READ_ONLY), ("tmp", GrantAccess.READ_WRITE)):
                     child = root / name
                     child.mkdir(exist_ok=True)
-                    grants.append(SandboxGrant(path=child.as_posix(), access=access))
+                    grants.append(SandboxGrant(path=local_envd_path(child), access=access))
             else:
-                grants.append(SandboxGrant(path=root.as_posix(), access=project_access))
-        launch = launch.model_copy(update={"sandbox": RestrictedSandbox(mode="restricted", grants=tuple(grants))})
-    shell = Path("/bin/bash").resolve(strict=True)
-    launch = launch.model_copy(
-        update={
-            "default_working_directory": launch.default_working_directory or canonical[0],
-            "trusted_executable_roots": launch.trusted_executable_roots or (Path("/usr/bin"), Path("/bin")),
-            "shell_profiles": launch.shell_profiles
-            or (LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=("-c",)),),
-        }
-    )
+                grants.append(SandboxGrant(path=local_envd_path(root), access=project_access))
+        launch = launch.model_copy(update={"sandbox": launch.sandbox.model_copy(update={"grants": tuple(grants)})})
+    launch = launch.model_copy(update={"default_working_directory": launch.default_working_directory or canonical[0]})
+    if not launch.full_control:
+        from a13n_harness_ui.extensions.environment_adapters import _host_shell
+
+        shell = _host_shell() if sys.platform == "win32" else Path("/bin/bash")
+        assert shell is not None
+        shell = shell.resolve(strict=True)
+        arguments = ("-NoLogo", "-NoProfile", "-NonInteractive", "-Command") if sys.platform == "win32" else ("-c",)
+        executable_roots = (
+            _windows_executable_roots(shell) if sys.platform == "win32" else (Path("/usr/bin"), Path("/bin"))
+        )
+        launch = launch.model_copy(
+            update={
+                "trusted_executable_roots": launch.trusted_executable_roots or executable_roots,
+                "shell_profiles": launch.shell_profiles
+                or (LocalEnvdShellProfile(profile_id="default", executable=shell, fixed_arguments=arguments),),
+            }
+        )
     return LocalEnvdProviderRuntime(
         executable=executable,
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
         configuration=launch,
     )
+
+
+def _windows_executable_roots(shell: Path) -> tuple[Path, ...]:
+    """Use installed Host tools without inheriting the Host command environment."""
+    candidates = [shell.parent]
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidates.append(Path(system_root) / "System32")
+    candidates.extend(Path(entry) for entry in os.get_exec_path() if entry)
+    # Relative and stale PATH entries must not become cwd-dependent authority
+    # or fail daemon preparation. The native Sandbox still owns file access.
+    return tuple(dict.fromkeys(path.resolve() for path in candidates if path.is_absolute() and path.is_dir()))
+
+
+async def validate_local_envd_runtime(
+    executable: Path,
+    project_path: Path,
+    *,
+    computer_use: bool = False,
+) -> ComputerDescription | None:
+    """Explicit execution and desktop readiness probe, without screenshots or input."""
+    runtime = await to_thread.run_sync(
+        lambda: create_sandbox_runtime(
+            executable,
+            roots=(project_path,),
+            launch=LocalEnvdLaunchConfiguration(
+                sandbox=DisabledSandbox(mode="disabled"), full_control=True, computer_use=computer_use
+            ),
+        )
+    )
+    try:
+        return await probe_local_envd_runtime(runtime, project_path, computer_use=computer_use)
+    finally:
+        with CancelScope(shield=True):
+            await runtime.close()
+
+
+async def probe_local_envd_runtime(
+    runtime: LocalEnvdProviderRuntime,
+    project_path: Path,
+    *,
+    computer_use: bool = False,
+) -> ComputerDescription | None:
+    """Check a shared Host runtime; release only the probe's own Session."""
+    connector = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(project_path.resolve())),
+        runtime=runtime,
+        environment_id="local-envd-probe",
+    )
+    environment = None
+    try:
+        environment = await connector.open()
+        processes = environment.operations.processes
+        if processes is None:
+            raise _unavailable("Local envd execution is unavailable.")
+        started = await processes.start(
+            CommandRequest(
+                command=ShellCommand(profile_id="default", script="echo envd-ready"),
+                output_policy=EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"),
+            )
+        )
+        result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
+        await processes.release(started.process.handle)
+        if result.status.exit_code != 0:
+            raise _unavailable("Local envd execution check failed.")
+        if computer_use:
+            computer = environment.operations.computer
+            if computer is None:
+                raise _unavailable("Computer Use is unavailable on this Host.")
+            return await computer.describe()
+        return None
+    finally:
+        with CancelScope(shield=True):
+            if environment is not None:
+                await environment.close()
 
 
 async def validate_sandbox_runtime(
@@ -106,7 +193,7 @@ async def validate_sandbox_runtime(
             )
         )
         connector = LOCAL_ENVD.execution_connector(
-            LocalEnvdEnvironmentConfiguration(working_directory=project_path.resolve().as_posix()),
+            LocalEnvdEnvironmentConfiguration(working_directory=local_envd_path(project_path.resolve())),
             runtime=runtime,
             environment_id="sandbox-probe",
         )
@@ -119,18 +206,37 @@ async def validate_sandbox_runtime(
             assert files is not None and processes is not None
             from a13n_harness.environment.models import EnvironmentError
 
-            try:
-                await files.read_text(sentinel.as_posix())
-            except EnvironmentError:
-                pass
+            if sys.platform == "win32":
+                if (await files.read_text(local_envd_path(sentinel))).text != "not granted":
+                    raise _unavailable("Sandbox ambient read probe failed.")
+                try:
+                    await files.write_text(local_envd_path(sentinel), "forbidden", mode="replace")
+                except EnvironmentError:
+                    pass
+                else:
+                    raise _unavailable("Sandbox allowed an unrelated Host write.")
             else:
-                raise _unavailable("Sandbox exposed an unrelated Host file.")
+                try:
+                    await files.read_text(local_envd_path(sentinel))
+                except EnvironmentError:
+                    pass
+                else:
+                    raise _unavailable("Sandbox exposed an unrelated Host file.")
             process_check = f"test ! -e /proc/{os.getpid()}/status || exit 42; " if sys.platform == "linux" else ""
             script = (
                 f"test ! -r {shlex.quote(str(sentinel))} || exit 40; "
-                f"if (echo probe > /dev/tcp/127.0.0.1/{port}) 2>/dev/null; then exit 41; fi; "
+                f"(echo probe > /dev/tcp/127.0.0.1/{port}) 2>/dev/null || exit 41; "
                 f"{process_check}printf sandbox-ready"
             )
+            if sys.platform == "win32":
+                path = str(sentinel).replace("'", "''")
+                script = (
+                    f"if ([IO.File]::ReadAllText('{path}') -ne 'not granted') {{ exit 40 }}; "
+                    f"try {{ [IO.File]::WriteAllText('{path}', 'forbidden'); exit 42 }} catch {{}}; "
+                    "$client = [Net.Sockets.TcpClient]::new(); "
+                    f"try {{ $client.Connect('127.0.0.1', {port}) }} "
+                    "catch { exit 41 } finally { $client.Dispose() }; Write-Output sandbox-ready; exit 0"
+                )
             started = await processes.start(
                 CommandRequest(
                     command=ShellCommand(profile_id="default", script=script),
@@ -141,7 +247,7 @@ async def validate_sandbox_runtime(
             )
             result = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=10)
             if result.status.exit_code != 0:
-                raise _unavailable("Sandbox filesystem, process or denied-network probe failed.")
+                raise _unavailable("Sandbox filesystem, process or Host localhost connectivity probe failed.")
             await processes.release(started.process.handle)
         finally:
             with CancelScope(shield=True):

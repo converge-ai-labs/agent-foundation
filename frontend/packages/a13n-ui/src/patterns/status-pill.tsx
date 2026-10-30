@@ -6,14 +6,15 @@ export type StatusPillVariant =
 
 /**
  * Settled states (success, neutral) are a dot and a label with no tint, so the
- * states that ask for attention are the only tinted pills on a screen.
+ * states that ask for attention are the only tinted pills on a screen. Every
+ * variant keeps the same inset, so dots line up down a column.
  */
 const variantClassNames: Record<StatusPillVariant, string> = {
-  danger: "bg-destructive/10 px-2 text-destructive-foreground",
-  info: "bg-info/10 px-2 text-info-foreground",
+  danger: "bg-destructive/10 text-destructive-foreground",
+  info: "bg-info/10 text-info-foreground",
   neutral: "text-muted-foreground",
   success: "text-foreground/80",
-  warning: "bg-warning/12 px-2 text-warning-foreground",
+  warning: "bg-warning/12 text-warning-foreground",
 };
 
 const dotClassNames: Record<StatusPillVariant, string> = {
@@ -42,7 +43,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full py-[3px] font-medium text-[12px] leading-4",
+        "inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2 py-[3px] font-medium text-[12px] leading-4",
         variantClassNames[variant],
         className,
       )}

@@ -1,7 +1,7 @@
 """One engine/session owner, short SQL transaction scopes and the database rules tables declare."""
 
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 from typing import Any, ClassVar
@@ -12,6 +12,7 @@ from sqlalchemy import BigInteger, DateTime, FetchedValue, MetaData, Table, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm.interfaces import ORMOption
 
 from a13n_service.infra.errors import ServiceError
 
@@ -96,12 +97,12 @@ def identity_guarded(table: str) -> str:
     return trigger(table, "guard_identity")
 
 
-def rules(*statements: str, unversioned: tuple[str, ...] = ()) -> dict[str, Any]:
+def rules(*statements: str, unversioned: tuple[str, ...] = (), compare_columns: bool = False) -> dict[str, Any]:
     """The `__table_args__` entry carrying a table's rules, in execution order (functions before triggers).
 
     Changes confined to `unversioned` columns of a `Stamped` table keep its version, and so its ETag.
     """
-    return {"info": {"rules": statements, "unversioned": unversioned}}
+    return {"info": {"rules": statements, "unversioned": unversioned, "compare_columns": compare_columns}}
 
 
 def table_rules(row: type[Base]) -> list[str]:
@@ -113,6 +114,11 @@ def table_rules(row: type[Base]) -> list[str]:
         unversioned = table.info.get("unversioned", ())
         ignored = "'{" + ",".join(unversioned) + "}'::text[]"
         when = f"(to_jsonb(OLD) - {ignored}) IS DISTINCT FROM (to_jsonb(NEW) - {ignored})" if unversioned else None
+        if table.info.get("compare_columns"):
+            names = [column.name for column in table.columns if column.name not in unversioned]
+            old = ", ".join(f'OLD."{name}"' for name in names)
+            new = ", ".join(f'NEW."{name}"' for name in names)
+            when = f"ROW({old}) IS DISTINCT FROM ROW({new})"
         stamp = [trigger(table.name, "stamp_resource", when=when)]
     return [*stamp, *table.info.get("rules", ())]
 
@@ -122,7 +128,7 @@ def schema_rules(rows: Iterable[type[Base]]) -> list[str]:
 
 
 class Storage:
-    def __init__(self, url: str, *, pool_size: int = 5, connect_timeout: int = 5, statement_timeout: int = 10):
+    def __init__(self, url: str, *, pool_size: int = 32, connect_timeout: int = 5, statement_timeout: int = 10):
         self.engine: AsyncEngine = create_async_engine(
             url,
             pool_size=pool_size,
@@ -141,7 +147,7 @@ class Storage:
 
 
 @asynccontextmanager
-async def short_session(storage: Storage) -> AsyncIterator[AsyncSession]:
+async def short_session(storage: Storage) -> AsyncGenerator[AsyncSession]:
     session = storage.sessions()
     try:
         yield session
@@ -151,7 +157,7 @@ async def short_session(storage: Storage) -> AsyncIterator[AsyncSession]:
 
 
 @asynccontextmanager
-async def transaction(storage: Storage) -> AsyncIterator[AsyncSession]:
+async def transaction(storage: Storage) -> AsyncGenerator[AsyncSession]:
     """Commit on normal exit; callbacks registered with `after_commit` run only after that commit succeeded."""
     async with short_session(storage) as session:
         async with session.begin():
@@ -173,10 +179,17 @@ def after_commit(session: AsyncSession, callback: Callable[[], Awaitable[object]
 
 
 async def lock[R: Base](
-    session: AsyncSession, row_type: type[R], row_id: str, *, skip_locked: bool = False
+    session: AsyncSession,
+    row_type: type[R],
+    row_id: str,
+    *,
+    skip_locked: bool = False,
+    options: Sequence[ORMOption] = (),
 ) -> R | None:
     """Refresh and lock a row; optionally return None when another transaction holds it."""
-    return await session.get(row_type, row_id, with_for_update={"skip_locked": skip_locked}, populate_existing=True)
+    return await session.get(
+        row_type, row_id, with_for_update={"skip_locked": skip_locked}, populate_existing=True, options=options
+    )
 
 
 def assign(row: object, changes: Mapping[str, object]) -> list[str]:

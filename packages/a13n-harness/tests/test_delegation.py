@@ -277,7 +277,14 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
     run_override: bool | None,
     expected_child_toolset_guidance: bool,
 ) -> None:
+    from a13n_harness import RequestContext
+
     child_instructions: list[str] = []
+    context = RequestContext(headers={"x-trace": "inline-context"})
+
+    def child_bindings(bindings: RunBindings) -> RunBindings:
+        assert bindings.request_context == context
+        return bindings
 
     async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages
@@ -322,16 +329,18 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
                 name="reviewer",
                 description="Inspect instruction inheritance.",
                 agent=child,
+                run_bindings_factory=child_bindings,
             ),
         ),
     )
     executable = HarnessBuilder().build(parent)
-    bindings = replace(_bindings_factory(), toolset_instructions=run_override)
+    bindings = replace(_bindings_factory(), toolset_instructions=run_override, request_context=context)
 
     result = await executable.run("delegate", bindings=bindings)
 
     assert result.output_or_raise() == "parent-done"
     assert len(child_instructions) == 1
+    assert result.state is not None and "inline-context" not in result.state.model_dump_json()
     assert "Child authored instruction." in child_instructions[0]
     assert ('<tool-instruction name="summarize">' in child_instructions[0]) is expected_child_toolset_guidance
 

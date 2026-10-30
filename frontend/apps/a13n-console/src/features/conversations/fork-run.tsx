@@ -1,4 +1,4 @@
-import { Button, DisclosureSection, Label, ModalFrame, Switch } from "a13n-ui";
+import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
 import { GitBranchIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,7 +8,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, StatePill } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/forms";
+import { FormActions, SwitchField, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
@@ -20,6 +20,7 @@ import {
   type ViewLevel,
 } from "./api";
 import { runRequest } from "./request";
+import { useInteractiveThread } from "./transcript/run-actions";
 import styles from "./fork.module.css";
 
 /** One Run boundary, shared by Chat, Debug and the historical-run dock. */
@@ -47,7 +48,8 @@ export function ForkRun({
   const [fresh, setFresh] = useState(false);
   const idempotency = useIdempotency();
   const agent = useAgent(open ? run.agent_id : undefined);
-  const allowed = can("run");
+  const interactive = useInteractiveThread(thread);
+  const allowed = can("run") && interactive;
   const sealed = !!run.sealed_at && !isActiveRun(run.status);
   const reason = !allowed
     ? t("Run permission is required to create a branch.")
@@ -84,14 +86,6 @@ export function ForkRun({
     onSuccess: (receipt) => {
       const keys = conversationKeys(workspace.id);
       cache.setQueryData(keys.thread(receipt.thread.id), receipt.thread);
-      cache.setQueryData<Schema["ThreadView"][]>(
-        keys.threads(receipt.thread.session_id),
-        (threads) =>
-          threads && [
-            ...threads.filter((thread) => thread.id !== receipt.thread.id),
-            receipt.thread,
-          ],
-      );
       if (receipt.run)
         cache.setQueryData(keys.run(receipt.run.id), receipt.run);
       void invalidateConversation(cache, workspace.id, {
@@ -113,13 +107,11 @@ export function ForkRun({
       navigate(`${path}?${params}`);
     },
   });
+  if (!interactive) return null;
   return (
     <ModalFrame
       open={open}
-      onOpenChange={(next, details) => {
-        if (mutation.isPending) details.cancel();
-        else setOpen(next);
-      }}
+      onOpenChange={setOpen}
       trigger={
         <Button
           type="button"
@@ -127,14 +119,18 @@ export function ForkRun({
           variant="ghost"
           disabled={!!reason}
           title={reason}
+          aria-label={t(compact ? "Create branch" : "Create branch from here")}
         >
           <GitBranchIcon size={14} aria-hidden="true" />
-          {t(compact ? "Create branch" : "Create branch from here")}
+          {/* A narrow run header keeps the glyph and drops the words. */}
+          <span data-action-label>
+            {t(compact ? "Create branch" : "Create branch from here")}
+          </span>
         </Button>
       }
       title={t("Create branch from here")}
       description={t(
-        "Continue from this run's saved history with a new message. The new branch stays in this session; the original conversation can continue.",
+        "Continue from this run's saved history with a new message. The new branch stays in this session; the original thread can continue.",
       )}
       closeLabel={t("Close")}
     >
@@ -164,7 +160,7 @@ export function ForkRun({
         {run.status === "waiting" && (
           <p className={styles.warning}>
             {t(
-              "Pending approvals will be denied and unanswered calls will fail in the new branch. The original conversation keeps waiting.",
+              "Pending approvals will be denied and unanswered calls will fail in the new branch. The original thread keeps waiting.",
             )}
           </p>
         )}
@@ -206,18 +202,16 @@ export function ForkRun({
             {t(
               fresh
                 ? "Uses the agent's default environment, if configured. Existing files are not copied. Memory remains shared."
-                : "Branches use the same files and memory. Changes can be visible in both conversations.",
+                : "Branches use the same files and memory. Changes can be visible in both threads.",
             )}
           </p>
           <DisclosureSection title={t("Environment options")}>
-            <Label className={styles.environmentChoice}>
-              <Switch
-                checked={fresh}
-                onCheckedChange={setFresh}
-                disabled={mutation.isPending}
-              />
-              {t("Use a new environment")}
-            </Label>
+            <SwitchField
+              label={t("Use a new environment")}
+              checked={fresh}
+              onCheckedChange={setFresh}
+              disabled={mutation.isPending}
+            />
           </DisclosureSection>
         </div>
         <ErrorNotice error={mutation.error} />

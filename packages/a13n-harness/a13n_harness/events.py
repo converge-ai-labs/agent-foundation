@@ -30,6 +30,7 @@ from a13n_harness.result import HarnessRunResult
 
 _EXTENSION_PAYLOAD_ADAPTER = TypeAdapter(JsonValue)
 _MAX_EXTENSION_PAYLOAD_BYTES = 64 * 1024
+MAX_FAILURE_DETAIL_CHARS = 2000
 type HarnessExtensionKind = Literal[
     "context",
     "state",
@@ -159,10 +160,15 @@ class ModelRequestCompletedPayload(_FirstPartyPayload):
 
 
 class ModelRequestFailedPayload(_FirstPartyPayload):
+    """`status_code` is the provider's HTTP status and `detail` its error message; another failure that `error_code`
+    does not name has the exception type as `detail`."""
+
     type: Literal["model_request_failed"] = "model_request_failed"
     request_id: str = Field(pattern=r"^model-request-[1-9][0-9]*$", max_length=64)
     request_index: int = Field(ge=0)
     error_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=128)
+    status_code: int | None = None
+    detail: str | None = Field(default=None, max_length=MAX_FAILURE_DETAIL_CHARS)
 
 
 class ContextSnapshotPayload(_FirstPartyPayload):
@@ -275,6 +281,7 @@ class SteeringInputEnqueuedPayload(_FirstPartyPayload):
     enqueue_id: str = Field(min_length=1, max_length=256)
     source: Literal["external", "async_subagent", "background_process"]
     references: tuple[str, ...] = Field(default=(), max_length=16)
+    handoff_requested: bool = False
 
     @field_validator("references")
     @classmethod
@@ -579,6 +586,12 @@ class _RunEventEmitter:
 
     async def emit(self, event: HarnessExtensionEvent) -> None:
         if self._closed:
+            from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+            if _OWNED_TOOL_EXECUTION.get():
+                # Detached execution reports completion through its runtime;
+                # the original conversation stream is already terminal.
+                return
             raise RunError("The Harness event emitter is closed.", code="event_emitter_closed")
         if not isinstance(event, HarnessExtensionEvent):
             raise RunError("Harness extension event is invalid.", code="event_invalid")

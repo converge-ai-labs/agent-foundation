@@ -67,6 +67,13 @@ COMMANDS = (
     Command("status", "Show Model, context, Environment, and subscription usage.", busy=True),
     Command("ps", "Inspect observed background processes and their last reported status.", busy=True),
     Command(
+        "executions",
+        "Inspect retained tool executions; optionally cancel one.",
+        "[offset|cancel execution-id]",
+        maximum=2,
+        busy=True,
+    ),
+    Command(
         "subagents",
         "Inspect this conversation's child executions and retained output.",
         "[execution-id|next]",
@@ -77,9 +84,9 @@ COMMANDS = (
         "usage",
         "Show this Thread's tokens, costs, and models for all/root/subagents; details adds attribution and Runs. "
         "Subscription limits and confirmed Codex reset credits are separate.",
-        "[all|root|subagents|details|subscription|reset]",
+        "[all|root|subagents|details|subscription|accounts|reset]",
         maximum=1,
-        choices=("all", "root", "subagents", "details", "subscription", "reset"),
+        choices=("all", "root", "subagents", "details", "subscription", "accounts", "reset"),
         busy=True,
     ),
     Command(
@@ -128,10 +135,10 @@ COMMANDS = (
     ),
     Command(
         "environment",
-        "Show or select the Environment mode (Full Control or Sandbox) for subsequent turns.",
+        "Select local execution for subsequent turns. envd/desktop explicitly prepare the runtime.",
         "[mode]",
         maximum=1,
-        choices=("full-control", "sandbox"),
+        choices=("full-control", "envd", "desktop", "sandbox"),
     ),
     Command("new", "Start a new conversation; keep all saved history."),
     Command(

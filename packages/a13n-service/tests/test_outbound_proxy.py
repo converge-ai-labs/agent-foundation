@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import httpx2
@@ -23,7 +23,7 @@ def isolated_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @asynccontextmanager
-async def proxy_server(*, status: int = 200, encoding: str = "identity") -> AsyncIterator[tuple[str, list[bytes]]]:
+async def proxy_server(*, status: int = 200, encoding: str = "identity") -> AsyncGenerator[tuple[str, list[bytes]]]:
     requests: list[bytes] = []
     tasks: set[asyncio.Task[None]] = set()
 

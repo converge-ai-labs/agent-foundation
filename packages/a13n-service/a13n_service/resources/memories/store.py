@@ -6,7 +6,7 @@ numbers changes without gaps, so a change cursor is a number and the feed lists 
 A version is a change number as a string: a file's version is the number of its last change.
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 
 from a13n_harness.providers.memory import (
@@ -93,6 +93,34 @@ def _check(row: MemoryFileRow | None, expected: str | None) -> None:
         raise MemoryStoreError("version_mismatch", "The file changed since that version.", current=current)
 
 
+async def _check_dependencies(
+    session: AsyncSession,
+    settings: MemorySettings,
+    memory_id: str,
+    dependencies: Mapping[str, str | None] | None,
+) -> None:
+    """Validate observed versions while the caller holds the store row lock."""
+    if not dependencies:
+        return
+    expected = {validate_path(path, file_format(settings)): version for path, version in dependencies.items()}
+    rows = (
+        await session.scalars(
+            select(MemoryFileRow)
+            .where(MemoryFileRow.memory_id == memory_id, MemoryFileRow.path.in_(expected))
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    current = {row.path: row for row in rows}
+    for path, version in expected.items():
+        row = current.get(path)
+        if (str(row.version) if row is not None else None) != version:
+            raise MemoryStoreError(
+                "read_conflict",
+                f"{path} changed since it was observed; reread it and reconsider the write.",
+                current=file_text(row) if row is not None else None,
+            )
+
+
 class _Change:
     """One locked change: it numbers revisions, keeps the counters and settles history before commit."""
 
@@ -127,7 +155,7 @@ class _Change:
         row.updated_by_run_id = self.origin.run_id
         row.updated_by_principal_id = self.origin.principal_id
 
-    async def settle(self, settings: MemorySettings) -> None:
+    async def settle(self, settings: MemorySettings, *, count_change: bool) -> None:
         """Prune each changed path to its revision count, then the oldest history until the memory fits its
         byte total; only current content over the total refuses the change."""
         store = self.store
@@ -135,6 +163,8 @@ class _Change:
             raise MemoryStoreError(
                 "memory_full", f"The memory's files exceed its {settings.max_total_bytes}-byte total."
             )
+        if count_change:
+            store.change_count += 1
         await self.session.flush()
         revisions = MemoryFileRevisionRow
         for path in dict.fromkeys(self.paths):
@@ -195,12 +225,15 @@ async def write_file(
     *,
     expected: str | None,
     origin: Origin,
+    count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> MemoryFileRow:
     """Create the file (`expected` None) or replace the version `expected` names; the same text changes nothing."""
     fmt = file_format(settings)
     path = validate_path(path, fmt)
     description = describe(text, fmt)
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, path)
     _check(row, expected)
     if row is not None and row.content == text:
@@ -217,15 +250,24 @@ async def write_file(
     store.content_bytes += size
     row.content, row.size, row.description = text, size, description
     change.stamp(row, version)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
     return row
 
 
 async def delete_file(
-    session: AsyncSession, settings: MemorySettings, memory_id: str, path: str, *, expected: str, origin: Origin
+    session: AsyncSession,
+    settings: MemorySettings,
+    memory_id: str,
+    path: str,
+    *,
+    expected: str,
+    origin: Origin,
+    count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> None:
     path = validate_path(path, file_format(settings))
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, path)
     _check(row, expected)
     assert row is not None
@@ -233,7 +275,7 @@ async def delete_file(
     change.store.content_bytes -= row.size
     change.store.file_count -= 1
     await session.delete(row)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
 
 
 async def move_file(
@@ -245,11 +287,14 @@ async def move_file(
     *,
     expected: str,
     origin: Origin,
+    count_change: bool = True,
+    dependencies: Mapping[str, str | None] | None = None,
 ) -> MemoryFileRow:
     """Move the version `expected` names to a free path in one change; the file keeps its ID."""
     fmt = file_format(settings)
     source, destination = validate_path(source, fmt), validate_path(destination, fmt)
     change = await _change(session, memory_id, origin)
+    await _check_dependencies(session, settings, memory_id, dependencies)
     row = await find_file(session, memory_id, source)
     _check(row, expected)
     assert row is not None
@@ -259,7 +304,7 @@ async def move_file(
     version = change.revise(destination, "move_in", None, source)
     row.path = destination
     change.stamp(row, version)
-    await change.settle(settings)
+    await change.settle(settings, count_change=count_change)
     return row
 
 
@@ -332,7 +377,7 @@ async def search_lines(
     else:
         matched = func.strpos(func.lower(line), func.lower(pattern)) > 0
     query = (
-        select(MemoryFileRow.path, number, line)
+        select(MemoryFileRow.path, number, line, MemoryFileRow.version)
         .select_from(MemoryFileRow)
         .join(lines, true())
         .where(MemoryFileRow.memory_id == memory_id, MemoryFileRow.path.startswith(directory, autoescape=True))
@@ -347,7 +392,9 @@ async def search_lines(
         if message is None:
             raise
         raise MemoryStoreError("invalid_pattern", message) from None
-    return [GrepMatch(path=path, line=line, text=text) for path, line, text in rows[:limit]], len(rows) > limit
+    return [
+        GrepMatch(path=path, line=line, text=text, version=str(version)) for path, line, text, version in rows[:limit]
+    ], len(rows) > limit
 
 
 async def purge_files(session: AsyncSession, memory_id: str) -> None:
@@ -359,7 +406,7 @@ async def purge_files(session: AsyncSession, memory_id: str) -> None:
     store.content_bytes = store.history_bytes = store.file_count = 0
 
 
-def _open(verb: Verb) -> None:
+async def _open(verb: Verb) -> None:
     """No gate: the caller authorized the operation already."""
 
 
@@ -376,46 +423,98 @@ class PostgresFileStore:
         memory_id: str,
         settings: MemorySettings,
         *,
-        gate: Callable[[Verb], None] = _open,
+        gate: Callable[[Verb], Awaitable[None]] = _open,
+        count_changes: bool = True,
     ):
         self.storage, self.memory_id, self.settings, self.gate = storage, memory_id, settings, gate
+        self.count_changes = count_changes
 
     async def list(self) -> list[FileEntry]:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await list_entries(session, self.memory_id)
 
     async def read(self, path: str) -> FileText:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return file_text(await read_file(session, self.settings, self.memory_id, path))
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
-        self.gate("run")
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
+        await self.gate("run")
         async with transaction(self.storage) as session:
-            row = await write_file(session, self.settings, self.memory_id, path, text, expected=expected, origin=origin)
-            return str(row.version)
-
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
-        self.gate("run")
-        async with transaction(self.storage) as session:
-            row = await move_file(
-                session, self.settings, self.memory_id, source, destination, expected=expected, origin=origin
+            row = await write_file(
+                session,
+                self.settings,
+                self.memory_id,
+                path,
+                text,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
+                dependencies=dependencies,
             )
             return str(row.version)
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
-        self.gate("run")
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
+        await self.gate("run")
         async with transaction(self.storage) as session:
-            await delete_file(session, self.settings, self.memory_id, path, expected=expected, origin=origin)
+            row = await move_file(
+                session,
+                self.settings,
+                self.memory_id,
+                source,
+                destination,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
+                dependencies=dependencies,
+            )
+            return str(row.version)
+
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None:
+        await self.gate("run")
+        async with transaction(self.storage) as session:
+            await delete_file(
+                session,
+                self.settings,
+                self.memory_id,
+                path,
+                expected=expected,
+                origin=origin,
+                count_change=self.count_changes,
+                dependencies=dependencies,
+            )
 
     async def changes(self, since: str | None) -> Changes | FullResync:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await changes_since(session, self.memory_id, since)
 
     async def search(self, pattern: str, *, regex: bool, case_sensitive: bool, path: str, limit: int) -> Matches:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await search_lines(
                 session,
@@ -429,6 +528,6 @@ class PostgresFileStore:
             )
 
     async def purge(self) -> None:
-        self.gate("write")
+        await self.gate("write")
         async with transaction(self.storage) as session:
             await purge_files(session, self.memory_id)

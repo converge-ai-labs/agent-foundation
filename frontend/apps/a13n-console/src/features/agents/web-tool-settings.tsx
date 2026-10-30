@@ -102,9 +102,9 @@ export function WebToolSettings({
                 onChange({ ...config, provider_id: reuseProviderId })
               }
             >
-              {t("Use the {{operation}} provider", {
-                operation: t(operation === "search" ? "scrape" : "search"),
-              })}
+              {operation === "search"
+                ? t("Use the scrape provider")
+                : t("Use the search provider")}
             </Button>
           )}
         {providerId &&

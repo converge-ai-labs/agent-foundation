@@ -367,9 +367,10 @@ async def test_calls_are_attributed_to_the_model_they_select_whatever_upstream_m
     assert {record.record["model_name"] for record in records} == {"scripted"}
 
 
-async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_tool_review_is_a_call_of_the_reviewer_model(skill_executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """The reviewer's request spends the reviewer model's credential: it is recorded, attributed and priced as that
     model, like the agent's own requests."""
+    executing = skill_executing
     endpoint = {"config": {"base_url": scripted_model.url}, "credential": {"api_key": "sk-scripted"}}
     for key, input_mtok in (("agent", "5"), ("reviewer", "10")):
         account = await provider(executing, name=key, **endpoint)
@@ -383,10 +384,11 @@ async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted
         "reviewed",
         "agent",
         instructions="Role: agent",
-        toolsets={"configuration": {"tools": {"find": {"permission": "review"}}}},
+        builtin_skills=["platform-operations"],
+        toolsets={"files": {"tools": {"view": {"permission": "review"}}}, "shell": {"enabled": False}},
         reviewer={"model": "reviewer"},
     )
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", to="Role: agent")
+    runs_kit.lookup(scripted_model, call_id="call_find", to="Role: agent")
     scripted_model.call("submit_tool_review", {"risk": "low"}, call_id="call_review", to="submit_tool_review")
     scripted_model.say("Found them", to="Role: agent")
     run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "find models"))["run"]["id"])
@@ -410,9 +412,10 @@ async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted
     assert review.record["tool_call_id"] == "call_find"
 
 
-async def test_a_compaction_is_a_call_of_the_agent_model(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_compaction_is_a_call_of_the_agent_model(skill_executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Compaction asks the agent's own model for a summary: that call is admitted, attributed and priced as the
     agent's model, like the requests it summarizes."""
+    executing = skill_executing
     endpoint = {"config": {"base_url": scripted_model.url}, "credential": {"api_key": "sk-scripted"}}
     account = await provider(executing, name="compacting", **endpoint)
     await post(
@@ -427,9 +430,9 @@ async def test_a_compaction_is_a_call_of_the_agent_model(executing, scripted_mod
         "compacting",
         "compacting",
         model_characteristics=characteristics,
-        toolsets={"configuration": {"tools": {"find": {}}}},
+        **runs_kit.LOOKUP,
     )
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find")
+    runs_kit.lookup(scripted_model, call_id="call_find")
     scripted_model.say("Found models so far.", to="compact continuation summary")
     scripted_model.say("Done")
     run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "find models"))["run"]["id"])
@@ -465,6 +468,37 @@ async def test_a_model_price_applies_to_its_own_calls_whatever_the_entry_names(
         [used] = usage.json()["models"]
         # 12 input and 5 output tokens at 5 and 30 USD per million.
         assert (used["model"], Decimal(str(used["cost"]))) == (key, Decimal("0.00021"))
+
+
+async def test_unused_media_and_cache_prices_reach_saved_run_spend(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    source = price("gemini-test", provider="google-vertex")
+    source["rules"][0]["prices"].extend(
+        {"price_key": key, "price": "1"}
+        for key in ("cache_read_mtok", "input_audio_mtok", "input_image_mtok", "input_video_mtok")
+    )
+    account = await provider(executing, config={"base_url": scripted_model.url}, credential={"api_key": "sk-scripted"})
+    await post(executing, "/models", {**manual(account["id"], "multimodal"), "pricing": source})
+    agent = await runs_kit.add_agent(executing, "priced", "multimodal")
+    scripted_model.say("Done")
+    run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "hi"))["run"]["id"])
+    assert run["status"] == "completed", run
+    response = await executing.client.get(f"{executing.api}/usage", params={"run_id": run["id"]})
+    assert response.status_code == 200
+    [used] = response.json()["models"]
+    assert (used["model"], Decimal(used["cost"])) == ("multimodal", Decimal("0.00021"))
+    async with short_session(executing.runtime.storage) as session:
+        [record] = (
+            await session.scalars(
+                select(UsageRecordRow).where(
+                    UsageRecordRow.run_id == run["id"], UsageRecordRow.record["kind"].astext == "model"
+                )
+            )
+        ).all()
+        assert record.record["pricing_status"] == "applied"
+        assert record.record["cost_source"] == "custom"
+        assert {item["price_key"] for item in record.price_snapshot["rules"][0]["prices"]} == {
+            item["price_key"] for item in source["rules"][0]["prices"]
+        }
 
 
 async def test_open_model_builds_the_native_model_with_the_revealed_secrets(service) -> None:  # type: ignore[no-untyped-def]
@@ -552,7 +586,10 @@ async def test_native_model_settings_roundtrip_and_api_validation(service) -> No
     assert switched.status_code == 400  # Responses summary does not silently survive an API change.
 
 
-@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4, "max_image_bytes": 1234567}])
+@pytest.mark.parametrize(
+    "policy",
+    [None, {}, {"support_gif": False, "max_images": 4, "max_image_bytes": 1234567, "image_retention_ratio": 0.75}],
+)
 async def test_model_api_round_trips_shared_image_input_policy(service, policy):
     account = await provider(service)
     created = await post(service, "/models", manual(account["id"], "images", characteristics={"image_input": policy}))

@@ -14,13 +14,15 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.usage import RunUsageSummary, UsageReportError
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
@@ -28,6 +30,7 @@ from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -51,6 +54,7 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
     ThreadDeferredResponse,
 )
+from a13n_harness_ui.tool_executions import ToolExecutions
 
 _MAX_WAIT_SECONDS = 60.0
 _MAX_VALUE_BYTES = 64 * 1024
@@ -85,6 +89,7 @@ class _RootOperation:
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
+    main_account: MainAccountSelection | None = None
 
 
 @dataclass(slots=True)
@@ -124,9 +129,13 @@ class RootRunCoordinator:
         on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
         on_input_admitted: Callable[[str | None], None] | None = None,
+        tool_executions: ToolExecutions | None = None,
+        browser_handback: BrowserHandback | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
+        self._tool_executions = tool_executions
+        self._browser_handback = browser_handback
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
@@ -160,6 +169,10 @@ class RootRunCoordinator:
             task_group = await context.__aenter__()
             self._task_group_context = context
             self._task_group = task_group
+            if self._tool_executions is not None:
+                self._tool_executions.start(task_group)
+            if self._browser_handback is not None:
+                self._browser_handback.start(task_group)
             self._accepting = True
 
     async def stop_admission(self) -> None:
@@ -279,6 +292,7 @@ class RootRunCoordinator:
         touch: bool = False,
         goal: GoalView | None = None,
         human_input: bool = False,
+        reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
@@ -292,6 +306,7 @@ class RootRunCoordinator:
             touch=touch,
             goal=goal,
             human_input=human_input,
+            reject_deferred=reject_deferred,
             authorize=authorize,
         )
 
@@ -351,6 +366,7 @@ class RootRunCoordinator:
         goal: GoalView | None = None,
         human_input: bool = False,
         organization: MemoryOrganizationRun | None = None,
+        reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
@@ -417,6 +433,10 @@ class RootRunCoordinator:
                 # waits. Nothing suspends between this guard and registration.
                 if authorize is not None:
                     await authorize()
+                if reject_deferred and admission.response is not None:
+                    raise RunCoordinationError(
+                        "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
+                    )
                 operation.composition = admission.published.reference
                 if (
                     pending is not None
@@ -429,6 +449,8 @@ class RootRunCoordinator:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
+                if human_input and self._browser_handback is not None:
+                    self._browser_handback.user_input(thread_id)
                 self._task_group.start_soon(self._run_operation, operation, admission)
                 if prompt is not None and self._on_input_admitted is not None and organization is None:
                     try:
@@ -517,7 +539,16 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: RunInputValue, touch: bool = False) -> RootControlResult:
+    async def steer(
+        self,
+        *,
+        receipt_id: str,
+        message: RunInputValue,
+        immediate: bool = False,
+        touch: bool = False,
+        authorize: Callable[[], Awaitable[None]] | None = None,
+        before_accept: Callable[[], None] | None = None,
+    ) -> RootControlResult:
         message = detach_input(message)
         operation = self._operations.get(receipt_id)
         if operation is None:
@@ -532,7 +563,11 @@ class RootRunCoordinator:
             )
             if self._restart is not None:
                 self._restart.require_input()
-            enqueue_id = await stream.steer(prepared)
+            if authorize is not None:
+                await authorize()
+            enqueue_id = await stream.steer(
+                prepared, immediate=immediate, best_effort=True, before_accept=before_accept
+            )
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
@@ -554,6 +589,10 @@ class RootRunCoordinator:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         if operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+        if self._tool_executions is not None:
+            self._tool_executions.suppress(operation.receipt.thread_id)
+        if self._browser_handback is not None:
+            self._browser_handback.suppress(operation.receipt.thread_id)
         operation.cancel_requested = True
         if self._restart is not None:
             self._restart.active.pop(operation.receipt.thread_id, None)
@@ -623,6 +662,7 @@ class RootRunCoordinator:
                         admission,
                         goal=operation.goal,
                         on_goal=lambda value: self._goal_changed(operation, value),
+                        on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files
                         ),
@@ -646,8 +686,8 @@ class RootRunCoordinator:
                         )
                     )
                     failure = (
-                        FailureView(code=exc.code, message=f"{exc}\n{feedback}")
-                        if isinstance(exc, UsageReportError)
+                        _exception_failure(exc, code="root_operation_failed", feedback=feedback)
+                        if isinstance(exc, HarnessError)
                         else FailureView(
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )
@@ -725,6 +765,10 @@ class RootRunCoordinator:
             if self._restart is not None and admission.organization is None:
                 self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
             operation.done.set()
+            if self._tool_executions is not None:
+                self._tool_executions.retry(thread_id)
+            if self._browser_handback is not None:
+                self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
             try:
@@ -828,6 +872,18 @@ class RootRunCoordinator:
         await self._publish_change(operation)
         if cancel_requested:
             stream.cancel()
+        elif self._tool_executions is not None:
+            self._tool_executions.retry(operation.receipt.thread_id)
+        if not operation.cancel_requested and self._browser_handback is not None:
+            self._browser_handback.retry(operation.receipt.thread_id)
+
+    async def _main_account_changed(self, operation: _RootOperation, value: MainAccountSelection) -> None:
+        previous = operation.main_account
+        if previous is not None and previous.account_id == value.account_id and previous.model_id == value.model_id:
+            return
+        operation.main_account = value
+        await self._persist_execution(operation)
+        await self._publish_change(operation)
 
     async def _persist_execution(self, operation: _RootOperation) -> None:
         if self._save_execution is None:
@@ -840,6 +896,7 @@ class RootRunCoordinator:
         await self._save_execution(
             operation.receipt.thread_id,
             ThreadExecution(
+                main_account=operation.main_account,
                 execution_id=operation.receipt.receipt_id,
                 status=operation.status.value,
                 submitted_at=operation.receipt.submitted_at,
@@ -892,6 +949,7 @@ def _view(operation: _RootOperation) -> RootOperationView:
         outcome=operation.outcome,
         failure=operation.failure,
         goal=operation.goal,
+        main_account=operation.main_account,
         available_actions=tuple(action for action in actions if action == "wait")
         if operation.observation_only
         else actions,
@@ -957,20 +1015,24 @@ def _safe_failure(value: SafeFailure) -> FailureView:
     )
 
 
-def _exception_failure(value: BaseException, *, code: str) -> FailureView:
-    if isinstance(value, HarnessUiError):
+def _exception_failure(value: BaseException, *, code: str, feedback: str = "") -> FailureView:
+    if isinstance(value, (HarnessUiError, HarnessError)):
         return FailureView(
             code=value.code[:256],
-            message=_bounded_message(str(value)),
+            message=_bounded_message(str(value), suffix=f"\n{feedback}" if feedback else ""),
             details=_json_mapping(value.details),
+            retry_hint=value.retry_hint if isinstance(value, HarnessError) else None,
         )
     return FailureView(code=code, message=_bounded_message(str(value) or type(value).__name__))
 
 
-def _bounded_message(value: str) -> str:
-    if len(value) <= 32 * 1024:
-        return value
-    return value[: 32 * 1024 - 23] + "\n...[message truncated]"
+def _bounded_message(value: str, *, suffix: str = "") -> str:
+    # Reserve room for diagnostic feedback before truncating the error text.
+    budget = 32 * 1024 - len(suffix)
+    if len(value) <= budget:
+        return value + suffix
+    marker = "\n...[message truncated]"
+    return value[: budget - len(marker)] + marker + suffix
 
 
 def _bounded_json(value: object) -> tuple[JsonValue | None, bool]:

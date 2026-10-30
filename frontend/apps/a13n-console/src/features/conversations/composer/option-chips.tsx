@@ -1,37 +1,50 @@
 import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { mediaKinds } from "../../models/media-understanding-fields";
 import {
   RunOptionsDialog,
   type OptionField,
   type RunOptionsState,
+  type RunOptionValues,
 } from "./options-dialog";
 import styles from "./composer.module.css";
 
 /**
- * Overrides stay visible as chips on the composer instead of hiding behind a
- * dialog: each chip names what it changed and opens that field.
+ * One quiet settings entry; new conversations also name their persistent setup.
  */
 export function RunOptions({
   options,
   showAgent = true,
+  newThread = true,
+  agentId,
 }: {
   options: RunOptionsState;
   showAgent?: boolean;
+  newThread?: boolean;
+  agentId?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [focus, setFocus] = useState<OptionField>();
+  // The choices the dialog opened with, restored when it is cancelled.
+  const [saved, setSaved] = useState<RunOptionValues>();
   function edit(field?: OptionField) {
+    setSaved(options.values);
     setFocus(field);
     setOpen(true);
   }
   return (
     <>
-      <OptionChip onClick={() => edit()} label={t("Options")}>
+      <OptionChip onClick={() => edit()} label={t("Run options")}>
         <SlidersHorizontalIcon size={13} aria-hidden="true" />
-        {t("Options")}
+        {t("Run options")}
+        {options.modified && (
+          <span
+            className={styles.modifiedDot}
+            role="img"
+            aria-label={t("Settings modified")}
+          />
+        )}
       </OptionChip>
       {showAgent && options.agent && (
         <OptionChip
@@ -40,51 +53,31 @@ export function RunOptions({
           value={options.labels.agent ?? options.agent}
         />
       )}
-      {options.model && (
-        <OptionChip
-          onClick={() => edit("model")}
-          label={t("Model")}
-          value={options.labels.model ?? options.model}
-        />
-      )}
-      {options.environment !== "inherit" && (
+      {newThread && options.environment !== "inherit" && (
         <OptionChip
           onClick={() => edit("environment")}
           label={t("Environment")}
           value={options.labels.environment ?? options.environment}
         />
       )}
-      {options.memories.length > 0 && (
+      {newThread && options.memories.length > 0 && (
         <OptionChip
           onClick={() => edit("memories")}
           label={t("Memories")}
           value={options.memories.map((mount) => mount.name).join(", ")}
         />
       )}
-      {mediaKinds.map(({ kind, label }) => {
-        const key = options.mediaUnderstanding[kind];
-        return key ? (
-          <OptionChip
-            key={kind}
-            onClick={() => edit(kind)}
-            label={t(label)}
-            value={options.labels.media?.[kind] ?? key}
-          />
-        ) : null;
-      })}
-      {options.overrideInstructions && (
-        <OptionChip
-          onClick={() => edit("instructions")}
-          label={t("Instructions overridden")}
-        >
-          {t("Instructions overridden")}
-        </OptionChip>
-      )}
       <RunOptionsDialog
         options={options}
         showAgent={showAgent}
+        newThread={newThread}
+        agentId={agentId}
         open={open}
         onOpenChange={setOpen}
+        onCancel={() => {
+          if (saved) options.restore(saved);
+          setOpen(false);
+        }}
         focus={focus}
       />
     </>

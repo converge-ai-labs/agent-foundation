@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from functools import lru_cache
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -70,6 +71,15 @@ class _SelectedCapabilityState(BaseModel):
     entry: CapabilityState | None = None
 
 
+@lru_cache(maxsize=128)
+def _selected_capability_model(capability_id: str) -> type[_SelectedCapabilityState]:
+    return create_model(
+        "SelectedCapabilityState",
+        __base__=_SelectedCapabilityState,
+        entry=(CapabilityState | None, Field(default=None, alias=capability_id)),
+    )
+
+
 _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
 
@@ -126,11 +136,7 @@ class AgentContextStateSnapshot(BaseModel):
 
     def get(self, capability_id: str) -> CapabilityState | None:
         """Decode one detached namespace without materializing unrelated payloads."""
-        selected = create_model(
-            "SelectedCapabilityState",
-            __base__=_SelectedCapabilityState,
-            entry=(CapabilityState | None, Field(default=None, alias=capability_id)),
-        )
+        selected = _selected_capability_model(capability_id)
         return selected.model_validate_json(cast(bytes, self.entries_json)).entry
 
     @computed_field
@@ -217,6 +223,18 @@ class HarnessState(BaseModel):
         """Return detached portable state for each stateful Environment mount."""
         return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
+    def to_json_bytes(self) -> bytes:
+        """Serialize a state using its existing history bytes, without decoding or revalidating them.
+
+        In-process callers must preserve the message type contract. Import external JSON with
+        model_validate_json(); this method does not validate unchecked internal mutations.
+        Subclasses retain their standard Pydantic serializer.
+        """
+        if type(self) is not HarnessState:
+            return self.model_dump_json().encode()
+        envelope = self.model_dump_json(exclude={"message_history"}).encode()
+        return b"".join((envelope[:-1], b',"message_history":', cast(bytes, self.message_history_json), b"}"))
+
     def fork(self, *, thread_id: str | None = None) -> HarnessState:
         """Copy portable continuation data into a distinct generated or Host-selected Thread."""
         from a13n_harness.capabilities.subagents import _fork_inline_subagent_state
@@ -239,7 +257,25 @@ class AgentContextState:
 
     def __init__(self, snapshot: AgentContextStateSnapshot | None = None) -> None:
         self._entries = snapshot.entries if snapshot is not None else {}
+        self._encoded_entries = {key: self._encode_entry(key, entry) for key, entry in self._entries.items()}
+        self._snapshot: AgentContextStateSnapshot | None = snapshot or AgentContextStateSnapshot()
+        # Namespaces whose owner builds their value only when this state is read or exported.
+        self._deferred: dict[str, tuple[Callable[[], BaseModel], str]] = {}
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _encode_entry(key: str, entry: CapabilityState) -> bytes:
+        # Both the key and payload have already passed their public validators.
+        # Reuse the immutable canonical payload instead of decoding it to encode
+        # all unchanged namespaces again at every snapshot.
+        return (
+            dump_json_bytes(key)
+            + b':{"version":'
+            + dump_json_bytes(entry.version)
+            + b',"data":'
+            + cast(bytes, entry.data_json)
+            + b"}"
+        )
 
     async def read[T: BaseModel](
         self,
@@ -251,6 +287,7 @@ class AgentContextState:
         """Read and validate one Capability's state without exposing shared bytes."""
         _validate_namespace(capability_id, version)
         async with self._lock:
+            self._materialize(capability_id)
             entry = self._entries.get(capability_id)
             if entry is None:
                 return None
@@ -285,12 +322,46 @@ class AgentContextState:
         _validate_namespace(capability_id, version)
         entry = CapabilityState(version=version, data=value.model_dump(mode="json"))
         async with self._lock:
+            self._deferred.pop(capability_id, None)
+            self._store(capability_id, entry)
+
+    def _defer(self, capability_id: str, produce: Callable[[], BaseModel], *, version: str) -> None:
+        """Replace one namespace with the value `produce` returns when this state is next read or exported.
+
+        `produce` runs at that read, so the namespace holds the owner's value at that moment, not at this call. Repeated
+        calls before the next read or export coalesce into one build. A later `write` of the namespace supersedes the
+        deferral. A failing `produce` stays deferred, so every later read or export fails the same way instead of
+        returning an older value.
+        """
+        _validate_namespace(capability_id, version)
+        # Synchronous with no await: no lock holder can observe a partial update.
+        if capability_id not in self._deferred:
+            # Cached snapshots predate the value this namespace will hold.
+            self._snapshot = None
+        self._deferred[capability_id] = (produce, version)
+
+    def _materialize(self, capability_id: str | None = None) -> None:
+        """Build deferred namespaces now; callers hold the lock."""
+        for key in tuple(self._deferred) if capability_id is None else (capability_id,):
+            if (deferred := self._deferred.get(key)) is not None:
+                produce, version = deferred
+                self._store(key, CapabilityState(version=version, data=produce().model_dump(mode="json")))
+                del self._deferred[key]
+
+    def _store(self, capability_id: str, entry: CapabilityState) -> None:
+        if self._entries.get(capability_id) != entry:
             self._entries[capability_id] = entry
+            self._encoded_entries[capability_id] = self._encode_entry(capability_id, entry)
+            self._snapshot = None
 
     async def snapshot(self) -> AgentContextStateSnapshot:
         """Return a detached snapshot suitable for a HarnessState envelope."""
         async with self._lock:
-            return AgentContextStateSnapshot(entries=self._entries)
+            self._materialize()
+            if self._snapshot is None:
+                encoded = b"{" + b",".join(self._encoded_entries.values()) + b"}"
+                self._snapshot = AgentContextStateSnapshot.model_construct(entries_json=encoded)
+            return self._snapshot
 
 
 def _validate_namespace(capability_id: str, version: str) -> None:

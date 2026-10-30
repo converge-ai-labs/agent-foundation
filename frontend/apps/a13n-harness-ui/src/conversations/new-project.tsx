@@ -10,7 +10,7 @@ import {
   invalidEnvironments,
   type EnvironmentSelection,
 } from "../configuration/environments";
-import styles from "./conversation.module.css";
+import styles from "./new-project.module.css";
 
 export function NewProject({
   close,
@@ -74,8 +74,6 @@ export function NewProject({
     <ModalFrame
       open
       title="Add project"
-      size="lg"
-      description="Name this Project and choose local or Device directories. Adding a Project does not create a conversation."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();
@@ -95,12 +93,16 @@ export function NewProject({
           profiles={selectors.data?.environments}
           onChange={(patch) => setEnvironments({ ...environments, ...patch })}
         />
-        <small>
-          Agent and other defaults can be changed in Project settings after
-          saving.
-        </small>
         <ErrorNotice error={save.error} />
-        <div data-a13n-form-actions className="flex justify-end">
+        <div data-a13n-form-actions className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={close}
+          >
+            Cancel
+          </Button>
           <Button
             type="submit"
             loading={save.isPending}

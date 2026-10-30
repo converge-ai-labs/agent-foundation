@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 
 from a13n_harness.model_affinity import SessionAffinityHeader
+from a13n_harness.providers.model.cloudflare import CloudflareConfiguration
 from a13n_harness.providers.model.routes import ROUTE_ALIASES
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
@@ -97,6 +98,8 @@ class PydanticAiModelAdapter:
             )
         try:
             configuration = _ModelConfiguration.model_validate(dict(model_cfg), strict=True)
+            if provider == "cloudflare":
+                CloudflareConfiguration(base_url=configuration.base_url)
             if configuration.base_url is not None and (
                 provider == "xai"
                 or ROUTE_ALIASES.get(provider, provider)

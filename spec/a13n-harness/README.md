@@ -4,7 +4,7 @@
 
 This directory defines `a13n-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It also supplies the optional Host-held tool execution runtime, storage interface and default memory store. Hosts own durable Agent schemas, Presets, artifact installation or trust, persistent execution adapters, queues, worker leases, product delivery and billing.
 
 ## Document Catalog
 
@@ -20,7 +20,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
 | [08-environment-integration.md](08-environment-integration.md)                           | Environment sources, first-use readiness, routes, Run Extensions, mutation, model projection, state, and cleanup                 |
 | [08a: Environment Execution](08a-environment-execution.md)                               | Fixed-target connectors, execution scopes, shared state, operations, errors, and database-free ownership                         |
-| [08b: Environment Providers](08b-environment-providers.md)                               | Native and Envd execution, local/remote Device support, and backend-specific guarantees                                          |
+| [08b: Environment Providers](08b-environment-providers.md)                               | Native execution exceptions, required Envd routes, local/remote Device support, and backend-specific guarantees                  |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, and compaction                                   |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
@@ -39,6 +39,10 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [21a-record-memory.md](21a-record-memory.md)                                             | Record memory store contract, Memory Providers and mem0 over REST, mounts, tools, and recall                                     |
 | [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all five domains, credential declaration, catalogs, and the installed Environment manifest           |
 
+[Browser Use](23-browser-use.md) owns Chromium CDP tools, global/owned tab access and cleanup ownership, human-control admission, and the Host lifecycle boundary.
+
+[Codex Live Transport](16c-codex-live.md) owns subscription WebRTC bootstrap, sideband lifetime, typed client delegation, and the media/Host boundary.
+
 ## Reading Paths
 
 ### Understand the Harness
@@ -51,7 +55,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Servic
 
 ### Author or Select a Provider
 
-Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, [Environment Execution](08a-environment-execution.md) for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
+Read `22` for the shared Provider core, credential declaration, catalogs, and the installed Environment manifest, then the owning domain: `16b` for Model, [Environment Execution](08a-environment-execution.md) and the [execution backend boundary](08b-environment-providers.md#execution-backend-boundary) for Environment, `21a` for Memory, and [Service providers](../a13n-service/08-providers.md) for the Connector and Web deployment boundaries.
 
 ### Understand Models and Recovery
 
@@ -59,7 +63,7 @@ Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host cr
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then `08a` and `08b` for connection and provider guarantees, [Service Environment Management](../a13n-service/06a-environment-management.md) for target lifecycle, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
+Read `07`, `08`, `13`, and `15`, then `08a` and `08b` for connection and provider guarantees, [Service Environment Management](../a13n-service/06a-environment-management.md) for target lifecycle, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `07` owns retained tool execution and `08` owns Shell control and process-observation semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
 
 ### Add Agent Memory
 
@@ -67,7 +71,7 @@ Read `21` for file memory and `21a` for record memory, then `09` for the model c
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, `14`, and `20`, then the [a13n Service specification](../a13n-service/README.md). A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
+Read `10`, `12`, `13`, `14`, and `20`, then the [a13n Service specification](../a13n-service/README.md). A Host owns all async-child lifecycle authority. Top-level Shell executions can retain their original scopes across Runs in the same Host runtime. Standalone `process-*` references remain Run-local. Provider state owns native recovery after scope or Host loss. See `07` and `08` for execution retention, control authorization and independent process/output completion boundaries.
 
 ### Integrate Observation
 

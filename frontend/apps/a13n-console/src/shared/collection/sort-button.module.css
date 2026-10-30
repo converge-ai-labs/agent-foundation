@@ -1,0 +1,30 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: inherit;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.button svg {
+  flex: none;
+  opacity: 0.45;
+}
+.button[data-active],
+.button:hover {
+  color: var(--a13n-text);
+}
+.button[data-active] svg,
+.button:hover svg {
+  opacity: 1;
+}
+.button:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 3px;
+  border-radius: 3px;
+}

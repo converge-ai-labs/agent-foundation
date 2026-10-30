@@ -12,22 +12,26 @@ import shutil
 import stat as stat_module
 import sys
 import tempfile
-from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from a13n_logging import get_logger
 from pathspec.gitignore import GitIgnoreSpec
 from pathspec.patterns.gitignore import GitIgnorePatternError
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
+from a13n_harness.environment.archives import FileArchive, extract_archive_files
+from a13n_harness.environment.batches import apply_file_batch
 from a13n_harness.environment.files import (
+    FileBatchValue,
     FileCopyResult,
     FileEntriesResult,
     FileKind,
     FileMetadata,
     FileMutationResult,
+    FileOperation,
     FilePatchResult,
     FileQueryRequest,
     FileTextMatch,
@@ -41,6 +45,10 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentOperati
 from a13n_harness.environment.text import apply_unified_diff
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
+from a13n_harness.providers.environment.direct_local.protected_files import (
+    check_local_file_read,
+    is_protected_local_file,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
@@ -84,7 +92,7 @@ class _LocalWriter:
 
     async def _copy_append_source(self) -> None:
         try:
-            source = await asyncio.to_thread(self._native_path.open, "rb")
+            source = await asyncio.to_thread(_open_read_stream, self._native_path)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open an append source") from exc
         decoder = codecs.getincrementaldecoder("utf-8")("strict") if self._validate_text_append else None
@@ -195,6 +203,12 @@ class _LocalWriter:
 
 class LocalFileOperator:
     """Root-confined Direct Local file operations with staged publication."""
+
+    async def batch(self, operations: Sequence[FileOperation]) -> tuple[FileBatchValue, ...]:
+        return await apply_file_batch(self, operations)
+
+    async def write_archive(self, path: str, archive: FileArchive) -> FileMutationResult:
+        return await extract_archive_files(self, path, archive)
 
     def __init__(
         self,
@@ -445,7 +459,7 @@ class LocalFileOperator:
         effective_chunk_size = min(chunk_size, self._policy.max_value_bytes)
         native = await asyncio.to_thread(self._resolve_file, path, "Raw read source")
         try:
-            file = await asyncio.to_thread(native.open, "rb")
+            file = await asyncio.to_thread(_open_read_stream, native)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open a binary file") from exc
         try:
@@ -673,6 +687,15 @@ class LocalFileOperator:
             metadata = _regular_search_file_metadata(native)
             if metadata is None or metadata.st_size > request.max_file_bytes:
                 continue
+            try:
+                if single_file:
+                    check_local_file_read(native)
+                elif is_protected_local_file(native):
+                    continue
+            except OSError as exc:
+                if single_file:
+                    raise _environment_error_from_os(exc, action="search a file") from exc
+                continue
             if request.max_files is not None and files_scanned >= request.max_files:
                 raise EnvironmentError(
                     "Text search exceeded the eligible file limit.",
@@ -775,9 +798,28 @@ class LocalFileOperator:
             destination_metadata.st_mode
         ):
             raise EnvironmentError("Move source and destination kinds differ.", code="environment_request_invalid")
-        # One native replacement preserves directory shape and non-empty-directory
-        # preconditions. Moving the destination aside first would bypass both.
-        os.replace(source_native, destination_native)
+        try:
+            os.replace(source_native, destination_native)
+        except OSError as exc:
+            if not stat_module.S_ISDIR(source_metadata.st_mode):
+                raise
+            if sys.platform == "win32":
+                if destination_metadata is None or exc.errno not in {errno.EACCES, errno.EEXIST, errno.ENOTEMPTY}:
+                    raise
+                # Windows has no directory exchange; replacement accepts the remove/rename gap.
+                shutil.rmtree(destination_native)
+                os.replace(source_native, destination_native)
+                return
+            if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise
+            _rename_atomic(source_native, destination_native, exchange=True)
+            try:
+                shutil.rmtree(source_native)
+            except OSError as cleanup_error:
+                raise EnvironmentError(
+                    "Directory replacement published, but displaced source cleanup failed.",
+                    code="environment_unknown_outcome",
+                ) from cleanup_error
 
     async def remove(
         self,
@@ -855,13 +897,18 @@ class LocalFileOperator:
         )
 
 
+def _open_read_stream(path: Path) -> BinaryIO:
+    check_local_file_read(path)
+    return path.open("rb")
+
+
 def _read_bytes_at_most(
     path: Path,
     offset: int,
     length: int | None,
     max_bytes: int,
 ) -> bytes:
-    with path.open("rb") as file:
+    with _open_read_stream(path) as file:
         file.seek(offset)
         return file.read(max_bytes + 1 if length is None else length)
 
@@ -915,7 +962,7 @@ def _read_text_page(
     selected_bytes = 0
     truncated_lines: list[int] = []
     line_index = 0
-    with path.open("rb") as file:
+    with _open_read_stream(path) as file:
         while line_index < line_offset:
             if read_line(file) is None:
                 return "", 0, False, ()
@@ -953,25 +1000,30 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
     if sys.platform == "win32":
         os.rename(source, destination)
         return
+    _rename_atomic(source, destination, exchange=False)
+
+
+def _rename_atomic(source: Path, destination: Path, *, exchange: bool) -> None:
+    """Use the platform's no-replace or exchange publication primitive."""
     if sys.platform not in {"linux", "darwin"}:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
 
     library = ctypes.CDLL(None, use_errno=True)
     name = "renamex_np" if sys.platform == "darwin" else "renameat2"
     rename = getattr(library, name, None)
     if rename is None:
-        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
     rename.restype = ctypes.c_int
     if sys.platform == "darwin":
         rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
+        result = rename(os.fsencode(source), os.fsencode(destination), 2 if exchange else 4)  # SWAP / EXCL
     else:
         rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 2 if exchange else 1)
     if result != 0:
         number = ctypes.get_errno()
         if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
-            raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+            raise EnvironmentError("Atomic directory move is unavailable.", code="environment_unsupported")
         raise OSError(number, os.strerror(number))
 
 
@@ -1056,7 +1108,7 @@ def _iter_native_paths(
 
 def _load_git_ignore(path: Path) -> GitIgnoreSpec | None:
     try:
-        if not path.is_file() or path.stat().st_size > 1024 * 1024:
+        if is_protected_local_file(path) or not path.is_file() or path.stat().st_size > 1024 * 1024:
             return None
         patterns: list[GitIgnoreSpecPattern] = []
         invalid_count = 0

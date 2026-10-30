@@ -17,8 +17,8 @@ async def test_capture_projection_omits_executable_payloads_and_bounds_children(
     value = value.model_copy(update={"root": value.root.model_copy(update={"children": children})})
     result = captured_configuration("a" * 64, value)
     assert len(result.children) == 100 and result.omitted_children == 5
-    assert result.tool_proxy is None  # Legacy direct captures are not rewritten.
-    assert value.root.tool_proxy is None
+    assert result.tool_search is None  # Legacy direct captures are not rewritten.
+    assert value.root.tool_search is None
     assert result.mcp_server_ids == ("mcp-docs",)
     assert result.harness_plugin_ids == ("plugin-memory",)
     payload = result.model_dump_json()

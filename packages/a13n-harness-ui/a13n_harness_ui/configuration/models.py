@@ -11,15 +11,16 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
-from a13n_harness import RunConfiguration
-from a13n_harness.capabilities import ToolProxyConfig
+from a13n_harness import RunConfiguration, ToolExecutionConfig
+from a13n_harness.compaction import BackgroundCompactionPolicy
+from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     RemoteEnvdStateData,
     WebSocketEnvdConnectionConfiguration,
 )
 from a13n_harness.spec import HarnessModelCharacteristics
-from a13n_harness.tools.tool_proxy import validate_group
+from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AliasChoices,
@@ -67,6 +68,7 @@ _SECRET_FIELD_NAMES = frozenset(
 type ResourceId = Annotated[str, Field(min_length=3, max_length=128, pattern=_RESOURCE_ID)]
 type CatalogKey = Annotated[str, Field(min_length=1, max_length=200, pattern=_CATALOG_KEY)]
 type ToolName = Annotated[str, Field(min_length=1, max_length=128, pattern=_CATALOG_KEY)]
+type McpToolName = Annotated[str, Field(min_length=1, max_length=128)]
 type RosterName = Annotated[str, Field(min_length=1, max_length=63, pattern=_NAME)]
 type SourceDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -95,6 +97,15 @@ class ConfigurationModel(StrictModel):
     model_config = ConfigDict(extra="allow")
     # Pydantic uses this narrower annotation to validate retained JSON extras.
     __pydantic_extra__: dict[str, JsonValue] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class BackgroundCompactionConfiguration(BackgroundCompactionPolicy, ConfigurationModel):
+    enabled: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _boolean_switch(cls, value: object) -> object:
+        return {"enabled": value} if isinstance(value, bool) else value
 
 
 class ProcessConfiguration(ConfigurationModel):
@@ -137,6 +148,10 @@ class TerminalDisplayConfiguration(ConfigurationModel):
     max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
 
 
+class ToolExecutionConfiguration(ToolExecutionConfig):
+    """Harness UI waits inline by default while retaining immediate handoff support."""
+
+
 class ToolsConfiguration(ConfigurationModel):
     """Application-owned tool switches and uniform interactive waiting policy."""
 
@@ -148,6 +163,7 @@ class ToolsConfiguration(ConfigurationModel):
         validation_alias=AliasChoices("interaction_timeout_seconds", "ask_user_question_timeout_seconds"),
     )
     enable_codeact: bool = True
+    execution: ToolExecutionConfiguration = Field(default_factory=ToolExecutionConfiguration)
 
     @model_validator(mode="before")
     @classmethod
@@ -171,8 +187,9 @@ class SubagentsConfiguration(ConfigurationModel):
 
 
 class InputConfiguration(ConfigurationModel):
-    """User-text delivery policy captured for each root Run."""
+    """Global user-input scheduling and captured long-text delivery policy."""
 
+    steering_mode: Literal["immediate", "queued"] = "immediate"
     long_text_threshold_chars: int | None = Field(default=8000, ge=1)
 
 
@@ -263,6 +280,26 @@ class MediaUnderstandingConfiguration(ConfigurationModel):
         return {kind: value for kind, value in values.items() if value is not None}
 
 
+class LiveConfiguration(ConfigurationModel):
+    """Built-in voice executor using an existing Codex subscription Model."""
+
+    enabled: bool = False
+    model: ResourceId | None = None
+    # Retain legacy values so immutable configuration generations remain readable.
+    # Voice admission rejects them before any provider access.
+    voice: CodexLiveVoice | Literal["marin", "cedar"] = "cove"
+    files_enabled: bool = True
+    instructions: str = Field(default="", max_length=64 * 1024)
+
+    @model_validator(mode="after")
+    def _selected_model(self) -> Self:
+        if self.model is not None:
+            _require_id_prefix(self.model, "model-")
+        if self.enabled and self.model is None:
+            raise ValueError("Enabled Live requires an existing Codex subscription Model")
+        return self
+
+
 class MemoryOrganizationConfiguration(ConfigurationModel):
     """WebUI-only maintenance with an optional Model override."""
 
@@ -301,11 +338,49 @@ class McpConfiguration(ConfigurationModel):
         return values
 
 
+class EnvdConfiguration(StrictModel):
+    """Host-owned local runtime configuration, captured when the App starts."""
+
+    executable: str | None = Field(default=None, min_length=1, max_length=4096)
+    computer_use: bool = False
+    monitoring_interval_seconds: int = Field(default=60, ge=10, le=60)
+
+    @field_validator("executable")
+    @classmethod
+    def _executable_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            from pathlib import Path
+
+            path = Path(value).expanduser()
+            if "\x00" in value or not path.is_absolute() or path.name not in {"a13n-envd", "a13n-envd.exe"}:
+                raise ValueError("envd executable must be an absolute path to a13n-envd or a13n-envd.exe")
+        return value
+
+
+class BrowserConfiguration(ConfigurationModel):
+    """Host browser policy captured at App startup; never install dependencies."""
+
+    mode: Literal["auto", "disabled"] = "auto"
+    executable: str | None = Field(default=None, min_length=1, max_length=4096)
+    vnc_executable: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @field_validator("executable", "vnc_executable")
+    @classmethod
+    def _host_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            if "\x00" in value or not Path(value).expanduser().is_absolute():
+                raise ValueError("browser paths must be absolute Host paths")
+            return str(Path(value).expanduser().resolve(strict=False))
+        return None
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
+    envd: EnvdConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
+    browser: BrowserConfiguration = Field(default_factory=BrowserConfiguration)
     input: InputConfiguration = Field(default_factory=InputConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
@@ -322,7 +397,9 @@ class HarnessUiDocument(ConfigurationModel):
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
     )
     memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
+    live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
+    background_compaction: BackgroundCompactionConfiguration = Field(default_factory=BackgroundCompactionConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -361,10 +438,12 @@ class ChatGPTSubscriptionAuthentication(StrictModel):
 
 class CodexSubscriptionAuthentication(StrictModel):
     kind: Literal["codex_subscription"]
+    group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class GrokSubscriptionAuthentication(StrictModel):
     kind: Literal["grok_subscription"]
+    group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class CopilotSubscriptionAuthentication(StrictModel):
@@ -398,6 +477,28 @@ def _native_model_characteristics(value: object) -> object:
 
 
 type ModelCharacteristics = Annotated[HarnessModelCharacteristics, BeforeValidator(_native_model_characteristics)]
+
+
+class SubscriptionGroupMember(StrictModel):
+    account: str = Field(pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
+    weight: int = Field(default=1, ge=1, le=1000)
+
+
+class SubscriptionGroupResource(ConfigurationModel):
+    schema_version: Literal["1"]
+    kind: Literal["subscription_group"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    provider: Literal["codex", "grok"]
+    strategy: Literal["ordered", "weighted"] = "ordered"
+    allow_credits: bool = False
+    accounts: tuple[SubscriptionGroupMember, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="after")
+    def _unique_accounts(self) -> Self:
+        if len({member.account for member in self.accounts}) != len(self.accounts):
+            raise ValueError("Subscription group accounts must be unique")
+        return self
 
 
 class ModelResource(ConfigurationModel):
@@ -572,16 +673,24 @@ type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
 class McpServerResource(ConfigurationModel):
-    schema_version: Literal["1"]
+    schema_version: Literal["1", "2"]
     kind: Literal["mcp_server"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "mcp-")
+        if self.tools is not None and self.schema_version != "2":
+            raise ValueError("MCP tool selection requires schema_version 2")
+        if self.tools is not None and len(set(self.tools)) != len(self.tools):
+            raise ValueError("MCP tool names must be unique")
         return self
+
+
+DEFAULT_CAPABILITY_KEYS = ("file_context", "working_state", "user_interaction", "codeact")
 
 
 class CapabilitySelection(ConfigurationModel):
@@ -622,29 +731,20 @@ class _MissingModelReferenceError(ValueError):
         super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
 
 
-class _ToolProxyConfigurationError(ValueError):
+class _ToolSearchConfigurationError(ValueError):
     """Authored source/group diagnostic safe to expose without resource inputs."""
 
 
-class AgentToolProxyGroup(ConfigurationModel):
+class AgentToolSearchGroup(ConfigurationModel):
     description: str = Field(min_length=1, max_length=512)
+    capabilities: tuple[str, ...] = ()
     mcp_servers: tuple[ResourceId, ...] = ()
     harness_plugins: tuple[ResourceId, ...] = ()
 
 
-class AgentToolProxy(ConfigurationModel):
-    groups: dict[str, AgentToolProxyGroup] = Field(default_factory=dict)
-    config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
-
-    @field_validator("config", mode="before")
-    @classmethod
-    def _parse_config(cls, value: object) -> object:
-        if isinstance(value, dict):
-            try:
-                return ToolProxyConfig(**value)
-            except (TypeError, ValueError) as exc:
-                raise _ToolProxyConfigurationError(f"Invalid tool_proxy.config: {exc}") from exc
-        return value
+class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
+    enabled: bool = Field(default=True, exclude_if=lambda value: value)
+    groups: dict[str, AgentToolSearchGroup] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _valid_groups(self) -> Self:
@@ -653,27 +753,32 @@ class AgentToolProxy(ConfigurationModel):
             try:
                 validate_group(name, group.description)
             except ValueError as exc:
-                raise _ToolProxyConfigurationError(f"Invalid tool_proxy group {name!r}: {exc}") from exc
-            for source in (*group.mcp_servers, *group.harness_plugins):
+                raise _ToolSearchConfigurationError(f"Invalid tool_search group {name!r}: {exc}") from exc
+            for source in (*group.mcp_servers, *group.harness_plugins, *group.capabilities):
                 if source in owners:
-                    raise _ToolProxyConfigurationError(
-                        f"ToolProxy source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
+                    raise _ToolSearchConfigurationError(
+                        f"ToolSearch source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
                     )
                 owners[source] = name
         return self
 
-    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolProxy:
+    def selected(
+        self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...], capabilities: tuple[str, ...] = ()
+    ) -> AgentToolSearch:
         """Capture only enabled membership, without activating dormant references."""
-        return AgentToolProxy(
+        return AgentToolSearch(
+            enabled=self.enabled,
             groups={
-                name: AgentToolProxyGroup(
+                name: AgentToolSearchGroup(
                     description=group.description,
+                    capabilities=tuple(source for source in group.capabilities if source in capabilities),
                     mcp_servers=tuple(source for source in group.mcp_servers if source in mcp_servers),
                     harness_plugins=tuple(source for source in group.harness_plugins if source in harness_plugins),
                 )
                 for name, group in self.groups.items()
                 if any(source in mcp_servers for source in group.mcp_servers)
                 or any(source in harness_plugins for source in group.harness_plugins)
+                or any(source in capabilities for source in group.capabilities)
             },
             config=self.config,
         )
@@ -690,7 +795,7 @@ class AgentResource(ConfigurationModel):
     harness_plugins: tuple[ResourceId, ...] | None = None
     mcp_servers: tuple[ResourceId, ...] | None = None
     tools: tuple[ToolName, ...] | None = None
-    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     subagents: tuple[SubagentSelection, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="after")
@@ -838,6 +943,9 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     content_plugins: tuple[InstalledContentPlugin, ...] = Field(default=(), max_length=256)
     content_plugin_diagnostics: tuple[str, ...] = ()
     models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
+    subscription_groups: dict[ResourceId, SubscriptionGroupResource] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     harness_plugins: dict[ResourceId, HarnessPluginResource] = Field(default_factory=dict)
     environment_profiles: dict[ResourceId, EnvironmentProfileResource] = Field(default_factory=dict)
     environment_run_extensions: dict[ResourceId, EnvironmentRunExtensionResource] = Field(default_factory=dict)
@@ -850,11 +958,25 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        for model in self.models.values():
+            auth = model.authentication
+            if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
+                provider = auth.kind.removesuffix("_subscription")
+                if auth.group:
+                    _require_reference(auth.group, self.subscription_groups, f"{model.id}.authentication.group")
+                group = self.subscription_groups.get(auth.group or f"{provider}-default")
+                if group is not None and group.provider != provider:
+                    raise ValueError(f"{model.id} requires a same-provider subscription group")
         for item in self.document.mcp.host_owned_servers:
             _require_reference(item, self.mcp_servers, "mcp.host_owned_servers")
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
+        live = self.document.live
+        if live is not None and live.model is not None:
+            _require_reference(live.model, self.models, "live.model")
+            if not isinstance(self.models[live.model].authentication, CodexSubscriptionAuthentication):
+                raise ValueError("live.model requires codex_subscription authentication")
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
         for kind, model_id in self.document.media_understanding.selections().items():
@@ -913,16 +1035,16 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():
                 _require_reference(item, self.mcp_servers, f"{agent.id}.mcp_servers")
-            if agent.tool_proxy is not None:
-                for name, group in agent.tool_proxy.groups.items():
+            if agent.tool_search is not None:
+                for name, group in agent.tool_search.groups.items():
                     for values, resources, kind in (
                         (group.mcp_servers, self.mcp_servers, "mcp_servers"),
                         (group.harness_plugins, self.harness_plugins, "harness_plugins"),
                     ):
                         for item in values:
                             if item not in resources:
-                                raise _ToolProxyConfigurationError(
-                                    f"{agent.id}.tool_proxy.groups.{name}.{kind} references unknown source {item!r}"
+                                raise _ToolSearchConfigurationError(
+                                    f"{agent.id}.tool_search.groups.{name}.{kind} references unknown source {item!r}"
                                 )
             roster_names: list[str] = []
             for selection in agent.subagents:

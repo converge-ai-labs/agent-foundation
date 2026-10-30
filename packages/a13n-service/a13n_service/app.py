@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from functools import partial
@@ -15,6 +15,7 @@ from typing import Any, get_args
 
 from a13n_harness import HarnessTraceContent
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from a13n_harness.providers.environment.modal.pool import TransportPool
 from anyio.to_thread import run_sync
 from fastapi import FastAPI, Request
 from fastapi.dependencies.models import Dependant
@@ -24,6 +25,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from a13n_service.api_access import CredentialAccess
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
@@ -39,12 +41,18 @@ from a13n_service.mcp import WorkspaceKey, build_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
+from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
+from a13n_service.runs.environments.monitoring.proxy import Proxy
+from a13n_service.runs.environments.monitoring.pull import run as run_collector
 from a13n_service.runs.execute import execute
+from a13n_service.runs.platform_files import open_platform_files
+from a13n_service.runs.platform_tokens import RunAuthenticator
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.stream import ThreadHub
+from a13n_service.runs.stream import SessionHub
+from a13n_service.runs.thread_stream import ThreadHub
 from a13n_service.runs.worker import Worker
 from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
@@ -89,12 +97,20 @@ def _dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any] | Non
         yield from _dependency_calls(dependency)
 
 
+def operation_id(route: APIRoute) -> str:
+    """The route name: one short name for the operation and its MCP tool."""
+    return route.name
+
+
 def contract(app: FastAPI, *, locally_authenticated: Sequence[APIRouter]) -> dict[str, Any]:
     """The HTTP contract: FastAPI's document, with failures as the Service sends them, and how each authenticated
     operation of `locally_authenticated` (the routers the local authenticator protects) proves its caller."""
     if app.openapi_schema is not None:
         return app.openapi_schema
     document = FastAPI.openapi(app)  # FastAPI's own document, which it caches; completed in place
+    ids = [operation["operationId"] for operations in document["paths"].values() for operation in operations.values()]
+    if duplicates := sorted({name for name in ids if ids.count(name) > 1}):
+        raise ValueError(f"Operation names must be unique: {', '.join(duplicates)}")
     document_errors(document)
     if locally_authenticated:
         document["components"]["securitySchemes"] = SECURITY_SCHEMES
@@ -153,6 +169,9 @@ def open_storage(config: Database) -> Storage:
 async def open_runtime(
     stack: AsyncExitStack, distribution: Distribution, config: Settings, *, executes: bool
 ) -> Runtime:
+    from a13n_service.runs.search import initialize
+
+    await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
     stack.push_async_callback(storage.close)
     redis = Redis.from_url(
@@ -170,24 +189,48 @@ async def open_runtime(
             content=HarnessTraceContent(telemetry.trace_content),
         )
     )
+    registry = _registry(distribution, config)
+    platform_files = await stack.enter_async_context(open_platform_files(registry, config))
     objects = await open_objects(stack, config.objects)
+    modal_transports = TransportPool()
+    modal_transports.start()
+    stack.push_async_callback(modal_transports.close)
     tasks = Tasks()
-    stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
-    return Runtime(
+    # HTTP connection drain stays bounded by server.shutdown_timeout. Lifespan cleanup must also allow
+    # the worker's natural-completion and finalization windows before closing its shared clients.
+    shutdown_seconds = config.server.shutdown_timeout
+    if executes:
+        shutdown_seconds += (
+            config.worker.drain_seconds
+            + config.tool_executions.shutdown_grace_seconds
+            + config.tool_executions.finalization_seconds
+        )
+    stack.push_async_callback(tasks.close, timeout=shutdown_seconds)
+    access = distribution.access()
+    runtime = Runtime(
         storage=storage,
         objects=objects,
         tasks=tasks,
         redis=redis,
         keys=_key_ring(config.encryption),
         settings=config,
-        registry=_registry(distribution, config),
-        access=distribution.access(),
+        registry=registry,
+        platform_mounts=platform_files.mounts,
+        builtin_skills=platform_files.skills,
+        modal_transports=modal_transports,
+        metrics_queries=Queries(
+            concurrency=config.monitoring.query_concurrency,
+            timeout=config.monitoring.query_seconds,
+            max_bytes=config.monitoring.query_bytes,
+        ),
+        access=replace(access, authenticator=RunAuthenticator(access.authenticator)),
         plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
         admission=distribution.admission,
         instrumentation=instrumentation,
         # Backends hold no connection between queries, so the query side needs no lifecycle.
         traces=telemetry.trace_config(),
     )
+    return replace(runtime, metrics_proxy=Proxy(runtime))
 
 
 def _key_ring(encryption: Encryption) -> KeyRing:
@@ -246,7 +289,7 @@ def build_app(
     serves_api, executes = role != "worker", role != "control"
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
         async with AsyncExitStack() as stack:
@@ -272,12 +315,22 @@ def build_app(
                     await initializer.existing()
                 runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
                 if serves_api:
+                    if config.monitoring.enabled:
+                        assert runtime.metrics_proxy is not None
+                        runtime.tasks.start(runtime.metrics_proxy.run(), name="environment-monitoring", service=True)
+                        for kind, collector in config.monitoring.collectors.items():
+                            if collector.writer:
+                                runtime.tasks.start(
+                                    run_collector(runtime, kind), name=f"collector-{kind}", service=True
+                                )
                     await stack.enter_async_context(mcp.lifespan(mcp))
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy
                     )
                     app.state.model_catalog = catalog
                     runtime.tasks.start(catalog.run(), name="model-catalog", service=True)
+                    app.state.session_hub = SessionHub(runtime)
+                    runtime.tasks.start(app.state.session_hub.run(), name="session-hub", service=True)
                     app.state.thread_hub = ThreadHub(runtime)
                     runtime.tasks.start(app.state.thread_hub.run(), name="thread-hub", service=True)
                     sweeps = [factory(runtime) for factory in distribution.sweeps]
@@ -298,9 +351,9 @@ def build_app(
         docs_url="/api/v1/docs" if serves_api else None,
         swagger_ui_oauth2_redirect_url="/api/v1/docs/oauth2-redirect" if serves_api else None,
         redoc_url=None,
+        generate_unique_id_function=operation_id,
     )
     app.add_middleware(BodyLimit, max_bytes=config.server.request_bytes, timeout=config.server.request_timeout)
-    install_error_envelope(app)
     documented = distribution.routers if serves_api and distribution.authenticator is None else ()
     app.openapi = partial(contract, app, locally_authenticated=documented)
 
@@ -347,8 +400,15 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.devices.tables import DeviceRow
+        from a13n_service.runs.devices.transport import install as install_device_transport
+
+        if DeviceRow in distribution.tables:
+            install_device_transport(app)
+        app.add_middleware(CredentialAccess, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))
     if serves_api and (console / "index.html").is_file():
         app.router.default = console_fallback(console, app.router.default)
+    install_error_envelope(app)
     return app

@@ -2,20 +2,20 @@ import { Button, DisclosureSection } from "a13n-ui";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
-import { ErrorNotice } from "../../../shared/feedback";
+import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { JsonView } from "../../../shared/forms";
 import { useAgent } from "../../agents/queries";
 import { isActiveRun, type ViewLevel } from "../api";
 import { useRun } from "../queries";
 import { useRunDisplay } from "../run-display";
-import { StoredContents, StoredObservations } from "../stored-content";
+import { StoredContents } from "../stored-content";
 import { runTimeline } from "../timeline";
 import { WorkingRow } from "./assistant-message";
 import { DebugRunSection } from "./debug/run-section";
-import { EarlierItems } from "./earlier-items";
 import { FailureNotice } from "./failure-notice";
 import { RunBlock } from "./run-block";
 import { useThreadRuns } from "./thread-runs";
+import { EarlierContent } from "./earlier-content";
 import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
@@ -24,16 +24,16 @@ export function RunEntry({
   runId,
   thread,
   level,
-  followed,
   prefill,
   jumpToDock,
+  preservePosition,
 }: {
   runId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
-  followed: boolean;
   prefill?: () => void;
   jumpToDock: () => void;
+  preservePosition: () => () => void;
 }) {
   const { t } = useTranslation();
   const query = useRun(runId);
@@ -41,8 +41,8 @@ export function RunEntry({
   const agent = useAgent(run?.agent_id);
   const agentName = agent.data?.name;
   const agentImageUrl = agent.data?.image_url;
-  const live = useRunDisplay(runId, { live: followed });
-  const { number } = useThreadRuns(level === "debug" ? thread.id : "");
+  const live = useRunDisplay(runId);
+  const { number } = useThreadRuns(level === "debug" ? thread.id : "", runId);
   const timeline = useMemo(
     () =>
       run &&
@@ -56,10 +56,20 @@ export function RunEntry({
     [run, live.attempts, live.items, live.execution],
   );
   if (!run || !timeline) return <ErrorNotice error={query.error} />;
+  if (live.loading) return <Loading variant="list" rows={3} />;
+  if (live.error && !live.displayItems.length)
+    return <ErrorNotice error={live.error} retry={live.reconnect} />;
   const active = isActiveRun(run.status);
   const stopped = ["failed", "cancelled"].includes(run.status);
   return (
     <StoredContents runId={runId} items={live.displayItems}>
+      {level === "chat" && (
+        <EarlierContent
+          history={live.history}
+          first={live.first}
+          preservePosition={preservePosition}
+        />
+      )}
       {live.gap && (
         <p role="status" className={styles.notice}>
           {live.incomplete
@@ -71,25 +81,25 @@ export function RunEntry({
               )}
         </p>
       )}
-      {live.state === "disconnected" && (
-        <ErrorNotice
-          error={live.error ?? new Error(t("Live connection disconnected."))}
-          retry={live.reconnect}
-        />
+      {live.error != null && (
+        <ErrorNotice error={live.error} retry={live.reconnect} />
       )}
       {level === "debug" ? (
-        <>
-          <EarlierItems earlier={live.earlier} />
-          <DebugRunSection
-            run={run}
-            thread={thread}
-            timeline={timeline}
-            index={number(run.id)}
-            resubmit={prefill}
-            jumpToDock={jumpToDock}
-          />
-          <StoredObservations />
-        </>
+        <DebugRunSection
+          run={run}
+          thread={thread}
+          timeline={timeline}
+          index={number(run.id)}
+          earlier={
+            <EarlierContent
+              history={live.history}
+              first={live.first}
+              preservePosition={preservePosition}
+            />
+          }
+          resubmit={prefill}
+          jumpToDock={jumpToDock}
+        />
       ) : (
         <div className={debug.runAnchor} data-run={run.id}>
           <RunBlock
@@ -98,9 +108,8 @@ export function RunEntry({
             timeline={timeline}
             agentName={agentName}
             agentImageUrl={agentImageUrl}
-            earlier={<EarlierItems earlier={live.earlier} />}
           >
-            {active && <WorkingRow connected={live.state === "connected"} />}
+            {active && <WorkingRow connected={live.connected} />}
             {(run.failure != null || stopped) && (
               <FailureNotice
                 failure={run.failure}

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
-import { formatCost } from "../../shared/cost";
+import { costColumnFormat, formatCost } from "../../shared/cost";
 import { observationCost } from "./cost";
 import { UNKNOWN } from "../../shared/unknown";
 
@@ -46,4 +46,18 @@ it("does not silently round tiny costs to zero or coerce malformed values", () =
     });
     expect(formatCost(value)).toBe(UNKNOWN);
   }
+});
+
+it("gives a column of costs one decimal count so the digits align", () => {
+  const subCent = costColumnFormat(["0.0035", "0.03", "0", null, "0.00001"]);
+  expect(["0.0035", "0.03", "0", "0.00001"].map(subCent)).toEqual([
+    "$0.0035",
+    "$0.0300",
+    "$0.0000",
+    "<$0.0001",
+  ]);
+  expect(subCent(null)).toBe(UNKNOWN);
+  const dollars = costColumnFormat(["1.5", "0.0035"]);
+  expect(["1.5", "0.0035"].map(dollars)).toEqual(["$1.50", "<$0.01"]);
+  expect(costColumnFormat(["0.03", "0.25"])("0.03")).toBe("$0.03");
 });

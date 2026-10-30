@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it } from "vitest";
+import type { Schema } from "../../../shared/api";
 import { initialConfig } from "../configuration";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 
@@ -7,14 +8,103 @@ const asIs = (value: string) => value;
 const vision = "model-00000000000000000001",
   motion = "model-00000000000000000002";
 
-function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
+const catalog: Schema["ToolsetDefinition"][] = ["schedules", "agents"].map(
+  (key) => ({
+    key: key as "schedules" | "agents",
+    display_name: key,
+    description: "",
+    platform: true,
+    default_enabled: false,
+    config_schema: {},
+    tools: [
+      {
+        key: "read",
+        display_name: "Read",
+        description: "",
+        execution_id: "read",
+        model_name: "read",
+        default_enabled: true,
+        default_permission: "allow",
+        supported_permissions: ["allow"],
+        config_schema: {},
+        resource_selector: null,
+        deployment_supported: true,
+      },
+    ],
+  }),
+);
+
+function draftFor(
+  config: Partial<ReturnType<typeof initialConfig>> = {},
+  definitions?: Schema["ToolsetDefinition"][],
+) {
   const initial = {
     ...initialConfig(),
     model: "model-0123456789abcdef0123",
     ...config,
   };
-  return renderHook(() => useAgentDraft(initial)).result;
+  return renderHook(() => useAgentDraft(initial, definitions)).result;
 }
+
+it("binds platform instructions to enabled tools without losing workspace pins", () => {
+  const skill = {
+    skill_id: "sk_0123456789abcdef0123",
+    revision_id: "skr_0123456789abcdef0123",
+  };
+  const draft = draftFor(
+    { skills: [skill], builtin_skills: [], toolsets: {} },
+    catalog,
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setToolsets({ schedules: { enabled: true } }));
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { skills: [skill], builtin_skills: ["platform-operations"] },
+  });
+  act(() =>
+    draft.current.setToolsets({
+      schedules: { enabled: false },
+      agents: { enabled: true },
+    }),
+  );
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  act(() =>
+    draft.current.setToolsets({
+      schedules: { enabled: false },
+      agents: { enabled: true, tools: { read: { enabled: false } } },
+    }),
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { skills: [skill], builtin_skills: [] },
+  });
+  act(() => draft.current.setToolsets({ files: { enabled: true } }));
+  expect(draft.current.builtinSkills).toEqual([]);
+  act(() => draft.current.setAdvanced('{"builtin_skills": []}'));
+  expect(buildDraftConfig(draft.current, undefined, asIs).ok).toBe(false);
+});
+
+it("retains saved builtin skills without a catalog for snapshots and failed discovery", () => {
+  const draft = draftFor({
+    builtin_skills: ["platform-operations"],
+    toolsets: {},
+  });
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  expect(draft.current.dirty).toBe(false);
+});
+
+it("offers a draft correction for saved selections that no longer match tools", () => {
+  const draft = draftFor(
+    { builtin_skills: ["platform-operations"], toolsets: {} },
+    catalog,
+  );
+  expect(draft.current.builtinSkills).toEqual([]);
+  expect(draft.current.dirty).toBe(true);
+});
 
 it("seeds media understanding from the saved configuration and publishes edits", () => {
   const draft = draftFor({
@@ -187,4 +277,266 @@ it("preserves raw settings and distinguishes inheritance from explicit clearing"
   act(() => draft.current.setThinking("false"));
   built = buildDraftConfig(draft.current, undefined, asIs);
   expect(built.ok && built.config.model_settings).toEqual({ thinking: false });
+});
+
+it("publishes session memory defaults independently of shared mounts", () => {
+  const memory = {
+    enabled: true,
+    spaces: [{ name: "team", space_id: "msp_00000000000000000001" }],
+  };
+  const reviewer = { model: "review-model" };
+  const draft = draftFor({ memory, reviewer });
+  expect(draft.current.memory).toEqual(memory);
+  expect(JSON.parse(draft.current.advanced)).not.toHaveProperty("memory");
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setMemory({ ...memory, enabled: false }));
+  expect(draft.current.dirty).toBe(true);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.memory).toEqual({
+    ...memory,
+    enabled: false,
+  });
+  expect(built.ok && built.config.memory_mounts).toEqual([]);
+  expect(built.ok && built.config.reviewer).toEqual(reviewer);
+  act(() =>
+    draft.current.setMemory({
+      enabled: true,
+      spaces: [{ name: "Invalid name", space_id: "msp_00000000000000000001" }],
+    }),
+  );
+  const invalid = buildDraftConfig(draft.current, undefined, asIs);
+  expect(invalid.ok).toBe(false);
+  expect(!invalid.ok && invalid.stage).toBe("advanced");
+  expect(!invalid.ok && invalid.error.message).toBe(
+    "Use unique mount names: lowercase letters, digits and hyphens, starting with a letter.",
+  );
+});
+
+it("requires a reviewer for declared builtin and connection review permissions", () => {
+  for (const config of [
+    {
+      toolsets: {
+        shell: {
+          enabled: true,
+          tools: { exec: { permission: "review" as const } },
+        },
+      },
+    },
+    {
+      connection_tools: [
+        {
+          connection_id: "con_0123456789abcdef0123",
+          permission: "review" as const,
+        },
+      ],
+    },
+    {
+      connection_tools: [
+        {
+          connection_id: "con_0123456789abcdef0123",
+          permissions: { send: "review" as const },
+        },
+      ],
+    },
+  ]) {
+    const draft = draftFor(config);
+    const refused = buildDraftConfig(draft.current, undefined, asIs);
+    expect(refused.ok).toBe(false);
+    expect(!refused.ok && refused.stage).toBe("reviewer");
+    act(() => draft.current.setReviewer({ model: "review-model" }));
+    const built = buildDraftConfig(draft.current, undefined, asIs);
+    expect(built.ok && built.config.reviewer).toEqual({
+      model: "review-model",
+    });
+    expect(draft.current.dirty).toBe(true);
+  }
+});
+
+it("preserves reviewer fields and rules, and includes only intentional edits", () => {
+  const reviewer = {
+    model: "review-model",
+    instruction: "Inspect data access",
+    shell_instruction: "Inspect shell operations",
+    on_error: "allow" as const,
+    timeout_seconds: 45.5,
+    model_settings: { extra_body: { policy: "strict" } },
+    rules: {
+      "mcp/source/*": { risk_threshold: "low" as const },
+      "*": { on_flagged: "approval_required" as const },
+    },
+  };
+  const draft = draftFor({ reviewer });
+  expect(draft.current.dirty).toBe(false);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { reviewer },
+  });
+  act(() => draft.current.setReviewer({ ...reviewer, risk_threshold: "high" }));
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { reviewer: { ...reviewer, risk_threshold: "high" } },
+  });
+  act(() => draft.current.setReviewer(reviewer));
+  expect(draft.current.dirty).toBe(false);
+});
+
+it("toggles discovery while preserving proxy settings", () => {
+  const id = "con_0123456789abcdef0123";
+  const draft = draftFor({
+    connection_tools: [{ connection_id: id }],
+    tool_search: {
+      groups: { knowledge: { description: "Lookup", connections: [id] } },
+      config: { mode: "proxy", max_results: 3 },
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
+  );
+  const directConfig = buildDraftConfig(draft.current, undefined, asIs);
+  expect(directConfig.ok && directConfig.config.tool_search).toBeUndefined();
+  act(() =>
+    draft.current.setToolSearch((current) => ({ ...current, mode: "proxy" })),
+  );
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.tool_search).toMatchObject({
+    config: { mode: "proxy", max_results: 3 },
+  });
+  act(() => draft.current.setConnections([]));
+  const removed = buildDraftConfig(draft.current, undefined, asIs);
+  expect(
+    removed.ok && removed.config.tool_search?.groups?.knowledge.connections,
+  ).toEqual([]);
+  act(() =>
+    draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
+  );
+  const direct = buildDraftConfig(draft.current, undefined, asIs);
+  expect(direct.ok && direct.config.tool_search).toBeUndefined();
+});
+
+it("reports invalid group names in the discovery section", () => {
+  const draft = draftFor();
+  act(() =>
+    draft.current.setToolSearch({
+      mode: "proxy",
+      groups: [{ name: "bad__group", description: "Lookup" }],
+    }),
+  );
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok).toBe(false);
+  expect(!built.ok && built.stage).toBe("toolSearch");
+});
+
+it("publishes sparse execution defaults and removes them when reset to inherit", () => {
+  const draft = draftFor({
+    execution: {
+      tools: { mode: "auto", foreground_wait_seconds: 5 },
+      steering: "immediate",
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setExecution({
+      tools: { mode: "inline", foreground_wait_seconds: 0 },
+      steering: "boundary",
+      environment: { APP_MODE: "run", EMPTY: "" },
+    }),
+  );
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.execution).toEqual({
+    tools: { mode: "inline", foreground_wait_seconds: 0 },
+    steering: "boundary",
+    environment: { APP_MODE: "run", EMPTY: "" },
+  });
+  expect(draft.current.dirty).toBe(true);
+  act(() =>
+    draft.current.setExecution({
+      tools: { mode: null, foreground_wait_seconds: null },
+      steering: null,
+    }),
+  );
+  const inherited = buildDraftConfig(draft.current, undefined, asIs);
+  expect(inherited.ok && inherited.config.execution).toBeUndefined();
+});
+
+it("saves plugin edits and updates only the renamed or removed discovery memberships", () => {
+  const plugin = {
+    instance_name: "audit",
+    plugin_key: "test.audit",
+    config: { nested: { retained: true } },
+  };
+  const other = {
+    instance_name: "other",
+    plugin_key: "test.audit",
+    config: {},
+  };
+  const draft = draftFor({
+    plugins: [plugin, other],
+    tool_search: {
+      groups: {
+        lookup: {
+          description: "Lookup",
+          plugins: ["audit", "other"],
+          capabilities: ["environment"],
+        },
+      },
+      config: { mode: "proxy" },
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.applyPlugin({ ...plugin, instance_name: "renamed" }, "audit"),
+  );
+  expect(draft.current.dirty).toBe(true);
+  let built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [{ ...plugin, instance_name: "renamed" }, other],
+      tool_search: {
+        groups: {
+          lookup: {
+            plugins: ["renamed", "other"],
+            capabilities: ["environment"],
+          },
+        },
+      },
+    },
+  });
+  act(() => draft.current.removePlugin("renamed"));
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [other],
+      tool_search: {
+        groups: {
+          lookup: { plugins: ["other"], capabilities: ["environment"] },
+        },
+      },
+    },
+  });
+  expect(draft.current.initial.plugins).toEqual([plugin, other]);
+});
+
+it("keeps summarize opt-in and preserves the context reminder policy", () => {
+  const draft = draftFor({
+    model_characteristics: { proactive_context_management_threshold: null },
+  });
+  expect(draft.current.summarize).toBe(false);
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setSummarize(true));
+  expect(draft.current.dirty).toBe(true);
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok).toBe(true);
+  if (built.ok) {
+    expect(built.config.summarize).toBe(true);
+    expect(
+      built.config.model_characteristics
+        ?.proactive_context_management_threshold,
+    ).toBeNull();
+  }
+  act(() => draft.current.setSummarize(false));
+  expect(draft.current.dirty).toBe(false);
 });

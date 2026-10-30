@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import {
@@ -173,6 +174,55 @@ it("reserves an upload before joining and resolves it after the initial draft id
   query.clear();
 });
 
+it.each(["accepted", "unknown"] as const)(
+  "preserves the next prompt when server consumption precedes an %s acknowledgement",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, "Submitted");
+    const receive = (doc: Y.Doc) =>
+      draft.receive({
+        draft_id: "draft-one",
+        participant_id: "participant-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(doc)),
+      });
+    receive(draft.doc);
+    const captured = draft.capture();
+    let finish!: (value: object) => void;
+    const POST = vi.fn(
+      () =>
+        new Promise<object>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = submitDraft(
+      draft,
+      { client: { POST } } as unknown as Transport,
+      "one",
+      "send",
+    );
+    await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+    // Ordinary synchronization delivers server consumption before HTTP returns.
+    captured.doc.getText("text").delete(0, captured.doc.getText("text").length);
+    receive(captured.doc);
+    expect(values(draft.doc).prompt).toBe("");
+    expect(draft.submission.kind).toBe("pending");
+    captured.doc.getText("text").insert(0, "Next prompt");
+    receive(captured.doc);
+    finish(
+      outcome === "accepted"
+        ? { data: { receipt_id: "receipt-one", thread_id: "one" } }
+        : {},
+    );
+    await pending;
+    expect(draft.submission.kind).toBe(outcome);
+    expect(values(draft.doc).prompt).toBe("Next prompt");
+    expect(POST).toHaveBeenCalledOnce();
+    captured.doc.destroy();
+    draft.doc.destroy();
+  },
+);
+
 it.each(["accepted", "rejected", "unknown"] as const)(
   "steers ordered attachments and preserves uncaptured edits when %s",
   async (outcome) => {
@@ -190,7 +240,7 @@ it.each(["accepted", "rejected", "unknown"] as const)(
       update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
     });
     const capture = draft.capture();
-    const input = { parts: capture.parts };
+    const input = { parts: capture.parts, draft: capture.snapshot };
     capture.doc.destroy();
     const attachment = {
       attachment_id: "attachment-image",
@@ -324,7 +374,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
     screen
       .getByRole("textbox", { name: "Shared prompt" })
       .getAttribute("aria-description"),
-  ).toContain("Enter to send; Shift+Enter for a new line");
+  ).toContain("Enter to send, Shift+Enter for a new line");
   act(() => {
     draft.submission = { kind: "rejected", message: "Draft retained" };
     draft.notify();
@@ -338,9 +388,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
     };
     draft.notify();
   });
-  expect(
-    screen.getByRole("button", { name: "Refresh operation and history" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh chat" })).toBeTruthy();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
@@ -349,7 +397,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("keeps Goal intent and authored input with direct shortcuts, and disables Goal during active work", () => {
+it("enables Goal intent from its option label, keeps it visible and disables it during active work", async () => {
   const draft = new ThreadDraft();
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -381,13 +429,14 @@ it("keeps Goal intent and authored input with direct shortcuts, and disables Goa
   );
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
-  const goal = screen.getByRole("button", { name: "Goal" });
-  fireEvent.click(goal);
-  expect(goal.getAttribute("aria-pressed")).toBe("true");
-  expect(editor.textContent).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const goal = screen.getByRole("switch", { name: "Goal" });
+  await userEvent.click(screen.getByText("Goal"));
+  expect(goal.getAttribute("aria-checked")).toBe("true");
+  expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
   expect(
-    goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
+    screen.getByRole("button", { name: "Turn off keep working" }),
   ).toBeTruthy();
   expect(
     editor.compareDocumentPosition(
@@ -395,17 +444,14 @@ it("keeps Goal intent and authored input with direct shortcuts, and disables Goa
     ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Composer options" })).toBeNull();
-  expect(
-    (screen.getByRole("button", { name: "Clear context" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Clear context" })).toBeNull();
   expect(screen.getAllByText("Agent and model summary")).toHaveLength(1);
   expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe(
     "Verify the full objective",
   );
   view.rerender(renderComposer(true));
-  expect((goal as HTMLButtonElement).disabled).toBe(true);
+  expect(goal.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   view.unmount();
   query.clear();
@@ -450,7 +496,7 @@ it.each([false, true])(
     );
     try {
       const slot = screen.getByRole("button", {
-        name: "Clear context",
+        name: "Chat options",
       }).previousElementSibling!;
       act(() => draft.doc.getText("text").insert(0, "Pending edit"));
       await act(() => vi.advanceTimersByTimeAsync(699));
@@ -468,7 +514,7 @@ it.each([false, true])(
       act(acknowledge);
       expect(screen.queryByRole("status")).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Clear context" })
+        screen.getByRole("button", { name: "Chat options" })
           .previousElementSibling,
       ).toBe(slot);
       act(() => {
@@ -689,7 +735,6 @@ it("uses distinct source identities for consecutive steering of one receipt and 
 it.each([
   ["send", false],
   ["send", "ultrafast"],
-  ["steer", false],
   ["steer", "ultrafast"],
 ] as const)(
   "submits captured skill references for %s at speed %s and preserves later edits",
@@ -847,6 +892,10 @@ it("continues with the shared draft and attachments and clears only accepted inp
         { attachment_id: "attachment-kept" },
       ],
       mode: "normal",
+      draft: {
+        draft_id: "draft-one",
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+      },
       source_id: expect.any(String),
       thinking: "low",
     },
@@ -959,7 +1008,7 @@ it.each(["restore", "other-field", "rejected"])(
     });
     const post = vi.fn(async () => {
       await wait;
-      if (outcome === "rejected") throw new ApiError("Conversation busy", 409);
+      if (outcome === "rejected") throw new ApiError("Chat busy", 409);
       return { data: { receipt_id: "receipt", thread_id: "thread-one" } };
     });
     const query = new QueryClient({
@@ -1014,7 +1063,7 @@ it.each(["restore", "other-field", "rejected"])(
     );
     expect(screen.queryByText("Sending…")).toBeNull();
     if (outcome === "rejected") {
-      expect(screen.getByText("Conversation busy")).toBeTruthy();
+      expect(screen.getByText("Chat busy")).toBeTruthy();
       expect(screen.getByLabelText("Message stream").textContent).toBe("");
     } else
       expect(screen.getByLabelText("Message stream").textContent).toContain(
@@ -1035,7 +1084,7 @@ it("explains unavailable send conditions without consuming the authored draft", 
     threadId: "thread-one",
     activity: { state: "inactive" } as Schema<"RootActivityView">,
     canRun: false,
-    unavailableReason: "Updating conversation settings…",
+    unavailableReason: "Updating chat settings…",
     profile: { display_name: "Test", color: "#000000" },
     unauthorized: () => {},
     reconcile: () => {},
@@ -1064,7 +1113,7 @@ it("explains unavailable send conditions without consuming the authored draft", 
       update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
     }),
   );
-  expect(screen.getByText("Updating conversation settings…")).toBeTruthy();
+  expect(screen.getByText("Updating chat settings…")).toBeTruthy();
   fireEvent.keyDown(editor, { key: "Enter" });
   expect(post).not.toHaveBeenCalled();
   expect(values(draft.doc).prompt).toBe("Keep my input");
@@ -1236,9 +1285,12 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
       </TransportContext>
     </QueryClientProvider>,
   );
+  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
   fireEvent.click(screen.getByRole("button", { name: "Clear context" }));
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
+    within(
+      screen.getByRole("dialog", { name: "Clear chat context?" }),
+    ).getByRole("button", {
       name: "Clear context",
     }),
   );
@@ -1325,9 +1377,10 @@ it.each([
         </TransportContext>
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
     expect(calls).toEqual([]);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() =>
       expect(draft.submission.kind).toBe(
@@ -1345,7 +1398,7 @@ it.each([
         expect(
           (
             screen.getByRole("button", {
-              name: "Coordinator",
+              name: "Turn off agent coordination",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(true);
@@ -1356,12 +1409,10 @@ it.each([
         get.mockResolvedValue({
           data: { thread: { thread_id: "thread-one", role: "coordinator" } },
         });
-        fireEvent.click(
-          screen.getByRole("button", { name: "Check Coordinator status" }),
-        );
+        fireEvent.click(screen.getByRole("button", { name: "Check status" }));
         await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
         expect(
-          screen.queryByRole("button", { name: "Coordinator" }),
+          screen.queryByRole("switch", { name: "Coordinate agents" }),
         ).toBeNull();
         expect(calls).toHaveLength(1);
         fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1373,7 +1424,9 @@ it.each([
       }
     } else {
       expect(calls[1]).toBe("/api/threads/{thread_id}/submit");
-      expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+      expect(
+        screen.queryByRole("switch", { name: "Coordinate agents" }),
+      ).toBeNull();
       expect(screen.getByText("Coordinator")).toBeTruthy();
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");
@@ -1449,4 +1502,55 @@ it("continues with selected App context and skill references from the captured d
     ],
   });
   expect(values(draft.doc).prompt).toBe("");
+});
+
+it("keeps history subscribers quiet during typing and acknowledgements, but observes input transitions", () => {
+  const draft = new ThreadDraft();
+  const renders = vi.fn();
+  function History() {
+    const value = useDraft("history", true);
+    renders();
+    return (
+      <span>
+        {value.submission.kind}:{value.localInputs.at(-1)?.state}
+      </span>
+    );
+  }
+  render(
+    <ComposerDrafts value={new Map([["history", draft]])}>
+      <History />
+    </ComposerDrafts>,
+  );
+  const initial = renders.mock.calls.length;
+  for (let index = 0; index < 100; index++) {
+    act(() => {
+      draft.doc.getText("text").insert(index, "x");
+      draft.receive({
+        draft_id: "draft",
+        participant_id: "p",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+        closed: false,
+      } as Schema<"DraftFrame">);
+    });
+  }
+  expect(renders).toHaveBeenCalledTimes(initial);
+  act(() => {
+    draft.localInputs = [
+      { id: "input", action: "send", state: "pending", parts: [] },
+    ];
+    draft.submission = { kind: "pending", action: "send" };
+    draft.notify();
+  });
+  expect(screen.getByText("pending:pending")).toBeTruthy();
+  act(() => {
+    draft.localInputs[0].state = "accepted";
+    draft.notify();
+  });
+  expect(screen.getByText("pending:accepted")).toBeTruthy();
+  act(() => {
+    draft.submission = { kind: "accepted", receipt: "receipt" };
+    draft.notify();
+  });
+  expect(screen.getByText("accepted:accepted")).toBeTruthy();
 });

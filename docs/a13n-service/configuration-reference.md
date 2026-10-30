@@ -4,12 +4,13 @@ sidebarTitle: Settings reference
 description: Every field of the Service settings, with its environment variable, type, bounds, and default.
 ---
 
-> [!NOTE]
-> Generated from the `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing them instead of editing rows.
+Find a setting by its section, then use the row to choose its TOML key or environment variable and check the accepted type, bounds, and default. For a complete deployment configuration, start with [Configure Service](configuration.md); that guide covers precedence, role and storage requirements, and checks across fields.
 
-Use [Configure Service](configuration.md) for precedence, examples, role/storage requirements, and cross-field validation. Types and field constraints below do not replace those combined checks. Secret defaults are masked by the schema; this reference never reads deployment environment values. Defaults apply to the source version, not every historical release.
+For example, `server.port` is `port` in the TOML `[server]` section or `A13N_SERVER__PORT` in the environment. Rows marked **JSON field** share one environment variable: set `A13N_AUTH__MAIL` to a JSON object containing the mail settings. An environment value replaces that field's file value, including the whole object for nested settings.
 
-The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](/reference/service-settings.json).
+These tables describe the built-in settings at this source version. Secret defaults are masked. Download [Service settings JSON](/reference/service-settings.json) for the full schema, including named enum and union definitions. Distribution-specific extension settings are documented by their distribution.
+
+The tables are generated from `Settings`. Contributors updating those definitions regenerate the English reference with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 ## `server`
 
@@ -18,6 +19,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `server.host`              | `A13N_SERVER__HOST`              | string          | default="127.0.0.1"                             |
 | `server.port`              | `A13N_SERVER__PORT`              | integer         | minimum=1; maximum=65535; default=8000          |
 | `server.public_url`        | `A13N_SERVER__PUBLIC_URL`        | string          | maxLength=2048; default="http://127.0.0.1:8000" |
+| `server.control_url`       | `A13N_SERVER__CONTROL_URL`       | string or null  | maxLength=2048; default=null                    |
 | `server.trusted_proxies`   | `A13N_SERVER__TRUSTED_PROXIES`   | array of string | default=[]                                      |
 | `server.request_bytes`     | `A13N_SERVER__REQUEST_BYTES`     | integer         | minimum=1024; maximum=33554432; default=2097152 |
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | number          | maximum=60; exclusiveMinimum=0; default=10      |
@@ -32,7 +34,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | --------------------------------------------- | --------------------------------------------------- | -------------- | ------------------------------------------------- |
 | `database.url`                                | `A13N_DATABASE__URL`                                | string         | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
 | `database.auto_migrate`                       | `A13N_DATABASE__AUTO_MIGRATE`                       | boolean        | default=true                                      |
-| `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | integer        | minimum=1; maximum=100; default=5                 |
+| `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | integer        | minimum=1; maximum=1024; default=32               |
 | `database.connect_timeout`                    | `A13N_DATABASE__CONNECT_TIMEOUT`                    | integer        | minimum=1; maximum=60; default=5                  |
 | `database.statement_timeout`                  | `A13N_DATABASE__STATEMENT_TIMEOUT`                  | integer        | minimum=1; maximum=300; default=10                |
 | `database.migration_advisory_lock_timeout`    | `A13N_DATABASE__MIGRATION_ADVISORY_LOCK_TIMEOUT`    | integer        | minimum=1; maximum=3600; default=900              |
@@ -95,16 +97,29 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `control`
 
-| Setting                          | Environment variable                   | Type / choices | Constraints and default                         |
-| -------------------------------- | -------------------------------------- | -------------- | ----------------------------------------------- |
-| `control.scan_seconds`           | `A13N_CONTROL__SCAN_SECONDS`           | number         | maximum=60; exclusiveMinimum=0; default=1       |
-| `control.sweep_batch`            | `A13N_CONTROL__SWEEP_BATCH`            | integer        | minimum=1; maximum=10000; default=100           |
-| `control.inbox_count`            | `A13N_CONTROL__INBOX_COUNT`            | integer        | minimum=1; maximum=10000; default=128           |
-| `control.inbox_bytes`            | `A13N_CONTROL__INBOX_BYTES`            | integer        | minimum=1024; maximum=16777216; default=2097152 |
-| `control.subscriptions`          | `A13N_CONTROL__SUBSCRIPTIONS`          | integer        | minimum=1; maximum=1000; default=32             |
-| `control.webhook_timeout`        | `A13N_CONTROL__WEBHOOK_TIMEOUT`        | number         | maximum=30; exclusiveMinimum=0; default=10      |
-| `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | number         | maximum=120; exclusiveMinimum=0; default=30     |
-| `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | number         | maximum=60; exclusiveMinimum=0; default=2       |
+| Setting                               | Environment variable                        | Type / choices | Constraints and default                         |
+| ------------------------------------- | ------------------------------------------- | -------------- | ----------------------------------------------- |
+| `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | number         | maximum=60; exclusiveMinimum=0; default=1       |
+| `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | integer        | minimum=1; maximum=10000; default=100           |
+| `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer        | minimum=1; maximum=10000; default=128           |
+| `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | integer        | minimum=1024; maximum=16777216; default=2097152 |
+| `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; default=3600                         |
+| `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
+| `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
+| `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | integer        | minimum=1; maximum=1000; default=32             |
+| `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | number         | maximum=30; exclusiveMinimum=0; default=10      |
+| `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | number         | maximum=120; exclusiveMinimum=0; default=30     |
+| `control.stream_refresh_seconds`      | `A13N_CONTROL__STREAM_REFRESH_SECONDS`      | number         | maximum=60; exclusiveMinimum=0; default=2       |
+
+## `schedules`
+
+| Setting                           | Environment variable                    | Type / choices | Constraints and default                    |
+| --------------------------------- | --------------------------------------- | -------------- | ------------------------------------------ |
+| `schedules.scan_seconds`          | `A13N_SCHEDULES__SCAN_SECONDS`          | number         | maximum=300; exclusiveMinimum=0; default=5 |
+| `schedules.batch`                 | `A13N_SCHEDULES__BATCH`                 | integer        | minimum=1; maximum=1000; default=100       |
+| `schedules.max_per_workspace`     | `A13N_SCHEDULES__MAX_PER_WORKSPACE`     | integer        | minimum=1; maximum=100000; default=1000    |
+| `schedules.dispatch_max_attempts` | `A13N_SCHEDULES__DISPATCH_MAX_ATTEMPTS` | integer        | minimum=1; maximum=20; default=5           |
 
 ## `outbox`
 
@@ -147,6 +162,29 @@ The complete machine-readable validation schema, including named enum/union defi
 | `worker.stream_trim_seconds`     | `A13N_WORKER__STREAM_TRIM_SECONDS`     | number         | minimum=0; maximum=600; default=10               |
 | `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | integer        | minimum=0; maximum=16; default=4                 |
 | `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | integer        | minimum=0; maximum=256; default=16               |
+
+## `tool_executions`
+
+| Setting                                       | Environment variable                                | Type / choices | Constraints and default                     |
+| --------------------------------------------- | --------------------------------------------------- | -------------- | ------------------------------------------- |
+| `tool_executions.max_active`                  | `A13N_TOOL_EXECUTIONS__MAX_ACTIVE`                  | integer        | minimum=1; maximum=1024; default=64         |
+| `tool_executions.foreground_wait_seconds`     | `A13N_TOOL_EXECUTIONS__FOREGROUND_WAIT_SECONDS`     | number         | minimum=0; maximum=300; default=5           |
+| `tool_executions.delivered_retention_seconds` | `A13N_TOOL_EXECUTIONS__DELIVERED_RETENTION_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600   |
+| `tool_executions.max_retention_seconds`       | `A13N_TOOL_EXECUTIONS__MAX_RETENTION_SECONDS`       | integer        | minimum=1; maximum=31536000; default=86400  |
+| `tool_executions.shutdown_grace_seconds`      | `A13N_TOOL_EXECUTIONS__SHUTDOWN_GRACE_SECONDS`      | number         | minimum=0; maximum=3600; default=300        |
+| `tool_executions.finalization_seconds`        | `A13N_TOOL_EXECUTIONS__FINALIZATION_SECONDS`        | number         | maximum=300; exclusiveMinimum=0; default=10 |
+
+## `run_search`
+
+| Setting                           | Environment variable                    | Type / choices | Constraints and default                        |
+| --------------------------------- | --------------------------------------- | -------------- | ---------------------------------------------- |
+| `run_search.user_head_bytes`      | `A13N_RUN_SEARCH__USER_HEAD_BYTES`      | integer        | minimum=256; maximum=6144; default=6144        |
+| `run_search.user_tail_bytes`      | `A13N_RUN_SEARCH__USER_TAIL_BYTES`      | integer        | minimum=256; maximum=2048; default=2048        |
+| `run_search.assistant_head_bytes` | `A13N_RUN_SEARCH__ASSISTANT_HEAD_BYTES` | integer        | minimum=256; maximum=4096; default=4096        |
+| `run_search.assistant_tail_bytes` | `A13N_RUN_SEARCH__ASSISTANT_TAIL_BYTES` | integer        | minimum=256; maximum=12288; default=12288      |
+| `run_search.vector_bytes`         | `A13N_RUN_SEARCH__VECTOR_BYTES`         | integer        | minimum=393216; maximum=786432; default=524288 |
+| `run_search.target_bytes`         | `A13N_RUN_SEARCH__TARGET_BYTES`         | integer        | minimum=327680; maximum=655360; default=393216 |
+| `run_search.messages`             | `A13N_RUN_SEARCH__MESSAGES`             | integer        | minimum=8; maximum=4096; default=512           |
 
 ## `environments`
 
@@ -195,21 +233,23 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `providers`
 
-| Setting                            | Environment variable                     | Type / choices  | Constraints and default                                       |
-| ---------------------------------- | ---------------------------------------- | --------------- | ------------------------------------------------------------- |
-| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | array of string | default=[]                                                    |
-| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | boolean         | default=true                                                  |
-| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | array of string | default=[]                                                    |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | array of object | default=[]                                                    |
-| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | integer         | minimum=30; maximum=1800; default=600                         |
-| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | number          | minimum=2; maximum=30; default=10                             |
-| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | number          | maximum=3600; exclusiveMinimum=0; default=30                  |
-| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | integer         | minimum=1; maximum=86400; default=300                         |
-| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | number          | maximum=600; exclusiveMinimum=0; default=60                   |
-| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | number          | maximum=3600; exclusiveMinimum=0; default=300                 |
-| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | integer         | minimum=65536; maximum=268435456; default=16777216            |
-| `providers.chatgpt_client_id`      | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`      | string or null  | minLength=1; maxLength=256; default=null                      |
-| `providers.chatgpt_redirect_uri`   | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`   | string          | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
+| Setting                                   | Environment variable                            | Type / choices  | Constraints and default                                       |
+| ----------------------------------------- | ----------------------------------------------- | --------------- | ------------------------------------------------------------- |
+| `providers.forward_model_context_headers` | `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS` | boolean         | default=true                                                  |
+| `providers.forward_mcp_context_headers`   | `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS`   | boolean         | default=true                                                  |
+| `providers.http_origins`                  | `A13N_PROVIDERS__HTTP_ORIGINS`                  | array of string | default=[]                                                    |
+| `providers.require_https`                 | `A13N_PROVIDERS__REQUIRE_HTTPS`                 | boolean         | default=true                                                  |
+| `providers.return_urls`                   | `A13N_PROVIDERS__RETURN_URLS`                   | array of string | default=[]                                                    |
+| `providers.mcp_servers`                   | `A13N_PROVIDERS__MCP_SERVERS`                   | array of object | default=[]                                                    |
+| `providers.flow_seconds`                  | `A13N_PROVIDERS__FLOW_SECONDS`                  | integer         | minimum=30; maximum=1800; default=600                         |
+| `providers.operation_seconds`             | `A13N_PROVIDERS__OPERATION_SECONDS`             | number          | minimum=2; maximum=30; default=10                             |
+| `providers.operation_scan_seconds`        | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS`        | number          | maximum=3600; exclusiveMinimum=0; default=30                  |
+| `providers.discovery_ttl`                 | `A13N_PROVIDERS__DISCOVERY_TTL`                 | integer         | minimum=1; maximum=86400; default=300                         |
+| `providers.tool_call_seconds`             | `A13N_PROVIDERS__TOOL_CALL_SECONDS`             | number          | maximum=600; exclusiveMinimum=0; default=60                   |
+| `providers.model_timeout`                 | `A13N_PROVIDERS__MODEL_TIMEOUT`                 | number          | maximum=3600; exclusiveMinimum=0; default=300                 |
+| `providers.response_bytes`                | `A13N_PROVIDERS__RESPONSE_BYTES`                | integer         | minimum=65536; maximum=268435456; default=16777216            |
+| `providers.chatgpt_client_id`             | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`             | string or null  | minLength=1; maxLength=256; default=null                      |
+| `providers.chatgpt_redirect_uri`          | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`          | string          | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
 
 ## `plugins`
 
@@ -242,3 +282,21 @@ The complete machine-readable validation schema, including named enum/union defi
 | `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | string or null                      | format="password"; default=null                                 |
 | `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"          | default="standard"                                              |
 | `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | number                              | maximum=60; exclusiveMinimum=0; default=10                      |
+
+## `monitoring`
+
+| Setting                                    | Environment variable                             | Type / choices | Constraints and default                          |
+| ------------------------------------------ | ------------------------------------------------ | -------------- | ------------------------------------------------ |
+| `monitoring.enabled`                       | `A13N_MONITORING__ENABLED`                       | boolean        | default=true                                     |
+| `monitoring.allow_loopback_ws`             | `A13N_MONITORING__ALLOW_LOOPBACK_WS`             | boolean        | default=false                                    |
+| `monitoring.max_devices`                   | `A13N_MONITORING__MAX_DEVICES`                   | integer        | minimum=1; maximum=512; default=64               |
+| `monitoring.poll_seconds`                  | `A13N_MONITORING__POLL_SECONDS`                  | number         | minimum=5; maximum=60; default=10                |
+| `monitoring.request_seconds`               | `A13N_MONITORING__REQUEST_SECONDS`               | number         | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_concurrency`             | `A13N_MONITORING__QUERY_CONCURRENCY`             | integer        | minimum=1; maximum=64; default=8                 |
+| `monitoring.query_seconds`                 | `A13N_MONITORING__QUERY_SECONDS`                 | number         | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_bytes`                   | `A13N_MONITORING__QUERY_BYTES`                   | integer        | minimum=65536; maximum=16777216; default=4194304 |
+| `monitoring.deployment_preset`             | `A13N_MONITORING__DEPLOYMENT_PRESET`             | object or null | default=null                                     |
+| `monitoring.deployment_query_bearer_token` | `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` | string or null | format="password"; default=null                  |
+| `monitoring.collectors`                    | `A13N_MONITORING__COLLECTORS`                    | object         | —                                                |
+| `monitoring.collector_seconds`             | `A13N_MONITORING__COLLECTOR_SECONDS`             | number         | minimum=10; maximum=300; default=30              |
+| `monitoring.collector_targets`             | `A13N_MONITORING__COLLECTOR_TARGETS`             | integer        | minimum=1; maximum=4096; default=512             |

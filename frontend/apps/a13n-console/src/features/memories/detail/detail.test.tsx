@@ -8,7 +8,10 @@ import { createClient } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { MemoryDetail } from "../page";
 
-vi.mock("../../../auth/context", () => ({ useClient: () => client }));
+vi.mock("../../../auth/context", () => ({
+  useClient: () => client,
+  useAuth: () => ({ data: { user: { value: { id: "usr_1", name: "Ada" } } } }),
+}));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/ws_design",
@@ -373,9 +376,12 @@ it("creates, renames and deletes files", async () => {
   });
   await screen.findByRole("region", { name: "notes/topic.md" });
 
-  await user.click(screen.getByRole("button", { name: "glossary.md" }));
-  await screen.findByRole("heading", { name: "Glossary" });
-  await user.click(screen.getByRole("button", { name: "Rename" }));
+  // Right-click a different file without changing the open document first.
+  await user.pointer({
+    target: screen.getByRole("button", { name: "glossary.md" }),
+    keys: "[MouseRight]",
+  });
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   const rename = await screen.findByRole("dialog");
   const destination = within(rename).getByRole("textbox", { name: "New path" });
   await user.clear(destination);
@@ -388,7 +394,8 @@ it("creates, renames and deletes files", async () => {
   });
 
   await screen.findByRole("region", { name: "terms.md" });
-  await user.click(await screen.findByRole("button", { name: "Delete" }));
+  await user.click(screen.getByRole("button", { name: "File actions" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
   const confirm = await screen.findByRole("dialog");
   await user.click(
     within(confirm).getByRole("button", { name: "Delete file" }),
@@ -398,6 +405,11 @@ it("creates, renames and deletes files", async () => {
     path: "/api/v1/memories/mem_1/files/terms.md",
     ifMatch: '"memf_glossary:8"',
   });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "terms.md" })).toBeNull(),
+  );
+  expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
 });
 
 it("filters history by run from the URL, opens a diff and restores under the current file", async () => {
@@ -457,9 +469,7 @@ it("purges one file's history only for people who may configure the memory", asy
   await user.click(screen.getByRole("button", { name: "Delete history" }));
   const confirm = await screen.findByRole("dialog");
   expect(
-    within(confirm).getByText(
-      /stays in their conversation histories and traces/,
-    ),
+    within(confirm).getByText(/stays in their session histories and traces/),
   ).toBeTruthy();
   await user.click(
     within(confirm).getByRole("button", { name: "Delete file history" }),
@@ -578,6 +588,14 @@ it("shows files and configuration read-only to readers", async () => {
   await screen.findByRole("heading", { name: "Handbook" });
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New file" })).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Actions for glossary.md" }),
+  );
+  expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+  expect(await screen.findByRole("menuitem", { name: "History" })).toBeTruthy();
+  await user.keyboard("{Escape}");
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
   await screen.findByRole("heading", { name: "Always loaded files" });
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();

@@ -6,7 +6,7 @@ import {
   Button,
   useToast,
 } from "a13n-ui";
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { CompassIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,10 @@ function reasonCopy(error: ApiError, t: TFunction) {
     );
   if (error.code !== "conflict") return undefined;
   switch (reason) {
+    case "provider_in_use":
+      return t(
+        "This provider is still referenced and cannot be deleted. Remove its references or disable it instead.",
+      );
     case "mount_limit":
       return t(
         "A thread can mount at most {{limit}} environments. Remove one before adding another.",
@@ -161,6 +165,28 @@ export function ErrorPage({
   );
 }
 
+/** A missing page or resource is not a failure: a calm notice with the way back. */
+export function NotFoundPage({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className={styles.errorPage}>
+      <div className={styles.errorMark} data-tone="neutral">
+        <CompassIcon aria-hidden="true" />
+      </div>
+      <h1>{title}</h1>
+      <p>{description}</p>
+      {actions && <div className={styles.errorPageActions}>{actions}</div>}
+    </div>
+  );
+}
+
 /** Stays beside the form or collection that owns the failure. */
 export function ErrorNotice({
   error,
@@ -176,7 +202,7 @@ export function ErrorNotice({
   if (!error) return null;
   const details = errorDetails(error, t);
   return (
-    <Alert variant="error" className="my-4">
+    <Alert variant="error" className={styles.errorNotice}>
       <WarningCircleIcon aria-hidden="true" />
       <AlertTitle>{details.title}</AlertTitle>
       <AlertDescription>

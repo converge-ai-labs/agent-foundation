@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
@@ -276,7 +277,7 @@ class _Aggregation:
         )
 
 
-def _contributions(root_id: str, *, root_only: bool = False):
+def _contributions(root_id: str | Select[tuple[str]], *, root_only: bool = False):
     """Flatten current scopes and legacy facts, retaining the first receipt attribution."""
     # Extract envelope metadata once per scope, not once per contribution.
     # Without materialization SQLite flattens the CTE and reparses a complete
@@ -284,6 +285,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     scopes = (
         select(
             ThreadUsageRecord.sequence,
+            ThreadUsageRecord.root_thread_id,
             ThreadUsageRecord.descendant,
             ThreadUsageRecord.payload_json,
             ThreadUsageRecord.observed_at,
@@ -293,7 +295,9 @@ def _contributions(root_id: str, *, root_only: bool = False):
             ).label("observed_through"),
         )
         .where(
-            ThreadUsageRecord.root_thread_id == root_id,
+            ThreadUsageRecord.root_thread_id == root_id
+            if isinstance(root_id, str)
+            else ThreadUsageRecord.root_thread_id.in_(root_id),
             ThreadUsageRecord.descendant.is_(False) if root_only else true(),
         )
         .cte("usage_scopes")
@@ -303,6 +307,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     entries = func.json_each(table.payload_json, "$.snapshot.records").table_valued("key", "value")
     legacy = select(
         table.sequence,
+        table.root_thread_id,
         literal(0).label("ordinal"),
         table.descendant,
         table.payload_json.label("payload"),
@@ -312,6 +317,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     current = (
         select(
             table.sequence,
+            table.root_thread_id,
             entries.c.key.label("ordinal"),
             table.descendant,
             entries.c.value.label("payload"),
@@ -327,7 +333,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
         facts,
         func.row_number()
         .over(
-            partition_by=func.json_extract(facts.c.payload, "$.record_id"),
+            partition_by=(facts.c.root_thread_id, func.json_extract(facts.c.payload, "$.record_id")),
             order_by=(facts.c.sequence, facts.c.ordinal),
         )
         .label("position"),
@@ -416,54 +422,66 @@ class ThreadUsageRepository:
         return ThreadUsageReporter(self, thread_id)
 
     async def save(self, *, thread_id: str, snapshot: UsageSnapshot) -> None:
-        """Replace one current JSON payload under SQLite's cross-process writer lock."""
-        async with transaction(self._sessions) as session:
+        """Prepare outside the writer queue, then compare and publish atomically."""
+        async with short_session(self._sessions) as session:
             root_id = await self._root_id(session, thread_id)
-            row = await session.scalar(
-                select(ThreadUsageRecord).where(
-                    ThreadUsageRecord.root_thread_id == root_id,
-                    ThreadUsageRecord.record_id == snapshot.usage_id,
-                )
-            )
-            if row is not None and row.origin_thread_id != thread_id:
-                raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
-            # Compare against the admitted row atomically, but keep ledger-sized CPU work
-            # off the event loop. The transaction still owns cancellation through commit.
-            prepared = await to_thread.run_sync(
-                _prepare_snapshot_write, snapshot, None if row is None else row.payload_json
-            )
+        query = select(ThreadUsageRecord).where(
+            ThreadUsageRecord.root_thread_id == root_id,
+            ThreadUsageRecord.record_id == snapshot.usage_id,
+        )
+        while True:
+            async with short_session(self._sessions) as session:
+                previous = await session.scalar(query)
+                if previous is not None and previous.origin_thread_id != thread_id:
+                    raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
+                previous_payload = None if previous is None else previous.payload_json
+            # Validation and serialization grow with the ledger. Neither a connection
+            # nor SQLite's single writer may be held while that worker runs.
+            prepared = await to_thread.run_sync(_prepare_snapshot_write, snapshot, previous_payload)
             if prepared is None:
                 return
             payload, now, receipts = prepared
-            # A provider receipt may be returned by several independent scopes.
-            # Check new IDs under the writer lock and charge their first owner only.
-            if receipts:
-                facts = _contributions(root_id)
-                for start in range(0, len(receipts), _BATCH):
-                    ids = tuple(receipts)[start : start + _BATCH]
-                    payloads = await session.scalars(
-                        select(facts.c.payload).where(
-                            func.json_extract(facts.c.payload, "$.record_id").in_(ids),
+            async with transaction(self._sessions) as session:
+                row = await session.scalar(query)
+                if row is not None and row.origin_thread_id != thread_id:
+                    raise StoreIntegrityError("Usage scope changed its Host owner.", code="usage_record_conflict")
+                if (None if row is None else row.payload_json) != previous_payload:
+                    # Another App may have advanced the scope during preparation.
+                    # Release the writer before comparing its newer accounting state.
+                    continue
+                # A provider receipt may be returned by several independent scopes.
+                # Check new IDs under the writer lock and charge their first owner only.
+                if receipts:
+                    facts = _contributions(root_id)
+                    for start in range(0, len(receipts), _BATCH):
+                        ids = tuple(receipts)[start : start + _BATCH]
+                        payloads = await session.scalars(
+                            select(facts.c.payload).where(
+                                func.json_extract(facts.c.payload, "$.record_id").in_(ids),
+                            )
+                        )
+                        for prior_payload in payloads:
+                            prior = _RECORD.validate_json(prior_payload)
+                            if (
+                                not isinstance(prior, ProviderUsageRecord)
+                                or prior.usage != receipts[prior.record_id].usage
+                            ):
+                                raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
+                if row is None:
+                    session.add(
+                        ThreadUsageRecord(
+                            root_thread_id=root_id,
+                            origin_thread_id=thread_id,
+                            record_id=snapshot.usage_id,
+                            run_id=snapshot.run_id,
+                            descendant=thread_id != root_id or snapshot.parent_agent_instance_id is not None,
+                            payload_json=payload,
+                            observed_at=now,
                         )
                     )
-                    for prior_payload in payloads:
-                        prior = _RECORD.validate_json(prior_payload)
-                        if not isinstance(prior, ProviderUsageRecord) or prior.usage != receipts[prior.record_id].usage:
-                            raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
-            if row is None:
-                session.add(
-                    ThreadUsageRecord(
-                        root_thread_id=root_id,
-                        origin_thread_id=thread_id,
-                        record_id=snapshot.usage_id,
-                        run_id=snapshot.run_id,
-                        descendant=thread_id != root_id or snapshot.parent_agent_instance_id is not None,
-                        payload_json=payload,
-                        observed_at=now,
-                    )
-                )
-            else:
-                row.payload_json = payload
+                else:
+                    row.payload_json = payload
+            return
 
     async def restore(self, *, thread_id: str, state: HarnessState) -> HarnessState:
         """Overlay accounting ahead of the selected execution checkpoint before a true resume."""
@@ -529,6 +547,22 @@ class ThreadUsageRepository:
                     )
                 )
                 await session.flush()
+
+    async def model_records(
+        self, *, thread_id: str, run_id: str, agent_instance_id: str
+    ) -> tuple[ModelUsageRecord, ...]:
+        """Restore a resumed Agent's model budget across foreground and detached scopes."""
+        async with short_session(self._sessions) as session:
+            root_id = await self._root_id(session, thread_id)
+            facts = _contributions(root_id)
+            payloads = await session.scalars(
+                select(facts.c.payload).where(
+                    func.json_extract(facts.c.payload, "$.kind") == "model",
+                    func.json_extract(facts.c.payload, "$.run_id") == run_id,
+                    func.json_extract(facts.c.payload, "$.agent_instance_id") == agent_instance_id,
+                )
+            )
+            return tuple(ModelUsageRecord.model_validate_json(payload) for payload in payloads)
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
         """Read current primary-request occupancy, never cumulative Context usage."""

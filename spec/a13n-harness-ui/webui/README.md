@@ -13,10 +13,12 @@ WebUI is the project-centric collaborative browser surface of Harness UI. Truste
 | [02-host-computer-sharing.md](02-host-computer-sharing.md)             | Native Host files, Git-aware views, PTY, access gating, and human development workflows                                         |
 | [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Python distribution                                                                 |
 | [04-workbench-interaction.md](04-workbench-interaction.md)             | Default user journey, participant awareness, composer controls, configuration UX, code/diff workflows, and terminal interaction |
+| [05-scoped-sharing.md](05-scoped-sharing.md)                           | Temporary Project/Thread grants, guest authority and the focused guest experience                                               |
+| [06-design-guidelines.md](06-design-guidelines.md)                     | Harness visual language, density, type, alignment, navigation, conversation and overlays                                        |
 
 ## Reading Paths
 
-Read `00` for the product and `04` for the end-to-end user experience. Read `01` for page awareness and pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
+Read `00` for the product, `04` for interaction and `06` for visual presentation. `06` specializes the [shared frontend foundation](../../frontend/design-system.md). Read `01` for page awareness and pair prompting, `02` for native server access, and `03` for packaging and container deployment boundaries.
 
 [MCP Apps Host](../09-mcp-apps.md) owns inline tool-result Apps, retained originals, trusted interaction confirmations and separate-origin sandboxing.
 
@@ -31,4 +33,5 @@ Read `00` for the product and `04` for the end-to-end user experience. Read `01`
 5. Access to native computer-sharing operations requires explicit startup enablement; API authentication bypass alone does not enable them.
 6. File-backed resources remain editable without the browser. Configuration UI does not create a parallel resource store.
 7. Browser disconnect neither cancels an Agent Run nor destroys a native terminal. Server process loss has different recovery consequences from browser disconnect.
-8. Browser assets remain part of the Harness UI distribution rather than an independently released application.
+8. Scoped sharing grants restrict guest browser/API access while prompt input retains the existing Agent's execution authority.
+9. Browser assets remain part of the Harness UI distribution rather than an independently released application.

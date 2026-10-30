@@ -36,3 +36,33 @@ it("does not present cancellation as connection loss", async () => {
   ).rejects.toBe(cause);
   transport.close();
 });
+
+it("rewrites guest JSON and attachment writes with their body bytes intact", async () => {
+  const requests: Request[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      requests.push(request);
+      return new Response("{}", {
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  const transport = createTransport("guest-key", vi.fn(), "share-one");
+  await transport.client.POST("/api/threads/{thread_id}/submit", {
+    params: { path: { thread_id: "thread-one" } },
+    body: { parts: ["Hello"] },
+  });
+  expect(new URL(requests[0].url).pathname).toBe(
+    "/api/shared/share-one/threads/thread-one/submit",
+  );
+  expect(await requests[0].json()).toEqual({ parts: ["Hello"] });
+  await transport.fetch("/api/threads/thread-one/attachments", {
+    method: "POST",
+    body: new Uint8Array([1, 2, 3]),
+  });
+  expect(new Uint8Array(await requests[1].arrayBuffer())).toEqual(
+    new Uint8Array([1, 2, 3]),
+  );
+  transport.close();
+});

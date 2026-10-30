@@ -18,6 +18,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
   AGENTS.md
   models/
     <resource>.yaml
+  subscription_groups/
+    <resource>.yaml
   extensions/
     <resource>.yaml
   mcp/
@@ -40,6 +42,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 [File Memory](08-file-memory.md) owns the root `memory` mapping, default-on switches, Model selection, and the runtime `memory/` directory beside this root. Memory files and maintenance bookkeeping are not resource sources or accepted-generation inputs.
 
 [MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server selection is automatically unioned with each root and child Agent's generic MCP selection in WebUI, without rewriting Agent resources or sticky Thread selections or overriding tool permissions.
+
+[Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
 
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
@@ -92,6 +96,10 @@ defaults:
 `input.long_text_threshold_chars` is a positive integer, default `8000`, or `null` to disable automatic text files. It counts Unicode characters in each submitted user-text block, not tokens or UTF-8 bytes. A block is eligible only when strictly longer than the threshold. A root Run captures the policy from its accepted generation and uses it for initial input and human steering; later configuration changes affect later Runs. The [root input contract](05-runtime-subagents-and-surfaces.md#long-text-input-files) owns conversion, readability checks, and failure behavior.
 
 `tools.interaction_timeout_seconds` is a positive finite number, default `120`. It controls the active terminal Host's wait for each question, approval, or external result and the WebUI App's wait for each complete root decision batch, not model execution. The old `ask_user_question_timeout_seconds` key is accepted as an input alias; output uses `interaction_timeout_seconds`. The [interactive contract](07-interactive-cli.md#waiting-and-cancellation) owns terminal expiry; the [App contract](05-runtime-subagents-and-surfaces.md#webui-interaction-deadlines) owns WebUI deadlines and continuation behavior.
+
+The optional root `envd` object configures the App-owned local runtime. `envd.executable` is `null` for managed acquisition or an explicit absolute path, after user expansion, to `a13n-envd` or `a13n-envd.exe`. `envd.computer_use` defaults to `false` and permits desktop-capable local launches; an Agent still needs an execution profile and mount permissions granting Computer Use. Omission retains the embedding Host's executable selection, with desktop capability disabled. An explicit object overrides that executable selection. These fields are captured at App startup; saving them uses ordinary source validation/publication and reports restart required without launching, downloading or requesting OS permissions. Lifecycle and readiness belong to [local runtime setup](06-setup-and-environment-readiness.md#deferred-local-runtime-setup), independently of `defaults.environment_profile`.
+
+The root `browser` object configures the optional Host browser runtime. `mode` is `auto` by default or `disabled`; Auto prepares the shared runtime at WebUI startup and admits browser tools automatically for eligible Runs, while Disabled opts out. `executable` and `vnc_executable` are absolute Host executable paths after user expansion. Omitted or null paths use automatic discovery of installed compatible programs at preparation and startup, without publishing paths into configuration. Explicit bindings override discovery independently; an invalid explicit path blocks startup instead of selecting a replacement. The shared browser profile is stored at the selected data root’s `browsers/profile` directory; its location is not configurable independently. Every Thread and Project uses this one profile through a single App-owned browser instance; no Thread identifier is appended. Empty, relative and NUL-containing paths are rejected; existence and runtime compatibility are checked during preparation. These settings apply across Projects and are captured at App startup. Saving them does not launch programs or migrate profiles; restart Harness UI to apply changes. [Host Browser](11-browser.md#host-preparation) owns dependency detection, executable binding and graphical-session lifecycle.
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 
@@ -186,13 +194,21 @@ A completed source write is not a promise that its bytes remain current after an
 
 ### Agent Tool-Proxy Configuration and Preview
 
-Agent YAML owns tool-proxy groups. `config show` exposes a static preview for Agents with grouping configured: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither preview nor validation constructs MCP clients or discovers tools.
+Agent YAML owns tool-search groups. `config show` exposes a static preview for Agents with grouping configured: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither preview nor validation constructs MCP clients or discovers tools.
 
-Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-proxy-groups). Browser group editing is not implemented; the existing configuration source HTTP contract is unchanged.
+Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-search-groups). WebUI exposes the Agent search switch and MCP membership editing while preserving custom groups; advanced group definitions remain editable in the source. Explicit MCP tool discovery and secret-preserving selection updates follow the browser configuration contract.
 
 ## First-use Initialization
 
 [Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, and last-write-wins publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
+
+## Background Compaction
+
+Root `background_compaction` contains `enabled` (default `true`) and `blocking_threshold` (default `0.95`, greater than zero and at most one). Starter configuration writes both values explicitly. Run composition captures the policy. It switches an enabled native compaction Capability to App-owned background generation for root Threads. Harness UI selects this mode at root Run reconstruction; both inline and asynchronous subagents retain synchronous compaction. Harness leaves this execution policy to the Host. Existing captures without the field retain synchronous behavior. Memory organization retains its synchronous composition.
+
+Setting `background_compaction.enabled` to `false` disables new background generation for later captured Runs while preserving delivery of already retained results. The blocking threshold uses Harness's [background policy](../a13n-harness/09-context-and-memory.md#background-execution-and-result-application); the common compaction trigger and Model context characteristics remain independent. Harness itself retains its synchronous default. [Local Storage and Recovery](03-local-storage-and-recovery.md#retained-background-compaction) owns result persistence, checkpoint acknowledgement, interruption, and shutdown.
+
+Harness UI inherits the default [Harness context recovery policy](../a13n-harness/09-context-and-memory.md#context-recovery) for roots and children. Recovery is trusted runtime behavior independent of authored compaction configuration and background mode.
 
 ## Goal Iteration Policy
 
@@ -210,7 +226,7 @@ then root YAML global default
 then the release-owned Full Control Environment profile (`environment-native`)
 ```
 
-The resulting Thread stores exact resource IDs, with null for an unselected optional Project. `defaults.project` is optional and is not generated by normal setup. Without an explicit creation Project or global Project default, a new Thread runs using its own scratch directory under the [projectless Thread contract](04-projects-threads-and-environments.md#threads-without-a-project). Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.
+The resulting Thread stores exact resource IDs, with null for an unselected optional Project. `defaults.project` is optional and is not generated by normal setup. Without an explicit creation Project or global Project default, a new Thread runs using its own scratch directory under the [projectless Thread contract](04-projects-threads-and-environments.md#threads-without-a-project). Later global-default or file changes alone do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values. [Interactive CLI resume](07-interactive-cli.md#project-selection-and-resume) explicitly refreshes the saved MCP selection through a configuration mutation using current defaults.
 
 Creation inspection reports the winning source per axis from this same resolver, including explicit null Project and empty collection selections. Sources distinguish explicit input, Project, Agent, global defaults, and built-in fallback. Existing sticky Thread selections are labeled as Thread values; matching a current default does not prove the historical origin of a stored ID. No historical inheritance provenance is inferred or persisted by this inspection.
 
@@ -265,11 +281,11 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 ## Compatibility
 
-The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
+The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. New MCP resources and wrappers use version 2 under the [MCP tool selection contract](02-agent-composition-and-snapshots.md#mcp-tool-selection); unversioned wrappers retain version-1 normalization for compatibility. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
 
-Within a supported version, root configuration sections, resource envelopes, Project roots/defaults, Capability selections, tool-proxy groups, canonical subagent metadata, and retained generation/source envelopes accept additive JSON fields. Readers preserve those fields in normalized round trips without applying unknown behavior. Source loading logs unknown field locations and names, never their values, so a typo remains diagnosable without disabling the whole tree. Managed read-modify-write operations preserve unrelated known and unknown fields; explicit full-source replacement still replaces the submitted document.
+Within a supported version, root configuration sections, resource envelopes, Project roots/defaults, Capability selections, tool-search groups, canonical subagent metadata, and retained generation/source envelopes accept additive JSON fields. Readers preserve those fields in normalized round trips without applying unknown behavior. Source loading logs unknown field locations and names, never their values, so a typo remains diagnosable without disabling the whole tree. Managed read-modify-write operations preserve unrelated known and unknown fields; explicit full-source replacement still replaces the submitted document.
 
-Known types, required fields, references, graph rules, and supported version/kind discriminators remain strict. Authentication sources, MCP transports/value sources, and Agent-versus-Markdown selectors are closed execution contracts, not additive metadata. Native Harness settings and tool-proxy configuration follow their owning schemas. Explicitly forbidden semantics, including obsolete question-tool policy names, authored Markdown `model`, and recursive Project defaults, remain errors. Unknown fields cannot grant a new credential source, transport, or execution authority. Changes that require older readers to enforce new semantics require an explicit incompatible version or discriminator transition, not an ignorable field.
+Known types, required fields, references, graph rules, and supported version/kind discriminators remain strict. Authentication sources, MCP transports/value sources, and Agent-versus-Markdown selectors are closed execution contracts, not additive metadata. Native Harness settings and tool-search configuration follow their owning schemas. Explicitly forbidden semantics, including obsolete question-tool policy names, authored Markdown `model`, and recursive Project defaults, remain errors. Unknown fields cannot grant a new credential source, transport, or execution authority. Changes that require older readers to enforce new semantics require an explicit incompatible version or discriminator transition, not an ignorable field.
 
 Writers omit semantically absent newly introduced optional fields where the historical shape allows it: empty Project `defaults` is omitted, while explicit empty selection lists remain present. This reduces avoidable incompatibility but cannot retrofit tolerant readers into already released strict packages; populated new features require a reader supporting those features. Historical format checks are separate from database structural compatibility and do not promise arbitrary old-wheel interoperability.
 

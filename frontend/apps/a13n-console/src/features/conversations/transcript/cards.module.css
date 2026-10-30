@@ -104,19 +104,6 @@
 .cardFacts dd {
   margin: 0;
 }
-.cardSwitch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--a13n-text-sm);
-}
-.cardFooter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding-top: 2px;
-}
 .cardsFooter {
   display: flex;
   align-items: center;

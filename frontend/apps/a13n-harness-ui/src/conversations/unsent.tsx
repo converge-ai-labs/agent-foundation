@@ -26,10 +26,11 @@ const UnsentContext = createContext<UnsentState>({
   loading: false,
   error: null,
 });
+const UnsentStoreContext = createContext<UnsentStore | undefined>(undefined);
 export const useUnsent = () => useContext(UnsentContext);
 
 export function useTrackUnsent(threadId: string, draft: ThreadDraft) {
-  const { store } = useUnsent();
+  const store = useContext(UnsentStoreContext);
   useEffect(() => {
     store?.track(threadId, draft);
   }, [store, threadId, draft]);
@@ -76,20 +77,23 @@ export function UnsentProvider({ children }: { children: ReactNode }) {
       a.thread.thread_id.localeCompare(b.thread.thread_id),
   );
   return (
-    <UnsentContext
-      value={{
-        store,
-        inputs,
-        rows,
-        loading: shared.isPending || lookups.some((lookup) => lookup.isPending),
-        error: shared.error ?? lookups.find((lookup) => lookup.error)?.error,
-        retry: () => {
-          void shared.refetch();
-          for (const lookup of lookups) void lookup.refetch();
-        },
-      }}
-    >
-      {children}
-    </UnsentContext>
+    <UnsentStoreContext value={store}>
+      <UnsentContext
+        value={{
+          store,
+          inputs,
+          rows,
+          loading:
+            shared.isPending || lookups.some((lookup) => lookup.isPending),
+          error: shared.error ?? lookups.find((lookup) => lookup.error)?.error,
+          retry: () => {
+            void shared.refetch();
+            for (const lookup of lookups) void lookup.refetch();
+          },
+        }}
+      >
+        {children}
+      </UnsentContext>
+    </UnsentStoreContext>
   );
 }

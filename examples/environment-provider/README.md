@@ -2,20 +2,26 @@
 
 This standalone project demonstrates how a Host uses Harness execution definitions and Service management drivers without an Agent or a model.
 
-The Host explicitly manages backing targets through `EnvironmentProvider`, records the returned state, and builds a reusable `EnvironmentConnector`. Each `open()` returns an independent `EnvironmentExecution` with ready operations. Execution close releases its connection and local resources; target deletion requires an explicit management call.
+The Host explicitly manages backing targets through `EnvironmentProvider`, records the returned state, and builds a reusable `EnvironmentConnector`. Each `open()` returns an independent `EnvironmentExecution` with ready operations. Execution close releases its connection and local resources; target deletion requires an explicit management call. Each managed vendor retains its own resource management subclass. Native Local/Docker/E2B provide Files & Shell for quick setup; Envd is the general execution path for OS sandbox, Egress, Computer use, and Device metrics.
 
 ## Demonstrated routes
 
-| Route  | Provider                 | Use it for                               | Operation and ownership boundary                            |
-| ------ | ------------------------ | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `direct_local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Envd   | `local_envd`             | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
-| Envd   | `http_envd`              | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `websocket_envd`         | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Execution path | Provider         | Execution scope                              | Resource management             |
+| -------------- | ---------------- | -------------------------------------------- | ------------------------------- |
+| Native         | `direct_local`   | Local Files & Shell                          | Host-owned directory            |
+| Native         | `docker`         | Container Files & Shell                      | Docker provider                 |
+| Native         | `e2b`            | Remote sandbox Files & Shell                 | E2B provider                    |
+| Envd           | `local_envd`     | General execution over stdio EIP             | Host-owned daemon               |
+| Envd           | `http_envd`      | General execution over HTTP(S) EIP           | Connect-only                    |
+| Envd           | `websocket_envd` | General execution over reverse WebSocket EIP | Connect-only; Host owns ingress |
 
 The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/environments/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
+
+[desktop_template.py](desktop_template.py) builds an operator-owned E2B Envd template with the shared desktop launcher, CJK fonts, Chromium and revocable viewer supervisor. From this source checkout, securely set `E2B_API_KEY`, run `uv sync --locked` in this directory, then `uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd`. Supply a compatible Linux amd64 binary from the matching release or source build. The build creates or updates the named template; it installs components but does not start a daemon or embed instance credentials. Select `execution="envd_http"`, `desktop=true` and that template in Console. Service performs per-instance startup and authenticated attachment; all Agent operations use EIP. See [E2B desktop preparation](../../docs/environments/providers.md#e2b-desktop-preparation).
+
+[desktop_access_template.py](desktop_access_template.py) invokes the same builder. The viewer supervisor uses preinstalled x11vnc and websockify; no dependency installation occurs when issuing a grant.
+
+Enable `desktop_assistance: true` in a Service desktop recipe to use the Agent-requested assistance flow. E2B needs this compatible custom template. Docker also needs `desktop_viewer_url`, an operator-provided WSS route containing `{container_id}` and reaching container port 6081. Service authorizes the human, reserves the native target and drains managed execution before admitting control. Console supports Agent-requested assistance and user-requested takeover of an eligible running task. Both share Service control coordination. A controller grant expires within 60 seconds unless renewed, with an absolute 15-minute lifetime. Observe grants reject input at the server. Revocation disconnects that grant and rejects its old credentials without revoking other observers. Envd Agent input is a separate authority; the Host must keep it excluded until revocation and input cleanup are confirmed. See the [management contract](../../spec/a13n-service/06a-environment-management.md#desktop-access-enforcement).
 
 ## Try remote providers in one command
 

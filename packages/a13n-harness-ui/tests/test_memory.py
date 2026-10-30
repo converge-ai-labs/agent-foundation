@@ -18,7 +18,7 @@ from a13n_harness_ui.memory_organization import (
     manifest,
 )
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.storage import StoredContinuation
+from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import RootOperationStatus
 from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
 from filelock import FileLock
@@ -445,7 +445,7 @@ async def test_app_input_starts_parallel_memory_work_hidden_from_ordinary_thread
             assert (await app.status()).memory_organization.availability == "webui_only"
         assert [item.thread_id for item in (await app.list_threads()).threads] == [thread.thread_id]
         saved = await app._threads.get(thread.thread_id)
-        continuation = await app._store.objects.read_model(saved.continuation, StoredContinuation)
+        continuation = await read_continuation(app._store.objects, saved.continuation, include_display=True)
         assert set(continuation.memory_cursors) == {"global", "project:project-main"}
         release.set()
         await _settle(app._memory_organizer)
@@ -509,6 +509,47 @@ async def test_organizer_real_memory_tool_write(tmp_path, monkeypatch):
         state = _read_state(scope.root / ".a13n-memory/organization.json")
         assert state.manifest == await manifest(store)
         assert state.snapshot["topic.md"] == "A stable topic.\n"
+        organizer.stop()
+    assert calls == 2
+
+
+async def test_organizer_rejects_stale_tool_write_before_progress_confirmation(tmp_path, monkeypatch):
+    import json
+
+    from pydantic_ai.models.function import DeltaToolCall
+
+    root, source, scope, store = await _seed(tmp_path)
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            assert "Keep stable preferences" in str(messages)
+            current = await store.read("MEMORY.md")
+            await store.write("MEMORY.md", "Changed externally", expected=current.version, origin=Origin())
+            yield {
+                0: DeltaToolCall(
+                    name="memory_file_create",
+                    json_args=json.dumps({"memory": "global", "path": "derived.md", "content": "Stale conclusion"}),
+                    tool_call_id="derive",
+                )
+            }
+        else:
+            assert "read_conflict" in str(messages)
+            yield "Conflict acknowledged."
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        organizer = app._memory_organizer
+        organizer.offer(None)
+        await _settle(organizer)
+        assert organizer.status(source).last_outcome == "concurrent_change"
+        assert not (scope.root / "derived.md").exists()
+        assert _read_state(scope.root / ".a13n-memory/organization.json").manifest == {}
         organizer.stop()
     assert calls == 2
 

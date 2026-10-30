@@ -4,7 +4,7 @@
 
 <h1 align="center">Agent Foundation (a13n)</h1>
 
-[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.converge.ai/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.dev/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) [![Slack](https://img.shields.io/badge/Slack-Join%20the%20community-4A154B)](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ)
 
 **The open-source, self-hosted foundation for AI agents.**
 
@@ -74,6 +74,8 @@ Build your agent stack in Console: choose model providers, web data services, ex
 | **Environments** | [Docker and hosted sandboxes](docs/a13n-service/environments.md#providers), including E2B, Daytona, Modal, Runloop, Sprites, and Vercel. |
 | **Connections**  | [Browse remote MCP servers](docs/a13n-service/tools.md#remote-mcp-servers) or connect your own compatible endpoint.                      |
 
+[Environment execution](docs/environments/index.md#choose-a-backend) has two paths: Native Local/Docker/E2B for quick setup with Files & Shell, and Envd for general execution with OS sandbox, Egress, Computer use, and Device metrics. Each infrastructure vendor retains its resource management provider.
+
 *Explore the full-size screenshots in the linked guides. The Local directory environment is available only in development.*
 
 ## Sign in with ChatGPT
@@ -107,6 +109,14 @@ First-use setup connects a model and selects execution permissions. Full Control
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
+We evaluated A13N Harness on Terminal-Bench 4.0 against official Codex using the same model and reasoning effort. Click the chart for the full results and methodology.
+
+[![Terminal-Bench 4.0: A13N Harness 58.06% versus official Codex 58.77% scored pass rate across 62 tasks; inference cost across 61 matched tasks is $98.73 estimated versus $97.70 per round. Click for methodology and full results.](.github/assets/terminal-bench-4-comparison.png)](https://github.com/converge-ai-labs/agent-foundation/discussions/1015)
+
+Using the [FrontierHarness Eval task set and methodology](https://github.com/frontier-harness-eval/eval), A13N Harness with Kimi K3 passed 21 of 30 tasks (70.0%) at $2.93 standardized cost per pass. We used our general-purpose instructions, without benchmark-specific instruction tuning to reduce token usage or inference cost. The comparison with published baselines is provisional: local execution conditions differ, and no matched control was run. Click the chart for the full results, accounting, and methodology.
+
+[![FrontierHarness Eval: A13N Harness with Kimi K3 passed 21/30 tasks (70.0%) at $2.93 standardized cost per pass, with a 7m 03s median successful-trial time. Provisional comparison with 12 published baseline configurations. Click for methodology and full results.](.github/assets/frontier-harness-comparison.svg)](https://github.com/converge-ai-labs/agent-foundation/discussions/1064)
+
 Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source
@@ -126,11 +136,15 @@ cd agent-foundation
 
 Source development uses Python 3.13, uv, and Make. Browser builds also need Node.js 24 and the pinned pnpm version; Service development needs Docker. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain and checks relevant to your change.
 
+## Community
+
+Join the [a13n community on Slack](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ) to ask questions, share what you're building, and discuss ideas with other users and contributors.
+
 ## Contribute
 
 Bug reports, documentation fixes, examples, and focused improvements are welcome. Search [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues) and read the [contribution guide](CONTRIBUTING.md) before starting. Discuss unresolved product or architecture decisions before implementing them.
 
-- [User documentation](https://a13n.converge.ai/docs/)
+- [User documentation](https://a13n.dev/docs/)
 - [Development standards](DEVELOPMENT.md)
 - [Accepted specifications](spec/README.md)
 - [Maintainers](MAINTAINERS.md)

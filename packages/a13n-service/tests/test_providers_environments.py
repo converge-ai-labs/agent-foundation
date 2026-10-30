@@ -62,7 +62,19 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
         assert json.loads(service.runtime.keys.reveal(Envelope.model_validate(row.credential), location)) == credential
 
         template = {"name": "Box", "provider_id": provider["id"]}
-        accepted = await service.client.post(templates, json={**template, "config": {"recipe": {}}})
+        accepted = await service.client.post(
+            templates,
+            json={
+                **template,
+                "config": {
+                    "recipe": {"snapshot": "envd"}
+                    if type_ == "daytona"
+                    else {"image": "im-envd"}
+                    if type_ == "modal"
+                    else {}
+                },
+            },
+        )
         assert accepted.status_code == 201, accepted.text
         rejected = await service.client.post(templates, json={**template, "config": {"recipe": broken}})
         assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_
@@ -95,10 +107,8 @@ async def test_e2b_compatible_service_account_and_domain_changes(service) -> Non
     path = f"{collection}/{provider['id']}"
     current = await service.client.get(path)
     body = {"config": {"domain": "other-sandboxes.example.com"}}
-    refused = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
-    assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "credential"
-    moved = await service.client.patch(
-        path, json={**body, "credential": {"api_key": "new-service-key"}}, headers={"If-Match": current.headers["etag"]}
-    )
+    moved = await service.client.patch(path, json=body, headers={"If-Match": current.headers["etag"]})
     assert moved.status_code == 200, moved.text
     assert moved.json()["config"] == body["config"]
+    assert moved.json()["credential_configured"]
+    assert SECRET not in moved.text

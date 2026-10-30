@@ -135,6 +135,10 @@ export function refreshActivity(
   transport: Transport,
   threadId: string,
 ) {
+  if (transport.shareId) {
+    void client.invalidateQueries({ queryKey: ["shared-threads"] });
+    return;
+  }
   let work = pending.get(client);
   if (!work) {
     work = { ids: new Set(), running: false };

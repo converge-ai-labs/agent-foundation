@@ -18,6 +18,7 @@ from a13n_service.runs.contents import INLINE_BYTES, MAX_CONTENT_BYTES, PREVIEW_
 from a13n_service.runs.display import DisplayFold, Item, Page, Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import RunItemPageRow, RunRow
 from a13n_stream_protocol.display import DisplayFold as SemanticFold
+from pydantic_ai import BinaryContent
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     PartDeltaEvent,
@@ -330,3 +331,238 @@ async def test_history_content_api_authorizes_references_and_page_cleanup_keeps_
     )()
     response = await service.client.get(path)
     assert response.status_code == 200 and response.json()["value"] == saved
+
+
+async def test_screenshots_are_references_on_the_stream_and_survive_page_retention(
+    service, scripted_model, runs_kit
+) -> None:
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first = await runs_kit.start_thread(service, agent, "observe")
+    run_id = first["run"]["id"]
+    lease = Lease(
+        run_id,
+        "rat_image",
+        first["thread"]["id"],
+        service.tenant.organization_id,
+        service.tenant.workspace_id,
+        1,
+        "w",
+        "t",
+    )
+    contents = Contents()
+    fold = DisplayFold(run_id, Tail(), attempt=1, page_items=1, page_bytes=1024)
+    streamed = []
+
+    class Sink:
+        def delta(self, value):
+            streamed.append(value)
+
+    png = b"\x89PNG\r\n\x1a\n" + b"image bytes" * 5000
+    part = ToolReturnPart(
+        "computer_observe",
+        [BinaryContent(data=png, media_type="image/png")],
+        "observe",
+        metadata={"a13n.computer.screenshot": True},
+    )
+    source = HarnessEvent(
+        thread_id="thread", run_id="harness", sequence=1, occurred_at=AT, event=FunctionToolResultEvent(part)
+    )
+    async with Coalescer(fold, Sink(), window=0, contents=contents) as output:
+        output.observe(source)
+    [tool] = [value for value in fold.items.values() if value.kind == "tool_call"]
+    [public] = tool.content["tool_images"]
+    assert public["media_type"] == "image/png" and public["size_bytes"] == len(png)
+    assert all(len(value.model_dump_json()) < 4000 for value in streamed)
+    path = f"{service.api}/runs/{run_id}/images/{public['id']}"
+    assert (await service.client.get(path)).status_code == 404, "uncommitted observations cannot be read"
+    published = await checkpoints.publish_display(service.runtime, lease, fold.snapshot(), contents=contents)
+    assert not contents.pending_images and contents.pending_image_bytes == 0
+    assert published.pages and published.pages[0].refs[0].purpose == "image"
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get(RunRow, run_id)
+        checkpoints.record_display(session, run, published)
+    response = await service.client.get(path)
+    assert response.status_code == 200 and response.content == png
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert (await service.client.get(f"{service.api}/runs/{run_id}/contents/{public['id']}")).status_code == 404
+    other = await runs_kit.start_thread(service, agent, "other")
+    assert (
+        await service.client.get(f"{service.api}/runs/{other['run']['id']}/images/{public['id']}")
+    ).status_code == 404
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get(RunRow, run_id)
+        await checkpoints.reclaim(session, run, before_attempt=2)
+    await Delivery(
+        service.runtime.storage,
+        {checkpoints.CLEANUP: partial(checkpoints.clean, service.runtime)},
+        owner="clean",
+        policies=service.runtime.settings.outbox.policies,
+    )()
+    assert (await service.client.get(path)).content == png
+
+
+async def test_screenshot_tail_restores_without_decoding_binary_as_json(runtime, tenant) -> None:
+    lease = Lease("run_images", "rat_images", "thr_images", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
+    contents = Contents()
+    image = contents.image(b"image", "image/png")
+    original = item([image.model_dump(mode="json")], "tool_images")
+    first = await checkpoints.publish_display(runtime, lease, Snapshot([], Tail(items=[original])), contents=contents)
+    tail = await checkpoints.load_tail(runtime.objects, first.tail, hydrate=True)
+    restored = Contents(tail.items, tail.refs)
+    second = await checkpoints.publish_display(runtime, lease, Snapshot([], tail), contents=restored)
+    assert second.tail.refs == first.tail.refs
+    restored.retire([original.id])
+    assert not restored.refs
+
+
+def test_screenshot_capture_has_per_image_and_pending_byte_limits() -> None:
+    contents = Contents()
+    assert contents.image(b"x" * (8 * 1024 * 1024 + 1), "image/png") is None
+    for _ in range(4):
+        assert contents.image(b"x" * (8 * 1024 * 1024), "image/png") is not None
+    assert contents.image(b"x", "image/png") is None
+    tiny = Contents()
+    for _ in range(64):
+        assert tiny.image(b"", "image/png") is not None
+    assert tiny.image(b"", "image/png") is None
+
+
+@pytest.mark.parametrize("tool_name", ["computer_observe", "computer_zoom"])
+@pytest.mark.parametrize("marked", [False, True])
+def test_screenshot_collection_requires_the_explicit_marker_and_preserves_child_identity(marked, tool_name) -> None:
+    from a13n_service.runs.images import observe
+
+    contents = Contents()
+    image = BinaryContent(data=b"image", media_type="image/png")
+    part = ToolReturnPart(tool_name, [image], "same-call", metadata={"a13n.computer.screenshot": marked})
+    event = HarnessEvent(
+        thread_id="thread", run_id="child", sequence=1, occurred_at=AT, event=FunctionToolResultEvent(part)
+    )
+    result = observe(event, root_run_id="root", contents=contents)
+    if marked:
+        assert result["subagentRunId"] == "child"
+        assert result["value"]["event"]["tool_call_id"] == "same-call"
+        assert part.content == [image]
+    else:
+        assert result is None and not contents.pending_images
+
+
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_harness_handoff_reaches_service_live_and_saved_display(immediate):
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, ToolExecutionConfig, ToolExecutionRuntime
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from pydantic_ai import Tool
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    entered = asyncio.Event()
+
+    async def lookup():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def model(messages, info):
+        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield "Continuing after handoff."
+        else:
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="call_lookup")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            ToolExecutionCapability(
+                ToolExecutionConfig(mode="inline" if immediate else "auto", foreground_wait_seconds=0)
+            ),
+            Capability(tools=[Tool(lookup, metadata={"a13n.tool-execution": "owned"})]),
+        ),
+    )
+    runtime = ToolExecutionRuntime()
+    fold = DisplayFold("run_handoff", Tail(), attempt=1, page_items=100, page_bytes=100000)
+    streamed = []
+    try:
+        async with Coalescer(fold, SimpleNamespace(delta=streamed.append), window=0) as output:
+            async with executable.stream(
+                "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=output.observe)
+            ) as stream:
+
+                async def consume():
+                    async for event in stream:
+                        if not isinstance(event, HarnessEvent):
+                            output.observe(event)
+
+                consumer = asyncio.create_task(consume())
+                await entered.wait()
+                if immediate:
+                    await stream.steer("continue", immediate=True)
+                await consumer
+        call = next(item for item in fold.items.values() if item.kind == "tool_call")
+        assert call.state == "completed"
+        receipt = json.loads(call.content["result"])
+        assert receipt["type"] == "tool_execution_receipt"
+        assert receipt["execution_id"].startswith("exec-")
+        results = [item for item in streamed if item.event["type"] == "TOOL_CALL_RESULT"]
+        assert len(results) == 1
+        restored = Item.model_validate_json(call.model_dump_json())
+        assert restored.content == call.content
+        assert restored.state == call.state
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("change", ["content", "position", "resume_after", "search", "first", "continuation"])
+async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, tenant, change):
+    from a13n_service.runs.search import SearchState
+    from a13n_stream_protocol.display import DisplayContinuation
+
+    lease = Lease("run_reuse", "rat_reuse", "thr_reuse", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
+    contents = Contents()
+    original = item("中" * 20000)
+    snapshot = Snapshot([], Tail(items=[original], position=StreamPosition(attempt=1, sequence=1)))
+    first = await checkpoints.publish_display(runtime, lease, snapshot, contents=contents)
+    assert first.tail.refs and first.tail_bytes
+    # Bytes are captured after large values were replaced with their durable references.
+    assert first.tail_bytes == await checkpoints.load(runtime.objects, first.tail)
+    reused = await checkpoints.publish_display(
+        runtime, lease, snapshot, contents=contents, previous_tail=first.tail, previous_tail_bytes=first.tail_bytes
+    )
+    assert reused.tail == first.tail
+    changes = {
+        "content": {"items": [original.model_copy(update={"content": {"text": "changed"}})]},
+        "position": {"position": StreamPosition(attempt=1, sequence=2)},
+        "resume_after": {"resume_after": "1-2"},
+        "search": {"search": SearchState(through=1)},
+        "first": {"first": 2},
+        "continuation": {
+            "continuation": DisplayContinuation(run_id=lease.run_id, position=snapshot.tail.position, next_ordinal=2)
+        },
+    }
+    different = await checkpoints.publish_display(
+        runtime,
+        lease,
+        Snapshot([], snapshot.tail.model_copy(update=changes[change])),
+        contents=contents,
+        previous_tail=first.tail,
+        previous_tail_bytes=first.tail_bytes,
+    )
+    assert different.tail != first.tail and different.tail_bytes != first.tail_bytes
+    # Even when the tail is identical, new page publications cannot be skipped or mis-indexed.
+    paged = await checkpoints.publish_display(
+        runtime,
+        lease,
+        Snapshot([Page(items=[original])], snapshot.tail),
+        contents=contents,
+        previous_tail=reused.tail,
+        previous_tail_bytes=reused.tail_bytes,
+    )
+    assert paged.tail == reused.tail and len(paged.pages) == 1
+    page = await checkpoints.load_page(runtime.objects, paged.pages[0])
+    assert page.items[0].id == original.id and page.refs == first.tail.refs

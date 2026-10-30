@@ -14,12 +14,7 @@ import {
   DialogTrigger,
   useMediaQuery,
 } from "a13n-ui";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CaretDown,
-  CaretRight,
-} from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, CaretRight } from "@phosphor-icons/react";
 import styles from "./execution-details.module.css";
 import conversation from "./conversation.module.css";
 
@@ -30,12 +25,10 @@ export const PauseConversationFollowing = createContext<
 
 export function ExecutionDetails({
   complete,
-  summary,
   preview,
   children,
 }: {
   complete: boolean;
-  summary: ReactNode;
   preview: string;
   children: (open: boolean) => ReactNode;
 }) {
@@ -52,28 +45,31 @@ export function ExecutionDetails({
   if (!mobile)
     return (
       <div className={conversation.execution}>
-        <button
-          type="button"
-          aria-expanded={open}
-          className={conversation.executionToggle}
-          onClick={() => {
-            if (!open) {
-              pauseFollowing?.();
-              setVisited(true);
-            }
-            setExpanded(!open);
-          }}
-        >
-          <span className={conversation.executionTitle}>
-            {open ? (
-              <CaretDown aria-hidden="true" />
-            ) : (
-              <CaretRight aria-hidden="true" />
+        <div className={conversation.executionHeading}>
+          <button
+            type="button"
+            aria-expanded={open}
+            className={conversation.executionToggle}
+            onClick={() => {
+              if (!open) {
+                pauseFollowing?.();
+                setVisited(true);
+              }
+              setExpanded(!open);
+            }}
+          >
+            {preview && (
+              <span className={conversation.executionPreview} title={preview}>
+                {preview}
+              </span>
             )}
-            Execution details
-          </span>
-          {summary}
-        </button>
+            <span className={conversation.srOnly}>Work log</span>
+            <CaretRight
+              className={conversation.executionCaret}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
         {visited && children(open)}
       </div>
     );
@@ -91,10 +87,10 @@ export function ExecutionDetails({
     >
       <DialogTrigger className={styles.preview}>
         <span className={styles.previewHeading}>
-          <span>Execution details{summary}</span>
+          <span className={styles.excerpt}>{preview}</span>
+          <span className={conversation.srOnly}>Work log</span>
           <ArrowRight aria-hidden="true" />
         </span>
-        <span className={styles.excerpt}>{preview}</span>
       </DialogTrigger>
       {visited && (
         <DialogPopup
@@ -107,17 +103,14 @@ export function ExecutionDetails({
           <header className={styles.header}>
             <DialogClose
               render={<Button variant="ghost" size="icon" />}
-              aria-label="Back to conversation"
+              aria-label="Back to chat"
             >
               <ArrowLeft />
             </DialogClose>
             <div>
-              <DialogTitle className={styles.title}>
-                Execution details
-              </DialogTitle>
+              <DialogTitle className={styles.title}>Work log</DialogTitle>
               <div className={styles.metrics}>
-                {complete ? "Completed" : "Execution history"}
-                {summary}
+                {complete ? "Recorded steps" : "Steps so far"}
               </div>
             </div>
           </header>

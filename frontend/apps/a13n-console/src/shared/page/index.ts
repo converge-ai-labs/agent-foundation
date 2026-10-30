@@ -17,4 +17,4 @@ export {
 } from "./page-actions";
 export { SaveBar } from "./save-bar";
 export { Panel } from "./panel";
-export { Section } from "./section";
+export { Section, SectionGroup, Sections } from "./section";

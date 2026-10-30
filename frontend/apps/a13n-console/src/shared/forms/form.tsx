@@ -1,5 +1,5 @@
 import { Button, FormField, ReadOnlyField, Textarea } from "a13n-ui";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
 
@@ -13,6 +13,7 @@ export function TextAreaField({
   onChange,
   rows = 5,
   hint,
+  placeholder,
   required,
   code = false,
   hideLabel = false,
@@ -20,12 +21,15 @@ export function TextAreaField({
   disabled = false,
   maxLength,
   error,
+  invalid,
+  ref,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   rows?: number;
   hint?: string;
+  placeholder?: string;
   required?: boolean;
   code?: boolean;
   hideLabel?: boolean;
@@ -33,6 +37,8 @@ export function TextAreaField({
   disabled?: boolean;
   maxLength?: number;
   error?: string;
+  invalid?: boolean;
+  ref?: Ref<HTMLTextAreaElement>;
 }) {
   if (readOnly)
     return (
@@ -52,14 +58,17 @@ export function TextAreaField({
       description={hint}
       hideLabel={hideLabel}
       error={error}
+      invalid={invalid}
       disabled={disabled}
     >
       <Textarea
-        variant="soft"
+        ref={ref}
+        aria-invalid={invalid || undefined}
         className={code ? styles.code : ""}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
+        placeholder={placeholder}
         required={required}
         maxLength={maxLength}
       />
@@ -82,6 +91,7 @@ export function FormActions({
   disabled = false,
   variant = "default",
   leading,
+  beforeCancel,
   cancelLabel,
   dismiss = false,
 }: {
@@ -97,6 +107,8 @@ export function FormActions({
   variant?: "default" | "outline";
   /** Actions that belong to the form but not to its outcome, at the left. */
   leading?: ReactNode;
+  /** Destructive or secondary actions immediately before Cancel. */
+  beforeCancel?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -107,6 +119,7 @@ export function FormActions({
     >
       {leading && <div className={styles.formActionsLeading}>{leading}</div>}
       <div className={styles.formActionsPrimary}>
+        {beforeCancel}
         {onCancel && (
           <Button
             variant="outline"
@@ -114,7 +127,7 @@ export function FormActions({
             onClick={onCancel}
             type="button"
           >
-            {cancelLabel ?? t("Cancel")}
+            {cancelLabel ?? t(dismiss ? "Close" : "Cancel")}
           </Button>
         )}
         {!dismiss && (

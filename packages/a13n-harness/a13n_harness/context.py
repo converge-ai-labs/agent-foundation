@@ -15,6 +15,8 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness._tool_execution import RunToolExecutions
+from a13n_harness.codeact.state import CODEACT_STATE_ID, CODEACT_STATE_VERSION, CodeActStateOwner
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
@@ -24,9 +26,11 @@ from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.recovery import ModelRecoveryState
 from a13n_harness.state import AgentContextState, HarnessState, StateStore
 from a13n_harness.storage import RunStorage
+from a13n_harness.tool_execution import ToolExecutionRuntime
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition, SubagentDefinition
+    from a13n_harness.capabilities.browser import BrowserBackend
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
@@ -137,21 +141,43 @@ class _CapabilityProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestContext:
+    """Detached business headers supplied by the Host, available only to trusted runtime code."""
+
+    headers: Mapping[str, str] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self) -> None:
+        headers: dict[str, str] = {}
+        for name, value in self.headers.items():
+            if not isinstance(name, str) or not isinstance(value, str):
+                raise TypeError("Request context headers must be strings")
+            name = name.lower()
+            if name in headers:
+                raise ValueError("Request context header names must be unique ignoring case")
+            headers[name] = value
+        object.__setattr__(self, "headers", MappingProxyType(headers))
+
+
+@dataclass(frozen=True, slots=True)
 class RunBindings:
     """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
+    request_context: RequestContext = field(default_factory=RequestContext, repr=False, kw_only=True)
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
     deferred_tools_supported: bool = True
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
+    browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    tool_execution: ToolExecutionRuntime | None = None
+    codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     producer_observer: Callable[[HarnessEvent], None] | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
@@ -161,6 +187,8 @@ class RunBindings:
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
+    context_recovery_scope_id: str | None = None
+    retained_history_directory: str | None = None
     state_store: StateStore | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
@@ -175,6 +203,12 @@ class RunBindings:
             raise TypeError("RunBindings.usage_reporter must implement UsageReporter or UsageDeltaReporter")
         if self.model_call_check is not None and not isinstance(self.model_call_check, ModelCallCheck):
             raise TypeError("RunBindings.model_call_check must implement ModelCallCheck")
+        if self.codeact_state is not None and not isinstance(self.codeact_state, CodeActStateOwner):
+            raise TypeError("RunBindings.codeact_state must be a CodeActStateOwner")
+        if self.tool_execution is not None and not isinstance(self.tool_execution, ToolExecutionRuntime):
+            raise TypeError("RunBindings.tool_execution must be a ToolExecutionRuntime")
+        if not isinstance(self.request_context, RequestContext):
+            raise TypeError("RunBindings.request_context must be a RequestContext")
         if not isinstance(self.configuration, RunConfiguration):
             raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.deferred_tools_supported, bool):
@@ -184,12 +218,17 @@ class RunBindings:
                 parse_mount_path(self.tool_result_directory)
             except ValueError as exc:
                 raise ValueError("tool_result_directory must be a canonical absolute Environment path") from exc
+        if self.retained_history_directory is not None:
+            parse_mount_path(self.retained_history_directory)
+        if self.context_recovery_scope_id is not None and not self.context_recovery_scope_id:
+            raise ValueError("context_recovery_scope_id must not be empty")
         if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
             raise TypeError("observation must be a HarnessObservationContext or None")
         if self.state_store is not None and not isinstance(self.state_store, StateStore):
             raise TypeError("RunBindings.state_store must implement StateStore")
+        from a13n_harness.capabilities.browser import BrowserBackend
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
@@ -198,6 +237,7 @@ class RunBindings:
         from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
 
         for name, value, expected in (
+            ("browser_backend", self.browser_backend, BrowserBackend),
             ("web", self.web, WebBinding),
             ("document_converter", self.document_converter, DocumentConverter),
             ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
@@ -222,6 +262,7 @@ class RunBindings:
         *,
         identity: AgentIdentityRef | None = None,
         configuration: RunConfiguration | None = None,
+        request_context: RequestContext | None = None,
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
@@ -230,17 +271,22 @@ class RunBindings:
         model_call_check: ModelCallCheck | None = None,
         usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        browser_backend: BrowserBackend | None = None,
         web: WebBinding | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
+        tool_execution: ToolExecutionRuntime | None = None,
+        codeact_state: CodeActStateOwner | None = None,
         working_state_observer: WorkingStateObserver | None = None,
         producer_observer: Callable[[HarnessEvent], None] | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
         tool_result_directory: str | None = None,
+        context_recovery_scope_id: str | None = None,
+        retained_history_directory: str | None = None,
         state_store: StateStore | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
@@ -251,6 +297,7 @@ class RunBindings:
                 agent_instance_id=instance_id,
             ),
             configuration=configuration or RunConfiguration(),
+            request_context=request_context or RequestContext(),
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
@@ -259,15 +306,20 @@ class RunBindings:
             model_call_check=model_call_check,
             usage_reporter=usage_reporter,
             capabilities=tuple(capabilities),
+            browser_backend=browser_backend,
             web=web,
             document_converter=document_converter,
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
             task_state=task_state,
+            tool_execution=tool_execution,
+            codeact_state=codeact_state,
             working_state_observer=working_state_observer,
             producer_observer=producer_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
+            context_recovery_scope_id=context_recovery_scope_id,
+            retained_history_directory=retained_history_directory,
             metadata=metadata or {},
             observation=observation,
             state_store=state_store,
@@ -389,6 +441,7 @@ class AgentContext:
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
+    request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
@@ -403,11 +456,14 @@ class AgentContext:
         compare=False,
     )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
+    browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    tool_execution: ToolExecutionRuntime | None = None
+    codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
@@ -424,9 +480,12 @@ class AgentContext:
         compare=False,
     )
     tool_result_directory: str | None = None
+    context_recovery_scope_id: str | None = None
+    retained_history_directory: str | None = None
     _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
     # The restored state's fields this Harness does not know, which every export keeps.
     _state_extensions: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    _compacting: bool = field(default=False, repr=False, compare=False)
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,
@@ -436,6 +495,12 @@ class AgentContext:
     _review_history_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
     _tool_pending_approvals: dict[str, dict[str, JsonValue]] = field(default_factory=dict, repr=False, compare=False)
+    _tool_executions: RunToolExecutions = field(default_factory=RunToolExecutions, repr=False, compare=False)
+
+    @property
+    def context_recovery_pending(self) -> bool:
+        """Whether the next primary dispatch requires a committed recovery checkpoint."""
+        return self._model_recovery.context_recovery_pending
 
     @property
     def tool_approval(self) -> ToolApprovalContext | None:
@@ -492,7 +557,13 @@ class AgentContext:
             store = _ToolResultSpillStore(self)
             object.__setattr__(self, "_tool_result_spill_store", store)
             self._register_run_cleanup("a13n.tool-result-spills", store.close)
-        return await store.write(data, suffix=suffix)
+        path = await store.write(data, suffix=suffix)
+        if path is not None:
+            from a13n_harness.tool_execution import _TOOL_EXECUTION_ARTIFACTS, ToolExecutionArtifact
+
+            if (artifacts := _TOOL_EXECUTION_ARTIFACTS.get()) is not None:
+                artifacts.append(ToolExecutionArtifact(path, data, suffix))
+        return path
 
     @property
     def identity(self) -> AgentIdentityRef:
@@ -545,7 +616,7 @@ class AgentContext:
 
         environment = await self.environment.project_model_context(request)
         payload: dict[str, JsonValue] = {
-            "run_id": self.run_id,
+            "harness_run_id": self.run_id,
             "thread_id": self.thread_id,
         }
         if request.kind is ModelContextRequestKind.TOOL_RESULTS:
@@ -576,10 +647,12 @@ class AgentContext:
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope, through the run's storage, which saves large content and lists
         what the state references."""
-        # A request-boundary export can precede consumption of the native input
-        # event. Reconcile delivered steering from the same canonical history
-        # before snapshotting capability state; pending input stays unretained.
-        await self._steering.resolve_delivered(message_history)
+        # A request-boundary export can precede native input-event consumption.
+        # Save accepted pending inputs separately from incorporated history.
+        if self.codeact_state is not None:
+            await self.state.write(CODEACT_STATE_ID, await self.codeact_state.snapshot(), version=CODEACT_STATE_VERSION)
+        await self._steering.checkpoint(message_history)
+        await self._tool_executions.reconcile(self.tool_execution, self.thread_id, message_history)
         await self.usage_attribution.save()
         state = HarnessState(
             schema_version="1",

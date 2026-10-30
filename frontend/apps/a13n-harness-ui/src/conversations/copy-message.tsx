@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
 import { Check, Copy } from "@phosphor-icons/react";
 import styles from "./conversation.module.css";
+import { copyText } from "../platform";
 
 export function CopyMessage({
   text,
@@ -41,7 +42,7 @@ export function CopyMessage({
           onClick={async () => {
             setState("copying");
             try {
-              await navigator.clipboard.writeText(text);
+              await copyText(text);
               setState("copied");
             } catch {
               setState("error");

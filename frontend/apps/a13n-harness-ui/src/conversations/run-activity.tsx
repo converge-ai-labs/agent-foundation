@@ -1,4 +1,4 @@
-import { CircleNotch } from "@phosphor-icons/react";
+import { LogoAnimation } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import type { Submission } from "./draft";
 import styles from "./conversation.module.css";
@@ -35,11 +35,7 @@ export function RunActivity({
   if (!label) return null;
   return (
     <div className={styles.runActivity} role="status" aria-live="polite">
-      <CircleNotch
-        size={14}
-        className={styles.threadRunning}
-        aria-hidden="true"
-      />
+      <LogoAnimation size={18} />
       <span>{label}</span>
     </div>
   );

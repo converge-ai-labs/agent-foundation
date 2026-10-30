@@ -50,6 +50,39 @@ HISTORY_INPUT = [
 ]
 
 
+def test_imported_retry_keeps_native_outcome_without_application_metadata():
+    data = deepcopy(HISTORY_INPUT)
+    part = data[2]["parts"][0]
+    part.update(
+        outcome="retried", content="Correct the arguments", retry={"cause": "model_retry"}, metadata={"foreign": True}
+    )
+    history = initial(HISTORY.validate_python(data))
+    result = history[2].parts[0]
+    assert isinstance(result, ToolReturnPart)
+    assert result.outcome == "retried"
+    assert result.retry is not None and result.retry.cause == "model_retry"
+    assert result.content == "Correct the arguments"
+    assert result.metadata is None
+
+
+def test_imported_text_keeps_native_citations():
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, TextPart, WebCitationSource
+
+    citation = Citation(
+        [WebCitationSource("https://example.com/source", title="Source")],
+        anchor=ContentCitationAnchor(start=0, end=8),
+    )
+    exported = ModelMessagesTypeAdapter.dump_json([ModelResponse(parts=[TextPart("An answer", citations=[citation])])])
+    accepted = HISTORY.validate_json(exported)
+
+    seeded = initial(accepted)
+
+    part = seeded[0].parts[0]
+    assert isinstance(part, TextPart)
+    assert part.citations == [citation]
+    assert accepted[0]["parts"][0]["citations"][0]["sources"][0]["url"] == "https://example.com/source"
+
+
 def test_history_uses_native_messages_without_execution_state():
     history = initial(HISTORY.validate_python(HISTORY_INPUT))
     assert isinstance(history[0], ModelRequest)
@@ -135,6 +168,12 @@ def assert_imported_wire_order(request):  # type: ignore[no-untyped-def]
     assert result["content"] == '{"zz":{"yy":42,"b":2},"a":3}'
 
 
+async def _history(service, thread_id: str) -> list:  # type: ignore[no-untyped-def]
+    """The imported history as stored; no view returns it."""
+    async with transaction(service.runtime.storage) as session:
+        return (await session.get_one(ThreadRow, thread_id)).message_history
+
+
 async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -143,11 +182,9 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     response = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert response.status_code == 201, response.text
     first = response.json()
-    assert first["thread"]["message_history"] == HISTORY_INPUT
-    imported = ModelMessagesTypeAdapter.validate_python(first["thread"]["message_history"])
-    assert imported[0].parts[0].content == "Imported question"
-    readback = await runs_kit.get_thread(service, first["thread"]["id"])
-    assert json.dumps(readback["message_history"]) == json.dumps(HISTORY_INPUT)
+    stored = await _history(service, first["thread"]["id"])
+    assert json.dumps(stored) == json.dumps(HISTORY_INPUT)
+    assert ModelMessagesTypeAdapter.validate_python(stored)[0].parts[0].content == "Imported question"
     replay = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert replay.status_code == 200 and replay.json() == first
     changed = {**body, "message_history": []}
@@ -185,7 +222,7 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
         headers=runs_kit.fresh_key(),
     )
     assert fork.status_code == 201, fork.text
-    assert fork.json()["thread"]["message_history"] == []
+    assert await _history(service, fork.json()["thread"]["id"]) == []
     scripted_model.say("Branch answer")
     await (await runs_kit.attempt(service))
     branched = await scripted_model.request()
@@ -207,7 +244,8 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
             )
 
 
-async def test_resume_input_is_atomic_ordered_and_idempotent(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_resume_input_is_atomic_ordered_and_idempotent(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "text", "text": "Use the revised invoice"}]}}
     headers = runs_kit.fresh_key()
@@ -235,7 +273,8 @@ async def test_resume_input_is_atomic_ordered_and_idempotent(service, scripted_m
     assert len(inputs) == 1 and inputs[0]["content"]["metadata"]["source_id"] == run["id"]
 
 
-async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_unreadable_resume_input_leaves_waiting_head_unchanged(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "asset", "asset_id": "ast_00000000000000000000000000000000"}]}}
     response = await service.client.post(
@@ -247,7 +286,8 @@ async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, sc
     assert len((await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]) == 1
 
 
-async def test_resume_input_survives_model_checkpoint_crash_once(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_resume_input_survives_model_checkpoint_crash_once(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     from urllib.parse import urlsplit
 
     configuration = {
@@ -287,8 +327,9 @@ async def test_resume_input_survives_model_checkpoint_crash_once(service, script
 
 
 async def test_resume_input_survives_pre_effect_checkpoint_without_replaying_approval(
-    service, scripted_model, runs_kit, monkeypatch
+    skill_service, scripted_model, runs_kit, monkeypatch
 ):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "text", "text": "After approved tool"}]}}
     body["approvals"] = {"approve": {"action": "approve"}}
@@ -354,8 +395,9 @@ async def test_initial_history_survives_a_root_without_a_checkpoint(service, scr
 
 
 async def test_resume_input_materialization_failure_fails_the_successor_not_the_batch(
-    service, scripted_model, runs_kit, listen
+    skill_service, scripted_model, runs_kit, listen
 ):  # type: ignore[no-untyped-def]
+    service = skill_service
     from fastapi import FastAPI
 
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)

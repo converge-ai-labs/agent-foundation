@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import base64
+import ctypes
+import errno
+import hashlib
 import json
 import os
 import re
@@ -11,9 +14,12 @@ import signal
 import stat
 import subprocess
 import sys
+import zipfile
+import zlib
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
+from a13n_harness.environment._zip import extract_zip
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
 
@@ -32,6 +38,10 @@ class FileRequestError(ValueError):
     def __init__(self, field: str, reason: str, hint: str) -> None:
         self.details = {"field": field, "reason": reason, "hint": hint}
         super().__init__(reason)
+
+
+class UnsupportedTextError(ValueError):
+    pass
 
 
 def require_regular_file(path: Path) -> None:
@@ -217,17 +227,33 @@ def search(root: Path, path: Path, request: dict, config: dict) -> dict:
 
 def execute(request: dict) -> dict:
     config, action = request["configuration"], request["action"]
+    if action == "batch":
+        operations = request["arguments"]["operations"]
+        if any(item["action"] not in {"stat", "mkdir", "write_text", "remove"} for item in operations):
+            raise ValueError("invalid batch operation")
+        results = []
+        for item in operations:
+            try:
+                result = execute({"configuration": config, "action": item["action"], "arguments": item})
+            except FileNotFoundError:
+                if item["action"] not in {"stat", "remove"} or not item.get("missing_ok"):
+                    raise
+                result = None
+            results.append(result)
+        return {"results": results}
     root = Path(config["root"]).resolve(strict=True)
     if not root.is_dir():
         raise NotADirectoryError()
     arguments = request["arguments"]
-    path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move"})
+    path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move", "archive"})
     mutations = {
         "stage",
         "publish",
         "mkdir",
         "remove",
         "move",
+        "archive",
+        "write_text",
     }
     if action in mutations and path == root:
         raise PermissionError()
@@ -240,6 +266,8 @@ def execute(request: dict) -> dict:
         return {"path": str(path)}
     if action == "stage":
         # Authorize creation as the configured guest user before SDK upload.
+        if arguments.get("parents"):
+            path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("xb"):
             pass
         return {"path": str(path)}
@@ -252,6 +280,16 @@ def execute(request: dict) -> dict:
             return {"data": base64.b64encode(file.read(arguments["length"])).decode()}
     if action == "publish":
         staged = resolve(root, arguments["staged"])
+        require_regular_file(staged)
+        if "digest" in arguments:
+            if staged.stat().st_size != arguments["size"] or arguments["size"] > config["max_file_bytes"]:
+                raise ValueError("upload size mismatch")
+            with staged.open("rb") as candidate:
+                digest = hashlib.sha256()
+                while chunk := candidate.read(65536):
+                    digest.update(chunk)
+                if digest.hexdigest() != arguments["digest"]:
+                    raise ValueError("upload checksum mismatch")
         mode = arguments["mode"]
         if mode == "create":
             os.link(staged, path)
@@ -269,6 +307,51 @@ def execute(request: dict) -> dict:
                     staged.chmod(original_mode & 0o777)
             os.replace(staged, path)
         return {}
+    if action == "write_text":
+        text, mode = arguments["text"], arguments["mode"]
+        if "\x00" in text:
+            raise UnsupportedTextError("text contains NUL")
+        if mode not in {"create", "replace", "upsert"}:
+            raise ValueError("invalid write mode")
+        content = text.encode("utf-8")
+        if len(content) > config["max_file_bytes"]:
+            raise OverflowError("file exceeds configured limit")
+        with NamedTemporaryFile(dir=path.parent, prefix=".a13n-write-", delete=False) as file:
+            staged = Path(file.name)
+            # Match ordinary newly created files, subject to the guest's umask.
+            mask = os.umask(0)
+            os.umask(mask)
+            os.fchmod(file.fileno(), 0o666 & ~mask)
+            file.write(content)
+        try:
+            execute(
+                {
+                    "configuration": config,
+                    "action": "publish",
+                    "arguments": {
+                        "path": arguments["path"],
+                        "staged": "/" + staged.relative_to(root).as_posix(),
+                        "mode": mode,
+                    },
+                }
+            )
+        finally:
+            staged.unlink(missing_ok=True)
+        return {"bytes_written": len(content)}
+    if action == "archive":
+        staged = resolve(root, arguments["staged"])
+        require_regular_file(staged)
+        try:
+            extract_zip(
+                staged,
+                path,
+                digest=arguments["digest"],
+                root=arguments["root"],
+                entries=arguments["entries"],
+            )
+        finally:
+            staged.unlink()
+        return {}
     if action == "mkdir":
         path.mkdir(parents=arguments["parents"], exist_ok=arguments["exist_ok"])
         return {}
@@ -281,20 +364,24 @@ def execute(request: dict) -> dict:
             path.rmdir()
         return {}
     if action == "move":
-        destination = resolve(root, arguments["destination"])
-        if destination == root:
+        destination = resolve(root, arguments["destination"], follow=False)
+        if destination == root or destination.is_symlink():
             raise PermissionError()
+        if path == destination:
+            return {}
         if arguments["replace"]:
-            os.replace(path, destination)
+            try:
+                os.replace(path, destination)
+            except OSError as exc:
+                if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST} or not path.is_dir():
+                    raise
+                rename_atomic(path, destination, exchange=True)
+                try:
+                    shutil.rmtree(path)
+                except OSError:
+                    return {"error": "environment_unknown_outcome"}
         else:
-            # Linux renameat2 provides an atomic no-replace publication for files and directories.
-            import ctypes
-
-            libc = ctypes.CDLL(None, use_errno=True)
-            result = libc.renameat2(-100, os.fsencode(path), -100, os.fsencode(destination), 1)
-            if result != 0:
-                number = ctypes.get_errno()
-                raise OSError(number, os.strerror(number))
+            rename_atomic(path, destination, exchange=False)
         return {}
     if action == "list":
         return query(root, path, {**arguments, "pattern": "*", "recursive": False}, config)
@@ -303,6 +390,25 @@ def execute(request: dict) -> dict:
     if action == "search":
         return search(root, path, arguments, config)
     raise ValueError("unknown operation")
+
+
+def rename_atomic(source: Path, destination: Path, *, exchange: bool) -> None:
+    if sys.platform not in {"linux", "darwin"}:
+        raise OSError(errno.ENOTSUP, "atomic directory move is unavailable")
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(library, "renamex_np" if sys.platform == "darwin" else "renameat2", None)
+    if rename is None:
+        raise OSError(errno.ENOTSUP, "atomic directory move is unavailable")
+    rename.restype = ctypes.c_int
+    if sys.platform == "darwin":
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(os.fsencode(source), os.fsencode(destination), 2 if exchange else 4)
+    else:
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 2 if exchange else 1)
+    if result != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
 
 
 def main() -> None:
@@ -318,12 +424,24 @@ def main() -> None:
         result = {"error": "environment_conflict"}
     except OverflowError:
         result = {"error": "environment_too_large"}
+    except UnsupportedTextError:
+        result = {"error": "environment_unsupported"}
     except (PatternError, FileRequestError) as exc:
         result = {"error": "environment_request_invalid", "details": exc.details}
-    except (ValueError, NotADirectoryError, IsADirectoryError, re.error):
+    except (
+        ValueError,
+        NotADirectoryError,
+        IsADirectoryError,
+        re.error,
+        zipfile.BadZipFile,
+        zlib.error,
+        EOFError,
+        NotImplementedError,
+    ):
         result = {"error": "environment_request_invalid"}
-    except OSError:
-        result = {"error": "environment_provider_failure"}
+    except OSError as exc:
+        unsupported = exc.errno in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}
+        result = {"error": "environment_unsupported" if unsupported else "environment_provider_failure"}
     print(json.dumps(result, separators=(",", ":")))
 
 

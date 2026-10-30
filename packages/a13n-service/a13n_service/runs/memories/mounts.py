@@ -16,12 +16,13 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import ServiceError, at_field, conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.resources.memories.schemas import MemoryMount
-from a13n_service.resources.memories.tables import MemoryRow
+from a13n_service.resources.memories.schemas import MemoryMount, SessionMemorySettings
+from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import given
-from a13n_service.runs.memories.schemas import MemoryMountPage, MemoryMountUpdate
+from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
+from a13n_service.runs.memories.schemas import FrozenMemoryMount, MemoryMountPage, MemoryMountUpdate
 from a13n_service.runs.memories.tables import ThreadMemoryRow
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_thread, refresh_version, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
@@ -86,6 +87,9 @@ async def mount_memories(
     for mount in mounts:
         if mount.memory_id not in existing:
             raise not_found(MemoryRow.KIND, mount.memory_id)
+    managed = await session.scalar(select(MemorySpaceRow).where(MemorySpaceRow.memory_id.in_(memory_ids)).limit(1))
+    if managed is not None:
+        raise conflict(MemoryRow.KIND, managed.memory_id, "managed_memory", space_id=managed.id)
     rows = [_row(thread, mount) for mount in mounts]
     session.add_all(rows)
     await session.flush()
@@ -99,7 +103,7 @@ async def shared_memory_mounts(session: AsyncSession, origin: ThreadRow) -> list
 
 async def adopt_memory_mounts(session: AsyncSession, child: ThreadRow, frozen: Sequence[dict]) -> None:
     """A child thread mounts the memories its parent run froze, except those deleted since."""
-    mounts = [MemoryMount.model_validate(mount) for mount in frozen]
+    mounts = [MemoryMount.model_validate(mount) for mount in frozen if mount.get("space_id") is None]
     existing = await _existing(session, child.workspace_id, [mount.memory_id for mount in mounts])
     session.add_all(_row(child, mount) for mount in mounts if mount.memory_id in existing)
     await session.flush()
@@ -110,6 +114,27 @@ async def freeze_memories(
 ) -> list[dict]:
     """The mount set a new run uses. At the thread's first acceptance the agent's `defaults` join first; a
     default whose memory is gone refuses the run. The caller holds the thread lock."""
+    if thread.purpose == "memory_organization":
+        space = await session.scalar(
+            select(MemorySpaceRow)
+            .join(
+                SpaceOrganizationRow,
+                SpaceOrganizationRow.space_id == MemorySpaceRow.id,
+            )
+            .where(SpaceOrganizationRow.session_id == thread.session_id)
+            .with_for_update(of=MemorySpaceRow, read=True)
+        )
+        if space is None or not space.enabled:
+            return []
+        return [
+            FrozenMemoryMount(
+                name="space",
+                memory_id=space.memory_id,
+                space_id=space.id,
+                access="write",
+                roots=("global/", "sessions/"),
+            ).model_dump(mode="json")
+        ]
     if thread.last_run_id is None and defaults:
         taken = await thread_mounts(session, thread.id)
         names, memory_ids = {mount.name for mount in taken}, {mount.memory_id for mount in taken}
@@ -120,9 +145,53 @@ async def freeze_memories(
                 with at_field(f"memory_mounts.{index}.memory_id"):
                     raise not_found(MemoryRow.KIND, mount.memory_id)
         await mount_memories(session, thread, added, limit=limit)
-    return [
-        MemoryMount.model_validate(mount).model_dump(mode="json") for mount in await thread_mounts(session, thread.id)
+    mounts = [
+        mount.model_dump(mode="json")
+        for mount in (MemoryMount.model_validate(row) for row in await thread_mounts(session, thread.id))
     ]
+    owner = await session.get_one(SessionRow, thread.session_id)
+    settings = SessionMemorySettings.model_validate(owner.memory)
+    if not settings.enabled:
+        return mounts
+    if thread.origin == "child":
+        parent = await session.get_one(RunRow, thread.origin_run_id)
+        selected = [FrozenMemoryMount.model_validate(item) for item in parent.memory_mounts if item.get("space_id")]
+        ids = [item.space_id for item in selected]
+    else:
+        selected = []
+        ids = [item.space_id for item in settings.spaces]
+    spaces = {
+        row.id: row
+        for row in await session.scalars(
+            select(MemorySpaceRow)
+            .where(MemorySpaceRow.workspace_id == thread.workspace_id, MemorySpaceRow.id.in_(ids))
+            .order_by(MemorySpaceRow.id)
+            .with_for_update(read=True)
+        )
+    }
+    if thread.origin != "child":
+        selected = [
+            FrozenMemoryMount(
+                name=binding.name,
+                memory_id=spaces[binding.space_id].memory_id,
+                space_id=binding.space_id,
+                access=binding.access,
+                roots=("global/", f"sessions/{owner.id}/"),
+            )
+            for binding in settings.spaces
+            if binding.space_id in spaces
+        ]
+    names = {mount["name"] for mount in mounts}
+    for mount in selected:
+        if mount.space_id not in spaces or not spaces[mount.space_id].enabled:
+            continue
+        if mount.name in names:
+            raise conflict("thread", thread.id, "memory_mount_name", name=mount.name)
+        names.add(mount.name)
+        mounts.append(mount.model_dump(mode="json"))
+    if len(mounts) > limit:
+        raise conflict("thread", thread.id, "memory_mount_limit", limit=limit)
+    return sorted(mounts, key=lambda mount: mount["name"])
 
 
 def inherited_cursors(parent: RunRow | None, mounts: Sequence[dict]) -> dict[str, str | None]:
@@ -130,11 +199,11 @@ def inherited_cursors(parent: RunRow | None, mounts: Sequence[dict]) -> dict[str
     continues holds that memory's context as of the cursor. Any other memory gets its full context."""
     if parent is None:
         return {}
-    before = {(mount["name"], mount["memory_id"]) for mount in parent.memory_mounts}
+    before = {(item.name, item.cursor_key) for item in map(FrozenMemoryMount.model_validate, parent.memory_mounts)}
     return {
-        mount["memory_id"]: parent.memory_cursors[mount["memory_id"]]
-        for mount in mounts
-        if (mount["name"], mount["memory_id"]) in before and mount["memory_id"] in parent.memory_cursors
+        mount.cursor_key: parent.memory_cursors[mount.cursor_key]
+        for mount in map(FrozenMemoryMount.model_validate, mounts)
+        if (mount.name, mount.cursor_key) in before and mount.cursor_key in parent.memory_cursors
     }
 
 

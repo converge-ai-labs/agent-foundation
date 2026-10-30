@@ -41,9 +41,9 @@ use crate::{
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
 mod computer;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod execution;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod isolated;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
@@ -80,7 +80,7 @@ pub(crate) enum ResponseHandoff {
         operation: Option<ActiveResponseHandoff>,
         _history: OwnedRwLockReadGuard<()>,
     },
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     Remote(crate::execution::worker::client::Handoff),
 }
 
@@ -92,7 +92,7 @@ impl ResponseHandoff {
                     operation.complete();
                 }
             }
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             Self::Remote(handoff) => handoff.complete(),
         }
     }
@@ -115,6 +115,7 @@ impl CarrierResponse {
 pub(crate) struct Daemon {
     config: Config,
     descriptor: DeviceDescriptor,
+    monitoring: Option<Arc<crate::monitoring::State>>,
     filesystem: Arc<DeviceFilesystem>,
     retention_quota: RetentionQuota,
     capacity: DeviceCapacity,
@@ -122,9 +123,35 @@ pub(crate) struct Daemon {
     sessions: Mutex<BTreeMap<String, Arc<Session>>>,
     ids: ShortIdAllocator,
     next_carrier: AtomicU64,
+    connections: Arc<AtomicU64>,
     next_attempt: AtomicU64,
     draining: AtomicBool,
     last_diagnostics: Mutex<Option<Instant>>,
+}
+
+/// Accepted public carrier lifetime, independent of Session ownership and worker IPC.
+pub(crate) struct ConnectionGuard(Arc<AtomicU64>);
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Default, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SessionResources {
+    processes: u64,
+    transfers: u64,
+    retained_output_bytes: u64,
+}
+
+impl SessionResources {
+    fn add(&mut self, other: Self) {
+        self.processes += other.processes;
+        self.transfers += other.transfers;
+        self.retained_output_bytes += other.retained_output_bytes;
+    }
 }
 
 pub(crate) struct Carrier {
@@ -174,6 +201,27 @@ fn session_methods(config: &Config) -> Vec<String> {
 }
 
 impl Daemon {
+    pub(crate) fn start_monitoring(
+        self: &Arc<Self>,
+    ) -> Result<Option<crate::monitoring::Runtime>, crate::config::ConfigError> {
+        self.monitoring
+            .as_ref()
+            .map(|state| {
+                state.start(
+                    &self.descriptor.device_id,
+                    self.descriptor.generation,
+                    Arc::downgrade(self),
+                )
+            })
+            .transpose()
+    }
+
+    pub(crate) fn metrics_report(&self) -> Option<eip::DeviceMetricsResult> {
+        self.monitoring
+            .as_ref()
+            .map(|state| state.report(&self.descriptor.device_id, self.descriptor.generation))
+    }
+
     pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
         Self::with_generation(config, fresh_generation()?)
     }
@@ -192,6 +240,7 @@ impl Daemon {
                 .iter()
                 .filter(|method| method.device_scoped)
                 .filter(|method| method.name != "directory.list" || config.directory_discovery)
+                .filter(|method| method.name != "device.metrics" || config.monitoring.is_some())
                 .map(|method| method.name.to_owned()),
         );
         if config.egress.controlled() && cfg!(target_os = "linux") {
@@ -200,6 +249,10 @@ impl Daemon {
         available_methods.sort();
         Ok(Self {
             config: config.clone(),
+            monitoring: config
+                .monitoring
+                .as_ref()
+                .map(crate::monitoring::State::new),
             filesystem,
             retention_quota,
             capacity: DeviceCapacity::new(&config.limits),
@@ -207,6 +260,7 @@ impl Daemon {
                 config.limits.max_device_concurrent_operations as usize,
             )),
             descriptor: DeviceDescriptor {
+                system_info: Some(crate::monitoring::system_info(config)),
                 boundary: crate::execution::boundary::descriptor(config)
                     .map_err(|_| DaemonInitError::new("invalid execution boundary"))?,
                 device_id: config.device_id.clone(),
@@ -226,10 +280,80 @@ impl Daemon {
             sessions: Mutex::new(BTreeMap::new()),
             ids: ShortIdAllocator::for_generation(generation),
             next_carrier: AtomicU64::new(1),
+            connections: Arc::new(AtomicU64::new(0)),
             next_attempt: AtomicU64::new(1),
             draining: AtomicBool::new(false),
             last_diagnostics: Mutex::new(None),
         })
+    }
+
+    pub(crate) fn connection_guard(&self) -> ConnectionGuard {
+        self.connections.fetch_add(1, Ordering::Relaxed);
+        ConnectionGuard(self.connections.clone())
+    }
+
+    /// Worker-local snapshot; the worker has no nested remote Sessions.
+    pub(crate) fn local_resources(&self) -> Option<SessionResources> {
+        let sessions: Vec<_> = self.sessions.try_lock().ok()?.values().cloned().collect();
+        let mut total = SessionResources::default();
+        for session in sessions {
+            total.add(session.local_resources()?);
+        }
+        Some(total)
+    }
+
+    pub(crate) async fn resource_metrics(&self) -> Option<eip::DaemonMetrics> {
+        let sessions: Vec<_> = self.sessions.try_lock().ok()?.values().cloned().collect();
+        let mut active = 0;
+        for session in &sessions {
+            let state = session.session.state.try_lock().ok()?;
+            active += u64::from(state.lifecycle != SessionState::Closed);
+        }
+        let mut metrics = eip::DaemonMetrics {
+            sessions: active,
+            connections: self.connections.load(Ordering::Relaxed),
+            processes: None,
+            transfers: None,
+            retained_output_bytes: None,
+        };
+        let mut total = SessionResources::default();
+        let mut pending = tokio::task::JoinSet::new();
+        for session in sessions {
+            if session.remote.is_some() {
+                pending.spawn(async move {
+                    session
+                        .remote
+                        .as_ref()
+                        .expect("remote Session")
+                        .client
+                        .resources()
+                        .await
+                });
+            } else if let Some(resources) = session.local_resources() {
+                total.add(resources);
+            } else {
+                return Some(metrics);
+            }
+        }
+        // One deadline for the entire worker fleet, not one timeout per Session.
+        let complete = tokio::time::timeout(Duration::from_millis(500), async {
+            while let Some(result) = pending.join_next().await {
+                match result {
+                    Ok(Ok(Some(resources))) => total.add(resources),
+                    _ => return false,
+                }
+            }
+            true
+        })
+        .await
+            == Ok(true);
+        // Dropping JoinSet cancels outstanding observation calls and removes their tickets.
+        if complete {
+            metrics.processes = Some(total.processes);
+            metrics.transfers = Some(total.transfers);
+            metrics.retained_output_bytes = Some(total.retained_output_bytes);
+        }
+        Some(metrics)
     }
 
     pub(crate) fn carrier(&self, outbound: mpsc::Sender<eip::DataFrame>) -> Arc<Carrier> {
@@ -402,7 +526,7 @@ impl Daemon {
             .session
             .admit_work()
             .ok_or(TransferError::Protocol)?;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(remote) = &session.remote {
             return remote
                 .client
@@ -430,7 +554,7 @@ impl Daemon {
             detaching.spawn(async move {
                 let clean = tokio::time::timeout(Duration::from_secs(5), async {
                     let _cleanup = session.cleanup.lock().await;
-                    #[cfg(any(target_os = "linux", target_os = "macos"))]
+                    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
                     if let Some(remote) = &session.remote {
                         let _ = remote.client.detach().await;
                     }
@@ -649,7 +773,7 @@ impl Daemon {
                 Err(error) => return error_response(error),
             }
         };
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(session) = &session
             && session.remote.is_some()
             && !matches!(request.method.as_str(), "egress.update" | "session.close")
@@ -807,6 +931,17 @@ impl EipDeviceHandler for DeviceRequest<'_> {
         })
     }
 
+    async fn device_metrics(
+        &self,
+        params: eip::DeviceMetricsParams,
+    ) -> Result<eip::DeviceMetricsResult, EIPError> {
+        self.daemon
+            .check_device(&params.expected_device_id, params.expected_generation)?;
+        self.daemon
+            .metrics_report()
+            .ok_or_else(|| protocol_error(ErrorType::Unsupported, "monitoring is disabled"))
+    }
+
     async fn directory_list(
         &self,
         params: eip::DirectoryListParams,
@@ -819,7 +954,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 "directory discovery is disabled",
             ));
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         if self.daemon.config.sandbox.restricted() {
             return crate::execution::discovery::list(&self.daemon.config, params)
                 .await
@@ -889,9 +1024,9 @@ impl EipDeviceHandler for DeviceRequest<'_> {
             || self.daemon.config.execution.is_some_and(|identity| {
                 crate::execution::needs_worker(identity) || !self.daemon.config.allow_sudo
             });
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let worker = self.daemon.config.sandbox.restricted();
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let worker = false;
         let cwd = tokio::task::spawn_blocking(move || {
             if worker {
@@ -924,7 +1059,7 @@ impl EipDeviceHandler for DeviceRequest<'_> {
                 ));
             }
         }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if worker {
             return self.daemon.open_worker(self.carrier, cwd, None).await;
         }
@@ -981,7 +1116,7 @@ impl Daemon {
 
 pub(crate) struct Session {
     computer: Arc<crate::computer::Computer>,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     remote: Option<crate::execution::runtime::Runtime>,
     descriptor: SessionDescriptor,
     filesystem: Arc<DeviceFilesystem>,
@@ -999,6 +1134,19 @@ pub(crate) struct Session {
     retention: RetentionStore,
     execution: Option<ExecutionManager>,
     transfers: TransferRegistry,
+}
+
+impl Session {
+    fn local_resources(&self) -> Option<SessionResources> {
+        Some(SessionResources {
+            processes: self
+                .execution
+                .as_ref()
+                .map_or(Some(0), ExecutionManager::active_count)?,
+            transfers: self.transfers.active_count()?,
+            retained_output_bytes: self.retention.retained_bytes()?,
+        })
+    }
 }
 
 impl SessionAdmission {
@@ -1110,7 +1258,7 @@ impl Session {
         let (closed, _) = watch::channel(false);
         Ok(Self {
             computer: Arc::new(crate::computer::Computer::new(daemon.ids.clone())),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             remote: None,
             closed,
             descriptor,
@@ -1201,7 +1349,7 @@ impl Session {
         self.closed.send_replace(true);
         self.operations.begin_drain();
         self.transfers.begin_session_close();
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(remote) = &self.remote {
             return tokio::time::timeout(budget, remote.close())
                 .await
@@ -1215,6 +1363,10 @@ impl Session {
             };
             let transfers_closed = self.transfers.close_session().await;
             self.operations.wait_until_owned_idle().await;
+            let computer = self.computer.clone();
+            let computer_closed = tokio::task::spawn_blocking(move || computer.close())
+                .await
+                .is_ok();
             self.session.wait_until_idle().await;
             self.transfers.reconcile_committing().await;
             let outputs_closed = execution_closed && self.retention.close().await;
@@ -1222,7 +1374,7 @@ impl Session {
             let candidates_closed = tokio::task::spawn_blocking(move || filesystem.retry_cleanup())
                 .await
                 .unwrap_or(false);
-            transfers_closed && outputs_closed && candidates_closed
+            computer_closed && transfers_closed && outputs_closed && candidates_closed
         })
         .await
         .unwrap_or(false)
@@ -1362,6 +1514,18 @@ impl Session {
 }
 
 impl EipSessionHandler for Session {
+    async fn computer_read_clipboard(
+        &self,
+        params: eip::ComputerReadClipboardParams,
+    ) -> Result<eip::ComputerReadClipboardResult, EIPError> {
+        self.read_computer_clipboard(params).await
+    }
+    async fn computer_write_clipboard(
+        &self,
+        params: eip::ComputerWriteClipboardParams,
+    ) -> Result<eip::ComputerWriteClipboardResult, EIPError> {
+        self.write_computer_clipboard(params).await
+    }
     async fn computer_describe(
         &self,
         params: eip::ComputerDescribeParams,
@@ -1373,6 +1537,12 @@ impl EipSessionHandler for Session {
         params: eip::ComputerObserveParams,
     ) -> Result<eip::ComputerObserveResult, EIPError> {
         self.observe_computer(params).await
+    }
+    async fn computer_zoom(
+        &self,
+        params: eip::ComputerZoomParams,
+    ) -> Result<eip::ComputerZoomResult, EIPError> {
+        self.zoom_computer(params).await
     }
     async fn computer_close_observation(
         &self,
@@ -2324,7 +2494,7 @@ impl EipSessionHandler for Session {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let request =
             crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
@@ -2332,7 +2502,7 @@ impl EipSessionHandler for Session {
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {
@@ -2661,7 +2831,7 @@ impl EipSessionHandler for Session {
         let filesystem = self.filesystem.clone();
         let hard_deadline =
             effective_deadline(params.context.timeout_ms, self.max_operation_duration)?;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let request =
             crate::execution::worker::request_environment(&params.request).map_err(|()| {
                 protocol_error(
@@ -2669,7 +2839,7 @@ impl EipSessionHandler for Session {
                     "command cannot override egress environment variables",
                 )
             })?;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         let request = std::borrow::Cow::Borrowed(&params.request);
         let started = match execution
             .start(&filesystem, &request, true, || {
@@ -3487,7 +3657,7 @@ mod tests {
         fn open_params(&self, required_methods: Value) -> Value {
             json!({"expected_device_id": self.device.descriptor.device_id,
                 "expected_generation": self.device.descriptor.generation,
-                "protocol_version": "0.1",
+                "protocol_version": "0.3",
                 "working_directory": self.device.descriptor.default_working_directory,
                 "required_methods": required_methods})
         }
@@ -3543,7 +3713,7 @@ mod tests {
 
     fn initialize_params() -> Value {
         json!({
-            "supported_protocol_versions": ["0.1"],
+            "supported_protocol_versions": ["0.3"],
             "client": {"name": "test", "version": "1"},
             "expected_device_id": "env-test"
         })
@@ -3588,13 +3758,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn old_protocol_is_rejected_before_returning_a_device_descriptor() {
+        let config = Config::for_test("env-test");
+        for version in ["0.1", "0.2"] {
+            let fixture = Fixture::new(&config, 7);
+            let mut params = initialize_params();
+            params["supported_protocol_versions"] = json!([version]);
+            let response = fixture.call("initialize", params).await;
+            assert_eq!(
+                response["error"]["data"]["error_type"],
+                "protocol_incompatible"
+            );
+            assert!(response.get("result").is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn device_metadata_and_session_descriptor_are_distinct() {
         let mut config = Config::for_test("env-test");
         config.display_name = Some("Build Linux".into());
         config.description = Some("Build artifacts".into());
         let fixture = Fixture::new(&config, 7);
         let initialized = initialize(&fixture).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.1");
+        assert_eq!(initialized["result"]["protocol_version"], "0.3");
         let device = fixture.call("device.describe", json!({})).await;
         assert_eq!(
             device["result"]["descriptor"],
@@ -4035,6 +4221,73 @@ mod tests {
         assert_eq!(response["error"]["code"], -32001);
         assert!(!fixture.carrier.initialized());
         assert!(fixture.device.sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn monitoring_skips_busy_session_registry_and_lifecycle() {
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+        };
+        let mut context = Context::from_waker(Waker::noop());
+        let fixture = Fixture::new(&Config::for_test("env-test"), 8);
+        initialize(&fixture).await;
+        {
+            let _busy_registry = fixture.device.sessions();
+            assert!(fixture.device.local_resources().is_none());
+            assert!(matches!(
+                std::pin::pin!(fixture.device.resource_metrics()).poll(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        {
+            let _busy_lifecycle = fixture.session.state();
+            assert!(matches!(
+                std::pin::pin!(fixture.device.resource_metrics()).poll(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        assert_eq!(fixture.device.resource_metrics().await.unwrap().sessions, 1);
+    }
+
+    #[tokio::test]
+    async fn monitoring_counts_observed_resources_not_reserved_allowances() {
+        let tree = TempTree::new();
+        let mut config = Config::for_test("env-test");
+        config.runtime =
+            Some(crate::runtime::RuntimeState::prepare(&tree.child("runtime")).unwrap());
+        let fixture = Fixture::new(&config, 8);
+        let empty = fixture.device.resource_metrics().await.unwrap();
+        assert_eq!(
+            (
+                empty.sessions,
+                empty.connections,
+                empty.processes,
+                empty.transfers
+            ),
+            (0, 0, Some(0), Some(0))
+        );
+        let connection = fixture.device.connection_guard();
+        initialize(&fixture).await;
+        let (output, other) = fixture.retention.create_live_pair().await.unwrap();
+        output.append(b"hello").await;
+        let usage = fixture.device.resource_metrics().await.unwrap();
+        assert_eq!((usage.sessions, usage.connections), (1, 1));
+        assert_eq!(usage.retained_output_bytes, Some(5));
+        assert!(fixture.device.retention_quota.usage().0 > 5);
+        fixture.session.state().owner = None;
+        assert_eq!(fixture.device.resource_metrics().await.unwrap().sessions, 1);
+        drop(connection);
+        assert_eq!(
+            fixture.device.resource_metrics().await.unwrap().connections,
+            0
+        );
+        output.complete().await;
+        other.complete().await;
+        assert!(fixture.close(Duration::from_secs(1)).await);
+        let closed = fixture.device.resource_metrics().await.unwrap();
+        assert_eq!(closed.sessions, 0);
+        assert_eq!(closed.retained_output_bytes, Some(0));
     }
 
     #[tokio::test]
@@ -4817,10 +5070,142 @@ mod tests {
                 target_os = "windows"
             ))
         );
+        for method in ["computer.read_clipboard", "computer.write_clipboard"] {
+            assert_eq!(
+                methods.iter().any(|m| m == method),
+                cfg!(any(
+                    target_os = "macos",
+                    target_os = "linux",
+                    target_os = "windows"
+                ))
+            );
+        }
         assert_eq!(
             methods.iter().any(|m| m == "computer.type_text"),
             cfg!(any(target_os = "macos", target_os = "windows"))
         );
+    }
+
+    #[tokio::test]
+    async fn clipboard_budget_charges_session_and_device_until_close() {
+        const BYTES: u64 = 512 * 1024;
+        let mut config = Config::for_test("env-test");
+        config.limits.max_staged_file_bytes = BYTES;
+        config.limits.max_device_staged_file_bytes = BYTES;
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let busy = fixture.filesystem.reserve_staging(1).unwrap();
+        assert!(
+            fixture
+                .computer
+                .reserve_clipboard(&fixture.filesystem)
+                .is_err()
+        );
+        drop(busy);
+        fixture
+            .computer
+            .reserve_clipboard(&fixture.filesystem)
+            .unwrap();
+        fixture
+            .computer
+            .reserve_clipboard(&fixture.filesystem)
+            .unwrap();
+        assert_eq!(fixture.filesystem.staging_usage(), (BYTES, 1));
+        assert_eq!(fixture.device.filesystem.staging_usage(), (BYTES, 1));
+        let opened = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        let sibling = fixture
+            .device
+            .lookup(
+                opened["result"]["descriptor"]["session_id"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(
+            sibling
+                .computer
+                .reserve_clipboard(&sibling.filesystem)
+                .is_err()
+        );
+        assert_eq!(sibling.filesystem.staging_usage(), (0, 0));
+        assert!(fixture.close(Duration::from_secs(2)).await);
+        assert_eq!(fixture.device.filesystem.staging_usage(), (0, 0));
+        sibling
+            .computer
+            .reserve_clipboard(&sibling.filesystem)
+            .unwrap();
+        assert!(sibling.close(Duration::from_secs(2)).await);
+        assert_eq!(fixture.device.filesystem.staging_usage(), (0, 0));
+    }
+
+    #[tokio::test]
+    #[ignore = "changes the native clipboard; run on an isolated desktop"]
+    async fn clipboard_eip_evidence_and_active_reads() {
+        let mut config = Config::for_test("env-test");
+        config.computer_use = true;
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let write = json!({"context": {"operation_id": "clipboard-write-a", "timeout_ms": 1000},
+            "text": "café 中文 🦀\r\n"});
+        let first = fixture
+            .call("computer.write_clipboard", write.clone())
+            .await;
+        assert_eq!(first["result"]["effect"], "executed", "{first}");
+        assert_eq!(first["result"]["cleanup_complete"], true);
+        assert_eq!(first["result"]["receipt"]["outcome"], "succeeded");
+        let read = json!({"context": {"operation_id": "clipboard-read", "timeout_ms": 1000}});
+        let result = fixture.call("computer.read_clipboard", read.clone()).await;
+        assert_eq!(result["result"]["text"], "café 中文 🦀\n", "{result}");
+        let second = fixture
+            .call(
+                "computer.write_clipboard",
+                json!({
+            "context": {"operation_id": "clipboard-write-b", "timeout_ms": 1000}, "text": ""}),
+            )
+            .await;
+        assert_eq!(second["result"]["effect"], "executed", "{second}");
+        // A retained write returns its original evidence without republishing A.
+        assert_eq!(fixture.call("computer.write_clipboard", write).await, first);
+        // Active-only read identity may be reused; it returns current content.
+        let result = fixture.call("computer.read_clipboard", read.clone()).await;
+        assert_eq!(result["result"]["status"], "text", "{result}");
+        assert_eq!(result["result"]["text"], "");
+        let missing = fixture
+            .call(
+                "computer.write_clipboard",
+                json!({
+            "context": {"operation_id": "clipboard-missing", "timeout_ms": 1000}}),
+            )
+            .await;
+        assert_eq!(
+            missing["error"]["data"]["error_type"], "invalid_params",
+            "{missing}"
+        );
+        for maximum in [0, 16385] {
+            let mut invalid = read.clone();
+            invalid["max_bytes"] = json!(maximum);
+            let result = fixture.call("computer.read_clipboard", invalid).await;
+            assert_eq!(
+                result["error"]["data"]["error_type"], "invalid_params",
+                "{result}"
+            );
+        }
+        for (index, value) in ["a\0b".to_string(), "é".repeat(8193)].iter().enumerate() {
+            let result = fixture.call("computer.write_clipboard", json!({
+                "context": {"operation_id": format!("clipboard-invalid-{index}"), "timeout_ms": 1000},
+                "text": value})).await;
+            assert_eq!(
+                result["error"]["data"]["error_type"], "invalid_params",
+                "{result}"
+            );
+            assert_eq!(
+                result["error"]["data"]["dispatch_stage"], "pre_dispatch",
+                "{result}"
+            );
+        }
+        assert!(fixture.close(Duration::from_secs(2)).await);
     }
 
     #[tokio::test]

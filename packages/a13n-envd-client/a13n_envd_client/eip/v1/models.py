@@ -18,6 +18,7 @@ from pydantic import (
     Field,
     RootModel,
     StrictBool,
+    StrictFloat,
     StrictInt,
     StrictStr,
     model_validator,
@@ -130,6 +131,12 @@ class ComputerButton(StrEnum):
     MIDDLE = "middle"
 
 
+class ComputerClipboardStatus(StrEnum):
+    TEXT = "text"
+    NO_CONTENT = "no_content"
+    NO_TEXT = "no_text"
+
+
 class ComputerEffect(StrEnum):
     NOT_EXECUTED = "not_executed"
     EXECUTED = "executed"
@@ -195,6 +202,7 @@ class ExecutionBackend(StrEnum):
     LINUX_MANAGED = "linux_managed"
     LINUX_BUBBLEWRAP = "linux_bubblewrap"
     MACOS_SEATBELT = "macos_seatbelt"
+    WINDOWS_MXC = "windows_mxc"
 
 
 class FileKind(StrEnum):
@@ -221,6 +229,12 @@ class FileWriterAbortStatus(StrEnum):
 class GrantAccess(StrEnum):
     READ_ONLY = "read_only"
     READ_WRITE = "read_write"
+
+
+class OperatingSystem(StrEnum):
+    LINUX = "linux"
+    MACOS = "macos"
+    WINDOWS = "windows"
 
 
 class OperationCancelStatus(StrEnum):
@@ -374,6 +388,18 @@ class ComputerPoint(EIPModel):
     y: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
 
+class ComputerReadClipboardResult(EIPModel):
+    status: ComputerClipboardStatus
+    text: StrictStr | None = None
+
+
+class ComputerRegion(EIPModel):
+    left: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    top: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    right: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+    bottom: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+
+
 class ComputerTarget(EIPModel):
     target_id: Identifier
     name: StrictStr
@@ -381,13 +407,57 @@ class ComputerTarget(EIPModel):
     height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
 
 
+class ComputerZoomImage(EIPModel):
+    source_observation_id: Identifier
+    target_id: Identifier
+    source_width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    source_height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    region: ComputerRegion
+    image_width: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    image_height: Annotated[StrictInt, Field(ge=1, le=4294967295)]
+    mime_type: StrictStr
+    captured_at: EIPTimestamp
+
+
+class ConnectionMetrics(EIPModel):
+    tcp_total: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    tcp_states: Annotated[
+        dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]], Field(max_length=16)
+    ] = Field(default_factory=dict)
+    udp_sockets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
 class ContentDigest(EIPModel):
     algorithm: Literal["sha256"]
     value: Sha256Digest
 
 
+class CpuTimeSeconds(EIPModel):
+    user: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    nice: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    system: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    idle: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    iowait: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    irq: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    softirq: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+    steal: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0)] | None = None
+
+
+class DaemonMetrics(EIPModel):
+    sessions: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    processes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transfers: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    connections: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    retained_output_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
 class DeviceDescribeParams(EIPModel):
     pass
+
+
+class DeviceMetricsParams(EIPModel):
+    expected_device_id: Identifier
+    expected_generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
 
 
 class DirectoryEntry(EIPModel):
@@ -412,6 +482,24 @@ class DirectoryListResult(EIPModel):
 
 class DisabledSandbox(EIPModel):
     mode: Literal["disabled"]
+
+
+class DiskIoMetrics(EIPModel):
+    identity: Annotated[StrictStr, Field(max_length=128)]
+    read_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    written_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    read_operations: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    write_operations: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    read_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    write_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    busy_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    weighted_time_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    in_progress: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class DiskMetrics(EIPModel):
+    devices: Annotated[dict[StrictStr, DiskIoMetrics], Field(max_length=64)] = Field(default_factory=dict)
+    truncated: StrictBool
 
 
 class EIPCallContext(EIPModel):
@@ -717,10 +805,65 @@ class FileWriterOpenResult(EIPModel):
     expires_at: EIPTimestamp
 
 
+class FilesystemInventory(EIPModel):
+    filesystems: Annotated[dict[StrictStr, FilesystemObservation], Field(max_length=16)] = Field(default_factory=dict)
+    truncated: StrictBool
+
+
+class FilesystemMetrics(EIPModel):
+    total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    available_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    free_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    total_inodes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    free_inodes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    available_inodes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class FilesystemObservation(EIPModel):
+    metrics: FilesystemMetrics | None = None
+
+
 class InitializeParams(EIPModel):
     supported_protocol_versions: Annotated[tuple[StrictStr, ...], Field(min_length=1)]
     client: EIPClientInfo
     expected_device_id: Identifier | None = None
+
+
+class LimitedCpuLimit(EIPModel):
+    kind: Literal["limited"]
+    quota_usec: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    period_usec: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+
+
+class LimitedMemoryLimit(EIPModel):
+    kind: Literal["limited"]
+    bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+
+
+class MemoryEvents(EIPModel):
+    low: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    high: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    max: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    oom: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    oom_kill: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    oom_group_kill: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class NetworkInterfaceMetrics(EIPModel):
+    identity: Annotated[StrictStr, Field(max_length=128)]
+    received_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmitted_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    received_packets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmitted_packets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    receive_errors: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmit_errors: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    receive_drops: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    transmit_drops: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class NetworkMetrics(EIPModel):
+    interfaces: Annotated[dict[StrictStr, NetworkInterfaceMetrics], Field(max_length=64)] = Field(default_factory=dict)
+    truncated: StrictBool
 
 
 class OperationCancelParams(EIPModel):
@@ -769,6 +912,13 @@ class PortWaitParams(EIPModel):
     context: EIPCallContext
     target: PortTarget
     desired_status: DesiredPortStatus
+
+
+class PressureLevel(EIPModel):
+    avg10_percent: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)]
+    avg60_percent: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)]
+    avg300_percent: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)]
+    total_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
 
 
 class ProcessCloseStdinResult(EIPModel):
@@ -893,6 +1043,22 @@ class ShellProfileDescriptor(EIPModel):
     max_script_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
 
 
+class SystemInfo(EIPModel):
+    os: OperatingSystem
+    os_version: Annotated[StrictStr, Field(max_length=256)] | None = None
+    kernel_version: Annotated[StrictStr, Field(max_length=256)] | None = None
+    architecture: Annotated[StrictStr, Field(max_length=64)] | None = None
+    cpu_model: Annotated[StrictStr, Field(max_length=256)] | None = None
+
+
+class UnlimitedCpuLimit(EIPModel):
+    kind: Literal["unlimited"]
+
+
+class UnlimitedMemoryLimit(EIPModel):
+    kind: Literal["unlimited"]
+
+
 class ArgvCommand(EIPModel):
     kind: Literal["argv"]
     arguments: tuple[StrictStr, ...] = ()
@@ -963,6 +1129,11 @@ class ComputerPressKeysParams(EIPModel):
     keys: tuple[StrictStr, ...] = ()
 
 
+class ComputerReadClipboardParams(EIPModel):
+    context: EIPCallContext
+    max_bytes: Annotated[StrictInt, Field(ge=1, le=16384)] = 16384
+
+
 class ComputerScrollParams(EIPModel):
     context: EIPCallContext
     observation_id: Identifier
@@ -976,6 +1147,36 @@ class ComputerTypeTextParams(EIPModel):
     context: EIPCallContext
     text: StrictStr
 
+
+class ComputerWriteClipboardParams(EIPModel):
+    context: EIPCallContext
+    text: StrictStr
+
+
+class ComputerWriteClipboardResult(EIPModel):
+    receipt: OperationReceipt
+    effect: ComputerEffect
+    cleanup_complete: StrictBool
+
+
+class ComputerZoomParams(EIPModel):
+    context: EIPCallContext
+    observation_id: Identifier
+    region: ComputerRegion
+    max_dimension: Annotated[StrictInt, Field(ge=256, le=2048)] = 1280
+
+
+class ComputerZoomResult(EIPModel):
+    image: ComputerZoomImage
+    reader: FileReaderHandle
+    size_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    expires_at: EIPTimestamp
+
+
+type CpuLimit = Annotated[
+    UnlimitedCpuLimit | LimitedCpuLimit,
+    Field(discriminator="kind"),
+]
 
 type EgressDestinations = Annotated[
     PublicDestinations | AllowlistDestinations,
@@ -1070,6 +1271,12 @@ class FileWriterCommitResult(EIPModel):
     receipt: OperationReceipt
 
 
+type MemoryLimit = Annotated[
+    UnlimitedMemoryLimit | LimitedMemoryLimit,
+    Field(discriminator="kind"),
+]
+
+
 class OutputInfo(EIPModel):
     reference: OutputReference
     producer_complete: StrictBool
@@ -1117,6 +1324,17 @@ class PortWaitResult(EIPModel):
     observation: PortObservation
 
 
+class Pressure(EIPModel):
+    some: PressureLevel | None = None
+    full: PressureLevel | None = None
+
+
+class Pressures(EIPModel):
+    cpu: Pressure | None = None
+    memory: Pressure | None = None
+    io: Pressure | None = None
+
+
 class ProcessCloseStdinParams(EIPModel):
     context: EIPCallContext
     handle: ProcessHandle
@@ -1130,6 +1348,7 @@ class ProcessOutput(EIPModel):
 class RestrictedSandbox(EIPModel):
     mode: Literal["restricted"]
     grants: tuple[SandboxGrant, ...] = ()
+    full_disk_read: StrictBool = False
 
 
 type SandboxPolicy = Annotated[
@@ -1153,6 +1372,43 @@ class ShellExecResult(EIPModel):
     receipt: OperationReceipt
 
 
+class SystemMetrics(EIPModel):
+    cpu_busy_percent: Annotated[StrictFloat, Field(allow_inf_nan=False, ge=0.0, le=100.0)] | None = None
+    cpu_time_seconds: CpuTimeSeconds | None = None
+    logical_cpu_count: Annotated[StrictInt, Field(ge=1, le=4294967295)] | None = None
+    memory_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_available_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    pressure: Pressures | None = None
+    memory_wired_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_compressed_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    swap_used_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    swap_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    commit_total_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    commit_limit_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_cache_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    process_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    thread_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    handle_count: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+
+
+class CgroupMetrics(EIPModel):
+    cpu_usage_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_user_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_system_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_periods_total: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_throttled_periods_total: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_throttled_usec: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    cpu_max: CpuLimit | None = None
+    memory_current_bytes: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    memory_max: MemoryLimit | None = None
+    memory_events: MemoryEvents
+    pressure: Pressures
+    pids_current: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    pids_limit: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
+    pids_unlimited: StrictBool | None = None
+    io: DiskMetrics | None = None
+
+
 class CommandRequest(EIPModel):
     command: CommandSpec
     cwd: EIPPath | None = None
@@ -1169,6 +1425,21 @@ class ExecutionBoundary(EIPModel):
     privilege_gain_blocked: StrictBool
     backend: ExecutionBackend
     policy_digest: Sha256Digest
+
+
+class MetricsSample(EIPModel):
+    sequence: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    sampled_at: EIPTimestamp
+    sample_age_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    collection_duration_ms: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    system: SystemMetrics
+    cgroup_v2: CgroupMetrics | None = None
+    filesystems: dict[StrictStr, FilesystemObservation] = Field(default_factory=dict)
+    network: NetworkMetrics | None = None
+    disks: DiskMetrics | None = None
+    connections: ConnectionMetrics | None = None
+    daemon: DaemonMetrics | None = None
+    local_filesystems: FilesystemInventory | None = None
 
 
 class PortInspectResult(EIPModel):
@@ -1249,6 +1520,14 @@ class DeviceDescriptor(EIPModel):
     limits: EIPLimits
     lifecycle: SessionLifecyclePolicy
     boundary: ExecutionBoundary
+    system_info: SystemInfo | None = None
+
+
+class DeviceMetricsResult(EIPModel):
+    device_id: Identifier
+    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    sample_interval_ms: Annotated[StrictInt, Field(ge=1000, le=60000)]
+    sample: MetricsSample | None = None
 
 
 class EIPErrorData(EIPModel):
@@ -1302,13 +1581,22 @@ CommandEnvironment.model_rebuild()
 CommandLimits.model_rebuild()
 ComputerObservation.model_rebuild()
 ComputerPoint.model_rebuild()
+ComputerReadClipboardResult.model_rebuild()
+ComputerRegion.model_rebuild()
 ComputerTarget.model_rebuild()
+ComputerZoomImage.model_rebuild()
+ConnectionMetrics.model_rebuild()
 ContentDigest.model_rebuild()
+CpuTimeSeconds.model_rebuild()
+DaemonMetrics.model_rebuild()
 DeviceDescribeParams.model_rebuild()
+DeviceMetricsParams.model_rebuild()
 DirectoryEntry.model_rebuild()
 DirectoryListParams.model_rebuild()
 DirectoryListResult.model_rebuild()
 DisabledSandbox.model_rebuild()
+DiskIoMetrics.model_rebuild()
+DiskMetrics.model_rebuild()
 EIPCallContext.model_rebuild()
 EIPClientInfo.model_rebuild()
 EIPLimits.model_rebuild()
@@ -1350,7 +1638,15 @@ FileWriteTextParams.model_rebuild()
 FileWriterAbortResult.model_rebuild()
 FileWriterOpenParams.model_rebuild()
 FileWriterOpenResult.model_rebuild()
+FilesystemInventory.model_rebuild()
+FilesystemMetrics.model_rebuild()
+FilesystemObservation.model_rebuild()
 InitializeParams.model_rebuild()
+LimitedCpuLimit.model_rebuild()
+LimitedMemoryLimit.model_rebuild()
+MemoryEvents.model_rebuild()
+NetworkInterfaceMetrics.model_rebuild()
+NetworkMetrics.model_rebuild()
 OperationCancelParams.model_rebuild()
 OperationCancelResult.model_rebuild()
 OperationReceipt.model_rebuild()
@@ -1358,6 +1654,7 @@ OutputReleaseParams.model_rebuild()
 OutputReleaseResult.model_rebuild()
 PortTarget.model_rebuild()
 PortWaitParams.model_rebuild()
+PressureLevel.model_rebuild()
 ProcessCloseStdinResult.model_rebuild()
 ProcessInspectParams.model_rebuild()
 ProcessKillParams.model_rebuild()
@@ -1380,6 +1677,9 @@ SessionKeepaliveResult.model_rebuild()
 SessionLifecyclePolicy.model_rebuild()
 ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
+SystemInfo.model_rebuild()
+UnlimitedCpuLimit.model_rebuild()
+UnlimitedMemoryLimit.model_rebuild()
 ArgvCommand.model_rebuild()
 ComputerActionResult.model_rebuild()
 ComputerClickParams.model_rebuild()
@@ -1390,8 +1690,13 @@ ComputerMoveParams.model_rebuild()
 ComputerObserveParams.model_rebuild()
 ComputerObserveResult.model_rebuild()
 ComputerPressKeysParams.model_rebuild()
+ComputerReadClipboardParams.model_rebuild()
 ComputerScrollParams.model_rebuild()
 ComputerTypeTextParams.model_rebuild()
+ComputerWriteClipboardParams.model_rebuild()
+ComputerWriteClipboardResult.model_rebuild()
+ComputerZoomParams.model_rebuild()
+ComputerZoomResult.model_rebuild()
 EgressPolicy.model_rebuild()
 EgressStatus.model_rebuild()
 EgressUpdateParams.model_rebuild()
@@ -1413,13 +1718,18 @@ OutputReadResult.model_rebuild()
 PortInspectParams.model_rebuild()
 PortObservation.model_rebuild()
 PortWaitResult.model_rebuild()
+Pressure.model_rebuild()
+Pressures.model_rebuild()
 ProcessCloseStdinParams.model_rebuild()
 ProcessOutput.model_rebuild()
 RestrictedSandbox.model_rebuild()
 SessionOpenParams.model_rebuild()
 ShellExecResult.model_rebuild()
+SystemMetrics.model_rebuild()
+CgroupMetrics.model_rebuild()
 CommandRequest.model_rebuild()
 ExecutionBoundary.model_rebuild()
+MetricsSample.model_rebuild()
 PortInspectResult.model_rebuild()
 ProcessInfo.model_rebuild()
 ProcessInspectResult.model_rebuild()
@@ -1432,6 +1742,7 @@ SessionDescriptor.model_rebuild()
 SessionOpenResult.model_rebuild()
 ShellExecParams.model_rebuild()
 DeviceDescriptor.model_rebuild()
+DeviceMetricsResult.model_rebuild()
 EIPErrorData.model_rebuild()
 EnvironmentDescribeResult.model_rebuild()
 InitializeResult.model_rebuild()
@@ -1442,6 +1753,7 @@ __all__ = [
     "EIP_ERROR_CODES",
     "AllowlistDestinations",
     "ArgvCommand",
+    "CgroupMetrics",
     "CleanupOutcome",
     "CommandEnvironment",
     "CommandLimits",
@@ -1450,6 +1762,7 @@ __all__ = [
     "ComputerActionResult",
     "ComputerButton",
     "ComputerClickParams",
+    "ComputerClipboardStatus",
     "ComputerDescribeParams",
     "ComputerDescribeResult",
     "ComputerDragParams",
@@ -1460,19 +1773,35 @@ __all__ = [
     "ComputerObserveResult",
     "ComputerPoint",
     "ComputerPressKeysParams",
+    "ComputerReadClipboardParams",
+    "ComputerReadClipboardResult",
+    "ComputerRegion",
     "ComputerScrollParams",
     "ComputerScrollUnit",
     "ComputerTarget",
     "ComputerTypeTextParams",
+    "ComputerWriteClipboardParams",
+    "ComputerWriteClipboardResult",
+    "ComputerZoomImage",
+    "ComputerZoomParams",
+    "ComputerZoomResult",
+    "ConnectionMetrics",
     "ContentDigest",
+    "CpuLimit",
+    "CpuTimeSeconds",
+    "DaemonMetrics",
     "DesiredPortStatus",
     "DeviceDescribeParams",
     "DeviceDescribeResult",
     "DeviceDescriptor",
+    "DeviceMetricsParams",
+    "DeviceMetricsResult",
     "DirectoryEntry",
     "DirectoryListParams",
     "DirectoryListResult",
     "DisabledSandbox",
+    "DiskIoMetrics",
+    "DiskMetrics",
     "DispatchStage",
     "EIPCallContext",
     "EIPClientInfo",
@@ -1544,9 +1873,20 @@ __all__ = [
     "FileWriterHandle",
     "FileWriterOpenParams",
     "FileWriterOpenResult",
+    "FilesystemInventory",
+    "FilesystemMetrics",
+    "FilesystemObservation",
     "GrantAccess",
     "InitializeParams",
     "InitializeResult",
+    "LimitedCpuLimit",
+    "LimitedMemoryLimit",
+    "MemoryEvents",
+    "MemoryLimit",
+    "MetricsSample",
+    "NetworkInterfaceMetrics",
+    "NetworkMetrics",
+    "OperatingSystem",
     "OperationCancelParams",
     "OperationCancelResult",
     "OperationCancelStatus",
@@ -1566,6 +1906,9 @@ __all__ = [
     "PortTarget",
     "PortWaitParams",
     "PortWaitResult",
+    "Pressure",
+    "PressureLevel",
+    "Pressures",
     "ProcessCloseStdinParams",
     "ProcessCloseStdinResult",
     "ProcessHandle",
@@ -1613,5 +1956,9 @@ __all__ = [
     "ShellExecParams",
     "ShellExecResult",
     "ShellProfileDescriptor",
+    "SystemInfo",
+    "SystemMetrics",
     "TerminationReason",
+    "UnlimitedCpuLimit",
+    "UnlimitedMemoryLimit",
 ]

@@ -22,6 +22,31 @@ export interface ContentRef {
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+/** Foreground return receipt, not the retained operation's final result. */
+export function toolExecutionReceipt(
+  value: unknown,
+): { execution_id: string; tool_name: string; status: string } | undefined {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return;
+    }
+  }
+  if (
+    record(value) &&
+    value.type === "tool_execution_receipt" &&
+    typeof value.execution_id === "string" &&
+    typeof value.tool_name === "string" &&
+    typeof value.status === "string"
+  )
+    return {
+      execution_id: value.execution_id,
+      tool_name: value.tool_name,
+      status: value.status,
+    };
+}
+
 const states = new Set(["in_progress", "completed", "interrupted", "failed"]);
 const kinds = new Set([
   "text_message",
@@ -306,6 +331,7 @@ export class DisplayNormalizer {
         const supplement = [
           "a13n.filesystem.edit_applied",
           "a13n.harness-ui.tool_images",
+          "a13n.tool_images",
           "a13n.harness-ui.mcp_apps",
         ].includes(name);
         const tool = supplement ? source : part;
@@ -319,7 +345,9 @@ export class DisplayNormalizer {
               before: tool.before,
               after: tool.after,
             };
-          else if (name === "a13n.harness-ui.tool_images") {
+          else if (
+            ["a13n.tool_images", "a13n.harness-ui.tool_images"].includes(name)
+          ) {
             content.tool_images = tool.images ?? [];
             content.tool_image_unavailable = tool.unavailable ?? false;
           } else content.mcp_apps = tool.apps ?? [];
@@ -337,7 +365,8 @@ export class DisplayNormalizer {
             content.value = tool.content;
           else content.truncated = true;
           content.outcome = tool.outcome ?? null;
-          content.retry = tool.part_kind === "retry-prompt";
+          content.retry =
+            tool.part_kind === "retry-prompt" || content.outcome === "retried";
         }
       } else {
         let observed: unknown = event.value;

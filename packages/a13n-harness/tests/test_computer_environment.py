@@ -8,11 +8,16 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerObservation,
     ComputerPoint,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerTypeText,
+    ComputerZoom,
+    ComputerZoomImage,
 )
 from a13n_harness.environment.models import (
     COMPUTER_ACTIONS,
@@ -35,6 +40,29 @@ class Computer:
     def __init__(self) -> None:
         self.binding = None
         self.inputs = []
+        self.zooms = []
+        self.clipboard = None
+        self.clipboard_effect = "executed"
+        self.clipboard_cleanup = True
+
+    async def read_clipboard(self, *, max_bytes=16384):
+        if self.clipboard is None:
+            return ComputerClipboard(status="no_content")
+        return ComputerClipboard(status="text", text=self.clipboard)
+
+    async def write_clipboard(self, text):
+        self.clipboard = text
+        return ComputerClipboardWriteResult(
+            receipt=EnvironmentOperationReceipt(
+                execution_id=self.binding.bound.execution_id,
+                observed_generation=self.binding.bound.descriptor.generation,
+                operation_id="op-clipboard",
+                stage="completed",
+                outcome="succeeded" if self.clipboard_effect == "executed" and self.clipboard_cleanup else "failed",
+            ),
+            effect=self.clipboard_effect,
+            cleanup_complete=self.clipboard_cleanup,
+        )
 
     async def describe(self):
         return ComputerDescription(targets=(), observe_ready=True, input_ready=True)
@@ -54,6 +82,23 @@ class Computer:
             b"image",
         )
 
+    async def zoom(self, observation, region, *, max_dimension=1280):
+        self.zooms.append((observation, region, max_dimension))
+        return ComputerZoom(
+            ComputerZoomImage(
+                source_observation_id=observation.observation_id,
+                target_id=observation.target_id,
+                source_width=observation.width,
+                source_height=observation.height,
+                region=region,
+                image_width=900,
+                image_height=600,
+                mime_type="image/png",
+                captured_at=datetime.now(UTC),
+            ),
+            b"detail-image",
+        )
+
     async def execute(self, request):
         self.inputs.append(request)
         return ComputerActionResult(
@@ -69,7 +114,7 @@ class Computer:
         )
 
 
-def mount(actions):
+def mount(actions, *, guard=None):
     computer = Computer()
     binding = _Binding(
         "desktop",
@@ -80,7 +125,9 @@ def mount(actions):
     computer.binding = binding
     runtime = create_environment_runtime(
         mounts={
-            "desktop": EnvironmentMount(source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions))
+            "desktop": EnvironmentMount(
+                source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions), operation_guard=guard
+            )
         },
         default_mount="desktop",
     )
@@ -295,7 +342,8 @@ async def test_incomplete_input_explains_reconciliation_and_never_replays(monkey
         assert "private text" not in str(result)
 
 
-async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch):
+@pytest.mark.parametrize("clipboard", [False, True])
+async def test_eip_computer_transport_loss_requires_inspection_not_new_run_replay(monkeypatch, clipboard):
     from a13n_envd_client import EIPTransportClosedError
     from a13n_harness.providers.environment.eip import computer as adapter
 
@@ -306,13 +354,297 @@ async def test_eip_computer_transport_loss_requires_inspection_not_new_run_repla
             sent.append(request)
             raise EIPTransportClosedError("private connection detail")
 
+        computer_write_clipboard = computer_type_text
+
     monkeypatch.setattr(adapter, "session_client", lambda _: Client())
     provider = adapter.EIPComputerOperations(None, execution_id="desktop", generation="one")
     with pytest.raises(EnvironmentError) as caught:
-        await provider.execute(ComputerTypeText(text="private text"))
+        if clipboard:
+            await provider.write_clipboard("private text")
+        else:
+            await provider.execute(ComputerTypeText(text="private text"))
     projection = caught.value.safe_projection()
     assert projection["retry_hint"] == "reconcile_first"
     assert projection["details"]["dispatch_stage"] == "unknown"
-    assert "Do not automatically replay" in projection["details"]["hint"]
+    assert "do not automatically replay" in projection["details"]["hint"].lower()
     assert "private" not in str(projection)
     assert len(sent) == 1
+
+
+async def test_host_admission_spans_dispatch_and_cannot_broaden_permissions():
+    from contextlib import asynccontextmanager
+
+    events = []
+    deny = False
+
+    @asynccontextmanager
+    async def guard(action):
+        events.append(("enter", action))
+        if deny:
+            raise EnvironmentError("Reserved by Host", code="environment_denied")
+        try:
+            yield
+        finally:
+            events.append(("exit", action))
+
+    runtime, computer = mount(COMPUTER_ACTIONS, guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        await environment.computer.describe()
+        assert events == [("enter", EnvironmentAction.COMPUTER_DESCRIBE), ("exit", EnvironmentAction.COMPUTER_DESCRIBE)]
+        deny = True
+        with pytest.raises(EnvironmentError, match="Reserved by Host"):
+            await environment.computer.execute(ComputerTypeText(text="blocked"))
+        assert not computer.inputs
+    events.clear()
+    runtime, _ = mount(frozenset({EnvironmentAction.COMPUTER_OBSERVE}), guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        with pytest.raises(EnvironmentError):
+            await environment.computer.execute(ComputerTypeText(text="permission denied first"))
+        assert not events
+
+
+@pytest.mark.parametrize("width,height,x,y", [(1280, 800, 747, 528), (800, 1280, 467, 844), (1, 1, 0, 0)])
+async def test_relative_coordinates_use_observation_geometry_for_all_pointer_actions(width, height, x, y):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    original = computer.observe
+
+    async def observe(**kwargs):
+        screenshot = await original(**kwargs)
+        return ComputerScreenshot(
+            screenshot.observation.model_copy(update={"width": width, "height": height}), screenshot.data
+        )
+
+    computer.observe = observe
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        image = await tools.computer_observe()
+        assert image.return_value["coordinate_space"] == "normalized_1000"
+        assert (await tools.computer_describe())["coordinate_space"] == "normalized_1000"
+        reference = image.return_value["observation_id"]
+        point = ComputerPoint(x=584, y=660)
+        expected = ComputerPoint(x=x, y=y)
+        assert (await tools.computer_click(reference, point))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert (await tools.computer_move(reference, point))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert (await tools.computer_drag(reference, ComputerPoint(x=0, y=0), ComputerPoint(x=1000, y=1000)))["ok"]
+        assert computer.inputs[-1].start == ComputerPoint(x=0, y=0)
+        assert computer.inputs[-1].end == ComputerPoint(x=width - 1, y=height - 1)
+        assert (await tools.computer_scroll(reference, point, delta_y=7, unit="steps"))["ok"]
+        assert computer.inputs[-1].point == expected
+        assert computer.inputs[-1].delta_y == 7 and computer.inputs[-1].unit == "steps"
+
+
+async def test_relative_coordinate_rejection_and_reference_recovery_never_dispatch():
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        invalid = ComputerPoint(x=1001, y=500)
+        for result in (
+            await tools.computer_click(reference, invalid),
+            await tools.computer_move(reference, invalid),
+            await tools.computer_drag(reference, ComputerPoint(x=0, y=0), invalid),
+            await tools.computer_scroll(reference, invalid),
+        ):
+            assert not result["ok"]
+            assert result["error"]["details"]["dispatch_stage"] == "pre_dispatch"
+        assert computer.inputs == []
+        # A new Run cannot reuse an earlier Run's geometry, regardless of coordinate mode.
+        new_tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        assert not (await new_tools.computer_click(reference, ComputerPoint(x=500, y=500)))["ok"]
+        assert computer.inputs == []
+        pixels = ComputerToolset(environment)
+        observed = await pixels.computer_observe()
+        assert observed.return_value["coordinate_space"] == "pixels"
+        assert (await pixels.computer_click(observed.return_value["observation_id"], ComputerPoint(x=500, y=400)))["ok"]
+        assert computer.inputs[-1].point == ComputerPoint(x=500, y=400)
+
+
+@pytest.mark.parametrize(
+    "mode,region,expected",
+    [
+        ("pixels", (320, 120, 640, 480), (320, 120, 640, 480)),
+        ("normalized_1000", (501, 251, 1000, 1000), (320, 120, 640, 480)),
+        ("normalized_1000", (0, 0, 1, 1), (0, 0, 1, 1)),
+    ],
+)
+async def test_zoom_keeps_full_frame_reference_and_converts_exclusive_edges(mode, region, expected):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment, coordinate_space=mode)
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        box = ComputerRegion(**dict(zip(("left", "top", "right", "bottom"), region, strict=True)))
+        for _ in range(20):
+            result = await tools.computer_zoom(reference, box)
+            assert isinstance(result, ToolReturn)
+            assert result.return_value["source_observation_id"] == reference
+            assert "observation_id" not in result.return_value
+            assert result.return_value["coordinate_space"] == mode
+            assert tuple(result.return_value["region_pixels"].values()) == expected
+            assert result.metadata == {"a13n.computer.screenshot": True}
+            assert result.content[0].data == b"detail-image"
+        assert len(tools._observations) == 1
+        assert tuple(computer.zooms[-1][1].model_dump().values()) == expected
+        clicked = await tools.computer_click(reference, ComputerPoint(x=100, y=100))
+        assert clicked["ok"]
+        assert computer.inputs[-1].point == (
+            ComputerPoint(x=64, y=48) if mode == "normalized_1000" else ComputerPoint(x=100, y=100)
+        )
+        assert computer.inputs[-1].observation.width == 640
+        assert computer.inputs[-1].observation.height == 480
+
+
+async def test_zoom_permission_binding_and_invalid_regions_reject_before_provider():
+    region = ComputerRegion(left=0, top=0, right=640, bottom=480)
+    runtime, computer = mount(frozenset({EnvironmentAction.COMPUTER_OBSERVE}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        assert "computer_zoom" not in tools.get_toolset().tools
+        assert not (await tools.computer_zoom(reference, region))["ok"]
+        assert not computer.zooms
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment, coordinate_space="normalized_1000")
+        reference = (await tools.computer_observe()).return_value["observation_id"]
+        assert not (await tools.computer_zoom(reference, ComputerRegion(left=0, top=0, right=1001, bottom=1)))["ok"]
+        assert not (await tools.computer_zoom(reference, ComputerRegion(left=1, top=0, right=1, bottom=1)))["ok"]
+        observation = tools._observations[reference]
+        for update in ({"execution_id": "missing"}, {"observed_generation": "old"}):
+            with pytest.raises(EnvironmentError):
+                await environment.computer.zoom(observation.model_copy(update=update), region)
+        with pytest.raises(EnvironmentError):
+            await environment.computer.zoom(observation, region, max_dimension=2049)
+        assert not computer.zooms
+        assert not (await ComputerToolset(environment).computer_zoom(reference, region))["ok"]
+
+
+@pytest.mark.parametrize(
+    ("methods", "expected"),
+    [
+        (("computer.observe", "computer.close_observation"), {EnvironmentAction.COMPUTER_OBSERVE}),
+        (("computer.zoom",), set()),
+        (("computer.read_clipboard",), {EnvironmentAction.COMPUTER_READ_CLIPBOARD}),
+        (("computer.write_clipboard",), {EnvironmentAction.COMPUTER_WRITE_CLIPBOARD}),
+        (("computer.zoom", "computer.close_observation"), {EnvironmentAction.COMPUTER_ZOOM}),
+        (
+            ("computer.observe", "computer.zoom", "computer.close_observation"),
+            {EnvironmentAction.COMPUTER_OBSERVE, EnvironmentAction.COMPUTER_ZOOM},
+        ),
+    ],
+)
+@pytest.mark.parametrize("path_style", ["posix", "windows"])
+def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods, expected, path_style):
+    from types import SimpleNamespace
+
+    from a13n_envd_client.eip import v1 as eip
+    from a13n_harness.providers.environment.eip.binding import EIPEnvironmentSession, _convert_descriptor
+
+    descriptor = eip.SessionDescriptor(
+        boundary=eip.ExecutionBoundary.model_validate(
+            {
+                "sandbox": {"mode": "disabled"},
+                "egress": "inherit",
+                "privilege_gain_blocked": False,
+                "backend": "native",
+                "policy_digest": "a" * 64,
+            }
+        ),
+        device_id="device-zoom",
+        session_id="ses-zoom",
+        generation=1,
+        working_directory="/",
+        lifecycle=eip.SessionLifecyclePolicy(idle_timeout_ms=30000, disconnect_grace_ms=1000),
+        available_methods=methods,
+        limits=eip.EIPLimits(
+            max_request_bytes=1024,
+            max_response_bytes=1024,
+            max_concurrent_operations=4,
+            max_processes=1,
+            max_operation_duration_ms=1000,
+            max_output_preview_bytes=1,
+            max_output_bytes_per_stream=1,
+            max_transfer_frame_bytes=128,
+            max_concurrent_file_transfers=2,
+            max_file_transfer_bytes=1024,
+            max_file_bytes=1024,
+        ),
+        execution_features=eip.ExecutionFeatures(
+            process_count_limit=False,
+            memory_bytes_limit=False,
+            cpu_time_limit=False,
+            signal_interrupt=False,
+            signal_terminate=False,
+        ),
+    )
+    assert _convert_descriptor(descriptor).permissions.operations == expected
+    adapter = EIPEnvironmentSession(
+        session=SimpleNamespace(descriptor=descriptor),
+        path_style=eip.PathStyle(path_style),
+        provider_key="http_envd",
+        environment_id="env-test",
+        execution_id="exec-test",
+    )
+    assert adapter.descriptor.environment_case_sensitive == (path_style == "posix")
+
+
+async def test_clipboard_permissions_are_independent_and_empty_text_is_content():
+    read = EnvironmentAction.COMPUTER_READ_CLIPBOARD
+    write = EnvironmentAction.COMPUTER_WRITE_CLIPBOARD
+    runtime, computer = mount(frozenset({read, write}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        assert set(tools.get_toolset().tools) == {"computer_read_clipboard", "computer_write_clipboard"}
+        assert await tools.computer_read_clipboard() == {"ok": True, "status": "no_content"}
+        assert (await tools.computer_write_clipboard(""))["ok"]
+        assert await tools.computer_read_clipboard() == {"ok": True, "status": "text", "text": ""}
+        assert computer.inputs == []
+    runtime, _ = mount(frozenset({read}))
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        tools = ComputerToolset(environment)
+        assert set(tools.get_toolset().tools) == {"computer_read_clipboard"}
+        assert (await tools.computer_write_clipboard("blocked"))["error"]["code"] == "environment_denied"
+
+
+@pytest.mark.parametrize("text", ["é" * 8193, "bad\0text", "\ud800"])
+async def test_clipboard_invalid_text_is_rejected_before_provider(text):
+    runtime, computer = mount(COMPUTER_ACTIONS)
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        result = await ComputerToolset(environment).computer_write_clipboard(text)
+        assert result["error"]["code"] == "environment_request_invalid"
+        assert result["error"]["details"]["dispatch_stage"] == "pre_dispatch"
+        assert computer.clipboard is None
+
+
+@pytest.mark.parametrize("effect,cleanup", [("partial", True), ("unknown", True), ("executed", False)])
+async def test_clipboard_uncertainty_reaches_operation_guard(effect, cleanup):
+    from contextlib import asynccontextmanager
+
+    failures = []
+
+    @asynccontextmanager
+    async def guard(request):
+        try:
+            yield
+        except EnvironmentError as error:
+            failures.append(error)
+            raise
+
+    runtime, computer = mount(COMPUTER_ACTIONS, guard=guard)
+    computer.clipboard_effect = effect
+    computer.clipboard_cleanup = cleanup
+    async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:
+        result = await ComputerToolset(environment).computer_write_clipboard("new text")
+        assert not result["ok"]
+        assert failures[-1].details["dispatch_stage"] == "dispatched"
+        assert failures[-1].details["effect"] == effect
+        assert failures[-1].details["cleanup_complete"] == cleanup

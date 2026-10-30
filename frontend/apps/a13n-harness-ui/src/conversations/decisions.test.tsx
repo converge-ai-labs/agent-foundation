@@ -130,6 +130,7 @@ it("renders generic review context as text and denies with a reason", async () =
   expect(screen.getByText("Risk: medium")).toBeTruthy();
   expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeTruthy();
   expect(document.querySelector("img")).toBeNull();
+  fireEvent.click(screen.getByText("Add a reason for denying"));
   fireEvent.change(screen.getByRole("textbox", { name: "Reason (optional)" }), {
     target: { value: "Use staging first" },
   });
@@ -250,6 +251,7 @@ it("allows a corrected singleton denial after an explicit validation rejection",
     .mockRejectedValueOnce(new ApiError("Invalid decision response", 422))
     .mockResolvedValueOnce({ data: { receipt_id: "corrected" } });
   const { reconcile } = setup([shell], POST);
+  fireEvent.click(screen.getByText("Add a reason for denying"));
   const reason = screen.getByRole("textbox", { name: "Reason (optional)" });
   fireEvent.change(reason, { target: { value: "x".repeat(32769) } });
   fireEvent.click(screen.getByRole("button", { name: "Deny" }));

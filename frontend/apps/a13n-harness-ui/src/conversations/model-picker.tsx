@@ -1,3 +1,4 @@
+import { ModelIdentity } from "../shell/model-identity";
 import { CheckIcon } from "@phosphor-icons/react";
 import { Button, Input } from "a13n-ui";
 import { useState } from "react";
@@ -55,11 +56,13 @@ export function ModelOptions({
           onClick={() => onChange(undefined)}
         >
           <span>
-            {defaultSource === "thread" ? "Thread default" : "Agent default"}
+            {defaultSource === "thread" ? "Chat default" : "Agent default"}
             <small>
-              {defaultModel
-                ? `Currently ${defaultModel.name}`
-                : "No default model available"}
+              {defaultModel ? (
+                <ModelIdentity model={defaultModel} />
+              ) : (
+                "No default model"
+              )}
             </small>
           </span>
           {value === undefined && <CheckIcon aria-hidden />}
@@ -76,7 +79,7 @@ export function ModelOptions({
             onClick={() => onChange(item.model_id)}
           >
             <span>
-              {item.name}
+              <ModelIdentity model={item} />
               {(names.get(item.name) ?? 0) > 1 && (
                 <small>
                   {item.model_id} · {item.route}

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-WebUI combines project-organized Agent conversations, configuration composition, and optional native computer access in one browser workbench. One person or a trusted small team uses one running Harness UI instance. All participants use the same instance authority; there are no tenants, per-participant execution backends, or account-based resource isolation.
+WebUI combines project-organized Agent conversations, configuration composition, and optional native computer access in one browser workbench. One person or a trusted small team uses one running Harness UI instance. Instance-key participants have full workbench authority; [sharing links](05-scoped-sharing.md) grant temporary view or prompt access to a Project or Thread. Prompt guests use the same Agent execution authority. There are no tenants, per-participant execution backends, or account-based resource isolation.
 
 The server owns one process-local `HarnessUiApp`. The browser calls its public commands and consumes detached projections and live events. It never constructs Providers, reads SQLite directly, reconstructs Harness continuation from a transcript, or owns an Agent loop. The server remains active when all browsers disconnect.
 
@@ -51,7 +51,7 @@ Presence and prompt CRDT state remain in memory. Multiplexed execution observati
 
 Startup validates access behind a public, theme-consistent workbench shell without briefly displaying the key-entry form or mounting application-data consumers. Successful validation opens the original deep link. An unavailable listener offers connection retry with the same credential rather than claiming authentication failed; explicit server bypass remains supported without a key. A hard reload still reacquires server data and observation connections.
 
-Missing or rejected credentials return the browser to key entry without treating authentication failure as missing Projects or lost Threads. Reauthentication does not automatically repeat a mutation. Generated server-key rotation invalidates previously saved browser keys. Forgetting a browser key removes that browser's retained access and closes its authenticated connections; it does not revoke the shared key for other participants or cancel server execution.
+Missing or rejected credentials return the browser to key entry without treating authentication failure as missing Projects or lost Threads. First entry without a key and explicit logout show quiet login guidance; a rejected key attempt shows an inline error, while loss of previously validated access identifies the expired session. A new key attempt is evaluated as a new login, and empty input cannot be submitted. Reauthentication does not automatically repeat a mutation. Generated server-key rotation invalidates previously saved browser keys. Forgetting a browser key removes that browser's retained access and closes its authenticated connections; it does not revoke the shared key for other participants or cancel server execution.
 
 HTTP uses authorization headers rather than request-URL keys. Interactive connections authenticate before subscribing to shared content or performing operations. Static shell delivery does not expose the key or application data. Arbitrary file content is not executed as workbench-origin HTML, because same-origin scripts can access browser credentials.
 

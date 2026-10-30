@@ -8,6 +8,7 @@ A renewal extends a sandbox by at most its recipe's timeout, which must cover th
 from dataclasses import replace
 
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.e2b.configuration import (
     E2BConnectionConfiguration,
@@ -17,10 +18,12 @@ from a13n_harness.providers.environment.e2b.configuration import (
 from a13n_harness.providers.environment.e2b.provider import E2BProviderRuntime
 from pydantic import BaseModel, Field
 
+from a13n_service.providers.environment.e2b_build import E2BDesktopPreparation
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
 
 from .configuration import E2BRecipe
 from .definition import E2B as BASE_E2B
+from .desktop_build import DesktopBuildAPI, revision, specification
 
 
 class Account(EnvironmentProviderConfiguration):
@@ -56,6 +59,7 @@ def _connector(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: E2BProviderRuntime | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ):
     if not isinstance(configuration, Account):
         raise TypeError("E2B requires its Service account configuration")
@@ -66,11 +70,13 @@ def _connector(
         environment_id=environment_id,
         state=state,
         runtime=runtime,
+        session_recovery=session_recovery,
     )
 
 
 E2B = replace(
     BASE_E2B,
+    e2b_desktop_preparation=E2BDesktopPreparation(specification, revision, DesktopBuildAPI),
     configuration_model=Account,
     environment_model=CloudRecipe,
     provider_factory=_provider,

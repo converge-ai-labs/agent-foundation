@@ -7,12 +7,14 @@
   max-width: 100%;
   font-size: var(--a13n-text-xs);
 }
+/* A layout that keeps glyphs in their own column sets the two variables. */
 .trigger {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--author-gap, 5px);
   min-width: 0;
   max-width: 100%;
+  margin-left: var(--author-inset, 0);
   border: 0;
   border-radius: 5px;
   padding: 2px 3px;
@@ -68,11 +70,16 @@
 .card {
   width: 300px;
   max-width: calc(100vw - 32px);
-  padding: 14px;
-  display: grid;
-  gap: 8px;
+  padding: 0;
   font-size: var(--a13n-text-xs);
   overflow-wrap: anywhere;
+}
+.card [data-slot="popover-viewport"] {
+  padding: 14px;
+}
+.cardBody {
+  display: grid;
+  gap: 8px;
 }
 .field {
   display: flex;

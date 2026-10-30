@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 from a13n_harness import (
     DeferredToolResume,
+    DefinitionError,
     HarnessBuilder,
     RunBindings,
     RunError,
@@ -181,7 +182,7 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
     )
     requests = first.deferred
     assert requests is not None
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
     assert requests.metadata[call_id][APPROVAL_PRESENTATION_KEY] == {
         "tool_id": "change",
         "target": "",
@@ -223,7 +224,7 @@ async def test_approved_override_is_schema_validated_and_resources_are_resolved_
     first = await _suspend(executable, _Policy(InvocationPolicyDecision.allow(), []))
     requests = first.deferred
     assert requests is not None
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
 
     second = await executable.run(
         bindings=RunBindings.embedded(
@@ -258,7 +259,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
     assert "a13n.harness.managed-tool-id" not in requests.metadata.get(call_id, {})
 
     second = await executable.run(
@@ -274,7 +275,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert executed == [1]
 
 
-async def test_host_may_replace_approved_tool_without_historical_identity_attestation() -> None:
+async def test_resume_rejects_replaced_tool_identity_even_with_legacy_metadata() -> None:
     managed_executed: list[int] = []
     first_executable = _build(managed_executed)
     first = await _suspend(
@@ -283,7 +284,7 @@ async def test_host_may_replace_approved_tool_without_historical_identity_attest
     )
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
     requests.metadata[call_id] = {"a13n.harness.managed-tool-id": "obsolete-tool"}
 
     unmanaged_executed: list[int] = []
@@ -298,14 +299,15 @@ async def test_host_may_replace_approved_tool_without_historical_identity_attest
         model=_model(),
         capabilities=(Capability(tools=[change], id="test-tools"),),
     )
-    result = await replacement.run(
-        bindings=RunBindings.embedded(),
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
-    )
-    assert result.status == "completed"
+    with pytest.raises(DefinitionError) as error:
+        await replacement.run(
+            bindings=RunBindings.embedded(),
+            previous_state=first.state,
+            deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
+        )
+    assert error.value.code == "deferred_surface_mismatch"
     assert managed_executed == []
-    assert unmanaged_executed == [1]
+    assert unmanaged_executed == []
 
 
 async def test_live_deny_after_approval_never_dispatches() -> None:
@@ -349,7 +351,7 @@ async def test_resume_requires_prior_state_and_exact_category_coverage() -> None
         )
     assert incomplete.value.code == "deferred_results_incomplete"
 
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
     with pytest.raises(RunError) as wrong_category:
         executable.stream(
             bindings=RunBindings.embedded(),
@@ -364,7 +366,7 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
     first = await _suspend(executable, _Policy(InvocationPolicyDecision.allow(), []))
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call_id = requests.approvals[0].tool_call_id
+    call_id = requests.approvals[0].target_call.tool_call_id
 
     with pytest.raises(RunError) as invalid_type:
         executable.stream(
@@ -465,7 +467,7 @@ async def test_environment_approval_ignores_connection_identity(kind, change):
     results = requests.build_results(approve_all=True)
     if change == "arguments":
         results = DeferredToolResults(
-            approvals={requests.approvals[0].tool_call_id: ToolApproved(override_args={"value": 2})}
+            approvals={requests.approvals[0].target_call.tool_call_id: ToolApproved(override_args={"value": 2})}
         )
     fresh_policy = _Policy(
         InvocationPolicyDecision.deny("current denial") if change == "deny" else InvocationPolicyDecision.allow(), []
@@ -558,7 +560,7 @@ async def test_deferred_resume_still_rejects_results_integrated_after_the_pendin
     executable = _build([])
     suspended = await executable.run("go")
     assert suspended.state is not None and suspended.deferred is not None
-    call = suspended.deferred.approvals[0]
+    call = suspended.deferred.approvals[0].target_call
     result_part = (RetryPromptPart if retry else ToolReturnPart)(
         content="already handled", tool_name=call.tool_name, tool_call_id=call.tool_call_id
     )
@@ -574,10 +576,9 @@ async def test_deferred_resume_still_rejects_results_integrated_after_the_pendin
 @pytest.mark.parametrize("decision", [True, False, ToolApproved(override_args={"value": 7})])
 @pytest.mark.parametrize("historical_metadata", [False, True])
 async def test_host_constructed_history_accepts_native_decisions(decision, historical_metadata):
-    from a13n_harness import HarnessState
+    from a13n_harness import DeferredToolCall, DeferredToolRequests, HarnessState
     from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
     from pydantic_ai.messages import ModelResponse, ToolCallPart, UserPromptPart
-    from pydantic_ai.tools import DeferredToolRequests
 
     executed = []
     call = ToolCallPart("change", {"value": 5}, "host-call")
@@ -598,7 +599,7 @@ async def test_host_constructed_history_accepts_native_decisions(decision, histo
         if historical_metadata
         else {}
     )
-    requests = DeferredToolRequests(approvals=[call], metadata=metadata)
+    requests = DeferredToolRequests(approvals=[DeferredToolCall(call, call, "change")], metadata=metadata)
 
     def change(value: int) -> int:
         executed.append(value)

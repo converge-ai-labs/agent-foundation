@@ -21,11 +21,17 @@ export function Calendar({
   ...props
 }: React.ComponentProps<typeof DayPicker>): React.ReactElement {
   const defaultClassNames = {
-    button_next: buttonClassNames,
-    button_previous: buttonClassNames,
+    button_next: cn(
+      buttonClassNames,
+      props.navLayout === "around" && "absolute end-0 top-0",
+    ),
+    button_previous: cn(
+      buttonClassNames,
+      props.navLayout === "around" && "absolute start-0 top-0",
+    ),
     caption_label:
       "text-base sm:text-sm font-medium flex items-center gap-2 h-full",
-    day: "size-(--cell-size) text-sm py-px",
+    day: "size-(--cell-size) text-sm",
     day_button: cn(
       buttonClassNames,
       "in-data-disabled:pointer-events-none in-[.range-middle]:rounded-none in-[.range-end:not(.range-start)]:rounded-s-none in-[.range-start:not(.range-end)]:rounded-e-none in-[.range-middle]:in-data-selected:bg-accent in-data-selected:bg-primary in-[.range-middle]:in-data-selected:text-foreground in-data-disabled:text-muted-foreground/72 in-data-outside:text-muted-foreground/72 in-data-selected:in-data-outside:text-primary-foreground in-data-selected:text-primary-foreground in-data-disabled:line-through outline-none in-[[data-selected]:not(.range-middle)]:transition-[border-radius,box-shadow] focus-visible:z-1 focus-visible:ring-1 focus-visible:ring-ring/80",
@@ -36,7 +42,7 @@ export function Calendar({
     dropdowns:
       "w-full flex items-center text-base sm:text-sm justify-center h-(--cell-size) gap-1.5 *:[span]:font-medium",
     hidden: "invisible",
-    month: "w-full",
+    month: "relative w-full",
     month_caption:
       "relative mx-(--cell-size) px-1 mb-1 flex h-(--cell-size) items-center justify-center z-2",
     months: "relative flex flex-col sm:flex-row gap-2",
@@ -50,8 +56,7 @@ export function Calendar({
       "*:after:pointer-events-none *:after:absolute *:after:bottom-1 *:after:start-1/2 *:after:z-1 *:after:size-[3px] *:after:-translate-x-1/2 *:after:rounded-full *:after:bg-primary [&[data-selected]:not(.range-middle)>*]:after:bg-background [&[data-disabled]>*]:after:bg-foreground/30",
     week_number:
       "size-(--cell-size) p-0 text-xs font-medium text-muted-foreground/72",
-    weekday:
-      "size-(--cell-size) p-0 text-xs font-medium text-muted-foreground/72",
+    weekday: "size-(--cell-size) p-0 text-xs font-medium text-muted-foreground",
   };
   const mergedClassNames: typeof defaultClassNames = Object.keys(
     defaultClassNames,
@@ -112,7 +117,7 @@ export function Calendar({
 
   const dayPickerProps = {
     className: cn(
-      "w-fit [--cell-size:--spacing(10)] sm:[--cell-size:--spacing(9)]",
+      "w-fit [--cell-size:--spacing(10)] sm:[--cell-size:--spacing(8)]",
       className,
     ),
     classNames: mergedClassNames,

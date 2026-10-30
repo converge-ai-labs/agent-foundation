@@ -163,3 +163,34 @@ async def test_public_websocket_admission_preserves_auth_and_origin(
                     ):
                         pass
                 assert failure.value.response.status_code == 403
+
+
+async def test_browser_lease_routes_parse_and_forward_requests(tmp_path: Path, monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui.browser import BrowserAccessRequest, BrowserControl, BrowserHandbackRequest, BrowserState
+
+    async with webui(tmp_path, [], api_key=None) as (server, app):
+        renew = AsyncMock(return_value=BrowserState(session_id="session", control="human", control_episode=7))
+        handback = AsyncMock(return_value=BrowserControl(state=BrowserState(session_id="session"), control_token=""))
+        monkeypatch.setattr(app, "renew_browser_control", renew)
+        monkeypatch.setattr(app, "control_browser", handback)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://localhost") as client:
+            prefix = "/api/threads/thread-a/browser/"
+            response = await client.post(
+                prefix + "renew-control", json={"session_id": "session", "control_token": "token"}
+            )
+            assert response.status_code == 200
+            assert response.json()["control_episode"] == 7
+            renew.assert_awaited_once_with(
+                "thread-a", BrowserAccessRequest(session_id="session", control_token="token")
+            )
+
+            response = await client.post(prefix + "handback", json={"session_id": "session"})
+            assert response.status_code == 400
+            handback.assert_not_awaited()
+            response = await client.post(prefix + "handback", json={"session_id": "session", "control_episode": 7})
+            assert response.status_code == 200
+            handback.assert_awaited_once_with(
+                "thread-a", BrowserHandbackRequest(session_id="session", control_episode=7), human=False
+            )

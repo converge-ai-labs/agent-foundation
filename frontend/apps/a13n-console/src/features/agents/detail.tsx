@@ -1,41 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, MenuItem, MenuSeparator, ModalFrame } from "a13n-ui";
-import {
-  ChatIcon,
-  ChatsIcon,
-  DownloadSimpleIcon,
-  PencilSimpleIcon,
-  PlayIcon,
-} from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { Button, ModalFrame } from "a13n-ui";
+import { ChatIcon, PencilSimpleIcon, PlayIcon } from "@phosphor-icons/react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, ifMatch, representation } from "../../shared/api";
+import { data, ifMatch, representation } from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
   Loading,
   StatePill,
-  Timestamp,
 } from "../../shared/feedback";
-import { CopyButton } from "../../shared/identity";
-import {
-  DetailHeader,
-  DetailPage,
-  RailNote,
-  RailRow,
-  RailSection,
-  useTabParam,
-} from "../../shared/page";
-import { environmentTemplates } from "../environments/api";
+import { ResourceReference } from "../../shared/identity";
+import { DetailHeader, DetailPage, useTabParam } from "../../shared/page";
 import { useAgentComposer } from "./composer";
+import { ConnectAgent } from "./connect";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
-import { AgentEditor, type AgentDraftSummary } from "./editor";
-import { ExportAgent } from "./export";
-import { editableAgent } from "./queries";
+import { AgentEditor } from "./editor";
+import {
+  editableAgent,
+  editableAgentRevision,
+  editablePreset,
+} from "./queries";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 import styles from "./agents.module.css";
@@ -83,13 +72,6 @@ export function AgentDetail() {
       return { ...resource, revision };
     },
   });
-  const templates = useQuery({
-    queryKey: ["environment-template-choices", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        environmentTemplates(client, workspace.id, signal, cursor),
-      ),
-  });
   const save = useMutation({
     mutationFn: async (body: {
       config: AgentConfig;
@@ -135,72 +117,7 @@ export function AgentDetail() {
     setGeneration((value) => value + 1);
   };
   const state = agent.archived_at ? "archived" : "enabled";
-  const editable = can("write") && editableAgent(agent);
-  const rail = (summary: AgentDraftSummary): ReactNode => {
-    const environment = summary.environmentId
-      ? (templates.data?.find((item) => item.id === summary.environmentId)
-          ?.name ?? summary.environmentId)
-      : t("None");
-    return (
-      <>
-        <RailSection title={t("Overview")}>
-          <RailRow label={t("Status")}>
-            <StatePill state={state} />
-          </RailRow>
-          <RailRow label={t("Default version")}>
-            <button
-              type="button"
-              className={styles.railLink}
-              onClick={() => setTab("versions")}
-            >
-              v{revision.number}
-            </button>
-            {summary.dirty && (
-              <span className="text-muted-foreground">
-                → v{revision.number + 1}
-              </span>
-            )}
-          </RailRow>
-          <RailRow label={t("Model")}>
-            {summary.modelIcon}
-            <span>{summary.modelName}</span>
-          </RailRow>
-          <RailRow label={t("Environment")}>
-            <span>{environment}</span>
-          </RailRow>
-          <RailRow label={t("Capabilities")}>
-            {t("{{count}} skills", { count: summary.skillCount })}
-            <span className={styles.railDot}>·</span>
-            {t("{{count}} connections", { count: summary.connectionCount })}
-          </RailRow>
-          <RailRow label={t("Updated")}>
-            <Timestamp value={agent.updated_at} relative />
-          </RailRow>
-          <RailRow label={t("ID")}>
-            <span title={agent.id}>{agent.id}</span>
-            <CopyButton
-              value={agent.id}
-              iconOnly
-              copyLabel={t("Copy resource ID")}
-            />
-          </RailRow>
-        </RailSection>
-        <RailNote>
-          {t(
-            "Versions are immutable. Every save creates a new version; older versions stay available in",
-          )}{" "}
-          <button
-            type="button"
-            className={styles.railLink}
-            onClick={() => setTab("versions")}
-          >
-            {t("Version history")}
-          </button>
-          .
-        </RailNote>
-      </>
-    );
-  };
+  const editable = can("write") && editableAgentRevision(agent);
   return (
     <DetailPage
       back={`${basePath}/agents`}
@@ -226,10 +143,16 @@ export function AgentDetail() {
             />
           }
           name={agent.name}
-          status={<StatePill state={state} />}
+          status={
+            <>
+              <ResourceReference id={agent.id} />
+              <StatePill state={state} />
+            </>
+          }
           description={agent.description}
           edit={
-            editable && (
+            can("write") &&
+            editableAgent(agent) && (
               <ModalFrame
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
@@ -238,9 +161,8 @@ export function AgentDetail() {
                     variant="ghost"
                     size="icon-xs"
                     aria-label={t("Edit agent details")}
-                    title={t("Edit agent details")}
                   >
-                    <PencilSimpleIcon size={13} />
+                    <PencilSimpleIcon aria-hidden="true" />
                   </Button>
                 }
                 title={t("Edit agent details")}
@@ -269,22 +191,16 @@ export function AgentDetail() {
                   loading={composer.pending}
                   onClick={() => composer.start({ agent, revision })}
                 >
-                  <ChatIcon size={15} aria-hidden="true" />
+                  <ChatIcon aria-hidden="true" />
                   {t("Edit with AI")}
                 </Button>
               )}
-              {can("read") && (
-                <Button
-                  variant="outline"
-                  render={
-                    <Link
-                      to={`${basePath}/sessions?agent_id=${encodeURIComponent(agent.id)}`}
-                    />
-                  }
-                >
-                  <ChatsIcon size={15} aria-hidden="true" />
-                  {t("View sessions")}
-                </Button>
+              {can("run") && (
+                <ConnectAgent
+                  key={`${workspace.id}:${agent.id}`}
+                  agent={agent}
+                  trigger="button"
+                />
               )}
               {can("run") && (
                 <Button
@@ -294,31 +210,15 @@ export function AgentDetail() {
                     navigate(`${basePath}/sessions/new?agent=${agent.id}`)
                   }
                 >
-                  <PlayIcon size={14} />
+                  <PlayIcon aria-hidden="true" />
                   {t("Try agent")}
                 </Button>
               )}
               <AgentActions
                 key={editorKey}
                 resource={query.data}
+                revision={revision}
                 reload={() => void reload()}
-                triggerVariant="outline"
-                leading={
-                  <>
-                    <ExportAgent
-                      agent={agent}
-                      config={revision.config}
-                      version={revision.number}
-                      trigger={
-                        <MenuItem closeOnClick={false}>
-                          <DownloadSimpleIcon size={14} />
-                          {t("Export agent")}
-                        </MenuItem>
-                      }
-                    />
-                    <MenuSeparator />
-                  </>
-                }
               />
             </>
           }
@@ -335,9 +235,9 @@ export function AgentDetail() {
           pending={save.isPending}
           error={save.error}
           readonly={!editable}
+          preset={editablePreset(agent) ? revision : undefined}
           submit={(config, etag, note) => save.mutate({ config, etag, note })}
           discard={() => void reload()}
-          rail={rail}
         />
       ) : (
         <AgentVersions

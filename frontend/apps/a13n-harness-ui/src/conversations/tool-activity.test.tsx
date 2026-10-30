@@ -180,13 +180,15 @@ it("surfaces the OpenAI adapter's failed native-search status in live and saved 
     },
   ] as Schema<"TranscriptEntry">[];
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
-  render(<ToolActivity tools={saved} />);
+  const view = render(<ToolActivity tools={[tool]} />);
   const toggle = screen.getByRole("button", {
     name: /Browsed the web/,
   });
   expect(toggle.textContent).not.toContain("Failed");
   fireEvent.click(toggle);
-  expect(screen.getByText("Failed")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe("Failed");
+  view.rerender(<ToolActivity tools={saved} />);
+  expect(screen.getByRole("status").textContent).toBe("Failed");
   expect(describeTool({ ...tool, provider: undefined }).failed).toBe(false);
 });
 
@@ -234,9 +236,11 @@ it("groups web operations and preserves message and tool category boundaries in 
   expect(
     screen.getByRole("button", { name: "Browsed the web · 2 actions" }),
   ).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Ran 1 command" })).toBeTruthy();
   expect(
-    screen.getByRole("button", { name: "File changes · 1 file" }),
+    screen.getByRole("button", { name: "Ran 1 command check" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "File changes · 1 file /work/a" }),
   ).toBeTruthy();
   expect(document.querySelectorAll("[data-activity]")).toHaveLength(3);
 });
@@ -262,7 +266,7 @@ it("navigates to a created Thread inline even when run admission failed, without
             />
           }
         />
-        <Route path="/threads/:threadId" element={<p>Worker conversation</p>} />
+        <Route path="/threads/:threadId" element={<p>Worker chat</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -270,7 +274,7 @@ it("navigates to a created Thread inline even when run admission failed, without
   expect(link.closest("button")).toBeNull();
   expect(screen.queryByText("Model unavailable")).toBeNull();
   fireEvent.click(link);
-  expect(screen.getByText("Worker conversation")).toBeTruthy();
+  expect(screen.getByText("Worker chat")).toBeTruthy();
 });
 
 it.each(["run_thread", "steer_thread", "send_thread_message"])(
@@ -294,9 +298,7 @@ it.each(["run_thread", "steer_thread", "send_thread_message"])(
       </MemoryRouter>,
     );
     expect(
-      screen
-        .getByRole("link", { name: "Open conversation" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Open chat" }).getAttribute("href"),
     ).toBe("/threads/thread%20%2F%20target");
     expect(screen.queryByText(/completed/i)).toBeNull();
     expect(
@@ -337,7 +339,7 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
       />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Find conversations/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Find chats/ }));
   expect(
     screen.getByRole("link", { name: "Research" }).getAttribute("href"),
   ).toBe("/threads/thread-one");
@@ -402,7 +404,7 @@ it("retains saved applied diffs and explicit omission without reconstructing req
   );
   expect(screen.getByText("-observed before")).toBeTruthy();
   expect(screen.getByText("+observed after")).toBeTruthy();
-  expect(screen.getByText(/This older record did not retain/)).toBeTruthy();
+  expect(screen.getByText(/This older edit has no saved diff/)).toBeTruthy();
   expect(screen.queryByText("Requested replacement")).toBeNull();
 });
 
@@ -438,4 +440,313 @@ it("does not pair provider search results with local calls sharing an ID", () =>
   expect(tools[0].result).toEqual({ status: "completed" });
   expect(tools[1].result).toBeUndefined();
   expect(activitySummary(tools).issue).toBe(true);
+});
+
+it("groups execution controls in live and saved output and keeps waiting distinct from execution completion", () => {
+  const observation = {
+    execution_id: "exec-one",
+    tool_name: "shell_exec",
+    run_id: "run-one",
+    status: "running",
+  };
+  const blocks = [
+    {
+      id: "inspect",
+      kind: "tool" as const,
+      name: "tool_execution_info",
+      text: '{"execution_id":"exec-one"}',
+      result: JSON.stringify(observation),
+      done: true,
+    },
+    {
+      id: "wait",
+      kind: "tool" as const,
+      name: "tool_execution_wait",
+      text: '{"execution_id":"exec-one"}',
+      inputComplete: true,
+    },
+  ];
+  const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
+  const group = screen.getByRole("button", {
+    name: /Tool calls · 2 operations/,
+  });
+  expect(group.textContent).toContain("1 waiting");
+  fireEvent.click(group);
+  expect(screen.getByText("Running at last check")).toBeTruthy();
+  mounted.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={blocks.map((block) => ({
+        ...block,
+        result: JSON.stringify(observation),
+        done: true,
+      }))}
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Tool calls/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(screen.queryByText("1 waiting")).toBeNull();
+  expect(screen.getAllByText("Running at last check").length).toBeGreaterThan(
+    0,
+  );
+  const entries = [
+    {
+      position: 0,
+      parts: blocks.flatMap((block) => [
+        {
+          kind: "tool_call",
+          tool_name: block.name,
+          tool_call_id: block.id,
+          value: { execution_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: block.name,
+          tool_call_id: block.id,
+          value: observation,
+        },
+      ]),
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
+  expect(saved).toHaveLength(2);
+  expect(activitySummary(saved)).toMatchObject({
+    title: "Tool calls · 2 operations",
+    status: "Running at last check",
+  });
+});
+
+it("keeps execution failures and cancellation requests visible without interpreting native result status as execution state", () => {
+  const waiting = completed("tool_execution_wait", {
+    execution_id: "exec-one",
+  });
+  const failed = {
+    ...waiting,
+    result: {
+      execution_id: "exec-one",
+      tool_name: "shell_exec",
+      run_id: "run-one",
+      status: "failed",
+    },
+  };
+  expect(activitySummary([failed])).toMatchObject({
+    issue: true,
+    status: "Failed at last check",
+  });
+  expect(
+    describeTool({
+      ...waiting,
+      result: { status: "running", data: "native result" },
+    }).phase,
+  ).toBe("Result received");
+  expect(
+    describeTool({ ...waiting, resultOmitted: true, result: undefined }).phase,
+  ).toBe("Result received");
+  const cancelled = {
+    ...failed,
+    name: "tool_execution_cancel",
+    result: { ...failed.result, status: "running" },
+  };
+  expect(describeTool(cancelled).phase).toBe("Cancellation requested");
+  expect(activitySummary([cancelled]).status).toContain(
+    "1 cancellation request",
+  );
+  expect(
+    activitySummary([{ ...waiting, result: { status: "unavailable" } }]),
+  ).toMatchObject({ issue: true, status: "Unavailable" });
+});
+
+it.each(["queued", "running"])(
+  "does not label a %s receipt as a finished command",
+  (status) => {
+    const tool = {
+      ...completed("shell_exec", { command: "pytest -q" }),
+      result: {
+        type: "tool_execution_receipt",
+        execution_id: "exec-one",
+        tool_name: "shell_exec",
+        status,
+      },
+    };
+    expect(activitySummary([tool])).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Execution handed off",
+    });
+    expect(
+      activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
+    ).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Running at last check",
+    });
+  },
+);
+
+it("renders saved Shell retrieval failures and output with exact receipt provenance", () => {
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: { command: "pytest -q" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: {
+            type: "tool_execution_receipt",
+            tool_name: "shell_exec",
+            execution_id: "exec-one",
+            status: "running",
+          },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one", status: { phase: "running" } },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: { execution_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: {
+            ok: true,
+            status: { phase: "exited", exit_code: 7 },
+            stderr: { text: "test failed", coverage: "partial" },
+          },
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const groups = savedToolGroups(entries);
+  expect(describeTool(groups.get(entries[0].parts[0])![1]).summary).toBe(
+    "exec-one · pytest -q",
+  );
+  const result = groups.get(entries[0].parts[4])![0];
+  expect(describeTool(result)).toMatchObject({
+    failed: true,
+    command: "pytest -q",
+    label: "Retrieve tool result",
+  });
+  render(<ToolActivity tools={[result]} />);
+  fireEvent.click(screen.getByRole("button", { name: /Tool calls/ }));
+  expect(screen.getByText("test failed")).toBeTruthy();
+  expect(screen.getByText(/Exit 7/)).toBeTruthy();
+  expect(screen.getByText(/Partial process output/)).toBeTruthy();
+  // A page-edge result with no visible receipt must remain generic.
+  const orphan = savedToolGroups([
+    { ...entries[0], parts: entries[0].parts.slice(4) },
+  ]).get(entries[0].parts[4])![0];
+  expect(describeTool(orphan)).toMatchObject({ shell: false, failed: false });
+});
+
+it.each([false, true])(
+  "uses later Shell observations instead of stale launch state (receipt: %s)",
+  (receipt) => {
+    const reference = receipt ? "exec-one" : "process-one";
+    const start: ToolView = {
+      ...completed("shell_exec", { command: "pytest -q" }),
+      result: receipt
+        ? {
+            type: "tool_execution_receipt",
+            execution_id: reference,
+            tool_name: "shell_exec",
+            status: "running",
+          }
+        : { process_id: reference, status: { phase: "running" } },
+    };
+    const wait: ToolView = {
+      ...completed("shell_wait", { process_id: reference }),
+      // Retained native results need not repeat the control reference.
+      result: { ok: true, status: { phase: "exited", exit_code: 0 } },
+    };
+    expect(activitySummary([start, wait])).toMatchObject({
+      title: "Ran 1 command",
+      status: "",
+      issue: false,
+    });
+    expect(
+      activitySummary([
+        start,
+        { ...wait, result: { status: { phase: "running" } } },
+      ]).status,
+    ).toBe("Running at last check");
+    // Another handle or child cannot settle the launch observation.
+    expect(
+      activitySummary([start, { ...wait, input: { process_id: "other" } }])
+        .status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    expect(
+      activitySummary([start, { ...wait, subagentRunId: "child" }]).status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    expect(
+      activitySummary([start, { ...wait, result: { ok: true } }]).status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    const failed = {
+      ...wait,
+      result: { status: { phase: "exited", exit_code: 7 } },
+    };
+    expect(activitySummary([start, failed])).toMatchObject({
+      issue: true,
+      status: "",
+    });
+    expect(describeTool(start).phase).toBe(
+      receipt ? "Execution handed off" : "Running at last check",
+    );
+  },
+);
+
+it("retains another active command after one Shell reference completes", () => {
+  const start = (id: string): ToolView => ({
+    ...completed("shell_exec", { command: id }),
+    id,
+    result: { process_id: id, status: { phase: "running" } },
+  });
+  const wait = (id: string): ToolView => ({
+    ...completed("shell_wait", { process_id: id }),
+    id: `wait-${id}`,
+    result: { status: { phase: "exited", exit_code: 0 } },
+  });
+  expect(
+    activitySummary([start("one"), start("two"), wait("one")]),
+  ).toMatchObject({
+    title: "Shell · 3 operations",
+    status: "Running at last check",
+  });
+  expect(
+    activitySummary([start("one"), start("two"), wait("one"), wait("two")]),
+  ).toMatchObject({ title: "Ran 2 commands", status: "" });
+});
+
+it("keeps successful foreground Shell completion distinct from an observation", () => {
+  const result = { ok: true, status: { phase: "exited", exit_code: 0 } };
+  expect(
+    describeTool({ ...completed("shell_exec", { command: "true" }), result })
+      .phase,
+  ).toBe("Result received");
+  expect(
+    describeTool({
+      ...completed("shell_wait", { process_id: "process-one" }),
+      result,
+    }).phase,
+  ).toBe("Exited at last check");
 });

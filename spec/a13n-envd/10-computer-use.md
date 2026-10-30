@@ -36,6 +36,16 @@ Observation geometry records the selected display's native origin and size and t
 
 A reference is not a pixel-freshness guarantee. An application, focus or window may change without changing display geometry. There is no desktop-wide effect counter. The agent must observe again when it needs current content; repeated observation does not eliminate shared-desktop races.
 
+## Regional Detail
+
+`computer.zoom` accepts a live source `observation_id`, a `region` with half-open `left`, `top`, `right`, and `bottom` edges in that observation's image pixels, and `max_dimension` (256–2048, default 1280). The rectangle must be nonempty and wholly inside the source image; right and bottom may equal its width and height. Unknown, expired or evicted references and changed target geometry fail rather than selecting a replacement target.
+
+Zoom captures a fresh native-resolution image of the same target, maps the region to the raw image dimensions, crops before downsizing, and returns a bounded JPEG. Lower edges round down and upper edges round up to cover the selected region. Raw image dimensions, rather than logical desktop dimensions, determine this mapping on high-density displays. The output preserves aspect ratio and is not enlarged beyond its native crop dimensions.
+
+The result's `image` contains `source_observation_id`, `target_id`, `source_width`, `source_height`, `region`, `image_width`, `image_height`, MIME type and capture timestamp. It is auxiliary image metadata, not a new pointer observation. Zoom neither inserts a geometry reference nor extends the source reference's lifetime. Pointer input continues to use the original observation and full-frame coordinates. Zoom shows current content within the old geometric frame; it does not guarantee that application content is unchanged.
+
+Zoom uses active-only admission and the same Session-owned capture, staging reservation, byte limits and verified raw-reader lifecycle as observe. Its result also carries `reader`, `size_bytes` and `expires_at`; `computer.close_observation` closes this image reader without invalidating the source geometry. Exact `computer.zoom` and reader-close method availability governs support. Older peers retain their existing observe and input contracts without a thumbnail-enlargement fallback.
+
 ## Input
 
 Each call performs one complete bounded gesture:
@@ -58,6 +68,20 @@ X11 scrolling uses XTEST wheel button pairs (4/5 vertical, 6/7 horizontal); step
 Windows uses physical scan-code chords, UTF-16 Unicode text events and discrete wheel steps (positive right/down), without a clipboard fallback. A CRLF pair produces one carriage-return event rather than two line-break events; standalone control characters and Unicode surrogate pairs are preserved. Unicode entry depends on the application's text-message handling; native insertion does not prove literal text reached a raw-input application. Required keys/buttons already held, or held modifiers during text entry, reject input before dispatch rather than clearing someone else's input state. Pointer buttons follow the system's primary/secondary button mapping. Coordinate conversion and capture use a scoped physical-pixel DPI context that is restored after each operation.
 
 There are no persistent key-down or button-down methods. An operation attempts to release only its own pressed keys/buttons on every exit, including interruption. This cleanup is not desktop ownership and cannot promise isolation from concurrent physical input.
+
+## Plain-Text Clipboard
+
+`computer.read_clipboard` and `computer.write_clipboard` operate on the shared desktop clipboard of the selected Session. They require independent exact method availability. They work without an observation or foreground-window selector and do not confer desktop ownership. Active clipboard calls are serialized within a worker; other applications and physical input remain independent. A copy chord followed by a read, or a write followed by a paste chord, is not atomic. Key dispatch proves neither application publication nor insertion.
+
+Read accepts `max_bytes` from 1 through 16384 (default 16384), measured after normalization as UTF-8. Its result has `status` and optional `text`: `text` includes an explicit empty string, `no_content` means no clipboard content, and `no_text` means content without a supported text representation. The latter two omit `text`. Oversized content fails with `quota_exceeded` instead of returning a prefix. Invalid encoding and access failures remain errors, not empty content.
+
+Write requires a `text` string, permits empty text, and rejects NUL and original UTF-8 payloads over 16384 bytes before native mutation. Both directions normalize CRLF to LF and preserve standalone CR. Native Windows publication converts LF to CRLF. Rich text, images, files, save/restore and implicit paste are outside these methods.
+
+Native adapters use the macOS general pasteboard, Windows `CF_UNICODETEXT`, or X11 `CLIPBOARD`. macOS selects the first item offering plain Unicode text, preserves native consent, and detects pasteboard revision changes. Windows requires the same signed-in unlocked input desktop as other computer methods, retries clipboard contention within five seconds, and publishes eager OS-owned data. Windows rejects malformed UTF-16; macOS and X11 reject malformed UTF-8. X11 negotiates `UTF8_STRING`, UTF-8 plain text and Latin-1 `STRING`, supports bounded incoming INCR transfers, and leaves `PRIMARY` unchanged. Selection reads share a five-second absolute deadline; an owner change fails the read. The Session keeps its existing X connection and passively serves its owned selection until replacement or close.
+
+Native text retrieval is bounded to 128 KiB before conversion. Clipboard use reserves 512 KiB and one staging object against both Session and Device budgets for native, transfer, normalized and retained data before the Session's first clipboard access. The reservation lasts until Session cleanup, including passive X11 ownership after a write returns. These bounds cover Envd-owned buffers; native APIs may allocate internally or wait for another process. Session close cancels and joins active work before releasing the clipboard worker and reservation. Cleanup releases only Session-owned resources and never clears a later owner's selection. macOS and Windows eager data can survive Session close; callers have no cross-Session, restart or human-handoff persistence guarantee.
+
+Read uses active-only admission. Write uses terminal evidence and returns an operation receipt, `effect` and `cleanup_complete`. `executed` means native publication completed, not that any application pasted the text. A failure after clearing native content is `partial`; uncertainty after attempting selection ownership is `unknown`. Cleanup describes per-call native resources, independently of key/button cleanup; passive selection serving is a successfully retained Session resource. Partial/unknown effects, incomplete cleanup, cancellation after mutation and transport loss require reconciliation, never automatic replay. Reusing retained operation identity returns the original write evidence without publishing again.
 
 ## Completion, Interruption and Retry
 

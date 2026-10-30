@@ -3,15 +3,17 @@ import {
   Menu,
   MenuCheckboxItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuTrigger,
   Popover,
   PopoverPopup,
   PopoverTrigger,
   SearchPicker,
 } from "a13n-ui";
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SetURLSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -25,7 +27,10 @@ import {
   parseLocalDateTime,
 } from "../../shared/local-date-time";
 import type { SessionFilters } from "./api";
+import { zoneOffset } from "./format";
+import filterStyles from "../../shared/forms/filter-popover.module.css";
 import styles from "./conversations.module.css";
+import listStyles from "./session-list.module.css";
 
 const statuses: Schema["RunStatus"][] = [
   "accepted",
@@ -40,10 +45,13 @@ const triggers: Schema["Trigger"][] = [
   "queued",
   "resume",
   "child_result",
+  "tool_result",
   "spawned",
 ];
 const keys = [
   "q",
+  "application",
+  "label",
   "agent_id",
   "status",
   "trigger",
@@ -54,35 +62,34 @@ const keys = [
 export function readSessionFilters(search: URLSearchParams): SessionFilters {
   return {
     q: search.get("q")?.trim() || undefined,
+    application: search.get("application") || undefined,
+    label: search.getAll("label"),
     agent_id: search.get("agent_id") || undefined,
     status: known(search.getAll("status"), statuses),
     trigger: known(search.getAll("trigger"), triggers),
     updated_after: search.get("updated_after") || undefined,
     updated_before: search.get("updated_before") || undefined,
+    sort: known(search.getAll("sort"), [
+      "runs",
+      "cost",
+      "updated_at",
+    ] as const)[0],
+    direction: known(search.getAll("direction"), ["asc", "desc"] as const)[0],
   };
 }
 
 /** URL values restricted to the filter's known options. */
-function known<T extends string>(values: string[], options: T[]): T[] {
+function known<T extends string>(values: string[], options: readonly T[]): T[] {
   return values.filter((value): value is T =>
     options.some((option) => option === value),
   );
 }
 
-export function SessionFilterBar({
-  search,
-  setSearch,
-}: {
-  search: URLSearchParams;
-  setSearch: SetURLSearchParams;
-}) {
-  const { t } = useTranslation();
+/** The workspace's agents, shared by the Agent filter and the rows' avatars. */
+export function useSessionAgents() {
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const committedQuery = search.get("q") ?? "";
-  const [query, setQuery] = useState(committedQuery);
-  useEffect(() => setQuery(committedQuery), [committedQuery]);
-  const agents = useQuery({
+  return useQuery({
     queryKey: ["session-filter-agents", workspace.id],
     enabled: can("read"),
     staleTime: 60_000,
@@ -99,6 +106,20 @@ export function SessionFilterBar({
           .then(data),
       ),
   });
+}
+
+export function SessionFilterBar({
+  search,
+  setSearch,
+}: {
+  search: URLSearchParams;
+  setSearch: SetURLSearchParams;
+}) {
+  const { t } = useTranslation();
+  const committedQuery = search.get("q") ?? "";
+  const [query, setQuery] = useState(committedQuery);
+  useEffect(() => setQuery(committedQuery), [committedQuery]);
+  const agents = useSessionAgents();
   const update = (patch: Record<string, string[]>) =>
     setSearch((previous) => {
       const next = new URLSearchParams(previous);
@@ -129,19 +150,25 @@ export function SessionFilterBar({
   if (agentId && !agentOptions.some((agent) => agent.value === agentId))
     agentOptions.push({ value: agentId, label: agentId, keywords: [] });
   const active = keys.some((key) => search.has(key));
+  // Row sources and labels narrow the list; each stays visible until removed.
+  const application = search.get("application");
+  const labels = search.getAll("label");
   return (
     <>
       <Toolbar
         search={query}
         onSearchChange={onSearchChange}
-        searchLabel={t("Search by title, session or thread ID")}
+        searchLabel={t("Search sessions")}
+        searchPlaceholder={t("Title, source, ID, or message…")}
         filters={
           <>
             <div className={styles.agentFilter}>
               <SearchPicker
                 label={t("Agent")}
-                placeholder={t("All agents")}
+                placeholder={t("Search agents")}
                 emptyMessage={t("No matching agents")}
+                // Names read in full, however narrow the trigger is.
+                popupClassName={styles.agentFilterPopup}
                 groups={[
                   {
                     label: t("Agents"),
@@ -182,10 +209,34 @@ export function SessionFilterBar({
                 update({ updated_after: [after], updated_before: [before] })
               }
             />
+            <div className={listStyles.mobileSort}>
+              <ChoiceFilter
+                label={t("Sort")}
+                allLabel={t("Recently updated")}
+                value={
+                  search.has("sort") || search.has("direction")
+                    ? `${search.get("sort") ?? "updated_at"}:${search.get("direction") ?? "desc"}`
+                    : undefined
+                }
+                options={[
+                  { value: "updated_at:asc", label: t("Oldest update") },
+                  { value: "runs:desc", label: t("Most runs") },
+                  { value: "runs:asc", label: t("Fewest runs") },
+                  { value: "cost:desc", label: t("Highest cost") },
+                  { value: "cost:asc", label: t("Lowest cost") },
+                ]}
+                onChange={(value) => {
+                  const [sort, direction] = (value ?? "updated_at:desc").split(
+                    ":",
+                  );
+                  update({ sort: [sort!], direction: [direction!] });
+                }}
+              />
+            </div>
             {active && (
               <Button
-                size="sm"
                 variant="ghost"
+                className={styles.clearFilters}
                 onClick={() => {
                   setQuery("");
                   clearTimeout(debounce.current);
@@ -198,12 +249,85 @@ export function SessionFilterBar({
           </>
         }
       />
+      {(application || labels.length > 0) && (
+        <div className={styles.activeFilters}>
+          {application && (
+            <FilterChip
+              name={t("Source")}
+              value={application}
+              onRemove={() => update({ application: [] })}
+            />
+          )}
+          {labels.map((label) => {
+            const [key, ...value] = label.split(":");
+            return (
+              <FilterChip
+                key={label}
+                name={key}
+                value={value.join(":")}
+                onRemove={() =>
+                  update({ label: labels.filter((item) => item !== label) })
+                }
+              />
+            );
+          })}
+        </div>
+      )}
       <ErrorNotice error={agents.error} retry={() => void agents.refetch()} />
     </>
   );
 }
 
-function MultiFilter({
+function FilterChip({
+  name,
+  value,
+  onRemove,
+}: {
+  name: string;
+  value: string;
+  onRemove: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className={styles.activeFilter}>
+      <span className={styles.activeFilterName}>{name}</span>
+      <span className={styles.activeFilterValue}>{value}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`${t("Remove filter")} ${name}: ${value}`}
+        title={t("Remove filter")}
+      >
+        <XIcon size={11} weight="bold" aria-hidden="true" />
+      </button>
+    </span>
+  );
+}
+
+interface FilterOption {
+  value: string;
+  label: string;
+}
+
+/** A toolbar filter's face: what it filters, then what is chosen. */
+function FilterTrigger({
+  label,
+  chosen,
+}: {
+  label: string;
+  chosen?: ReactNode;
+}) {
+  return (
+    <>
+      <span className={styles.filterLabel}>{label}</span>
+      {chosen}
+      <CaretDownIcon size={12} aria-hidden="true" />
+    </>
+  );
+}
+
+/** Any number of values, chosen from a toolbar menu. */
+export function MultiFilter({
   label,
   values,
   options,
@@ -211,17 +335,20 @@ function MultiFilter({
 }: {
   label: string;
   values: string[];
-  options: { value: string; label: string }[];
+  options: FilterOption[];
   onChange: (values: string[]) => void;
 }) {
   return (
     <Menu>
       <MenuTrigger render={<Button variant="outline" />}>
-        <span className={styles.filterLabel}>{label}</span>
-        {values.length > 0 && (
-          <span className={styles.filterCount}>{values.length}</span>
-        )}
-        <CaretDownIcon size={12} aria-hidden="true" />
+        <FilterTrigger
+          label={label}
+          chosen={
+            values.length > 0 && (
+              <span className={styles.filterCount}>{values.length}</span>
+            )
+          }
+        />
       </MenuTrigger>
       <MenuPopup align="start" aria-label={label}>
         {options.map((option) => (
@@ -245,6 +372,48 @@ function MultiFilter({
   );
 }
 
+/** One value or all of them, for a filter the Service applies one value at a time. */
+export function ChoiceFilter({
+  label,
+  allLabel,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  value?: string;
+  options: FilterOption[];
+  onChange: (value: string | undefined) => void;
+}) {
+  const chosen = options.find((option) => option.value === value);
+  return (
+    <Menu>
+      <MenuTrigger render={<Button variant="outline" />}>
+        <FilterTrigger
+          label={label}
+          chosen={chosen && <span>{chosen.label}</span>}
+        />
+      </MenuTrigger>
+      <MenuPopup align="start" aria-label={label}>
+        <MenuRadioGroup
+          value={chosen?.value ?? ""}
+          onValueChange={(next: string) => onChange(next || undefined)}
+        >
+          <MenuRadioItem value="" closeOnClick>
+            {allLabel}
+          </MenuRadioItem>
+          {options.map((option) => (
+            <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+              {option.label}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 function UpdatedFilter({
   after,
   before,
@@ -254,7 +423,7 @@ function UpdatedFilter({
   before: string | null;
   onChange: (after: string, before: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -281,19 +450,25 @@ function UpdatedFilter({
       }}
     >
       <PopoverTrigger render={<Button variant="outline" />}>
-        <span className={styles.filterLabel}>{t("Updated")}</span>
-        {(after || before) && (
-          <span className={styles.filterDot} aria-label={t("Filter active")} />
-        )}
-        <CaretDownIcon size={12} aria-hidden="true" />
+        <FilterTrigger
+          label={t("Updated")}
+          chosen={
+            (after || before) && (
+              <span
+                className={styles.filterDot}
+                aria-label={t("Filter active")}
+              />
+            )
+          }
+        />
       </PopoverTrigger>
       <PopoverPopup
         aria-label={t("Updated")}
         align="end"
-        className={styles.updatedPopup}
+        className={`${styles.updatedPopup} ${filterStyles.popup}`}
       >
-        <div className={styles.updatedBody}>
-          <div className={styles.presets}>
+        <div className={filterStyles.body}>
+          <div className={filterStyles.presets}>
             {presets.map((preset) => (
               <Button
                 key={preset.days}
@@ -314,7 +489,7 @@ function UpdatedFilter({
               </Button>
             ))}
           </div>
-          <div className={styles.updatedFields}>
+          <div className={filterStyles.dates}>
             <DateTimeField
               label={t("Start time")}
               value={start}
@@ -331,9 +506,12 @@ function UpdatedFilter({
               {t("Choose a valid time range.")}
             </p>
           )}
-          <div className={styles.updatedFooter}>
-            <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
-            <div className={styles.updatedActions}>
+          <div className={filterStyles.footer}>
+            {/* The fields read in the browser's zone; its full name is a hover away. */}
+            <span title={Intl.DateTimeFormat().resolvedOptions().timeZone}>
+              {zoneOffset(undefined, i18n.resolvedLanguage)}
+            </span>
+            <div className={filterStyles.actions}>
               <Button
                 variant="ghost"
                 size="sm"
@@ -346,6 +524,7 @@ function UpdatedFilter({
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={invalid}
                 onClick={() => {
                   onChange(

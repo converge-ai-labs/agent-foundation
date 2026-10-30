@@ -2,6 +2,8 @@
 
 The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and its private Service client. The display language follows the browser by default, with English as the fallback. Users can choose English or Simplified Chinese in personal Preferences.
 
+[Console design](../../../spec/frontend/console-design-guidelines.md) owns presentation; the [shared compositions catalog](src/shared/README.md) describes implementation APIs.
+
 ## Local development
 
 From the repository root, start this checkout's PostgreSQL and Redis, apply migrations, and run the local scripted model, the Service and Console in the background:
@@ -10,7 +12,7 @@ From the repository root, start this checkout's PostgreSQL and Redis, apply migr
 make dev
 ```
 
-The command returns once all three accept connections and prints the Console URL; `make dev-stop` stops them and `make dev-foreground` runs them attached. It writes this checkout's Service settings to `var/dev/service.toml`, with the Console origin as the Service public URL; no `.env` is required. Use `make dev-reset STATE=seeded` for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
+The command returns once all three accept connections and prints the Console URL; `make dev-stop` stops them and `make dev-foreground` runs them attached. It writes this checkout's Service settings to `var/dev/service.toml`, with the Console origin as the Service public URL; no `.env` is required. Use `make dev-reset STATE=seeded` for fictional accounts and content, or `STATE=empty` for a fresh instance with the local administrator already created and no seeded business content. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 
@@ -27,7 +29,10 @@ The local launcher assigns a stable Console port per checkout and passes the mat
 - Sessions with threads, runs, retained and live output, attachments, waiting feedback, steering, interruption, and queued messages.
 - Models and providers, Skills and versions, file Memories with their history and mounts, and Environment providers, templates, and instances.
 - Connectors, and remote MCP connections and tool discovery.
-- Run attempt details and Traces.
+- [Schedules](../../../docs/a13n-service/schedules.md) for recurring work; [Findings](../../../docs/a13n-service/agents-and-runs.md#find-and-improve-execution-issues) for diagnosing and improving agents.
+- [Memory Spaces and standalone file or record memories](../../../docs/a13n-service/memory.md).
+- [Environment dashboards, data sources and Devices](../../../docs/a13n-service/environment-monitoring.md), plus [desktop assistance](../../../docs/a13n-service/environments.md#computer-use).
+- Run attempt details, Traces and [retained tool executions](../../../docs/a13n-service/agents-and-runs.md#retained-tool-executions).
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, and audit events.
 
 Existing hidden configuration is preserved when editing supported fields.
@@ -36,7 +41,7 @@ Console uses Service permission hints for navigation and controls; the Service a
 
 ## Service contract
 
-Console owns `src/service-client/`; it does not install, build, or release with an external Service SDK. HTTP types are generated from `proto/a13n-service/openapi.json`, not edited by hand. After changing a Service route or model, run `make service-contract-generate`; `make service-contract-check` detects drift without modifying files. Transport, session/CSRF, and thread stream tests run against the internal client.
+Console owns `src/service-client/`; it does not install, build, or release with an external Service SDK. HTTP types are generated from `proto/a13n-service/openapi.json`, not edited by hand. After changing a Service route or model, run `make service-contract-generate`; `make service-contract-check` detects drift without modifying files. Transport, session/CSRF, and session stream tests run against the internal client.
 
 ## Validation and production build
 

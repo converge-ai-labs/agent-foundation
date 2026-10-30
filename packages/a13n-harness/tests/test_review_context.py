@@ -397,7 +397,7 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
         async def after_model_request(self, ctx, *, request_context, response):
             return replace(response, provider_response_id="resp_nested_parent")
 
-    from .test_tool_proxy import _group, _run
+    from .test_tool_search import _group, _run
 
     def double(value: int) -> int:
         return value * 2
@@ -410,9 +410,9 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
     ]
     if codeact:
         capabilities.append(CodeActCapability())
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='double', arguments={'value': 3})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='double', arguments={'value': 3})"})
     else:
-        call = ("call_proxy_tool", {"group": "crm", "tool": "double", "arguments": {"value": 3}})
+        call = ("call_tool", {"group": "crm", "tool": "double", "arguments": {"value": 3}})
     result, _ = await _run(tuple(capabilities), [call])
     assert result.status == "completed"
     assert len(reviewer.requests) == 2

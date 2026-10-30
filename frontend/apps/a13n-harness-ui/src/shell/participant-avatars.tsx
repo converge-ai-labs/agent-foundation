@@ -34,7 +34,11 @@ export function threadParticipants(
     );
 }
 
-function Avatar({ participant }: { participant: Participant }) {
+export function ParticipantAvatar({
+  participant,
+}: {
+  participant: Participant;
+}) {
   const name = participant.display_name?.trim() || "Anonymous";
   const words = name.split(/\s+/u);
   const initials = (
@@ -79,7 +83,7 @@ export function ParticipantAvatars({
       >
         <span className={styles.avatars}>
           {participants.slice(0, 3).map((participant) => (
-            <Avatar
+            <ParticipantAvatar
               key={participant.participant_id}
               participant={participant}
             />
@@ -96,12 +100,12 @@ export function ParticipantAvatars({
       </PopoverTrigger>
       <PopoverPopup side="right" align="start" className={styles.popup}>
         <PopoverTitle className={styles.title}>
-          In this conversation <span>{count}</span>
+          People here <span>{count}</span>
         </PopoverTitle>
         <ul className={styles.people}>
           {participants.map((participant) => (
             <li key={participant.participant_id}>
-              <Avatar participant={participant} />
+              <ParticipantAvatar participant={participant} />
               <div className={styles.identity}>
                 <span className={styles.name}>
                   {participant.display_name?.trim() || "Anonymous"}
@@ -121,7 +125,11 @@ export function ParticipantAvatars({
                       ? "Changes"
                       : participant.focus?.target.kind === "terminal"
                         ? "Terminal"
-                        : "Files"}
+                        : participant.focus?.target.kind === "file"
+                          ? "Files"
+                          : participant.focus?.target.kind === "project"
+                            ? "Project"
+                            : "Workspace"}
                 </small>
               </div>
             </li>

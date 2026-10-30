@@ -13,6 +13,41 @@
   background: color-mix(in srgb, var(--a13n-signal) 22%, transparent);
 }
 
+/* One default for click actions, including native controls and portalled
+   composite widgets. Editable and spatial controls keep their own cursors. */
+@layer base {
+  :where(
+      button,
+      a[href],
+      summary,
+      select,
+      input[type="button"],
+      input[type="submit"],
+      input[type="reset"],
+      input[type="checkbox"],
+      input[type="radio"],
+      input[type="file"],
+      input[type="color"],
+      [role="button"],
+      [role="link"],
+      [role="menuitem"],
+      [role="menuitemcheckbox"],
+      [role="menuitemradio"],
+      [role="option"],
+      [role="tab"],
+      [role="checkbox"],
+      [role="radio"],
+      [role="switch"],
+      [role="combobox"]:not(input),
+      label[for],
+      label:has(input[type="checkbox"], input[type="radio"])
+    ):not(:disabled, [aria-disabled="true"], [data-disabled]):not(
+      :where([aria-disabled="true"], [data-disabled]) *
+    ):not(:has(:disabled, [aria-disabled="true"], [data-disabled])) {
+    cursor: pointer;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -21,5 +56,10 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* A spinner still has to say "working". */
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
   }
 }

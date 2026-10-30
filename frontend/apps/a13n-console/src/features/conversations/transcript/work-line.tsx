@@ -1,4 +1,5 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
 import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -6,11 +7,12 @@ import { formatDuration } from "../format";
 import { DiffBadges } from "./diff-badges";
 import { ItemContents } from "../stored-content";
 import {
-  asksAQuestion,
   entryGlyph,
   entryLabel,
   entrySubject,
+  entryWait,
   StateMark,
+  waitingLabel,
   type WorkState,
 } from "./entry-language";
 import { workSummary, type WorkEntry, type WorkSummary } from "./items";
@@ -31,11 +33,8 @@ export function WorkLine({
 }) {
   const { t } = useTranslation();
   const summary = workSummary(entries);
-  const [toggled, setToggled] = useState<boolean | null>(null);
+  const [open, setOpen] = useState(false);
   if (!entries.length) return null;
-  // Running work opens itself. Waiting on a person does not: that question is
-  // answered in the card below, not in these rows.
-  const open = toggled ?? (summary.running && !summary.waiting);
   const delegated = entries.some((work) => work.entry.kind === "subagent");
   return (
     <div className={styles.work}>
@@ -44,19 +43,13 @@ export function WorkLine({
           type="button"
           className={styles.workTrigger}
           aria-expanded={open}
-          onClick={() => setToggled(!open)}
+          onClick={() => setOpen((value) => !value)}
         >
           <StateMark state={lineState(summary)} size={13} decorative />
-          <span className={styles.workText}>
+          <span className={styles.workText} title={workTitle(summary, t)}>
+            {/* The card below names the call; the line only says whose turn it is. */}
             {summary.waiting ? (
-              <>
-                <Name entry={summary.waiting} />{" "}
-                {t(
-                  asksAQuestion(summary.waiting)
-                    ? "waiting for your answer"
-                    : "waiting for your approval",
-                )}
-              </>
+              waitingLabel(entryWait(summary.waiting), t)
             ) : (
               <>
                 {summary.named.map((work, index) => (
@@ -103,11 +96,29 @@ export function WorkLine({
   );
 }
 
+/** The whole line as text, so a truncated line still reads in full on hover. */
+function workTitle(summary: WorkSummary, t: TFunction) {
+  if (summary.waiting) return undefined;
+  const named = summary.named
+    .map(({ entry }) =>
+      [entryLabel(entry, t).name, entrySubject(entry)]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join(", ");
+  return summary.more
+    ? [named, t("and {{count}} more", { count: summary.more })]
+        .filter(Boolean)
+        .join(" ")
+    : named;
+}
+
 function lineState(summary: WorkSummary): WorkState {
   if (summary.waiting) return "waiting";
   if (summary.running) return "working";
   if (summary.failed) return "failed";
-  return summary.interrupted ? "interrupted" : "done";
+  if (summary.interrupted) return "interrupted";
+  return summary.handedOff ? "handed_off" : "done";
 }
 
 /** The step's name, monospace only when it is a tool's own wire name. */

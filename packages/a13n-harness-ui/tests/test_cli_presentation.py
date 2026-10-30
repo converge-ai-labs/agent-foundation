@@ -655,3 +655,34 @@ async def test_empty_clipboard_cleans_only_its_anchor_after_async_edits(
             if shell._clipboard_task is not None:
                 await shell._clipboard_task
             shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("child", [False, True])
+def test_context_recovery_warning_remains_visible_after_success(child: bool) -> None:
+    renderer = StreamRenderer(Status(mode="concise"))
+    for outcome in ("prepared", "resumed"):
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.harness.recovery",
+                "value": {
+                    "event": {
+                        "payload": {
+                            "type": "context_recovery",
+                            "outcome": outcome,
+                            "warning": "Immediate root-cause investigation is required.",
+                            "before_chars": 100_000,
+                        }
+                    }
+                },
+            },
+            child=child,
+            run_id="child" if child else "root",
+            execution_id="reviewer" if child else None,
+        )
+    renderer.ingest("RUN_FINISHED", {}, run_id="root")
+    text = "".join(block.source for block in renderer.transcript.blocks.values())
+    assert "Immediate root-cause investigation is required." in text
+    assert "Outcome: resumed" in text
+    assert ("reviewer" in text) is child
+    assert "before_chars" not in text

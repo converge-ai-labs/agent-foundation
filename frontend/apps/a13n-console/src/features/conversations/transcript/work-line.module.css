@@ -1,11 +1,11 @@
 /* The work line: one summary of everything the agent did between two replies,
    and the compact steps it opens into. */
 
-/* The mark sits in the avatar gutter, so the summary text, the step names and
-   the agent's prose all start on the same line. */
+/* The row's hover surface reaches past the content edge, so the mark itself
+   lines up with the agent's avatar and prose. */
 .work {
   min-width: 0;
-  margin-left: -28px;
+  margin-inline: -6px;
 }
 .workLine {
   display: flex;
@@ -133,9 +133,6 @@
   text-align: right;
 }
 @media (max-width: 680px) {
-  .work {
-    margin-left: -6px;
-  }
   .workSubject {
     display: none;
   }

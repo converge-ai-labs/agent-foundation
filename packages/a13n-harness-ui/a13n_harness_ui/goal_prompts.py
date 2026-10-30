@@ -1,6 +1,21 @@
 """Goal completion protocol and audit prompts, preserving YAACLI behavior."""
 
 GOAL_COMPLETE_MARKER = "[GOAL_COMPLETE]"
+GOAL_BLOCKED_MARKER = "[GOAL_BLOCKED]"
+
+
+def has_blocked_marker(output: str) -> bool:
+    """Recognize an explicit external blocker without claiming completion."""
+    return any(line.strip() == GOAL_BLOCKED_MARKER for line in output.splitlines())
+
+
+_BLOCKED_GUIDANCE = (
+    "If remaining work depends on unavailable access, an external event, or a user decision, "
+    "first complete any independent work. When no further progress is possible, briefly explain "
+    f"the blocker and end with {GOAL_BLOCKED_MARKER} on its own line. This ends Goal mode without "
+    "claiming completion. If a tool has registered a callback, end this turn and let that "
+    "notification bring you back; do not poll or repeatedly retry.\n"
+)
 
 
 def has_completion_marker(output: str) -> bool:
@@ -58,6 +73,7 @@ def goal_check_prompt(goal: str) -> str:
         "- The audit must prove completion requirement by requirement.\n\n"
         f"If current evidence proves the full goal is complete, respond with {GOAL_COMPLETE_MARKER} "
         "on its own line. Otherwise, continue working on the remaining requirements.\n"
+        f"{_BLOCKED_GUIDANCE}"
         "</goal-check>"
     )
 
@@ -88,5 +104,6 @@ def post_restore_audit_prompt(goal: str, source: str | None) -> str:
         "handoff or compact summary alone never satisfies a requirement.\n\n"
         f"Only if this fresh audit proves the full goal complete, respond with {GOAL_COMPLETE_MARKER} "
         "on its own line. Otherwise, continue working on the remaining requirements.\n"
+        f"{_BLOCKED_GUIDANCE}"
         "</goal-post-restore-audit>"
     )

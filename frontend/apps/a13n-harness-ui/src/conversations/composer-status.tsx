@@ -1,9 +1,9 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
+import { speedLabel } from "./speed-label";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
-import { GoalStatus } from "./goal-status";
+import { result } from "../transport/client";
 import {
   Button,
   Popover,
@@ -12,6 +12,7 @@ import {
   PopoverTitle,
 } from "a13n-ui";
 import { useOperation, useThreads } from "./queries";
+import { HelpTip } from "../shell/help-tip";
 import { ErrorNotice } from "../shell/ui";
 import {
   elapsedTime,
@@ -21,31 +22,34 @@ import {
 } from "./usage";
 import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
+import { useDebug } from "../shell/debug";
+import {
+  ArrowClockwise,
+  CircleHalf,
+  CurrencyDollar,
+} from "@phosphor-icons/react";
 
 export function ComposerStatus({
   threadId,
   receipt,
   busy = false,
   liveTokens,
-  savedGoal,
-  onRetryGoal,
 }: {
   threadId: string;
   receipt?: string | null;
   busy?: boolean;
   liveTokens?: number;
-  savedGoal?: Schema<"GoalView"> | null;
-  onRetryGoal?: (objective: string) => void;
 }) {
+  const { enabled: debug } = useDebug();
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
-  const operation =
-    observed.data ??
-    activity.data?.pages
-      .flatMap((page) => page.rows)
-      .find((row) => row.thread.thread_id === threadId)?.latest_operation;
-  // Terminal receipts remain inspectable even after their working state is reset.
-  const goal = busy ? (operation?.goal ?? savedGoal) : savedGoal;
+  const row = activity.data?.pages
+    .flatMap((page) => page.rows)
+    .find((row) => row.thread.thread_id === threadId);
+  const operation = observed.data ?? row?.latest_operation;
+  const mainAccount = operation
+    ? operation.main_account
+    : row?.thread.last_execution?.main_account;
   const active =
     busy ||
     operation?.status === "running" ||
@@ -68,17 +72,6 @@ export function ComposerStatus({
       captured.receipt_id !== operation?.receipt.receipt_id)
       ? undefined
       : captured?.captured?.agent;
-  const fast = capturedAgent?.fast;
-  const fastLabel =
-    fast === "on"
-      ? "On"
-      : fast === "off"
-        ? "Off"
-        : fast === "ultrafast"
-          ? "Ultrafast"
-          : fast === "default"
-            ? "Default"
-            : "—";
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
@@ -106,90 +99,143 @@ export function ComposerStatus({
   return (
     <div className={styles.bar}>
       <div className={styles.metrics}>
-        {goal && (
-          <GoalStatus
-            goal={goal}
-            onRetry={
-              onRetryGoal ? () => onRetryGoal(goal.objective) : undefined
-            }
-          />
+        {debug && mainAccount && (
+          <span
+            className={styles.metric}
+            title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
+          >
+            Account <strong>{mainAccount.account_name}</strong>
+          </span>
         )}
         {(
           [
-            ["Tokens", summary.tokens, "Conversation usage"],
+            ["Tokens", summary.tokens, "Chat usage"],
             ["Context", summary.context, "Context usage"],
-            ["Cost", summary.cost, "Conversation usage"],
-            ["Cache", summary.cache, "Conversation usage"],
+            ["Cost", summary.cost, "Chat usage"],
           ] as const
-        ).map(([label, value, title]) => (
-          <Popover
-            key={label}
-            open={detail === label}
-            onOpenChange={(open) =>
-              setDetail((current) =>
-                open ? label : current === label ? null : current,
-              )
-            }
-          >
-            <PopoverTrigger
-              className={styles.metric}
-              aria-label={`${label} details`}
+        )
+          .filter(([label]) => debug || label !== "Tokens")
+          .map(([label, value, title]) => (
+            <Popover
+              key={label}
+              open={detail === label}
+              onOpenChange={(open) =>
+                setDetail((current) =>
+                  open ? label : current === label ? null : current,
+                )
+              }
             >
-              {label} <strong>{value}</strong>
-            </PopoverTrigger>
-            <PopoverPopup side="top" align="start" className={styles.popup}>
-              <PopoverTitle>{title}</PopoverTitle>
-              {label === "Context" ? (
-                <ContextDetails
-                  used={tokens}
-                  capacity={context.data?.context_window}
-                />
-              ) : (
-                <UsageDetails usage={usage.data} />
-              )}
-              <ErrorNotice
-                error={
-                  usage.error ||
-                  context.error ||
-                  inspection.error ||
-                  observed.error ||
-                  activity.error
-                }
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={usage.isFetching || context.isFetching}
-                onClick={() => {
-                  void usage.refetch();
-                  void context.refetch();
-                  void inspection.refetch();
-                  if (receipt) void observed.refetch();
-                  else void activity.refetch();
-                }}
+              <PopoverTrigger
+                className={styles.metric}
+                aria-label={`${label} details`}
+                title={`${label}: ${value}`}
               >
-                Refresh usage
-              </Button>
-            </PopoverPopup>
-          </Popover>
-        ))}
-        <span
-          className={styles.metric}
-          title="Elapsed time for the current or latest operation."
-        >
-          Time <strong>{elapsedTime(operation, now)}</strong>
-        </span>
-        <span
-          className={styles.metric}
-          title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run."
-        >
-          Fast <strong>{fastLabel}</strong>
-        </span>
-        {capturedAgent?.reasoning_mode &&
+                {debug ? (
+                  label
+                ) : label === "Context" ? (
+                  <CircleHalf aria-hidden />
+                ) : (
+                  <CurrencyDollar aria-hidden />
+                )}{" "}
+                {label === "Context" && !debug && tokens != null && (
+                  <span>
+                    {Intl.NumberFormat("en", {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 2,
+                    }).format(tokens / 1000)}
+                    k
+                  </span>
+                )}
+                <strong>
+                  {label === "Context" && !debug && tokens != null
+                    ? `(${value})`
+                    : label === "Cost" && !debug
+                      ? value.replace(/^\$/, "")
+                      : value}
+                </strong>
+              </PopoverTrigger>
+              <PopoverPopup
+                side="top"
+                align="end"
+                className={`${styles.popup} ${label === "Context" ? styles.contextPopup : ""}`}
+              >
+                <div className={styles.popupHeader}>
+                  <PopoverTitle>{title}</PopoverTitle>
+                  {label === "Context" && (
+                    <HelpTip label="About context">
+                      Tokens in the latest request. Chat totals are in Usage.
+                      The context limit depends on the model.
+                      {!context.data?.context_window &&
+                        " This model has not provided a context limit, so its used percentage is unavailable."}
+                    </HelpTip>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Refresh usage"
+                    title="Refresh usage"
+                    loading={usage.isFetching || context.isFetching}
+                    onClick={() => {
+                      void usage.refetch();
+                      void context.refetch();
+                      void inspection.refetch();
+                      if (receipt) void observed.refetch();
+                      else void activity.refetch();
+                    }}
+                  >
+                    <ArrowClockwise />
+                  </Button>
+                </div>
+                <div className={styles.popupBody}>
+                  {label === "Context" ? (
+                    <div className={styles.contextStats}>
+                      <ContextDetails
+                        used={tokens}
+                        capacity={context.data?.context_window}
+                        compact
+                        cacheRate={summary.cache}
+                      />
+                    </div>
+                  ) : (
+                    <UsageDetails usage={usage.data} />
+                  )}
+                  <ErrorNotice
+                    inline
+                    error={
+                      usage.error ||
+                      context.error ||
+                      inspection.error ||
+                      observed.error ||
+                      activity.error
+                    }
+                  />
+                </div>
+              </PopoverPopup>
+            </Popover>
+          ))}
+        {debug && (
+          <span
+            className={styles.metric}
+            title="Elapsed time for the current or latest operation."
+          >
+            {active ? "Working" : "Time"}{" "}
+            <strong>{elapsedTime(operation, now)}</strong>
+          </span>
+        )}
+        {debug && (
+          <span
+            className={styles.metric}
+            title="Speed requested for this run. Changes apply next time. Actual speed depends on the provider."
+          >
+            Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
+          </span>
+        )}
+        {debug &&
+          capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (
             <span
               className={styles.metric}
-              title="Captured reasoning mode request, not the next-run draft or a guarantee of provider access."
+              title="Reasoning mode requested for this run. Provider access may vary. Changes apply next time."
             >
               Mode{" "}
               <strong>

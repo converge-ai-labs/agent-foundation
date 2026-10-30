@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod boundary;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod discovery;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -12,15 +12,17 @@ mod macos;
 pub(crate) mod management;
 #[cfg(target_os = "linux")]
 pub(crate) mod namespace;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod runtime;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod state;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(windows)]
+pub(crate) mod windows;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) use state::StateDirectory;
 #[cfg(target_os = "linux")]
 pub(crate) mod sandbox;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(crate) mod worker;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::*;

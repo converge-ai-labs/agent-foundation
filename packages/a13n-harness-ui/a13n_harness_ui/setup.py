@@ -13,10 +13,10 @@ from pydantic import Field
 
 from a13n_harness_ui.configuration.models import StrictModel
 from a13n_harness_ui.configuration.setup import SetupSelection
-from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
+from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, LocalProfileId, local_sandbox_supported
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
-from a13n_harness_ui.sandbox import validate_sandbox_runtime
+from a13n_harness_ui.sandbox import validate_local_envd_runtime, validate_sandbox_runtime
 
 
 class SetupProvider(StrictModel):
@@ -46,16 +46,18 @@ class SetupStatus(StrictModel):
 
 
 class EnvironmentReadiness(StrictModel):
-    profile_id: Literal["environment-native", "environment-sandbox"]
+    profile_id: LocalProfileId
     ready: bool
+    observe_ready: bool | None = None
+    input_ready: bool | None = None
     code: str
     message: str
     instructions: tuple[str, ...] = ()
-    documentation_url: str = "https://a13n.converge.ai/docs/a13n-envd/"
+    documentation_url: str = "https://a13n.dev/docs/a13n-envd/"
 
 
 async def preflight_environment(
-    profile_id: Literal["environment-native", "environment-sandbox"],
+    profile_id: LocalProfileId,
     project_path: Path,
     *,
     resolve_executable: Callable[[], Awaitable[Path]],
@@ -69,6 +71,36 @@ async def preflight_environment(
             code="full_control",
             message="Full Control runs as your Host account with ambient filesystem and network access. It is not a sandbox.",
         )
+    if profile_id in {"environment-envd", "environment-desktop"}:
+        try:
+            with fail_after(300):
+                executable = await resolve_executable()
+                desktop = await validate_local_envd_runtime(
+                    executable, project_path, computer_use=profile_id == "environment-desktop"
+                )
+            ready = desktop is None or (desktop.observe_ready and desktop.input_ready)
+            return EnvironmentReadiness(
+                profile_id=profile_id,
+                ready=ready,
+                code="envd_ready" if ready else "computer_not_ready",
+                message="Local envd execution check passed."
+                if ready
+                else "Desktop observation or input is unavailable.",
+                observe_ready=None if desktop is None else desktop.observe_ready,
+                input_ready=None if desktop is None else desktop.input_ready,
+            )
+        except (HarnessUiError, EnvironmentError, EnvironmentProviderError, OSError, TimeoutError) as exc:
+            return EnvironmentReadiness(
+                profile_id=profile_id,
+                ready=False,
+                code="envd_not_ready",
+                message=str(exc) or "Local envd did not become ready.",
+                instructions=(
+                    "Retry after checking the runtime and Host permissions.",
+                    "Computer Use needs Screen Recording and Accessibility on macOS, native X11 on Linux, or an unlocked interactive Windows desktop.",
+                    "You can explicitly turn off Computer Use or keep Direct. Your selection has not changed.",
+                ),
+            )
     if not local_sandbox_supported():
         return EnvironmentReadiness(
             profile_id=profile_id,
@@ -87,7 +119,7 @@ async def preflight_environment(
             profile_id=profile_id,
             ready=True,
             code="sandbox_ready",
-            message="Production filesystem, process, and denied-network isolation checks passed.",
+            message="Production filesystem and process isolation and Host localhost connectivity checks passed.",
         )
     except (HarnessUiError, EnvironmentError, EnvironmentProviderError, OSError, TimeoutError) as exc:
         code = exc.code if isinstance(exc, HarnessUiError) else "sandbox_probe_failed"
@@ -95,7 +127,8 @@ async def preflight_environment(
             profile_id=profile_id,
             ready=False,
             code=code,
-            message="Sandbox is not ready. No environment selection or system policy was changed.",
+            message=str(exc)
+            or "Sandbox isolation check failed. No environment selection or system policy was changed.",
             instructions=(
                 "Check the configured a13n-envd release and executable permissions, then Retry.",
                 "On Linux, check /usr/bin/bwrap and the distribution's unprivileged user-namespace/AppArmor policy. See the setup documentation; Harness UI will not modify system policy.",

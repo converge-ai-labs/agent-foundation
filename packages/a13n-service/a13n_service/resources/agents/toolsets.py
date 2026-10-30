@@ -1,5 +1,6 @@
-"""The built-in toolset catalogue, normalized selections of it, and the Harness configuration they select.
+"""The toolset catalogue, normalized selections of it, and the Harness configuration they select.
 
+The catalogue holds the built-in toolsets and one toolset per platform group, whose tools are its operations.
 A stored selection is always complete: normalization materializes every toolset and tool of the catalogue
 with its defaults and validates each typed config, so readers never merge defaults again.
 """
@@ -16,30 +17,20 @@ from a13n_harness.capabilities.web import (
     WebSearchConfiguration,
 )
 from a13n_harness.environment import DynamicEnvironmentConfiguration
+from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
-from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
+from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, source_tool_id
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
-CONFIGURATION_TOOL_IDS = {
-    "find": "service.configuration.find",
-    "read": "service.configuration.read",
-    "describe": "service.configuration.describe",
-    "create_agent": "service.configuration.create_agent",
-    "create_revision": "service.configuration.create_revision",
-}
+PLATFORM_SOURCE = "platform"
 
-TRACE_TOOL_IDS = {"list": "service.traces.list", "read": "service.traces.read", "spans": "service.traces.spans"}
-FINDING_TOOL_IDS = {
-    "read": "service.findings.read",
-    "submit": "service.findings.submit",
-}
-
-type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration", "traces", "findings"]
+type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -98,6 +89,7 @@ class ToolResourceSelector(_Frozen):
 class ToolDefinition(_Frozen):
     key: str
     display_name: str
+    description: str = ""
     # The tool's permission identity: the key of its rule in the compiled tool permissions.
     execution_id: str
     model_name: str
@@ -113,7 +105,10 @@ class ToolDefinition(_Frozen):
 class ToolsetDefinition(_Frozen):
     key: ToolsetKey
     display_name: str
+    description: str = ""
     default_enabled: bool
+    # Its tools call Service operations with the run's own credential.
+    platform: bool = False
     config_schema: dict[str, JsonValue]
     tools: tuple[ToolDefinition, ...]
 
@@ -131,17 +126,20 @@ class _Tool:
     config: type[BaseModel] = EmptyConfiguration
     default_enabled: bool = True
     operation: WebOperation | None = None
-    # What a selection starts with; `inherit` takes the agent's default, which allows.
-    permission: ToolPermissionSetting = "inherit"
+    description: str = ""
+    # The Harness default an `inherit` selection takes.
+    default_permission: ToolPermissionMode = "allow"
 
     def definition(self, supported_operations: frozenset[str]) -> ToolDefinition:
         return ToolDefinition(
             key=self.key,
             display_name=self.display_name,
+            description=self.description,
             execution_id=self.execution_id,
             model_name=self.model_name,
             default_enabled=self.default_enabled,
-            default_permission="allow" if self.permission == "inherit" else self.permission,
+            # A selection starts with `inherit`, which takes this default.
+            default_permission=self.default_permission,
             config_schema=self.config.model_json_schema(),
             supported_permissions=_PERMISSIONS,
             resource_selector=None
@@ -157,58 +155,239 @@ class _Toolset:
     display_name: str
     default_enabled: bool
     tools: tuple[_Tool, ...]
+    description: str = ""
+    config: type[BaseModel] = EmptyConfiguration
+    platform: bool = False
 
     def definition(self, supported_operations: frozenset[str]) -> ToolsetDefinition:
         return ToolsetDefinition(
             key=self.key,
             display_name=self.display_name,
+            description=self.description,
             default_enabled=self.default_enabled,
-            config_schema=EmptyConfiguration.model_json_schema(),
+            platform=self.platform,
+            config_schema=self.config.model_json_schema(),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
         )
 
 
+def _platform(group: PlatformGroup, display_name: str, description: str) -> _Toolset:
+    """A group's operations, each called by its MCP tool name; reads default to allow and writes to ask."""
+    return _Toolset(
+        group,
+        display_name,
+        False,
+        tuple(
+            _Tool(
+                tool.key,
+                tool.summary,
+                source_tool_id(PLATFORM_SOURCE, tool.key, kind="mcp"),
+                tool.key,
+                description=f"{tool.method} {tool.path.removeprefix('/api/v1')}",
+                default_permission="allow" if tool.effect == "read" else "ask",
+            )
+            for tool in PLATFORM_TOOLS
+            if tool.group == group
+        ),
+        description=description,
+        platform=True,
+    )
+
+
 _TOOLSETS: tuple[_Toolset, ...] = (
+    _Toolset(
+        "browser",
+        "Browser",
+        False,
+        tuple(
+            _Tool(key, key.title(), f"browser.{key}", f"browser_{key}", description=description)
+            for key, description in (
+                ("observe", "Observe the selected page and obtain element references"),
+                ("read", "Read page text, links, forms, tables, or attributes"),
+                ("navigate", "Navigate the selected tab or traverse its history"),
+                ("act", "Interact with an observed element or screenshot location"),
+                ("wait", "Wait for a page condition"),
+                ("tabs", "List, open, select, or close accessible tabs"),
+                ("dialog", "Inspect, accept, or dismiss a browser dialog"),
+                ("files", "Inspect downloads or upload files through the browser binding"),
+                ("screenshot", "Capture the selected page or a viewport region"),
+            )
+        ),
+        description="Native browser tools on the Thread's managed Browser binding.",
+    ),
     _Toolset(
         "files",
         "Files",
         True,
         (
-            _Tool("view", "View", "filesystem.view", "view"),
-            _Tool("write", "Write", "filesystem.write", "write"),
-            _Tool("edit", "Edit", "filesystem.edit", "edit"),
-            _Tool("multi_edit", "Multi edit", "filesystem.multi_edit", "multi_edit"),
-            _Tool("mkdir", "Create directories", "filesystem.mkdir", "mkdir"),
-            _Tool("move", "Move", "filesystem.move", "move"),
-            _Tool("copy", "Copy", "filesystem.copy", "copy"),
-            _Tool("delete", "Delete", "filesystem.remove", "delete"),
-            _Tool("ls", "List", "filesystem.ls", "ls"),
-            _Tool("glob", "Find paths", "filesystem.glob", "glob"),
-            _Tool("grep", "Search files", "filesystem.grep", "grep"),
+            _Tool("view", "View", "filesystem.view", "view", description="Read file contents"),
+            _Tool("write", "Write", "filesystem.write", "write", description="Create or replace a file"),
+            _Tool("edit", "Edit", "filesystem.edit", "edit", description="Edit a file"),
+            _Tool(
+                "multi_edit",
+                "Multi edit",
+                "filesystem.multi_edit",
+                "multi_edit",
+                description="Apply several file edits",
+            ),
+            _Tool("mkdir", "Create directories", "filesystem.mkdir", "mkdir", description="Create directories"),
+            _Tool("move", "Move", "filesystem.move", "move", description="Move a file or directory"),
+            _Tool("copy", "Copy", "filesystem.copy", "copy", description="Copy a file or directory"),
+            _Tool("delete", "Delete", "filesystem.remove", "delete", description="Delete a file or directory"),
+            _Tool("ls", "List", "filesystem.ls", "ls", description="List directory contents"),
+            _Tool("glob", "Find paths", "filesystem.glob", "glob", description="Find matching paths"),
+            _Tool("grep", "Search files", "filesystem.grep", "grep", description="Search file contents"),
         ),
+        description="Read, write, and organize files.",
     ),
     _Toolset(
         "shell",
         "Terminal",
         True,
         (
-            _Tool("exec", "Execute", "environment.shell_exec", "shell_exec"),
-            _Tool("info", "Inspect processes", "environment.process_info", "shell_info"),
-            _Tool("wait", "Wait for process", "environment.process_wait", "shell_wait"),
-            _Tool("input", "Send process input", "environment.process_input", "shell_input"),
-            _Tool("signal", "Signal process", "environment.process_signal", "shell_signal"),
+            _Tool("exec", "Execute", "environment.shell_exec", "shell_exec", description="Execute a command"),
+            _Tool(
+                "info",
+                "Inspect processes",
+                "environment.process_info",
+                "shell_info",
+                description="Inspect a running process",
+            ),
+            _Tool(
+                "wait", "Wait for process", "environment.process_wait", "shell_wait", description="Wait for a process"
+            ),
+            _Tool(
+                "input",
+                "Send process input",
+                "environment.process_input",
+                "shell_input",
+                description="Send input to a process",
+            ),
+            _Tool(
+                "signal", "Signal process", "environment.process_signal", "shell_signal", description="Signal a process"
+            ),
         ),
+        description="Run commands and manage processes.",
+    ),
+    _Toolset(
+        "computer",
+        "Computer",
+        False,
+        (
+            _Tool(
+                "describe",
+                "Describe desktop",
+                "environment.computer.describe",
+                "computer_describe",
+                description="Describe displays and readiness",
+            ),
+            _Tool(
+                "observe",
+                "Observe desktop",
+                "environment.computer.observe",
+                "computer_observe",
+                description="Capture the desktop for the model and the session",
+            ),
+            _Tool(
+                "zoom",
+                "Inspect desktop region",
+                "environment.computer.zoom",
+                "computer_zoom",
+                description="Inspect fresh native detail while retaining full-screen action coordinates",
+            ),
+            _Tool(
+                "click",
+                "Click",
+                "environment.computer.click",
+                "computer_click",
+                description="Click a location in an observed desktop",
+            ),
+            _Tool(
+                "move",
+                "Move pointer",
+                "environment.computer.move",
+                "computer_move",
+                description="Move the desktop pointer",
+            ),
+            _Tool(
+                "drag",
+                "Drag",
+                "environment.computer.drag",
+                "computer_drag",
+                description="Drag between observed desktop locations",
+            ),
+            _Tool(
+                "scroll", "Scroll", "environment.computer.scroll", "computer_scroll", description="Scroll the desktop"
+            ),
+            _Tool(
+                "type_text",
+                "Type text",
+                "environment.computer.type_text",
+                "computer_type_text",
+                description="Type text into the focused application",
+            ),
+            _Tool(
+                "press_keys",
+                "Press keys",
+                "environment.computer.press_keys",
+                "computer_press_keys",
+                description="Press a desktop key combination",
+            ),
+            _Tool(
+                "read_clipboard",
+                "Read clipboard",
+                "environment.computer.read_clipboard",
+                "computer_read_clipboard",
+                description="Read bounded plain text from the desktop clipboard",
+            ),
+            _Tool(
+                "write_clipboard",
+                "Write clipboard",
+                "environment.computer.write_clipboard",
+                "computer_write_clipboard",
+                description="Replace the desktop clipboard with plain text without pasting",
+            ),
+        ),
+        description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
+        config=ComputerConfiguration,
     ),
     _Toolset(
         "web",
         "Web",
         False,
         (
-            _Tool("search", "Search", "web.search", "search", SearchConfiguration, False, "search"),
-            _Tool("scrape", "Scrape", "web.scrape", "scrape", ScrapeConfiguration, False, "scrape"),
-            _Tool("fetch", "Fetch", "web.fetch", "fetch", FetchConfiguration, False),
-            _Tool("download", "Download", "web.download", "download", DownloadConfiguration, False),
+            _Tool(
+                "search",
+                "Search",
+                "web.search",
+                "search",
+                SearchConfiguration,
+                False,
+                "search",
+                description="Search the web",
+            ),
+            _Tool(
+                "scrape",
+                "Scrape",
+                "web.scrape",
+                "scrape",
+                ScrapeConfiguration,
+                False,
+                "scrape",
+                description="Extract page content",
+            ),
+            _Tool("fetch", "Fetch", "web.fetch", "fetch", FetchConfiguration, False, description="Fetch URL content"),
+            _Tool(
+                "download",
+                "Download",
+                "web.download",
+                "download",
+                DownloadConfiguration,
+                False,
+                description="Download a resource",
+            ),
         ),
+        description="Search and retrieve online content.",
     ),
     # The tools of the memories a run mounts; a read mount offers only viewing and searching.
     _Toolset(
@@ -216,68 +395,110 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "Memory",
         True,
         (
-            _Tool("file_view", "View memory files", "memory.file.view", "memory_file_view"),
-            _Tool("file_grep", "Search memory files", "memory.file.grep", "memory_file_grep"),
-            _Tool("file_create", "Create memory file", "memory.file.create", "memory_file_create"),
-            _Tool("file_edit", "Edit memory file", "memory.file.edit", "memory_file_edit"),
-            _Tool("file_append", "Append to memory file", "memory.file.append", "memory_file_append"),
-            _Tool("file_move", "Move memory file", "memory.file.move", "memory_file_move"),
-            _Tool("file_delete", "Delete memory file", "memory.file.delete", "memory_file_delete"),
-            _Tool("record_search", "Search memory records", "memory.record.search", "memory_record_search"),
-            _Tool("record_list", "List memory records", "memory.record.list", "memory_record_list"),
-            _Tool("record_add", "Add memory record", "memory.record.add", "memory_record_add"),
-            _Tool("record_update", "Update memory record", "memory.record.update", "memory_record_update"),
-            _Tool("record_delete", "Delete memory record", "memory.record.delete", "memory_record_delete"),
+            _Tool(
+                "file_view",
+                "View memory files",
+                "memory.file.view",
+                "memory_file_view",
+                description="View memory files",
+            ),
+            _Tool(
+                "file_grep",
+                "Search memory files",
+                "memory.file.grep",
+                "memory_file_grep",
+                description="Search memory files",
+            ),
+            _Tool(
+                "file_create",
+                "Create memory file",
+                "memory.file.create",
+                "memory_file_create",
+                description="Create a memory file",
+            ),
+            _Tool(
+                "file_edit",
+                "Edit memory file",
+                "memory.file.edit",
+                "memory_file_edit",
+                description="Edit a memory file",
+            ),
+            _Tool(
+                "file_append",
+                "Append to memory file",
+                "memory.file.append",
+                "memory_file_append",
+                description="Append to a memory file",
+            ),
+            _Tool(
+                "file_move",
+                "Move memory file",
+                "memory.file.move",
+                "memory_file_move",
+                description="Move a memory file",
+            ),
+            _Tool(
+                "file_delete",
+                "Delete memory file",
+                "memory.file.delete",
+                "memory_file_delete",
+                description="Delete a memory file",
+            ),
+            _Tool(
+                "record_search",
+                "Search memory records",
+                "memory.record.search",
+                "memory_record_search",
+                description="Search memory records",
+            ),
+            _Tool(
+                "record_list",
+                "List memory records",
+                "memory.record.list",
+                "memory_record_list",
+                description="List memory records",
+            ),
+            _Tool(
+                "record_add",
+                "Add memory record",
+                "memory.record.add",
+                "memory_record_add",
+                description="Add a memory record",
+            ),
+            _Tool(
+                "record_update",
+                "Update memory record",
+                "memory.record.update",
+                "memory_record_update",
+                description="Update a memory record",
+            ),
+            _Tool(
+                "record_delete",
+                "Delete memory record",
+                "memory.record.delete",
+                "memory_record_delete",
+                description="Delete a memory record",
+            ),
         ),
+        description="Read and change the memories a session mounts.",
     ),
     _Toolset(
         "assets",
         "Asset publication",
         False,
-        (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset"),),
+        (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset", description="Publish an asset"),),
+        description="Publish files as agent assets.",
     ),
-    _Toolset(
-        "traces",
-        "Trace queries",
-        False,
-        (
-            _Tool("list", "List traces", TRACE_TOOL_IDS["list"], "list_traces"),
-            _Tool("read", "Read trace", TRACE_TOOL_IDS["read"], "read_trace"),
-            _Tool("spans", "Read trace steps", TRACE_TOOL_IDS["spans"], "read_trace_spans"),
-        ),
+    _platform("agents", "Agents", "Agents, their versions and the tool catalog."),
+    _platform("models", "Models", "Models and the model catalog."),
+    _platform("connections", "Connections", "Connections, their tools and connector apps."),
+    _platform("skills", "Skills", "Skills and their versions."),
+    _platform("environment_templates", "Environment templates", "Environment templates."),
+    _platform("providers", "Providers", "Providers, and tests of their saved connections."),
+    _platform(
+        "execution", "Execution", "Sessions, threads, runs, traces and findings; its only write submits a finding."
     ),
-    _Toolset(
-        "findings",
-        "Findings",
-        False,
-        (
-            _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding"),
-            _Tool("submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding"),
-        ),
-    ),
-    _Toolset(
-        "configuration",
-        "Agent configuration",
-        False,
-        (
-            _Tool("find", "Find resources", CONFIGURATION_TOOL_IDS["find"], "find_resources"),
-            _Tool("read", "Read resource", CONFIGURATION_TOOL_IDS["read"], "read_resource"),
-            _Tool(
-                "describe", "Describe agent configuration", CONFIGURATION_TOOL_IDS["describe"], "describe_agent_config"
-            ),
-            # Writes act with the run principal's authority, so each one waits for the user's approval.
-            _Tool(
-                "create_agent", "Create agent", CONFIGURATION_TOOL_IDS["create_agent"], "create_agent", permission="ask"
-            ),
-            _Tool(
-                "create_revision",
-                "Create agent revision",
-                CONFIGURATION_TOOL_IDS["create_revision"],
-                "create_agent_revision",
-                permission="ask",
-            ),
-        ),
-    ),
+    _platform("schedules", "Schedules", "One-time and recurring Agent schedules, manual dispatch and trigger history."),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
@@ -298,20 +519,16 @@ def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> di
 
 def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetSelection:
     selected = selected or ToolsetSelection(enabled=toolset.default_enabled)
-    EmptyConfiguration.model_validate(selected.config)
-    # Old immutable revisions may contain the retired report tool; never expose it again.
-    retired = {"report"} if toolset.key == "findings" else set()
-    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools} - retired
+    configuration = toolset.config.model_validate(selected.config).model_dump(mode="json", exclude_none=True)
+    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools}
     if unknown:
         raise ValueError(f"unknown {toolset.key} tool {sorted(unknown)[0]!r}")
     tools: dict[str, ToolSelection] = {}
     for tool in toolset.tools:
-        submitted = selected.tools.get(tool.key) or ToolSelection(
-            enabled=tool.default_enabled, permission=tool.permission
-        )
+        submitted = selected.tools.get(tool.key) or ToolSelection(enabled=tool.default_enabled)
         config = tool.config.model_validate(submitted.config).model_dump(mode="json", exclude_none=True)
         tools[tool.key] = submitted.model_copy(update={"config": config})
-    return ToolsetSelection(enabled=selected.enabled, tools=tools)
+    return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)
 
 
 Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolsets)]
@@ -352,6 +569,17 @@ def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, 
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
 
 
+def platform_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolIdentity]:
+    """The enabled platform tools by MCP name, each with the identity its permission rule and default apply to."""
+    return {
+        tool.model_name: ToolIdentity(tool.execution_id, tool.default_permission)
+        for toolset in _TOOLSETS
+        if toolset.platform
+        for tool in toolset.tools
+        if enabled_tool(toolsets, toolset.key, tool.key) is not None
+    }
+
+
 # The memory toolset's tool keys name each memory kind's tools by their Harness keys, such as `file_view`.
 _FILE_TOOLS: dict[str, FileToolKey] = {f"file_{key}": key for key in FILE_TOOL_KEYS}
 _RECORD_TOOLS: dict[str, RecordToolKey] = {f"record_{key}": key for key in RECORD_TOOL_KEYS}
@@ -369,9 +597,19 @@ def memory_record_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozens
 
 def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> DynamicEnvironmentConfiguration:
     files, shell = toolsets["files"], toolsets["shell"]
+    computer = toolsets.get("computer")
     return DynamicEnvironmentConfiguration(
         files_enabled=files.enabled,
         shell_enabled=shell.enabled,
+        computer_enabled=computer is not None and computer.enabled,
+        computer_coordinate_space=ComputerConfiguration.model_validate(
+            computer.config if computer else {}
+        ).coordinate_space,
+        computer_tools=frozenset(
+            tool.model_name
+            for tool in _BY_KEY["computer"].tools
+            if computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
+        ),
         file_tools=frozenset(tool.model_name for tool in _BY_KEY["files"].tools if files.tools[tool.key].enabled),
         shell_tools=frozenset(tool.model_name for tool in _BY_KEY["shell"].tools if shell.tools[tool.key].enabled),
     )

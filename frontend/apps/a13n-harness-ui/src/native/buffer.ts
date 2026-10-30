@@ -112,7 +112,7 @@ export function lineRange(start: string, end: string): LineRange {
     last < first
   )
     throw new Error(
-      "Choose both one-based line numbers, with the end at or after the start.",
+      "Enter start and end line numbers, starting at 1. The end can't come before the start.",
     );
   return { start_line: first, end_line: last };
 }

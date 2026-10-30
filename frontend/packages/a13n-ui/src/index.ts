@@ -54,3 +54,5 @@ export * from "./components/toggle-group";
 export * from "./components/fieldset";
 
 export { ReadOnlyField } from "./patterns/read-only-field";
+
+export { modelBrand } from "./brand/model-brand";

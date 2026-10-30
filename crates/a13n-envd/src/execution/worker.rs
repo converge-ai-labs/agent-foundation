@@ -8,7 +8,6 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Read},
-    os::{fd::FromRawFd, unix::net::UnixStream},
     time::Duration,
 };
 #[cfg(target_os = "linux")]
@@ -16,6 +15,9 @@ use std::{
     os::{fd::AsRawFd, unix::process::CommandExt},
     process::Command,
 };
+
+#[cfg(unix)]
+use std::os::{fd::FromRawFd, unix::net::UnixStream};
 
 pub(crate) mod client;
 mod server;
@@ -48,6 +50,7 @@ pub(crate) struct WorkerConfig {
 impl WorkerConfig {
     fn config(&self) -> io::Result<Config> {
         Ok(Config {
+            monitoring: None,
             computer_use: self.computer_use,
             // Permission readiness belongs to daemon startup, not Session workers.
             computer_use_permission_timeout: Duration::ZERO,
@@ -123,6 +126,10 @@ pub(crate) fn run_internal(ready: bool) -> io::Result<()> {
         return Err(Command::new(format!("{RUNTIME}/envd"))
             .arg("--internal-egress-ready")
             .env_clear()
+            .envs(desktop_environment(
+                bootstrap.computer_use,
+                bootstrap.command.as_ref(),
+            ))
             .exec());
     }
     // Executing resets dumpability; restore it before any payload can start.
@@ -141,6 +148,26 @@ pub(crate) fn run_internal(ready: bool) -> io::Result<()> {
         command.drop_supervisor_capabilities = true;
     }
     serve(socket, bootstrap)
+}
+
+/// X11 workers need the host-selected display after identity changes. Do not
+/// inherit unrelated daemon variables, credentials or dynamic-loader settings.
+#[cfg(target_os = "linux")]
+pub(super) fn desktop_environment(
+    enabled: bool,
+    command: Option<&CommandConfig>,
+) -> impl Iterator<Item = (&str, &str)> {
+    command
+        .into_iter()
+        .flat_map(|command| &command.base_environment)
+        .filter(move |(name, _)| {
+            enabled
+                && matches!(
+                    name.as_str(),
+                    "DISPLAY" | "XAUTHORITY" | "WAYLAND_DISPLAY" | "XDG_SESSION_TYPE"
+                )
+        })
+        .map(|(name, value)| (name.as_str(), value.as_str()))
 }
 
 /// The managed restricted helper prepares networking only. Bubblewrap owns the
@@ -206,6 +233,7 @@ pub(crate) fn run_restricted() -> io::Result<()> {
 
 /// Ordinary identity workers use the same filesystem and command engine, without
 /// silently opting into a network policy or changing the native system tree.
+#[cfg(unix)]
 pub(crate) fn run_session() -> io::Result<()> {
     let mut socket = unsafe { UnixStream::from_raw_fd(libc::STDIN_FILENO) };
     let mut bootstrap: WorkerConfig = read_bootstrap(&mut socket)?;
@@ -273,6 +301,7 @@ fn enter_linux(bootstrap: &mut WorkerConfig) -> io::Result<()> {
     namespace::protect_process()
 }
 
+#[cfg(unix)]
 fn serve(socket: UnixStream, bootstrap: WorkerConfig) -> io::Result<()> {
     let config = bootstrap.config()?;
     socket.set_nonblocking(true)?;
@@ -295,7 +324,28 @@ fn serve(socket: UnixStream, bootstrap: WorkerConfig) -> io::Result<()> {
     result
 }
 
-fn read_bootstrap<T: serde::de::DeserializeOwned>(reader: &mut impl Read) -> io::Result<T> {
+#[cfg(windows)]
+pub(crate) fn run_session() -> io::Result<()> {
+    let mut bootstrap: WorkerConfig = read_bootstrap(&mut io::stdin())?;
+    enter(&mut bootstrap)?;
+    let config = bootstrap.config()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(server::serve(
+        tokio::io::stdin(),
+        tokio::io::stdout(),
+        config,
+        bootstrap.generation,
+        bootstrap.session_id,
+    ));
+    runtime.shutdown_timeout(Duration::from_secs(1));
+    result
+}
+
+pub(super) fn read_bootstrap<T: serde::de::DeserializeOwned>(
+    reader: &mut impl Read,
+) -> io::Result<T> {
     let mut length = [0; 4];
     reader.read_exact(&mut length)?;
     let length = u32::from_be_bytes(length) as usize;

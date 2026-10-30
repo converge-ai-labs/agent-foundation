@@ -3,16 +3,15 @@ title: Provider configuration reference
 description: Every built-in Environment Provider configuration field, generated from the Provider models.
 ---
 
-> [!NOTE]
-> Generated from the built-in Provider Pydantic models by `scripts/docs/references.py`. Regenerate instead of editing rows.
+Find your Provider's configuration model, then use its table to check field names, accepted values, and defaults. A type such as `DirectLocalRootConfiguration` has its own table below. Start with [Configure Providers](configuration.md) to assemble a recipe, backend settings, and private credentials into a working configuration.
 
-Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed; this reference does not resolve values from your Host environment or credential store. The tables describe Provider configuration objects. For standalone daemon JSON settings, use [Envd configuration](../a13n-envd/configuration.md).
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe, account, and credential objects.
+The tables are generated from the built-in Provider models. Contributors changing those models regenerate the English page with `uv run --locked python scripts/docs/references.py` and synchronize the translated rows.
 
 ## Cloud Providers
 
-All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
+Use the links to find each cloud Provider's three configuration objects. The recipe describes the target to create, backend settings select the account or endpoint, and credentials supply private authentication. For supported operations and setup examples, see [Cloud Providers](providers.md#cloud-providers).
 
 | Provider       | Recipe                                                              | Backend                                                           | Credential                          |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
@@ -30,6 +29,7 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 | `root`                     | true     | DirectLocalRootConfiguration     | —                                       |
 | `shell_profiles`           | false    | array of DirectLocalShellProfile | default=[]                              |
 | `allowed_executables`      | false    | array of string                  | uniqueItems=true; default=[]            |
+| `environment`              | false    | EnvironmentVariables             | —; default from model factory           |
 | `inherit_environment`      | false    | boolean                          | default=false                           |
 | `allowed_environment_keys` | false    | array of string or null          | uniqueItems=true; default=[]            |
 | `allowed_ports`            | false    | array of integer                 | uniqueItems=true; default=[]            |
@@ -55,6 +55,12 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 | `fixed_arguments` | false    | array of string       | default=[]                 |
 | `dialect`         | false    | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false    | boolean               | default=false              |
+
+## `EnvironmentVariables`
+
+Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.
+
+Choices: `object`.
 
 ## `LocalEnvdEnvironmentConfiguration`
 
@@ -140,10 +146,11 @@ Choices: `"read_only", "read_write"`.
 
 ## `RestrictedSandbox`
 
-| Field    | Required | Type / choices        | Constraints and default |
-| -------- | -------- | --------------------- | ----------------------- |
-| `mode`   | true     | "restricted"          | —                       |
-| `grants` | false    | array of SandboxGrant | default=[]              |
+| Field            | Required | Type / choices        | Constraints and default |
+| ---------------- | -------- | --------------------- | ----------------------- |
+| `mode`           | true     | "restricted"          | —                       |
+| `grants`         | false    | array of SandboxGrant | default=[]              |
+| `full_disk_read` | false    | boolean               | default=false           |
 
 ## `SandboxGrant`
 
@@ -160,20 +167,24 @@ Choices: `DisabledSandbox or RestrictedSandbox`.
 
 Host-selected daemon launch configuration, shared by every Session on this runtime.
 
-| Field                         | Required | Type / choices                 | Constraints and default                             |
-| ----------------------------- | -------- | ------------------------------ | --------------------------------------------------- |
-| `execution`                   | false    | EnvdExecutionConfiguration     | —; default from model factory                       |
-| `sandbox`                     | false    | SandboxPolicy                  | —; default from model factory                       |
-| `egress`                      | false    | EnvdNetworkConfiguration       | —; default from model factory                       |
-| `default_working_directory`   | false    | string or null                 | format="path"; default=null                         |
-| `directory_discovery`         | false    | boolean                        | default=true                                        |
-| `trusted_executable_roots`    | false    | array of string                | default=[]                                          |
-| `shell_profiles`              | false    | array of LocalEnvdShellProfile | default=[]                                          |
-| `max_file_bytes`              | false    | integer                        | exclusiveMinimum=0; default=16777216                |
-| `max_output_preview_bytes`    | false    | integer                        | maximum=16777216; exclusiveMinimum=0; default=65536 |
-| `max_output_bytes_per_stream` | false    | integer                        | exclusiveMinimum=0; default=268435456               |
-| `max_spool_bytes`             | false    | integer                        | exclusiveMinimum=0; default=1073741824              |
-| `max_device_spool_bytes`      | false    | integer                        | exclusiveMinimum=0; default=4294967296              |
+| Field                                | Required | Type / choices                           | Constraints and default                             |
+| ------------------------------------ | -------- | ---------------------------------------- | --------------------------------------------------- |
+| `execution`                          | false    | EnvdExecutionConfiguration               | —; default from model factory                       |
+| `sandbox`                            | false    | SandboxPolicy                            | —; default from model factory                       |
+| `egress`                             | false    | EnvdNetworkConfiguration                 | —; default from model factory                       |
+| `default_working_directory`          | false    | string or null                           | format="path"; default=null                         |
+| `directory_discovery`                | false    | boolean                                  | default=true                                        |
+| `full_control`                       | false    | boolean                                  | default=false                                       |
+| `computer_use`                       | false    | boolean                                  | default=false                                       |
+| `computer_use_permission_timeout_ms` | false    | integer                                  | exclusiveMinimum=0; default=120000                  |
+| `monitoring`                         | false    | LocalEnvdMonitoringConfiguration or null | default=null                                        |
+| `trusted_executable_roots`           | false    | array of string                          | default=[]                                          |
+| `shell_profiles`                     | false    | array of LocalEnvdShellProfile           | default=[]                                          |
+| `max_file_bytes`                     | false    | integer                                  | exclusiveMinimum=0; default=16777216                |
+| `max_output_preview_bytes`           | false    | integer                                  | maximum=16777216; exclusiveMinimum=0; default=65536 |
+| `max_output_bytes_per_stream`        | false    | integer                                  | exclusiveMinimum=0; default=268435456               |
+| `max_spool_bytes`                    | false    | integer                                  | exclusiveMinimum=0; default=1073741824              |
+| `max_device_spool_bytes`             | false    | integer                                  | exclusiveMinimum=0; default=4294967296              |
 
 ## `EnvdExecutionConfiguration`
 
@@ -188,6 +199,16 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field  | Required | Type / choices                  | Constraints and default |
 | ------ | -------- | ------------------------------- | ----------------------- |
 | `mode` | true     | "inherit", "deny", "controlled" | —                       |
+
+## `LocalEnvdMonitoringConfiguration`
+
+Optional outer-daemon sampling; independent of Session execution policy.
+
+| Field                 | Required | Type / choices | Constraints and default                    |
+| --------------------- | -------- | -------------- | ------------------------------------------ |
+| `sample_interval_ms`  | false    | integer        | minimum=1000; maximum=60000; default=10000 |
+| `filesystems`         | false    | object         | —; default from model factory              |
+| `cgroup_v2_directory` | false    | string or null | format="path"; default=null                |
 
 ## `LocalEnvdShellProfile`
 
@@ -204,8 +225,10 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | Field                         | Required | Type / choices                    | Constraints and default                                                          |
 | ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
 | `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
+| `desktop`                     | false    | boolean                           | default=false                                                                    |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false    | object                            | —; default from model factory                                                    |
+| `environment`                 | false    | EnvironmentVariables              | —; default from model factory                                                    |
 | `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
 | `disable_network`             | false    | boolean                           | default=false                                                                    |
 | `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
@@ -222,6 +245,8 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 | `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false    | boolean                           | default=false                                                                    |
+| `desktop_viewer_url`          | false    | string or null                    | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
 
 ## `DockerMountConfiguration`
@@ -234,82 +259,86 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `E2BRecipe`
 
-| Field                       | Required | Type / choices | Constraints and default                                   |
-| --------------------------- | -------- | -------------- | --------------------------------------------------------- |
-| `template`                  | false    | string         | minLength=1; maxLength=256; default="base"                |
-| `root`                      | false    | string         | default="/home/user"                                      |
-| `user`                      | false    | string         | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false    | string         | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false    | number         | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false    | boolean        | default=true                                              |
-| `max_file_bytes`            | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
-| `max_observation_bytes`     | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
+| Field                       | Required | Type / choices        | Constraints and default                                   |
+| --------------------------- | -------- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false    | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false    | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false    | boolean               | default=false                                             |
+| `environment`               | false    | EnvironmentVariables  | —; default from model factory                             |
+| `root`                      | false    | string                | default="/home/user"                                      |
+| `user`                      | false    | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false    | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false    | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false    | boolean               | default=true                                              |
+| `max_file_bytes`            | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false    | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false    | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false    | boolean               | default=false                                             |
+| `timeout_seconds`           | false    | integer               | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/home/daytona"                                |
-| `python`                  | false    | string         | default="python3"                                      |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `snapshot`                | false    | string or null | maxLength=256; default=null                            |
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `snapshot`                | true     | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/"                                            |
-| `python`                  | false    | string         | default="/usr/local/bin/python3"                       |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `image`                   | false    | string         | minLength=1; maxLength=256; default="python:3.13-slim" |
-| `timeout_seconds`         | false    | integer        | minimum=300; maximum=86400; default=86400              |
-| `cpu`                     | false    | number         | maximum=64; exclusiveMinimum=0; default=1              |
-| `memory`                  | false    | integer        | minimum=128; maximum=262144; default=1024              |
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `image`                   | true     | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer              | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number               | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer              | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/vercel/sandbox"                              |
-| `python`                  | false    | string         | default="/vercel/runtimes/python/bin/python3"          |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `runtime`                 | false    | string         | minLength=1; maxLength=128; default="python3.13"       |
-| `timeout_seconds`         | false    | integer        | minimum=300; maximum=18000; default=3600               |
-| `vcpus`                   | false    | integer        | minimum=2; maximum=8; default=2                        |
+| Field                     | Required | Type / choices        | Constraints and default                                                             |
+| ------------------------- | -------- | --------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                                                       |
+| `root`                    | false    | string                | default="/vercel/sandbox"                                                           |
+| `python`                  | false    | string                | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false    | string                | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false    | "native", "envd_http" | default="native"                                                                    |
+| `snapshot`                | false    | string or null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false    | boolean               | default=false                                                                       |
+| `runtime`                 | false    | string                | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false    | integer               | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false    | integer               | minimum=2; maximum=8; default=2                                                     |
 
 ## `SpritesEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/home/sprite"                                 |
-| `python`                  | false    | string         | default="python3"                                      |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false    | string or null | maxLength=64; default=null                             |
+| Field                     | Required | Type / choices        | Constraints and default                                |
+| ------------------------- | -------- | --------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                          |
+| `root`                    | false    | string                | default="/home/sprite"                                 |
+| `python`                  | false    | string                | default="python3"                                      |
+| `shell`                   | false    | string                | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null        | maxLength=64; default=null                             |
+| `execution`               | false    | "native", "envd_http" | default="native"                                       |
+| `desktop`                 | false    | boolean               | default=false                                          |
 
 ## `RunloopEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices                                   | Constraints and default                                |
 | ------------------------- | -------- | ------------------------------------------------ | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables                             | —; default from model factory                          |
 | `root`                    | false    | string                                           | default="/home/user"                                   |
 | `python`                  | false    | string                                           | default="python3"                                      |
 | `shell`                   | false    | string                                           | default="/bin/bash"                                    |
@@ -338,9 +367,19 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `DockerConnectionConfiguration`
 
-| Field         | Required | Type / choices | Constraints and default                 |
-| ------------- | -------- | -------------- | --------------------------------------- |
-| `docker_host` | false    | string         | minLength=1; default from model factory |
+| Field         | Required | Type / choices                  | Constraints and default                 |
+| ------------- | -------- | ------------------------------- | --------------------------------------- |
+| `envd_http`   | false    | DockerHttpConfiguration or null | default=null                            |
+| `docker_host` | false    | string                          | minLength=1; default from model factory |
+
+## `DockerHttpConfiguration`
+
+| Field                          | Required | Type / choices | Constraints and default                                 |
+| ------------------------------ | -------- | -------------- | ------------------------------------------------------- |
+| `host`                         | true     | string         | minLength=1; maxLength=253                              |
+| `bind_host`                    | false    | string or null | default=null                                            |
+| `allow_plaintext_private_link` | false    | boolean        | default=false                                           |
+| `credential_file`              | false    | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 
 ## `E2BConnectionConfiguration`
 
@@ -357,18 +396,18 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `DaytonaConnectionConfiguration`
 
-| Field             | Required | Type / choices | Constraints and default                 |
-| ----------------- | -------- | -------------- | --------------------------------------- |
-| `organization_id` | true     | string         | minLength=1; maxLength=128              |
-| `target`          | false    | string         | minLength=1; maxLength=64; default="us" |
+| Field             | Required | Type / choices | Constraints and default                  |
+| ----------------- | -------- | -------------- | ---------------------------------------- |
+| `organization_id` | false    | string or null | minLength=1; maxLength=128; default=null |
+| `target`          | false    | string         | minLength=1; maxLength=64; default="us"  |
 
 ## `ModalConnectionConfiguration`
 
-| Field              | Required | Type / choices | Constraints and default                    |
-| ------------------ | -------- | -------------- | ------------------------------------------ |
-| `workspace`        | true     | string         | minLength=1; maxLength=128                 |
-| `app_name`         | true     | string         | minLength=1; maxLength=128                 |
-| `environment_name` | false    | string         | minLength=1; maxLength=128; default="main" |
+| Field              | Required | Type / choices | Constraints and default                              |
+| ------------------ | -------- | -------------- | ---------------------------------------------------- |
+| `workspace`        | false    | string or null | minLength=1; maxLength=128; default=null             |
+| `app_name`         | false    | string         | minLength=1; maxLength=128; default="a13n-sandboxes" |
+| `environment_name` | false    | string         | minLength=1; maxLength=128; default="main"           |
 
 ## `ModalCredential`
 
@@ -414,9 +453,10 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `HttpEnvdCredential`
 
-| Field   | Required | Type / choices | Constraints and default                        |
-| ------- | -------- | -------------- | ---------------------------------------------- |
-| `token` | true     | string         | minLength=1; maxLength=4096; format="password" |
+| Field     | Required | Type / choices | Constraints and default                        |
+| --------- | -------- | -------------- | ---------------------------------------------- |
+| `headers` | false    | object         | —; default from model factory                  |
+| `token`   | true     | string         | minLength=1; maxLength=4096; format="password" |
 
 ## `WebSocketEnvdConnectionConfiguration`
 

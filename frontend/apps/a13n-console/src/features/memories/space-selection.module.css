@@ -1,0 +1,146 @@
+.sessionLink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 500;
+}
+.sessionLink > span {
+  overflow-wrap: anywhere;
+}
+.sessionLink > svg {
+  flex: none;
+  align-self: center;
+  color: var(--a13n-secondary);
+}
+.selection {
+  display: grid;
+  gap: 20px;
+}
+.participation,
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.participation {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.participation p,
+.spacesHeader p {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+/* Selected spaces: headed like the editor's sections, rows close below. */
+.spaces {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.spacesHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.spacesHeader h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.rows {
+  display: grid;
+  gap: 8px;
+}
+.row {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.identity a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.alias {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+@media (width < 480px) {
+  .controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .alias {
+    grid-column: 1 / -1;
+  }
+}
+
+.organization p {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.organization {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.organization .heading {
+  justify-content: start;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+
+@media (width < 480px) {
+  .spacesHeader {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .spacesHeader > :first-child {
+    flex-basis: 100%;
+  }
+}
+
+.compact .participation {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.compact .participation label {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+
+.compact .spacesHeader {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+.compact .spacesHeader > :first-child {
+  flex-basis: auto;
+  min-width: 0;
+}

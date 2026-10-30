@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from typing import Literal, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict, cast
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -28,6 +28,7 @@ class ToolOutputDisclosure(TypedDict):
     output_chars: int
     output_bytes: int
     output_file_path: str | None
+    text_file_paths: NotRequired[dict[str, str]]
     content_complete: bool
     hint: str
 
@@ -54,6 +55,7 @@ async def create_tool_output_disclosure(
     *,
     content_complete: bool,
     noun: str = "output",
+    text_paths: Sequence[tuple[str, ...]] = (),
     max_spill_bytes: int = MAX_TOOL_OUTPUT_SPILL_BYTES,
 ) -> ToolOutputDisclosure:
     """Best-effort save the fullest available redacted JSON value and describe it."""
@@ -69,7 +71,7 @@ async def create_tool_output_disclosure(
         hint = f"The {completeness} {noun} is saved at output_file_path. Use view to inspect it."
     else:
         hint = f"The {completeness} {noun} could not be saved. Use continuation parameters or narrow the request."
-    return {
+    disclosure: ToolOutputDisclosure = {
         "truncated": True,
         "output_chars": len(encoded.decode("utf-8")),
         "output_bytes": len(encoded),
@@ -77,6 +79,23 @@ async def create_tool_output_disclosure(
         "content_complete": content_complete,
         "hint": hint,
     }
+    if output_file_path is not None:
+        text_file_paths: dict[str, str] = {}
+        for path in text_paths:
+            text = _path_value(safe_value, path)
+            if isinstance(text, str) and text:
+                saved = await context._spill_tool_result(text.encode("utf-8"), suffix=".txt")
+                if saved is not None:
+                    pointer = "/" + "/".join(part.replace("~", "~0").replace("/", "~1") for part in path)
+                    text_file_paths[pointer] = saved
+        if text_file_paths:
+            disclosure["text_file_paths"] = text_file_paths
+            disclosure["hint"] = (
+                f"The {completeness} {noun} is saved as JSON at output_file_path. "
+                "Use view on text_file_paths for readable text with original line breaks; "
+                "keys identify fields by JSON Pointer."
+            )
+    return disclosure
 
 
 def continuation_disclosure(
@@ -115,6 +134,7 @@ async def disclose_text_fields(
         result,
         content_complete=content_complete,
         noun=noun,
+        text_paths=tuple((field,) for field in text_fields),
     )
     preview: dict[str, JsonValue] = {**result, "disclosure": cast(JsonValue, disclosure)}
     suffix = "\n[... output truncated; see disclosure ...]\n"
@@ -147,6 +167,7 @@ async def disclose_text_paths(
         result,
         content_complete=content_complete,
         noun=noun,
+        text_paths=text_paths,
     )
     result["disclosure"] = cast(JsonValue, disclosure)
     originals: dict[tuple[str, ...], str] = {}

@@ -5,12 +5,19 @@ import hashlib
 import io
 import zipfile
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 from a13n_harness import AbstractHarnessPlugin
-from a13n_harness.capabilities import CompactionCapability, SubagentCapability, UserInteractionCapability
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    FileContextCapability,
+    HandoffCapability,
+    SubagentCapability,
+    UserInteractionCapability,
+)
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.plugin_factories import (
@@ -27,6 +34,7 @@ from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.resources.agents import composer as builtin_composer
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import (
@@ -81,25 +89,23 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     tools = [tool for toolset in catalogue.items for tool in toolset.tools]
 
     assert [toolset.key for toolset in catalogue.items] == [
+        "browser",
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
-        "traces",
-        "findings",
-        "configuration",
+        *PLATFORM_GROUPS,
     ]
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
     supported = {tool.execution_id: tool.deployment_supported for tool in tools}
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
-
-
-def test_retired_analysis_report_tool_is_not_exposed_from_stored_configs() -> None:
-    selected = config(toolsets={"findings": {"enabled": True, "tools": {"report": {"enabled": True}}}})
-    assert "report" not in selected.toolsets["findings"].tools
-    catalog = next(item for item in toolsets.catalog(frozenset()).items if item.key == "findings")
-    assert "report" not in {item.key for item in catalog.tools}
+    # A platform group is an opt-in toolset of its operations; a read runs, a write asks.
+    execution = next(toolset for toolset in catalogue.items if toolset.key == "execution")
+    assert execution.platform and not execution.default_enabled
+    defaults = {tool.description: tool.default_permission for tool in execution.tools}
+    assert defaults["GET /traces/{trace_id}"] == "allow" and defaults["POST /findings"] == "ask"
 
 
 def test_toolsets_normalize_to_the_whole_catalogue() -> None:
@@ -107,16 +113,18 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})
 
     assert set(selected.toolsets) == {
+        "browser",
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
-        "configuration",
-        "traces",
-        "findings",
+        *PLATFORM_GROUPS,
     }
+    assert not any(selected.toolsets[group].enabled for group in PLATFORM_GROUPS)
     assert not selected.toolsets["assets"].enabled
+    assert not selected.toolsets["browser"].enabled
     # Memory tools reach a run only through its mounts; a disabled tool is left out of every mount.
     assert toolsets.memory_file_tools(selected.toolsets) == {
         "view",
@@ -130,8 +138,6 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     reading = config(toolsets={"memory": {"tools": {"file_delete": {"enabled": False}}}})
     assert "delete" not in toolsets.memory_file_tools(reading.toolsets)
     assert toolsets.memory_file_tools(config(toolsets={"memory": {"enabled": False}}).toolsets) == frozenset()
-    # Writes of the configuration toolset wait for approval unless the author says otherwise.
-    assert selected.toolsets["configuration"].tools["create_agent"].permission == "ask"
     assert selected.toolsets["web"].tools["search"].config == {"provider_id": provider, "max_results": 5}
     web = toolsets.web_tools(selected.toolsets)
     assert web is not None and web.search is not None and web.scrape is None and web.fetch is None
@@ -147,8 +153,12 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
 
 
 def test_permissions_compile_from_each_selection() -> None:
+    finding = "create_finding"
     selected = config(
-        toolsets={"shell": {"tools": {"exec": {"permission": "ask"}}}},
+        toolsets={
+            "shell": {"tools": {"exec": {"permission": "ask"}}},
+            "execution": {"enabled": True, "tools": {finding: {"permission": "allow"}}},
+        },
         connection_tools=[
             {"connection_id": MCP, "permission": "review", "permissions": {"drop": "deny"}},
             {
@@ -171,12 +181,22 @@ def test_permissions_compile_from_each_selection() -> None:
 
     assert rules["environment.shell_exec"] == "ask" and rules["filesystem.view"] == "inherit"
     assert "web.search" not in rules
+    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
     assert rules["tool/a13n-service-client/lookup"] == "deny"
     assert definition.declared_permissions(selected) >= {"ask", "review", "deny", "allow"}
     with pytest.raises(ValidationError):
         ConnectionSelection.model_validate({"connection_id": GITHUB, "tools": ["issues"], "permissions": {"x": "deny"}})
+
+
+def test_connection_selection_ignores_unknown_fields() -> None:
+    known = {"connection_id": MCP, "tools": ["echo"], "permission": "ask", "permissions": {}}
+    value = {**known, "unknown": {"value": True}}
+    selected = ConnectionSelection.model_validate(value)
+    assert selected.model_dump(mode="json") == known
+    assert config(connection_tools=[value]).connection_tools == (selected,)
+    assert AgentOverride.model_validate({"connection_tools": [value]}).connection_tools == (selected,)
 
 
 def test_output_schemas_inline_their_references() -> None:
@@ -265,6 +285,20 @@ def test_lazy_environment_override_preserves_false_and_inherits_null(baseline: b
     assert apply_override(revision, restored).lazy_environment is applied.lazy_environment
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_background_compaction_is_revision_owned_and_roundtrips(enabled: bool) -> None:
+    assert config().background_compaction.enabled is False
+    revision = config(background_compaction={"enabled": enabled, "blocking_threshold": 0.925})
+    restored = AgentConfig.model_validate_json(revision.model_dump_json())
+    assert restored.background_compaction == revision.background_compaction
+    assert (
+        apply_override(restored, AgentOverride(instructions="Changed")).background_compaction
+        == revision.background_compaction
+    )
+    with pytest.raises(ValidationError):
+        restored.background_compaction.enabled = not enabled
+
+
 class _Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     level: int = 1
@@ -342,6 +376,7 @@ def test_build_composes_the_definition_without_io() -> None:
     [prices] = [item for item in composed.capabilities if isinstance(item, AbstractModelCostCapability)]
     assert {type(capability) for capability in composed.capabilities} - {type(prices)} == {
         DynamicEnvironmentCapability,
+        FileContextCapability,
         ToolPermissionsCapability,
         CompactionCapability,
         WebCapability,
@@ -351,11 +386,139 @@ def test_build_composes_the_definition_without_io() -> None:
     }
     assert asked == [root_revision, HELPER_REVISION]
     assert composed.definition_id == root_revision and composed.agent.instructions == "Help."
-    assert composed.agent.model_settings == {"temperature": 0.5, "max_tokens": 64}
+    assert composed.agent.model_settings == {"temperature": 0.5, "max_tokens": 64, "cache": True}
     assert [plugin.plugin_id for plugin in composed.plugins] == ["audit"]
     (subagent,) = composed.subagents
     assert (subagent.name, subagent.description, subagent.agent.definition_id) == ("helper", "Helps", HELPER_REVISION)
     assert composed.model is None and composed.agent.model == subagent.agent.agent.model == MODEL
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_background_compaction_build_preserves_policy_and_keeps_children_synchronous(enabled: bool) -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.compaction import CompactionOperator
+
+    selected = config(
+        background_compaction={"enabled": enabled, "blocking_threshold": 0.925},
+        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+    )
+    child = resolved(HELPER, HELPER_REVISION, config(background_compaction={"enabled": True}))
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+    )
+    operator = AsyncMock(spec=CompactionOperator) if enabled else None
+    built = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None, compaction=operator)
+    [capability] = [item for item in built.definition.capabilities if isinstance(item, CompactionCapability)]
+    assert capability.background is enabled
+    if enabled:
+        assert capability.background_policy == selected.background_compaction
+    [child_capability] = [
+        item for item in built.definition.subagents[0].agent.capabilities if isinstance(item, CompactionCapability)
+    ]
+    assert child_capability.background is False and child_capability.operator is None
+    # Async child roots are built without an operator even if their own revision opts in.
+    child_built = build(child, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    [async_capability] = [
+        item for item in child_built.definition.capabilities if isinstance(item, CompactionCapability)
+    ]
+    assert async_capability.background is False and async_capability.operator is None
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_summarize_selection_controls_tools_and_continues_from_saved_summary(enabled):
+    from a13n_harness import HarnessState, RunBindings
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    selected = config(
+        summarize=enabled,
+        model_characteristics={"context_window_tokens": 10000},
+        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+    )
+    child = resolved(HELPER, HELPER_REVISION, config(summarize=not enabled))
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+    )
+    executable = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    assert any(isinstance(item, HandoffCapability) for item in executable.definition.capabilities) is enabled
+    assert (
+        any(isinstance(item, HandoffCapability) for item in executable.definition.subagents[0].agent.capabilities)
+        is not enabled
+    )
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(str(messages))
+        assert ("summarize" in {tool.name for tool in info.function_tools}) is enabled
+        if enabled and len(seen) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize", json_args='{"content":"Keep the release decision."}', tool_call_id="summary"
+                )
+            }
+        else:
+            yield "Continuing."
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    bindings = RunBindings.embedded(model_resolver=model_resolver)
+    result = await executable.run("Finish the release", bindings=bindings)
+    assert result.output_or_raise() == "Continuing."
+    assert len(seen) == (2 if enabled else 1)
+    assert result.state is not None
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    continued = await executable.run("Continue", previous_state=restored, bindings=bindings)
+    assert continued.output_or_raise() == "Continuing."
+    if enabled:
+        assert "Keep the release decision." in seen[-2]
+        assert "Keep the release decision." in seen[-1]
+
+
+async def test_summarize_survives_service_checkpoint_and_next_run(executing, scripted_model, runs_kit):
+    agent = await runs_kit.create_agent(executing, scripted_model, summarize=True)
+    summary = "The release decision is to keep the existing API."
+    scripted_model.call("summarize", {"content": summary}, call_id="summary")
+    scripted_model.say("Continuing after summary.")
+    submitted = await runs_kit.start_thread(executing, agent, "Prepare the release")
+    run = await runs_kit.sealed(executing, submitted["run"]["id"])
+    assert run["status"] == "completed" and run["output"] == "Continuing after summary.", run
+    await scripted_model.request()
+    after_summary = await scripted_model.request()
+    assert summary in str(runs_kit.user_texts(after_summary))
+
+    scripted_model.say("The API stays unchanged.")
+    response = await runs_kit.submit(executing, run["thread_id"], runs_kit.message(agent, "What did we decide?"))
+    assert response.status_code == 201, response.text
+    continued = await runs_kit.sealed(executing, response.json()["run"]["id"])
+    assert continued["status"] == "completed"
+    restored = await scripted_model.request()
+    assert summary in str(runs_kit.user_texts(restored))
+
+
+async def test_summarize_revision_roundtrip_and_client_tool_collision(service):
+    model = await create_model(service)
+    enabled = await create_agent(service, "summarizer", model, summarize=True)
+    revision = await service.client.get(
+        f"{service.api}/agents/{enabled['id']}/revisions/{enabled['default_revision_id']}"
+    )
+    assert revision.status_code == 200, revision.text
+    assert revision.json()["config"]["summarize"] is True
+    client = {"name": "summarize", "description": "Client summary", "parameters_json_schema": {"type": "object"}}
+    for enabled in (False, True):
+        response = await service.client.post(
+            f"{service.api}/agents",
+            json={"name": "Client summary", "config": {"model": model, "summarize": enabled, "client_tools": [client]}},
+        )
+        assert response.status_code == (400 if enabled else 201), response.text
+        if enabled:
+            assert response.json()["error"]["details"]["field"] == "client_tools.0.name"
 
 
 @pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])
@@ -384,6 +547,43 @@ async def test_service_connection_permission_overrides_native_approval(mode: str
     result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
     assert result.status == ("suspended" if mode in {"ask", "inherit"} else "completed")
     assert executed == ([False] if mode == "allow" else [])
+
+
+@pytest.mark.parametrize("mounted", [False, True])
+async def test_service_build_projects_workspace_guidance_without_loading_child_contents(tmp_path, mounted):
+    from a13n_harness import RunBindings
+    from pydantic_ai.models.function import FunctionModel
+
+    from .test_host_capabilities import ENVIRONMENT, mount
+
+    selected = resolved(new_object_id("ap"), new_object_id("apr"), config())
+    executable = build(selected, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    environment = mount(tmp_path)
+    workspace = tmp_path / ENVIRONMENT
+    (workspace / "AGENTS.md").write_text("ROOT GUIDANCE")
+    (workspace / "backend/.agents/skills").mkdir(parents=True)
+    (workspace / "backend/AGENTS.md").write_text("CHILD GUIDANCE BODY")
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(str(messages))
+        yield "done"
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    result = await executable.run(
+        "Work on backend",
+        environments={"workspace": environment} if mounted else None,
+        default_environment="workspace" if mounted else None,
+        bindings=RunBindings.embedded(model_resolver=model_resolver),
+    )
+    assert result.output_or_raise() == "done"
+    text = seen[0]
+    assert ("ROOT GUIDANCE" in text) is mounted
+    assert ("/workspace/backend/AGENTS.md" in text) is mounted
+    assert ("/workspace/backend/.agents/skills" in text) is mounted
+    assert "CHILD GUIDANCE BODY" not in text
 
 
 async def create_model(service, **config: object) -> str:  # type: ignore[no-untyped-def]
@@ -815,15 +1015,25 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
 
     catalogue = await service.client.get(f"{service.api}/toolsets")
     assert catalogue.status_code == 200, catalogue.text
+    for group in catalogue.json()["items"]:
+        assert group["display_name"].strip()
+        assert group["description"].strip()
+        for tool in group["tools"]:
+            assert tool["display_name"].strip()
+            assert tool["description"].strip()
+    files = next(group for group in catalogue.json()["items"] if group["key"] == "files")
+    view = next(tool for tool in files["tools"] if tool["key"] == "view")
+    assert view["description"] == "Read file contents"
+    assert view["model_name"] == "view"
     assert [toolset["key"] for toolset in catalogue.json()["items"]] == [
+        "browser",
         "files",
         "shell",
+        "computer",
         "web",
         "memory",
         "assets",
-        "traces",
-        "findings",
-        "configuration",
+        *PLATFORM_GROUPS,
     ]
 
 
@@ -982,3 +1192,100 @@ async def test_workspace_media_defaults_fill_what_an_agent_leaves_unselected(ser
     assert disabled.status_code == 200, disabled.text
     # A default that stopped working leaves the kind unavailable instead of failing the agent's runs.
     assert await media() == {}
+
+
+def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choices() -> None:
+    legacy = config().toolsets
+    assert not legacy["computer"].enabled
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    legacy.pop("computer")
+    assert not toolsets.environment_configuration(legacy).computer_enabled
+    selected = config(
+        toolsets={
+            "computer": {"enabled": True, "tools": {"click": {"enabled": False}, "type_text": {"permission": "ask"}}}
+        }
+    )
+    projected = toolsets.environment_configuration(selected.toolsets)
+    assert projected.computer_enabled
+    assert "computer_observe" in projected.computer_tools
+    assert "computer_zoom" in projected.computer_tools
+    assert "computer_click" not in projected.computer_tools
+    assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
+
+
+def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overrides():
+    from pydantic import ValidationError
+
+    assert toolsets.environment_configuration(config().toolsets).computer_coordinate_space == "pixels"
+    selected = config(toolsets={"computer": {"enabled": True, "config": {"coordinate_space": "normalized_1000"}}})
+    assert selected.toolsets["computer"].config == {"coordinate_space": "normalized_1000"}
+    assert toolsets.environment_configuration(selected.toolsets).computer_coordinate_space == "normalized_1000"
+    overrides = toolsets.normalize_toolset_overrides({"computer": selected.toolsets["computer"]})
+    assert overrides["computer"].config == selected.toolsets["computer"].config
+    schema = next(t.config_schema for t in toolsets.catalog(frozenset()).items if t.key == "computer")
+    assert schema["$defs"]["ComputerCoordinateSpace"]["enum"] == ["pixels", "normalized_1000"]
+    with pytest.raises(ValidationError):
+        config(toolsets={"computer": {"config": {"coordinate_space": "auto"}}})
+
+
+async def test_plugin_catalog_is_authorized_and_exposes_only_public_metadata(service, monkeypatch) -> None:
+    class Described(_Factory):
+        configuration_model = _Settings
+        display_name = "Audit"
+
+        def validate_configuration(self, configuration):
+            raise AssertionError("listing must not validate or run a plugin")
+
+        def create_plugin(self, context):
+            raise AssertionError("listing must not validate or run a plugin")
+
+    runtime = service.runtime
+    monkeypatch.setattr(
+        service.app.state,
+        "runtime",
+        replace(
+            runtime,
+            plugins=HarnessPluginFactoryCatalog(
+                [
+                    (
+                        HarnessPluginFactoryRegistration(
+                            "test.audit", "private.module", "Factory", "/private/path", "audit-package", "1.0"
+                        ),
+                        Described(),
+                    ),
+                ]
+            ),
+        ),
+    )
+    response = await service.client.get(f"{service.api}/plugins")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "items": [
+            {
+                "plugin_key": "test.audit",
+                "display_name": "Audit",
+                "description": "",
+                "config_schema": _Settings.model_json_schema(),
+                "distribution_name": "audit-package",
+                "distribution_version": "1.0",
+            }
+        ]
+    }
+    assert "private" not in response.text
+    route = service.app.openapi()["paths"]["/api/v1/plugins"]["get"]
+    assert route["x-a13n-mcp"] is True
+    monkeypatch.setattr(service.app.state, "runtime", replace(runtime, plugins=HarnessPluginFactoryCatalog([])))
+    assert (await service.client.get(f"{service.api}/plugins")).json() == {"items": []}
+    denied = await service.client.get(f"{service.api}/plugins", headers={"x-workspace-id": new_object_id("ws")})
+    assert denied.status_code in (403, 404)
+    service.client.cookies.clear()
+    assert (await service.client.get(f"{service.api}/plugins")).status_code == 401
+
+
+def test_context_recovery_is_default_host_execution_policy() -> None:
+    from a13n_harness import ContextRecoveryPolicy
+
+    agent = resolved(new_object_id("ap"), new_object_id("apr"), config())
+    built = build(agent, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    assert built.definition.context_recovery == ContextRecoveryPolicy()
+    assert "context_recovery" not in AgentConfig.model_fields

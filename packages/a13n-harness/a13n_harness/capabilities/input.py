@@ -11,6 +11,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
+from a13n_harness._context_recovery import mark_input
 from a13n_harness.content import annotate_prompt
 from a13n_harness.context import AgentContext
 from a13n_harness.events import input_events
@@ -59,7 +60,15 @@ class InputCapability(AbstractCapability[AgentContext]):
                     for index in range(len(request.parts) - 1, -1, -1)
                     if isinstance(request.parts[index], UserPromptPart)
                 )
-                annotated = annotate_prompt(request, index, state.content)
+                annotated = annotate_prompt(
+                    request,
+                    index,
+                    mark_input(
+                        state.content,
+                        kind="recovery" if state.source == "recovery" else "task",
+                        run_id=ctx.deps.run_id,
+                    ),
+                )
                 ctx.messages[-1] = annotated
                 request_context.messages[-1] = annotated
                 state.annotated = True

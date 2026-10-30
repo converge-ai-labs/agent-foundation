@@ -206,7 +206,8 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
         "Failed runs: a model error and malformed structured output",
         [run("failed")["status"], run("malformed_output")["status"]] == ["failed", "failed"],
     )
-    yield "Structured output is recorded", isinstance(run("structured_output")["output"], dict)
+    structured = api.get(f"/api/v1/runs/{index['structured_output']}")
+    yield "Structured output is recorded", isinstance(structured["output"], dict)
     delegated = run("delegated")
     # The result steers the parent's run while it waits, or starts a successor run once it has ended.
     results = api.items(f"/api/v1/threads/{delegated['thread_id']}/inbox")
@@ -227,7 +228,7 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
     ]
     yield (
         "The shared workspace shows a skill read, a file write and a command",
-        [name for name, _ in calls] == ["view", "write", "shell_exec"] and "/.a13n/skills/" in calls[0][1],
+        [name for name, _ in calls] == ["view", "write", "shell_exec"] and "/.agents/skills/" in calls[0][1],
     )
     native, inline, placed = (api.get(f"/api/v1/runs/{index[name]}/items")["items"] for name in DELIVERIES)
     media_types = {
@@ -246,7 +247,7 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
         "Earlier runs keep the writer's first revision, and one run is pinned to it",
         {item["agent_revision_id"] for item in writer_runs}
         == {index["writer_first_revision"], index["writer_default_revision"]}
-        and run("run_pinned_to_first_revision")["revision_selection"] == "pinned",
+        and api.get(f"/api/v1/runs/{index['run_pinned_to_first_revision']}")["revision_selection"] == "pinned",
     )
     yield (
         "Another member started a conversation",

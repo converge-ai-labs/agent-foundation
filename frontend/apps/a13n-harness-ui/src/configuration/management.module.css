@@ -1,0 +1,203 @@
+.sectionTitle,
+.subsectionTitle,
+.inlineLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sectionTitle > svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.subsectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.subsectionTitle > svg,
+.inlineLabel > svg,
+.metadata > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.instructions {
+  min-height: 96px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 21px;
+}
+.instructions > textarea {
+  min-height: 104px;
+  padding: 12px 12px;
+  field-sizing: content;
+}
+.modelEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.groupActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-block: 0 16px;
+}
+.capabilities {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.capabilities > [data-slot="settings-row"] {
+  padding-bottom: 0;
+}
+.capabilityHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.capability {
+  display: grid;
+  gap: 12px;
+}
+.capability > details {
+  border-top: 0;
+  padding-top: 0;
+}
+.capability + .capability {
+  border-top: 1px solid var(--a13n-border-soft);
+  padding-top: 16px;
+}
+.capabilityHeader > button {
+  flex-shrink: 0;
+}
+.resourceInfo {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.resourceInfo small,
+.resourceMeta small {
+  margin: 0;
+}
+.resourceInfo > a,
+.resourceInfo > strong {
+  font-size: 14px;
+}
+.resourceMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 42%;
+  min-width: 0;
+  text-align: right;
+}
+.resourceMeta small.metadata {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.metadata > svg {
+  margin-top: 1px;
+}
+.modelList {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--a13n-surface);
+  border: 0;
+  overflow: hidden;
+}
+.modelList:empty {
+  display: none;
+}
+.modelList > .modelRow {
+  position: relative;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+.modelLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.modelRow > button {
+  position: relative;
+  z-index: 1;
+}
+.modelLink:focus-visible {
+  outline: none;
+}
+.modelLink:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+  border-radius: var(--harness-radius-panel);
+}
+@media (max-width: 600px) {
+  .modelList > .modelRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .modelRow > .resourceIdentity,
+  .modelRow > .resourceMeta {
+    grid-column: 1;
+  }
+  .modelRow > .resourceMeta {
+    align-items: flex-start;
+    max-width: 100%;
+    text-align: left;
+  }
+  .modelRow > button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+.modelTabs {
+  gap: 24px;
+  min-width: 0;
+}
+.modelPanel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+.defaultsSummary {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.defaultsSummary strong {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+
+/* Modal forms share the compact rhythm of project creation. */
+:global([data-a13n-modal]) .modelEditor,
+:global([data-a13n-modal]) .modelTabs,
+:global([data-a13n-modal]) .modelPanel:not([hidden]) {
+  gap: 16px;
+}

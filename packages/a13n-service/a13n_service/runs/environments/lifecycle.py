@@ -14,7 +14,7 @@ beginning any operation ends renewal.
 
 import hmac
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -27,8 +27,10 @@ from a13n_harness.environment.errors import (
 from a13n_harness.environment.models import EnvironmentError as OperationError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select, text
+from pydantic import ValidationError
+from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
@@ -38,14 +40,21 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.environment.errors import observed_environment_state
 from a13n_service.providers.environment.management import EnvironmentProvider
+from a13n_service.providers.environment.metrics import MetricsLaunch
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
-from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
+from a13n_service.resources.providers.service import (
+    ResolvedProvider,
+    read_provider,
+    rejection_reason,
+    resolve_provider,
+)
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, credential_version, open_provider, provider_identity
-from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle
+from a13n_service.runs.environments.monitoring import launch
+from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import RunRow, ToolExecutionRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -78,13 +87,45 @@ _CERTAINTY: dict[EnvironmentProviderOutcomeCertainty, Certainty] = {
 
 
 def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool]:
-    """Whether an accepted or running run's frozen mounts name the instance: the durable active-use evidence."""
-    return exists().where(
-        # Literal, so the partial GIN index on active runs' mounts applies.
-        text("runs.status IN ('accepted', 'running')"),
-        RunRow.environment_mounts.contains(
-            func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
-        ),
+    """Whether the instance is in active use: an accepted or running run's frozen mounts name it, or a desktop
+    context holds the reservation of its native target under any alias."""
+    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopTargetRow
+
+    held = aliased(EnvironmentRow)
+    candidate = aliased(EnvironmentRow)
+    from a13n_service.runs.desktop_assistance.admission import TARGET_FIELDS
+
+    same_target = (
+        held.handle["state"]["provider_key"].astext == candidate.handle["state"]["provider_key"].astext
+    ) & or_(
+        *(
+            (held.handle["state"]["provider_key"].astext == provider)
+            & (held.handle["state"]["state"][field].astext == candidate.handle["state"]["state"][field].astext)
+            for provider, field in TARGET_FIELDS.items()
+        )
+    )
+    held_target = exists(
+        select(DesktopAssistanceRow.id)
+        .join(DesktopTargetRow, DesktopTargetRow.holder_id == DesktopAssistanceRow.id)
+        .join(held, held.id == DesktopAssistanceRow.environment_id)
+        .join(candidate, same_target)
+        .where(candidate.id == environment_id)
+        .correlate_except(DesktopAssistanceRow, DesktopTargetRow, held, candidate)
+    )
+    return (
+        exists().where(
+            text("runs.status IN ('accepted', 'running')"),
+            RunRow.environment_mounts.contains(
+                func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
+            ),
+        )
+        | exists().where(
+            ToolExecutionRow.completed_at.is_(None),
+            ToolExecutionRow.environment_mounts.contains(
+                func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
+            ),
+        )
+        | held_target
     )
 
 
@@ -205,12 +246,18 @@ class Operation:
     # The provider credential's version now, and whether it changed since that credential last reached the instance.
     credential_version: str | None
     credential_changed: bool
+    metrics: MetricsLaunch | None = field(default=None, repr=False)
+    e2b_desktop_template: str | None = None
+    modal_desktop_image: str | None = None
+    daytona_desktop_snapshot: str | None = None
+    vercel_desktop_snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
     state: EnvironmentState | None
     fault: Fault | None = None
+    pending: bool = False
 
 
 # The provider no longer has the instance: nothing can bring it back, and it is never silently recreated.
@@ -274,10 +321,55 @@ async def _refusal(
         definition = runtime.registry.get("environment", provider.type)
         # Freeze effective defaults too: rebuilding an adapter after an upgrade must use the same recipe.
         try:
-            recipe = definition.validate_environment(template.config.recipe).model_dump(mode="json")
-        except EnvironmentProviderError as error:
+            recipe = definition.validate_environment(template.config.recipe)
+            if environment.status == "creating":
+                await launch.freeze(
+                    session,
+                    runtime.keys,
+                    environment,
+                    supported=definition.metrics_launch is not None and definition.metrics_launch(recipe),
+                )
+        except (EnvironmentProviderError, ServiceError) as error:
             return fault_of(error, dispatched=False)
-        environment.handle = Handle(recipe=recipe).model_dump(mode="json")
+        preparation = None
+        if provider.type == "e2b" and getattr(recipe, "template", None) == "auto":
+            from a13n_service.runs.environments.e2b_templates import bind
+
+            try:
+                preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        modal_preparation = None
+        if provider.type == "modal" and getattr(recipe, "image", None) == "auto":
+            from a13n_service.runs.environments.modal_images import bind
+
+            try:
+                modal_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        daytona_preparation = None
+        if provider.type == "daytona" and getattr(recipe, "snapshot", None) == "auto":
+            from a13n_service.runs.environments.daytona_snapshots import bind
+
+            try:
+                daytona_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        vercel_preparation = None
+        if provider.type == "vercel" and getattr(recipe, "snapshot", None) == "auto":
+            from a13n_service.runs.environments.vercel_snapshots import bind
+
+            try:
+                vercel_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        environment.handle = Handle(
+            recipe=recipe.model_dump(mode="json"),
+            e2b_desktop_template=preparation,
+            modal_desktop_image=modal_preparation,
+            daytona_desktop_snapshot=daytona_preparation,
+            vercel_desktop_snapshot=vercel_preparation,
+        ).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
         message = "The provider now points at another account or endpoint; restore it or delete this environment"
@@ -311,6 +403,42 @@ async def claim_locked(
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
     unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
+    if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
+        handle = Handle.model_validate(environment.handle)
+        if (
+            environment.provider_identity
+            and environment.provider_identity.get("type") == "sprites"
+            and handle.recipe.get("desktop")
+        ):
+            return None
+        if handle.recipe.get("template") == "auto" and handle.e2b_desktop_template:
+            from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
+
+            build = await session.get(E2BDesktopTemplateRow, handle.e2b_desktop_template)
+            if build is not None and build.phase == "failed":
+                # Preserve the original actionable failure until explicit retry. Cleanup still advances.
+                return None
+        if handle.recipe.get("image") == "auto" and handle.modal_desktop_image:
+            from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
+
+            build = await session.get(ModalDesktopImageRow, handle.modal_desktop_image)
+            if build is not None and build.phase == "failed":
+                return None
+        if handle.recipe.get("snapshot") == "auto" and handle.daytona_desktop_snapshot:
+            from a13n_service.runs.environments.daytona_snapshots import DaytonaDesktopSnapshotRow
+
+            build = await session.get(DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
+            if build is not None and build.phase == "failed":
+                return None
+        if handle.vercel_desktop_snapshot and handle.recipe.get("snapshot") != "auto":
+            # A known startup rejection needs an explicit retry, not repeated allocations.
+            return None
+        if handle.recipe.get("snapshot") == "auto" and handle.vercel_desktop_snapshot:
+            from a13n_service.runs.environments.vercel_snapshots import VercelDesktopSnapshotRow
+
+            build = await session.get(VercelDesktopSnapshotRow, handle.vercel_desktop_snapshot)
+            if build is not None and build.phase == "failed":
+                return None
     # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
     if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
@@ -336,6 +464,11 @@ async def claim_locked(
         seconds=seconds,
         credential_version=version,
         credential_changed=changed,
+        metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
+        e2b_desktop_template=handle.e2b_desktop_template,
+        modal_desktop_image=handle.modal_desktop_image,
+        daytona_desktop_snapshot=handle.daytona_desktop_snapshot,
+        vercel_desktop_snapshot=handle.vercel_desktop_snapshot,
     )
 
 
@@ -348,6 +481,7 @@ async def _call(provider: EnvironmentProvider, operation: Operation) -> Environm
                 environment_id=target.environment_id,
                 operation_id=operation.operation_id,
                 state=target.state,
+                **({"metrics": operation.metrics} if operation.metrics is not None else {}),
             )
         case "starting":
             return await provider.start(
@@ -373,11 +507,21 @@ async def _call(provider: EnvironmentProvider, operation: Operation) -> Environm
             return None
 
 
+def public_message(error: EnvironmentProviderError) -> str:
+    """The safe message with the Provider and its code and, when a schema refused the input, the fields and the
+    schema's reasons, never the input or upstream text."""
+    origin = ", ".join(part for part in (error.context.provider_key, error.code) if part)
+    message = f"{error.safe_projection().message.removesuffix('.')} ({origin})"
+    if isinstance(error.__cause__, ValidationError):
+        return f"{message}: {rejection_reason(error.__cause__)}."
+    return f"{message}."
+
+
 def fault_of(error: Exception, *, dispatched: bool) -> Fault:
     if isinstance(error, EnvironmentProviderError):
         certainty = _CERTAINTY[error.certainty]
         permanent = certainty != "unknown" and error.category in PERMANENT
-        return Fault(error.code, error.safe_projection().message, certainty, permanent)
+        return Fault(error.code, public_message(error), certainty, permanent)
     if isinstance(error, ServiceError):
         return Fault("environment_provider_unavailable", error.message, "not_dispatched", permanent=True)
     certainty: Certainty = "unknown" if dispatched else "not_dispatched"
@@ -393,10 +537,78 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
     dispatched = False
     try:
         with anyio.fail_after(operation.seconds):
+            if operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto":
+                if operation.phase == "deleting":
+                    # Preparation never allocated a sandbox. Its private base remains a reusable account asset.
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.e2b_templates import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    template = await prepare(runtime, operation.e2b_desktop_template, operation.target.account)
+                    if template is None:
+                        return Outcome(None, pending=True)
+                    operation = await _pin_e2b_template(runtime, operation, template)
+            if operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto":
+                if operation.phase == "deleting":
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.modal_images import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    image = await prepare(runtime, operation.modal_desktop_image, operation.target.account)
+                    if image is None:
+                        return Outcome(None, pending=True)
+                    await _pin_modal_image(runtime, operation, image)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
+            if operation.daytona_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto":
+                if operation.phase == "deleting":
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.daytona_snapshots import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    snapshot = await prepare(runtime, operation.daytona_desktop_snapshot, operation.target.account)
+                    if snapshot is None:
+                        return Outcome(None, pending=True)
+                    await _pin_daytona_snapshot(runtime, operation, snapshot)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
+            if operation.vercel_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto":
+                if operation.phase == "deleting":
+                    from a13n_service.runs.environments.vercel_snapshots import cancel
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    done = await cancel(
+                        runtime, operation.vercel_desktop_snapshot, operation.target.account, operation.environment_id
+                    )
+                    return Outcome(None, pending=not done)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.vercel_snapshots import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    snapshot = await prepare(runtime, operation.vercel_desktop_snapshot, operation.target.account)
+                    if snapshot is None:
+                        return Outcome(None, pending=True)
+                    await _pin_vercel_snapshot(runtime, operation, snapshot)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
+            if operation.metrics is not None:
+                endpoint = operation.metrics.environment.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+                if endpoint is not None:
+                    await runtime.endpoint_policy.validate(endpoint)
             provider = await open_provider(runtime, operation.target)
             dispatched = True
             return Outcome(await _call(provider, operation))
     except Exception as error:
+        if (
+            operation.phase == "creating"
+            and isinstance(error, EnvironmentProviderError)
+            and error.context.provider_key == "sprites"
+            and error.code == "sprites_desktop_pending"
+        ):
+            return Outcome(observed_environment_state(error, operation.target.state), pending=True)
         logger.warning(
             "Environment operation failed",
             extra={
@@ -414,6 +626,14 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             and error.category == EnvironmentProviderErrorCategory.MISSING
             else fault_of(error, dispatched=dispatched)
         )
+        if (
+            (operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto")
+            or (operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto")
+            or (operation.daytona_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto")
+            or (operation.vercel_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto")
+        ):
+            # Build uncertainty is retained by its own ledger; no sandbox allocation was dispatched yet.
+            fault = replace(fault, certainty="not_dispatched")
         return Outcome(observed_environment_state(error, operation.target.state), fault)
     finally:
         if provider is not None:
@@ -436,16 +656,35 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         environment.operation_deadline = None
         handle = Handle.model_validate(environment.handle)
+        if outcome.pending:
+            if outcome.state is not None:
+                environment.handle = handle.model_copy(
+                    update={"state": outcome.state, "credential_version": operation.credential_version}
+                ).model_dump(mode="json")
+            environment.failure = None
+            return
         if outcome.fault is not None:
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
-            record_failure(environment, outcome.fault, current, unresolved=operation.unresolved)
+            preparing = (
+                (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto")
+                or (handle.modal_desktop_image is not None and handle.recipe.get("image") == "auto")
+                or (handle.daytona_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
+                or (handle.vercel_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
+            )
+            fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
+            record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
             return
         reached = _REACHES[operation.phase]
         environment.status = reached
         environment.operation_id = environment.operation_started_at = None
         environment.failure = None
+        if operation.phase == "creating" and environment.metrics_application is not None:
+            applied = MetricsApplication.model_validate(environment.metrics_application)
+            environment.metrics_application = applied.model_copy(update={"applied_at": current}).model_dump(mode="json")
+            environment.metrics_launch = None
         if reached == "deleted":
             environment.handle = None
+            environment.metrics_launch = None
         else:
             update = {"state": outcome.state, "credential_version": operation.credential_version}
             environment.handle = handle.model_copy(update=update).model_dump(mode="json")
@@ -463,6 +702,86 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             target_id=environment.id,
             details={"operation_id": operation.operation_id},
         )
+
+
+async def _pin_e2b_template(runtime: Runtime, operation: Operation, template: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("template") not in {"auto", template}:
+            raise conflict("environment", row.id, "desktop_template_changed")
+        recipe = {**handle.recipe, "template": template}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_modal_image(runtime: Runtime, operation: Operation, image: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("image") not in {"auto", image}:
+            raise conflict("environment", row.id, "desktop_image_changed")
+        recipe = {**handle.recipe, "image": image}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_daytona_snapshot(runtime: Runtime, operation: Operation, snapshot: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("snapshot") not in {"auto", snapshot}:
+            raise conflict("environment", row.id, "desktop_snapshot_changed")
+        recipe = {**handle.recipe, "snapshot": snapshot}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_vercel_snapshot(runtime: Runtime, operation: Operation, snapshot: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("snapshot") not in {"auto", snapshot}:
+            raise conflict("environment", row.id, "desktop_snapshot_changed")
+        recipe = {**handle.recipe, "snapshot": snapshot}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
 
 
 async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:

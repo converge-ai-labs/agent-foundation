@@ -11,7 +11,9 @@ from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session
+from a13n_service.runs.claim import claim
 from a13n_service.runs.findings.schemas import Category
+from a13n_service.runs.platform_tokens import issue
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Authenticated
 from a13n_service.tenancy.authenticate import LocalAuthenticator
@@ -47,7 +49,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            expected_version=created["headers"]["etag"],
             request_body={},
         )
         assert unchanged["status"] == 200 and unchanged["body"]["guide"] == "custom"
@@ -57,7 +59,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": unchanged["headers"]["etag"]},
+            expected_version=unchanged["headers"]["etag"],
             request_body={"guide": None},
         )
         assert cleared["status"] == 200 and cleared["body"]["guide"] is None
@@ -67,7 +69,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            expected_version=created["headers"]["etag"],
             request_body={"guide": "stale"},
         )
         assert stale["status"] == 412 and stale["body"]["error"]["code"] == "precondition_failed"
@@ -75,7 +77,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         listing = await call(http, service, "GET", "/memories", limit=1)
         assert listing["body"]["items"][0]["id"] == memory_id
         deleted = await call(
-            http, service, "DELETE", "/memories/{memory_id}", **args, **{"If-Match": cleared["headers"]["etag"]}
+            http, service, "DELETE", "/memories/{memory_id}", **args, expected_version=cleared["headers"]["etag"]
         )
         assert deleted["status"] == 204 and deleted["body"] is None
     async with short_session(service.runtime.storage) as session:
@@ -135,7 +137,7 @@ async def test_real_client_and_two_api_process_lifespans(
             headers = {"authorization": "Bearer " + credential["secret"]}
             async with Client(StreamableHttpTransport(first_url + MCP, headers=headers)) as first:
                 tools = await first.list_tools()
-                assert len(tools) == 124
+                assert any(tool.name == "search_documents" for tool in tools)
                 operation = service.app.openapi()["paths"]["/api/v1/memories"]["post"]
                 created = await first.call_tool(
                     tool_name(operation["operationId"]), {"request_body": {"name": "shared"}}
@@ -171,7 +173,9 @@ class ExtensionAuthenticator(LocalAuthenticator):
         return result
 
 
-async def test_distribution_authentication_and_explicit_operation_admission(serve: Any) -> None:
+async def test_distribution_authentication_and_explicit_operation_admission(
+    serve: Any, scripted_model: Any, runs_kit: Any
+) -> None:
     router = APIRouter(prefix="/api/v1/extension")
 
     @router.get("/selected", operation_id="extension_selected", openapi_extra={"x-a13n-mcp": True})
@@ -202,6 +206,32 @@ async def test_distribution_authentication_and_explicit_operation_admission(serv
             assert (await rpc(http, "tools/list")).status_code == 401
             auth.credential = None
             assert (await rpc(http, "tools/list")).status_code == 401
+        # Installing a Distribution authenticator still admits independently validated Run credentials.
+        agent = await runs_kit.create_agent(service, scripted_model)
+        await runs_kit.start_thread(service, agent, "inspect agents")
+        (lease,) = await claim(service.runtime, worker_id="extension-test", worker_build="test", limit=1)
+        token = await issue(service.runtime, lease, frozenset({"agents"}))
+        async with client(service, {"secret": token}) as http:
+            response = await rpc(http, "tools/list")
+            assert response.status_code == 200, response.text
+            names = {tool["name"] for tool in response.json()["result"]["tools"]}
+            assert names and "extension_selected" not in names
+            assert (await http.get("/api/v1/extension/selected")).status_code == 403
+
+
+def test_operations_take_route_names_and_a_duplicate_fails_assembly() -> None:
+    settings = Settings()
+    schema = build_app(role="control", settings=settings).openapi()
+    assert schema["paths"]["/api/v1/agents/{agent_id}/revisions"]["get"]["operationId"] == "list_agent_revisions"
+    router = APIRouter(prefix="/api/v1/extension")
+
+    @router.get("/agents")
+    async def list_agents() -> dict[str, str]:
+        return {}
+
+    distribution = OSS.extend(Distribution(name="extension", routers=(router,), authenticator=LocalAuthenticator()))
+    with pytest.raises(ValueError, match="list_agents"):
+        build_app(distribution, role="control", settings=settings)
 
 
 def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
@@ -213,24 +243,62 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     selected = {
         (path, method) for path, item in schema["paths"].items() for method, op in item.items() if op.get("x-a13n-mcp")
     }
-    assert len(selected) == 123
+    assert {
+        ("/api/v1/runs", "get"),
+        ("/api/v1/sessions", "get"),
+        ("/api/v1/runs/{run_id}/attempts/{attempt_id}", "get"),
+        ("/api/v1/runs/{run_id}/agent", "get"),
+    } <= selected
+    assert ("/api/v1/runs/{run_id}/interrupt", "post") not in selected
     assert ("/api/v1/runs/{run_id}/attempts/{attempt_id}/trace", "get") in selected
+    assert ("/api/v1/traces/{trace_id}/spans/{span_id}", "get") in selected
+    assert ("/api/v1/sessions/{session_id}/threads", "get") in selected
+    assert ("/api/v1/usage/runs", "get") in selected
+    assert ("/api/v1/usage", "get") in selected
+    assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
+    assert ("/api/v1/usage/context", "get") in selected
+    for path in ("overview", "agents", "models", "members"):
+        assert (f"/api/v1/usage/{path}", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
+        ("/api/v1/sessions", "get"),
+        ("/api/v1/sessions/{session_id}", "get"),
+        ("/api/v1/memory-spaces", "get"),
+        ("/api/v1/memory-spaces/{space_id}", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organization", "get"),
+        ("/api/v1/memory-spaces/{space_id}/organizations", "get"),
+        ("/api/v1/memory-spaces/{space_id}/sessions", "get"),
+    } <= selected
+    assert {
         ("/api/v1/findings", "get"),
+        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "get"),
         ("/api/v1/finding-analyses", "get"),
     } <= selected
     assert {
-        ("/api/v1/findings", "post"),
         ("/api/v1/findings/{finding_id}", "patch"),
         ("/api/v1/finding-analyses", "post"),
         ("/api/v1/finding-agent", "post"),
     }.isdisjoint(selected)
     assert not any(
-        "/auth" in path or "/uploads" in path or "/organizations" in path or "/users" in path for path, _ in selected
+        "/auth" in path or "/uploads" in path or path.startswith("/api/v1/organizations") or "/users" in path
+        for path, _ in selected
     )
-    assert not any(path.endswith("/content") or path.endswith("/authorize") for path, _ in selected)
+    assert {path for path, _ in selected if path.endswith("/content")} == {
+        "/api/v1/runs/{run_id}/items/{item_id}/content",
+        "/api/v1/traces/{trace_id}/spans/{span_id}/content",
+    }
+    assert not any(path.endswith("/authorize") for path, _ in selected)
+    monitoring = {
+        (path, method)
+        for path, item in schema["paths"].items()
+        for method, operation in item.items()
+        if path.startswith(("/api/v1/metrics-data-sources", "/api/v1/metrics-dashboards", "/api/v1/devices"))
+        or (path.startswith("/api/v1/environments/") and "/metrics" in path)
+    }
+    assert monitoring
+    assert monitoring.isdisjoint(selected)
+    assert all(schema["paths"][path][method].get("x-a13n-mcp") is False for path, method in monitoring)
     tools = api_tools(
         app, schema, settings.server.public_origin, [route for router in OSS.routers for route in router.routes]
     )

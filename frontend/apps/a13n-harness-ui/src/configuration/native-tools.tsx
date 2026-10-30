@@ -1,11 +1,10 @@
+import { SettingsToggle } from "../shell/settings";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsSection } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { connectionId } from "./model-editor";
 import { readDocument } from "./documents";
-import styles from "../shell/workbench.module.css";
 
 type Tool = Schema<"ModelToolChoice">;
 export function nativeToolKind(value: unknown): string | undefined {
@@ -118,56 +117,37 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   return (
-    <SettingsSection
-      title="Model-native tools"
-      description="Choices come from this Agent's saved Model. Changing the Model never silently replaces existing tools."
-    >
-      <div className={`${styles.stack} ${styles.fieldGroup}`}>
-        <ErrorNotice error={saved.error || options.error} />
-        {!raw?.model ? (
-          <p>Select a saved Model to see its native tool choices.</p>
-        ) : options.isPending && request ? (
-          <p>Loading tool support…</p>
-        ) : !tools.length ? (
-          <p>
-            No guided native tools for this connection. Advanced capabilities
-            remain unchanged.
+    <>
+      <ErrorNotice error={saved.error || options.error} />
+      {!raw?.model ? (
+        <p>Choose a saved model to see its tools.</p>
+      ) : options.isPending && request ? (
+        <p>Loading tool support…</p>
+      ) : !tools.length ? (
+        <p>This model has no built-in tool options.</p>
+      ) : (
+        tools.map((tool) => (
+          <SettingsToggle
+            key={tool.value}
+            label={tool.label}
+            description={`${tool.description}${tool.recommended ? " Recommended for this model." : ""}${!tool.capability ? " Configure required provider parameters in advanced YAML." : ""}`}
+            checked={configured.includes(tool.value)}
+            disabled={!tool.capability}
+            onCheckedChange={(checked) =>
+              onChange(toggleNativeTool(source, tool, checked))
+            }
+          />
+        ))
+      )}
+      {options.data &&
+        configured.some(
+          (kind: string) => !tools.some((tool) => tool.value === kind),
+        ) && (
+          <p role="status">
+            Some saved tools aren't available for this model. Review them in
+            Capabilities or Advanced configuration.
           </p>
-        ) : (
-          tools.map((tool) => (
-            <div key={tool.value}>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={configured.includes(tool.value)}
-                  disabled={!tool.capability}
-                  onChange={(event) =>
-                    onChange(
-                      toggleNativeTool(source, tool, event.target.checked),
-                    )
-                  }
-                />{" "}
-                {tool.label}
-                {tool.recommended ? " · Recommended" : ""}
-              </label>
-              <small>
-                {tool.description}
-                {!tool.capability &&
-                  " Configure required provider parameters in advanced YAML."}
-              </small>
-            </div>
-          ))
         )}
-        {options.data &&
-          configured.some(
-            (kind: string) => !tools.some((tool) => tool.value === kind),
-          ) && (
-            <p role="status">
-              Some configured native tools are not offered for this Model. They
-              have been preserved; review them in Capabilities or advanced YAML.
-            </p>
-          )}
-      </div>
-    </SettingsSection>
+    </>
   );
 }

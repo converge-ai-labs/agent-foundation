@@ -282,15 +282,30 @@ def test_environment_mount_rejects_noncanonical_mount_path(
         )
 
 
-@pytest.mark.parametrize("working_directory", ["relative", "/with/../parent", "/double//slash", "/trailing/"])
-def test_environment_mount_rejects_noncanonical_working_directory(
+@pytest.mark.parametrize("field", ["working_directory", "provider_root"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "relative",
+        "/with/../parent",
+        "/double//slash",
+        "/trailing/",
+        "/D:/project/",
+        "/UNC/server/share/project/",
+        "/UNC/server/",
+        "/UNC/server/../",
+        "/D://",
+    ],
+)
+def test_environment_mount_rejects_noncanonical_provider_paths(
     tmp_path: Path,
-    working_directory: str,
+    field: str,
+    path: str,
 ) -> None:
     with pytest.raises(ValueError, match="canonical absolute path"):
         EnvironmentMount(
-            _environment(tmp_path, "invalid-working-directory"),
-            working_directory=working_directory,
+            _environment(tmp_path, "invalid-provider-path"),
+            **{field: path},  # type: ignore[arg-type]
         )
 
 

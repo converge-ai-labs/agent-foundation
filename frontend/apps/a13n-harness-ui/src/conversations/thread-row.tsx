@@ -9,18 +9,24 @@ import {
   CircleNotch,
   WarningCircleIcon,
   Archive,
+  ArrowUp,
+  ArrowDown,
   ArrowCounterClockwise,
   DotsThree,
+  GitFork,
   PencilSimple,
   ShareNetwork,
   SlidersHorizontal,
   Star,
+  Trash,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
 import { refreshThread } from "./refresh";
+import { refreshActivity } from "./activity-updates";
+import { applyThreadMutation } from "./thread-updates";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
@@ -28,11 +34,14 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useUnsent } from "./unsent";
 import { CoordinatorIcon } from "./coordinator-icon";
+import { canDeleteThread, DeleteThread } from "./delete-thread";
 import {
   canPromoteCoordinator,
   CoordinatorPromotion,
   useCoordinatorMutation,
 } from "./coordinator-settings";
+
+import { NavigationDragContext } from "./navigation-drag";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -76,8 +85,16 @@ export function ThreadRow({
   activeWorkerCount?: number;
   disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
+  const drag = useContext(NavigationDragContext);
+  const rowElement = useRef<HTMLDivElement>(null);
+  const sortable =
+    !!drag &&
+    !row.thread.archived &&
+    row.thread.role !== "worker" &&
+    !row.thread.parent_thread_id;
   const coordinator = useCoordinatorMutation(row.thread);
   const [promoting, setPromoting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { tracker: results } = useResults();
   const unsent = useUnsent().inputs.has(row.thread.thread_id);
   const unread = results?.isUnread(row.thread.thread_id);
@@ -93,21 +110,13 @@ export function ThreadRow({
   );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row);
-  const needsAttention =
-    !!row.pending_decision || state === "Failed" || state === "Outcome unknown";
-  const activity = [
-    state,
+  const workerActivity =
     activeWorkerCount > 0
       ? `${activeWorkerCount} ${activeWorkerCount === 1 ? "worker" : "workers"} active`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+      : "";
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
-  const starLabel = row.thread.starred
-    ? "Unstar conversation"
-    : "Star conversation";
+  const starLabel = row.thread.starred ? "Unstar chat" : "Star chat";
   const star = useMutation({
     mutationFn: () =>
       result(
@@ -119,14 +128,10 @@ export function ThreadRow({
           },
         }),
       ),
-    // Refetch, rather than replacing newer live activity with a mutation snapshot.
-    onSettled: async () => {
-      await Promise.all([
-        queries.invalidateQueries({
-          queryKey: ["thread", row.thread.thread_id],
-        }),
-        refreshThreadLists(queries),
-      ]);
+    onSuccess: (updated) => applyThreadMutation(queries, updated),
+    onSettled: () => {
+      refreshThread(queries, row.thread.thread_id, "metadata");
+      refreshActivity(queries, transport, row.thread.thread_id);
       if (document.activeElement === document.body)
         actionsButton.current?.focus();
     },
@@ -135,6 +140,18 @@ export function ThreadRow({
     if (star.isPending) return;
     star.mutate();
   };
+  const fork = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.POST("/api/threads/{thread_id}/fork", {
+          params: { path: { thread_id: row.thread.thread_id } },
+        }),
+      ),
+    onSuccess: (copied) => {
+      void refreshThreadLists(queries);
+      navigate(`/threads/${encodeURIComponent(copied.thread_id)}`);
+    },
+  });
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -163,30 +180,70 @@ export function ThreadRow({
   });
   return (
     <div>
-      <div key={row.thread.thread_id} className={styles.threadRow}>
+      <div
+        ref={rowElement}
+        key={row.thread.thread_id}
+        className={styles.threadRow}
+        data-nav-thread={sortable ? row.thread.thread_id : undefined}
+        data-nav-source={drag?.moving === row.thread.thread_id || undefined}
+      >
+        {disclosure && (
+          <button
+            type="button"
+            className={styles.threadDisclosure}
+            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-expanded={disclosure.expanded}
+            onClick={disclosure.onToggle}
+          >
+            <CaretRight
+              aria-hidden="true"
+              className={
+                disclosure.expanded ? styles.expandedChevron : undefined
+              }
+            />
+          </button>
+        )}
         <NavLink
+          draggable={false}
+          onPointerDown={
+            sortable
+              ? (event) =>
+                  drag.begin(event, {
+                    kind: "thread",
+                    id: row.thread.thread_id,
+                    label: title,
+                    thread: row.thread,
+                  })
+              : undefined
+          }
+          onKeyDown={
+            sortable
+              ? (event) => {
+                  if (
+                    event.altKey &&
+                    ["ArrowUp", "ArrowDown"].includes(event.key)
+                  ) {
+                    event.preventDefault();
+                    drag.moveThread(
+                      row.thread,
+                      rowElement.current!,
+                      event.key === "ArrowUp" ? -1 : 1,
+                    );
+                    requestAnimationFrame(() =>
+                      rowElement.current
+                        ?.querySelector<HTMLElement>("a")
+                        ?.focus(),
+                    );
+                  }
+                }
+              : undefined
+          }
+          aria-keyshortcuts={sortable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
           to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
           className={({ isActive }) =>
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
           }
         >
-          <span className={styles.threadIcon}>
-            {isCoordinator ? (
-              <CoordinatorIcon size={18} />
-            ) : (
-              <ThreadStateIcon row={row} />
-            )}
-            {unsent && (
-              <span
-                className={styles.draftMarker}
-                role="img"
-                aria-label="Draft · Unsent input"
-                title="Draft · Unsent input"
-              >
-                <PencilSimple size={10} weight="bold" aria-hidden="true" />
-              </span>
-            )}
-          </span>
           <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
             {row.thread.role === "coordinator" && title !== "Coordinator" && (
@@ -200,20 +257,32 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {needsAttention ? (
-              <small className={styles.attentionState}>
-                {isCoordinator ? activity : state}
-              </small>
-            ) : !isCoordinator && state ? (
-              <small className={styles.srOnly}>{state}</small>
-            ) : null}
-            {isCoordinator && activity && !needsAttention && (
-              <small className={styles.coordinatorActivity} title={activity}>
-                {state && <ThreadStateIcon row={row} />}
-                <span>{activity}</span>
-              </small>
-            )}
           </span>
+          {isCoordinator && workerActivity && (
+            <small
+              className={styles.coordinatorActivity}
+              title={workerActivity}
+              aria-label={workerActivity}
+            >
+              {activeWorkerCount} active
+            </small>
+          )}
+          {unsent && (
+            <span
+              className={styles.draftMarker}
+              role="img"
+              aria-label="Draft · Unsent input"
+              title="Unsent input"
+            >
+              <PencilSimple size={12} aria-hidden="true" />
+            </span>
+          )}
+          {state && (
+            <span className={styles.threadStatus} title={state}>
+              <ThreadStateIcon row={row} />
+              <span className={styles.srOnly}>{state}</span>
+            </span>
+          )}
           {unread && (
             <span
               className={styles.resultDot}
@@ -241,7 +310,7 @@ export function ThreadRow({
           <span
             className={styles.threadStar}
             role="img"
-            aria-label={`Starred conversation: ${title}`}
+            aria-label={`Starred chat: ${title}`}
             title="Starred · Shared with everyone in this project"
           >
             <Star size={12} weight="fill" aria-hidden="true" />
@@ -253,7 +322,7 @@ export function ThreadRow({
               <Button ref={actionsButton} variant="ghost" size="icon-sm" />
             }
             className={styles.threadActions}
-            aria-busy={star.isPending}
+            aria-busy={star.isPending || fork.isPending}
             aria-label={`Actions for ${title}`}
           >
             <DotsThree />
@@ -274,6 +343,26 @@ export function ThreadRow({
                 <ChatCircle /> New worker
               </MenuItem>
             )}
+            {sortable && (
+              <>
+                <MenuItem
+                  onClick={() =>
+                    drag.moveThread(row.thread, rowElement.current!, -1)
+                  }
+                >
+                  <ArrowUp />
+                  Move up
+                </MenuItem>
+                <MenuItem
+                  onClick={() =>
+                    drag.moveThread(row.thread, rowElement.current!, 1)
+                  }
+                >
+                  <ArrowDown />
+                  Move down
+                </MenuItem>
+              </>
+            )}
             {canStar && (
               <MenuItem disabled={star.isPending} onClick={toggleStar}>
                 <Star weight={row.thread.starred ? "fill" : "regular"} />
@@ -282,13 +371,14 @@ export function ThreadRow({
             )}
             {(
               [
-                ["rename", "Rename conversation", PencilSimple],
-                ["share", "Share conversation", ShareNetwork],
-                ["details", "Conversation details", SlidersHorizontal],
+                ["rename", "Rename chat", "Rename", PencilSimple],
+                ["share", "Share chat", "Share", ShareNetwork],
+                ["details", "Chat details", "Details", SlidersHorizontal],
               ] as const
-            ).map(([action, label, Icon]) => (
+            ).map(([action, label, caption, Icon]) => (
               <MenuItem
                 key={action}
+                aria-label={label}
                 onClick={() =>
                   navigate(
                     `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
@@ -296,9 +386,20 @@ export function ThreadRow({
                 }
               >
                 <Icon />
-                {label}
+                {caption}
               </MenuItem>
             ))}
+            {row.thread.role === "ordinary" &&
+              !row.thread.parent_thread_id &&
+              !row.thread.memory_scope &&
+              row.thread.configuration.agent_source.kind === "agent" && (
+                <MenuItem
+                  disabled={fork.isPending}
+                  onClick={() => fork.mutate()}
+                >
+                  <GitFork /> Fork chat
+                </MenuItem>
+              )}
             {row.thread.role === "ordinary" &&
               row.thread.configuration.project_id && (
                 <MenuItem
@@ -317,42 +418,40 @@ export function ThreadRow({
               >
                 <CoordinatorIcon size={16} />
                 {row.thread.auto_followup
-                  ? "Pause automatic follow-up"
-                  : "Enable automatic follow-up"}
+                  ? "Pause follow-ups"
+                  : "Enable follow-ups"}
               </MenuItem>
             )}
-            <MenuItem
-              disabled={
-                archive.isPending ||
-                row.thread.root_activity.state !== "inactive"
-              }
-              onClick={() => archive.mutate()}
-            >
-              <Archive />
-              {row.thread.archived
-                ? "Restore conversation"
-                : "Archive conversation"}
-            </MenuItem>
+            {row.thread.configuration.agent_source.kind !== "live" && (
+              <MenuItem
+                disabled={
+                  archive.isPending ||
+                  row.thread.root_activity.state !== "inactive"
+                }
+                onClick={() => archive.mutate()}
+              >
+                <Archive />
+                {row.thread.archived ? "Restore chat" : "Archive chat"}
+              </MenuItem>
+            )}
+            {canDeleteThread(row.thread) && (
+              <MenuItem
+                variant="destructive"
+                disabled={row.thread.root_activity.state !== "inactive"}
+                onClick={() => setDeleting(true)}
+              >
+                <Trash /> Delete chat
+              </MenuItem>
+            )}
           </MenuPopup>
         </Menu>
-        {disclosure && (
-          <button
-            type="button"
-            className={styles.threadDisclosure}
-            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
-            aria-expanded={disclosure.expanded}
-            onClick={disclosure.onToggle}
-          >
-            <CaretRight
-              aria-hidden="true"
-              className={
-                disclosure.expanded ? styles.expandedChevron : undefined
-              }
-            />
-          </button>
-        )}
       </div>
-      <ErrorNotice error={star.error || archive.error || coordinator.error} />
+      <ErrorNotice
+        error={star.error || archive.error || fork.error || coordinator.error}
+      />
+      {deleting && (
+        <DeleteThread thread={row.thread} close={() => setDeleting(false)} />
+      )}
       <CoordinatorPromotion
         open={promoting}
         close={() => setPromoting(false)}

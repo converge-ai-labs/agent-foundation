@@ -2,7 +2,7 @@
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 36px 48px 64px;
+  padding: 32px var(--console-page-gutter) 64px;
 }
 .back {
   display: inline-flex;
@@ -21,11 +21,17 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: 3px;
 }
+/* Actions move under the title before the title has to break. */
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px 24px;
+}
+.header > :first-child {
+  flex: 1 1 360px;
+  min-width: 0;
 }
 .titleRow {
   display: flex;
@@ -36,9 +42,10 @@
 .titleRow h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
-  line-height: 1.2;
+  line-height: 32px;
+  overflow-wrap: anywhere;
 }
 .count {
   align-self: flex-end;
@@ -50,16 +57,18 @@
 }
 .description {
   max-width: 72ch;
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
-  line-height: 1.5;
+  line-height: 20px;
 }
 .actions {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -78,9 +87,9 @@
 
 /* Detail page ----------------------------------------------------------- */
 .detailPage {
-  max-width: 1180px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 28px 48px 120px;
+  padding: 32px var(--console-page-gutter) 120px;
 }
 .identity {
   display: flex;
@@ -93,19 +102,25 @@
   gap: 4px;
   min-width: 0;
 }
+/* Centre status and edit controls on the title; wrap without squeezing them. */
 .detailTitleRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
 }
 .detailTitleRow h1 {
+  min-width: 0;
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  line-height: 32px;
+  overflow-wrap: break-word;
+}
+.detailTitleRow > :not(h1) {
+  flex: none;
 }
 .subtitle {
   display: flex;
@@ -119,13 +134,33 @@
 .subtitle .dot {
   color: var(--a13n-border);
 }
+/* A summary keeps two lines; the full text is in its title. */
 .subtitleText {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 48ch;
+  max-width: 72ch;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.expandableDescription {
+  flex-basis: 100%;
+  min-width: 0;
+  max-width: 72ch;
+}
+.identity[data-expandable-description="true"] {
+  align-items: flex-start;
+}
+.expandableDescription .subtitleText {
+  white-space: pre-wrap;
+}
+.subtitleText[data-expanded="true"] {
+  display: block;
+  -webkit-line-clamp: unset;
 }
 .tabs {
+  composes: tabStrip from "../shared.module.css";
   margin-top: 24px;
 }
 .tabs [data-slot="tabs-tab"] > [data-slot="tab-count"] {
@@ -138,7 +173,7 @@
 }
 .content {
   container-type: inline-size;
-  padding-top: 28px;
+  padding-top: 24px;
 }
 .layout {
   display: grid;
@@ -151,7 +186,7 @@
 }
 .main {
   display: grid;
-  gap: 36px;
+  gap: 32px;
   min-width: 0;
 }
 .rail {
@@ -208,32 +243,114 @@
 /* Section --------------------------------------------------------------- */
 .section {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 .sectionHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
+.sectionHeader > :first-child {
+  flex: 1 1 160px;
+  min-width: 0;
+}
 .sectionHeader h2 {
   margin: 0;
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
-  line-height: 1.3;
+  line-height: 20px;
+}
+/* A section action centres on the title line, not on title and summary. */
+.sectionActions {
+  composes: compact from "../controls.module.css";
+  max-width: 100%;
+  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-block: -4px;
 }
 .sectionHeader p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.5;
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
 }
 .sectionBody {
   display: grid;
+  align-content: start;
   gap: 16px;
   min-width: 0;
+}
+.sectionBody:empty {
+  display: none;
+}
+.sectionGroup > .sectionBody {
+  gap: 32px;
+}
+/* A subsection reads as a labelled field of its group. */
+.subsection {
+  gap: 10px;
+}
+.subsection > .sectionHeader {
+  align-items: center;
+  min-height: 28px;
+}
+.subsection > .sectionHeader h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.subsection > .sectionHeader p {
+  margin-top: 1px;
+}
+.subsection > .sectionHeader .sectionActions {
+  margin-block: 0;
+}
+
+/* Sections as rows ------------------------------------------------------ */
+.sections {
+  --sections-title: clamp(176px, 26cqi, 248px);
+  container-type: inline-size;
+  display: grid;
+  gap: 56px;
+  min-width: 0;
+}
+@container (min-width: 720px) {
+  .sections > .section {
+    grid-template-columns: var(--sections-title) minmax(0, 1fr);
+    gap: 0 48px;
+  }
+  .sections > .section > .sectionHeader {
+    position: sticky;
+    top: var(--sections-sticky-top, 24px);
+    align-self: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  /* The wrapping basis is a width only in the row layout. */
+  .sections > .section > .sectionHeader > :first-child {
+    flex: none;
+  }
+  .sections > .section > .sectionHeader .sectionActions {
+    margin-block: 0;
+  }
+}
+@container (max-width: 719px) {
+  .sections > .section {
+    gap: 16px;
+  }
+}
+@media (width < 640px) {
+  .sections {
+    gap: 40px;
+  }
 }
 
 /* Save bar -------------------------------------------------------------- */
@@ -248,11 +365,18 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px 10px 16px;
-  border-radius: 14px;
+  border-radius: var(--a13n-radius-group);
   background: var(--a13n-elevated);
   box-shadow:
     0 12px 32px color-mix(in srgb, var(--a13n-text) 12%, transparent),
     0 1px 2px color-mix(in srgb, var(--a13n-text) 6%, transparent);
+}
+/* Beside the desktop sidebar the bar centres on the content column. */
+@media (width >= 768px) {
+  .saveBar {
+    left: calc(50% + var(--sidebar-width, 0px) / 2);
+    width: min(760px, calc(100% - var(--sidebar-width, 0px) - 48px));
+  }
 }
 .saveStatus {
   display: flex;
@@ -296,6 +420,9 @@
     position: static;
     order: -1;
   }
+  .layout[data-folded-rail="hidden"] .rail {
+    display: none;
+  }
   .railSection {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -306,22 +433,29 @@
     grid-column: 1 / -1;
   }
 }
-@media (max-width: 1000px) {
-  .detailPage {
-    padding-inline: 24px;
-  }
-}
 @media (width < 768px) {
   .page {
-    padding: 24px var(--a13n-page-gutter-mobile) 40px;
+    padding-block: 16px 40px;
   }
   .header {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 12px;
+  }
+  .header > :first-child {
+    flex: 1 1 200px;
+  }
+  .actions {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .toolbar {
+    margin-top: 14px;
+  }
+  .identity {
+    align-items: flex-start;
   }
   .detailPage {
-    padding: 20px var(--a13n-page-gutter-mobile) 140px;
+    padding: 16px var(--console-page-gutter) 140px;
   }
   .saveBar {
     flex-wrap: wrap;
@@ -437,4 +571,56 @@
   .panelInline {
     width: 100% !important;
   }
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel:not(.panelInline) {
+    animation: panel-enter 160ms ease-out;
+  }
+}
+.panelTitle:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sectionTitleActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-block: -2px;
+}
+.sectionTitleLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--a13n-secondary);
+}
+.sectionTitleLink:hover {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.sectionTitleLink:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
 }

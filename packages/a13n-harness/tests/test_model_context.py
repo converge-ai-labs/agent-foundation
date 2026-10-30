@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from itertools import pairwise
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
+    DeferredToolCall,
+    DeferredToolRequests,
+    DeferredToolResume,
     HarnessBuilder,
     RunBindings,
 )
@@ -37,7 +40,11 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    ModelSettingsDeltaPart,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
+    SystemPromptPart,
     TextContent,
     TextPart,
     ToolAvailabilityDeltaPart,
@@ -54,11 +61,16 @@ pytestmark = pytest.mark.anyio
 
 
 class _ProjectionDeps:
+    _compacting = False
+
     def __init__(
         self,
         deferred_resume: Any = None,
         projection: ModelContextProjection | None = None,
     ) -> None:
+        from a13n_harness.state import AgentContextState
+
+        self.state = AgentContextState()
         self.deferred_resume = deferred_resume
         self.model_context = None
         self.projection = projection or ModelContextProjection()
@@ -232,8 +244,14 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert text[0].startswith("Current Environment mounts")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
-    assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)
+    agent_context = next(
+        value for value in text if isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">')
+    )
     assert result.state is not None
+    assert json.loads(agent_context.splitlines()[1]) == {
+        "harness_run_id": result.run_id,
+        "thread_id": result.state.thread_id,
+    }
     persisted_request = result.state.message_history[0]
     assert isinstance(persisted_request, ModelRequest)
     persisted_text = [
@@ -310,6 +328,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
             item.value for item in request_input_content(final) if item.metadata.source_id == "a13n.agent-context"
         ]
         assert len(runtime_context) == 1
+        assert json.loads(runtime_context[0].splitlines()[1]) == {"harness_run_id": result.run_id}
         assert "automatic runtime metadata, not a new user message" in runtime_context[0]
         assert "Continue the existing task only if work remains" in runtime_context[0]
     assert seen_instructions == [seen_instructions[0]] * 3
@@ -375,8 +394,9 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     assert calls == ["host:before", "host:after"]
 
 
-@pytest.mark.parametrize("placement", ["after", "between", "retry", "rendered_native"])
-async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
+@pytest.mark.parametrize("placement", ["after", "between", "retry", "feedback", "retried", "rendered_native"])
+@pytest.mark.parametrize("native_kind", ["tools", "system"])
+async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement, native_kind):
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(RunContext, "emit", AsyncMock())
@@ -388,6 +408,10 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     parts = (results[0], notice, results[1]) if placement == "between" else (*results, notice)
     if placement == "retry":
         parts = (*parts, RetryPromptPart("retry"))
+    elif placement == "feedback":
+        parts = (*parts, RetryFeedbackPart("retry", retry=RetryInfo(cause="model_retry")))
+    elif placement == "retried":
+        parts = (ToolReturnPart("first", "retry", "call-1", outcome="retried"), results[1], notice)
     original = ModelRequest(parts=parts)
     projection = ModelContextProjection(
         blocks=(
@@ -398,7 +422,11 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     deps = _ProjectionDeps(projection=projection)
     model = FunctionModel(lambda messages, info: "unused")
     ctx = RunContext(deps=cast(AgentContext, deps), model=model, usage=RunUsage(), messages=[original], run_id="run-1")
-    native = ToolAvailabilityDeltaPart(tools_added=["new_tool"])
+    native = (
+        ToolAvailabilityDeltaPart(tools_added=["new_tool"])
+        if native_kind == "tools"
+        else SystemPromptPart("capability reminder")
+    )
     if placement == "rendered_native":
         ctx.messages[:] = [ModelRequest(parts=results), ModelRequest(parts=(native,))]
     request = ModelRequestContext(
@@ -549,18 +577,16 @@ async def test_exact_boundaries_skip_projection_without_history_mutation() -> No
     await _assert_exact_coordinator_hooks([committed, suspended])
 
     calls = (
-        SimpleNamespace(tool_call_id="call-1"),
-        SimpleNamespace(tool_call_id="call-2"),
+        ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
+        ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
     )
-    deferred_resume = SimpleNamespace(
-        requests=SimpleNamespace(calls=calls, approvals=()),
+    requests = DeferredToolRequests(
+        calls=[DeferredToolCall(call, call, f"tool/test/{call.tool_name}") for call in calls],
     )
-    pending_calls = ModelResponse(
-        parts=(
-            ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
-            ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
-        )
+    deferred_resume = DeferredToolResume(
+        requests, requests.build_results(calls={call.tool_call_id: call.tool_name for call in calls})
     )
+    pending_calls = ModelResponse(parts=calls)
     complete_results = ModelRequest(
         parts=(
             ToolReturnPart(tool_name="one", content="one", tool_call_id="call-1"),
@@ -745,3 +771,18 @@ async def test_input_events_do_not_replay_restored_history_or_change_provider_pr
     original_wire = await model._map_messages(history, {}, ModelRequestParameters())
     observed_prefix = await model._map_messages(seen[: len(history)], {}, ModelRequestParameters())
     assert observed_prefix == original_wire
+
+
+def test_request_coalescing_preserves_settings_deltas_and_content_annotations() -> None:
+    from a13n_harness.content import merge_request_history
+
+    low = ModelSettingsDeltaPart(settings={"thinking": "low"}, top_level=True)
+    high = ModelSettingsDeltaPart(settings={"thinking": "high"})
+    first = ModelRequest(parts=[low, UserPromptPart("first")])
+    second = ModelRequest(parts=[high, UserPromptPart("second")])
+    merged = merge_request_history([first, second])
+    assert len(merged) == 1
+    request = merged[0]
+    assert isinstance(request, ModelRequest)
+    assert tuple(request.parts) == (low, first.parts[1], high, second.parts[1])
+    assert [item.value for item in request_input_content(request)] == ["first", "second"]

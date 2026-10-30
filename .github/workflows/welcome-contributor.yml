@@ -1,0 +1,76 @@
+name: Welcome First-Time Contributors
+
+on:
+  pull_request_target:
+    types: [opened]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  pull-requests: write
+  issues: write # Required by the issue-comment reactions endpoint.
+
+concurrency:
+  group: welcome-contributor-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      # Metadata only, including on fork PRs: never check out or execute PR code.
+      - name: Welcome the author's first pull request
+        uses: actions/github-script@v8
+        with:
+          script: |
+            if (context.payload.pull_request.user.type === 'Bot') return;
+            const {data: pr} = await github.rest.pulls.get({
+              ...context.repo, pull_number: context.payload.pull_request.number,
+            });
+            if (pr.state !== 'open') return;
+
+            // The repository issues endpoint includes PRs and supports creator filtering.
+            // Include closed/merged PRs; an earlier issue does not disqualify the author.
+            // Use the listing API rather than the eventually indexed search API.
+            for await (const {data: items} of github.paginate.iterator(github.rest.issues.listForRepo, {
+              ...context.repo, creator: pr.user.login, state: 'all',
+              sort: 'created', direction: 'asc', per_page: 100,
+            })) {
+              if (items.some(item => item.pull_request && item.number < pr.number)) return;
+            }
+
+            const marker = '<!-- a13n-first-pr-welcome -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: pr.number, per_page: 100,
+            });
+            const existing = comments.find(comment =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker));
+
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const branch = encodeURIComponent(context.payload.repository.default_branch);
+            const guide = `https://github.com/${repository}/blob/${branch}/CONTRIBUTING.md`;
+            const image = `https://raw.githubusercontent.com/${repository}/${branch}/.github/assets/contributor-welcome.jpg`;
+            const slack = 'https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ';
+            const body = [
+              marker,
+              '',
+              `Hi @${pr.user.login}, thanks for opening your first pull request to Agent Foundation!`,
+              '',
+              `<img src="${image}" alt="Welcome to a13n — glad you are building with us." width="640">`,
+              '',
+              'If you get stuck with setup, tests, or review feedback, ask here in the PR. ' +
+                `Our [contributing guide](${guide}) covers the development workflow.`,
+              '',
+              `You're also welcome to [join us on Slack](${slack}) ` +
+                "to meet other contributors, ask questions, and share what you're building.",
+              '',
+              'Glad to have you here!',
+            ].join('\n');
+            const comment = existing ?? (await github.rest.issues.createComment({
+              ...context.repo, issue_number: pr.number, body,
+            })).data;
+            // Reuse the welcome on reruns; adding the same reaction is idempotent.
+            await github.rest.reactions.createForIssueComment({
+              ...context.repo, comment_id: comment.id, content: 'hooray',
+            });

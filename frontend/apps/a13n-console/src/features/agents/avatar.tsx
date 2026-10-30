@@ -16,26 +16,40 @@ export function AgentAvatar({
   url?: string | null;
   className?: string;
 }) {
+  // Until an image loads or fails, the tile stays blank: initials would flash first.
+  const [failed, setFailed] = useState<string>();
+  const waiting = !!url && failed !== url;
+  const fail = () => setFailed(url ?? undefined);
   return (
     <Avatar className={className} aria-hidden="true">
       {url &&
         (url.startsWith("blob:") ? (
-          <AvatarImage src={url} alt="" />
+          <AvatarImage
+            src={url}
+            alt=""
+            onLoadingStatusChange={(status) => status === "error" && fail()}
+          />
         ) : (
-          <WorkspaceAvatarImage url={url} />
+          <WorkspaceAvatarImage url={url} onError={fail} />
         ))}
       <AvatarFallback
         className="rounded-[inherit] font-semibold"
-        style={avatarTint(id ?? name)}
+        style={waiting ? undefined : avatarTint(id ?? name)}
       >
-        {nameInitials(name, 1) || "A"}
+        {waiting ? null : nameInitials(name, 1) || "A"}
       </AvatarFallback>
     </Avatar>
   );
 }
 
 /** Browser image requests cannot carry the workspace header. */
-function WorkspaceAvatarImage({ url }: { url: string }) {
+function WorkspaceAvatarImage({
+  url,
+  onError,
+}: {
+  url: string;
+  onError: () => void;
+}) {
   const client = useClient();
   const { workspace } = useWorkspace();
   const image = useQuery({
@@ -51,7 +65,15 @@ function WorkspaceAvatarImage({ url }: { url: string }) {
     setPreview({ blob: image.data, url: objectUrl });
     return () => URL.revokeObjectURL(objectUrl);
   }, [image.data]);
+  const failed = image.isError;
+  useEffect(() => {
+    if (failed) onError();
+  }, [failed, onError]);
   return preview && preview.blob === image.data ? (
-    <AvatarImage src={preview.url} alt="" />
+    <AvatarImage
+      src={preview.url}
+      alt=""
+      onLoadingStatusChange={(status) => status === "error" && onError()}
+    />
   ) : null;
 }

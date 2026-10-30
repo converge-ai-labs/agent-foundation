@@ -32,6 +32,7 @@ export function Composer({
   label,
   placeholder,
   disabled = false,
+  submitDisabled = false,
   agentName,
   options,
   stop,
@@ -44,6 +45,8 @@ export function Composer({
   label?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** Block sending while keeping configuration controls available for correction. */
+  submitDisabled?: boolean;
   agentName?: string;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
@@ -66,6 +69,8 @@ export function Composer({
     if (!input) return;
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+    // A message that still fits has nothing to scroll, whatever the rounding.
+    input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
   }, [text]);
   const [attachments, setAttachments] = useState<Attachment[]>(
     initial?.content.flatMap((part): Attachment[] =>
@@ -159,7 +164,7 @@ export function Composer({
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
-        mutation.mutate();
+        if (!disabled && !submitDisabled && !busy) mutation.mutate();
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
@@ -169,6 +174,7 @@ export function Composer({
           unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
+          aria-keyshortcuts="Meta+Enter Control+Enter"
           placeholder={
             placeholder ??
             (agentName
@@ -188,7 +194,9 @@ export function Composer({
             }
             if (
               event.key !== "Enter" ||
+              !(event.metaKey || event.ctrlKey) ||
               event.shiftKey ||
+              event.altKey ||
               event.nativeEvent.isComposing
             )
               return;
@@ -249,7 +257,7 @@ export function Composer({
       </fieldset>
       <div className={styles.send}>
         <span className={styles.hint}>
-          {stopMode ? t("Esc stops") : t("Enter to send")}
+          {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
         </span>
         {stopMode ? (
           <Button
@@ -272,7 +280,7 @@ export function Composer({
             className={styles.sendButton}
             aria-label={action}
             title={action}
-            disabled={empty || disabled || busy}
+            disabled={empty || disabled || submitDisabled || busy}
             loading={mutation.isPending}
           >
             <ArrowUpIcon size={15} />

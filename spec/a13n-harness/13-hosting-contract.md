@@ -23,6 +23,10 @@ The Host also owns durable acceptance, durable execution attempts, leases, check
 | Durable completion and delivery                            | Owns                                               | Returns a candidate                                               |
 | Observation providers, signal policy, and export lifecycle | Owns                                               | Uses independently selected providers when supplied               |
 
+For optional [retained tool execution](07-tool-execution.md#host-held-tool-executions), Harness implements the process-local runtime, storage interface and default memory store. The Host holds the runtime across Runs, binds exact Thread authority, selects retention/persistence and completion delivery, and joins retained scopes before closing shared collaborators. Host-owned lifecycle does not require a second executor. Persistent records do not transfer live invocation ownership to another worker. A Host can bind a per-Thread `CodeActStateOwner` for late explicit-state writes; exported checkpoints remain detached values.
+
+For optional [background compaction](09-context-and-memory.md#background-execution-and-result-application), the Host supplies `CompactionOperator` and fresh model-request authority. Harness owns detached input capture, summary generation/retry and self-contained result application. The Host owns admission, aggregate usage budgets, independent task lifetime, retained results and notification. Ready results apply at an active Run's model boundary or join the next ordinary `run`/`stream` call through `compaction_result` alongside the selected `previous_state`. Harness decides replacement before recovery, then finishes current-tool restoration and resets projection cursors before context projection. The Host queries `compaction_disposition` on the checkpoint actually selected by its normal fenced commit before acknowledging applied or skipped work. Idle completion retains the independent result without rewriting history.
+
 ## Definition Mapping
 
 ```mermaid
@@ -66,7 +70,12 @@ For each logical run the Host can construct `RunBindings` with:
 - optional model-context middleware;
 - an optional [state store](10-snapshot-and-resume.md#host-state-store) for large content and retained inline child states;
 - fresh run Capabilities required by definition-selected features;
-- bounded non-authoritative metadata.
+- bounded non-authoritative metadata;
+- an optional typed `RequestContext` carrying explicit business request headers.
+
+`RunBindings.request_context` defaults to an empty `RequestContext`. Its headers are a detached read-only string mapping with lower-case, case-insensitively unique names. `AgentContext.request_context` exposes the same value to trusted tools and Capabilities. It is separate from metadata and has no automatic prompt, history, log, tool-result or shell-environment projection. Inline children inherit it. Hosts that schedule independent children supply the inherited context explicitly.
+
+Request context is a runtime binding, outside `HarnessState`. A Host reconstructs it for each execution attempt and defines persistence, resume and new-message semantics. Restoring a checkpoint alone does not restore headers. Shared model Provider `forward_context_headers` uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` when omitted, resolved when constructing the configuration rather than at module import. Unset means true; values are case-insensitive `true` or `false` with surrounding whitespace ignored; invalid values raise a configuration error. Explicit booleans take precedence, and Provider normalization preserves an explicit value even when it equals the current default. Hosts can reuse `a13n_harness.http.forward_context_headers_default()` for their transport configuration defaults. Automatic outbound forwarding belongs to explicit Host model and MCP integration, including precedence, target policy and redirect handling; other networking tools receive no implicit headers.
 
 An embedded caller can omit `RunBindings`; Harness creates fresh embedded bindings. Environment selection is independent from the remaining bindings: the caller passes one Host-owned `EnvironmentSource` or `EnvironmentMount` through `environment=`, or a named mapping through `environments=`. Provider keys, specifications, Provider objects, state envelopes, and lifecycle policy are not Harness Run inputs.
 
@@ -124,7 +133,7 @@ The executable-owned `SubagentCollection` is process-local topology and grants n
 
 Harness supplies no default async manager, execution-store protocol, parent-state mirror, completion observer, or shutdown operation. A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run queries the Host operator using the public execution reference. Parent Run closure neither cancels accepted child work nor closes the operator.
 
-Shell observations follow the separate [Environment contract](08-environment-integration.md#run-local-shell-observations). Harness supplies Run-local references, optional native discovery, explicit-offset observations and best-effort exit hints without a Host process operator. Run close releases observations without blanket termination. Provider state owns recovery of whatever the backend actually retained; a later Run uses fresh references and cannot assume historical output survives.
+Shell controls follow the [Environment contract](08-environment-integration.md#shell-executions-and-observations). The Host-held tool runtime retains top-level Shell operations and their original scopes across Runs, with explicit-offset observation and current-Run control authorization. Standalone `process-*` references remain Run-local. Provider state owns recovery after scope or Host loss; native discovery uses fresh references and cannot assume historical output survives.
 
 a13n Service and Harness UI use this ordinary Environment integration. Async subagents retain their independent Host operator.
 

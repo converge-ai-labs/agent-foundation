@@ -2,9 +2,9 @@
 
 from contextlib import AbstractAsyncContextManager
 
-from a13n_envd_client import EIPSession
 from pydantic import BaseModel
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderError, provider_error
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import (
@@ -49,12 +49,14 @@ class RemoteEnvdExecution(ExecutionBackend):
         provider_key: str,
         environment_id: str,
         state: EnvironmentState,
-        session_context: AbstractAsyncContextManager[EIPSession],
+        session_context: AbstractAsyncContextManager[EIPSessionBinding],
         working_directory: str | None = None,
+        environment: dict[str, str] | None = None,
     ) -> None:
         super().__init__(state)
         self._provider_key = provider_key
         self._environment_id = environment_id
+        self._environment = dict(environment or {})
         self._session_context = session_context
         self._entered_session = False
         self._bound: EIPEnvironmentSession | None = None
@@ -88,13 +90,15 @@ class RemoteEnvdExecution(ExecutionBackend):
             raise provider_error(self.provider_key, "provider_runtime_consumed", Category.UNAVAILABLE)
         self._attempted = True
         try:
-            session = await self._session_context.__aenter__()
+            binding = await self._session_context.__aenter__()
             self._entered_session = True
             self._bound = EIPEnvironmentSession(
-                session=session,
+                session=binding.session,
+                path_style=binding.device_descriptor.path_style,
                 provider_key=self.provider_key,
                 environment_id=self.environment_id,
                 execution_id=execution_id,
+                environment=self._environment,
             )
             self._descriptor = self._bound.descriptor
             self._operations = self._bound.operations

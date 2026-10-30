@@ -17,6 +17,13 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 | **verb**         | `read`, `run`, `write` or `admin`; what `authorize` checks                                                                           | an operation name                                         |
 | **authority**    | a run's persisted execution ceiling, intersected with its principal's current grants ([03](03-tenancy.md#execution-authority))       | the worker's own credentials                              |
 
+## Recurring invocation
+
+| Word           | Meaning                                                                                                                                 | Not                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Schedule**   | Workspace-owned one-time or recurring Agent invocation and durable delegation ([13](13-schedules.md))                                   | a Worker claim or general business workflow |
+| **Occurrence** | One recorded scheduled or manual trigger, whose terminal state describes input submission ([13](13-schedules.md#objects-and-ownership)) | a Run or an execution result                |
+
 ## Resources
 
 | Word                     | Meaning                                                                                                                                                                                     | Not                                                    |
@@ -29,7 +36,7 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 | **revision**             | an immutable, numbered configuration of a revisioned resource                                                                                                                               | a version, a generation, a draft                       |
 | **pin**                  | the exact revision a skill or subagent edge resolves to when a configuration is validated ([04](04-resources.md#validation))                                                                | a default, which can change                            |
 | **override**             | a run's changes to its revision's configuration, validated like a revision and frozen with the run                                                                                          | a new revision                                         |
-| **Agent Composer**       | the builtin agent that creates agents and revisions through the `configuration` toolset ([04](04-resources.md#agent-composer))                                                              | a draft editor, a separate session kind                |
+| **Agent Composer**       | the builtin agent that creates agents and revisions through platform tools ([04](04-resources.md#agent-composer))                                                                           | a draft editor, a separate session kind                |
 | **provider resource**    | a tenant-configured backend account with `type`, `config`, write-only credential and enabled state: model, environment, connector, web or memory ([04](04-resources.md#provider-resources)) | an adapter, a live client                              |
 | **model**                | one upstream model served by one model provider resource                                                                                                                                    | a model provider, a calling API                        |
 | **template**             | the live configuration managed environments are created from; an instance keeps the recipe it was created with ([04](04-resources.md#environment-templates))                                | an agent template, a revisioned resource               |
@@ -111,17 +118,18 @@ One word, one meaning. If a new word is needed, add it here first. Definitions a
 
 ## Facts, delivery and runtime
 
-| Word               | Meaning                                                                                                                                       | Not                                                |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **usage record**   | one immutable Harness usage report with its model and price snapshot ([07](07-facts-and-delivery.md#usage-records))                           | a cost ledger, a budget                            |
-| **lifecycle kind** | the name of a run or attempt status transition, such as `run.completed`, that a subscription selects                                          | a stored event log, a stream entry, an audit event |
-| **stream**         | the bounded, provisional Redis feed of one thread's output and boundary markers ([07](07-facts-and-delivery.md#the-thread-stream))            | durable output, the display                        |
-| **outbox**         | durable delivery intents: webhooks, child results and identity mail ([07](07-facts-and-delivery.md#outbox))                                   | an event log, object reclamation                   |
-| **sweep**          | a periodic background function that finds its work by a `WHERE` clause ([09](09-runtime.md#sweeps))                                           | a job, a reconciler                                |
-| **wake marker**    | the single Redis list entry that makes an idle worker scan sooner; it carries no run                                                          | a task, a claim                                    |
-| **infra**          | shared database, storage, transport, audit, outbox and scheduling mechanisms under `infra/`, without business-package dependencies            | assembly, a home for business handlers             |
-| **role** (process) | `all`, `control` or `worker` ([09](09-runtime.md#roles))                                                                                      | a tenancy role                                     |
-| **distribution**   | typed contributions to assembly: routers, tables, migrations, settings, sweeps, providers, roles, grant sources, authentication and admission | an edition, a plugin                               |
+| Word               | Meaning                                                                                                                                                                           | Not                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **usage record**   | one immutable Harness usage report with its model and price snapshot ([07](07-facts-and-delivery.md#usage-records))                                                               | a cost ledger, a budget                            |
+| **lifecycle kind** | the name of a run or attempt status transition, such as `run.completed`, that a subscription selects                                                                              | a stored event log, a stream entry, an audit event |
+| **stream**         | the bounded, provisional Redis feed of one thread's output and boundary markers ([07](07-facts-and-delivery.md#the-session-stream))                                               | durable output, the display                        |
+| **session stream** | the SSE feed of a session's thread states and its active runs' items and output, starting from a snapshot on every connection ([07](07-facts-and-delivery.md#the-session-stream)) | a resumable log, a cursor                          |
+| **outbox**         | durable delivery intents: webhooks, child results and identity mail ([07](07-facts-and-delivery.md#outbox))                                                                       | an event log, object reclamation                   |
+| **sweep**          | a periodic background function that finds its work by a `WHERE` clause ([09](09-runtime.md#sweeps))                                                                               | a job, a reconciler                                |
+| **wake marker**    | the single Redis list entry that makes an idle worker scan sooner; it carries no run                                                                                              | a task, a claim                                    |
+| **infra**          | shared database, storage, transport, audit, outbox and scheduling mechanisms under `infra/`, without business-package dependencies                                                | assembly, a home for business handlers             |
+| **role** (process) | `all`, `control` or `worker` ([09](09-runtime.md#roles))                                                                                                                          | a tenancy role                                     |
+| **distribution**   | typed contributions to assembly: routers, tables, migrations, settings, sweeps, providers, roles, grant sources, authentication and admission                                     | an edition, a plugin                               |
 
 ## Providers
 

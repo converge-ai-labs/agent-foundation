@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol
 
@@ -13,7 +13,11 @@ from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from pydantic import BaseModel, JsonValue
 
+from .daytona_build import DaytonaDesktopPreparation
+from .e2b_build import E2BDesktopPreparation
 from .management import EnvironmentProvider
+from .modal_build import ModalDesktopPreparation
+from .vercel_build import VercelDesktopPreparation
 
 
 class ProviderFactory[C: BaseModel, K: BaseModel, E: BaseModel, R](Protocol):
@@ -31,6 +35,11 @@ class EnvironmentManagementDefinition[C: BaseModel, K: BaseModel, E: BaseModel, 
     supports_stop: bool = False
     supports_destroy: bool = False
     requires_keepalive: bool = False
+    metrics_launch: Callable[[E], bool] | None = None
+    e2b_desktop_preparation: E2BDesktopPreparation | None = None
+    daytona_desktop_preparation: DaytonaDesktopPreparation | None = None
+    modal_desktop_preparation: ModalDesktopPreparation | None = None
+    vercel_desktop_preparation: VercelDesktopPreparation | None = None
 
     def validate_domain(self) -> None:
         if not isinstance(self.execution, EnvironmentProviderDefinition):
@@ -41,6 +50,8 @@ class EnvironmentManagementDefinition[C: BaseModel, K: BaseModel, E: BaseModel, 
             raise TypeError("Management recipes must extend the shared execution input model")
         if not callable(self.provider_factory):
             raise TypeError("Management requires a provider factory")
+        if self.metrics_launch is not None and not callable(self.metrics_launch):
+            raise TypeError("Metrics launch capability must be a recipe predicate")
         if any(type(flag) is not bool for flag in (self.supports_stop, self.supports_destroy, self.requires_keepalive)):
             raise TypeError("Management capabilities must be booleans")
         if (
@@ -92,6 +103,7 @@ def management_definition[C: BaseModel, K: BaseModel, E: BaseModel, R](
     supports_stop: bool = False,
     supports_destroy: bool = False,
     requires_keepalive: bool = False,
+    metrics_launch: Callable[[E], bool] | None = None,
 ) -> EnvironmentManagementDefinition[C, K, E, R]:
     return EnvironmentManagementDefinition(
         type=execution.type,
@@ -107,4 +119,5 @@ def management_definition[C: BaseModel, K: BaseModel, E: BaseModel, R](
         supports_stop=supports_stop,
         supports_destroy=supports_destroy,
         requires_keepalive=requires_keepalive,
+        metrics_launch=metrics_launch,
     )

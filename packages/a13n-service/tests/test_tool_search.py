@@ -1,0 +1,394 @@
+"""Service selects presentation; Harness owns discovery and local invocation."""
+
+from typing import Any
+
+import pytest
+from a13n_harness import DeferredToolResume, RunBindings
+from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import definition
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.runs.agent import build
+from pydantic import ValidationError
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.profiles.anthropic import anthropic_model_profile
+from pydantic_ai.toolsets import FunctionToolset
+
+from .test_agents import HELPER, HELPER_REVISION, PLUGINS, config, resolved
+
+pytestmark = pytest.mark.anyio
+CONNECTION = new_object_id("con")
+
+
+def selection(**changes: Any) -> AgentConfig:
+    return config(
+        connection_tools=[{"connection_id": CONNECTION}],
+        tool_search={
+            "config": {"mode": "proxy"},
+            "groups": {"knowledge": {"description": "Knowledge lookup", "connections": [CONNECTION]}},
+        },
+        **changes,
+    )
+
+
+def test_configuration_preserves_defaults_and_validates_membership() -> None:
+    assert "tool_search" not in config().model_dump(mode="json")
+    selected = selection()
+    assert AgentConfig.model_validate_json(selected.model_dump_json()) == selected
+    assert selected.tool_search is not None
+    assert selected.tool_search.connection_ids == {CONNECTION}
+    for groups, message in (
+        ({"bad__name": {"description": "Tools"}}, "ToolSearch group"),
+        ({"tools": {"description": " "}}, "non-blank"),
+        ({"tools": {"description": "Tools", "connections": [new_object_id("con")]}}, "unselected connection"),
+        ({"tools": {"description": "Tools", "plugins": ["missing"]}}, "unselected plugin"),
+        ({"tools": {"description": "Tools", "platform": True}}, "enabled platform tool"),
+        (
+            {name: {"description": "Tools", "connections": [CONNECTION]} for name in ("one", "two")},
+            "multiple groups",
+        ),
+    ):
+        with pytest.raises(ValidationError, match=message):
+            AgentConfig.model_validate({**selected.model_dump(), "tool_search": {"groups": groups}})
+
+
+def test_override_replaces_the_plan_and_validates_the_result() -> None:
+    selected = selection()
+    for override in ({}, {"tool_search": None}):
+        assert apply_override(selected, AgentOverride.model_validate(override)).tool_search == selected.tool_search
+    disabled = apply_override(selected, AgentOverride.model_validate({"tool_search": {"groups": {}}}))
+    assert disabled.tool_search is not None and not disabled.tool_search.groups
+    with pytest.raises(ValidationError, match="unselected connection"):
+        apply_override(selected, AgentOverride(connection_tools=()))
+    cleared = apply_override(selected, AgentOverride.model_validate({"connection_tools": [], "tool_search": {}}))
+    assert not cleared.connection_tools
+
+
+def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> None:
+    from a13n_service.runs.agent import ResolvedSubagent
+
+    connection = Capability(tools=[lambda: "connection"])
+    platform = Capability(tools=[lambda: "platform"])
+    environment = Capability(tools=[lambda: "environment"])
+    selected = config(
+        connection_tools=[{"connection_id": CONNECTION}],
+        plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
+        toolsets={"agents": {"enabled": True}},
+        tool_search={
+            "config": {"mode": "proxy"},
+            "groups": {
+                "tools": {
+                    "description": "Selected tools",
+                    "connections": [CONNECTION],
+                    "plugins": ["audit"],
+                    "platform": True,
+                    "capabilities": ["environment", "web"],
+                }
+            },
+        },
+        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+    )
+    sources = {CONNECTION: connection, "platform": platform, "environment": environment}
+    plan = definition.tool_search(selected, sources)
+    assert plan is not None and plan.config.mode == "proxy"
+    # An unavailable optional capability is not activated by group membership.
+    assert plan.groups["tools"].capabilities == (connection, environment, platform)
+    assert plan.groups["tools"].plugins == ("audit",)
+    child = resolved(HELPER, HELPER_REVISION, config())
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        connection_types={CONNECTION: "mcp"},
+        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], HELPER_REVISION, "Help", child)},
+    )
+    executable = build(
+        root,
+        capabilities=lambda node: list(sources.values()) if node is root else [],
+        tool_sources=lambda node: sources if node is root else {},
+        plugins=PLUGINS,
+        instrumentation=None,
+    )
+    built = executable.definition.tool_search
+    assert built is not None
+    assert built.groups["tools"].capabilities[0] is connection
+    assert built.groups["tools"].capabilities[-1] is platform
+    from a13n_harness.environment import DynamicEnvironmentCapability
+
+    assert isinstance(built.groups["tools"].capabilities[1], DynamicEnvironmentCapability)
+    assert built.groups["tools"].plugins == ("audit",)
+    assert executable.definition.subagents[0].agent.tool_search is None
+
+
+@pytest.mark.parametrize("permission", ["allow", "ask", "deny"])
+async def test_proxy_discovery_restores_history_and_keeps_connection_permissions(permission: str) -> None:
+    effects = []
+
+    def lookup(value: int) -> int:
+        effects.append(value)
+        return value * 2
+
+    source = Capability(toolsets=[FunctionToolset([lookup], id=CONNECTION)])
+    selected = config(
+        toolsets={},
+        connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
+        tool_search=selection().tool_search,
+    )
+    root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
+    phase = "discover"
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        tools = {tool.name: tool for tool in info.function_tools}
+        assert "load_capability" not in tools
+        assert "call_tool" in tools and "knowledge__lookup" not in tools
+        if calls == 0:
+            calls += 1
+            if phase == "discover":
+                yield {
+                    0: DeltaToolCall(
+                        name="describe_tool", json_args='{"group":"knowledge","tool":"lookup"}', tool_call_id="search"
+                    )
+                }
+            else:
+                yield {
+                    0: DeltaToolCall(
+                        name="call_tool",
+                        json_args='{"group":"knowledge","tool":"lookup","arguments":{"value":4}}',
+                        tool_call_id="invoke",
+                    )
+                }
+        else:
+            yield "found" if phase == "discover" else "done"
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream, profile=anthropic_model_profile("claude-sonnet-4-6"))
+
+    executable = build(
+        root,
+        capabilities=lambda _: [source],
+        tool_sources=lambda _: {CONNECTION: source},
+        plugins=PLUGINS,
+        instrumentation=None,
+    )
+    bindings = RunBindings.embedded(model_resolver=model_resolver)
+    first = await executable.run("find", bindings=bindings)
+    assert first.output_or_raise() == "found"
+    state = type(first.state).model_validate_json(first.state.model_dump_json())
+    phase = "invoke"
+    calls = 0
+    result = await executable.run("call", previous_state=state, bindings=bindings)
+    if permission == "ask":
+        assert result.status == "suspended"
+        assert effects == []
+        pending = result.deferred
+        assert pending is not None and not pending.calls
+        [request] = pending.approvals
+        assert request.model_call.tool_name == "call_tool"
+        assert request.model_call.tool_call_id == "invoke"
+        assert request.target_call.tool_name == "knowledge__lookup"
+        assert request.target_call.args_as_dict() == {"value": 4}
+        state = type(result.state).model_validate_json(result.state.model_dump_json())
+        result = await executable.run(
+            previous_state=state,
+            bindings=bindings,
+            deferred_resume=DeferredToolResume(
+                pending,
+                pending.build_results(approvals={request.target_call.tool_call_id: True}),
+            ),
+        )
+    assert result.status == "completed"
+    assert result.output_or_raise() == "done"
+    assert effects == ([] if permission == "deny" else [4])
+
+
+async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_checks(service) -> None:
+    from a13n_service.infra.db import short_session
+    from a13n_service.providers.tools import ToolDispatch
+    from a13n_service.resources.connections.runtime import open_connections
+    from a13n_service.runs.host import resolve_host
+    from a13n_service.runs.tables import RunRow
+    from a13n_service.tenancy.authorize import execution_authority
+
+    from .test_agents import create_agent, create_model, revision_config
+    from .test_connections import SECRET, admin, create, patch, remote, scope
+
+    async with remote() as server:
+        connection = await create(
+            service,
+            {
+                "config": {"url": f"{server.url}/mcp", "headers": ["x-api-key"], "tools": ["echo"]},
+                "auth": "headers",
+                "credential": {"headers": {"x-api-key": SECRET}},
+            },
+        )
+        connection_id = connection["id"]
+        model_key = await create_model(service)
+        agent = await create_agent(
+            service,
+            "Proxy search",
+            model_key,
+            toolsets={},
+            connection_tools=[{"connection_id": connection_id, "permission": "allow"}],
+            tool_search={
+                "config": {"mode": "proxy"},
+                "groups": {
+                    "knowledge": {
+                        "description": "Knowledge tools",
+                        "connections": [connection_id],
+                    }
+                },
+            },
+        )
+        selected = AgentConfig.model_validate(await revision_config(service, agent))
+        root = resolved(agent["id"], agent["default_revision_id"], selected, connection_types={connection_id: "mcp"})
+        actor, workspace = admin(service), scope(service)
+        run = RunRow(options={}, memory_mounts=[], mcp_headers={connection_id: {"x-trace": "proxy-search"}})
+        async with short_session(service.runtime.storage) as session:
+            plan = await resolve_host(
+                session, run, actor, workspace, root, authority=execution_authority(actor, workspace)
+            )
+        [planned] = plan.parts[root.revision_id].connections
+        dispatches = []
+
+        async def check(dispatch: ToolDispatch) -> None:
+            dispatches.append(dispatch)
+
+        runtime = service.runtime
+        async with open_connections(
+            (planned,),
+            check,
+            storage=runtime.storage,
+            redis=runtime.redis,
+            keys=runtime.keys,
+            registry=runtime.registry,
+            policy=runtime.endpoint_policy,
+            settings=runtime.settings.providers,
+        ) as capabilities:
+            phase = "discover"
+            called = False
+
+            async def stream(messages, info):
+                nonlocal called
+                tools = {tool.name: tool for tool in info.function_tools}
+                assert set(tools) == {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"}
+                if not called:
+                    called = True
+                    if phase == "discover":
+                        yield {
+                            0: DeltaToolCall(name="list_tools", json_args='{"detail":"full"}', tool_call_id="search")
+                        }
+                    else:
+                        yield {
+                            0: DeltaToolCall(
+                                name="call_tool",
+                                json_args='{"group":"knowledge","tool":"echo","arguments":{"text":"hello"}}',
+                                tool_call_id="invoke",
+                            )
+                        }
+                else:
+                    yield "found" if phase == "discover" else "done"
+
+            async def model_resolver(context, model_id):
+                return FunctionModel(stream_function=stream, profile=anthropic_model_profile("claude-sonnet-4-6"))
+
+            executable = build(
+                root,
+                capabilities=lambda _: capabilities,
+                tool_sources=lambda _: {connection_id: capabilities[0]},
+                plugins=PLUGINS,
+                instrumentation=None,
+            )
+            bindings = RunBindings.embedded(model_resolver=model_resolver)
+            found = await executable.run("find", bindings=bindings)
+            assert found.output_or_raise() == "found"
+            phase = "invoke"
+            called = False
+            invoked = await executable.run("call", previous_state=found.state, bindings=bindings)
+            assert invoked.output_or_raise() == "done"
+            assert server.echoed == ["hello"]
+            assert len(dispatches) == 1
+            assert dispatches[0].connection_id == connection_id
+            assert dispatches[0].tool_name == "echo"
+            assert server.requests[-1]["x-trace"] == "proxy-search"
+            assert server.requests[-1]["x-api-key"] == SECRET
+            await patch(service, connection, {"enabled": False})
+            called = False
+            refused = await executable.run("call again", previous_state=invoked.state, bindings=bindings)
+            assert refused.status == "completed"
+            assert server.echoed == ["hello"] and len(dispatches) == 1
+
+
+async def test_plugin_tools_compose_once_for_proxy_search(monkeypatch) -> None:
+    from .test_agents import _Plugin
+
+    contributions = []
+    effects = []
+
+    def lookup() -> str:
+        effects.append("called")
+        return "found"
+
+    def get_capabilities(self):
+        contributions.append(self.plugin_id)
+        return [Capability(tools=[lookup])]
+
+    monkeypatch.setattr(_Plugin, "get_capabilities", get_capabilities)
+    selected = config(
+        toolsets={},
+        plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
+        tool_search={
+            "config": {"mode": "proxy"},
+            "groups": {
+                "knowledge": {
+                    "description": "Knowledge",
+                    "plugins": ["audit"],
+                }
+            },
+        },
+    )
+    root = resolved(new_object_id("ap"), new_object_id("apr"), selected)
+    step = 0
+
+    async def stream(messages, info):
+        nonlocal step
+        step += 1
+        if step == 1:
+            assert {tool.name for tool in info.function_tools} == {
+                "discover_tools",
+                "describe_tool",
+                "call_tool",
+                "list_tools",
+                "list_tool_groups",
+            }
+            yield {
+                0: DeltaToolCall(
+                    name="call_tool",
+                    json_args='{"group":"knowledge","tool":"lookup","arguments":{}}',
+                    tool_call_id="call",
+                )
+            }
+        else:
+            yield "done"
+
+    async def model_resolver(context, model_id):
+        return FunctionModel(stream_function=stream, profile=anthropic_model_profile("claude-sonnet-4-6"))
+
+    executable = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
+    assert result.output_or_raise() == "done"
+    assert contributions == ["audit"] and effects == ["called"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"native_search": False, "config": {"mode": "proxy"}},
+        {"config": {"mode": "native"}},
+        {"config": {"mode": "proxy", "strategy": "regex"}},
+    ],
+)
+def test_search_config_rejects_conflicting_branches(value) -> None:
+    with pytest.raises(ValidationError):
+        config(tool_search=value)

@@ -10,6 +10,9 @@ pub(super) enum Command {
         payload: Value,
         environment: std::collections::BTreeMap<String, String>,
     },
+    Resources {
+        ticket: u64,
+    },
     Close {
         ticket: u64,
     },
@@ -27,6 +30,7 @@ pub(super) enum Command {
 pub(super) struct Reply {
     pub ticket: u64,
     pub payload: Value,
+    pub requires_finish: bool,
 }
 
 /// Envelope overhead is bounded separately from the public request/response limit.

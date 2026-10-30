@@ -1,12 +1,14 @@
 """Durable reclamation: rollback, interruption, pagination and reference safety."""
 
 import asyncio
+import json
 from dataclasses import replace
 from functools import partial
 
 import pytest
 from a13n_harness import HarnessState, StoredRef
 from a13n_service.infra.db import short_session, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import Delivery, OutboxRow, claim
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease
@@ -220,3 +222,117 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
     finally:
         release.set()
         await asyncio.gather(publishing, return_exceptions=True)
+
+
+@pytest.mark.parametrize("format", [1, 2])
+def test_legacy_checkpoint_defaults_to_no_session_hints(format):
+    legacy = RunState(harness=HarnessState.new(thread_id="thr_legacy"), seq=1, attempt=1).model_dump(mode="json")
+    legacy["format"] = format
+    del legacy["envd_sessions"]
+    restored = RunState.model_validate(legacy)
+    assert restored.envd_sessions == {}
+    pointer = StatePointer(key="legacy", digest="0" * 64, size=1, format=format, seq=1, attempt=1)
+    assert checkpoints.require_compatible(RunRow(id="run_legacy", checkpoint=pointer.model_dump())) == pointer
+    upgraded = RunState(harness=restored.harness, seq=2, attempt=2)
+    assert upgraded.format == checkpoints.FORMAT == 4
+
+
+@pytest.mark.parametrize("format", checkpoints.READABLE_FORMATS)
+def test_checkpoint_preserves_unknown_fields_in_model_round_trip(format):
+    payload = RunState(harness=HarnessState.new(thread_id="thr_extra"), seq=1, attempt=1).model_dump(mode="json")
+    payload.update(format=format, extension={"items": [1, "value", None]})
+    restored = RunState.model_validate(payload)
+    assert restored.model_extra == {"extension": payload["extension"]}
+    assert RunState.model_validate_json(restored.model_dump_json()).model_dump(mode="json") == payload
+    assert json.loads(restored.to_json_bytes()) == payload
+    assert RunState.model_validate_json(restored.to_json_bytes()) == restored
+
+
+@pytest.mark.parametrize(
+    "changes", [{"seq": 0}, {"attempt": 0}, {"format": checkpoints.FORMAT + 1}, {"envd_sessions": []}]
+)
+def test_checkpoint_extensions_do_not_relax_known_fields(changes):
+    from pydantic import ValidationError
+
+    payload = RunState(harness=HarnessState.new(thread_id="thr_extra"), seq=1, attempt=1).model_dump(mode="json")
+    payload.update(extension={"accepted": True}, **changes)
+    with pytest.raises(ValidationError):
+        RunState.model_validate(payload)
+
+
+async def test_checkpoint_bytes_publish_load_and_detect_corruption(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+
+    lease = Lease(
+        "run_encoding", "rat_test", "thr_test", tenant.organization_id, tenant.workspace_id, 1, "worker", "token"
+    )
+    state = RunState(
+        harness=HarnessState.new(
+            thread_id=lease.thread_id,
+            message_history=[
+                ModelResponse(parts=[ToolCallPart("lookup", {"z": 1, "a": [None]}, tool_call_id="c1")]),
+                ModelRequest(parts=[ToolReturnPart("lookup", {"value": "中文"}, tool_call_id="c1")]),
+            ],
+        ),
+        seq=2,
+        attempt=lease.number,
+        deferred={"pending": [{"tool_call_id": "c2"}]},
+        resume_input_consumed=True,
+        future_run={"value": [1, None]},
+    )
+    ref = StoredRef(key="contents/kept", digest="a" * 64, size=42)
+    state = state.model_copy(update={"harness": state.harness.model_copy(update={"refs": (ref,)})})
+    messages = state.harness.message_history
+    messages[0].parts.clear()
+    pointer, display = await checkpoints.publish_checkpoint(runtime, lease, state, Snapshot([], Tail()))
+    assert pointer.refs == (ref,)
+    assert (pointer.seq, pointer.attempt, pointer.format) == (2, 1, checkpoints.FORMAT)
+    assert json.loads(await checkpoints.load(runtime.objects, pointer)) == json.loads(state.model_dump_json())
+    assert await checkpoints.load_state(runtime.objects, pointer) == state
+    assert await checkpoints.load_tail(runtime.objects, display.tail) == Tail()
+    await runtime.objects.put(pointer.key, b"corrupt", content_type="application/zstd")
+    with pytest.raises(ServiceError, match="does not match its digest"):
+        await checkpoints.load_state(runtime.objects, pointer)
+
+
+async def test_checkpoint_load_validates_external_history(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+    from pydantic import ValidationError
+
+    lease = Lease(
+        "run_invalid", "rat_test", "thr_test", tenant.organization_id, tenant.workspace_id, 1, "worker", "token"
+    )
+    payload = RunState(harness=HarnessState.new(), seq=1, attempt=1).model_dump(mode="json")
+    payload["harness"]["message_history"] = [1]
+    # Matching object digest does not replace schema validation on checkpoint import.
+    ref = await checkpoints.publish(runtime.objects, lease, "state", json.dumps(payload).encode(), level=3)
+    pointer = StatePointer(key=ref.key, digest=ref.digest, size=ref.size, format=checkpoints.FORMAT, seq=1, attempt=1)
+    with pytest.raises(ValidationError):
+        await checkpoints.load_state(runtime.objects, pointer)
+
+
+@pytest.mark.parametrize("subclass", ["harness", "run"])
+def test_checkpoint_bytes_keep_standard_subclass_serialization(subclass):
+    from pydantic import model_serializer
+
+    class ExtendedHarness(HarnessState):
+        private_detail: str = "not in the annotated base envelope"
+
+    class CustomRunState(RunState):
+        @model_serializer
+        def custom(self) -> dict[str, int]:
+            return {"custom_sequence": self.seq}
+
+    state = (
+        RunState(harness=ExtendedHarness.new(), seq=1, attempt=1)
+        if subclass == "harness"
+        else CustomRunState(harness=HarnessState.new(), seq=2, attempt=1)
+    )
+    assert state.to_json_bytes() == state.model_dump_json().encode()
+    if subclass == "harness":
+        assert "private_detail" not in json.loads(state.to_json_bytes())["harness"]
+    else:
+        assert json.loads(state.to_json_bytes()) == {"custom_sequence": 2}
+        unchecked = state.model_copy(
+            update={"harness": state.harness.model_copy(update={"message_history_json": b"[1]"})}
+        )
+        assert unchecked.to_json_bytes() == state.to_json_bytes()

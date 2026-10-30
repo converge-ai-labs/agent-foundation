@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Dialog,
@@ -29,6 +29,7 @@ import {
   type WizardDraft,
 } from "./wizard-state";
 import { ShellReviewModel } from "./shell-review";
+import { LiveOptIn } from "./live-opt-in";
 import styles from "./wizard.module.css";
 type Selection = Schema<"SetupSelection">;
 
@@ -62,16 +63,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const [phase, setPhase] = useState("");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const preflightAbort = useRef<AbortController | null>(null);
-  useEffect(() => () => preflightAbort.current?.abort(), []);
   const heading = useRef<HTMLHeadingElement>(null);
-  const [preview, setPreview] = useState<{
-    key: string;
-    value: Schema<"SetupPreview">;
-  }>();
-  const [readiness, setReadiness] = useState<
-    Record<string, Schema<"EnvironmentReadiness">>
-  >({});
   const patch = (change: Partial<WizardDraft>) =>
     setDraft((value) => ({ ...value, ...change }));
   const changeSelection = (change: Partial<Selection>) =>
@@ -92,20 +84,76 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
     : ["Model", "Workspace"];
   const workspaceStep = steps.length - 1;
   const reviewStep = apiKey && draft.step === 1;
-  const selectionKey = JSON.stringify(selection);
-  const currentPreview =
-    preview?.key === selectionKey ? preview.value : undefined;
+  const workspaceActive = draft.step === workspaceStep && !draft.pending;
+  const preview = useQuery({
+    queryKey: ["setup-preview", scope, selection],
+    queryFn: ({ signal }) =>
+      result(client.POST("/api/setup/preview", { body: selection, signal })),
+    enabled: workspaceActive,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
+  const currentPreview = preview.data;
   const sandbox = selection.environment_profile === "environment-sandbox";
+  const targets =
+    workspaceActive && sandbox ? currentPreview?.project_paths : undefined;
+  const [cancelledTargets, setCancelledTargets] = useState<string>();
+  const targetKey = JSON.stringify(targets);
+  const cancelled = cancelledTargets != null && cancelledTargets === targetKey;
+  const sandboxCheck = useQuery({
+    queryKey: ["setup-sandbox", scope, targets],
+    queryFn: async ({ signal }) => {
+      const checks: Record<string, Schema<"EnvironmentReadiness">> = {};
+      for (const path of targets ?? []) {
+        checks[path] = await result(
+          client.POST("/api/environments/preflight", {
+            body: { profile_id: "environment-sandbox", project_path: path },
+            signal,
+          }),
+        );
+      }
+      return checks;
+    },
+    enabled: !!targets?.length && !cancelled,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
+  const readiness = sandboxCheck.data ?? {};
   const sandboxReady =
-    !!currentPreview?.project_paths.length &&
-    currentPreview.project_paths.every((path) => readiness[path]?.ready);
-  useEffect(() => {
-    setReadiness({});
-  }, [
-    selection.environment_profile,
-    selection.project,
-    selection.project_path,
-  ]);
+    !!targets?.length &&
+    !sandboxCheck.isFetching &&
+    targets.every((path) => readiness[path]?.ready);
+  const runtime = useQuery({
+    queryKey: ["envd-runtime"],
+    queryFn: ({ signal }) => result(client.GET("/api/envd", { signal })),
+    enabled: workspaceActive && sandbox,
+    refetchInterval: sandboxCheck.isFetching ? 1000 : false,
+  });
+  const preparing = preview.isFetching || (sandbox && sandboxCheck.isFetching);
+  const preparationError = preview.error || (sandbox && sandboxCheck.error);
+  const preparationStatus = preview.isFetching
+    ? "Checking configuration…"
+    : sandbox && sandboxCheck.isFetching
+      ? runtime.data?.phase === "downloading"
+        ? `Downloading envd… ${Math.round((runtime.data.downloaded_bytes ?? 0) / 1024 / 1024)} MB${runtime.data.total_bytes ? ` / ${Math.round(runtime.data.total_bytes / 1024 / 1024)} MB` : ""}`
+        : runtime.data?.phase === "verifying"
+          ? "Verifying envd download…"
+          : runtime.data?.phase === "checking"
+            ? "Checking envd installation…"
+            : runtime.data?.installed
+              ? "Checking Sandbox isolation…"
+              : "Preparing envd download…"
+      : cancelled
+        ? "Preparation cancelled. Retry or choose Full Control."
+        : preparationError
+          ? "Setup needs attention. Review the error above and retry."
+          : sandbox && !sandboxReady
+            ? "Sandbox is not ready. Retry or choose Full Control."
+            : currentPreview
+              ? "Ready to save"
+              : "Checking configuration…";
 
   const run = async (operation: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -121,35 +169,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       busyRef.current = false;
       setBusy(false);
       setPhase("");
-      preflightAbort.current = null;
     }
   };
-  const review = () =>
-    run(async () => {
-      setPhase("Preparing your configuration…");
-      const value = await result(
-        client.POST("/api/setup/preview", { body: selection }),
-      );
-      setPreview({ key: selectionKey, value });
-    });
-  const checkSandbox = () =>
-    run(async () => {
-      if (!currentPreview) return;
-      setPhase("Checking Sandbox isolation…");
-      const abort = new AbortController();
-      preflightAbort.current = abort;
-      setReadiness({});
-      const results: typeof readiness = {};
-      for (const path of currentPreview.project_paths) {
-        results[path] = await result(
-          client.POST("/api/environments/preflight", {
-            body: { profile_id: "environment-sandbox", project_path: path },
-            signal: abort.signal,
-          }),
-        );
-        setReadiness({ ...results });
-      }
-    });
   const reconcile = async (pending: NonNullable<WizardDraft["pending"]>) => {
     setPhase("Checking saved files…");
     for (const [path, expected] of Object.entries(pending.files)) {
@@ -160,7 +181,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       );
       if (saved.content !== expected)
         throw new Error(
-          "Some files are missing or changed. Review the remaining changes before explicitly saving again; existing resources will be preserved.",
+          "Some files are missing or changed. Review the changes before saving again. Existing resources are kept.",
         );
     }
     const saved = await result(
@@ -172,13 +193,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       saved.default_agent !== pending.selection.default_agent
     )
       throw new Error(
-        "Configuration needs attention. Inspect the saved files before trying again.",
+        "Check the saved configuration files before trying again.",
       );
   };
   const openConversation = async (
     pending: NonNullable<WizardDraft["pending"]>,
   ) => {
-    setPhase("Opening your first conversation…");
+    setPhase("Opening your first chat…");
     const lookup = async () => {
       try {
         return await result(
@@ -223,7 +244,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       (configured.project_id ?? null) !== (pending.selection.project ?? null)
     )
       throw new Error(
-        "The first conversation already exists with different choices. Inspect its Agent, Project, and execution environment before continuing; this setup has not changed that conversation.",
+        "The first chat already uses different settings. Check its agent, project and environment before continuing. Setup hasn't changed it.",
       );
     finishWizard(scope);
     navigate(`/threads/${encodeURIComponent(draft.threadId)}?compose=1`, {
@@ -233,13 +254,19 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   };
   const save = () =>
     run(async () => {
-      if (!currentPreview || (sandbox && !sandboxReady)) return;
+      if (
+        !currentPreview ||
+        preparing ||
+        preparationError ||
+        (sandbox && !sandboxReady)
+      )
+        return;
       const pending = { selection, files: currentPreview.files };
       const next = { ...draft, pending };
       // Persist the exact publication intent before sending. Reload never resubmits it.
       if (!saveWizardDraft(scope, next))
         throw new Error(
-          "Browser storage is unavailable. Allow local storage before saving so an interrupted publication can be recovered safely.",
+          "Enable browser storage before saving. It lets setup recover if the connection is interrupted.",
         );
       setDraft(next);
       setPhase("Saving configuration…");
@@ -279,7 +306,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         }}
       >
         <DialogHeader>
-          <DialogTitle>Make this workbench yours</DialogTitle>
+          <DialogTitle className={styles.title}>Set up Harness</DialogTitle>
           <DialogDescription>
             Connect a model and choose where it can work.
           </DialogDescription>
@@ -310,29 +337,17 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             <ErrorNotice error={error} />
             {!storageAvailable && (
               <p role="alert">
-                Browser storage is unavailable. Your choices will not survive a
-                refresh; enable storage before saving setup.
+                Browser storage is off. Your choices will be lost on refresh.
+                Enable storage before saving.
               </p>
             )}
             {phase && <p role="status">{phase}</p>}
-            {preflightAbort.current && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  preflightAbort.current?.abort();
-                  setReadiness({});
-                }}
-              >
-                Cancel readiness check
-              </Button>
-            )}
             {draft.pending ? (
               <div className={styles.stack}>
                 <h3>Resume your saved setup</h3>
                 <p>
-                  Settings may have been saved even if the response was lost.
-                  Check the exact files and first conversation before retrying.
-                  No prompt will be sent.
+                  Your settings may already be saved. Resume to check the saved
+                  files and first chat. No message will be sent.
                 </p>
                 <Button
                   loading={busy}
@@ -343,17 +358,17 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     })
                   }
                 >
-                  Check saved setup and open conversation
+                  Resume setup
                 </Button>
                 <Button
                   variant="outline"
                   disabled={busy}
                   onClick={() => {
                     patch({ pending: undefined });
-                    setPreview(undefined);
+                    void preview.refetch();
                   }}
                 >
-                  Review remaining changes
+                  Review changes
                 </Button>
               </div>
             ) : (
@@ -376,7 +391,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <details className={styles.advanced}>
                       <summary>Agent options</summary>
                       <div className={styles.stack}>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={selection.tool_capabilities == null}
@@ -388,9 +403,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Enable recommended native tools on the new Agent
+                          Enable recommended model tools
                         </label>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={
@@ -446,13 +461,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             "environment-native",
                             "Full Control",
                             Desktop,
-                            "Runs as the server's Host account. This is not a sandbox.",
+                            "Run directly as your host account with full filesystem and network access.",
                           ],
                           [
                             "environment-sandbox",
                             "Sandbox",
                             ShieldCheck,
-                            "Isolated execution. A readiness check is required before saving.",
+                            "Runs in a sandbox. Downloads envd if needed and checks isolation.",
                           ],
                         ] as const
                       ).map(([value, label, Icon, description]) => (
@@ -471,6 +486,83 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                         </button>
                       ))}
                     </div>
+                    <div className={styles.runtimeStatus}>
+                      <strong>
+                        {sandbox ? "Sandbox runtime" : "Direct execution"}
+                      </strong>
+                      <p>
+                        {sandbox
+                          ? "envd runs on this server."
+                          : "No envd download is needed for Full Control with Direct."}
+                      </p>
+                      <Link to="/settings/runtime">
+                        Manage envd & Computer Use
+                      </Link>
+                      {sandbox && (
+                        <>
+                          <p role="status">{preparationStatus}</p>
+                          {sandboxCheck.isFetching &&
+                            runtime.data?.phase === "downloading" && (
+                              <progress
+                                aria-label="envd download"
+                                max={runtime.data.total_bytes ?? undefined}
+                                value={
+                                  runtime.data.total_bytes
+                                    ? runtime.data.downloaded_bytes
+                                    : undefined
+                                }
+                              />
+                            )}
+                          {sandboxCheck.isFetching && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setCancelledTargets(targetKey);
+                                void queries.cancelQueries({
+                                  queryKey: ["setup-sandbox", scope, targets],
+                                  exact: true,
+                                });
+                              }}
+                            >
+                              Cancel preparation
+                            </Button>
+                          )}
+                          {Object.entries(readiness)
+                            .filter(([, value]) => !value.ready)
+                            .map(([path, value]) => (
+                              <div key={path}>
+                                <p>{value.message}</p>
+                                {value.instructions?.map((line) => (
+                                  <p key={line}>{line}</p>
+                                ))}
+                              </div>
+                            ))}
+                          {!preparing && !sandboxReady && currentPreview && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (cancelled) setCancelledTargets(undefined);
+                                else void sandboxCheck.refetch();
+                              }}
+                            >
+                              Retry sandbox
+                            </Button>
+                          )}
+                        </>
+                      )}
+                      <ErrorNotice error={preparationError} />
+                      {preview.error && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void preview.refetch()}
+                        >
+                          Check again
+                        </Button>
+                      )}
+                    </div>
                     <TextField
                       label="Project directory (optional)"
                       value={selection.project_path ?? ""}
@@ -480,12 +572,19 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           project_path: path || null,
                         })
                       }
-                      description="Existing directory on the server. Leave blank to start without a Project; the conversation gets its own working directory."
+                      description="An existing folder on the server. Leave blank for a new workspace."
+                    />
+                    <LiveOptIn
+                      model={selection.model}
+                      enabled={selection.enable_live ?? true}
+                      onChange={(enable_live) =>
+                        changeSelection({ enable_live })
+                      }
                     />
                     {!apiKey && (
                       <details className={styles.advanced}>
                         <summary>Shell review</summary>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={selection.shell_review ?? true}
@@ -497,10 +596,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           />{" "}
                           Review shell commands before execution
                         </label>
-                        <p>
-                          Review is not isolation and uses model requests when
-                          you work. Existing root settings stay unchanged.
-                        </p>
+                        <p>Uses model requests to review commands.</p>
                       </details>
                     )}
                     {apiKey && (
@@ -514,65 +610,20 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       <strong>{selection.model?.route}</strong>
                       <span>
                         {sandbox ? "Sandbox" : "Full Control"} ·{" "}
-                        {selection.project_path || "Without a Project"}
+                        {selection.project_path || "Without a project"}
                       </span>
-                      <p>
-                        Account connected does not mean model-request verified.
-                        Your first message is the first model request.
-                      </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      loading={busy && !phase.includes("Sandbox")}
-                      onClick={() => void review()}
-                    >
-                      Review configuration
-                    </Button>
                     {currentPreview && (
                       <>
-                        {sandbox && (
-                          <>
-                            <Button
-                              variant="outline"
-                              loading={busy}
-                              onClick={() => void checkSandbox()}
-                            >
-                              Check Sandbox readiness
-                            </Button>
-                            {Object.entries(readiness).map(([path, value]) => (
-                              <div key={path} role="status">
-                                <strong>
-                                  {value.ready
-                                    ? "Environment ready"
-                                    : "Sandbox needs attention"}
-                                </strong>
-                                <p>{path}</p>
-                                <p>{value.message}</p>
-                                {value.instructions?.map((line) => (
-                                  <p key={line}>{line}</p>
-                                ))}
-                              </div>
-                            ))}
-                          </>
-                        )}
                         <p>
-                          File memory and automatic organization are enabled by
-                          default. Organization automatically uses the global
-                          default Agent's model; no separate model selection is
-                          needed. WebUI may make additional background requests
-                          when memory files change. This can consume quota or
-                          incur costs. Existing choices are preserved; change
-                          these settings under General settings → Memory.
+                          Automatic memory updates use model quota. Manage them
+                          in Settings → Memory.
                         </p>
                         <details className={styles.advanced}>
                           <summary>
                             Generated files (
                             {Object.keys(currentPreview.files).length})
                           </summary>
-                          <p>
-                            These are ordinary editable configuration files.
-                            Existing resources are preserved.
-                          </p>
                           {Object.entries(currentPreview.files).map(
                             ([path, content]) => (
                               <details key={path}>
@@ -591,9 +642,19 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
           </div>
         </DialogPanel>
         <DialogFooter variant="bare" className={styles.footer}>
-          <Button variant="ghost" disabled={busy} onClick={close}>
+          {workspaceActive && (
+            <p className={styles.preparationStatus} role="status">
+              {phase || preparationStatus}
+            </p>
+          )}
+          <button
+            type="button"
+            className={styles.later}
+            disabled={busy}
+            onClick={close}
+          >
             Set up later
-          </Button>
+          </button>
           <div>
             <span className={styles.stepCount}>
               Step {draft.step + 1} of {steps.length}
@@ -611,10 +672,16 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               (draft.step === workspaceStep ? (
                 <Button
                   loading={busy}
-                  disabled={!currentPreview || (sandbox && !sandboxReady)}
+                  disabled={
+                    busy ||
+                    preparing ||
+                    !!preparationError ||
+                    !currentPreview ||
+                    (sandbox && !sandboxReady)
+                  }
                   onClick={() => void save()}
                 >
-                  Save and start chatting <ArrowRight />
+                  Save and start <ArrowRight />
                 </Button>
               ) : (
                 <Button

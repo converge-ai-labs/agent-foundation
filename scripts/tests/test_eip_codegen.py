@@ -13,6 +13,7 @@ from scripts.eip_codegen.__main__ import (
     GENERATED_HEADER,
     MANIFEST_PATH,
     PYTHON_PATH,
+    _write_manifest,
     verify_generated,
 )
 
@@ -47,8 +48,23 @@ def snapshot(root: Path) -> dict[Path, bytes]:
     return {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
 
+def test_generated_manifest_uses_portable_paths(tmp_path: Path) -> None:
+    relative = PYTHON_PATH / "models.py"
+    _write_manifest(tmp_path, [tmp_path / relative], "descriptor")
+    manifest = json.loads((tmp_path / MANIFEST_PATH).read_text(encoding="utf-8"))
+    assert manifest["files"] == sorted([relative.as_posix(), MANIFEST_PATH.as_posix()])
+    assert all("\\" not in path for path in manifest["files"])
+
+
 def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]
+    for model, field, maximum in [
+        ("NetworkMetrics", "interfaces", 64),
+        ("DiskMetrics", "devices", 64),
+        ("FilesystemInventory", "filesystems", 16),
+        ("ConnectionMetrics", "tcp_states", 16),
+    ]:
+        assert schema[model]["properties"][field]["maxProperties"] == maximum
     assert schema["EIPPath"]["properties"]["path"]["format"] == "eip-absolute-path"
     assert schema["EncodedBytes"]["properties"]["data"]["format"] == "eip-base64-unpadded"
     generation = schema["SessionDescriptor"]["properties"]["generation"]
@@ -88,13 +104,14 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness_result["properties"]["device_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 50
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 21
-    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 21
-    assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 8
+    assert methods["method_count"] == 54
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 23
+    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 22
+    assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 9
     assert {method["jsonrpc_method"] for method in methods["methods"] if method["device_scoped"]} == {
         "initialize",
         "device.describe",
+        "device.metrics",
         "directory.list",
         "session.open",
     }
@@ -115,6 +132,7 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
         "file.commit_writer",
         "file.abort_writer",
         "computer.observe",
+        "computer.zoom",
         "computer.close_observation",
     }
 

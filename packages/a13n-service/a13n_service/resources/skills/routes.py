@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
 from a13n_service.resources.runtime import Runtime
@@ -41,7 +42,7 @@ async def _github(request: Request, actor: Actor, runtime: Runtime, source: Uplo
     )
 
 
-@router.post("", response_model=Skill, status_code=201, openapi_extra={"x-a13n-mcp": True})
+@router.post("", response_model=Skill, status_code=201, openapi_extra=platform_operation("skills", "write"))
 async def create_skill(
     request: Request,
     response: Response,
@@ -55,8 +56,8 @@ async def create_skill(
     return tagged(response, result)
 
 
-@router.post("/validate", response_model=SkillManifest, openapi_extra={"x-a13n-mcp": True})
-async def validate_package(
+@router.post("/validate", response_model=SkillManifest, openapi_extra=platform_operation("skills", "read"))
+async def validate_skill(
     request: Request, workspace_id: WorkspaceId, body: SkillValidate, actor: Actor, runtime: CurrentRuntime
 ) -> SkillManifest:
     """The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
@@ -65,7 +66,7 @@ async def validate_package(
     return await service.validate_package(runtime.storage, runtime.objects, github, actor, workspace_id, body.source)
 
 
-@router.get("", response_model=SkillPage, openapi_extra={"x-a13n-mcp": True})
+@router.get("", response_model=SkillPage, openapi_extra=platform_operation("skills", "read"))
 async def list_skills(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -92,14 +93,14 @@ async def list_skills(
     )
 
 
-@router.get("/{skill_id}", response_model=Skill, openapi_extra={"x-a13n-mcp": True})
+@router.get("/{skill_id}", response_model=Skill, openapi_extra=platform_operation("skills", "read"))
 async def get_skill(
     response: Response, workspace_id: WorkspaceId, skill_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Skill:
     return tagged(response, await service.get_skill(runtime.storage, actor, workspace_id, skill_id))
 
 
-@router.patch("/{skill_id}", response_model=Skill, openapi_extra={"x-a13n-mcp": True})
+@router.patch("/{skill_id}", response_model=Skill, openapi_extra=platform_operation("skills", "write"))
 async def update_skill(
     response: Response,
     workspace_id: WorkspaceId,
@@ -114,7 +115,7 @@ async def update_skill(
     return tagged(response, result)
 
 
-@router.post("/{skill_id}/archive", response_model=Skill, openapi_extra={"x-a13n-mcp": True})
+@router.post("/{skill_id}/archive", response_model=Skill, openapi_extra=platform_operation("skills", "write"))
 async def archive_skill(
     response: Response,
     workspace_id: WorkspaceId,
@@ -130,7 +131,7 @@ async def archive_skill(
     return tagged(response, result)
 
 
-@router.post("/{skill_id}/unarchive", response_model=Skill, openapi_extra={"x-a13n-mcp": True})
+@router.post("/{skill_id}/unarchive", response_model=Skill, openapi_extra=platform_operation("skills", "write"))
 async def unarchive_skill(
     response: Response,
     workspace_id: WorkspaceId,
@@ -145,8 +146,13 @@ async def unarchive_skill(
     return tagged(response, result)
 
 
-@router.post("/{skill_id}/revisions", response_model=SkillRevision, status_code=201, openapi_extra={"x-a13n-mcp": True})
-async def create_revision(
+@router.post(
+    "/{skill_id}/revisions",
+    response_model=SkillRevision,
+    status_code=201,
+    openapi_extra=platform_operation("skills", "write"),
+)
+async def create_skill_revision(
     request: Request,
     workspace_id: WorkspaceId,
     skill_id: str,
@@ -162,8 +168,10 @@ async def create_revision(
     )
 
 
-@router.get("/{skill_id}/revisions", response_model=SkillRevisionPage, openapi_extra={"x-a13n-mcp": True})
-async def list_revisions(
+@router.get(
+    "/{skill_id}/revisions", response_model=SkillRevisionPage, openapi_extra=platform_operation("skills", "read")
+)
+async def list_skill_revisions(
     workspace_id: WorkspaceId,
     skill_id: str,
     actor: Actor,
@@ -174,17 +182,23 @@ async def list_revisions(
     return await service.list_revisions(runtime.storage, actor, workspace_id, skill_id, limit=limit, cursor=cursor)
 
 
-@router.get("/{skill_id}/revisions/{revision_id}", response_model=SkillRevision, openapi_extra={"x-a13n-mcp": True})
-async def get_revision(
+@router.get(
+    "/{skill_id}/revisions/{revision_id}",
+    response_model=SkillRevision,
+    openapi_extra=platform_operation("skills", "read"),
+)
+async def get_skill_revision(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> SkillRevision:
     return await service.get_revision(runtime.storage, actor, workspace_id, skill_id, revision_id)
 
 
 @router.post(
-    "/{skill_id}/revisions/{revision_id}/set-default", response_model=Skill, openapi_extra={"x-a13n-mcp": True}
+    "/{skill_id}/revisions/{revision_id}/set-default",
+    response_model=Skill,
+    openapi_extra=platform_operation("skills", "write"),
 )
-async def set_default_revision(
+async def set_default_skill_revision(
     response: Response,
     workspace_id: WorkspaceId,
     skill_id: str,
@@ -209,7 +223,7 @@ async def set_default_revision(
         }
     },
 )
-async def read_archive(
+async def read_skill_archive(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """The revision's package as a zip archive."""
@@ -233,7 +247,7 @@ async def read_archive(
         }
     },
 )
-async def read_file(
+async def read_skill_file(
     workspace_id: WorkspaceId, skill_id: str, revision_id: str, path: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """One package file, by the path the revision's manifest lists."""

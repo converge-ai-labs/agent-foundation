@@ -127,7 +127,6 @@ def test_shell_diff_output_retains_file_headers_and_hunk_coordinates() -> None:
     assert json.loads(expanded)["stdout"]["text"] == diff
 
 
-@pytest.mark.parametrize("detailed", [False, True])
 @pytest.mark.parametrize("theme", ["auto", "dark", "light"])
 @pytest.mark.parametrize(
     "path",
@@ -138,13 +137,14 @@ def test_shell_diff_output_retains_file_headers_and_hunk_coordinates() -> None:
         "src/中文目录/文件 · [bold].py",
     ],
 )
-def test_edit_heading_reflows_between_border_and_subdued_path_without_losing_content(path, theme, detailed) -> None:
+def test_edit_heading_reflows_between_border_and_subdued_path_without_losing_content(path, theme) -> None:
     from a13n_harness_ui.interactive.theme import activity_colors, resolve_theme
     from prompt_toolkit.utils import get_cwidth
 
     renderer = StreamRenderer(Status())
     renderer.transcript.theme = resolve_theme(theme)
-    renderer.transcript.detailed = detailed
+    # These short diff lines render identically in folded and detailed modes.
+    renderer.transcript.detailed = False
     renderer.ingest(
         "CUSTOM",
         {

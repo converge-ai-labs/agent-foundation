@@ -1,21 +1,8 @@
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
-import {
-  ArrowSquareOut,
-  Check,
-  Copy,
-  FileText,
-  PencilSimple,
-  TerminalWindow,
-  MagnifyingGlass,
-  Code,
-  Wrench,
-  Globe,
-  Chats,
-  ListChecks,
-  UsersThree,
-} from "@phosphor-icons/react";
+import { useGuestAccess } from "../transport/context";
+import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
   describeTool,
@@ -33,6 +20,9 @@ import styles from "./tool-call.module.css";
 import { SyntaxCode, codeLanguage } from "./syntax-code";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { RetainedImagePreview } from "./image-preview";
+import { copyText } from "../platform";
+import { DebugData, DebugId } from "../shell/debug";
+import { ToolWorkingState } from "./tool-working-state";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -60,7 +50,7 @@ function CodeContent({
           variant="ghost"
           aria-label={`Copy ${title.toLowerCase()}`}
           onClick={() => {
-            void navigator.clipboard.writeText(content).then(
+            void copyText(content).then(
               () => {
                 setCopied(true);
                 setError(false);
@@ -162,10 +152,7 @@ const EditDiff = memo(function EditDiff({
           : "Requested fragment diff only; not proof of an applied change."}
       </small>
       {!lines ? (
-        <p>
-          Diff preview unavailable for this large change. Inspect the recorded
-          content below.
-        </p>
+        <p>Too large for a diff preview. Review the saved content below.</p>
       ) : !lines.length ? (
         <p>No content change.</p>
       ) : (
@@ -221,13 +208,12 @@ function ToolImages({ tool }: { tool: ToolView }) {
             threadId={image.thread_id}
             attachment={image.attachment}
           />
-          <span>Captured desktop · Open image</span>
+          <span>Open screenshot</span>
         </button>
       ))}
       {tool.imageUnavailable && (
         <p role="status">
-          The screenshot reached the model, but its display copy could not be
-          retained.
+          The model received the screenshot, but no preview was saved.
         </p>
       )}
       {preview && (
@@ -241,29 +227,111 @@ function ToolImages({ tool }: { tool: ToolView }) {
   );
 }
 
-function ToolDetails({ tool }: { tool: ToolView }) {
+/** Recorded arguments and result, formatted or exactly as received. */
+function ToolData({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [raw, setRaw] = useState(false);
+  return (
+    <>
+      <div className={styles.format}>
+        <Button
+          size="sm"
+          variant={raw ? "ghost" : "secondary"}
+          aria-pressed={!raw}
+          onClick={() => setRaw(false)}
+        >
+          Formatted
+        </Button>
+        <Button
+          size="sm"
+          variant={raw ? "secondary" : "ghost"}
+          aria-pressed={raw}
+          onClick={() => setRaw(true)}
+        >
+          Raw
+        </Button>
+      </div>
+      {tool.inputOmitted ? (
+        <p>Input omitted by the server.</p>
+      ) : (
+        tool.input !== undefined && (
+          <CodeContent
+            title="Input"
+            value={raw ? tool.input : parsed(tool.input)}
+          />
+        )
+      )}
+      {tool.resultOmitted ? (
+        <p>Result omitted by the server.</p>
+      ) : (
+        tool.result !== undefined && (
+          <CodeContent
+            title="Result"
+            value={raw ? tool.result : parsed(tool.result)}
+          />
+        )
+      )}
+      {tool.result === undefined &&
+        !tool.resultParts &&
+        !tool.resultOmitted && (
+          <small>
+            {info.phase}. This does not establish whether side effects occurred.
+          </small>
+        )}
+    </>
+  );
+}
+
+function ToolDetails({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const textResult = parsed(tool.result);
   const replacements =
     tool.name === "multi_edit" && Array.isArray(info.args.edits)
       ? info.args.edits.filter(record)
       : [info.args];
   return (
     <div className={styles.details} data-tool-details>
-      {info.errorText && (
+      <DebugId label="Tool call" value={tool.toolCallId ?? tool.id} />
+      <DebugData
+        label="Tool call data"
+        value={{
+          id: tool.id,
+          tool_call_id: tool.toolCallId,
+          subagent_run_id: tool.subagentRunId,
+          name: tool.name,
+          input: tool.input,
+          result: tool.result,
+          outcome: tool.outcome,
+          failure: tool.failure,
+        }}
+      />
+      {(info.errorText || info.failed) && (
         <p role="status" className={styles.error}>
-          {info.errorText}
+          {info.errorText || info.phase}
+        </p>
+      )}
+      {info.executionReceipt && (
+        <p role="status">
+          Handed off with status {info.executionReceipt.status}. Check activity
+          for the result.
         </p>
       )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
+      {tool.resultParts && <AguiContent parts={tool.resultParts} />}
+      {!tool.resultParts &&
+        !info.shell &&
+        typeof textResult === "string" &&
+        textResult &&
+        !info.errorText && <CodeContent title="Output" value={textResult} />}
       <CollaborationDetails tool={tool} />
+      <ToolWorkingState tool={tool} />
       {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (
         <ToolImages tool={tool} />
       )}
       {tool.editOmitted && (
         <p role="status">
-          This older record did not retain the applied edit content. Current
-          Host content is not a historical diff.
+          This older edit has no saved diff. The current file may have changed
+          since then.
         </p>
       )}
       {tool.edit && tool.name !== "write" && <EditDiff edit={tool.edit} />}
@@ -299,40 +367,48 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             )}
           </section>
         )}
-      {info.kind === "shell" && (
-        <>
-          {typeof info.args.command === "string" && (
-            <CodeContent
-              title="Command"
-              value={info.args.command}
-              language="bash"
-            />
+      {info.shell && (
+        <section className={styles.shellResult} aria-label="Command result">
+          {info.command && (
+            <CodeContent title="Command" value={info.command} language="bash" />
           )}
-          {record(info.result.status) && (
-            <small>
-              Process: {sourceText(info.result.status.phase)}
-              {typeof info.result.status.exit_code === "number"
-                ? ` · Exit ${info.result.status.exit_code}`
-                : ""}
+          {!tool.resultParts &&
+            typeof textResult === "string" &&
+            textResult &&
+            !info.errorText && (
+              <CodeContent title="Output" value={textResult} />
+            )}
+          {["stdout", "stderr"].map((name) => {
+            const stream = info.result[name];
+            const value =
+              typeof stream === "string"
+                ? stream
+                : record(stream)
+                  ? stream.text
+                  : undefined;
+            return typeof value === "string" && value ? (
+              <CodeContent key={name} title={name} value={value} />
+            ) : null;
+          })}
+          {(record(info.result.status) || info.exitCode !== undefined) && (
+            <small className={styles.processStatus}>
+              {[
+                record(info.result.status) &&
+                typeof info.result.status.phase === "string"
+                  ? info.result.status.phase
+                  : "",
+                info.exitCode !== undefined ? `Exit ${info.exitCode}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </small>
-          )}
-          {["stdout", "stderr"].map((name) =>
-            record(info.result[name]) &&
-            typeof info.result[name].text === "string" &&
-            info.result[name].text ? (
-              <CodeContent
-                key={name}
-                title={name}
-                value={info.result[name].text}
-              />
-            ) : null,
           )}
           {info.outputIncomplete && (
             <p role="status">
               Partial process output. Earlier or omitted bytes are not shown.
             </p>
           )}
-        </>
+        </section>
       )}
       {tool.name === "view" && typeof info.result.content === "string" && (
         <CodeContent
@@ -355,74 +431,51 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       {tool.name === "run_code" && typeof info.args.code === "string" && (
         <CodeContent title="Code" value={info.args.code} language="python" />
       )}
-      <DisclosureSection title="Arguments & result">
-        <div className={styles.format}>
-          <Button
-            size="sm"
-            variant={raw ? "ghost" : "secondary"}
-            aria-pressed={!raw}
-            onClick={() => setRaw(false)}
-          >
-            Formatted
-          </Button>
-          <Button
-            size="sm"
-            variant={raw ? "secondary" : "ghost"}
-            aria-pressed={raw}
-            onClick={() => setRaw(true)}
-          >
-            Raw
-          </Button>
-        </div>
-        {tool.inputOmitted ? (
-          <p>Arguments omitted by the server.</p>
-        ) : (
-          tool.input !== undefined && (
-            <CodeContent
-              title="Arguments"
-              value={raw ? tool.input : parsed(tool.input)}
-            />
-          )
-        )}
-        {tool.resultParts && <AguiContent parts={tool.resultParts} />}
-        {tool.resultOmitted ? (
-          <p>Result omitted by the server.</p>
-        ) : (
-          tool.result !== undefined && (
-            <CodeContent
-              title="Result"
-              value={raw ? tool.result : parsed(tool.result)}
-            />
-          )
-        )}
-        {tool.result === undefined &&
-          !tool.resultParts &&
-          !tool.resultOmitted && (
-            <small>
-              {info.phase}. This does not establish whether side effects
-              occurred.
-            </small>
-          )}
+      <DisclosureSection
+        className={styles.recordedDisclosure}
+        title="Input & result"
+      >
+        <ToolData tool={tool} />
       </DisclosureSection>
     </div>
   );
 }
-const toolIcons = {
-  file: FileText,
-  edit: PencilSimple,
-  shell: TerminalWindow,
-  search: MagnifyingGlass,
-  web: Globe,
-  thread: Chats,
-  code: Code,
-  tool: Wrench,
-};
+
+/** One grouped call: a single row whose semantic details follow directly. */
+function ToolOperation({ tool }: { tool: ToolView }) {
+  const detail = describeTool(tool);
+  return (
+    <section
+      className={styles.operation}
+      data-operation-id={tool.id}
+      data-state={toolState(detail.phase)}
+    >
+      <header>
+        <span className={styles.operationName}>{detail.label}</span>
+        <span className={styles.operationSummary} title={detail.summary}>
+          {detail.summary}
+        </span>
+        {detail.phase !== "Result received" && (
+          <small className={styles.phase}>{detail.phase}</small>
+        )}
+        <ToolActions tool={tool} />
+      </header>
+      <ToolDetails tool={tool} />
+    </section>
+  );
+}
+function toolState(phase: string) {
+  if (phase === "Failed") return "failed";
+  if (phase === "Result received") return "done";
+  return "running";
+}
 
 function ToolActions({ tool }: { tool: ToolView }) {
+  const guest = useGuestAccess();
   const info = describeTool(tool);
   const openFile = useContext(OpenHostFile);
   const path = hostLookupPath(info.path);
-  if (!info.threadId && !(openFile && path)) return null;
+  if (guest || (!info.threadId && !(openFile && path))) return null;
   return (
     <div className={styles.actions}>
       {info.threadId && (
@@ -432,7 +485,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
           title={info.threadId}
         >
           <ArrowSquareOut aria-hidden="true" />
-          {info.threadTitle || "Open conversation"}
+          {info.threadTitle || "Open chat"}
         </Link>
       )}
       {openFile && path && (
@@ -440,7 +493,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
           className={styles.fileLink}
           size="sm"
           variant="ghost"
-          title="Look up this exact path on the WebUI server/container, not the Agent Environment. Opens current Host content or your existing private buffer."
+          title="Opens the server's copy of this file, or your unsaved draft. This may differ from the agent's copy."
           onClick={() => openFile(path)}
         >
           <ArrowSquareOut />
@@ -452,6 +505,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
 }
 
 function CollaborationDetails({ tool }: { tool: ToolView }) {
+  const guest = useGuestAccess();
   const info = describeTool(tool);
   const { args, result } = info;
   const resources = ["threads", "projects", "agents", "models"].find(
@@ -493,9 +547,8 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
             "steer_thread",
           ].includes(tool.name) && (
             <small>
-              Acceptance is not completion or saved delivery. Open the
-              conversation to inspect progress; do not blindly retry an
-              uncertain operation.
+              Check progress in the chat. Accepted doesn't mean finished or
+              saved. Check the outcome before retrying.
             </small>
           )}
         </>
@@ -525,12 +578,12 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
                       : id;
                 return (
                   <li key={id || index}>
-                    {resources === "threads" && id ? (
+                    {!guest && resources === "threads" && id ? (
                       <Link to={`/threads/${encodeURIComponent(id)}`}>
                         {name || id}
                         <ArrowSquareOut aria-hidden="true" />
                       </Link>
-                    ) : resources === "projects" && id ? (
+                    ) : !guest && resources === "projects" && id ? (
                       <Link to={`/projects/${encodeURIComponent(id)}`}>
                         {name || id}
                       </Link>
@@ -570,27 +623,27 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
-  const Icon = toolIcons[info.kind];
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
-    <section className={styles.tool} data-tool-id={tool.id}>
+    <section
+      className={styles.tool}
+      data-tool-id={tool.id}
+      data-state={toolState(info.phase)}
+    >
       <DisclosureSection
         open={expanded}
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <Icon aria-hidden="true" />
-            <strong>{info.label}</strong>
+            <strong>{info.label}</strong>{" "}
             {info.summary && <span title={info.summary}>{info.summary}</span>}
           </span>
         }
         summary={
-          <span className={styles.phase}>
-            {info.phase === "Result received" || info.phase === "Failed"
-              ? ""
-              : info.phase}
-          </span>
+          info.phase !== "Result received" ? (
+            <span className={styles.phase}>{info.phase}</span>
+          ) : undefined
         }
       >
         {expanded && <ToolDetails tool={tool} />}
@@ -612,7 +665,7 @@ export function QuestionInteraction({ tool }: { tool: ToolView }) {
       : []);
   return (
     <section
-      className={styles.questionReceipt}
+      className={`${styles.tool} ${styles.questionReceipt}`}
       data-tool-id={tool.id}
       aria-label={receipt ? "Answers" : "Question"}
     >
@@ -638,9 +691,7 @@ export function QuestionInteraction({ tool }: { tool: ToolView }) {
             </div>
           ))}
           {(tool.failure || typeof tool.result === "string") && (
-            <p className={styles.answerDescription}>
-              {tool.failure || (tool.result as string)}
-            </p>
+            <p className={styles.answerDescription}>No answer was submitted.</p>
           )}
         </div>
       )}
@@ -724,27 +775,28 @@ export const ToolActivity = memo(function ToolActivity({
       </>
     );
   const info = activitySummary(tools);
-  const Icon = {
-    explore: MagnifyingGlass,
-    shell: TerminalWindow,
-    web: Globe,
-    edit: PencilSimple,
-    work: ListChecks,
-    subagents: UsersThree,
-  }[kind];
+  const single = tools.length === 1 ? describeTool(tools[0]) : undefined;
+  const target = single?.summary;
   return (
     <section
       className={`${styles.tool} ${styles.group}`}
       data-activity={kind}
       data-tool-id={tools[0].id}
+      data-state={
+        tools.some((tool) => toolState(describeTool(tool).phase) === "running")
+          ? "running"
+          : undefined
+      }
     >
       <DisclosureSection
         open={expanded}
         onOpenChange={setExpanded}
         title={
           <span className={styles.title}>
-            <Icon aria-hidden="true" />
-            <strong>{info.title}</strong>
+            <strong>
+              {kind === "work" && single ? single.label : info.title}
+            </strong>{" "}
+            {target && <span title={target}>{target}</span>}
           </span>
         }
         summary={
@@ -755,28 +807,14 @@ export const ToolActivity = memo(function ToolActivity({
       >
         {expanded && (
           <div className={styles.operations}>
-            {tools.map((tool) => {
-              const detail = describeTool(tool);
-              return (
-                <section
-                  key={tool.id}
-                  className={styles.operation}
-                  data-operation-id={tool.id}
-                >
-                  <header>
-                    <span className={styles.operationName}>{detail.label}</span>
-                    {detail.summary && (
-                      <span title={detail.summary}>{detail.summary}</span>
-                    )}
-                    {detail.phase !== "Result received" && (
-                      <small className={styles.phase}>{detail.phase}</small>
-                    )}
-                  </header>
-                  <ToolActions tool={tool} />
-                  <ToolDetails tool={tool} />
-                </section>
-              );
-            })}
+            {tools.length === 1 ? (
+              <>
+                <ToolDetails tool={tools[0]} />
+                <ToolActions tool={tools[0]} />
+              </>
+            ) : (
+              tools.map((tool) => <ToolOperation key={tool.id} tool={tool} />)
+            )}
           </div>
         )}
       </DisclosureSection>

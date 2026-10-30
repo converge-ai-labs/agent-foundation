@@ -8,6 +8,7 @@ new thread or fork takes its initial mounts through the same checks before its f
 
 from collections.abc import Mapping, Sequence
 
+from a13n_harness.environment.models import EnvironmentPermissionSet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +16,16 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.runs.desktop_assistance.admission import admit_mounts
 from a13n_service.runs.environments.lifecycle import require_usable_state, reserve
-from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate, MountPage, MountView
+from a13n_service.runs.environments.schemas import (
+    DEFAULT_MOUNT_PERMISSIONS,
+    MAX_MOUNTS,
+    MountCreate,
+    MountPage,
+    MountUpdate,
+    MountView,
+)
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import ThreadRow
@@ -38,6 +47,12 @@ async def thread_has_primary(session: AsyncSession, thread: ThreadRow) -> bool:
     return await session.get(ThreadEnvironmentRow, (thread.id, PRIMARY)) is not None
 
 
+async def primary_mount(session: AsyncSession, thread_id: str) -> EnvironmentMount | None:
+    """The thread's desired mount of its primary sandbox."""
+    row = await session.get(ThreadEnvironmentRow, (thread_id, PRIMARY))
+    return None if row is None else EnvironmentMount.model_validate(row, from_attributes=True)
+
+
 async def desired_mounts(session: AsyncSession, thread_id: str) -> list[ThreadEnvironmentRow]:
     return list(
         (
@@ -50,7 +65,13 @@ async def desired_mounts(session: AsyncSession, thread_id: str) -> list[ThreadEn
     )
 
 
-def _mount(thread: ThreadRow, environment_id: str, name: str, working_directory: str | None) -> ThreadEnvironmentRow:
+def _mount(
+    thread: ThreadRow,
+    environment_id: str,
+    name: str,
+    working_directory: str | None,
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS,
+) -> ThreadEnvironmentRow:
     return ThreadEnvironmentRow(
         thread_id=thread.id,
         environment_id=environment_id,
@@ -58,6 +79,7 @@ def _mount(thread: ThreadRow, environment_id: str, name: str, working_directory:
         workspace_id=thread.workspace_id,
         name=name,
         working_directory=working_directory,
+        permission_ceiling=permission_ceiling.model_dump(mode="json"),
     )
 
 
@@ -70,9 +92,10 @@ async def shared_mounts(session: AsyncSession, origin: ThreadRow) -> list[MountC
 
 
 async def adopt_mounts(session: AsyncSession, thread: ThreadRow, mounts: Sequence[EnvironmentMount]) -> None:
-    """A child thread mounts what its parent run froze; the run that starts it locks and checks them."""
+    """A child thread mounts its parent's: what the parent run froze when it was spawned, or later the parent thread's
+    primary. The run that starts it locks and checks them."""
     for mount in mounts:
-        session.add(_mount(thread, mount.environment_id, mount.name, mount.working_directory))
+        session.add(_mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling))
     await session.flush()
 
 
@@ -135,7 +158,10 @@ async def mount_environments(
     await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
-    rows = [_mount(thread, mount.environment_id, mount.name, mount.working_directory) for mount in mounts]
+    rows = [
+        _mount(thread, mount.environment_id, mount.name, mount.working_directory, mount.permission_ceiling)
+        for mount in mounts
+    ]
     session.add_all(rows)
     await session.flush()
     return rows
@@ -144,28 +170,33 @@ async def mount_environments(
 async def reserve_primary(
     session: AsyncSession, principal: Principal, thread: ThreadRow, *, template_id: str, limit: int
 ) -> None:
-    """Mount a new `creating` instance of the template as the thread's primary sandbox, unless the thread has one.
+    """Mount a new `creating` instance of the template as the thread's primary sandbox.
 
-    The caller holds the thread lock. The instance is created later, from the template current at that time.
+    The caller holds the thread lock and has found no primary mount. The instance is created later, from the
+    template current at that time.
     """
-    if await thread_has_primary(session, thread):
-        return
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     environment = await reserve(session, principal, scope, template_id, limit=limit)
     session.add(_mount(thread, environment.id, PRIMARY, None))
     await session.flush()
 
 
-async def freeze_mounts(session: AsyncSession, thread: ThreadRow, *, principal_id: str) -> list[dict]:
+async def freeze_mounts(
+    session: AsyncSession, thread: ThreadRow, *, principal_id: str, resume_run_id: str | None = None
+) -> list[dict]:
     """The mount set a new run uses: the thread's desired mounts, each usable by the run's principal. The caller
     holds the thread lock; environments lock in ID order."""
     mounts = await desired_mounts(session, thread.id)
-    await lock_environments(
+    environments = await lock_environments(
         session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal_id
     )
+    await admit_mounts(session, environments, resume_run_id=resume_run_id)
     return [
         EnvironmentMount(
-            name=mount.name, environment_id=mount.environment_id, working_directory=mount.working_directory
+            name=mount.name,
+            environment_id=mount.environment_id,
+            working_directory=mount.working_directory,
+            permission_ceiling=EnvironmentPermissionSet.model_validate(mount.permission_ceiling),
         ).model_dump(mode="json")
         for mount in mounts
     ]
@@ -181,7 +212,14 @@ async def list_mounts(storage: Storage, actor: Principal, workspace_id: str, thr
 
 
 def _audit(
-    session: AsyncSession, actor: Principal, thread: ThreadRow, verb: str, name: str, environment_id: str
+    session: AsyncSession,
+    actor: Principal,
+    thread: ThreadRow,
+    verb: str,
+    name: str,
+    environment_id: str,
+    *,
+    permission_ceiling: EnvironmentPermissionSet | None = None,
 ) -> None:
     record(
         session,
@@ -190,7 +228,15 @@ def _audit(
         action=f"thread_environment.{verb}",
         target_kind="thread",
         target_id=thread.id,
-        details={"name": name, "environment_id": environment_id},
+        details={
+            "name": name,
+            "environment_id": environment_id,
+            **(
+                {"permission_ceiling": permission_ceiling.model_dump(mode="json")}
+                if permission_ceiling is not None
+                else {}
+            ),
+        },
     )
 
 
@@ -227,3 +273,38 @@ async def remove_mount(
         _audit(session, actor, thread, "delete", name, mount.environment_id)
         await refresh_version(session, thread)
         return thread.version
+
+
+async def update_mount(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    thread_id: str,
+    name: str,
+    body: MountUpdate,
+    *,
+    if_match: str | None,
+) -> tuple[MountView, int]:
+    """Change the exact action ceiling for later runs only."""
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
+        require_match(if_match, thread.id, thread.version)
+        require_open(thread)
+        mount = await session.get(ThreadEnvironmentRow, (thread.id, name))
+        if mount is None:
+            raise not_found("mount", name)
+        await lock_environments(session, scope.workspace_id, [mount.environment_id], principal_id=actor.id)
+        mount.permission_ceiling = body.permission_ceiling.model_dump(mode="json")
+        await session.flush()
+        _audit(
+            session,
+            actor,
+            thread,
+            "update",
+            mount.name,
+            mount.environment_id,
+            permission_ceiling=body.permission_ceiling,
+        )
+        await refresh_version(session, thread)
+        return MountView.model_validate(mount), thread.version

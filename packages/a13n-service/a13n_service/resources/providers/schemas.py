@@ -62,6 +62,20 @@ class ProviderPage(BaseModel):
     next_cursor: str | None
 
 
+class ProviderReference(BaseModel):
+    id: str
+    name: str
+    status: str
+
+
+class EnvironmentProviderReferences(BaseModel):
+    # Each list is bounded to ten entries; counts include disabled and historical rows.
+    template_count: int
+    templates: list[ProviderReference]
+    environment_count: int
+    environments: list[ProviderReference]
+
+
 class ProviderTest(BaseModel):
     provider_id: str
     provider_version: int

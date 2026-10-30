@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import { ResourceKeyChip } from "../identity";
+import { ExpandableDescription } from "./expandable-description";
 import styles from "./page.module.css";
 
 export interface DetailTab {
@@ -50,6 +51,7 @@ export function DetailPage({
   onTabChange,
   rail,
   className,
+  contentClassName,
   children,
 }: {
   back?: string;
@@ -60,6 +62,7 @@ export function DetailPage({
   onTabChange?: (value: string) => void;
   rail?: ReactNode;
   className?: string;
+  contentClassName?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -86,7 +89,7 @@ export function DetailPage({
           </TabsList>
         </Tabs>
       )}
-      <div className={styles.content}>
+      <div className={`${styles.content} ${contentClassName ?? ""}`}>
         {rail ? <DetailLayout rail={rail}>{children}</DetailLayout> : children}
       </div>
     </div>
@@ -99,10 +102,13 @@ export function DetailPage({
  */
 export function DetailLayout({
   rail,
+  foldedRail = "above",
   className,
   children,
 }: {
   rail?: ReactNode;
+  /** Where a narrow layout puts the rail: above the content, or nowhere. */
+  foldedRail?: "above" | "hidden";
   className?: string;
   children: ReactNode;
 }) {
@@ -110,6 +116,7 @@ export function DetailLayout({
     <div
       className={`${styles.layout} ${className ?? ""}`}
       data-rail={rail ? "true" : "false"}
+      data-folded-rail={foldedRail}
     >
       <div className={styles.main}>{children}</div>
       {rail && <aside className={styles.rail}>{rail}</aside>}
@@ -125,6 +132,7 @@ export function DetailHeader({
   edit,
   resourceKey,
   description,
+  expandableDescription = false,
   actions,
 }: {
   avatar?: ReactNode;
@@ -133,11 +141,15 @@ export function DetailHeader({
   edit?: ReactNode;
   resourceKey?: string;
   description?: string | null;
+  expandableDescription?: boolean;
   actions?: ReactNode;
 }) {
   return (
     <header className={styles.header}>
-      <div className={styles.identity}>
+      <div
+        className={styles.identity}
+        data-expandable-description={expandableDescription || undefined}
+      >
         {avatar}
         <div className={styles.titleBlock}>
           <div className={styles.detailTitleRow}>
@@ -148,14 +160,17 @@ export function DetailHeader({
           {(resourceKey || description) && (
             <div className={styles.subtitle}>
               {resourceKey && <ResourceKeyChip value={resourceKey} />}
-              {resourceKey && description && (
+              {resourceKey && description && !expandableDescription && (
                 <span className={styles.dot}>·</span>
               )}
-              {description && (
-                <span className={styles.subtitleText} title={description}>
-                  {description}
-                </span>
-              )}
+              {description &&
+                (expandableDescription ? (
+                  <ExpandableDescription key={description} text={description} />
+                ) : (
+                  <span className={styles.subtitleText} title={description}>
+                    {description}
+                  </span>
+                ))}
             </div>
           )}
         </div>

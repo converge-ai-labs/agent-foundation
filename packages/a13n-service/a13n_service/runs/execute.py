@@ -14,7 +14,8 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Literal
@@ -29,6 +30,7 @@ from a13n_harness import (
     HarnessRunStream,
     HarnessState,
     HarnessStreamEvent,
+    RequestContext,
     RunBindings,
     RunConfiguration,
     RunError,
@@ -36,22 +38,27 @@ from a13n_harness import (
     RunPreparationContext,
 )
 from a13n_harness.capabilities import MemoryCursors
-from a13n_harness.capabilities.steering import steering_input_ids
+from a13n_harness.capabilities.steering import steering_input_ids, without_input
+from a13n_harness.compaction import CompactionResult
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import UserContent
+from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.usage import UsageLimits
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
-from a13n_service.runs import agent, checkpoints, claim, deferred, inbox, inputs
+from a13n_service.resources.agents.toolsets import enabled_tools
+from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.agent import ResolvedAgent
@@ -64,21 +71,29 @@ from a13n_service.runs.attempts import (
     authorize_execution,
     lock_thread_lease,
 )
-from a13n_service.runs.boundaries import Boundaries, Staged
+from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
+from a13n_service.runs.browsers.delivery import StaleNotice, require_notice
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
+from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
+from a13n_service.runs.desktop_assistance import execution as desktop_execution
+from a13n_service.runs.desktop_assistance.execution import ExecutionFence
+from a13n_service.runs.desktop_assistance.tools import DesktopAssistanceCapability
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
+from a13n_service.runs.environments.lifecycle import public_message
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
-from a13n_service.runs.host import HostPlan, open_host, resolve_host
+from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
+from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
     Failure,
+    MessagePayload,
     Outcome,
     Pending,
     Resume,
@@ -86,9 +101,14 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
+from a13n_service.runs.search import Index, seed
+from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.tool_executions.owner import resources
+from a13n_service.runs.tool_executions.recovery import restore as restore_executions
+from a13n_service.runs.tool_executions.state import SharedCodeActState
 from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -100,7 +120,11 @@ class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
     session_id: str
+    retain_tools: bool
+    background_compaction: bool
+    compaction_result: CompactionResult | None
     configuration: RunConfiguration
+    request_context: RequestContext
     source_entry_id: str | None
     mounts: tuple[EnvironmentMount, ...]
     memory_cursors: dict[str, str | None]
@@ -115,13 +139,18 @@ class _Plan:
     # Entries assigned to the run and not yet consumed, in position order: this attempt's input.
     assigned: list[Offered]
     state: HarnessState
+    envd_sessions: dict[str, EnvdSessionState]
     resume: DeferredToolResume | None
     resume_input: Offered | None
+    # What changed since the run whose history this one continues; it precedes the input, or is the input of a resume
+    # that has none, until a model request carries it.
+    reminder: TextContent | None
     # A run that starts from a failed or cancelled one never repeats that run's unanswered tool calls.
     tool_recovery: Literal["declared", "never"]
     tail: Tail
     committed: Committed | None
     seq: int
+    obsolete_notice: bool = False
 
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
@@ -170,10 +199,17 @@ def _failure(lease: Lease, error: Exception) -> Outcome | None:
 def _own(error: Exception) -> Exception:
     """The Service's own failure inside a Harness hook, such as a skill package read or a lease proof, which the
     Harness wraps and keeps as the cause; it keeps its meaning. Any other error is itself."""
+    # The attempt's monitor TaskGroup also wraps failures from its stream body.
+    while isinstance(error, ExceptionGroup) and len(error.exceptions) == 1:
+        error = error.exceptions[0]
     current: BaseException = error
     while isinstance(current, HarnessError) and current.__cause__ is not None:
         current = current.__cause__
-    return current if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable) else error
+    return (
+        current
+        if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable | EndpointPolicyError)
+        else error
+    )
 
 
 def _deterministic(error: Exception) -> Outcome | None:
@@ -181,13 +217,24 @@ def _deterministic(error: Exception) -> Outcome | None:
         return error.outcome
     if isinstance(error, ServiceError):
         return None if error.code == "unavailable" else Outcome.refused(error)
+    if isinstance(error, EndpointPolicyError):
+        return Outcome.failed("provider_endpoint_denied", str(error))
     if isinstance(error, HarnessError):
-        return Outcome.failed(error.code, str(error))
+        return Outcome.failed(error.code, _harness_failure_message(str(error), error.details))
     if isinstance(error, EnvironmentUnavailable):
         return Outcome.failed("environment_unavailable", str(error))
     if isinstance(error, EnvironmentProviderError) and error.category not in _TRANSIENT_ENVIRONMENT:
-        return Outcome.failed("environment_unavailable", error.safe_projection().message)
+        return Outcome.failed("environment_unavailable", public_message(error))
     return None
+
+
+def _harness_failure_message(message: str, details: Mapping[str, JsonValue]) -> str:
+    """Keep the Harness's safe HTTP status without exposing an upstream body or exception message."""
+    status = details.get("status_code")
+    # Harness records status_code for ModelHTTPError and its provider-specific subclasses.
+    if type(status) is int and 400 <= status <= 599:
+        return f"{message} Model provider returned HTTP {status}."
+    return message
 
 
 async def _release(runtime: Runtime, lease: Lease, error: Exception) -> None:
@@ -229,32 +276,84 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         tail_pointer = checkpoints.TailPointer.model_validate(run.tail) if run.tail else None
         committed = Committed.of(run)
         baseline = await _baseline(session, parent)
+        previous = [EnvironmentMount.model_validate(mount) for mount in baseline.environment_mounts] if baseline else []
         baseline_checkpoint = checkpoints.require_compatible(baseline) if baseline is not None else None
+        baseline_run_id = baseline.id if baseline is not None else None
         pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
         answers = Resume.model_validate(run.resume) if run.resume is not None else None
         history = HISTORY.validate_python(thread.message_history)
         # Until its own first checkpoint the run continues its parent's; a takeover after it repeats its own calls.
         unknown_outcomes = checkpoint is None and parent is not None and parent.status in {"failed", "cancelled"}
         session_id, source_entry_id = run.session_id, run.source_entry_id
+        source = await session.get(InboxEntryRow, source_entry_id) if source_entry_id else None
+        obsolete_notice = (
+            not assigned
+            and source is not None
+            and source.kind == "browser_handback"
+            and source.status == "failed"
+            and source.failure is not None
+            and source.failure.get("code") == "browser_notice_stale"
+        )
+        if obsolete_notice:
+            # A corrected first cut may already contain other incorporated input which
+            # still needs its model response. Only a notice-only Run completes as a no-op.
+            obsolete_notice = not await session.scalar(
+                select(
+                    select(InboxEntryRow.id)
+                    .where(
+                        InboxEntryRow.assigned_run_id == run.id,
+                        InboxEntryRow.status == "consumed",
+                    )
+                    .exists()
+                )
+            )
+        input_text = (
+            MessagePayload.model_validate(source.payload).text()
+            if source is not None and source.kind == "message"
+            else answers.input.text()
+            if answers is not None and answers.input is not None
+            else ""
+        )
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
+        # Space organization keeps its memory-only surface and completes calls within the round.
+        retain_tools = thread.purpose == "conversation"
+        root_compaction = thread.origin != "child" and retain_tools
+        background_compaction = root_compaction and resolved.config.background_compaction.enabled
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
         checkpoints.load_tail(runtime.objects, tail_pointer, hydrate=True),
     )
+    if tail.search is None:
+        initial_index = await asyncio.to_thread(
+            seed, input_text, source_entry_id or lease.run_id, runtime.settings.run_search
+        )
+        tail.search = initial_index.state
     state, resume = _initial(lease.thread_id, base, pending=pending, answers=answers, history=history)
+    consumed = own is not None and own.resume_input_consumed
     resume_input = (
         Offered(lease.run_id, "message", lease.workspace_id, answers.input.model_dump(mode="json"))
-        if answers is not None and answers.input is not None and not (own and own.resume_input_consumed)
+        if answers is not None and answers.input is not None and not consumed
         else None
     )
+    reminder = None if consumed else inputs.reminder(inputs.mount_changes(previous, mounts))
     if own is not None:
         state = own.harness
-        resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
+        resume = replace(resume, recovery=True) if resume is not None else None
+    origin_run_id = lease.run_id if own is not None else baseline_run_id
+    if origin_run_id is not None:
+        state = await restore_executions(runtime, state, thread_id=lease.thread_id, origin_run_id=origin_run_id)
+    if resume is not None:
+        resume = resume.remaining(state.message_history)
+    compaction = await runtime.compactions.inspect(lease.thread_id) if root_compaction else None
     return _Plan(
         session_id=session_id,
+        background_compaction=background_compaction,
+        compaction_result=compaction.result if compaction is not None else None,
+        retain_tools=retain_tools,
         configuration=options.configuration or RunConfiguration(),
+        request_context=RequestContext(options.context.headers if options.context else {}),
         source_entry_id=source_entry_id,
         mounts=mounts,
         memory_cursors=memory_cursors,
@@ -267,12 +366,15 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         limit=options.max_usage.requests if options.max_usage is not None else None,
         assigned=assigned,
         state=state,
+        envd_sessions=dict(own.envd_sessions) if own is not None else {},
         resume=resume,
         resume_input=resume_input,
+        reminder=reminder,
         tool_recovery="never" if unknown_outcomes else "declared",
         tail=tail,
         committed=committed,
         seq=own.seq if own is not None else 0,
+        obsolete_notice=obsolete_notice,
     )
 
 
@@ -304,6 +406,8 @@ def _initial(
         answers = deferred.fork_results(pending)
     if answers is None:
         raise ValueError("A waiting parent requires explicit resume results")
+    if pending.desktop_control_id and not pending.calls and not pending.approvals:
+        return state, None
     return state, deferred.resume(deferred.load(base.deferred), answers)
 
 
@@ -318,11 +422,15 @@ class _Offers:
         # Whether a model request carried the input: it is in every state exported after that.
         self.requested = False
 
-    def incorporated(self, state: HarnessState) -> list[str]:
-        ids = set(steering_input_ids(state.message_history))
+    def incorporated(self, messages: Sequence[ModelMessage]) -> list[str]:
+        ids = set(steering_input_ids(messages))
         if self.requested:
             ids |= self.initial
         return [entry_id for entry_id in self.open if entry_id in ids]
+
+    def pending_notice(self, messages: list[ModelMessage]) -> bool:
+        ids = set(steering_input_ids(messages)) | self.initial
+        return any(entry.kind == "browser_handback" and entry.id in ids for entry in self.open.values())
 
     def consumed(self, entry_ids: list[str]) -> None:
         for entry_id in entry_ids:
@@ -335,7 +443,11 @@ class _Attempt:
     def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
+        self.last_committed_tail_bytes: bytes | None = None
+        self.envd_sessions = {name: EnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
+        assert plan.tail.search is not None
+        self.search = Index(plan.tail.search, runtime.settings.run_search)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
             lease.run_id,
@@ -348,6 +460,9 @@ class _Attempt:
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
         self.offers = _Offers(plan.assigned)
+        self.app_captures = Captures(lease.run_id)
+        self.offer_lock = asyncio.Lock()
+        self.incoming: asyncio.Task[None] | None = None
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
             primary=any(mount.name == PRIMARY for mount in plan.mounts),
@@ -357,13 +472,46 @@ class _Attempt:
         self.boundaries = Boundaries(self.cursors.snapshot)
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
+        self.compaction = (
+            CompactionRun(
+                runtime.compactions,
+                lease,
+                Selection(
+                    plan.agent.model,
+                    self._call_context(),
+                    plan.principal.id,
+                    plan.request_context,
+                    plan.configuration,
+                    plan.limit,
+                ),
+            )
+            if plan.background_compaction
+            else None
+        )
         self.usage = UsageBuffer(self.check.calls)
-        self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
+        self.usage_reporter = DeltaReporter(
+            runtime.storage, lease.run_id, lease.attempt_id, self.usage, check=self.check.reconcile
+        )
         self.yielding = False
+        self.desktop_paused = False
+        self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))
+        self.boundaries.wait_for_model = self.desktop_enabled or any(
+            entry.kind == "browser_handback" for entry in plan.assigned
+        )
         self.live: ThreadStream | None = None
 
     async def run(self) -> None:
         try:
+            if self.plan.obsolete_notice:
+                # A notification-only continuation lost its source before its first checkpoint.
+                # Preserve inherited history and complete without a model call or a Thread pause.
+                await self._commit(
+                    self.plan.state,
+                    cursors=self.cursors.snapshot(),
+                    snapshot=self._snapshot(),
+                    outcome=Outcome(status="completed"),
+                )
+                return
             result = await self._stream()
             if result is None:
                 if self.control.stopped.is_set():
@@ -382,18 +530,24 @@ class _Attempt:
             error = _own(wrapped)
             if isinstance(error, LeaseLost):
                 raise error from None
+            if isinstance(error, StaleNotice):
+                # Input-read rejection has no new work. Checkpoint rejection has already saved
+                # the same cut without the notice, including completed tools and child state.
+                async with transaction(self.runtime.storage) as session:
+                    _, run, _, current = await lock_thread_lease(session, self.lease)
+                    await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
+                await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
+                return
             outcome = self._refusal() or _failure(self.lease, error)
             if outcome is None:
                 await _release(self.runtime, self.lease, error)
             else:
                 await self._seal_interrupted(outcome)
 
-    async def _stream(self) -> HarnessRunResult | None:
-        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
-        runtime, lease = self.runtime, self.lease
-        root = self.plan.agent
-        if not root.config.lazy_environment and not await self._prepare_environments():
-            return None
+    @asynccontextmanager
+    async def _open_resources(self) -> AsyncIterator[Host]:
+        runtime, lease, root = self.runtime, self.lease, self.plan.agent
+        skill_cache = Cache()
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -403,9 +557,13 @@ class _Attempt:
                     self.plan.authority,
                     self.plan.mounts,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
+                    envd_sessions=self.envd_sessions,
                 )
             )
-            models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
+            models = await agent.open_models(
+                stack, runtime, root, configuration=self.plan.configuration, request_context=self.plan.request_context
+            )
             host = await stack.enter_async_context(
                 open_host(
                     runtime,
@@ -416,20 +574,48 @@ class _Attempt:
                     principal=self.plan.principal,
                     authority=self.plan.authority,
                     cursors=self.cursors,
+                    request_context=self.plan.request_context,
                     configuration=self.plan.configuration,
+                    skill_cache=skill_cache,
+                    environments=environments,
+                    app_captures=self.app_captures,
                 )
             )
+            yield host
+
+    async def _stream(self) -> HarnessRunResult | None:
+        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
+        runtime, lease = self.runtime, self.lease
+        root = self.plan.agent
+        if self.desktop_enabled:
+            await desktop_execution.prepare(runtime, lease, supported=not root.subagents)
+        if not root.config.lazy_environment and not await self._prepare_environments():
+            return None
+        async with resources(lease, self._open_resources()) as host, AsyncExitStack() as stack:
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
-                    [self.boundaries, *host.capabilities(node), *host.memory]
+                    [
+                        self.boundaries,
+                        InputBoundary(self.boundaries, self.offers.pending_notice),
+                        *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
+                        *host.capabilities(node, retain_tools=self.plan.retain_tools),
+                        *host.memory,
+                        *(
+                            [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
+                            if enabled_tools(root.config.toolsets, "computer")
+                            else []
+                        ),
+                    ]
                     if node is root
                     else host.capabilities(node)
                 ),
+                tool_sources=host.sources,
                 child_bindings=host.bindings,
                 operators=self._operator,
                 plugins=runtime.plugins,
                 instrumentation=runtime.instrumentation,
+                compaction=self.compaction,
             )
             live = await stack.enter_async_context(
                 ThreadStream(
@@ -442,7 +628,13 @@ class _Attempt:
             )
             self.live = live
             output = await stack.enter_async_context(
-                Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
+                Coalescer(
+                    self.fold,
+                    live,
+                    window=runtime.settings.worker.stream_coalesce_seconds,
+                    contents=self.contents,
+                    app_captures=self.app_captures,
+                )
             )
 
             def freeze_display(_open_calls: frozenset[str]) -> Snapshot:
@@ -451,13 +643,17 @@ class _Attempt:
 
             self.boundaries.freeze_display = freeze_display
             bindings = replace(
-                host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                host.bindings(root, self._bindings(agent.model_resolver(root, host.models))),
                 producer_observer=output.observe,
+                environment=host.environment,
             )
             start = partial(
                 executable.stream,
-                input_factory=self._assigned_input if self.plan.assigned or self.plan.resume_input else None,
+                input_factory=self._assigned_input
+                if self.plan.assigned or self.plan.resume_input or self.plan.reminder
+                else None,
                 previous_state=self.plan.state,
+                compaction_result=self.plan.compaction_result,
                 # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
@@ -466,22 +662,21 @@ class _Attempt:
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
-            # The Harness takes no empty environment set; a run without mounts runs without one.
-            stream = (
-                start(environments=environments, default_environment=PRIMARY if PRIMARY in environments else None)
-                if environments
-                else start()
-            )
+            stream = start()
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
-            async with stream:
-                interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
+            async with stream, asyncio.TaskGroup() as monitors:
+                interrupt = monitors.create_task(self._cancel_when_stopped(stream))
+                if self.plan.host.execution.steering == "immediate":
+                    self.incoming = monitors.create_task(self._receive_input(stream))
                 try:
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
                 finally:
                     interrupt.cancel()
-                    await asyncio.gather(interrupt, return_exceptions=True)
+                    if self.incoming is not None:
+                        self.incoming.cancel()
+                        self.incoming = None
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
@@ -534,13 +729,18 @@ class _Attempt:
             output.observe(item)
 
     async def _boundary(self, staged: Staged, *, stream: HarnessRunStream, output: Coalescer) -> None:
-        if staged.at == "model":
+        if staged.at in {"input", "model"}:
             self.offers.requested = True
         steers = await self._commit(
             staged.state,
             cursors=staged.cursors,
             snapshot=staged.display,
+            pause_boundary=staged.at == "model" and self.desktop_enabled,
         )
+        if self.desktop_paused:
+            self.boundaries.stop()
+            stream.cancel()
+            return
         output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
         if staged.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
@@ -558,8 +758,45 @@ class _Attempt:
         *,
         cursors: dict[str, str | None],
         snapshot: Snapshot,
+        pause_boundary: bool = False,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
+    ) -> list[Offered]:
+        rejected: list[StaleNotice] = []
+        while True:
+            try:
+                steers = await self._commit_cut(
+                    state,
+                    cursors=cursors,
+                    snapshot=snapshot,
+                    pause_boundary=pause_boundary,
+                    outcome=outcome,
+                    deferred=deferred,
+                    rejected=rejected,
+                )
+                break
+            except StaleNotice as error:
+                # The model waits at this cut. Preserve its completed work and remove only
+                # the expired hint from history and compact/recovery replay state.
+                rejected.append(error)
+                state = without_input(state, input_id=error.entry_id, source_id=error.entry_id)
+                self.offers.open.pop(error.entry_id)
+        if rejected:
+            # The live Harness still holds the old input. End this attempt before dispatch;
+            # ordinary recovery restores the corrected, durably committed continuation.
+            raise rejected[0]
+        return steers
+
+    async def _commit_cut(
+        self,
+        state: HarnessState,
+        *,
+        cursors: dict[str, str | None],
+        snapshot: Snapshot,
+        pause_boundary: bool,
+        outcome: Outcome | None,
+        deferred: JsonValue,
+        rejected: list[StaleNotice],
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
@@ -568,8 +805,18 @@ class _Attempt:
         if near_deadline(self.runtime, self.control):
             raise LeaseLost()
         started = time.monotonic()
-        consumed = self.offers.incorporated(state)
+        acknowledgement = (
+            await compactions.acknowledgement(self.runtime, state, RunObjects(self.runtime, self.lease, self.control))
+            if self.plan.background_compaction or self.plan.compaction_result is not None
+            else None
+        )
+        consumed: list[str] = []
+        if self.offers.open:
+            messages = state.message_history
+            consumed = self.offers.incorporated(messages)
+            del messages
         usage = self.usage.pending()
+        search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
@@ -579,44 +826,78 @@ class _Attempt:
                 seq=self.seq + 1,
                 attempt=self.lease.number,
                 deferred=deferred,
-                resume_input_consumed=self.plan.resume_input is None or self.offers.requested,
+                envd_sessions={
+                    name: recovery.state for name, recovery in self.envd_sessions.items() if recovery.state is not None
+                }
+                if outcome is None
+                else {},
+                resume_input_consumed=(self.plan.resume_input is None and self.plan.reminder is None)
+                or self.offers.requested,
             ),
             snapshot,
             contents=self.contents,
             control=self.control,
+            previous_tail=self.committed.tail if self.committed else None,
+            previous_tail_bytes=self.last_committed_tail_bytes,
         )
+        display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
         async with transaction(self.runtime.storage) as session:
             # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
-            thread, run, attempt, current = await lock_thread_lease(session, self.lease)
-            committed = await checkpoints.commit(
-                session,
-                run,
-                attempt,
-                previous=self.committed,
-                state=pointer,
-                display=display,
-                memory_cursors=cursors,
-                consumed=consumed,
-                usage=usage,
-                at=current,
-            )
-            checkpoints.retire(session, run, self.committed, committed)
-            if outcome is not None:
-                await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
-            else:
-                entries = await inbox.assign_steers(
+            thread, run, attempt, current = await checkpoints.lock(session, self.lease)
+            # This transaction is the observation boundary: retake either suppresses the hint
+            # first, or follows its durable incorporation. No model request carrying a new
+            # Browser notice dispatches before this commit, and no lock spans external I/O.
+            for entry_id in consumed:
+                if self.offers.open[entry_id].kind == "browser_handback":
+                    entry = await session.get_one(InboxEntryRow, entry_id)
+                    await require_notice(session, self.runtime, entry)
+            for error in rejected:
+                await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
+            # Usage/consumption use explicit SQL; pending checkpoint fields need not flush for those reads.
+            # seal() flushes the final checkpoint and outcome together; ordinary boundaries flush on commit.
+            with session.no_autoflush:
+                committed = await checkpoints.commit(
                     session,
-                    thread,
                     run,
-                    max_count=worker.delivery_count,
-                    max_bytes=worker.delivery_bytes,
-                    scan=self.runtime.settings.control.inbox_count,
+                    attempt,
+                    previous=self.committed,
+                    state=pointer,
+                    display=display,
+                    memory_cursors=cursors,
+                    consumed=consumed,
+                    usage=usage,
+                    at=current,
                 )
-                steers = [Offered.of(entry) for entry in entries]
+                checkpoints.retire(session, run, self.committed, committed)
+                await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)
+                if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
+                    pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
+                    if pending is not None and pending.desktop_control_id:
+                        outcome = Outcome(status="waiting", pending=pending)
+                if outcome is not None:
+                    # Stop input polling before our seal releases the lease. A poll already waiting for
+                    # this transaction's Thread lock must not mistake our own completion for lease loss.
+                    if self.incoming is not None:
+                        self.incoming.cancel()
+                    await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
+                else:
+                    entries = await inbox.assign_steers(
+                        session,
+                        thread,
+                        run,
+                        max_count=worker.delivery_count,
+                        max_bytes=worker.delivery_bytes,
+                        scan=self.runtime.settings.control.inbox_count,
+                    )
+                    steers = [Offered.of(entry) for entry in entries]
+        if outcome is not None and outcome.pending is not None and outcome.pending.desktop_control_id:
+            self.desktop_paused = True
         CHECKPOINT_DURATION.record(time.monotonic() - started)
+        self.search = search
         self.committed, self.seq = committed, self.seq + 1
+        self.last_committed_tail_bytes = display.tail_bytes
         self.fold.committed(snapshot)
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
@@ -628,22 +909,29 @@ class _Attempt:
     async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:
         """Offer the steers assigned at this boundary, and any the Harness could not take before, to the run's next
         request."""
-        self.offers.unsent.extend(steers)
-        while self.offers.unsent and self.boundaries.accepting_steers:
-            entry = self.offers.unsent[0]
-            content = await self._read(entry, stream.context.environment)
-            if content is None:
-                self.offers.unsent.pop(0)
-                continue
-            if not self.boundaries.accepting_steers:
-                return  # Keep the unconsumed entry for continuation after native completion.
-            try:
-                await stream.steer(content, input_id=entry.id)
-            except RunError as error:
-                if error.code != "run_not_active":
-                    raise
-                return
-            self.offers.open[entry.id] = self.offers.unsent.pop(0)
+        async with self.offer_lock:
+            self.offers.unsent.extend(steers)
+            while self.offers.unsent and self.boundaries.accepting_steers:
+                entry = self.offers.unsent[0]
+                content = await self._read(entry, stream.context.environment)
+                if content is None:
+                    self.offers.unsent.pop(0)
+                    continue
+                if not self.boundaries.accepting_steers:
+                    return  # Keep the unconsumed entry for continuation after native completion.
+                if entry.kind == "browser_handback":
+                    self.boundaries.wait_for_model = True
+                try:
+                    await stream.steer(
+                        content,
+                        input_id=entry.id,
+                        immediate=entry.kind == "message" and self.plan.host.execution.steering == "immediate",
+                    )
+                except RunError as error:
+                    if error.code != "run_not_active":
+                        raise
+                    return
+                self.offers.open[entry.id] = self.offers.unsent.pop(0)
 
     async def _assigned_input(self, context: RunPreparationContext) -> tuple[UserContent, ...]:
         """The Harness input factory: the assigned entries' content, read once the environments are ready, so the
@@ -663,10 +951,10 @@ class _Attempt:
             )
         for entry in self.plan.assigned:
             parts.extend(await self._read(entry, context.environment) or ())
-        if not parts:
+        if not parts and (self.plan.assigned or self.plan.resume_input):
             # Each entry was a steer that failed alone; the next attempt continues without them.
             raise ServiceError("unavailable", "No assigned input could be read", {"dependency": "input"})
-        return tuple(parts)
+        return tuple(parts) if self.plan.reminder is None else (self.plan.reminder, *parts)
 
     async def _read(self, entry: Offered, environment: BoundEnvironment) -> tuple[UserContent, ...] | None:
         """The entry's content, its files placed in `environment`, or None for a steer that cannot be read,
@@ -691,16 +979,47 @@ class _Attempt:
         self.offers.open.pop(entry.id, None)
         return None
 
+    async def _receive_input(self, stream: HarnessRunStream) -> None:
+        """Immediate input uses ordinary mailbox assignment; checkpoints still own incorporation."""
+        async with self.runtime.mailbox.listen(self.lease.thread_id) as ready:
+            while True:
+                await ready.wait()
+                ready.clear()
+                if not self.boundaries.accepting_steers:
+                    continue
+                try:
+                    async with transaction(self.runtime.storage) as session:
+                        thread, run, _, _ = await lock_thread_lease(session, self.lease)
+                        await authorize_execution(session, self.runtime.access, run)
+                        entries = await inbox.assign_steers(
+                            session,
+                            thread,
+                            run,
+                            max_count=self.runtime.settings.worker.delivery_count,
+                            max_bytes=self.runtime.settings.worker.delivery_bytes,
+                            scan=self.runtime.settings.control.inbox_count,
+                        )
+                        offers = [Offered.of(entry) for entry in entries]
+                except ServiceError as error:
+                    if error.code != "unavailable":
+                        raise
+                    continue
+                await self._offer(stream, offers)
+
     async def _cancel_when_stopped(self, stream: HarnessRunStream) -> None:
         await self.control.stopped.wait()
         stream.cancel()
 
     async def _end(self, result: HarnessRunResult) -> None:
+        if self.desktop_paused:
+            return
         self.usage.add(result.usage_records)
         if result.status == "failed":
             assert result.failure is not None
             await self._record_usage()
-            failed = Outcome.failed(result.failure.code, result.failure.message)
+            failed = Outcome.failed(
+                result.failure.code, _harness_failure_message(result.failure.message, result.failure.details)
+            )
             await self._seal_interrupted(self._refusal() or failed)
             return
         if result.status == "cancelled":
@@ -735,10 +1054,37 @@ class _Attempt:
         display = None
         self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
+            snapshot = self.fold.pending(self._snapshot())
+            # Only user sources actually visible in this display join a failed/cancelled run's index.
+            visible = {
+                str(metadata["source_id"])
+                for item in (*[item for page in snapshot.pages for item in page.items], *snapshot.tail.items)
+                if isinstance(metadata := item.content.get("metadata"), dict) and "source_id" in metadata
+            }
+            search, snapshot = await self._search(snapshot, visible)
             display = await checkpoints.publish_display(
-                self.runtime, self.lease, self._snapshot(), contents=self.contents, control=self.control
+                self.runtime,
+                self.lease,
+                snapshot,
+                contents=self.contents,
+                control=self.control,
+                previous_tail=self.committed.tail if self.committed else None,
+                previous_tail_bytes=self.last_committed_tail_bytes,
+            )
+            display = display.model_copy(
+                update={"search_terms": tuple(sorted(search.counts)) if search.changed else None}
             )
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
+
+    async def _search(self, snapshot: Snapshot, consumed: Iterable[str]) -> tuple[Index, Snapshot]:
+        inputs = [
+            (entry.id, MessagePayload.model_validate(entry.payload).text())
+            for key in consumed
+            if (entry := self.offers.open.get(key)) is not None and entry.kind == "message"
+        ]
+        items = [item for page in snapshot.pages for item in page.items] + snapshot.tail.items
+        search = await asyncio.to_thread(self.search.prepare, items, inputs)
+        return search, Snapshot(snapshot.pages, snapshot.tail.model_copy(update={"search": search.state}))
 
     def _snapshot(self) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
@@ -810,7 +1156,12 @@ class _Attempt:
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease
         return RunBindings(
+            tool_execution=self.runtime.executions if self.plan.retain_tools else None,
+            codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
+            context_recovery_scope_id=lease.run_id,
+            retained_history_directory=f"{placement.ROOT}/history/{lease.thread_id}",
+            request_context=self.plan.request_context,
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),
                 agent_instance_id=lease.run_id,

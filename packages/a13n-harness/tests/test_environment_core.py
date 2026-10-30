@@ -32,6 +32,7 @@ from a13n_harness.environment.advanced import (
     create_empty_environment_runtime,
     create_environment_runtime,
 )
+from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -43,6 +44,7 @@ from a13n_harness.environment.commands import (
     ProcessStatus,
 )
 from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.files import FileMkdirOperation, FileMutationResult, FileStatOperation
 from a13n_harness.environment.models import EnvironmentOperationReceipt, EnvironmentState
 from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy, OpaqueProcessHandle
@@ -214,6 +216,7 @@ def _runtime_mount(
     *,
     working_directory: str | None = "/",
     mount_path: str | None = None,
+    provider_root: str = "/",
     permissions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.FILE_STAT}),
 ) -> EnvironmentMount:
     return EnvironmentMount(
@@ -221,6 +224,7 @@ def _runtime_mount(
         permission_ceiling=EnvironmentPermissionSet(operations=permissions),
         working_directory=working_directory,
         mount_path=mount_path,
+        provider_root=provider_root,
     )
 
 
@@ -762,7 +766,20 @@ async def test_direct_mount_paths_support_drive_and_unc_roots() -> None:
         assert unc_path.path == "/readme.md"
 
 
-async def test_direct_file_results_return_reusable_mount_paths() -> None:
+@pytest.mark.parametrize(
+    ("root", "provider_root"),
+    [
+        ("/Users/example/project", "/"),
+        ("/Users/example/project", "/Users/example/project"),
+        ("/", "/"),
+        ("D:/project", "/D:/project"),
+        ("D:/", "/D:/"),
+        ("//server/share/project", "/UNC/server/share/project"),
+        ("//server/share/", "/UNC/server/share/"),
+    ],
+)
+@pytest.mark.parametrize("directory", ["", "src"])
+async def test_direct_file_results_return_reusable_mount_paths(root: str, provider_root: str, directory: str) -> None:
     class ListingFiles(_Files):
         async def list(self, path: str, **kwargs: Any) -> FileEntriesResult:
             del kwargs
@@ -788,7 +805,9 @@ async def test_direct_file_results_return_reusable_mount_paths() -> None:
         mounts={
             "workspace": _runtime_mount(
                 provider,
-                mount_path="/Users/example/project",
+                mount_path=root,
+                provider_root=provider_root,
+                working_directory=provider_root,
                 permissions=frozenset({EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT}),
             )
         },
@@ -801,13 +820,18 @@ async def test_direct_file_results_return_reusable_mount_paths() -> None:
         instance=_instance(),
         host_refs={},
     ) as environment:
-        result = await environment.files.list("/Users/example/project/src")
+        assert environment.resolve_path(root).path == provider_root
+        assert environment.resolve_path(".").path == provider_root
+        aggregate_directory = f"{root.rstrip('/')}/{directory}" if directory else root
+        result = await environment.files.list(aggregate_directory)
         returned = result.entries[0].path
 
-        assert returned == "/Users/example/project/src/child.txt"
+        assert returned == f"{aggregate_directory.rstrip('/')}/child.txt"
         selected = environment.resolve_path(returned)
         assert selected.mount_id == environment.resolve_path(".").mount_id
-        assert selected.path == "/src/child.txt"
+        suffix = f"{directory}/child.txt" if directory else "child.txt"
+        assert selected.path == f"{provider_root.rstrip('/')}/{suffix}"
+        assert (await environment.files.stat(returned)).path == returned
 
 
 async def test_equivalent_direct_mount_paths_fail_before_provider_entry() -> None:
@@ -2075,3 +2099,138 @@ async def test_copy_keeps_destination_generation_while_source_prepares(rebuild: 
         else:
             assert (await copying).bytes_copied == 7
             assert writes == [b"payload"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("missing", [None, EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES])
+async def test_archive_requires_both_file_permissions_without_shell_authority(missing):
+    writes = []
+
+    class ArchiveFiles(_Files):
+        async def mkdir(self, *args, **kwargs):
+            raise AssertionError("Archive dispatch must stay one operation")
+
+        async def write_bytes_stream(self, *args, **kwargs):
+            raise AssertionError("Archive dispatch must stay one operation")
+
+        async def write_archive(self, path, archive):
+            writes.append((path, archive))
+            return FileMutationResult(
+                path=path,
+                receipt=EnvironmentOperationReceipt(
+                    execution_id=provider.bound.execution_id,
+                    observed_generation=provider.bound.descriptor.generation,
+                    operation_id="archive-1",
+                    stage="completed",
+                    outcome="succeeded",
+                ),
+            )
+
+    actions = frozenset({EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES} - {missing})
+    provider = _Binding("archive", operations=EnvironmentProviderOperations(files=ArchiveFiles()), permissions=actions)
+    runtime = create_environment_runtime(
+        mounts={"workspace": _runtime_mount(provider, permissions=actions)}, default_mount="workspace"
+    )
+    archive = FileArchive(b"provider validates ZIP", (("nested/SKILL.md", 1),))
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        if missing is None:
+            result = await environment.files.write_archive("/workspace/candidate", archive)
+            assert result.path == "/workspace/candidate"
+            assert writes == [("/candidate", archive)]
+        else:
+            with pytest.raises(EnvironmentError) as error:
+                await environment.files.write_archive("/workspace/candidate", archive)
+            assert error.value.code == "environment_denied"
+            assert not writes
+
+
+@pytest.mark.anyio
+async def test_archive_rejects_nested_mount_before_any_write():
+    actions = frozenset({EnvironmentAction.FILE_MKDIR, EnvironmentAction.FILE_WRITE_BYTES})
+    parent, nested = _Binding("parent", permissions=actions), _Binding("nested", permissions=actions)
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(parent, permissions=actions),
+            "nested": _runtime_mount(nested, permissions=actions, mount_path="/workspace/candidate/nested"),
+        },
+        default_mount="workspace",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        with pytest.raises(EnvironmentError) as error:
+            await environment.files.write_archive("/workspace/candidate", FileArchive(b"", (("nested/file", 1),)))
+        assert error.value.code == "environment_selection_invalid"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cross_mount", [False, True])
+async def test_batch_authorizes_every_operation_before_dispatch(cross_mount):
+    calls = []
+
+    class BatchFiles(_Files):
+        async def batch(self, operations):
+            calls.append(operations)
+            return ()
+
+    all_actions = frozenset({EnvironmentAction.FILE_STAT, EnvironmentAction.FILE_MKDIR})
+    permitted = all_actions if cross_mount else frozenset({EnvironmentAction.FILE_STAT})
+    parent = _Binding("parent", operations=EnvironmentProviderOperations(files=BatchFiles()), permissions=permitted)
+    nested = _Binding("nested", permissions=all_actions)
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(parent, permissions=permitted),
+            "nested": _runtime_mount(nested, permissions=all_actions, mount_path="/workspace/nested"),
+        },
+        default_mount="workspace",
+    )
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        with pytest.raises(EnvironmentError) as error:
+            await environment.files.batch(
+                [
+                    FileStatOperation(path="/workspace/cache"),
+                    FileMkdirOperation(path="/workspace/nested/new" if cross_mount else "/workspace/new"),
+                ]
+            )
+        assert error.value.code == ("environment_selection_invalid" if cross_mount else "environment_denied")
+        assert calls == []
+
+
+async def test_command_defaults_follow_each_selected_mount_case_rules() -> None:
+    from a13n_harness.environment.commands import CommandEnvironment
+
+    class RecordingProcesses(_IdempotentProcessOperations):
+        def __init__(self):
+            super().__init__()
+            self.requests = []
+
+        async def start(self, request):
+            self.requests.append(request)
+            return await super().start(request)
+
+    mounts = {}
+    recorders = {}
+    for alias, sensitive in (("posix", True), ("windows", False)):
+        operations = RecordingProcesses()
+        provider = _Binding(
+            "processes",
+            families=frozenset({"processes"}),
+            operations=EnvironmentProviderOperations(processes=operations),
+            permissions=_process_permissions(),
+        )
+        provider.bound.descriptor = provider.bound.descriptor.model_copy(
+            update={"environment_case_sensitive": sensitive}
+        )
+        operations.configure_execution(provider.bound.execution_id)
+        mounts[alias] = _runtime_mount(provider, permissions=_process_permissions())
+        recorders[alias] = operations
+    runtime = create_environment_runtime(mounts=mounts, command_environment={"PATH": "run", "REMOVE": "run"})
+    original = _process_request().model_copy(
+        update={"environment": CommandEnvironment(set={"Path": "command"}, unset=("remove",))}
+    )
+    async with runtime.bind(thread_id="thread", run_id="run", instance=_instance(), host_refs={}) as environment:
+        await runtime._activate()
+        for alias in mounts:
+            result = await environment.processes.start(original, alias=alias)
+            await environment.processes.release(result.process.handle)
+    assert dict(recorders["posix"].requests[0].environment.set) == {"PATH": "run", "Path": "command", "REMOVE": "run"}
+    assert dict(recorders["windows"].requests[0].environment.set) == {"PATH": "command"}
+    assert dict(original.environment.set) == {"Path": "command"}

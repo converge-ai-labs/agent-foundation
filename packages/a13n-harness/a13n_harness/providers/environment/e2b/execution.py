@@ -16,7 +16,6 @@ from a13n_harness.environment.models import (
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.providers.environment._backend import ExecutionBackend
 from a13n_harness.providers.environment._guest_files import GuestFiles
-from a13n_harness.providers.environment._guest_ports import GuestPorts
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
@@ -102,7 +101,6 @@ class E2BExecution(E2BReference, ExecutionBackend):
             files=files,
             shell=processes,
             processes=processes,
-            ports=GuestPorts(commands),
         )
         self._descriptor = descriptor(self._configuration, commands.generation, sandbox.sandbox_id)
         self._availability = EnvironmentAvailability(

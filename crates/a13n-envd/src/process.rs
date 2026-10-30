@@ -150,6 +150,12 @@ struct StartReservation {
 }
 
 impl ExecutionManager {
+    /// Started command groups still consuming execution capacity, including residual cleanup.
+    pub(crate) fn active_count(&self) -> Option<u64> {
+        let state = self.inner.state.try_lock().ok()?;
+        Some((state.active + state.residual_active) as u64)
+    }
+
     pub(crate) fn new(
         config: &Config,
         generation: u64,
@@ -1649,7 +1655,7 @@ fn resolve_bare_executable(
         } else {
             candidate
         };
-        let Ok(canonical) = std::fs::canonicalize(&candidate) else {
+        let Ok(canonical) = crate::device_path::canonicalize(&candidate) else {
             continue;
         };
         if (!full_control && !canonical.starts_with(root)) || !canonical.is_file() {

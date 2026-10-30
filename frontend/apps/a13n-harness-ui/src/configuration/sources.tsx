@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { ModelIdentity } from "../shell/model-identity";
+import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Button,
-  ChoiceField,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -11,11 +11,20 @@ import {
   ModalFrame,
 } from "a13n-ui";
 import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
-import { useSources, useTransport } from "../transport/context";
+import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import {
+  EmptyList,
+  ErrorNotice,
+  PageHeader,
+  Panel,
+  SearchField,
+  TextField as ModalTextField,
+} from "../shell/ui";
+import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
+import { McpTools } from "./mcp-tools";
 import { ResourceFields } from "./fields";
 import {
   readDocument,
@@ -24,17 +33,21 @@ import {
   updateDocument,
   type ResourceKind,
 } from "./documents";
+import { useRootConfiguration } from "./root-configuration";
 import { MediaUnderstandingFields } from "./media-understanding";
+import {
+  EnvdConfigurationFields,
+  ExecutionDefaultsFields,
+} from "./envd-fields";
 import styles from "../shell/workbench.module.css";
+import layout from "./settings.module.css";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 
-export type SourceDraft = {
-  content: string;
-  base: string | null;
-  digest: string | null;
-  replacement: boolean;
-};
-// Deliberately memory-only. Kept above the auth gate so reauthentication does not discard edits.
-export const DraftContext = createContext<Map<string, SourceDraft>>(new Map());
+import { DraftContext, type SourceDraft } from "./drafts";
 
 export function NewResourceButton({
   kind,
@@ -70,7 +83,7 @@ export function NewResourceButton({
     >
       <Plus />
       {label ??
-        `Add ${resourceKinds.find((item) => item.value === kind)!.label.toLowerCase()}`}
+        `Add ${inlineLabel(resourceKinds.find((item) => item.value === kind)!.label)}`}
     </Button>
   );
 }
@@ -123,8 +136,10 @@ export function DraftLinks({
 
 export function SourcesPage({
   kinds,
-  title = "Advanced configuration",
-  description,
+  title = "Configuration files",
+  description = kinds
+    ? undefined
+    : "The YAML and Markdown files behind every setting.",
   headingLevel = 1,
 }: {
   kinds?: ResourceKind[];
@@ -133,52 +148,100 @@ export function SourcesPage({
   headingLevel?: 1 | 2;
 }) {
   const sources = useSources();
+  const selectors = useSelectors();
+  const root = useRootConfiguration(kinds?.includes("agent"));
+  const names = new Map([
+    ...(selectors.data?.agents ?? []).map(
+      (item) => [item.agent_id, item.name] as const,
+    ),
+    ...(selectors.data?.models ?? []).map(
+      (item) => [item.model_id, item.name] as const,
+    ),
+    ...(selectors.data?.environments ?? []).map(
+      (item) => [item.profile_id, item.name] as const,
+    ),
+    ...(selectors.data?.harness_plugins ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+    ...(selectors.data?.mcp_servers ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+    ...(selectors.data?.environment_run_extensions ?? []).map(
+      (item) => [item.resource_id, item.name] as const,
+    ),
+  ]);
+  const displayName = (source: {
+    relative_path: string;
+    resource_ids: string[];
+  }) =>
+    source.resource_ids.map((id) => names.get(id) ?? id).join(", ") ||
+    source.relative_path;
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [kind, setKind] = useState<ResourceKind>("model");
+  const listed = sources.data?.sources.filter(
+    (source) => !kinds || kinds.includes(source.resource_kind as ResourceKind),
+  );
   const [id, setId] = useState("model-primary");
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
+  const visible = listed?.filter((source) =>
+    `${displayName(source)} ${source.relative_path} ${source.resource_ids.join(" ")}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const addAction = kinds ? (
+    kinds.map((kind) => (
+      <NewResourceButton
+        key={kind}
+        kind={kind}
+        variant={headingLevel === 2 ? "outline" : "default"}
+      />
+    ))
+  ) : (
+    <Button onClick={() => setCreating(true)}>
+      <Plus />
+      Add configuration
+    </Button>
+  );
   return (
-    <>
+    <section
+      className={[
+        headingLevel === 2 ? layout.collection : layout.collectionPage,
+        !kinds && layout.configurationFiles,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <PageHeader
         title={title}
         level={headingLevel}
         description={description}
-        actions={
-          kinds ? (
-            kinds.map((kind) => <NewResourceButton key={kind} kind={kind} />)
-          ) : (
-            <Button onClick={() => setCreating(true)}>
-              <Plus />
-              Add configuration
-            </Button>
-          )
-        }
+        actions={addAction}
       />
-      <ErrorNotice error={sources.error} retry={() => void sources.refetch()} />
-      <div className={styles.search}>
-        <TextField
-          type="search"
-          label={`Search ${title.toLowerCase()}`}
-          value={search}
-          onChange={setSearch}
+      <div className={layout.collection}>
+        {!!listed?.length && (
+          <div className={layout.toolbar}>
+            {!!listed?.length && (
+              <SearchField
+                label={`Search ${inlineLabel(title)}`}
+                value={search}
+                onChange={setSearch}
+              />
+            )}
+          </div>
+        )}
+        <ErrorNotice
+          error={sources.error || selectors.error}
+          retry={() => {
+            void sources.refetch();
+            void selectors.refetch();
+          }}
         />
-      </div>
-      {sources.isPending && <p role="status">Loading resources…</p>}
-      <DraftLinks kinds={kinds} search={search} />
-      <div className={styles.resourceList}>
-        {sources.data?.sources
-          .filter(
-            (source) =>
-              !kinds || kinds.includes(source.resource_kind as ResourceKind),
-          )
-          .filter((source) =>
-            `${source.relative_path} ${source.resource_ids.join(" ")}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-          )
-          .map((source) => (
+        {sources.isPending && <p role="status">Loading resources…</p>}
+        <DraftLinks kinds={kinds} search={search} />
+        <div className={styles.resourceList}>
+          {visible?.map((source) => (
             <Link
               key={source.relative_path}
               className={styles.resourceRow}
@@ -186,76 +249,137 @@ export function SourcesPage({
             >
               <div>
                 <strong>
-                  {source.resource_ids.join(", ") || source.relative_path}
+                  {kinds ? displayName(source) : source.relative_path}
                 </strong>
-                <small>{source.relative_path}</small>
+                <small>
+                  {kinds?.length === 1 && kinds[0] === "agent" ? (
+                    source.resource_ids.map((id) => {
+                      const model = selectors.data?.agents.find(
+                        (agent) => agent.agent_id === id,
+                      )?.model_id;
+                      return model ? (
+                        <ModelIdentity
+                          key={id}
+                          model={selectors.data?.models?.find(
+                            (item) => item.model_id === model,
+                          )}
+                          name={names.get(model) ?? model}
+                        />
+                      ) : (
+                        "No model selected"
+                      );
+                    })
+                  ) : kinds ? (
+                    source.resource_ids.join(", ") === displayName(source) ? (
+                      ""
+                    ) : (
+                      source.resource_ids.join(", ")
+                    )
+                  ) : displayName(source) === source.relative_path ? (
+                    ""
+                  ) : source.resource_kind === "model" ? (
+                    <ModelIdentity
+                      model={selectors.data?.models?.find((model) =>
+                        source.resource_ids.includes(model.model_id),
+                      )}
+                      name={displayName(source)}
+                    />
+                  ) : (
+                    displayName(source)
+                  )}
+                </small>
               </div>
-              <span>{source.resource_kind.replaceAll("_", " ")}</span>
-              <small>
-                {!source.writable
-                  ? "Read only"
-                  : !source.content_available
-                    ? "Replacement only"
-                    : "Editable"}
-              </small>
+              {source.resource_kind === "agent" &&
+                source.resource_ids.includes(
+                  root.configuration?.defaults?.agent,
+                ) && <span className={styles.tag}>Default</span>}
+              {!source.writable && (
+                <span className={styles.tag}>Read only</span>
+              )}
+              {source.writable && !source.content_available && (
+                <span className={styles.tag}>Connection hidden</span>
+              )}
+              {!kinds && (
+                <span className={styles.kind}>
+                  {source.resource_kind.replaceAll("_", " ")}
+                </span>
+              )}
             </Link>
           ))}
-      </div>
-      {sources.data && !sources.data.sources.length && (
-        <Panel title="No saved configuration">
-          <p>
-            Complete guided setup to create the root configuration before adding
-            resources.
+        </div>
+        {!!listed?.length && !visible?.length && (
+          <EmptyList>No matching {inlineLabel(title)}.</EmptyList>
+        )}
+        {kinds && listed?.length === 0 && (
+          <p
+            className={
+              headingLevel === 2 ? layout.emptySection : styles.emptyList
+            }
+          >
+            No {inlineLabel(title)} yet. Add one to get started.
           </p>
-          <Link to="/setup">Open setup</Link>
-        </Panel>
-      )}
+        )}
+        {sources.data && !kinds && !sources.data.sources.length && (
+          <Panel title="No saved configuration">
+            <p>Finish setup before adding configurations.</p>
+            <Link to="/setup">Open setup</Link>
+          </Panel>
+        )}
+      </div>
       <ModalFrame
         open={creating}
         onOpenChange={setCreating}
         title="Add configuration"
         closeLabel="Close"
         footer={
-          <Button
-            disabled={!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(id)}
-            onClick={() => {
-              const choice = resourceKinds.find((item) => item.value === kind)!;
-              const path = `${choice.directory}/${id}.${kind === "subagent" ? "md" : "yaml"}`;
-              if (
-                sources.data?.sources.some(
-                  (source) => source.relative_path === path,
-                ) ||
-                drafts.has(path)
-              ) {
-                const unpublished =
-                  drafts.get(path)?.digest === null &&
-                  !sources.data?.sources.some(
+          <>
+            <Button variant="outline" onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(id)}
+              onClick={() => {
+                const choice = resourceKinds.find(
+                  (item) => item.value === kind,
+                )!;
+                const path = `${choice.directory}/${id}.${kind === "subagent" ? "md" : "yaml"}`;
+                if (
+                  sources.data?.sources.some(
                     (source) => source.relative_path === path,
+                  ) ||
+                  drafts.has(path)
+                ) {
+                  const unpublished =
+                    drafts.get(path)?.digest === null &&
+                    !sources.data?.sources.some(
+                      (source) => source.relative_path === path,
+                    );
+                  navigate(
+                    `/settings/source?path=${encodeURIComponent(path)}${unpublished ? "&new=1" : ""}`,
                   );
-                navigate(
-                  `/settings/source?path=${encodeURIComponent(path)}${unpublished ? "&new=1" : ""}`,
-                );
-              } else {
-                drafts.set(path, {
-                  content: template(kind, id),
-                  base: null,
-                  digest: null,
-                  replacement: true,
-                });
-                navigate(
-                  `/settings/source?path=${encodeURIComponent(path)}&new=1`,
-                );
-              }
-              setCreating(false);
-            }}
-          >
-            Continue
-          </Button>
+                } else {
+                  drafts.set(path, {
+                    content: template(kind, id),
+                    base: null,
+                    digest: null,
+                    replacement: true,
+                  });
+                  navigate(
+                    `/settings/source?path=${encodeURIComponent(path)}&new=1`,
+                  );
+                }
+                setCreating(false);
+              }}
+            >
+              Continue
+            </Button>
+          </>
         }
       >
         <div className={styles.stack}>
           <ChoiceField
-            label="Resource type"
+            label="Type"
+            layout="stacked"
             value={kind}
             options={resourceKinds}
             onValueChange={(value) => {
@@ -266,15 +390,15 @@ export function SourcesPage({
               setId(`${choice.prefix}-new`);
             }}
           />
-          <TextField
-            label="Resource ID"
+          <ModalTextField
+            label="ID"
             value={id}
             onChange={setId}
             description="Use the resource prefix and a lowercase hyphenated name."
           />
         </div>
       </ModalFrame>
-    </>
+    </section>
   );
 }
 
@@ -291,12 +415,15 @@ export function SourceDocument({
   title,
   mediaOnly = false,
   embedded = false,
+  section,
 }: {
   path: string;
   isNew?: boolean;
-  title?: string;
+  /** Null omits the heading when the containing section already supplies one. */
+  title?: string | null;
   mediaOnly?: boolean;
   embedded?: boolean;
+  section?: "envd" | "execution" | "connections";
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -306,6 +433,7 @@ export function SourceDocument({
     () => drafts.get(path) ?? null,
   );
   const [notice, setNotice] = useState("");
+  const [modelReady, setModelReady] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const source = useQuery({
@@ -319,7 +447,41 @@ export function SourceDocument({
       ),
     enabled: !!path && !isNew,
   });
-  const dirty = !!draft && draft.content !== draft.base;
+  const selectors = useSelectors();
+  const sourceInfo = source.data;
+  const mcpName =
+    sourceInfo?.resource_kind === "mcp_server"
+      ? sourceInfo.resource_ids
+          .map(
+            (id) =>
+              selectors.data?.mcp_servers.find(
+                (item) => item.resource_id === id,
+              )?.name ?? id,
+          )
+          .join(", ")
+      : undefined;
+  const kind =
+    readDocument(draft?.content ?? "")?.get("kind") ??
+    sourceInfo?.resource_kind;
+  const [back, backLabel] =
+    kind === "agent"
+      ? ["/settings/agents", "Agents"]
+      : kind === "model"
+        ? ["/settings/models", "Models"]
+        : kind === "device"
+          ? ["/settings/environments?tab=devices", "Devices"]
+          : kind === "environment_profile" ||
+              kind === "environment_run_extension"
+            ? ["/settings/environments?tab=profiles", "Environments"]
+            : kind === "mcp_server" || kind === "harness_plugin"
+              ? ["/settings/connections", "Connections"]
+              : ["/settings/resources", "Configuration files"];
+  // Hidden MCP connections have an empty placeholder with no editable base.
+  // Only an explicit replacement turns that placeholder into a source draft.
+  const dirty =
+    !!draft &&
+    (isNew || draft.replacement || draft.base !== null) &&
+    draft.content !== draft.base;
   const sharedDraft = drafts.get(path);
   useEffect(() => {
     // Quick actions can publish this source while its clean editor stays mounted.
@@ -399,164 +561,204 @@ export function SourceDocument({
     onSuccess: () => {
       drafts.delete(path);
       void queries.invalidateQueries();
-      navigate("/settings/resources");
+      navigate(back);
     },
   });
   const canEdit =
     !!draft &&
     !!writable &&
     (source.data?.content_available || isNew || draft.replacement);
-  const resourceLabel =
-    resourceKinds
-      .find(
-        (item) =>
-          item.value === readDocument(draft?.content ?? "")?.get("kind"),
-      )
-      ?.label.toLowerCase() ??
-    (path.endsWith(".md") ? "subagent" : "configuration");
+  const resourceLabel = inlineLabel(
+    resourceKinds.find(
+      (item) => item.value === readDocument(draft?.content ?? "")?.get("kind"),
+    )?.label ?? (path.endsWith(".md") ? "subagent" : "configuration"),
+  );
   return (
-    <div className={styles.sourceDocument}>
-      {!embedded && (
-        <Link className={styles.back} to="/settings">
-          <ArrowLeft />
-          Settings
-        </Link>
+    <div
+      className={`${styles.sourceDocument} ${section || mediaOnly ? styles.sourceSubsection : ""}`}
+    >
+      {title !== null && (
+        <div className={styles.sourceHeader}>
+          {!embedded && (
+            <Link className={styles.back} to={back}>
+              <ArrowLeft />
+              {backLabel}
+            </Link>
+          )}
+          <PageHeader
+            level={mediaOnly || section ? 2 : 1}
+            description={
+              mediaOnly
+                ? "Used when your main model can't read this media."
+                : section === "envd"
+                  ? "Server-wide settings. Save and restart Harness UI to apply."
+                  : section === "execution"
+                    ? "Used by new chats unless the project sets its own defaults."
+                    : undefined
+            }
+            title={
+              title ||
+              (isNew
+                ? `Add ${resourceLabel}`
+                : String(
+                    readDocument(draft?.content ?? "")?.get("name") ||
+                      mcpName ||
+                      path ||
+                      "Configuration",
+                  ))
+            }
+            actions={
+              source.data?.writable &&
+              source.data.resource_kind !== "root" && (
+                <Menu>
+                  <MenuTrigger
+                    aria-label="More configuration actions"
+                    render={<Button variant="ghost" size="icon" />}
+                  >
+                    <DotsThree />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <MenuItem
+                      variant="destructive"
+                      onClick={() => setDeleting(true)}
+                    >
+                      <Trash />
+                      Delete
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              )
+            }
+          />
+        </div>
       )}
-      <PageHeader
-        level={mediaOnly ? 2 : 1}
-        description={
-          mediaOnly ? "Used when native input is unavailable." : undefined
-        }
-        title={
-          title ||
-          (isNew
-            ? `Add ${resourceLabel}`
-            : String(
-                readDocument(draft?.content ?? "")?.get("name") ||
-                  path ||
-                  "Configuration",
-              ))
-        }
-        actions={
-          source.data?.writable &&
-          source.data.resource_kind !== "root" && (
-            <Menu>
-              <MenuTrigger
-                aria-label="More configuration actions"
-                render={<Button variant="ghost" size="icon" />}
-              >
-                <DotsThree />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                <MenuItem
-                  variant="destructive"
-                  onClick={() => setDeleting(true)}
-                >
-                  <Trash />
-                  Delete configuration
-                </MenuItem>
-              </MenuPopup>
-            </Menu>
-          )
-        }
-      />
       <ErrorNotice error={source.error || remove.error} />
       {external && (
         <div className={styles.notice}>
           <p>
-            This configuration changed elsewhere. Your edits are preserved.
-            Saving will replace the current file.
+            This file changed elsewhere. Your edits are kept. Saving will
+            replace the newer file.
           </p>
           <Button variant="outline" onClick={() => setReplacing(true)}>
-            Reload saved version
+            Reload saved
           </Button>
         </div>
       )}
+      {source.data?.resource_kind === "mcp_server" &&
+        !draft?.replacement &&
+        source.data.resource_ids.map((id) => (
+          <McpTools key={id} serverId={id} />
+        ))}
       {source.data && !source.data.content_available && !draft?.replacement && (
-        <Panel title="Saved configuration is hidden">
-          <p>
-            Saved MCP configuration may contain secrets. Replacing it overwrites
-            the whole file, including {source.data.resource_ids.join(", ")}.
-            Existing secrets and unknown fields cannot be recovered here.
-          </p>
-          {writable && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                update({
-                  content: "",
-                  base: null,
-                  digest: source.data!.source_digest,
-                  replacement: true,
-                })
-              }
-            >
-              Replace configuration file
-            </Button>
-          )}
-        </Panel>
+        <details className={layout.groupDisclosure}>
+          <summary>Server connection</summary>
+          <Panel title="Saved connection details are hidden">
+            <p>
+              Tool selections are saved separately. Replacing the connection
+              overwrites the whole file, including{" "}
+              {source.data.resource_ids.join(", ")}. Existing secrets and
+              unknown fields cannot be recovered here.
+            </p>
+            {writable && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  update({
+                    content: "",
+                    base: null,
+                    digest: source.data!.source_digest,
+                    replacement: true,
+                  })
+                }
+              >
+                Replace file
+              </Button>
+            )}
+          </Panel>
+        </details>
       )}
       {canEdit && (
         <div className={styles.configurationForm}>
-          {mediaOnly ? (
+          {section === "envd" ? (
+            <EnvdConfigurationFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : section === "execution" ? (
+            <ExecutionDefaultsFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          ) : mediaOnly ? (
             <MediaUnderstandingFields
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
             />
           ) : (
             <ResourceFields
+              onReady={setModelReady}
+              connectionsOnly={section === "connections"}
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
             />
           )}
-          {!mediaOnly && (
-            <details
-              className={styles.details}
-              open={
-                (!readDocument(draft!.content) && draft!.replacement) ||
-                path.endsWith(".md")
-              }
-            >
-              <summary>Advanced configuration</summary>
-              <div className={styles.stack}>
-                {readDocument(draft!.content)?.has("kind") && (
-                  <TextField
-                    label="Resource ID"
-                    value={String(
-                      readDocument(draft!.content)?.get("id") ?? "",
-                    )}
-                    description="Changing this ID can break references."
-                    onChange={(id) =>
-                      update({
-                        ...draft!,
-                        content: updateDocument(draft!.content, ["id"], id),
-                      })
-                    }
-                  />
-                )}
-                <h3>Configuration file</h3>
-                <p>
-                  Complete file replacement. Preserve unknown fields and use
-                  credential references, not literal keys.
-                </p>
-                <SourceEditor
-                  value={draft!.content}
-                  onChange={(content) => update({ ...draft!, content })}
-                />
-                <Button
-                  variant="outline"
-                  loading={validate.isPending}
-                  disabled={save.isPending}
-                  onClick={() => validate.mutate(draft!.content)}
-                >
-                  Check configuration
-                </Button>
-              </div>
-            </details>
-          )}
+          {!mediaOnly &&
+            !(
+              embedded &&
+              !section &&
+              source.data?.resource_kind === "root"
+            ) && (
+              <details
+                className={styles.details}
+                open={
+                  (!readDocument(draft!.content) && draft!.replacement) ||
+                  path.endsWith(".md")
+                }
+              >
+                <summary>Advanced configuration</summary>
+                <div className={styles.sourceAdvanced}>
+                  {readDocument(draft!.content)?.has("kind") && (
+                    <TextField
+                      label="ID"
+                      value={String(
+                        readDocument(draft!.content)?.get("id") ?? "",
+                      )}
+                      description="Changing this ID can break references."
+                      onChange={(id) =>
+                        update({
+                          ...draft!,
+                          content: updateDocument(draft!.content, ["id"], id),
+                        })
+                      }
+                    />
+                  )}
+                  <section className={styles.sourceCode}>
+                    <header>
+                      <h3>Configuration file</h3>
+                      <p>Use credential references for API keys.</p>
+                    </header>
+                    <SourceEditor
+                      value={draft!.content}
+                      onChange={(content) => update({ ...draft!, content })}
+                    />
+                  </section>
+                  <Button
+                    variant="outline"
+                    loading={validate.isPending}
+                    disabled={save.isPending}
+                    onClick={() => validate.mutate(draft!.content)}
+                  >
+                    Check settings
+                  </Button>
+                </div>
+              </details>
+            )}
         </div>
       )}
-      {canEdit && (
+      {!dirty && !isNew && !validate.error && !save.error && notice && (
+        <p role="status">{notice}</p>
+      )}
+      {canEdit && (isNew || dirty || validate.error || save.error) && (
         <footer
           className={styles.editorActions}
           aria-label="Configuration actions"
@@ -567,16 +769,8 @@ export function SourceDocument({
             </div>
           )}
           <div className={styles.editorState}>
-            <span>
-              {dirty
-                ? "Unsaved changes · lost on reload"
-                : "No unsaved changes"}
-            </span>
-            {notice ? (
-              <small role="status">{notice}</small>
-            ) : (
-              <small>Saving validates changes for future runs.</small>
-            )}
+            {dirty && <span>Unsaved changes</span>}
+            {notice && <small role="status">{notice}</small>}
           </div>
           <div className={styles.actions}>
             {isNew ? (
@@ -587,13 +781,13 @@ export function SourceDocument({
                     Cancel
                   </Button>
                 }
-                title="Discard this unsaved configuration?"
-                description={`Your unsaved configuration for ${path} will be lost.`}
+                title="Discard draft?"
+                description={`Changes to ${path} will be lost.`}
                 confirmLabel="Discard draft"
                 destructive
                 onConfirm={() => {
                   drafts.delete(path);
-                  navigate("/settings/resources");
+                  navigate(back);
                 }}
               />
             ) : (
@@ -607,14 +801,10 @@ export function SourceDocument({
             )}
             <Button
               loading={save.isPending}
-              disabled={!dirty}
+              disabled={!dirty || (kind === "model" && !modelReady)}
               onClick={() => save.mutate(draft!.content)}
             >
-              {isNew
-                ? `Create ${resourceLabel}`
-                : mediaOnly
-                  ? "Save"
-                  : "Save changes"}
+              {isNew ? "Create" : "Save"}
             </Button>
           </div>
         </footer>
@@ -629,15 +819,20 @@ export function SourceDocument({
         onOpenChange={setDeleting}
         title="Delete this configuration?"
         description={`This deletes ${path} and every resource defined in it. References must be removed first. Unsaved edits will be discarded.`}
-        closeLabel="Cancel"
+        closeLabel="Close confirmation"
         footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            Delete configuration
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setDeleting(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => remove.mutate()}
+            >
+              Delete
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={remove.error} />
@@ -646,23 +841,28 @@ export function SourceDocument({
         open={replacing}
         onOpenChange={setReplacing}
         title="Discard this local draft?"
-        description="Reload the saved configuration. Your unsaved edits will be lost."
-        closeLabel="Cancel"
+        description="Reload the saved file? Your unsaved edits will be lost."
+        closeLabel="Close confirmation"
         footer={
-          <Button
-            onClick={() => {
-              const accepted = source.data!;
-              update({
-                content: accepted.content ?? "",
-                base: accepted.content,
-                digest: accepted.source_digest,
-                replacement: false,
-              });
-              setReplacing(false);
-            }}
-          >
-            Reload saved version
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setReplacing(false)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                const accepted = source.data!;
+                update({
+                  content: accepted.content ?? "",
+                  base: accepted.content,
+                  digest: accepted.source_digest,
+                  replacement: false,
+                });
+                setReplacing(false);
+              }}
+            >
+              Reload saved
+            </Button>
+          </>
         }
       >
         <p>{path}</p>

@@ -13,6 +13,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._run_stream import HarnessRunStream as HarnessRunStream
 from a13n_harness._run_stream import _usage_limits_from_spec
+from a13n_harness.compaction import CompactionResult
 from a13n_harness.context import AgentContext, RunBindings, SubagentCollection
 from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import RunError
@@ -60,6 +61,48 @@ class ExecutableAgent[OutputT]:
         self._model_inference = model_inference
         self._observation = observation
 
+    async def compact(
+        self,
+        *,
+        previous_state: HarnessState,
+        instruction: str | None = None,
+        environment: EnvironmentEntry | None = None,
+        environments: Mapping[str, EnvironmentEntry] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        resume_usage: bool = False,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[str]:
+        """Compact a quiescent checkpoint, returning a summary and resumable state.
+
+        Built-in constraints and the caller's instruction are appended at the tail.
+        When instruction is None, default compaction guidance is used instead.
+        The Agent must support text output with its existing tool configuration.
+        A completed result can be saved immediately; runtime restoration occurs
+        automatically on the next ordinary Run. Hosts publish only completed
+        results and retain the original checkpoint on failure or cancellation.
+        Scheduling, fenced publication, and save-failure notifications are Host-owned.
+        """
+        from a13n_harness._compaction_run import _CompactionRunStream
+
+        async with _CompactionRunStream(
+            executable=self,
+            previous_state=previous_state,
+            instruction=instruction,
+            environment=environment,
+            environments=environments,
+            default_environment=default_environment,
+            bindings=bindings,
+            resume_usage=resume_usage,
+            usage=usage,
+            usage_limits=usage_limits,
+        ) as stream:
+            async for item in stream:
+                if isinstance(item, HarnessRunResultEvent):
+                    return item.result
+        raise RunError("Compaction ended without a terminal result.", code="run_result_missing")
+
     def definition_usage_limits(self) -> UsageLimits:
         """Return a detached definition baseline, independent of per-Run overrides."""
         return _usage_limits_from_spec(self.definition.agent)
@@ -75,6 +118,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -93,6 +137,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -111,6 +156,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -128,6 +174,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -144,6 +191,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            compaction_result=compaction_result,
             resume_usage=resume_usage,
             tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
@@ -166,6 +214,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -184,6 +233,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -202,6 +252,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -219,6 +270,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -235,6 +287,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            compaction_result=compaction_result,
             resume_usage=resume_usage,
             tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,

@@ -1,0 +1,63 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+}
+
+.statusBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.instructions {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.instructions summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.metadata {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px 24px;
+  padding-block: 12px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.metadata dt {
+  color: var(--a13n-secondary);
+}
+
+.metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .controls {
+    justify-content: flex-start;
+  }
+}

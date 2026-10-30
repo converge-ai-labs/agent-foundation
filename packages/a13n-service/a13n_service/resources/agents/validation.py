@@ -27,9 +27,11 @@ from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.environment_templates.service import resolve_template
 from a13n_service.resources.memories.service import resolve_memory
+from a13n_service.resources.memories.tables import MemorySpaceRow
 from a13n_service.resources.models.service import model_settings, resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
+from a13n_service.resources.rows import find_row
 from a13n_service.resources.skills.pins import require_distinct_names, require_pins
 from a13n_service.resources.skills.schemas import SkillPin
 from a13n_service.resources.skills.tables import SkillRow
@@ -65,7 +67,11 @@ async def validate_config(
         update={
             "plugins": _normalized_plugins(config, plugins),
             "skills": await _pin_skills(
-                session, scope.workspace_id, config.skills, () if held is None else held.skills
+                session,
+                scope.workspace_id,
+                config.skills,
+                () if held is None else held.skills,
+                builtin_names=config.builtin_skills,
             ),
             "subagents": await _pin_subagents(
                 session, scope.workspace_id, config.subagents, {} if held is None else held.subagents
@@ -107,6 +113,9 @@ async def validate_config(
             with at_field(path):
                 await resolve_template(session, actor, scope, template_id, verb=verb, authority=authority)
     if held is None:
+        for index, binding in enumerate(config.memory.spaces):
+            with at_field(f"memory.spaces.{index}.space_id"):
+                await find_row(session, actor, MemorySpaceRow, scope, binding.space_id, "read")
         # A run's thread takes default mounts at its first acceptance, which checks them then.
         for index, mount in enumerate(config.memory_mounts):
             with at_field(f"memory_mounts.{index}.memory_id"):
@@ -121,6 +130,8 @@ def _check_rules(config: AgentConfig) -> None:
         if tool.provider_id is None:
             raise invalid(f"toolsets.web.tools.{operation}.config.provider_id", "required while the tool is enabled")
     reserved = toolsets.model_names(config.toolsets) | ({definition.QUESTION_TOOL} if config.user_questions else set())
+    if config.summarize:
+        reserved |= {"summarize"}
     for index, tool in enumerate(config.client_tools):
         if tool.name in reserved:
             raise invalid(f"client_tools.{index}.name", "is the name of a built-in tool")
@@ -177,7 +188,12 @@ def _normalized_plugins(config: AgentConfig, plugins: HarnessPluginFactoryCatalo
 
 
 async def _pin_skills(
-    session: AsyncSession, workspace_id: str, skills: Sequence[SkillSelection], held: Collection[SkillSelection]
+    session: AsyncSession,
+    workspace_id: str,
+    skills: Sequence[SkillSelection],
+    held: Collection[SkillSelection],
+    *,
+    builtin_names: Collection[str],
 ) -> tuple[SkillSelection, ...]:
     """Each skill at its selected revision, by default the skill's default revision; archived skills refuse a pin
     that is not `held` already."""
@@ -206,7 +222,10 @@ async def _pin_skills(
         pinned.append(selection)
     await require_pins(session, workspace_id, checked)
     await require_distinct_names(
-        session, workspace_id, {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)}
+        session,
+        workspace_id,
+        {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)},
+        reserved=builtin_names,
     )
     return tuple(pinned)
 

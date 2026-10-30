@@ -1,15 +1,15 @@
-import { FormField, Input, SettingsRow, SettingsSection } from "a13n-ui";
+import { FormField, Input, SettingsRow } from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { StatePill } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, FormSection } from "../../shared/forms";
 import { CredentialsPill, type CredentialState } from "./credentials-pill";
 import { ProviderFacts } from "./provider-facts";
 import styles from "./providers.module.css";
 
 /**
- * One anatomy for every provider editor: the name it is listed under, one soft
- * settings group, whatever the category folds away, then the footer.
+ * One anatomy for every provider editor: identity, configuration and credentials,
+ * optional advanced settings, then the footer.
  */
 export function ProviderEditor({
   onSubmit,
@@ -49,27 +49,30 @@ export function ProviderName({
 }) {
   const { t } = useTranslation();
   return (
-    <FormField
-      className="min-w-0 w-full"
-      label={t("Name")}
-      description={t("How this provider is listed across the console.")}
-    >
-      <Input
-        required
-        maxLength={128}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </FormField>
+    <FormSection title={t("Basic information")}>
+      <FormField className="min-w-0 w-full" label={t("Name")}>
+        <Input
+          required
+          maxLength={128}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </FormField>
+    </FormSection>
   );
 }
 
-/** The single soft group an editor settles everything else into. */
-export function ProviderGroup({ children }: { children: ReactNode }) {
+/** Provider settings share one outlined group. */
+export function ProviderGroup({
+  children,
+  title = "Configuration",
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
+  const { t } = useTranslation();
   return (
-    <div className={styles.group}>
-      <SettingsSection>{children}</SettingsSection>
-    </div>
+    <FormSection title={title ? t(title) : undefined}>{children}</FormSection>
   );
 }
 
@@ -105,12 +108,7 @@ export function ProviderReadOnly({
           <CredentialsPill state={credentials} />
         </SettingsRow>
       </ProviderGroup>
-      <FormActions
-        dismiss
-        pending={false}
-        cancelLabel={t("Close")}
-        onCancel={onClose}
-      />
+      <FormActions dismiss pending={false} onCancel={onClose} />
     </div>
   );
 }

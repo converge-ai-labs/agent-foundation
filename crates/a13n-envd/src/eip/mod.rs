@@ -11,13 +11,14 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
 
     use super::{
-        DataFrame, DataFrameKind, DataResetStatus, EIP_PROTO_PACKAGE, EIP_PROTOCOL_VERSION,
-        EIPCallContext, EIPError, EIPLimits, EIPServerInfo, EipValidate, EncodedBytes,
-        EnvironmentReadinessParams, EnvironmentReadinessResult, ErrorType, FileFindParams,
-        FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
-        InitializeParams, JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, METHODS,
-        OutputInfo, OutputReadParams, OutputReference, ProcessWriteStdinParams, ReceiptGetParams,
-        ShellExecParams, decode, decode_data_frame, encode, encode_data_frame,
+        CpuTimeSeconds, DataFrame, DataFrameKind, DataResetStatus, DeviceMetricsParams,
+        DeviceMetricsResult, EIP_PROTO_PACKAGE, EIP_PROTOCOL_VERSION, EIPCallContext, EIPError,
+        EIPLimits, EIPServerInfo, EipValidate, EncodedBytes, EnvironmentReadinessParams,
+        EnvironmentReadinessResult, ErrorType, FileFindParams, FileSearchMatch, FileSearchParams,
+        FileSearchResult, FileStatParams, FileStatResult, InitializeParams, JsonRpcErrorResponse,
+        JsonRpcRequest, JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams,
+        OutputReference, ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, SystemInfo,
+        SystemMetrics, decode, decode_data_frame, encode, encode_data_frame,
     };
 
     fn assert_golden<T>(value: serde_json::Value)
@@ -39,9 +40,9 @@ mod tests {
 
     #[test]
     fn generated_registry_has_complete_v1_surface() {
-        assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
+        assert_eq!(EIP_PROTOCOL_VERSION, "0.3");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 50);
+        assert_eq!(METHODS.len(), 54);
         assert!(
             METHODS
                 .iter()
@@ -53,14 +54,14 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            21
+            23
         );
         assert_eq!(
             METHODS
                 .iter()
                 .filter(|method| method.replay_class == "terminal_evidence")
                 .count(),
-            21
+            22
         );
         assert_eq!(
             METHODS
@@ -70,6 +71,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "device.describe",
+                "device.metrics",
                 "directory.list",
                 "egress.update",
                 "initialize",
@@ -83,7 +85,14 @@ mod tests {
             .iter()
             .filter(|method| method.transfer_action.is_some())
             .collect::<Vec<_>>();
-        assert_eq!(transfer_methods.len(), 7);
+        assert_eq!(transfer_methods.len(), 8);
+        let zoom = METHODS
+            .iter()
+            .find(|method| method.name == "computer.zoom")
+            .expect("computer.zoom is registered");
+        assert_eq!(zoom.replay_class, "active_only");
+        assert_eq!(zoom.transfer_action, Some("open"));
+        assert_eq!(zoom.transfer_direction, Some("server_to_client"));
         assert!(
             transfer_methods
                 .iter()
@@ -99,6 +108,9 @@ mod tests {
         for case in fixture["cases"].as_array().expect("cases is an array") {
             let value = case["value"].clone();
             match case["type"].as_str().expect("case type is a string") {
+                "SystemInfo" => assert_golden::<SystemInfo>(value),
+                "DeviceMetricsParams" => assert_golden::<DeviceMetricsParams>(value),
+                "DeviceMetricsResult" => assert_golden::<DeviceMetricsResult>(value),
                 "InitializeParams" => assert_golden::<InitializeParams>(value),
                 "EnvironmentReadinessParams" => assert_golden::<EnvironmentReadinessParams>(value),
                 "EnvironmentReadinessResult" => assert_golden::<EnvironmentReadinessResult>(value),
@@ -154,6 +166,26 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn monitoring_floats_enforce_finite_fractional_bounds() {
+        for value in [0.0, 0.25, 99.99, 100.0] {
+            assert!(decode::<SystemMetrics>(&format!(r#"{{"cpu_busy_percent":{value}}}"#)).is_ok());
+        }
+        for value in [-0.01, 100.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut metrics: SystemMetrics = decode("{}").unwrap();
+            metrics.cpu_busy_percent = Some(value);
+            assert!(encode(&metrics).is_err(), "accepted {value}");
+        }
+        for value in [-0.01, f64::NAN, f64::INFINITY] {
+            let mut seconds: CpuTimeSeconds = decode("{}").unwrap();
+            seconds.user = Some(value);
+            assert!(encode(&seconds).is_err());
+        }
+        assert!(decode::<SystemMetrics>(r#"{"cpu_busy_percent":100.01}"#).is_err());
+        let absent = decode::<SystemMetrics>(r#"{"cpu_busy_percent":null}"#).unwrap();
+        assert_eq!(encode(&absent).unwrap(), b"{}");
     }
 
     fn valid_eip_limits() -> serde_json::Value {

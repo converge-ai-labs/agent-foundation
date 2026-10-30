@@ -1,8 +1,12 @@
-import { Button, ChoiceField, DisclosureSection, Label, Switch } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  SegmentedControl,
+} from "a13n-ui";
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import {
-  CheckIcon,
   HandPalmIcon,
   QuestionIcon,
   WarningIcon,
@@ -14,8 +18,12 @@ import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
-import { JsonView, TextAreaField } from "../../../shared/forms";
+import { JsonView, SwitchField, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
+import { DesktopAssistance } from "./desktop-assistance";
+import { ProviderConfiguration } from "./provider-configuration";
+import { callWait } from "../lifecycle";
+import { waitingLabel } from "./entry-language";
 import styles from "./cards.module.css";
 
 type PendingAction = Schema["PendingCall"] & { category: "approval" | "call" };
@@ -53,18 +61,7 @@ export function PendingRequests({ pending }: { pending: Schema["Pending"] }) {
       </p>
       {actions.map((action) => (
         <ActionCard key={action.tool_call_id} action={action}>
-          <DisclosureSection
-            className={styles.inlineDisclosure}
-            title={<>{t("Request details")}</>}
-          >
-            <JsonView
-              value={
-                action.category === "approval"
-                  ? (action.presentation ?? action.arguments)
-                  : action.arguments
-              }
-            />
-          </DisclosureSection>
+          <RequestSummary action={action} />
         </ActionCard>
       ))}
     </div>
@@ -191,6 +188,41 @@ export function RunFeedback({
             action.tool_name === "ask_user_question"
               ? readQuestions(action.arguments)
               : null;
+          if (
+            action.category === "call" &&
+            action.tool_name === "configure_provider"
+          )
+            return (
+              <ActionCard key={action.tool_call_id} action={action}>
+                <ProviderConfiguration
+                  arguments={action.arguments}
+                  onResolved={(value) =>
+                    change(action.tool_call_id, {
+                      action: "returned",
+                      value: JSON.stringify(value),
+                    })
+                  }
+                />
+              </ActionCard>
+            );
+          if (
+            action.category === "call" &&
+            action.tool_name === "request_desktop_assistance"
+          )
+            return (
+              <ActionCard key={action.tool_call_id} action={action}>
+                <DesktopAssistance
+                  runId={run.id}
+                  callId={action.tool_call_id}
+                  onResolved={(value) =>
+                    change(action.tool_call_id, {
+                      action: "returned",
+                      value: JSON.stringify(value),
+                    })
+                  }
+                />
+              </ActionCard>
+            );
           if (questions)
             return (
               <ActionCard key={action.tool_call_id} action={action}>
@@ -200,98 +232,35 @@ export function RunFeedback({
                 />
               </ActionCard>
             );
-          const details =
-            action.category === "approval"
-              ? approvalDetails(action.presentation)
-              : null;
           return (
-            <ActionCard
-              key={action.tool_call_id}
-              action={action}
-              details={details}
-            >
-              {details?.target && (
-                <div className={styles.cardCommand}>
-                  <code>{details.target}</code>
-                  <CopyButton
-                    value={details.target}
-                    iconOnly
-                    copyLabel={t("Copy command")}
-                  />
-                </div>
-              )}
-              {details && (lowRisk(details.risk) || details.reason) && (
-                <dl className={styles.cardFacts}>
-                  {/* High risk is already stated in the header badge. */}
-                  {lowRisk(details.risk) && (
-                    <>
-                      <dt>{t("Risk")}</dt>
-                      <dd>{t(details.risk!)}</dd>
-                    </>
-                  )}
-                  {details.reason && (
-                    <>
-                      <dt>{t("Review reason")}</dt>
-                      <dd>{t(details.reason)}</dd>
-                    </>
-                  )}
-                </dl>
-              )}
-              {!details && (
-                <DisclosureSection
-                  className={styles.inlineDisclosure}
-                  title={<>{t("Request details")}</>}
-                >
-                  <JsonView
-                    value={
-                      action.category === "approval"
-                        ? (action.presentation ?? action.arguments)
-                        : action.arguments
-                    }
-                  />
-                </DisclosureSection>
-              )}
+            <ActionCard key={action.tool_call_id} action={action}>
+              <RequestSummary action={action} />
               {action.category === "approval" ? (
-                <div className={styles.cardFooter}>
-                  {(
-                    [
-                      ["approve", t("Approve once"), "default"],
-                      ["reject", t("Deny"), "outline"],
-                      ["reject_with_reason", t("Deny with reason"), "ghost"],
-                    ] as const
-                  ).map(([choice, label, variant]) => {
-                    const target =
-                      choice === "reject_with_reason" ? "reject" : choice;
-                    const pressed =
-                      answer.action === target &&
-                      (choice === "reject_with_reason"
-                        ? !!answer.reasonMode
-                        : !answer.reasonMode);
-                    return (
-                      <Button
-                        key={choice}
-                        type="button"
-                        size="sm"
-                        variant={pressed ? "secondary" : variant}
-                        aria-pressed={pressed}
-                        onClick={() =>
-                          change(action.tool_call_id, {
-                            ...answer,
-                            action: target,
-                            reasonMode: choice === "reject_with_reason",
-                            value:
-                              choice === "reject_with_reason"
-                                ? answer.value
-                                : "",
-                          })
-                        }
-                      >
-                        {pressed && <CheckIcon size={13} aria-hidden="true" />}
-                        {label}
-                      </Button>
-                    );
-                  })}
-                </div>
+                <SegmentedControl
+                  label={t("Response")}
+                  value={
+                    answer.action === "reject" && answer.reasonMode
+                      ? "reject_with_reason"
+                      : answer.action
+                  }
+                  onValueChange={(choice) =>
+                    change(action.tool_call_id, {
+                      ...answer,
+                      action: choice === "approve" ? "approve" : "reject",
+                      reasonMode: choice === "reject_with_reason",
+                      value:
+                        choice === "reject_with_reason" ? answer.value : "",
+                    })
+                  }
+                  options={[
+                    { value: "approve", label: t("Approve once") },
+                    { value: "reject", label: t("Deny") },
+                    {
+                      value: "reject_with_reason",
+                      label: t("Deny with reason"),
+                    },
+                  ]}
+                />
               ) : (
                 <ChoiceField
                   placeholder={t("Choose a response")}
@@ -348,18 +317,16 @@ export function RunFeedback({
               {["complete", "respond"].includes(answer.action) && (
                 <>
                   {answer.action === "respond" && (
-                    <Label className={styles.cardSwitch}>
-                      <Switch
-                        checked={!!answer.structured}
-                        onCheckedChange={(checked) =>
-                          change(action.tool_call_id, {
-                            ...answer,
-                            structured: checked === true,
-                          })
-                        }
-                      />
-                      {t("Structured response")}
-                    </Label>
+                    <SwitchField
+                      label={t("Structured response")}
+                      checked={!!answer.structured}
+                      onCheckedChange={(checked) =>
+                        change(action.tool_call_id, {
+                          ...answer,
+                          structured: checked === true,
+                        })
+                      }
+                    />
                   )}
                   <TextAreaField
                     label={t(
@@ -379,7 +346,9 @@ export function RunFeedback({
           );
         })}
         <div className={styles.cardsFooter}>
-          {continuation}
+          {!actions.some(
+            (action) => action.tool_name === "request_desktop_assistance",
+          ) && continuation}
           <Button
             type="submit"
             variant="default"
@@ -403,16 +372,18 @@ export function RunFeedback({
  */
 function ActionCard({
   action,
-  details,
   children,
 }: {
   action: PendingAction;
-  details?: { risk?: string } | null;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const approval = action.category === "approval";
   const question = !approval && action.tool_name === "ask_user_question";
+  const desktop =
+    !approval && action.tool_name === "request_desktop_assistance";
+  const provider = !approval && action.tool_name === "configure_provider";
+  const risk = approval ? approvalDetails(action.presentation).risk : undefined;
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
@@ -430,12 +401,16 @@ function ActionCard({
             ? t("Approval requested")
             : question
               ? t("The agent has a question")
-              : t("Waiting for a tool result")}
+              : provider
+                ? t("Configure provider")
+                : desktop
+                  ? t("Desktop assistance requested")
+                  : waitingLabel(callWait(action.tool_name), t)}
         </h3>
-        {action.tool_name && (
+        {action.tool_name && !provider && (
           <code className={styles.cardTool}>{action.tool_name}</code>
         )}
-        {highRisk(details?.risk) && (
+        {highRisk(risk) && (
           <span className={styles.cardRisk}>
             <WarningIcon size={12} aria-hidden="true" />
             {t("High risk")}
@@ -447,37 +422,87 @@ function ActionCard({
   );
 }
 
+/**
+ * What the call is about: an approval's command, risk and reason as the
+ * Harness presented them, and the call's arguments behind a disclosure when
+ * nothing else says what it will do.
+ */
+function RequestSummary({ action }: { action: PendingAction }) {
+  const { t } = useTranslation();
+  const details =
+    action.category === "approval" ? approvalDetails(action.presentation) : {};
+  const facts = lowRisk(details.risk) || details.reason;
+  const empty = !action.arguments || Object.keys(action.arguments).length === 0;
+  return (
+    <>
+      {details.target && (
+        <div className={styles.cardCommand}>
+          <code>{details.target}</code>
+          <CopyButton
+            value={details.target}
+            iconOnly
+            copyLabel={t("Copy command")}
+          />
+        </div>
+      )}
+      {facts && (
+        <dl className={styles.cardFacts}>
+          {/* High risk is already stated in the header badge. */}
+          {lowRisk(details.risk) && (
+            <>
+              <dt>{t("Risk")}</dt>
+              <dd>{t(details.risk === "low" ? "Low" : "Medium")}</dd>
+            </>
+          )}
+          {details.reason && (
+            <>
+              <dt>{t("Review reason")}</dt>
+              <dd>{t(details.reason)}</dd>
+            </>
+          )}
+        </dl>
+      )}
+      {!details.target && !empty && (
+        <DisclosureSection
+          className={styles.inlineDisclosure}
+          title={<>{t("Request details")}</>}
+        >
+          <JsonView value={action.arguments} />
+        </DisclosureSection>
+      )}
+    </>
+  );
+}
+
 const highRisk = (risk?: string) => risk === "high" || risk === "extra_high";
 const lowRisk = (risk?: string) => !!risk && !highRisk(risk);
 
-function approvalDetails(
-  value: Schema["PendingCall"]["presentation"],
-): { target?: string; reason?: string; risk?: string } | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const details = value as Record<string, unknown>;
-  const { target, reason, risk } = details;
-  if (
-    Object.keys(details).length === 0 ||
-    !Object.keys(details).every((key) =>
-      ["target", "reason", "risk"].includes(key),
-    ) ||
-    (target !== undefined && typeof target !== "string") ||
-    (reason !== undefined &&
-      (typeof reason !== "string" ||
-        ![
-          "Tool permission configuration requires approval.",
-          "Tool policy requires approval.",
-          "Tool reviewer requires approval.",
-          "Tool review could not complete.",
-        ].includes(reason))) ||
-    (risk !== undefined &&
-      (typeof risk !== "string" ||
-        !["low", "medium", "high", "extra_high"].includes(risk)))
-  )
-    return null;
+/** Reasons the Harness gives for asking; each has its own translation. */
+const REVIEW_REASONS = [
+  "Tool permission configuration requires approval.",
+  "Tool policy requires approval.",
+  "Tool reviewer requires approval.",
+  "Tool review could not complete.",
+];
+const RISKS = ["low", "medium", "high", "extra_high"];
+
+/**
+ * The fields of an approval's presentation this console knows how to show.
+ * Other keys, such as the tool's identity, and malformed values are left out
+ * rather than shown as raw JSON.
+ */
+function approvalDetails(value: Schema["PendingCall"]["presentation"]): {
+  target?: string;
+  reason?: string;
+  risk?: string;
+} {
+  const { target, reason, risk } = value ?? {};
   return {
-    target: target as string | undefined,
-    reason: reason as string | undefined,
-    risk: risk as string | undefined,
+    target: typeof target === "string" && target.trim() ? target : undefined,
+    reason:
+      typeof reason === "string" && REVIEW_REASONS.includes(reason)
+        ? reason
+        : undefined,
+    risk: typeof risk === "string" && RISKS.includes(risk) ? risk : undefined,
   };
 }

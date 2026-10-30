@@ -23,6 +23,9 @@ vi.mock("./capture", () => ({
   CaptureContext: () => null,
   downloadBlob: vi.fn(),
 }));
+vi.mock("./file-media", () => ({
+  FileMedia: () => <div data-testid="media-preview" />,
+}));
 afterEach(cleanup);
 
 function file(
@@ -78,6 +81,60 @@ async function openConfirmation(
   await user.click(trigger);
   return screen.findByRole("dialog");
 }
+
+it.each(["text", "binary"] as const)(
+  "inspects ambiguous .ts bytes before selecting the %s view",
+  async (presentation) => {
+    const path = "/code/checkout.ts";
+    const value = file("export const ready = true;", "one", path);
+    const info = {
+      entry: value.entry,
+      resolved_path: path,
+      media_type: "video/mp2t",
+    };
+    const GET = vi.fn(async (url: string) => ({
+      data:
+        url === "/api/host/files/info"
+          ? info
+          : {
+              ...value,
+              presentation,
+              text: presentation === "text" ? value.text : null,
+            },
+    }));
+    const queries = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queries}>
+        <TransportContext value={{ client: { GET } } as unknown as Transport}>
+          <FileBuffers value={new Map()}>
+            <FileView path={path} refresh={vi.fn()} open={vi.fn()} />
+          </FileBuffers>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    if (presentation === "text") {
+      expect(
+        (
+          (await screen.findByLabelText(
+            `File text: ${path}`,
+          )) as HTMLTextAreaElement
+        ).value,
+      ).toBe(value.text);
+      expect(screen.queryByTestId("media-preview")).toBeNull();
+    } else {
+      expect(await screen.findByTestId("media-preview")).toBeTruthy();
+      expect(screen.queryByLabelText(`File text: ${path}`)).toBeNull();
+    }
+    expect(GET).toHaveBeenCalledWith(
+      "/api/host/files/text",
+      expect.objectContaining({
+        params: { query: { path, expected_revision: "one" } },
+      }),
+    );
+  },
+);
 
 it("opens Markdown in Preview and switches between rendered and Text buttons", async () => {
   const path = "/code/readme.md";

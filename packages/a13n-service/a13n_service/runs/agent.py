@@ -29,6 +29,7 @@ from a13n_harness import (
     HarnessInstrumentation,
     HarnessModelCharacteristics,
     ModelRecoveryPolicy,
+    RequestContext,
     RunBindings,
     RunConfiguration,
     RunModelResolver,
@@ -36,11 +37,14 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import (
     CompactionCapability,
+    FileContextCapability,
+    HandoffCapability,
     SubagentCapability,
     SubagentOperator,
     UserInteractionCapability,
 )
 from a13n_harness.capabilities.web import WebCapability
+from a13n_harness.compaction import CompactionOperator
 from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
@@ -215,7 +219,12 @@ async def resolve(
 
 
 async def open_models(
-    stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent, *, configuration: RunConfiguration | None = None
+    stack: AsyncExitStack,
+    runtime: Runtime,
+    agent: ResolvedAgent,
+    *,
+    configuration: RunConfiguration | None = None,
+    request_context: RequestContext | None = None,
 ) -> dict[str, Model]:
     """Every model of the agent and its inline subagents, by model key, opened once and closed by `stack`."""
     opened: dict[str, Model] = {}
@@ -229,6 +238,7 @@ async def open_models(
                     keys=runtime.keys,
                     policy=runtime.endpoint_policy.for_run(configuration or RunConfiguration()),
                     settings=runtime.settings.providers,
+                    request_context=request_context,
                 )
             )
     return opened
@@ -246,6 +256,7 @@ def model_resolver(agent: ResolvedAgent, models: Mapping[str, Model]) -> RunMode
 
 
 type HostCapabilities = Callable[[ResolvedAgent], Sequence[AbstractCapability[AgentContext]]]
+type ToolSources = Callable[[ResolvedAgent], Mapping[str, AbstractCapability[AgentContext]]]
 type ChildBindings = Callable[[ResolvedAgent, RunBindings], RunBindings]
 type Operators = Callable[[ResolvedAgent], SubagentOperator]
 
@@ -254,10 +265,12 @@ def build(
     agent: ResolvedAgent,
     *,
     capabilities: HostCapabilities,
+    tool_sources: ToolSources | None = None,
     child_bindings: ChildBindings | None = None,
     operators: Operators | None = None,
     plugins: HarnessPluginFactoryCatalog,
     instrumentation: HarnessInstrumentation | None,
+    compaction: CompactionOperator | None = None,
 ) -> ExecutableAgent[Any]:
     """The executable agent over the worker's attempt-bound parts; its run resolves models by `model_resolver`.
 
@@ -266,7 +279,7 @@ def build(
     child binds of its own, such as web backends and media understanding. `operators` returns the operator
     through which one async agent of the graph starts child runs over its own edges.
     """
-    root = _Host(capabilities, child_bindings, operators, plugins).compose(agent)
+    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(agent, compaction=compaction)
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
     prices = TokenPricingCapability({model.key: model.pricing for model in agent.models() if model.pricing is not None})
     return HarnessBuilder(instrumentation=instrumentation, configured_plugins_enabled=False).build(
@@ -320,18 +333,29 @@ class _Host:
     child_bindings: ChildBindings | None
     operators: Operators | None
     plugins: HarnessPluginFactoryCatalog
+    tool_sources: ToolSources | None = None
 
-    def compose(self, agent: ResolvedAgent) -> AgentDefinition[Any]:
+    def compose(self, agent: ResolvedAgent, *, compaction: CompactionOperator | None = None) -> AgentDefinition[Any]:
         config = agent.config
+        sources = dict(self.tool_sources(agent) if self.tool_sources else {})
+        environment = DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets))
+        sources["environment"] = environment
         features: list[AbstractCapability[AgentContext]] = [
             *self.capabilities(agent),
-            DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets)),
+            environment,
+            FileContextCapability(),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
-            CompactionCapability(),
+            CompactionCapability(
+                background=config.background_compaction if compaction is not None else False,
+                operator=compaction,
+            ),
         ]
         if (web := toolsets.web_tools(config.toolsets)) is not None:
-            features.append(WebCapability(toolsets.web_configuration(web)))
+            sources["web"] = WebCapability(toolsets.web_configuration(web))
+            features.append(sources["web"])
+        if config.summarize:
+            features.append(HandoffCapability())
         if config.user_questions:
             features.append(UserInteractionCapability())
         if (client := definition.client_toolset(config)) is not None:
@@ -356,6 +380,7 @@ class _Host:
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.revision_id,
             capabilities=tuple(features),
+            tool_search=definition.tool_search(config, sources),
             plugins=tuple(
                 self.plugins.create_plugin(
                     HarnessPluginFactoryContext(

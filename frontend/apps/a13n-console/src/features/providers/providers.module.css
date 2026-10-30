@@ -14,12 +14,14 @@
 /* The connect step: one column of fields, then the notices and the actions. */
 .connectForm {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
 /* A connect step that disables its fields while the create request is in flight. */
 .connectFields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
   border: 0;
@@ -31,6 +33,7 @@
    The dialog panel sets a 16px gap on any form; an editor breathes more. */
 .editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
 }
@@ -39,16 +42,12 @@
 }
 .editorFields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
-}
-.group {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
 }
 
 /* Connection facts: what the saved provider answers for, never editable. */
@@ -95,9 +94,10 @@
 }
 .credentialEdit {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
-  padding-block: 16px;
+  padding-block: 0;
 }
 /* Backing out of a replacement reads like helper text, not a second Cancel. */
 .credentialKeep {
@@ -134,9 +134,11 @@
 .checkNote {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+  text-wrap: balance;
 }
 .checkResult {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
 }
@@ -149,4 +151,35 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
+}
+
+.referenceSection {
+  margin: 20px 0;
+}
+.referenceSection h3 {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.referenceList {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.referenceList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.referenceList li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.referenceList small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  margin-top: 4px;
 }

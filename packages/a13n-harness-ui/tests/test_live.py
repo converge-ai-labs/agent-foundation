@@ -543,3 +543,102 @@ async def test_subscribe_never_captures_half_of_a_raw_publication_batch() -> Non
         assert frames[0].payload["value"]["items"][0]["content"]["text"] == "".join(map(str, range(20)))
         assert frames[-1].payload["value"]["continuation"]["position"]["sequence"] == len(observations)
     await hub.close()
+
+
+async def test_fanout_shares_private_events_and_detaches_each_delivery() -> None:
+    from ag_ui.core import CustomEvent
+
+    hub = HarnessUiLiveHub(epoch="epoch")
+    source = CustomEvent(name="nested", value={"rows": [{"text": "original"}]})
+    async with hub.subscribe(root_thread_id="root") as first, hub.subscribe(root_thread_id="root") as second:
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="root",
+            parent_thread_id=None,
+            thread_id="root",
+            run_id="run",
+            events=(source,),
+        )
+        source.value["rows"][0]["text"] = "producer mutation"
+        stored = hub._ring[-1]
+        # Queue references are private; consumers only receive detached objects.
+        assert first._subscriber.receive._state.buffer[0] is stored
+        assert second._subscriber.receive._state.buffer[0] is stored
+        delivered = await first.receive()
+        delivered.payload["value"]["rows"][0]["text"] = "consumer mutation"
+        drained = second.drain_pending()[0]
+        assert drained.payload["value"]["rows"][0]["text"] == "original"
+        drained.payload["value"]["rows"].clear()
+        async with hub.subscribe(root_thread_id="root", after=LiveCursor(epoch="epoch", sequence=0)) as resumed:
+            assert (await resumed.receive()).payload["value"]["rows"][0]["text"] == "original"
+    await hub.close()
+
+
+async def test_snapshot_filters_before_detaching_and_preserves_suffix_budget(monkeypatch) -> None:
+    from a13n_harness_ui.live import LiveEvent
+
+    hub = HarnessUiLiveHub()
+    for index in range(5):
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="root",
+            parent_thread_id=None,
+            thread_id="root",
+            run_id="run",
+            events=(_text_event(str(index)),),
+        )
+    full = await hub.snapshot(root_thread_id="root")
+    budget = sum(len(event.model_dump_json().encode()) for event in full[1:4])
+    copied = []
+    original = LiveEvent.model_copy
+
+    def copy(event, **kwargs):
+        copied.append(event.sequence)
+        return original(event, **kwargs)
+
+    monkeypatch.setattr(LiveEvent, "model_copy", copy)
+    suffix = await hub.snapshot(root_thread_id="root", through_sequence=4, max_bytes=budget)
+    assert suffix == full[1:4]
+    assert copied == [4, 3, 2]
+    assert await hub.snapshot(root_thread_id="root", max_bytes=0) == ()
+    await hub.close()
+
+
+async def test_taken_bootstrap_releases_replay_but_preserves_refresh_and_new_runs() -> None:
+    import gc
+    import weakref
+
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_stream_protocol.display import DisplayFold
+
+    hub = HarnessUiLiveHub()
+
+    async def publish(run):
+        fold = DisplayFold(run, full_content=True)
+        observations = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": run}])
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="root",
+            parent_thread_id=None,
+            thread_id="root",
+            run_id=run,
+            events=(),
+            display=DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation()),
+        )
+
+    await publish("first")
+    async with hub.subscribe(root_thread_id="root") as subscription:
+        replay = subscription.take_root_stream()
+        reference = weakref.ref(replay.events[0])
+        assert subscription.root_stream is None
+        assert subscription.take_root_stream() is None
+        assert subscription.capture_root_stream("first") == replay
+        await hub.finish_root(thread_id="root", run_id="first", saved_continuation_id="saved")
+        assert subscription.capture_root_stream("first") == replay
+        del replay
+        gc.collect()
+        assert reference() is None
+        await publish("second")
+        assert subscription.capture_root_stream("first") is None
+        assert subscription.capture_root_stream("second").summary.run_id == "second"
+    await hub.close()

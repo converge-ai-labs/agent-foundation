@@ -110,6 +110,29 @@ def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -
     assert set(exported["entries"]) == set(catalog)
 
 
+def test_bundled_catalog_includes_new_upstream_models() -> None:
+    entry = get_default_pricing_catalog()["openai:gpt-6.1-terra"]
+
+    assert entry.source == "genai_prices"
+    assert entry.context_window == 1_050_000
+    assert {component.price_key for rule in entry.rules for component in rule.prices} >= {
+        "input_mtok",
+        "output_mtok",
+        "cache_read_mtok",
+    }
+
+
+def test_bundled_catalog_preserves_upstream_dated_price_changes() -> None:
+    capability = CatalogModelCostCapability(catalog=get_default_pricing_catalog())
+
+    before = capability.quote(_cost_input("mistral-small-latest", "mistral", datetime(2026, 3, 15, 23, tzinfo=UTC)))
+    after = capability.quote(_cost_input("mistral-small-latest", "mistral", datetime(2026, 3, 16, tzinfo=UTC)))
+
+    assert before is not None and before.cost_usd == Decimal("0.4")
+    assert after is not None and after.cost_usd == Decimal("0.75")
+    assert before.rule_id != after.rule_id
+
+
 def test_catalog_preserves_genai_and_overlay_time_window_pricing() -> None:
     capability = CatalogModelCostCapability()
 
@@ -272,11 +295,16 @@ def test_official_context_merge_preserves_explicit_supplements_and_missing_media
         ("moonshotai:kimi-k3", 1048576, "3", "15"),
         ("x-ai:grok-4.7", 500000, "2", "6"),
         ("x-ai:grok-4.20-0309-reasoning", 1000000, "1.25", "2.5"),
-        ("mistral:mistral-large-4", 1000000, "0.68", "2.09"),
+        ("mistral:mistral-large-4", 1000000, "1.36", "4.18"),
         ("fireworks:accounts/fireworks/models/ember-1", 1040000, "3", "15"),
         ("together:moonshotai/Kimi-K3", 1048576, "3", "15"),
         ("together:deepseek-ai/DeepSeek-V4.1-Flash", 1000000, "0.3", "1.2"),
         ("minimax:MiniMax-M3", 1000000, "0.3", "1.2"),
+        ("minimax:MiniMax-M3.1-Flash", 1000000, "0.15", "0.6"),
+        ("anthropic:claude-opus-5-5", 1000000, "4", "20"),
+        ("google:gemini-4-argon", 1048576, "2", "10"),
+        ("openai:gpt-5.5-pro", 1050000, "30", "180"),
+        ("openai:gpt-4.1", 1047576, "2", "8"),
     ],
 )
 def test_reviewed_provider_prices_and_context(key, context, input_price, output_price):

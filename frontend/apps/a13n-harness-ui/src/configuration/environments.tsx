@@ -1,10 +1,22 @@
-import { ChoiceField } from "a13n-ui";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
+import styles from "./environments.module.css";
+import { HelpTip } from "../shell/help-tip";
+
 import type { Schema } from "../transport/client";
-import { BindingSummary, EnvironmentBindings } from "./environment-bindings";
+import {
+  BindingSummary,
+  DefaultWorkingDirectory,
+  EnvironmentBindings,
+} from "./environment-bindings";
 import { ProjectFolders } from "./project-folders";
 
 import {
   changeLocalRoots,
+  directoryCount,
+  selectedWorkingDirectory,
   localAlias,
   type EnvironmentSelection,
 } from "./environment-selection";
@@ -37,17 +49,24 @@ export function EnvironmentsEditor({
       item.profile_id === (value.environment_profile_id ?? inheritedProfile),
   );
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <section className="flex flex-col gap-3" aria-label="Local environment">
-        <div>
-          <h3 className="font-medium">Local · Harness server</h3>
-          <p className="text-sm text-muted-foreground">
-            On the computer running Harness, not your browser. One mode covers
-            local folders and Thread files.
-          </p>
-        </div>
+    <div className={styles.editor}>
+      <SettingsSection
+        title={
+          <span className={styles.sectionTitle}>
+            Local
+            <HelpTip label="About local environments">
+              The computer running Harness.
+            </HelpTip>
+          </span>
+        }
+      >
         <ChoiceField
           label="Local mode"
+          description={
+            profile?.mode === "full-control"
+              ? "Runs as the server account without a sandbox."
+              : profile?.description
+          }
           value={value.environment_profile_id ?? ""}
           onValueChange={(environment_profile_id) =>
             onChange({
@@ -74,13 +93,6 @@ export function EnvironmentsEditor({
               : []),
           ]}
         />
-        {profile && (
-          <p className="text-sm text-muted-foreground">
-            {profile.mode === "full-control"
-              ? "Full Control runs as the server account, without a sandbox."
-              : profile.description}
-          </p>
-        )}
         <ProjectFolders
           compact
           roots={roots.map((path) => ({ path }))}
@@ -94,20 +106,21 @@ export function EnvironmentsEditor({
             )
           }
         />
-      </section>
-      <section className="flex flex-col gap-3" aria-label="Device environments">
-        <h3 className="font-medium">Device environments</h3>
-        <EnvironmentBindings
-          bindings={value.environment_bindings ?? []}
-          localRoots={roots}
-          defaultEnvironment={value.default_environment}
-          allowUnsetDefault={allowUnsetDefault}
-          allowEmpty={!requireWorkspace || roots.length > 0}
-          onChange={(environment_bindings, default_environment) =>
-            onChange({ environment_bindings, default_environment })
-          }
-        />
-      </section>
+      </SettingsSection>
+      <EnvironmentBindings
+        bindings={value.environment_bindings ?? []}
+        localRoots={roots}
+        defaultEnvironment={value.default_environment}
+        allowEmpty={!requireWorkspace || roots.length > 0}
+        onChange={(environment_bindings, default_environment) =>
+          onChange({ environment_bindings, default_environment })
+        }
+      />
+      <DefaultWorkingDirectory
+        value={value}
+        allowUnsetDefault={allowUnsetDefault}
+        onChange={(default_environment) => onChange({ default_environment })}
+      />
     </div>
   );
 }
@@ -122,25 +135,30 @@ export function EnvironmentsSummary({
   const profile = profiles.find(
     (item) => item.profile_id === value.environment_profile_id,
   );
+  const selected = selectedWorkingDirectory(value);
   return (
-    <div className="flex flex-col gap-2 text-sm">
-      <p>
-        Local · Harness server ·{" "}
-        {profile?.name ?? value.environment_profile_id ?? "Default mode"}
-      </p>
-      {(value.local_roots ?? []).map((path, index) => (
-        <p key={path} className="break-all">
-          {localAlias(index)} · {path}
-        </p>
-      ))}
-      {!value.local_roots?.length && (
+    <div className={styles.summary}>
+      <section className={styles.summaryEnvironment}>
+        <p className="font-medium">Local · Harness server</p>
         <p className="text-muted-foreground">
-          Thread files only on this server
+          {profile?.name ?? value.environment_profile_id ?? "Default mode"}
+          {value.local_roots?.length
+            ? ` · ${directoryCount(value.local_roots.length)}`
+            : " · Chat files only"}
         </p>
-      )}
+        {(value.local_roots ?? []).map((path, index) => (
+          <p key={path} className={styles.summaryPath}>
+            {path}
+            {localAlias(index) === selected && (
+              <span className="ml-2 text-muted-foreground">Default</span>
+            )}
+          </p>
+        ))}
+        {selected === "thread-files" && <p>Chat files · Default</p>}
+      </section>
       <BindingSummary
         bindings={value.environment_bindings ?? []}
-        defaultEnvironment={value.default_environment}
+        defaultEnvironment={selected}
       />
     </div>
   );

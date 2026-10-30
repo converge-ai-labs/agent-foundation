@@ -13,7 +13,7 @@ import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { RenameProject } from "./rename-project";
-import { DraftContext, type SourceDraft } from "./sources";
+import { DraftContext, type SourceDraft } from "./drafts";
 
 const path = "projects/custom-name.yaml";
 let content: string;
@@ -137,7 +137,7 @@ it("does not overwrite an unsaved Project settings draft", async () => {
   };
   drafts.set(path, draft);
   mount();
-  await screen.findByText(/There are unsaved changes/);
+  await screen.findByText(/Save or discard your project changes/);
   fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), {
     target: { value: "Changed" },
   });

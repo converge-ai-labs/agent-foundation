@@ -14,7 +14,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setup() {
+function setup(initialLevel?: string) {
+  let level = initialLevel;
+  let identity = "first";
   let resize!: () => void;
   let scroll!: ReturnType<typeof useTranscriptScroll>;
   let height = 2000;
@@ -30,9 +32,15 @@ function setup() {
       disconnect() {}
     },
   );
-  function Transcript() {
+  function Transcript({
+    level,
+    identity,
+  }: {
+    level?: string;
+    identity: string;
+  }) {
     const ref = useRef<HTMLDivElement>(null);
-    scroll = useTranscriptScroll(ref);
+    scroll = useTranscriptScroll(ref, level, identity);
     return (
       <div
         data-session-stage
@@ -52,6 +60,7 @@ function setup() {
       >
         <div ref={ref}>
           <div
+            key={level}
             data-run="current"
             ref={(node) => {
               if (node)
@@ -73,13 +82,21 @@ function setup() {
       </div>
     );
   }
-  const view = render(<Transcript />);
+  const view = render(<Transcript level={level} identity={identity} />);
   const stage = view.container.querySelector<HTMLElement>(
     "[data-session-stage]",
   )!;
   return {
     stage,
     writes,
+    switchLevel(next: string) {
+      level = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
+    },
+    switchRun(next: string) {
+      identity = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
+    },
     scroll: () => scroll,
     resize: () => act(resize),
     grow(amount: number) {
@@ -214,4 +231,106 @@ it("updates the jump from the actual distance when layout changes without a read
   view.grow(-250);
   view.resize();
   expect(screen.getByText("At latest")).toBeTruthy();
+});
+
+it("restores the same Run before paint when a level switch replaces its DOM", () => {
+  const view = setup();
+  view.readAt(100);
+  const oldRun = view.stage.querySelector("[data-run]");
+  view.prepend(400);
+  view.switchLevel("debug");
+  expect(view.stage.querySelector("[data-run]")).not.toBe(oldRun);
+  expect(
+    view.stage.querySelector("[data-run]")!.getBoundingClientRect().top,
+  ).toBe(-100);
+  expect(view.stage.scrollTop).toBe(500);
+  view.grow(200);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(500);
+});
+
+it("keeps following the latest output across a level switch", () => {
+  const view = setup();
+  view.grow(400);
+  view.switchLevel("chat");
+  expect(view.stage.scrollTop).toBe(1900);
+  expect(view.writes.mock.calls.at(-1)?.[0].behavior).toBe("instant");
+});
+
+it("keeps a visible message in place when earlier content is inserted inside the same Run", () => {
+  const view = setup();
+  const run = view.stage.querySelector<HTMLElement>("[data-run]")!;
+  const message = document.createElement("p");
+  message.dataset.messageId = "item_300";
+  run.append(message);
+  let offset = 300;
+  message.getBoundingClientRect = () =>
+    new DOMRect(0, offset - view.stage.scrollTop, 700, 100);
+  view.readAt(300);
+  const top = message.getBoundingClientRect().top;
+  const restore = view.scroll().preservePosition();
+  offset += 700;
+  view.grow(700);
+  act(restore);
+  expect(message.getBoundingClientRect().top).toBe(top);
+  expect(view.stage.scrollTop).toBe(1000);
+  expect(screen.getByText("Jump to latest")).toBeTruthy();
+});
+
+it.each(["wheel", "ArrowUp"])(
+  "keeps a small upward %s movement near the bottom instead of snapping back",
+  (input) => {
+    const view = setup();
+    if (input === "wheel") fireEvent.wheel(view.stage, { deltaY: -40 });
+    else fireEvent.keyDown(view.stage, { key: input });
+    view.stage.scrollTop = 1460;
+    fireEvent.scroll(view.stage);
+    if (input !== "wheel") fireEvent.keyUp(view.stage, { key: input });
+    fireEvent(view.stage, new Event("scrollend"));
+    expect(view.stage.scrollTop).toBe(1460);
+    // The jump button can remain hidden nearby without resuming following.
+    expect(screen.getByText("At latest")).toBeTruthy();
+    view.grow(300);
+    view.resize();
+    expect(view.stage.scrollTop).toBe(1460);
+    expect(screen.getByText("Jump to latest")).toBeTruthy();
+  },
+);
+
+it("keeps upward intent when keyup precedes the first animated scroll frame", () => {
+  const view = setup();
+  fireEvent.keyDown(view.stage, { key: "ArrowUp" });
+  fireEvent.keyUp(view.stage, { key: "ArrowUp" });
+  // A queued scroll event can still describe the old bottom position.
+  fireEvent.scroll(view.stage);
+  view.stage.scrollTop = 1460;
+  fireEvent.scroll(view.stage);
+  fireEvent(view.stage, new Event("scrollend"));
+  view.resize();
+  expect(view.stage.scrollTop).toBe(1460);
+});
+
+it("opens Debug at the beginning and does not follow content that finishes loading", () => {
+  const view = setup("debug");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(-1600);
+  view.resize();
+  fireEvent(view.stage, new Event("scrollend"));
+  view.grow(2000);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  expect(screen.getByText("Jump to latest")).toBeTruthy();
+});
+
+it("resets another Run and cached back navigation to the top without stealing the sidebar scroll", () => {
+  const view = setup();
+  expect(view.stage.scrollTop).toBe(1500);
+  view.switchRun("second");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(400);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  view.readAt(600);
+  view.switchRun("first");
+  expect(view.stage.scrollTop).toBe(0);
 });

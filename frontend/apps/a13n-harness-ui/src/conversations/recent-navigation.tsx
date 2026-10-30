@@ -13,16 +13,14 @@ import {
 
 export function RecentNavigation({
   enabled,
-  projectId,
   selected,
   selectedUpdatedAt,
 }: {
   enabled: boolean;
-  projectId?: string;
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
 }) {
-  const list = useThreads("", projectId, false, {
+  const list = useThreads("", undefined, false, {
     enabled,
     includeActive: true,
   });
@@ -30,8 +28,7 @@ export function RecentNavigation({
     useNavigationObservations({
       list,
       enabled,
-      belongs: (thread) =>
-        !projectId || thread.configuration.project_id === projectId,
+      belongs: () => true,
       selected,
       selectedUpdatedAt,
     });
@@ -63,15 +60,15 @@ export function RecentNavigation({
       <ThreadRow key={row.thread.thread_id} row={row} />
     );
   return (
-    <section aria-label="Recent conversations">
+    <section aria-label="Recent chats">
       {rows.map(renderRow)}
       {list.isPending && !list.data && enabled && (
         <div role="status" className={styles.initialLoading}>
-          <span>Loading conversations…</span>
+          <span>Loading chats…</span>
         </div>
       )}
       {list.isSuccess && list.data?.pages[0]?.total === 0 && !rows.length && (
-        <small className={styles.emptyGroup}>No conversations yet</small>
+        <small className={styles.emptyGroup}>No chats yet</small>
       )}
       <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
@@ -82,7 +79,7 @@ export function RecentNavigation({
           className={styles.showMore}
           loading={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()}
-          aria-label="Show more recent conversations"
+          aria-label="Show more recent chats"
         >
           Show more
         </Button>

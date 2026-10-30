@@ -475,3 +475,142 @@ def test_a_packaged_chart_deploys_its_service_release(tmp_path):
         check=True,
     )
     assert images(str(tmp_path / f"a13n-service-{version}.tgz")) == {f"ghcr.io/converge-ai-labs/a13n-service:{version}"}
+
+
+MANAGED = (
+    "--set",
+    "monitoring.vmagent.enabled=true",
+    "--set",
+    "monitoring.vmagent.prometheusUrl=http://prometheus:9090",
+)
+
+
+@helm
+def test_managed_collector_is_singleton_private_and_uses_protected_persistent_storage():
+    documents = render(
+        *EXTERNAL,
+        *MANAGED,
+        "--set",
+        "roles.control.autoscaling.enabled=true",
+        "--set",
+        "monitoring.vmagent.remoteWriteBearerTokenSecret.name=write-token",
+        "--set",
+        "monitoring.vmagent.remoteWriteCASecret.name=write-ca",
+    )
+    deployment = next(
+        d for d in documents if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-monitoring")
+    )
+    assert deployment["spec"]["replicas"] == 1
+    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+    labels = deployment["spec"]["template"]["metadata"]["labels"]
+    for service in (d for d in documents if d["kind"] == "Service"):
+        assert not all(labels.get(k) == v for k, v in service["spec"]["selector"].items())
+    assert all(
+        d["spec"]["scaleTargetRef"]["name"] != deployment["metadata"]["name"]
+        for d in documents
+        if d["kind"] == "HorizontalPodAutoscaler"
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    assert pod["securityContext"]["runAsUser"] == 10001
+    writer, vmagent = pod["containers"]
+    assert writer["args"][-1] == "control"
+    env = {entry["name"]: entry.get("value") for entry in writer["env"]}
+    assert json.loads(env["A13N_MONITORING__COLLECTORS"])["vmagent"]["writer"] is True
+    assert env["A13N_SERVER__HOST"] == "127.0.0.1"
+    assert "-httpListenAddr=127.0.0.1:8429" in vmagent["args"]
+    assert "-remoteWrite.url=http://prometheus:9090/api/v1/write" in vmagent["args"]
+    assert "-remoteWrite.bearerTokenFile=/etc/vmagent/token/token" in vmagent["args"]
+    assert "envFrom" not in vmagent
+    mounts = {entry["mountPath"]: entry for entry in vmagent["volumeMounts"]}
+    assert mounts["/var/lib/a13n-monitoring/fragments"]["readOnly"]
+    assert mounts["/var/lib/a13n-monitoring/fragments"]["subPath"] == "fragments"
+    assert not mounts["/var/lib/a13n-monitoring/queue"].get("readOnly")
+    volumes = {entry["name"]: entry for entry in pod["volumes"]}
+    assert "persistentVolumeClaim" in volumes["monitoring"]
+    assert volumes["remote-write-token"]["secret"]["secretName"] == "write-token"
+    assert all(mount["name"] != "remote-write-token" for mount in writer["volumeMounts"])
+    for d in documents:
+        if d["kind"] == "Deployment" and d is not deployment:
+            env = {entry["name"]: entry.get("value") for entry in d["spec"]["template"]["spec"]["containers"][0]["env"]}
+            assert json.loads(env["A13N_MONITORING__COLLECTORS"])["vmagent"]["writer"] is False
+
+
+@helm
+def test_managed_preset_and_writer_environment_load_as_actual_settings(tmp_path, monkeypatch):
+    settings_module = pytest.importorskip("a13n_service.settings")
+    documents = render(
+        *EXTERNAL,
+        *MANAGED,
+        "--set",
+        "monitoring.deploymentPreset.enabled=true",
+        "--set",
+        "monitoring.deploymentPreset.workspaceIds[0]=ws_allowed",
+        "--set",
+        "monitoring.deploymentPreset.queryEndpoint=https://query.example.com",
+        "--set",
+        "monitoring.deploymentPreset.queryBearerTokenSecret.name=query-token",
+    )
+    config = next(d for d in documents if d["kind"] == "ConfigMap" and "service.toml" in d["data"])["data"][
+        "service.toml"
+    ]
+    path = tmp_path / "service.toml"
+    path.write_text(config)
+    for d in (d for d in documents if d["kind"] == "Deployment"):
+        with monkeypatch.context() as patch:
+            for name in [name for name in os.environ if name.startswith("A13N_")]:
+                patch.delenv(name)
+            env = d["spec"]["template"]["spec"]["containers"][0]["env"]
+            for entry in env:
+                patch.setenv(entry["name"], entry.get("value", "test-token"))
+            settings = settings_module.load_settings(path)
+            role = d["metadata"]["name"].rsplit("-", 1)[-1]
+            assert settings.monitoring.collectors["vmagent"].writer == (role == "monitoring")
+            assert settings.monitoring.collectors["vmagent"].allow_http_reload
+            assert settings.providers.require_https
+            assert settings.providers.http_origins == ()
+            if role == "control":
+                assert settings.monitoring.deployment_preset.query_endpoint == "https://query.example.com"
+                assert settings.monitoring.deployment_preset.workspace_ids == ["ws_allowed"]
+                assert settings.monitoring.deployment_query_bearer_token.get_secret_value() == "test-token"
+            else:
+                assert settings.monitoring.deployment_preset is None
+
+
+@helm
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--set", "monitoring.vmagent.enabled=true"),
+        (*MANAGED, "--set", "monitoring.vmagent.remoteWriteUrl=http://user:password@metrics/write"),
+        (*MANAGED, "--set", "monitoring.vmagent.remoteWriteUrl=http://metrics/write?token=secret"),
+        ("--set", "monitoring.deploymentPreset.enabled=true"),
+    ],
+)
+def test_managed_collector_rejects_missing_endpoints_and_url_credentials(arguments):
+    with pytest.raises(subprocess.CalledProcessError):
+        render(*EXTERNAL, *arguments)
+
+
+@helm
+def test_managed_collector_bootstrap_clears_stale_targets_but_preserves_queue(tmp_path):
+    documents = render(*EXTERNAL, *MANAGED)
+    pod = next(d for d in documents if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-monitoring"))[
+        "spec"
+    ]["template"]["spec"]
+    script = next(c for c in pod["initContainers"] if c["name"] == "prepare-collector")["args"][0]
+    script = script.replace("/var/lib/a13n-monitoring", str(tmp_path))
+    import sys
+
+    subprocess.run([sys.executable, "-c", script], check=True)
+    fragment = tmp_path / "fragments/a13n-managed.yml"
+    lock = tmp_path / "fragments/.a13n-vmagent.lock"
+    inode = lock.stat().st_ino
+    fragment.write_text("stale targets")
+    queue = tmp_path / "queue/pending"
+    queue.write_text("pending samples")
+    subprocess.run([sys.executable, "-c", script], check=True)
+    assert fragment.read_text() == "[]\n"
+    assert stat.S_IMODE(fragment.stat().st_mode) == 0o600
+    assert stat.S_IMODE(fragment.parent.stat().st_mode) == 0o700
+    assert lock.stat().st_ino == inode
+    assert queue.read_text() == "pending samples"

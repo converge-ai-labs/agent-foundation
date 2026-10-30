@@ -5,8 +5,10 @@ completions, and the `lease_*` columns are the claim of whoever is dispatching t
 `renew_at` and `expires_at` schedule the renewal of a ready sandbox whose type ends it unless renewed.
 """
 
+import json
 from datetime import datetime
 
+from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -39,6 +41,11 @@ class EnvironmentRow(Stamped, Base):
         ),
         ForeignKeyConstraint(
             ["workspace_id", "template_id"], ["environment_templates.workspace_id", "environment_templates.id"]
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "metrics_data_source_id"],
+            ["metrics_data_sources.workspace_id", "metrics_data_sources.id"],
+            name="fk_environments_metrics_data_source",
         ),
         CheckConstraint(f"status IN {STATUSES}", name="status"),
         CheckConstraint(
@@ -84,6 +91,11 @@ class EnvironmentRow(Stamped, Base):
             postgresql_where=text("template_id IS NOT NULL AND status IN ('reserved', 'ready', 'stopped')"),
         ),
         Index("ix_environments_renewals", "renew_at", postgresql_where=text("renew_at IS NOT NULL")),
+        Index(
+            "ix_environments_metrics_data_source",
+            "metrics_data_source_id",
+            postgresql_where=text("metrics_data_source_id IS NOT NULL"),
+        ),
         rules(
             identity_guarded("environments"),
             # Renewals reschedule themselves every few minutes without changing what a client sees.
@@ -109,6 +121,13 @@ class EnvironmentRow(Stamped, Base):
     # External targets belong to the principal that registered them; workspace-managed sandboxes have no owner.
     owner_principal_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     name: Mapped[str]
+    metrics_data_source_id: Mapped[str | None]
+    metrics_labels: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # Frozen creation input, encrypted for this row/column; erased after successful
+    # creation or deletion. Retries reuse it even if the desired source changes.
+    metrics_launch: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Secret-free sampler/exporter receipt, independent of the live desired binding.
+    metrics_application: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     status: Mapped[str]
     # The recipe a managed instance was built from, the provider's portable state for reaching it and the version of
     # the credential that last did; NULL for an external target, which its endpoint and device ID reach.
@@ -158,4 +177,7 @@ class ThreadEnvironmentRow(Base):
     workspace_id: Mapped[str]
     name: Mapped[str]
     working_directory: Mapped[str | None]
+    permission_ceiling: Mapped[dict] = mapped_column(
+        JSONB, server_default=text("'" + json.dumps({"operations": sorted(FILE_EXECUTION_ACTIONS)}) + "'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,3 +1,5 @@
+import { objectVariants } from "../../shared/forms/schema-definition";
+
 /** Provider definitions carry JSON Schema; these read it without trusting it. */
 export function schemaProperties(schema?: Record<string, unknown> | null) {
   const properties = schema?.properties;
@@ -9,7 +11,10 @@ export function schemaProperties(schema?: Record<string, unknown> | null) {
 }
 
 export function hasFields(schema?: Record<string, unknown> | null) {
-  return Object.keys(schemaProperties(schema)).length > 0;
+  return (
+    Object.keys(schemaProperties(schema)).length > 0 ||
+    !!(schema && objectVariants(schema).length)
+  );
 }
 
 /**

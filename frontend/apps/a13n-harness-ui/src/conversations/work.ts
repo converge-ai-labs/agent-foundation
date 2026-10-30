@@ -89,12 +89,17 @@ export function workCaption(
   work?: Schema<"ThreadWork">,
   stale = false,
   refreshing = false,
+  debug = false,
 ) {
   const source =
     work?.source === "live"
-      ? `Live Run ${work.run_id}, revision ${work.revision}; not a saved checkpoint.`
+      ? debug
+        ? `Live Run ${work.run_id}, revision ${work.revision}; not a saved checkpoint.`
+        : "Live work. Not saved yet."
       : work?.source === "saved"
-        ? `Saved continuation ${work.continuation_id ?? "initial state"}.`
+        ? debug
+          ? `Saved continuation ${work.continuation_id ?? "initial state"}.`
+          : "Saved work."
         : "Work observation unavailable.";
   return `${stale ? "Stale observation. " : ""}${refreshing ? "Refreshing. " : ""}${source}`;
 }

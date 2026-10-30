@@ -62,24 +62,27 @@ export function LinkedMediaPreview({ path }: { path: string }) {
     <figure
       ref={container}
       className={styles.linkedPreview}
+      data-state={!current ? "loading" : current.error ? "error" : "ready"}
       aria-label={`Media preview: ${path.split(/[\\/]/).at(-1)}`}
     >
-      {!current && <p role="status">Loading media preview…</p>}
+      {!current && (
+        <p role="status" className={styles.srOnly}>
+          Loading media preview…
+        </p>
+      )}
       <ErrorNotice
+        inline
         error={current?.error}
         retry={() => setAttempt((value) => value + 1)}
       />
       {file &&
         (kind === "image" && file.entry.size > MAX_MEDIA_BYTES ? (
           <p>
-            Preview supports files up to 10 MiB. Open the original file to
-            inspect it.
+            Too large to preview. Open the original file. The preview limit is
+            10 MiB.
           </p>
         ) : !kind ? (
-          <p>
-            This file cannot be previewed as media. Open the original file to
-            inspect it.
-          </p>
+          <p>Can't preview this file. Open the original instead.</p>
         ) : (
           <FileMedia
             key={`${path}:${file.entry.revision}:${attempt}`}

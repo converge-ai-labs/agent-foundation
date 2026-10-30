@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hmac
@@ -9,7 +10,7 @@ import ipaddress
 import json
 import os
 import secrets
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -28,7 +29,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
-from fastapi import FastAPI, Query, Request, WebSocket
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, JsonValue, ValidationError, model_validator
@@ -38,10 +39,23 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.browser import (
+    BrowserAccess,
+    BrowserAccessRequest,
+    BrowserCommand,
+    BrowserControl,
+    BrowserHandbackRequest,
+    BrowserState,
+    BrowserViewportRequest,
+)
+from a13n_harness_ui.browser_capture import WindowPreview
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
+from a13n_harness_ui.configuration.mcp_tools import McpToolDescriptor, McpToolSelection, McpToolSettings
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
-    AgentToolProxyView,
+    AgentToolSearchView,
     ConfigurationPublication,
     ConfigurationSourceCatalog,
     ConfigurationSourceView,
@@ -50,7 +64,10 @@ from a13n_harness_ui.configuration.views import (
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
+from a13n_harness_ui.envd_runtime import EnvdStatus
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_monitoring import MonitoringCatalog, MonitoringDetail
+from a13n_harness_ui.environment_profiles import LocalProfileId
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
 from a13n_harness_ui.host_file_transfers import (
@@ -104,7 +121,16 @@ from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResp
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
+from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage
+from a13n_harness_ui.model_accounts.subscriptions import (
+    SubscriptionAccountCreate,
+    SubscriptionAccountUpdate,
+    SubscriptionCatalog,
+)
+from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest, ResetResult
+from a13n_harness_ui.model_accounts.usage_cache import UsageSnapshot
 from a13n_harness_ui.model_authoring import (
     ModelChoice,
     ModelChoices,
@@ -118,6 +144,7 @@ from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
+    ConversationPage,
     PointerFrame,
     PointerReport,
     PresenceFrame,
@@ -126,8 +153,20 @@ from a13n_harness_ui.page_presence import (
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
-from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame, DraftSummary
+from a13n_harness_ui.share_models import (
+    ShareAccess,
+    ShareCreate,
+    ShareCreated,
+    SharedThreadCreate,
+    ShareGrant,
+    ShareScope,
+    ShareUpdate,
+)
+from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftFrame, DraftSummary
+from a13n_harness_ui.sharing import forbidden
+from a13n_harness_ui.storage.shares import unavailable
 from a13n_harness_ui.storage.usage import ThreadUsageView
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.surfaces import (
     ChildControlResult,
     ChildExecutionPage,
@@ -160,6 +199,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -170,6 +210,7 @@ from a13n_harness_ui.thread_files import (
     ComposerInput,
     ThreadAttachment,
 )
+from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
 from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
@@ -186,6 +227,7 @@ class ListenerFeatures(SurfaceModel):
     host_files: bool = False
     host_git: bool = False
     host_terminal: bool = False
+    browser: bool = False
 
 
 class ListenerStatus(SurfaceModel):
@@ -241,6 +283,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest, ModelControlSelection):
+    draft: DraftCapture | None = None
     app_context: tuple[AppContextReference, ...] = Field(default=(), max_length=8)
     mode: Literal["normal", "goal"] = "normal"
     environment: EnvironmentSelectionPatch | None = None
@@ -248,6 +291,8 @@ class SubmitRequest(PromptRequest, ModelControlSelection):
 
 
 class RootSteerRequest(PromptRequest):
+    draft: DraftCapture | None = None
+
     @model_validator(mode="after")
     def validate_instruction(self) -> RootSteerRequest:
         if not self.parts:
@@ -259,9 +304,17 @@ class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
 
 
+class StartEnvdRequest(SurfaceModel):
+    computer_use: bool = False
+
+
+class StopEnvdRequest(SurfaceModel):
+    confirm: Literal[True]
+
+
 class PreflightRequest(SurfaceModel):
-    profile_id: Literal["environment-native", "environment-sandbox"]
-    project_path: str = Field(min_length=1, max_length=4096)
+    profile_id: LocalProfileId
+    project_path: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
 class FocusSnapshotFrame(SurfaceModel):
@@ -444,6 +497,8 @@ class AccessBoundary:
             authorization = request.headers.get("authorization", "")
             if (
                 not interactive
+                # The explicitly registered guest router authenticates its own grants.
+                and not scope["path"].startswith("/api/shared/")
                 and not (scope["path"] == PAIRING_PATH and scope["method"] == "POST")
                 and self.api_key is not None
                 and not (self.file_transfers is not None and self.file_transfers.admits(request))
@@ -456,12 +511,14 @@ class AccessBoundary:
         await self.app(scope, receive, send)
 
 
-async def _document[T: BaseModel](request: Request, model: type[T]) -> T:
+async def _document[T: BaseModel](request: Request, model: type[T], *, max_bytes: int = _MAX_BODY) -> T:
     data = bytearray()
     async for chunk in request.stream():
         data.extend(chunk)
-        if len(data) > _MAX_BODY:
-            raise HarnessUiError("Request exceeds the one MiB limit.", code="request_too_large")
+        if len(data) > max_bytes:
+            raise HarnessUiError(
+                f"Request exceeds the {max_bytes // (1024 * 1024)} MiB limit.", code="request_too_large"
+            )
     try:
         return model.model_validate_json(data)
     except ValidationError:
@@ -499,7 +556,7 @@ def create_webui(
     file_transfers = FileTransfers()
 
     @asynccontextmanager
-    async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
         nonlocal owner, allowed_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             source = await opened.current_configuration()
@@ -541,6 +598,7 @@ def create_webui(
         file_transfers=file_transfers,
     )
     server.add_middleware(RequestLog)
+    register_voice_routes(server, lambda: app().voice(), api_key)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -558,6 +616,9 @@ def create_webui(
         if code in {"request_too_large", "host_files_too_large", "host_git_too_large"}:
             status = 413
         elif code in {
+            "browser_disabled",
+            "browser_full_control_required",
+            "browser_thread_unavailable",
             "host_files_disabled",
             "host_files_permission_denied",
             "host_files_transfer_expired",
@@ -568,9 +629,24 @@ def create_webui(
             status = 403
         elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
             status = 409
+        elif code in {
+            "browser_human_control",
+            "browser_observation_required",
+            "browser_reference_expired",
+            "browser_access_expired",
+        }:
+            status = 409
+        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready"}:
+            status = 503
+        elif code == "browser_limit":
+            status = 429
         elif code == "host_files_io_error":
             status = 500
         elif code in {"device_authentication_failed", "device_revoked", "device_pairing_rejected"}:
+            status = 403
+        elif code == "share_unavailable":
+            status = 401
+        elif code == "share_forbidden":
             status = 403
         elif code == "device_pairing_capacity":
             status = 429
@@ -628,6 +704,26 @@ def create_webui(
     async def test_push(subscription_id: str) -> PushTestResult:
         return await app().test_push(subscription_id)
 
+    @server.post("/api/shares", response_model=ShareCreated, openapi_extra=_body(ShareCreate))
+    async def create_share(request: Request) -> ShareCreated:
+        return await app().sharing.create(await _document(request, ShareCreate))
+
+    @server.get("/api/shares", response_model=tuple[ShareGrant, ...])
+    async def list_shares(
+        scope: ShareScope, target_id: Annotated[str, Query(min_length=1, max_length=128)]
+    ) -> tuple[ShareGrant, ...]:
+        return await app().sharing.list(scope, target_id)
+
+    @server.patch("/api/shares/{share_id}", response_model=ShareGrant, openapi_extra=_body(ShareUpdate))
+    async def update_share(share_id: str, request: Request) -> ShareGrant:
+        command = await _document(request, ShareUpdate)
+        return await app().sharing.update(share_id, command.permission)
+
+    @server.delete("/api/shares/{share_id}", status_code=204)
+    async def revoke_share(share_id: str) -> Response:
+        await app().sharing.revoke(share_id)
+        return Response(status_code=204)
+
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
         return ListenerStatus(
@@ -638,6 +734,7 @@ def create_webui(
                 host_files=app().shares_computer,
                 host_git=app().host_git_available,
                 host_terminal=app().host_terminal_available,
+                browser=app().browser_available,
             ),
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
@@ -674,6 +771,14 @@ def create_webui(
     @server.post("/api/devices/{device_id}/revoke")
     async def revoke_device(device_id: str) -> DeviceSummary:
         return await app().revoke_device(device_id)
+
+    @server.get("/api/environment-monitoring")
+    async def environment_monitoring() -> MonitoringCatalog:
+        return await app().environment_monitoring()
+
+    @server.get("/api/environment-monitoring/{target_id}")
+    async def environment_metrics(target_id: str) -> MonitoringDetail:
+        return await app().environment_metrics(target_id)
 
     @server.get("/api/devices")
     async def devices() -> tuple[DeviceSummary, ...]:
@@ -717,9 +822,44 @@ def create_webui(
             with CancelScope(shield=True):
                 await connection.close()
 
+    async def authenticate_browser(socket: WebSocket) -> bool:
+        share_id = socket.path_params.get("share_id")
+        if not isinstance(share_id, str):
+            return await authenticate_interactive(socket, api_key)
+
+        async def validate(key: str) -> None:
+            await app().sharing.authenticate(share_id, key)
+
+        return await authenticate_interactive(socket, None, validate=validate)
+
+    async def guest_check(socket: WebSocket, thread_id: str | None = None, *, prompt: bool = False) -> None:
+        share_id = socket.path_params.get("share_id")
+        if isinstance(share_id, str):
+            if thread_id is None:
+                await app().sharing.active(share_id, prompt=prompt)
+            else:
+                await app().sharing.thread(share_id, thread_id, prompt=prompt)
+
+    async def guard_guest(
+        socket: WebSocket, delivery: InteractiveOutput, check: Callable[[], Awaitable[None]], cancel: CancelScope
+    ) -> None:
+        if "share_id" not in socket.path_params:
+            return
+        while not delivery.closed:
+            try:
+                await check()
+            except HarnessUiError as exc:
+                await delivery.close(
+                    code=4403 if exc.code == "share_forbidden" else 4401, reason="Sharing access changed"
+                )
+                cancel.cancel()
+                return
+            await sleep(1)
+
+    @server.websocket("/api/shared/{share_id}/presence/connect")
     @server.websocket("/api/presence/connect")
     async def connect_presence(socket: WebSocket) -> None:
-        if not await authenticate_interactive(socket, api_key):
+        if not await authenticate_browser(socket):
             return
         delivery = InteractiveOutput(socket)
         try:
@@ -739,6 +879,13 @@ def create_webui(
                             frame = PresenceFrame(participant_id=participant, participants=(), closed=True)
                         else:
                             frame = await app().page_presence_snapshot(participant)
+                        if "share_id" in socket.path_params:
+                            allowed = set(frame.same_page_participant_ids) | {participant}
+                            frame = frame.model_copy(
+                                update={
+                                    "participants": tuple(p for p in frame.participants if p.participant_id in allowed)
+                                }
+                            )
                         await delivery.send(frame)
                         if frame.closed:
                             await delivery.close()
@@ -762,6 +909,17 @@ def create_webui(
                         # Coalesce latest positions, without a queue or resource I/O.
                         await sleep(0.05)
 
+                async def check_presence() -> None:
+                    own = directory.participants.get(participant)
+                    focus = own.focus if own is not None else None
+                    await guest_check(
+                        socket,
+                        focus.target.thread_id
+                        if focus is not None and isinstance(focus.target, ConversationPage)
+                        else None,
+                    )
+
+                group.start_soon(guard_guest, socket, delivery, check_presence, group.cancel_scope)
                 group.start_soon(output)
                 group.start_soon(pointer_output)
                 try:
@@ -771,9 +929,15 @@ def create_webui(
                                 raw = await receive_text(socket, limit=16384)
                             payload = json.loads(raw)
                             if isinstance(payload, dict) and payload.get("kind") == "pointer":
-                                directory.report_pointer(participant, PointerReport.model_validate(payload))
+                                pointer = PointerReport.model_validate(payload)
+                                await guest_check(socket, pointer.target.thread_id)
+                                directory.report_pointer(participant, pointer)
                             else:
                                 report = PresenceReport.model_validate(payload)
+                                if "share_id" in socket.path_params and report.focus is not None:
+                                    if not isinstance(report.focus.target, ConversationPage):
+                                        raise forbidden()
+                                    await guest_check(socket, report.focus.target.thread_id)
                                 await app().report_page_presence(participant, report)
                         except (ValidationError, ValueError):
                             await delivery.send(
@@ -898,12 +1062,14 @@ def create_webui(
     async def list_unsent_drafts() -> tuple[DraftSummary, ...]:
         return await app().list_unsent_drafts()
 
+    @server.websocket("/api/shared/{share_id}/threads/{thread_id}/draft/connect")
     @server.websocket("/api/threads/{thread_id}/draft/connect")
     async def connect_draft(socket: WebSocket, thread_id: str) -> None:
-        if not await authenticate_interactive(socket, api_key):
+        if not await authenticate_browser(socket):
             return
         delivery = InteractiveOutput(socket)
         try:
+            await guest_check(socket, thread_id, prompt=True)
             draft = await app().shared_draft(thread_id)
         except HarnessUiError as exc:
             await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
@@ -927,11 +1093,16 @@ def create_webui(
                                 await changed.wait()
                             draft.expire_presence()
 
+                async def check_draft() -> None:
+                    await guest_check(socket, thread_id, prompt=True)
+
+                group.start_soon(guard_guest, socket, delivery, check_draft, group.cancel_scope)
                 group.start_soon(output)
                 try:
                     while True:
                         try:
                             command = DraftCommand.model_validate_json(await receive_text(socket, limit=710000))
+                            await guest_check(socket, thread_id, prompt=True)
                             await app().edit_shared_draft(thread_id, participant, command)
                         except (ValidationError, ValueError):
                             await delivery.send(
@@ -952,6 +1123,154 @@ def create_webui(
             pass
         finally:
             draft.detach(participant)
+
+    @server.post("/api/browser/scan", response_model=BrowserScan)
+    async def scan_browser_executables() -> BrowserScan:
+        return await app().scan_browser_executables()
+
+    @server.post("/api/browser/check", response_model=BrowserSetup, openapi_extra=_body(BrowserConfiguration))
+    async def check_browser_configuration(request: Request) -> BrowserSetup:
+        return await app().check_browser_configuration(await _document(request, BrowserConfiguration))
+
+    @server.post("/api/browser/macos/settings", status_code=204)
+    async def open_macos_browser_settings() -> Response:
+        await app().open_macos_browser_settings()
+        return Response(status_code=204)
+
+    @server.get("/api/threads/{thread_id}/browser", response_model=BrowserState)
+    async def browser_state(thread_id: str) -> BrowserState:
+        return await app().browser_state(thread_id)
+
+    @server.get("/api/threads/{thread_id}/browser/setup", response_model=BrowserSetup)
+    async def browser_setup(thread_id: str) -> BrowserSetup:
+        return await app().browser_setup(thread_id)
+
+    @server.post("/api/threads/{thread_id}/browser/start", response_model=BrowserState)
+    async def start_browser(thread_id: str) -> BrowserState:
+        return await app().start_browser(thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/reset", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+    )
+    async def reset_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().reset_browser(thread_id, await _document(request, BrowserCommand))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/viewport",
+        response_model=BrowserState,
+        openapi_extra=_body(BrowserViewportRequest),
+    )
+    async def resize_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().resize_browser(thread_id, await _document(request, BrowserViewportRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/close", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+    )
+    async def close_browser_pages(thread_id: str, request: Request) -> BrowserState:
+        return await app().close_browser_pages(thread_id, await _document(request, BrowserCommand))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/take-control",
+        response_model=BrowserControl,
+        openapi_extra=_body(BrowserCommand),
+    )
+    async def take_browser_control(thread_id: str, request: Request) -> BrowserControl:
+        return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=True)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/handback",
+        response_model=BrowserControl,
+        openapi_extra=_body(BrowserHandbackRequest),
+    )
+    async def handback_browser(thread_id: str, request: Request) -> BrowserControl:
+        return await app().control_browser(thread_id, await _document(request, BrowserHandbackRequest), human=False)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/renew-control",
+        response_model=BrowserState,
+        openapi_extra=_body(BrowserAccessRequest),
+    )
+    async def renew_browser_control(thread_id: str, request: Request) -> BrowserState:
+        return await app().renew_browser_control(thread_id, await _document(request, BrowserAccessRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/access",
+        response_model=BrowserAccess,
+        openapi_extra=_body(BrowserAccessRequest),
+    )
+    async def browser_access(thread_id: str, request: Request) -> BrowserAccess:
+        return await app().browser_access(thread_id, await _document(request, BrowserAccessRequest))
+
+    @server.websocket("/api/threads/{thread_id}/browser/connect")
+    async def connect_browser(
+        socket: WebSocket, thread_id: str, ticket: Annotated[str, Query(min_length=16, max_length=80)]
+    ) -> None:
+        # HTTP authentication issues a short-lived single-use ticket. The API key never enters the URL.
+        try:
+            browsers = app().browsers()
+            connection = await browsers.connect(thread_id, ticket)
+        except (HarnessUiError, OSError, TimeoutError, asyncio.IncompleteReadError):
+            await socket.close(code=4403)
+            return
+        try:
+            await socket.accept(subprotocol="binary" if "binary" in socket.scope.get("subprotocols", []) else None)
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    try:
+                        while True:
+                            data = (
+                                await connection.receive()
+                                if isinstance(connection, WindowPreview)
+                                else await connection.read(64 * 1024)
+                            )
+                            if not data:
+                                break
+                            async with asyncio.timeout(10):
+                                await socket.send_bytes(data)
+                    finally:
+                        group.cancel_scope.cancel()
+
+                async def input_() -> None:
+                    try:
+                        while True:
+                            message = await socket.receive()
+                            if isinstance(connection, WindowPreview):
+                                # This transport has no input protocol. Any client
+                                # message (including disconnect) ends the viewer.
+                                break
+                            data = message.get("bytes")
+                            if not isinstance(data, bytes) or len(data) > 64 * 1024:
+                                break
+                            await connection.send(data)
+                    finally:
+                        group.cancel_scope.cancel()
+
+                async def authority() -> None:
+                    try:
+                        while True:
+                            await asyncio.sleep(1)
+                            await browsers.authorize(thread_id)
+                            if connection.is_closing():
+                                return
+                    finally:
+                        group.cancel_scope.cancel()
+
+                group.start_soon(output)
+                group.start_soon(input_)
+                group.start_soon(authority)
+        except* (WebSocketDisconnect, OSError, HarnessUiError, TimeoutError):
+            pass
+        finally:
+            await browsers.disconnect(connection)
+            try:
+                await connection.wait_closed()
+            except OSError:
+                pass
+            try:
+                await socket.close()
+            except (RuntimeError, WebSocketDisconnect):
+                pass
 
     @server.get("/api/host/terminals", response_model=tuple[TerminalView, ...])
     async def terminals() -> tuple[TerminalView, ...]:
@@ -1190,11 +1509,43 @@ def create_webui(
         document = await _document(request, SetupApplyRequest)
         return await app().apply_setup(document.selection)
 
+    @server.get("/api/envd", response_model=EnvdStatus)
+    async def envd_runtime_status() -> EnvdStatus:
+        return await app().envd_runtime_status()
+
+    @server.post("/api/envd/start", response_model=EnvironmentReadiness, openapi_extra=_body(StartEnvdRequest))
+    async def start_envd(request: Request) -> EnvironmentReadiness:
+        document = await _document(request, StartEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().start_envd(computer_use=document.computer_use))
+
+    @server.post("/api/envd/restart", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
+    async def restart_envd(request: Request) -> EnvironmentReadiness:
+        await _document(request, StopEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().restart_envd())
+
+    @server.post("/api/envd/reinstall", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
+    async def reinstall_envd(request: Request) -> EnvironmentReadiness:
+        await _document(request, StopEnvdRequest)
+        return await readiness_while_connected(request, lambda: app().restart_envd(reinstall=True))
+
+    @server.post("/api/envd/stop", status_code=204, openapi_extra=_body(StopEnvdRequest))
+    async def stop_envd(request: Request) -> Response:
+        await _document(request, StopEnvdRequest)
+        await app().stop_envd()
+        return Response(status_code=204)
+
     @server.post(
         "/api/environments/preflight", response_model=EnvironmentReadiness, openapi_extra=_body(PreflightRequest)
     )
     async def preflight(request: Request) -> EnvironmentReadiness:
         document = await _document(request, PreflightRequest)
+        return await readiness_while_connected(
+            request, lambda: app().preflight_environment(document.profile_id, project_path=document.project_path)
+        )
+
+    async def readiness_while_connected(
+        request: Request, operation: Callable[[], Awaitable[EnvironmentReadiness]]
+    ) -> EnvironmentReadiness:
         readiness: EnvironmentReadiness | None = None
         async with create_task_group() as tasks:
 
@@ -1206,11 +1557,61 @@ def create_webui(
                         return
 
             tasks.start_soon(disconnected)
-            readiness = await app().preflight_environment(document.profile_id, project_path=document.project_path)
+            readiness = await operation()
             tasks.cancel_scope.cancel()
         if readiness is None:
             raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
         return readiness
+
+    @server.get("/api/subscriptions/copilot/usage", response_model=CopilotUsage)
+    async def copilot_usage() -> CopilotUsage:
+        return await app().copilot_usage()
+
+    @server.get("/api/subscriptions", response_model=SubscriptionCatalog)
+    async def subscriptions() -> SubscriptionCatalog:
+        return await app().subscriptions()
+
+    @server.get("/api/subscriptions/accounts/{account_id}", response_model=AccountProjection)
+    async def subscription_account(account_id: str) -> AccountProjection:
+        return await app().inspect_subscription_account(account_id)
+
+    @server.post(
+        "/api/subscriptions/accounts",
+        response_model=SubscriptionAccount,
+        openapi_extra=_body(SubscriptionAccountCreate),
+    )
+    async def create_subscription_account(request: Request) -> SubscriptionAccount:
+        return await app().create_subscription_account(await _document(request, SubscriptionAccountCreate))
+
+    @server.patch(
+        "/api/subscriptions/accounts/{account_id}",
+        response_model=SubscriptionAccount,
+        openapi_extra=_body(SubscriptionAccountUpdate),
+    )
+    async def update_subscription_account(account_id: str, request: Request) -> SubscriptionAccount:
+        return await app().update_subscription_account(account_id, await _document(request, SubscriptionAccountUpdate))
+
+    @server.delete("/api/subscriptions/accounts/{account_id}")
+    async def delete_subscription_account(account_id: str) -> None:
+        await app().delete_subscription_account(account_id)
+
+    @server.post("/api/subscriptions/accounts/{account_id}/logout", response_model=bool)
+    async def logout_subscription_account(account_id: str) -> bool:
+        return await app().logout_subscription_account(account_id)
+
+    @server.post("/api/subscriptions/accounts/{account_id}/refresh", response_model=UsageSnapshot)
+    async def refresh_subscription_usage(account_id: str) -> UsageSnapshot:
+        return await app().refresh_subscription_usage(account_id)
+
+    @server.get("/api/subscriptions/accounts/{account_id}/reset-vouchers", response_model=CodexUsage)
+    async def subscription_reset_vouchers(account_id: str) -> CodexUsage:
+        return await app().codex_usage(account_id)
+
+    @server.post(
+        "/api/subscriptions/accounts/{account_id}/reset", response_model=ResetResult, openapi_extra=_body(ResetRequest)
+    )
+    async def redeem_subscription_reset(account_id: str, request: Request) -> ResetResult:
+        return await app().redeem_codex_reset(await _document(request, ResetRequest), account_id)
 
     @server.get("/api/auth/accounts/{provider}", response_model=AccountProjection)
     async def account(provider: Provider) -> AccountProjection:
@@ -1240,9 +1641,9 @@ def create_webui(
     async def implementation_catalog() -> tuple[CatalogReference, ...]:
         return await app().list_catalog()
 
-    @server.get("/api/agents/{agent_id}/tool-proxy", response_model=AgentToolProxyView)
-    async def agent_tool_proxy(agent_id: str) -> AgentToolProxyView:
-        return await app().inspect_agent_tool_proxy(agent_id)
+    @server.get("/api/agents/{agent_id}/tool-search", response_model=AgentToolSearchView)
+    async def agent_tool_search(agent_id: str) -> AgentToolSearchView:
+        return await app().inspect_agent_tool_search(agent_id)
 
     @server.get("/api/auth/keys", response_model=tuple[ApiKeyStatus, ...])
     async def api_keys() -> tuple[ApiKeyStatus, ...]:
@@ -1278,6 +1679,22 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    @server.get("/api/mcp/{server_id}/tools", response_model=McpToolSettings)
+    async def mcp_tools_settings(server_id: str) -> McpToolSettings:
+        return await app().mcp_tool_settings(server_id)
+
+    @server.post("/api/mcp/{server_id}/tools/discover", response_model=tuple[McpToolDescriptor, ...])
+    async def mcp_tools_discover(server_id: str) -> tuple[McpToolDescriptor, ...]:
+        return await app().discover_mcp_tools(server_id)
+
+    @server.put(
+        "/api/mcp/{server_id}/tools", response_model=ConfigurationPublication, openapi_extra=_body(McpToolSelection)
+    )
+    async def mcp_tools_select(server_id: str, request: Request) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(
+            await app().select_mcp_tools(server_id, await _document(request, McpToolSelection))
+        )
 
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:
@@ -1379,6 +1796,10 @@ def create_webui(
     async def context_usage(thread_id: str) -> ContextUsageView:
         return await app().context_usage(thread_id)
 
+    @server.get("/api/usage", response_model=UsageAnalyticsView)
+    async def usage_analytics(query: Annotated[UsageQuery, Query()]) -> UsageAnalyticsView:
+        return await app().usage_analytics(query)
+
     @server.get("/api/threads/{thread_id}/usage", response_model=ThreadUsageView)
     async def usage(thread_id: str) -> ThreadUsageView:
         return await app().thread_usage(thread_id=thread_id)
@@ -1436,6 +1857,10 @@ def create_webui(
     @server.patch("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def set_auto_followup(thread_id: str, body: CoordinatorUpdate) -> ThreadSummary:
         return await app().set_auto_followup(thread_id, body.auto_followup)
+
+    @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
+    async def fork_thread(thread_id: str) -> ThreadSummary:
+        return await app().fork_thread(thread_id)
 
     @server.post("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def promote_coordinator(thread_id: str) -> ThreadSummary:
@@ -1520,6 +1945,16 @@ def create_webui(
             parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
         )
 
+    @server.get("/api/threads/{thread_id}/tool-executions", response_model=tuple[ToolExecutionView, ...])
+    async def tool_executions(
+        thread_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
+    ) -> tuple[ToolExecutionView, ...]:
+        return await app().tool_executions(thread_id, offset=offset, limit=limit)
+
+    @server.post("/api/threads/{thread_id}/tool-executions/{execution_id}/cancel", response_model=ToolExecutionView)
+    async def cancel_tool_execution(thread_id: str, execution_id: str) -> ToolExecutionView:
+        return await app().cancel_tool_execution(thread_id, execution_id)
+
     @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
     async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
         return await app().cancel_child_execution(parent_thread_id=thread_id, execution_id=execution_id)
@@ -1564,6 +1999,10 @@ def create_webui(
             coordinator=document.coordinator,
             coordinator_thread_id=document.coordinator_thread_id,
         )
+
+    @server.delete("/api/threads/{thread_id}", response_model=tuple[str, ...])
+    async def delete_thread(thread_id: str, expected_version: Annotated[int, Query(ge=1)]) -> tuple[str, ...]:
+        return await app().delete_thread(thread_id=thread_id, expected_version=expected_version)
 
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str) -> ThreadDetail:
@@ -1662,7 +2101,8 @@ def create_webui(
 
     @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(SubmitRequest))
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
-        document = await _document(request, SubmitRequest)
+        # Ordered input and its base64 CRDT capture can each contain the prompt.
+        document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
         try:
             return await app().submit_thread(
                 thread_id=thread_id,
@@ -1673,6 +2113,7 @@ def create_webui(
                 model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
                 skill_references=document.skill_references,
                 input_surface="webui",
+                draft=document.draft,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1693,12 +2134,13 @@ def create_webui(
         "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(RootSteerRequest)
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
-        document = await _document(request, RootSteerRequest)
+        document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
         try:
             return await app().steer_root_operation(
                 receipt_id=receipt_id,
                 message=document.input(),
                 skill_references=document.skill_references,
+                draft=document.draft,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1733,12 +2175,16 @@ def create_webui(
                     if watch.root_stream is not None:
                         for batch in watch.root_stream.batches():
                             yield FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch)
+                        # Even the final batch can contain a large snapshot row.
+                        batch = ()
                         yield FocusReadyFrame(
                             resume_cursor=_cursor(
                                 "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
                             )
                         )
-                    async for event in watch.events:
+                    events = watch.events
+                    del watch
+                    async for event in events:
                         yield FocusEventFrame(
                             event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
                         )
@@ -1763,9 +2209,10 @@ def create_webui(
         except HarnessUiError as exc:
             yield ResetFrame(reason=exc.code)
 
+    @server.websocket("/api/shared/{share_id}/realtime/connect")
     @server.websocket("/api/realtime/connect")
     async def realtime(socket: WebSocket) -> None:
-        if not await authenticate_interactive(socket, api_key):
+        if not await authenticate_browser(socket):
             return
         channels: dict[str, tuple[CancelScope, str | None]] = {}
         output = InteractiveOutput(socket)
@@ -1785,7 +2232,37 @@ def create_webui(
                         )
                         try:
                             async for frame in frames:
+                                if isinstance(frame, FocusSnapshotFrame) and isinstance(
+                                    share_id := socket.path_params.get("share_id"), str
+                                ):
+                                    thread = await app().sharing.thread(
+                                        share_id, frame.snapshot.thread.thread.thread_id
+                                    )
+                                    operation = frame.snapshot.root_operation
+                                    if operation is not None:
+                                        operation = operation.model_copy(
+                                            update={
+                                                "available_actions": tuple(
+                                                    a
+                                                    for a in operation.available_actions
+                                                    if a == "wait"
+                                                    or (a == "steer" and "steer" in thread.available_actions)
+                                                )
+                                            }
+                                        )
+                                    frame = frame.model_copy(
+                                        update={
+                                            "snapshot": frame.snapshot.model_copy(
+                                                update={"thread": thread, "root_operation": operation, "mcp_inputs": ()}
+                                            )
+                                        }
+                                    )
+                                    del thread, operation
                                 await send(RealtimeFrame(channel=command.channel, frame=frame))
+                                del frame
+                        except HarnessUiError:
+                            await close(code=4401, reason="Sharing access changed")
+                            group.cancel_scope.cancel()
                         finally:
                             await frames.aclose()
                             current = channels.get(command.channel)
@@ -1815,6 +2292,12 @@ def create_webui(
                     await close(code=1001)
                     group.cancel_scope.cancel()
 
+                async def check_channels() -> None:
+                    await guest_check(socket)
+                    for _, root in tuple(channels.values()):
+                        await guest_check(socket, root)
+
+                group.start_soon(guard_guest, socket, output, check_channels, group.cancel_scope)
                 group.start_soon(heartbeat)
                 try:
                     while True:
@@ -1827,6 +2310,16 @@ def create_webui(
                         if previous is not None:
                             previous[0].cancel()
                         if command.kind == "subscribe":
+                            if "share_id" in socket.path_params:
+                                try:
+                                    if command.root_thread_id is None:
+                                        raise forbidden()
+                                    await guest_check(socket, command.root_thread_id)
+                                except HarnessUiError as exc:
+                                    await send(
+                                        RealtimeFrame(channel=command.channel, frame=ResetFrame(reason=exc.code))
+                                    )
+                                    continue
                             active = await trim_idle_channels()
                             duplicate = any(root == command.root_thread_id for _, root in channels.values())
                             idle_count = sum(root not in active for _, root in channels.values())
@@ -1846,6 +2339,137 @@ def create_webui(
                     group.cancel_scope.cancel()
         except* (WebSocketDisconnect, TimeoutError):
             pass
+
+    async def require_guest(request: Request, share_id: str) -> None:
+        authorization = request.headers.get("authorization", "")
+        if not authorization.startswith("Bearer ") or len(authorization) > 4096:
+            raise unavailable()
+        await app().sharing.authenticate(share_id, authorization[7:])
+        thread_id = request.path_params.get("thread_id")
+        receipt_id = request.path_params.get("receipt_id")
+        if isinstance(receipt_id, str):
+            try:
+                thread_id = (await app().get_root_operation(receipt_id)).receipt.thread_id
+            except HarnessUiError:
+                raise unavailable() from None
+        if isinstance(thread_id, str):
+            await app().sharing.thread(share_id, thread_id)
+
+    async def require_prompt(share_id: str) -> None:
+        await app().sharing.active(share_id, prompt=True)
+
+    guest = APIRouter(prefix="/api/shared/{share_id}", dependencies=[Depends(require_guest)])
+
+    @guest.get("/access", response_model=ShareAccess)
+    async def shared_access(share_id: str, request: Request) -> ShareAccess:
+        return await app().sharing.authenticate(share_id, request.headers["authorization"][7:])
+
+    @guest.get("/threads", response_model=ThreadPage)
+    async def shared_threads(
+        share_id: str,
+        query: Annotated[str | None, Query(max_length=500)] = None,
+        cursor: Annotated[str | None, Query(max_length=4096)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> ThreadPage:
+        grant = await app().sharing.active(share_id)
+        if grant.scope == "thread":
+            detail = await app().sharing.thread(share_id, grant.target_id)
+            return ThreadPage(threads=(detail.thread,), total=1)
+        return await app().list_threads(project_id=grant.target_id, query=query, cursor=cursor, limit=limit)
+
+    @guest.post(
+        "/threads",
+        response_model=ThreadSummary,
+        openapi_extra=_body(SharedThreadCreate),
+        dependencies=[Depends(require_prompt)],
+    )
+    async def shared_create(share_id: str, request: Request) -> ThreadSummary:
+        command = await _document(request, SharedThreadCreate)
+        return await app().sharing.create_thread(share_id, thread_id=command.thread_id, title=command.title)
+
+    @guest.get("/threads/{thread_id}", response_model=ThreadDetail)
+    async def shared_thread(share_id: str, thread_id: str) -> ThreadDetail:
+        return await app().sharing.thread(share_id, thread_id)
+
+    @guest.post(
+        "/threads/{thread_id}/submit",
+        response_model=RootRunReceipt,
+        openapi_extra=_body(RootSteerRequest),
+        dependencies=[Depends(require_prompt)],
+    )
+    async def shared_submit(share_id: str, thread_id: str, request: Request) -> RootRunReceipt:
+        document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
+        if document.skill_references:
+            raise forbidden()
+        await app().sharing.thread(share_id, thread_id, prompt=True)
+        return await app().submit_thread(
+            thread_id=thread_id, prompt=document.input(), draft=document.draft, input_surface="webui"
+        )
+
+    @guest.get("/operations/{receipt_id}", response_model=RootOperationView)
+    async def shared_operation(share_id: str, receipt_id: str) -> RootOperationView:
+        grant = await app().sharing.active(share_id)
+        operation = await app().get_root_operation(receipt_id)
+        actions = tuple(
+            action
+            for action in operation.available_actions
+            if action == "wait" or (grant.permission == "prompt" and action == "steer")
+        )
+        return operation.model_copy(update={"available_actions": actions})
+
+    @guest.post(
+        "/operations/{receipt_id}/steer",
+        response_model=RootControlResult,
+        openapi_extra=_body(RootSteerRequest),
+        dependencies=[Depends(require_prompt)],
+    )
+    async def shared_steer(share_id: str, receipt_id: str, request: Request) -> RootControlResult:
+        document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
+        if document.skill_references:
+            raise forbidden()
+        operation = await app().get_root_operation(receipt_id)
+        await app().sharing.thread(share_id, operation.receipt.thread_id, prompt=True)
+        return await app().steer_root_operation(receipt_id=receipt_id, message=document.input(), draft=document.draft)
+
+    # Explicit read admission reuses the existing serializers and App operations.
+    # No prefix proxy or automatic inclusion can expose newly added owner routes.
+    guest.add_api_route("/threads/{thread_id}/transcript", transcript, methods=["GET"], response_model=TranscriptPage)
+    guest.add_api_route(
+        "/threads/{thread_id}/inputs", transcript_inputs, methods=["GET"], response_model=TranscriptInputPage
+    )
+    guest.add_api_route(
+        "/threads/{thread_id}/saved-output",
+        saved_output,
+        methods=["POST"],
+        response_model=SavedOutputView,
+        openapi_extra=_body(SavedOutputTarget),
+    )
+    guest.add_api_route("/threads/{thread_id}/children", children, methods=["GET"], response_model=ChildExecutionPage)
+    guest.add_api_route(
+        "/threads/{thread_id}/children/{execution_id}/saved-output",
+        saved_child_output,
+        methods=["GET"],
+        response_model=SavedChildOutputPage,
+    )
+    guest.add_api_route(
+        "/threads/{thread_id}/context-usage", context_usage, methods=["GET"], response_model=ContextUsageView
+    )
+    guest.add_api_route("/threads/{thread_id}/work", work, methods=["GET"], response_model=ThreadWork)
+    guest.add_api_route("/threads/{thread_id}/attachments/{attachment_id}", download_attachment, methods=["GET"])
+    guest.add_api_route(
+        "/threads/{thread_id}/attachments/{attachment_id}/metadata",
+        attachment_metadata,
+        methods=["GET"],
+        response_model=ThreadAttachment,
+    )
+    guest.add_api_route(
+        "/threads/{thread_id}/attachments",
+        upload_attachment,
+        methods=["POST"],
+        response_model=ThreadAttachment,
+        dependencies=[Depends(require_prompt)],
+    )
+    server.include_router(guest)
 
     @server.get("/api/openapi.json", include_in_schema=False)
     async def schema() -> JSONResponse:
@@ -1875,6 +2499,7 @@ def create_webui(
         recognized = path in {
             "",
             "new",
+            "live",
             "setup",
             "settings",
             "projects",
@@ -1887,10 +2512,19 @@ def create_webui(
             "settings/agents",
             "settings/capabilities",
             "settings/environments",
+            "settings/envd",
+            "settings/runtime",
             "settings/connections",
             "archived",
             "memory",
+            "usage",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
+        recognized = recognized or (
+            segments[0] == "share"
+            and len(segments) in {2, 4}
+            and bool(segments[1])
+            and (len(segments) == 2 or (segments[2] == "threads" and bool(segments[3])))
+        )
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"
@@ -1925,6 +2559,9 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         RealtimeCommand,
         RealtimeFrame,
         RealtimePing,
+        VoiceCommand,
+        VoiceOwner,
+        VoicePing,
         TerminalCommand,
         TerminalFrame,
         DraftCommand,
@@ -1940,6 +2577,13 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         components[model.__name__] = schema
     document["x-interactive"] = {
         "authentication": {"$ref": "#/components/schemas/InteractiveAuthentication"},
+        "voice": {
+            "path": "/api/voice/connect",
+            "owner": {"$ref": "#/components/schemas/VoiceOwner"},
+            "input": {"$ref": "#/components/schemas/VoiceCommand"},
+            "output": {"$ref": "#/components/schemas/VoiceSnapshot"},
+            "heartbeat": {"$ref": "#/components/schemas/VoicePing"},
+        },
         "realtime": {
             "path": "/api/realtime/connect",
             "input": {"$ref": "#/components/schemas/RealtimeCommand"},

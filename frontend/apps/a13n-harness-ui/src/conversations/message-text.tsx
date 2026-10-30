@@ -1,11 +1,14 @@
 import { memo, useContext, type ComponentPropsWithoutRef } from "react";
+import { useGuestAccess } from "../transport/context";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
 import { OpenHostFile } from "./tool-call";
-import { syntaxHighlight } from "./syntax-code";
 import { linkedMediaPreviews } from "./linked-media";
 import { LinkedMediaPreview } from "./linked-media-preview";
 
@@ -15,6 +18,15 @@ function MarkdownLink({
   ...props
 }: ComponentPropsWithoutRef<"a">) {
   const openHostFile = useContext(OpenHostFile);
+  const guest = useGuestAccess();
+  if (guest && href) {
+    try {
+      if (new URL(href, window.location.href).origin === window.location.origin)
+        return <span>{children}</span>;
+    } catch {
+      return <span>{children}</span>;
+    }
+  }
   const path = href ? linkedHostFile(href, window.location.href) : null;
   if (path && openHostFile)
     return (
@@ -48,6 +60,15 @@ const components: Components = {
   img: ({ alt }) => <span>[Image: {alt || "attachment"}]</span>,
   pre: MarkdownPre,
   table: MarkdownTable,
+  span: ({ node: _node, className, ...props }) => (
+    <span
+      {...props}
+      className={className}
+      {...(className === "katex-display"
+        ? { role: "region", "aria-label": "Math formula", tabIndex: 0 }
+        : {})}
+    />
+  ),
   figure: ({ node, children, ...props }) => {
     const path = node?.properties.dataHostMediaPath;
     return typeof path === "string" ? (
@@ -63,15 +84,20 @@ export const MessageText = memo(function MessageText({
 }: {
   text: string;
 }) {
+  const guest = useGuestAccess();
   return (
     <MarkdownSource value={text}>
       <div className={styles.markdown}>
         <Markdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[
-            syntaxHighlight,
-            [linkedMediaPreviews, { currentHref: window.location.href }],
-          ]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={
+            guest
+              ? [rehypeKatex]
+              : [
+                  rehypeKatex,
+                  [linkedMediaPreviews, { currentHref: window.location.href }],
+                ]
+          }
           skipHtml
           components={components}
         >

@@ -12,9 +12,9 @@ from typing import Literal
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, ResolveModelId
 
+from a13n_harness.capabilities.browser import BROWSER_USE_CAPABILITY_ID, BrowserUseCapability
 from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
 from a13n_harness.capabilities.context import (
-    COMPACTION_CAPABILITY_ID,
     FILE_CONTEXT_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
     RUNTIME_CONTEXT_CAPABILITY_ID,
@@ -26,6 +26,7 @@ from a13n_harness.capabilities.context import (
     WorkspaceOutlineCapability,
     _FileContextRunCapability,
 )
+from a13n_harness.capabilities.context_recovery import CONTEXT_RECOVERY_CAPABILITY_ID, ContextRecoveryCapability
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID, DocumentsCapability
 from a13n_harness.capabilities.input import INPUT_CAPABILITY_ID, InputCapability
 from a13n_harness.capabilities.interaction import USER_INTERACTION_CAPABILITY_ID, UserInteractionCapability
@@ -42,11 +43,12 @@ from a13n_harness.capabilities.subagents import (
     _AsyncSubagentCapability,
     _InlineSubagentCapability,
 )
-from a13n_harness.capabilities.tool_proxy import (
-    TOOL_PROXY_CAPABILITY_ID,
-    ToolProxyCapability,
-    _ToolProxyGroupCapability,
-    _ToolProxySurfaceCapability,
+from a13n_harness.capabilities.tool_execution import TOOL_EXECUTION_CAPABILITY_ID, ToolExecutionCapability
+from a13n_harness.capabilities.tool_search import (
+    TOOL_SEARCH_CAPABILITY_ID,
+    ToolSearchCapability,
+    _ToolSearchGroupCapability,
+    _ToolSearchSurfaceCapability,
 )
 from a13n_harness.capabilities.video_url import VIDEO_URL_CAPABILITY_ID, VideoUrlCapability
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID, WebCapability
@@ -56,6 +58,7 @@ from a13n_harness.capabilities.working_state import (
     _WorkingStateRunCapability,
 )
 from a13n_harness.capability_types import _validate_capability_id
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
@@ -79,9 +82,11 @@ from a13n_harness.tools.surface import TOOL_SURFACE_CAPABILITY_ID, ToolSurfaceCa
 from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCapability
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
+    BROWSER_USE_CAPABILITY_ID: (BrowserUseCapability,),
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
-    TOOL_PROXY_CAPABILITY_ID: (_ToolProxySurfaceCapability,),
+    TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
+    TOOL_EXECUTION_CAPABILITY_ID: (ToolExecutionCapability,),
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
     TOOL_PERMISSIONS_CAPABILITY_ID: (ToolPermissionsCapability,),
     RUNTIME_CONTEXT_CAPABILITY_ID: (RuntimeContextCapability,),
@@ -103,6 +108,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     TOOL_SURFACE_CAPABILITY_ID: (ToolSurfaceCapability, "tool-surface"),
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID: (MessageIntegrityFilterCapability, "message-integrity Filter"),
     LIFECYCLE_EVENT_CAPABILITY_ID: (LifecycleEventCapability, "lifecycle event"),
+    CONTEXT_RECOVERY_CAPABILITY_ID: (ContextRecoveryCapability, "context recovery"),
     STEERING_CAPABILITY_ID: (SteeringCapability, "steering"),
     INPUT_CAPABILITY_ID: (InputCapability, "input"),
     VIDEO_URL_CAPABILITY_ID: (VideoUrlCapability, "video URL"),
@@ -146,14 +152,15 @@ def _reserved_harness_capability_contract() -> tuple[
         ToolExecutionBoundaryCapability,
         MessageIntegrityFilterCapability,
         LifecycleEventCapability,
+        ContextRecoveryCapability,
         ModelContextCoordinatorCapability,
         VideoUrlCapability,
         InvocationPolicyCapability,
         AbstractModelCostCapability,
         ClientToolsCapability,
         CodeActCapability,
-        ToolProxyCapability,
-        _ToolProxySurfaceCapability,
+        ToolSearchCapability,
+        _ToolSearchSurfaceCapability,
         DynamicEnvironmentCapability,
         SubagentCapability,
     )
@@ -262,15 +269,15 @@ def _validate_built_capability_tree(
         for capability in leaves[:surface_index]:
             # Membership adds no global wrapper; its original nodes are visited
             # separately below and retain the same surface-order validation.
-            if type(capability) is _ToolProxyGroupCapability:
+            if type(capability) is _ToolSearchGroupCapability:
                 continue
             if isinstance(
-                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolSearchSurfaceCapability
             ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only ToolSearch, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -353,7 +360,7 @@ def _validate_capability_source(
                 source == "definition"
                 and (isinstance(capability, AbstractModelCostCapability) or type(capability) in _DEFINITION_TYPES)
             )
-            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "plugin" and type(capability) is _ToolSearchSurfaceCapability)
             or (source == "run" and type(capability) in _RUN_TYPES)
         )
         reserved_type = isinstance(capability, _SOURCE_RESERVED_TYPES)
@@ -478,5 +485,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             raise DefinitionError(
                 f"{label}Capability requires its RunBindings dependency.", code=f"{prefix}_binding_missing"
             )
+    if ctx.deps.browser_backend is not None and ctx.capabilities.get(BROWSER_USE_CAPABILITY_ID) is None:
+        raise DefinitionError("A browser binding requires its definition owner.", code="browser_owner_missing")
     if ctx.deps.task_state is not None and ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID) is None:
         raise DefinitionError("A task-state binding requires its definition owner.", code="task_state_owner_missing")

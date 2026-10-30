@@ -8,12 +8,13 @@ from a13n_harness_ui.resource_names import coding_agent_name, model_name
 @pytest.mark.parametrize(
     "provider,model_id",
     [
-        *((provider.route, model) for provider in API_PROVIDERS for model in API_MODEL_SUGGESTIONS[provider.route]),
+        # Provider labels vary; model-family formatting is covered in test_model_presets.
+        *((provider.route, API_MODEL_SUGGESTIONS[provider.route][0]) for provider in API_PROVIDERS),
         ("codex", "gpt-6-astra"),
         ("grok-subscription", "grok-4.6"),
     ],
 )
-def test_every_recommended_connection_generates_plain_printable_names(provider, model_id) -> None:
+def test_each_connection_generates_plain_printable_names(provider, model_id) -> None:
     model = model_name(provider, model_id)
     agent = coding_agent_name(model)
     assert model.isascii() and model.isprintable()
@@ -36,4 +37,5 @@ def test_resource_names_do_not_copy_terminal_provider_labels(monkeypatch) -> Non
 def test_plain_generated_formatting_preserves_custom_unicode_and_case() -> None:
     assert model_name("openai-chat", "组织/模型-AbC") == "OpenAI Chat - 组织/模型-AbC"
     assert coding_agent_name("我的模型") == "我的模型 - Coding"
+    assert len(model_name("openai-chat", "x" * 256)) == 110
     assert len(coding_agent_name("x" * 256)) <= 128

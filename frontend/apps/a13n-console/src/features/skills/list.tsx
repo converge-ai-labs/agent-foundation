@@ -23,9 +23,10 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Page } from "../../shared/page";
+import { useBuiltinSkills } from "./builtin";
 import { usedByQuery } from "./detail/used-by";
 import { ImportSkill } from "./import-dialog";
-import { SkillIcon, SourceChip } from "./source";
+import { SkillAvatar, SkillIcon, SourceChip } from "./source";
 import styles from "./skills.module.css";
 
 type Source = Schema["SkillRevisionSummary"]["source"]["kind"];
@@ -36,11 +37,12 @@ export function SkillsPage() {
     { t } = useTranslation(),
     navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [source, setSource] = useState<Source | "all">("all");
+  const [source, setSource] = useState<Source | "builtin" | "all">("all");
   const [archived, setArchived] = useState(false);
   const term = search.trim().toLocaleLowerCase();
   const page = useCursor({ term, source, archived });
   const query = useQuery({
+    enabled: source !== "builtin",
     queryKey: [
       "skills",
       workspace.id,
@@ -60,13 +62,44 @@ export function SkillsPage() {
               // The chip adds archived items; omitting the filter lists both.
               ...(!archived && { archived: false }),
               ...(term && { q: term }),
-              ...(source !== "all" && { source }),
+              ...((source === "github" || source === "upload") && { source }),
             },
           },
           signal,
         })
         .then(data),
   });
+  const showBuiltin = source === "all" || source === "builtin";
+  const catalog = useBuiltinSkills(showBuiltin);
+  const builtinItems =
+    showBuiltin && !page.cursor
+      ? (catalog.data?.items ?? []).filter((skill) =>
+          `${skill.name} ${skill.description} ${t(skill.description)}`
+            .toLocaleLowerCase()
+            .includes(term),
+        )
+      : [];
+  const items = [
+    ...builtinItems.map((skill) => ({
+      id: `builtin:${skill.name}`,
+      name: skill.name,
+      description: t(skill.description),
+      path: `builtin/${skill.name}`,
+      workspaceSkill: null as Schema["Skill"] | null,
+    })),
+    ...(source === "builtin" ? [] : (query.data?.items ?? [])).map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description || skill.id,
+      path: skill.id,
+      workspaceSkill: skill as Schema["Skill"] | null,
+    })),
+  ];
+  const loading =
+    (showBuiltin && catalog.isPending) ||
+    (source !== "builtin" && query.isPending);
+  const failed =
+    (showBuiltin && catalog.error) || (source !== "builtin" && query.error);
   const importSkill = can("write") ? (
     <ImportSkill onSuccess={(skill) => navigate(skill.id)} />
   ) : undefined;
@@ -74,7 +107,9 @@ export function SkillsPage() {
   return (
     <Page
       title={t("Skills")}
-      description={t("Reusable, versioned packages for your agents.")}
+      description={t(
+        "Built-in instructions and reusable skill packages for your agents.",
+      )}
       actions={importSkill}
       toolbar={
         <Toolbar
@@ -89,60 +124,87 @@ export function SkillsPage() {
                 value={source}
                 onValueChange={(value) =>
                   setSource(
-                    value === "github" || value === "upload" ? value : "all",
+                    value === "github" ||
+                      value === "upload" ||
+                      value === "builtin"
+                      ? value
+                      : "all",
                   )
                 }
                 options={[
                   { value: "all", label: t("All sources") },
+                  { value: "builtin", label: t("Built-in skills") },
                   { value: "github", label: "GitHub" },
                   { value: "upload", label: t("ZIP") },
                 ]}
               />
-              <ArchivedFilter value={archived} onChange={setArchived} />
+              {source !== "builtin" && (
+                <ArchivedFilter value={archived} onChange={setArchived} />
+              )}
             </>
           }
         />
       }
     >
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending ? (
-        <Loading variant="table" columns={5} />
-      ) : query.data?.items.length ? (
+      {showBuiltin && (
+        <ErrorNotice
+          error={catalog.error}
+          retry={() => void catalog.refetch()}
+        />
+      )}
+      {source !== "builtin" && (
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      )}
+      {items.length ? (
         <>
           <ResourceTable
             className={styles.listTable}
             caption={t("Skills")}
-            items={query.data.items}
-            onRowActivate={(skill) => navigate(skill.id)}
+            items={items}
+            onRowActivate={(item) => navigate(item.path)}
             columns={[
               {
                 label: t("Skill"),
                 tone: "primary",
-                render: (skill) => (
+                render: (item) => (
                   <ResourceIdentity
-                    to={skill.id}
-                    name={skill.name}
-                    description={skill.description || skill.id}
-                    resourceId={skill.id}
-                    icon={<SkillIcon />}
+                    to={item.path}
+                    name={item.name}
+                    description={item.description}
+                    resourceId={item.workspaceSkill?.id}
+                    icon={
+                      item.workspaceSkill ? (
+                        <SkillAvatar
+                          name={item.name}
+                          id={item.id}
+                          className="size-8 rounded-lg"
+                        />
+                      ) : (
+                        <SkillIcon size={24} />
+                      )
+                    }
                   />
                 ),
               },
               {
                 label: t("Source"),
-                render: (skill) =>
-                  skill.default_revision ? (
-                    <SourceChip kind={skill.default_revision.source.kind} />
+                render: (item) =>
+                  !item.workspaceSkill ? (
+                    <SourceChip kind="builtin" />
+                  ) : item.workspaceSkill.default_revision ? (
+                    <SourceChip
+                      kind={item.workspaceSkill.default_revision.source.kind}
+                    />
                   ) : (
                     <span>—</span>
                   ),
               },
               {
                 label: t("Version"),
-                render: (skill) =>
-                  skill.default_revision ? (
+                render: (item) =>
+                  item.workspaceSkill?.default_revision ? (
                     <span className={styles.version}>
-                      v{skill.default_revision.number}
+                      v{item.workspaceSkill.default_revision.number}
                     </span>
                   ) : (
                     <span>—</span>
@@ -151,39 +213,49 @@ export function SkillsPage() {
               {
                 label: t("Used by"),
                 tone: "muted",
-                render: (skill) => <UsedBy skill={skill} />,
+                render: (item) =>
+                  item.workspaceSkill ? (
+                    <UsedBy skill={item.workspaceSkill} />
+                  ) : (
+                    <span>—</span>
+                  ),
               },
               {
                 label: t("Updated"),
                 tone: "muted",
-                render: (skill) => (
-                  <Timestamp value={skill.updated_at} relative />
-                ),
+                render: (item) =>
+                  item.workspaceSkill ? (
+                    <Timestamp
+                      value={item.workspaceSkill.updated_at}
+                      relative
+                    />
+                  ) : (
+                    <span>—</span>
+                  ),
               },
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} skills on this page", {
-              count: query.data.items.length,
-            })}
+            count={t("{{count}} skills on this page", { count: items.length })}
           >
-            <Pagination page={page} next={query.data.next_cursor} />
+            {source !== "builtin" && (
+              <Pagination page={page} next={query.data?.next_cursor} />
+            )}
           </CollectionFooter>
         </>
-      ) : (
-        !query.error && (
-          <Empty
-            icon={<SkillIcon size={20} />}
-            title={t(filtered ? "No matching skills" : "No skills yet")}
-            description={t(
-              filtered
-                ? "Try another search or source."
-                : "Import a skill package to make it available in agent configurations.",
-            )}
-            action={!filtered && importSkill}
-          />
-        )
-      )}
+      ) : !loading && !failed ? (
+        <Empty
+          icon={<SkillIcon size={20} />}
+          title={t(filtered ? "No matching skills" : "No skills yet")}
+          description={t(
+            filtered
+              ? "Try another search or source."
+              : "Import a skill package to make it available in agent configurations.",
+          )}
+          action={!filtered && importSkill}
+        />
+      ) : null}
+      {loading && <Loading variant="table" columns={5} />}
     </Page>
   );
 }

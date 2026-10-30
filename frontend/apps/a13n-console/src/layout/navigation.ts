@@ -1,12 +1,13 @@
 import {
   type Icon,
   BrainIcon,
-  MagnifyingGlassIcon,
+  LightbulbIcon,
   ChartBarIcon,
   PulseIcon,
   HeadCircuitIcon,
   CubeIcon,
   ChatsIcon,
+  ClockIcon,
   MonitorIcon,
   PlugIcon,
   PuzzlePieceIcon,
@@ -20,14 +21,24 @@ export const navigationGroups: {
     entries: [
       ["agents", "Agents", HeadCircuitIcon],
       ["sessions", "Sessions", ChatsIcon],
+      ["schedules", "Schedules", ClockIcon],
     ],
   },
   {
-    label: "Resources",
+    label: "Capabilities",
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
-      ["memories", "Memories", BrainIcon],
+      [
+        "memory-spaces",
+        "Memories",
+        BrainIcon,
+        [
+          ["memory-spaces", "Spaces"],
+          ["memories", "Standalone"],
+        ],
+      ],
+      ["connections", "Connections", PlugIcon],
       [
         "environments",
         "Environments",
@@ -35,24 +46,18 @@ export const navigationGroups: {
         [
           ["environments", "Templates"],
           ["environments/instances", "Instances"],
+          ["monitoring", "Metrics"],
         ],
       ],
     ],
   },
   {
-    label: "Integrations",
-    entries: [["connections", "Connections", PlugIcon]],
-  },
-  {
-    label: "Observe",
+    label: "Insights",
     entries: [
       ["usage", "Usage", ChartBarIcon],
       ["traces", "Traces", PulseIcon],
+      ["findings", "Findings", LightbulbIcon],
     ],
-  },
-  {
-    label: "Improve",
-    entries: [["findings", "Findings", MagnifyingGlassIcon]],
   },
 ];
 
@@ -65,18 +70,25 @@ export function routeSkeleton(
 ): { variant: "page" | "detail"; columns: number } | undefined {
   const tail = pathname.replace(/^\/[^/]+\/[^/]+/, "");
   const lists: Record<string, number> = {
+    "/api-keys": 4,
     "/agents": 4,
     "/sessions": 4,
+    "/schedules": 4,
     "/models": 4,
     "/skills": 3,
     "/memories": 5,
+    "/memory-spaces": 5,
     "/environments": 4,
     "/connections": 3,
     "/traces": 5,
     "/findings": 5,
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
-  if (/^\/(agents|traces|environments|memories|findings)\/[^/]+$/.test(tail))
+  if (
+    /^\/(agents|schedules|traces|environments|memories|memory-spaces|findings)\/[^/]+$/.test(
+      tail,
+    )
+  )
     return { variant: "detail", columns: 4 };
   return undefined;
 }

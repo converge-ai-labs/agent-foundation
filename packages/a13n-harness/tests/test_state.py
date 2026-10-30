@@ -36,6 +36,80 @@ def test_environment_states_reject_non_finite_json(value: float) -> None:
         )
 
 
+def test_native_retry_and_run_instruction_parts_survive_state_roundtrip() -> None:
+    from pydantic_ai.messages import (
+        InstructionDeltaPart,
+        InstructionId,
+        RetryFeedbackPart,
+        RetryInfo,
+        RunInstructionSource,
+        ToolReturnPart,
+    )
+
+    parts = [
+        InstructionDeltaPart(id=InstructionId(RunInstructionSource(), name="policy"), content="Run-scoped instruction"),
+        ToolReturnPart(
+            "lookup",
+            "Correct the arguments",
+            tool_call_id="call-retry",
+            outcome="retried",
+            retry=RetryInfo("validation_error", attempt=1, max_retries=3),
+        ),
+        RetryFeedbackPart("Correct the response", retry=RetryInfo("model_retry", attempt=2, max_retries=3)),
+    ]
+    state = HarnessState.new(message_history=(ModelRequest(parts=parts),))
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+    assert restored.message_history == state.message_history
+    request = restored.message_history[0]
+    assert isinstance(request, ModelRequest)
+    instruction, tool, feedback = request.parts
+    assert isinstance(instruction, InstructionDeltaPart) and instruction.id == InstructionId(
+        RunInstructionSource(), name="policy"
+    )
+    assert isinstance(tool, ToolReturnPart) and tool.outcome == "retried" and tool.retry == parts[1].retry
+    assert isinstance(feedback, RetryFeedbackPart) and feedback.retry == parts[2].retry
+
+
+def test_text_citations_survive_state_roundtrip() -> None:
+    from pydantic_ai.messages import (
+        Citation,
+        ContentCitationAnchor,
+        DocumentCitationSource,
+        MarkerCitationAnchor,
+        ModelResponse,
+        TextPart,
+        WebCitationSource,
+    )
+
+    part = TextPart(
+        "Evidence [1]",
+        provider_name="anthropic",
+        provider_details={"citations": [{"document_index": 0, "start_page_number": 1}]},
+        citations=[
+            Citation(
+                [DocumentCitationSource(document_id="doc-1", title="Report", excerpts=["Evidence"])],
+                anchor=ContentCitationAnchor(start=0, end=8),
+            ),
+            Citation(
+                [WebCitationSource("https://example.com/report", title="Report")],
+                anchor=MarkerCitationAnchor(start=9, end=12),
+            ),
+            Citation([WebCitationSource("https://example.com/background")]),
+        ],
+    )
+    state = HarnessState.new(message_history=(ModelResponse(parts=[part]),))
+
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+
+    assert restored.message_history == state.message_history
+    response = restored.message_history[0]
+    assert isinstance(response, ModelResponse)
+    restored_part = response.parts[0]
+    assert isinstance(restored_part, TextPart)
+    assert restored_part.citations == part.citations
+    assert restored_part.provider_details == part.provider_details
+
+
 class CounterState(BaseModel):
     value: int
 
@@ -309,3 +383,84 @@ def test_fork_moves_inline_children_to_new_threads_without_reading_their_states(
     assert len(threads) == 2 and threads.isdisjoint({inline.thread_id, "thr_saved", "thr_fork"})
     assert children["worker-abcd"].state == inline
     assert children["worker-beef"].state == saved and children["worker-beef"].refs == (screenshot,)
+
+
+async def test_namespace_snapshots_reuse_immutable_encoding_without_decoding_unchanged_values(monkeypatch):
+    original = AgentContextStateSnapshot(
+        entries={
+            "opaque": CapabilityState(version="future", data={"large": ["unchanged"] * 1000}),
+        }
+    )
+    state = AgentContextState(original)
+    assert await state.snapshot() is original
+    payload = CapabilityState.data.fget
+    reads = []
+
+    def counted(entry):
+        reads.append(entry.version)
+        return payload(entry)
+
+    monkeypatch.setattr(CapabilityState, "data", property(counted))
+    await state.write("counter", CounterState(value=1), version="1")
+    updated = await state.snapshot()
+    assert reads == []
+    assert updated is await state.snapshot()
+    await state.write("counter", CounterState(value=1), version="1")
+    assert updated is await state.snapshot()
+    assert updated.entries["opaque"].data == original.entries["opaque"].data
+    assert AgentContextStateSnapshot.model_validate_json(updated.model_dump_json()) == updated
+    detached = updated.entries
+    detached.pop("opaque")
+    assert updated.get("opaque") is not None
+    assert original.get("counter") is None
+
+
+async def test_deferred_namespace_is_built_once_when_read_and_superseded_by_write():
+    state = AgentContextState()
+    builds: list[int] = []
+
+    def produce(value):
+        def build():
+            builds.append(value)
+            return CounterState(value=value)
+
+        return build
+
+    state._defer("counter", produce(1), version="1")
+    state._defer("counter", produce(2), version="1")
+    assert builds == []
+    assert await state.read("counter", CounterState, version="1") == CounterState(value=2)
+    assert await state.read("counter", CounterState, version="1") == CounterState(value=2)
+    assert builds == [2]
+
+    state._defer("counter", produce(3), version="1")
+    await state.write("counter", CounterState(value=4), version="1")
+    exported = await state.snapshot()
+    assert builds == [2]
+    entry = exported.get("counter")
+    assert entry is not None and entry.data == {"value": 4}
+
+    state._defer("counter", produce(5), version="1")
+    changed = await state.snapshot()
+    assert changed is not exported
+    entry = changed.get("counter")
+    assert entry is not None and entry.data == {"value": 5}
+    assert await state.snapshot() is changed
+
+
+async def test_failed_deferred_namespace_keeps_failing_instead_of_exposing_an_older_value():
+    state = AgentContextState()
+    await state.write("counter", CounterState(value=1), version="1")
+
+    def fail() -> CounterState:
+        raise ValueError("too large")
+
+    state._defer("counter", fail, version="1")
+    for _ in range(2):
+        with pytest.raises(ValueError, match="too large"):
+            await state.snapshot()
+        with pytest.raises(ValueError, match="too large"):
+            await state.read("counter", CounterState, version="1")
+    await state.write("counter", CounterState(value=3), version="1")
+    entry = (await state.snapshot()).get("counter")
+    assert entry is not None and entry.data == {"value": 3}

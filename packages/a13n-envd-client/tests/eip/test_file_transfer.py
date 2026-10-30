@@ -758,9 +758,16 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("method", ["computer.observe", "computer.zoom"])
 @pytest.mark.parametrize("size_delta", [0, 1])
-def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> None:
-    from a13n_envd_client.eip.v1 import ComputerObservation, ComputerObserveResult
+def test_computer_observation_uses_verified_raw_transfer(size_delta: int, method: str) -> None:
+    from a13n_envd_client.eip.v1 import (
+        ComputerObservation,
+        ComputerObserveResult,
+        ComputerRegion,
+        ComputerZoomImage,
+        ComputerZoomResult,
+    )
 
     async def scenario() -> None:
         transport = FakeTypedTransport()
@@ -779,15 +786,22 @@ def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> Non
             ),
             max_in_flight=4,
         )
-        description = descriptor().model_copy(
-            update={"available_methods": ("computer.observe", "computer.close_observation")}
-        )
+        description = descriptor().model_copy(update={"available_methods": (method, "computer.close_observation")})
         session = connection._bind(description)
         session._ready = True
         content = b"immutable-image"
 
+        region = ComputerRegion(left=100, top=100, right=400, bottom=300)
+
+        def open_image():
+            return (
+                session.observe_computer()
+                if method == "computer.observe"
+                else session.zoom_computer(observation_id="obs-one", region=region)
+            )
+
         async def peer() -> None:
-            opened = await next_control(transport, "computer.observe")
+            opened = await next_control(transport, method)
             await respond(
                 transport,
                 opened,
@@ -799,6 +813,23 @@ def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> Non
                         target_id="display-1",
                         width=800,
                         height=600,
+                        mime_type="image/jpeg",
+                        captured_at="2026-08-21T00:00:00Z",
+                    ),
+                    expires_at="2026-08-21T01:00:00Z",
+                )
+                if method == "computer.observe"
+                else ComputerZoomResult(
+                    reader=FileReaderHandle("screen-one"),
+                    size_bytes=len(content) + size_delta,
+                    image=ComputerZoomImage(
+                        source_observation_id="obs-one",
+                        target_id="display-1",
+                        source_width=800,
+                        source_height=600,
+                        region=region,
+                        image_width=900,
+                        image_height=600,
                         mime_type="image/jpeg",
                         captured_at="2026-08-21T00:00:00Z",
                     ),
@@ -818,6 +849,7 @@ def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> Non
                 DataFrame(session_id="ses-transfer", kind=DataFrameKind.END, handle="screen-one", offset=len(content))
             )
             closed = await next_control(transport, "computer.close_observation")
+            assert closed.params["reader"] == "screen-one"
             await respond(
                 transport,
                 closed,
@@ -833,14 +865,114 @@ def test_computer_observation_uses_verified_raw_transfer(size_delta: int) -> Non
         try:
             if size_delta:
                 with pytest.raises(EIPProtocolError, match="immutable size"):
-                    async with session.observe_computer() as reader:
+                    async with open_image() as reader:
                         _ = [chunk async for chunk in reader]
             else:
-                async with session.observe_computer() as reader:
+                async with open_image() as reader:
                     assert b"".join([chunk async for chunk in reader]) == content
-                    assert reader.opened.observation.observation_id == "obs-one"
+                    if method == "computer.observe":
+                        assert reader.opened.observation.observation_id == "obs-one"
+                    else:
+                        assert reader.opened.image.source_observation_id == "obs-one"
                     assert reader.completion.produced_bytes == len(content)
             await peer_task
+        finally:
+            await session.abort()
+            await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("method", ["file.open_reader", "computer.observe", "computer.zoom"])
+def test_reader_cancel_during_acquisition_retires_late_handle(method: str) -> None:
+    from a13n_envd_client.eip.v1 import (
+        ComputerObservation,
+        ComputerObserveResult,
+        ComputerRegion,
+        ComputerZoomImage,
+        ComputerZoomResult,
+    )
+
+    async def scenario() -> None:
+        transport = FakeTypedTransport()
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                boundary=BOUNDARY,
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
+            max_in_flight=4,
+        )
+        description = descriptor().model_copy(update={"available_methods": (method, "computer.close_observation")})
+        session = connection._bind(description)
+        session._ready = True
+        session._requester._max_transfers = 1
+        region = ComputerRegion(left=0, top=0, right=100, bottom=50)
+        path = EIPPath(path="/cancelled.bin")
+        try:
+            for index in range(3):
+                if method == "computer.zoom":
+                    reader = session.zoom_computer(observation_id="obs-one", region=region)
+                elif method == "computer.observe":
+                    reader = session.observe_computer()
+                else:
+                    reader = session.open_reader(path)
+                entering = asyncio.create_task(reader.__aenter__())
+                request = await next_control(transport, method)
+                entering.cancel()
+                await asyncio.sleep(0)
+                entering.cancel()
+                handle = f"late-reader-{index}"
+                common = {"reader": FileReaderHandle(handle), "expires_at": "2026-08-21T01:00:00Z"}
+                if method == "computer.zoom":
+                    opened = ComputerZoomResult(
+                        **common,
+                        size_bytes=1,
+                        image=ComputerZoomImage(
+                            source_observation_id="obs-one",
+                            target_id="display-1",
+                            source_width=800,
+                            source_height=600,
+                            region=region,
+                            image_width=200,
+                            image_height=100,
+                            mime_type="image/jpeg",
+                            captured_at="2026-08-21T00:00:00Z",
+                        ),
+                    )
+                elif method == "computer.observe":
+                    opened = ComputerObserveResult(
+                        **common,
+                        size_bytes=1,
+                        observation=ComputerObservation(
+                            observation_id="obs-one",
+                            target_id="display-1",
+                            width=800,
+                            height=600,
+                            mime_type="image/jpeg",
+                            captured_at="2026-08-21T00:00:00Z",
+                        ),
+                    )
+                else:
+                    opened = FileReaderOpenResult(**common, info=info(path, 1))
+                await respond(transport, request, opened)
+                reset = await asyncio.wait_for(transport.outbound.get(), 2)
+                assert isinstance(reset, DataFrame) and reset.kind is DataFrameKind.RESET
+                assert reset.handle == handle and reset.reset_status is DataResetStatus.CANCELLED
+                assert not entering.done()
+                await transport.inbound.put(reset)
+                with pytest.raises(asyncio.CancelledError):
+                    await entering
+                assert not session._requester._retired
+                assert not transport.closed
+                assert transport.outbound.empty()
         finally:
             await session.abort()
             await device.close()

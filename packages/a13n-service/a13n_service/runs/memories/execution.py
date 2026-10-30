@@ -10,7 +10,7 @@ memory deleted meanwhile is `memory_deleted`. A record store also rechecks that 
 cursors, which each checkpoint commits.
 """
 
-from collections.abc import AsyncIterator, Callable, Collection
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,27 +37,30 @@ from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.memories import provenance
 from a13n_service.resources.memories.records import RecordMemory, backend, open_record_store, record_memory
-from a13n_service.resources.memories.schemas import MemoryMount, MemoryRecordSource
+from a13n_service.resources.memories.schemas import MemoryRecordSource
 from a13n_service.resources.memories.service import inherited_guide
 from a13n_service.resources.memories.store import PostgresFileStore, file_format
 from a13n_service.resources.memories.tables import MemoryRow
 from a13n_service.resources.providers.tables import MemoryProviderRow
 from a13n_service.runs.attempts import Lease
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
+from a13n_service.runs.memories.view import SpaceFileView
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
 
 logger = get_logger(__name__)
 
-type Gate = Callable[[Verb], None]
+type Gate = Callable[[Verb], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
 class PlannedMemory:
     """One frozen mount whose memory exists, with the memory's configuration as the attempt read it."""
 
-    mount: MemoryMount
+    mount: FrozenMemoryMount
     guide: str | None
     always_load: tuple[str, ...]
     # A record memory with its enabled provider; None for a file memory.
@@ -65,7 +68,7 @@ class PlannedMemory:
 
 
 async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedMemory, ...]:
-    mounts = [MemoryMount.model_validate(mount) for mount in run.memory_mounts]
+    mounts = [FrozenMemoryMount.model_validate(mount) for mount in run.memory_mounts]
     if not mounts:
         return ()
     rows = {
@@ -90,17 +93,25 @@ async def resolve_memories(session: AsyncSession, run: RunRow) -> tuple[PlannedM
                     raise
                 logger.warning("Record memory skipped", extra={"memory_id": row.id, "reason": "provider_disabled"})
                 continue
-        planned.append(PlannedMemory(mount, row.guide, tuple(row.always_load), record))
+        always_load = tuple(row.always_load)
+        if mount.space_id is not None:
+            always_load = tuple(path for path in always_load if path.startswith(mount.roots))
+            own_index = f"sessions/{run.session_id}/MEMORY.md"
+            if own_index.startswith(mount.roots) and own_index not in always_load:
+                always_load += (own_index,)
+        planned.append(PlannedMemory(mount, row.guide, always_load, record))
     return tuple(planned)
 
 
-def _gate(lease: Lease, principal: Principal, authority: ExecutionAuthority) -> Gate:
+def _gate(runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority) -> Gate:
     """The per-call check of the run principal under the run's frozen authority."""
     scope = WorkspaceScope(lease.organization_id, lease.workspace_id)
 
-    def gate(verb: Verb) -> None:
+    async def gate(verb: Verb) -> None:
         try:
             authorize(principal, scope, verb, authority=authority)
+            current = await prove(runtime, lease)
+            authorize(current, scope, verb, authority=authority)
         except ServiceError as error:
             if error.code != "forbidden":
                 raise
@@ -110,14 +121,19 @@ def _gate(lease: Lease, principal: Principal, authority: ExecutionAuthority) -> 
 
 
 def _guide(memory: PlannedMemory, settings: MemorySettings) -> str:
-    if memory.guide is not None:
-        return memory.guide
-    return inherited_guide(settings, "file" if memory.record is None else "record")
+    guide = (
+        memory.guide
+        if memory.guide is not None
+        else inherited_guide(settings, "file" if memory.record is None else "record")
+    )
+    if memory.mount.space_id is not None:
+        guide += "\nThis Memory Space exposes: " + ", ".join(memory.mount.roots)
+        guide += ". Save shared knowledge under global/ and conversation notes under your Session folder."
+    return guide
 
 
 def file_memory(
-    storage: Storage,
-    settings: MemorySettings,
+    runtime: Runtime,
     planned: tuple[PlannedMemory, ...],
     *,
     lease: Lease,
@@ -127,18 +143,34 @@ def file_memory(
     tools: Collection[FileToolKey],
 ) -> FileMemoryCapability | None:
     """The capability over the planned file memories, or None when the run mounts none."""
+    storage, settings = runtime.storage, runtime.settings.memory
     files = [memory for memory in planned if memory.record is None]
     if not files:
         return None
-    gate = _gate(lease, principal, authority)
+    gate = _gate(runtime, lease, principal, authority)
     mounts = [
         FileMount(
             name=memory.mount.name,
-            store=PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate),
+            store=(
+                SpaceFileView(
+                    PostgresFileStore(
+                        storage,
+                        memory.mount.memory_id,
+                        settings,
+                        gate=gate,
+                        # Only the host-resolved organizer view includes every Session folder.
+                        count_changes="sessions/" not in memory.mount.roots,
+                    ),
+                    memory.mount.roots,
+                    file_format(settings),
+                )
+                if memory.mount.space_id is not None
+                else PostgresFileStore(storage, memory.mount.memory_id, settings, gate=gate)
+            ),
             access=memory.mount.access,
             guide=_guide(memory, settings),
             always_load=memory.always_load,
-            cursor_key=memory.mount.memory_id,
+            cursor_key=memory.mount.cursor_key,
         )
         for memory in files
     ]
@@ -174,7 +206,7 @@ class RunRecordStore:
         )
 
     async def _check(self, verb: Verb) -> None:
-        self.gate(verb)
+        await self.gate(verb)
         async with short_session(self.storage) as session:
             enabled = await session.scalar(
                 select(MemoryProviderRow.enabled)
@@ -234,10 +266,10 @@ async def record_memory_capability(
     authority: ExecutionAuthority,
     tools: Collection[RecordToolKey],
     configuration: RunConfiguration | None = None,
-) -> AsyncIterator[RecordMemoryCapability | None]:
+) -> AsyncGenerator[RecordMemoryCapability | None]:
     """The capability over the planned record memories whose stores open, which stay open until the context
     exits; None when there is none."""
-    gate = _gate(lease, principal, authority)
+    gate = _gate(runtime, lease, principal, authority)
     settings = runtime.settings.memory
     async with AsyncExitStack() as stack:
         mounts: list[RecordMount] = []

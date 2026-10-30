@@ -78,3 +78,20 @@
   margin: 6px auto;
   display: flex;
 }
+
+/* An application the provider cannot offer yet, with the way to recheck. */
+.unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.unavailable p {
+  margin: 0;
+}
+.unavailable button {
+  flex: none;
+}

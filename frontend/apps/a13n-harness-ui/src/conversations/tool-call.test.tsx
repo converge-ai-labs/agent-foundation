@@ -7,7 +7,7 @@ import {
   fireEvent,
   within,
 } from "@testing-library/react";
-import { ToolCall, OpenHostFile, editPatch } from "./tool-call";
+import { ToolActivity, ToolCall, OpenHostFile, editPatch } from "./tool-call";
 import {
   describeTool,
   hostLookupPath,
@@ -16,6 +16,7 @@ import {
 } from "./tool-presentation";
 import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
+import { DebugProvider } from "../shell/debug";
 afterEach(cleanup);
 
 it("pairs loaded calls with results once, retaining page-edge results and repeated call IDs", () => {
@@ -188,7 +189,7 @@ it("labels historical replacement as input and offers explicit host lookup outsi
   expect(hostLookupPath("C:\\work\\a.py")).toBe("C:\\work\\a.py");
 });
 
-it("renders tool calls inline and exposes bounded shell output with raw fallback", () => {
+it("keeps shell output readable and exposes complete input and result without Debug", () => {
   const { container } = render(
     <LiveOutput
       gap={false}
@@ -209,6 +210,7 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
         { id: "three", kind: "assistant", text: "After" },
       ]}
     />,
+    { wrapper: DebugProvider },
   );
   const html = container.innerHTML;
   expect(html.indexOf("Before")).toBeLessThan(
@@ -223,8 +225,117 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
   ).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Arguments & result" }));
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
   expect(screen.getByRole("button", { name: "Raw" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '{"command":"printf hello"}',
+  );
+  expect(screen.getByRole("region", { name: "Result" }).textContent).toContain(
+    '"content_complete":false',
+  );
+  expect(screen.getByText("warning")).toBeTruthy();
+});
+
+it("keeps structured tool content visible without enabling Debug", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "lookup",
+        name: "lookup",
+        resultParts: [
+          { type: "text", text: "The requested document is ready." },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /lookup/ }));
+  expect(screen.getByText("The requested document is ready.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Input & result" })).toBeTruthy();
+});
+
+it("shows legacy file targets and shell output without dropping flat stream values or exit codes", () => {
+  expect(
+    describeTool({ id: "file", name: "view", input: { path: "checkout.ts" } })
+      .summary,
+  ).toBe("checkout.ts");
+  const tool = {
+    id: "shell",
+    name: "shell_exec",
+    input: { command: "check", cwd: "/project" },
+    result: {
+      stdout: "one check passed",
+      stderr: "one check failed",
+      exit_code: 1,
+    },
+  };
+  expect(describeTool(tool).phase).toBe("Failed");
+  render(<ToolCall tool={tool} />);
+  fireEvent.click(screen.getByRole("button", { name: /Run/ }));
+  expect(screen.getByText("one check passed")).toBeTruthy();
+  expect(screen.getByText("one check failed")).toBeTruthy();
+  expect(screen.getByText("Exit 1")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '"cwd": "/project"',
+  );
+});
+
+it("shows note content and complete payloads for each call in a group", () => {
+  render(
+    <ToolActivity
+      tools={[
+        {
+          id: "one",
+          name: "note_write",
+          input: { key: "Plan", value: "Keep retries explicit." },
+          result: { ok: true, key: "Plan", action: "created" },
+        },
+        {
+          id: "two",
+          name: "task_create",
+          input: { subject: "Review", description: "Check failures" },
+          result: {
+            ok: true,
+            task: {
+              subject: "Review",
+              description: "Check failures",
+              status: "pending",
+            },
+          },
+        },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Tasks & notes/ }));
+  expect(screen.getByText("Keep retries explicit.")).toBeTruthy();
+  expect(screen.getByText("Check failures")).toBeTruthy();
+  const records = screen.getAllByRole("button", { name: "Input & result" });
+  expect(records).toHaveLength(2);
+  fireEvent.click(records[0]);
+  expect(screen.getByRole("region", { name: "Input" }).textContent).toContain(
+    '"value"',
+  );
+  expect(screen.getByRole("region", { name: "Result" }).textContent).toContain(
+    '"created"',
+  );
+});
+
+it("discloses omitted input and results instead of presenting empty data as complete", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "omitted",
+        name: "lookup",
+        inputOmitted: true,
+        resultOmitted: true,
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /lookup/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Input & result" }));
+  expect(screen.getByText("Input omitted by the server.")).toBeTruthy();
+  expect(screen.getByText("Result omitted by the server.")).toBeTruthy();
 });
 
 it("preserves retry requests as a distinct saved tool status", () => {
@@ -487,6 +598,7 @@ it("keeps missing, omitted, malformed and unsuccessful question results visible 
     { outcome: "failed" as const },
     { outcome: "denied" as const },
     { outcome: "interrupted" as const },
+    { outcome: "retried" as const },
     { retry: true },
   ]) {
     const { unmount } = render(
@@ -552,7 +664,86 @@ it("shows screenshot retention failure without marking a successful observation 
   );
   fireEvent.click(screen.getByRole("button", { name: /Observe desktop/ }));
   expect(screen.getByRole("status").textContent).toContain(
-    "display copy could not be retained",
+    "no preview was saved",
   );
   expect(screen.queryByText("Failed")).toBeNull();
+});
+
+it.each([
+  ["ls", '{"path":"/actual",', { path: "/actual" }, "/actual"],
+  ["get_thread", '{"thread_id":', { thread_id: "thread-one" }, "thread-one"],
+  [
+    "list_threads",
+    '{"project_id":',
+    { project_id: "project-one" },
+    "project-one",
+  ],
+  ["list_models", '{"query":', { query: "model-one" }, "model-one"],
+])(
+  "does not infer %s default targets from unfinished arguments",
+  (name, input, complete, target) => {
+    const pending = { id: "pending", name, input };
+    expect(describeTool(pending)).toMatchObject({
+      summary: "",
+      phase: "Receiving input",
+    });
+    expect(
+      describeTool({ ...pending, input: complete, inputComplete: true }),
+    ).toMatchObject({ summary: target, phase: "Awaiting result" });
+  },
+);
+
+it("distinguishes process listing from single-process inspection", () => {
+  expect(
+    describeTool({
+      id: "list",
+      name: "shell_info",
+      input: { alias: "remote" },
+      inputComplete: true,
+    }),
+  ).toMatchObject({ label: "List processes", summary: "remote" });
+  expect(
+    describeTool({
+      id: "inspect",
+      name: "shell_info",
+      input: { process_id: "process-one" },
+      inputComplete: true,
+    }),
+  ).toMatchObject({ label: "Inspect process", summary: "process-one" });
+});
+
+it("renders retained execution receipts as handoffs in live and saved tools", () => {
+  const receipt = {
+    type: "tool_execution_receipt",
+    execution_id: "exec-lookup",
+    tool_name: "lookup",
+    status: "running",
+  };
+  const tool = { id: "call", name: "lookup", result: receipt };
+  expect(describeTool(tool).phase).toBe("Execution handed off");
+  expect(describeTool({ ...tool, result: JSON.stringify(receipt) }).phase).toBe(
+    "Execution handed off",
+  );
+  expect(
+    describeTool({ ...tool, result: { ...receipt, type: undefined } }).phase,
+  ).toBe("Result received");
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_call_id: "call",
+          tool_name: "lookup",
+          value: {},
+        },
+        { kind: "tool_result", tool_call_id: "call", value: receipt },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const saved = savedTools(entries).get(entries[0].parts[0])!;
+  expect(describeTool(saved).phase).toBe("Execution handed off");
+  render(<ToolCall tool={saved} />);
+  expect(screen.getByText("Execution handed off")).toBeTruthy();
+  expect(screen.queryByText("Result received")).toBeNull();
 });

@@ -59,6 +59,7 @@ export function covers(accepted: Y.Snapshot, local: Y.Snapshot): boolean {
 export type DraftCapture = {
   doc: Y.Doc;
   draftId: string;
+  snapshot: Schema<"DraftCapture">;
   input: ReturnType<typeof values>;
   parts: ReturnType<typeof orderedInput>;
 };
@@ -128,6 +129,34 @@ export class ThreadDraft {
     };
   };
   getSnapshot = () => this.version;
+  private historySnapshot = {
+    submission: this.submission,
+    inputs: [] as LocalInput[],
+  };
+  // Input preparation mutates its private LocalInput in place. Compare the small
+  // presentation list, never the CRDT document or the saved transcript.
+  getHistorySnapshot = () => {
+    const previous = this.historySnapshot;
+    if (
+      previous.submission !== this.submission ||
+      previous.inputs.length !== this.localInputs.length ||
+      this.localInputs.some((input, index) => {
+        const old = previous.inputs[index];
+        return (
+          old?.id !== input.id ||
+          old.action !== input.action ||
+          old.state !== input.state ||
+          old.parts !== input.parts
+        );
+      })
+    ) {
+      this.historySnapshot = {
+        submission: this.submission,
+        inputs: this.localInputs.map((input) => ({ ...input })),
+      };
+    }
+    return this.historySnapshot;
+  };
   notify() {
     this.version++;
     this.listeners.forEach((listener) => listener());
@@ -160,6 +189,10 @@ export class ThreadDraft {
       return {
         doc,
         draftId: this.draftId,
+        snapshot: {
+          draft_id: this.draftId,
+          update_base64: encode(Y.encodeStateAsUpdate(doc)),
+        },
         input: values(doc),
         parts: orderedInput(doc),
       };
@@ -304,7 +337,7 @@ export class ThreadDraft {
       const update = Y.encodeStateAsUpdate(this.doc);
       if (update.length > 512 * 1024) {
         this.error =
-          "Draft exceeds the server's 512 KiB CRDT limit. Copy your text before rejoining a fresh draft.";
+          "This draft is over the 512 KiB limit. Copy your text before joining a new draft.";
         this.notify();
         return;
       }
@@ -322,11 +355,9 @@ export class ThreadDraft {
       inFlight = undefined;
       this.status = "Connecting";
       this.notify();
-      const url = new URL(
+      const url = transport.socketUrl(
         `/api/threads/${encodeURIComponent(threadId)}/draft/connect`,
-        window.location.origin,
       );
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(url);
       socket = ws;
       ws.onopen = () => ws.send(JSON.stringify({ api_key: transport.key }));
@@ -396,7 +427,7 @@ export class ThreadDraft {
         this.status = "Disconnected";
         this.participants = {};
         this.notify();
-        if (event.code === 4401) {
+        if (event.code === 4401 || (transport.shareId && event.code === 4403)) {
           unauthorized();
           return;
         }

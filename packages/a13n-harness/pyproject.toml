@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "a13n-envd-client",
+    "cdp-use>=1.4.5,<2",
     "pathspec>=1.1,<2",
     "packaging>=24,<27",
     "websockets>=15,<16",
@@ -20,30 +21,33 @@ dependencies = [
     "google-auth>=2.40,<3",
     "google-genai>=1.0,<3",
     "openai>=3.5,<4",
-    "genai-prices>=0.1.9,<1",
+    "genai-prices==0.2.*",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
     "opentelemetry-api>=1.39,<2",
     "pydantic>=2.12,<3",
-    "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,typesafe,xai,xai-realtime]>=2.55.0,<3",
+    "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,typesafe,xai,xai-realtime]==2.63.*",
     "pydantic-core>=2.41,<3",
-    "pydantic-monty>=1.1.0,<2",
+    "pydantic-monty>=1.4.0,<2",
     "pyjwt[crypto]>=2.10,<3",
     "pyyaml>=6.0,<7",
     "referencing>=0.37,<1",
     "tenacity>=9,<10",
     "typing-extensions>=4.15,<5",
     "typesafe-sdk>=0.7.1,<1",
+    "pydantic-ai-harness==0.63.*",
 ]
 
 [project.optional-dependencies]
 docker = ["docker>=7.2,<8"]
-e2b = ["e2b>=2.46.4,<3"]
+e2b = [
+    "e2b>=2.46.4,<3",
+]
 modal = ["modal>=1.5.5,<2"]
 
 [project.urls]
-Homepage = "https://a13n.converge.ai/"
-Documentation = "https://a13n.converge.ai/docs/a13n-harness/"
+Homepage = "https://a13n.dev/"
+Documentation = "https://a13n.dev/docs/a13n-harness/"
 Repository = "https://github.com/converge-ai-labs/agent-foundation"
 
 [dependency-groups]
@@ -60,7 +64,7 @@ build-backend = "hatchling.build"
 packages = ["a13n_harness"]
 
 [tool.a13n.release-dependencies]
-a13n-envd-client = ">=0.1.2,<0.2.0"
+a13n-envd-client = ">=0.5.0,<0.6.0"
 a13n-logging = ">=0.2.0,<0.3.0"
 
 [tool.deptry]

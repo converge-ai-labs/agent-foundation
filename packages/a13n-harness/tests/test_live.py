@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -67,6 +67,7 @@ from pydantic_ai.realtime.codec import (
     ToolResult,
     TruncateOutput,
 )
+from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, RealtimeFrame
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
@@ -78,11 +79,17 @@ class _Connection(RealtimeConnection):
     def __init__(self) -> None:
         self.events: asyncio.Queue[RealtimeCodecEvent] = asyncio.Queue()
         self.sent: asyncio.Queue[RealtimeInput] = asyncio.Queue()
+        self.lifecycle = InferredLifecycle()
 
-    async def send(self, content: RealtimeInput) -> None:
-        await self.sent.put(content)
+    async def send(self, content: RealtimeInput) -> list[LifecycleEvent]:
+        with self.lifecycle.sending(content):
+            await self.sent.put(content)
+        return self.lifecycle.take_pending()
 
-    async def __aiter__(self) -> AsyncIterator[RealtimeCodecEvent]:
+    def frames(self) -> AsyncIterator[RealtimeFrame]:
+        return self.lifecycle.frames(self._events())
+
+    async def _events(self) -> AsyncIterator[RealtimeCodecEvent]:
         while True:
             yield await self.events.get()
 
@@ -120,7 +127,7 @@ class _Model(RealtimeModel):
         messages: Sequence[ModelMessage],
         model_settings: RealtimeModelSettings | None,
         model_request_parameters: ModelRequestParameters,
-    ) -> AsyncIterator[RealtimeConnection]:
+    ) -> AsyncGenerator[RealtimeConnection]:
         self.messages = messages
         self.parameters = model_request_parameters
         self.opened = True
@@ -532,7 +539,7 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
     async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "lookup")
-        assert result.output == "Try a different query\n\nFix the errors and try again."
+        assert result.output == '{"error":"Try a different query"}'
         assert not result.content
         assert len(projection.requests) == 1
         await live.close()
@@ -545,7 +552,9 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
         for part in message.parts
         if isinstance(part, (RetryPromptPart, ToolReturnPart))
     ]
-    assert len(returns) == 1 and isinstance(returns[0], RetryPromptPart)
+    assert len(returns) == 1 and isinstance(returns[0], ToolReturnPart)
+    assert returns[0].outcome == "retried"
+    assert returns[0].retry is not None and returns[0].retry.cause == "model_retry"
     assert returns[0].tool_name == "lookup" and returns[0].tool_call_id == "call-1"
 
 

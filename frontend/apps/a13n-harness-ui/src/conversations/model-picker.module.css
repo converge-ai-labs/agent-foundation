@@ -1,16 +1,14 @@
 .modelOption {
   flex: 1;
   min-width: 0;
-}
-.modelOption {
   width: 100%;
   height: auto;
-  min-height: 44px;
+  min-height: var(--harness-menu-row);
   justify-content: space-between;
   text-align: left;
-  padding: 10px 8px;
-  gap: 12px;
-  font-size: 13px;
+  padding: 4px 8px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 400;
   white-space: normal;
 }
@@ -21,25 +19,26 @@
 .modelOption small {
   display: block;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 14px;
+  margin-top: 4px;
 }
 .hint {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .search {
-  margin-top: 12px;
+  margin: 4px;
+  width: calc(100% - 8px);
 }
 .modelList {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .divider {
   border-top: 1px solid var(--a13n-border-soft);
-  margin: 6px 8px;
+  margin: 8px 8px;
 }
 @media (pointer: coarse) {
   .search {

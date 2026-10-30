@@ -171,7 +171,7 @@ A hosted system can persist the Harness-owned plugin document and maintain artif
 09. Cancellation, usage limits, output retry exhaustion, tool failure, and deferred/HITL boundaries stop semantic recovery.
 10. Provider and external side-effect uncertainty is never rewritten as exactly-once success or rollback.
 11. Model-facing resource references and aggregate Environment paths are non-authoritative selectors; provider-local paths, trusted identities, and durable identities retain their owning representations.
-12. Shell references are Run-local; cleanup releases observations while Provider state owns native recovery.
+12. Host-held Shell executions retain their original scope across Runs; standalone process references are Run-local, and Provider state owns native recovery.
 13. Terminal delivery occurs only after cleanup.
 14. Host durability, event projection, telemetry export, external delivery, usage accounting, billing, and payment remain separate facts.
 15. [Harness Observation](19-observation-model.md) independently selects traces and metrics: the Harness owns logical-run and focused-operation telemetry, while Pydantic AI owns its native Agent/model/tool spans and model metrics.

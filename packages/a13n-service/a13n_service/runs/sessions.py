@@ -1,18 +1,21 @@
-"""Sessions as resources: listing with previews, reads, creation and labels."""
+"""Caller-owned Session identity and listings with bounded execution previews."""
 
+import re
 from collections.abc import Sequence
 
-from pydantic import JsonValue
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
-from a13n_service.infra.errors import not_found
+from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.ids import OBJECT_ID_PATTERN, new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
+from a13n_service.runs.memories.session_memory import configure
+from a13n_service.runs.previews import input_text
+from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.schemas import (
     SessionCreate,
     SessionPage,
@@ -21,7 +24,9 @@ from a13n_service.runs.schemas import (
     SessionUpdate,
     SessionView,
 )
+from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
+from a13n_service.runs.usage import session_costs
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
@@ -29,86 +34,160 @@ PREVIEW_INPUT = 256
 PREVIEW_OUTPUT = 512
 
 
-def _input_text(payload: dict[str, JsonValue] | None) -> str | None:
-    content = payload.get("content") if payload is not None else None
-    if not isinstance(content, list):
-        return None
-    texts = [text for part in content if isinstance(part, dict) and isinstance(text := part.get("text"), str)]
-    return "\n".join(texts)[:PREVIEW_INPUT] if texts else None
-
-
-def new_session(organization_id: str, workspace_id: str, created_by_id: str) -> SessionRow:
+def new_session(
+    organization_id: str, workspace_id: str, created_by_id: str, details: SessionCreate | None = None
+) -> SessionRow:
+    details = details or SessionCreate()
     return SessionRow(
         id=new_object_id("sess"),
         organization_id=organization_id,
         workspace_id=workspace_id,
-        labels={},
+        title=details.title,
+        origin=details.origin.model_dump(mode="json") if details.origin is not None else None,
+        labels=dict(details.labels),
         created_by_id=created_by_id,
     )
 
 
 async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[SessionView]:
-    """Views with the latest run's preview and each session's run count, two queries per page."""
+    """Views with the latest run's preview and each session's run count, and Schedule association, batched per page."""
+    if not rows:
+        return []
+    workspace_id = rows[0].workspace_id
     ids = [row.id for row in rows]
-    previews: dict[str, SessionPreview] = {}
-    for session_id, run, agent_name, payload in (
-        await session.execute(
-            select(SessionRow.id, RunRow, AgentRow.name, InboxEntryRow.payload)
-            .join(RunRow, RunRow.id == SessionRow.last_run_id)
-            .join(AgentRow, AgentRow.id == RunRow.agent_id)
-            .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.source_entry_id)
-            .where(SessionRow.id.in_(ids))
-        )
-    ).tuples():
-        previews[session_id] = SessionPreview.model_validate(
-            {
-                "run_id": run.id,
-                "thread_id": run.thread_id,
-                "agent_id": run.agent_id,
-                "agent_name": agent_name,
-                "status": run.status,
-                "trigger": run.trigger,
-                "input_text": _input_text(payload),
-                "output_text": run.output[:PREVIEW_OUTPUT] if isinstance(run.output, str) else None,
-            }
-        )
-    counts = dict(
+    schedules = dict(
         (
             await session.execute(
-                select(RunRow.session_id, func.count()).where(RunRow.session_id.in_(ids)).group_by(RunRow.session_id)
+                select(ScheduleRow.session_id, func.min(ScheduleRow.id))
+                .where(ScheduleRow.session_id.in_(ids))
+                .group_by(ScheduleRow.session_id)
+                .having(func.count() == 1)
             )
         )
         .tuples()
         .all()
     )
+    previews: dict[str, SessionPreview] = {}
+    for row in (
+        await session.execute(
+            select(
+                SessionRow.id.label("session_id"),
+                RunRow.id.label("run_id"),
+                RunRow.thread_id,
+                RunRow.agent_id,
+                AgentRow.name.label("agent_name"),
+                RunRow.status,
+                RunRow.trigger,
+                input_text(PREVIEW_INPUT).label("input_text"),
+                case(
+                    (
+                        func.jsonb_typeof(RunRow.output) == "string",
+                        func.left(RunRow.output[()].astext, PREVIEW_OUTPUT),
+                    )
+                ).label("output_text"),
+            )
+            .join(RunRow, RunRow.id == SessionRow.last_run_id)
+            .join(AgentRow, AgentRow.id == RunRow.agent_id)
+            .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.source_entry_id)
+            .where(SessionRow.id.in_(ids))
+        )
+    ).mappings():
+        previews[row["session_id"]] = SessionPreview.model_validate(row)
+    counts = dict(
+        (
+            await session.execute(
+                select(RunRow.session_id, func.count())
+                .where(RunRow.workspace_id == workspace_id, RunRow.session_id.in_(ids))
+                .group_by(RunRow.session_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    costs = {
+        row.session_id: row
+        for row in (await session.execute(session_costs(workspace_id).where(RunRow.session_id.in_(ids)))).mappings()
+    }
     return [
-        SessionView.model_validate(row).model_copy(
-            update={"preview": previews.get(row.id), "run_count": counts.get(row.id, 0)}
+        SessionView.model_validate(
+            {
+                "id": row.id,
+                "workspace_id": row.workspace_id,
+                "title": row.title,
+                "origin": row.origin,
+                "labels": row.labels,
+                "created_by_id": row.created_by_id,
+                "last_run_id": row.last_run_id,
+                "memory": row.memory,
+                "purpose": row.purpose,
+                "version": row.version,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+                "preview": previews.get(row.id),
+                "run_count": counts.get(row.id, 0),
+                "cost": costs[row.id].cost if row.id in costs else None,
+                "unpriced_requests": costs[row.id].unpriced_requests if row.id in costs else 0,
+                "schedule_id": schedules.get(row.id),
+            }
         )
         for row in rows
     ]
 
 
+def require_conversation(row: SessionRow) -> None:
+    if row.purpose != "conversation":
+        raise conflict("session", row.id, "managed_organization")
+
+
 async def find_session(session: AsyncSession, workspace_id: str, session_id: str, *, lock: bool = False) -> SessionRow:
     query = select(SessionRow).where(SessionRow.workspace_id == workspace_id, SessionRow.id == session_id)
-    found = await session.scalar(query.with_for_update() if lock else query)
+    found = await session.scalar(query.with_for_update(key_share=True) if lock else query)
     if found is None:
         raise not_found("session", session_id)
     return found
 
 
 async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, filters: SessionQuery) -> SessionPage:
-    """Most recently updated first: a run's acceptance or a label edit updates a session."""
+    """Sort the authorized, filtered collection before taking a bounded page."""
+    match = predicate(RunRow.search_vector, filters.text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         query = select(SessionRow).where(
-            SessionRow.workspace_id == scope.workspace_id, label_filter(SessionRow.labels, list(filters.label))
+            SessionRow.workspace_id == scope.workspace_id,
+            SessionRow.purpose == "conversation",
+            label_filter(SessionRow.labels, list(filters.label)),
         )
-        if filters.q:
+        if filters.q and (needle := filters.q.strip()):
             by_thread = select(ThreadRow.session_id).where(
-                ThreadRow.workspace_id == scope.workspace_id, ThreadRow.id == filters.q
+                ThreadRow.workspace_id == scope.workspace_id, ThreadRow.id == needle
             )
-            query = query.where(or_(SessionRow.id == filters.q, SessionRow.id.in_(by_thread)))
+            matches = [SessionRow.id == needle, SessionRow.id.in_(by_thread)]
+            exact_id = needle.startswith(("sess_", "thread_")) and re.fullmatch(OBJECT_ID_PATTERN, needle)
+            if not exact_id:
+                label_values = func.jsonb_each_text(SessionRow.labels).table_valued("key", "value")
+                matches.extend(
+                    [
+                        SessionRow.title.icontains(needle, autoescape=True),
+                        *[
+                            SessionRow.origin[field].astext.icontains(needle, autoescape=True)
+                            for field in ("application", "name", "external_id")
+                        ],
+                        select(1)
+                        .select_from(label_values)
+                        .where(label_values.c.value.icontains(needle, autoescape=True))
+                        .exists(),
+                    ]
+                )
+                text_match = predicate(RunRow.search_vector, needle)
+                if text_match is not None:
+                    matches.append(
+                        SessionRow.id.in_(
+                            select(RunRow.session_id).where(RunRow.workspace_id == scope.workspace_id, text_match)
+                        )
+                    )
+            query = query.where(or_(*matches))
+        if filters.application:
+            query = query.where(SessionRow.origin["application"].astext == filters.application)
         if filters.updated_after:
             query = query.where(SessionRow.updated_at >= filters.updated_after)
         if filters.updated_before:
@@ -121,17 +200,68 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
                 query = query.where(RunRow.status.in_(filters.status))
             if filters.trigger:
                 query = query.where(RunRow.trigger.in_(filters.trigger))
-        rows, next_cursor = await cursors.keyset_page(
-            session,
-            query,
-            (SessionRow.updated_at, SessionRow.id),
-            kind="sessions",
-            owner=cursors.query_owner(scope.workspace_id, filters.model_dump(exclude={"limit", "cursor"})),
-            cursor=filters.cursor,
-            limit=filters.limit,
-            newest_first=True,
-        )
+        if match is not None:
+            query = query.where(
+                SessionRow.id.in_(select(RunRow.session_id).where(RunRow.workspace_id == scope.workspace_id, match))
+            )
+        owner = cursors.query_owner(scope.workspace_id, filters.model_dump(exclude={"limit", "cursor"}))
+        if filters.sort == "updated_at":
+            rows, next_cursor = await cursors.keyset_page(
+                session,
+                query,
+                (SessionRow.updated_at, SessionRow.id),
+                kind="sessions",
+                owner=owner,
+                cursor=filters.cursor,
+                limit=filters.limit,
+                newest_first=filters.direction == "desc",
+            )
+        else:
+            candidates = query.with_only_columns(SessionRow.id).correlate(None)
+            if filters.sort == "runs":
+                counts = (
+                    select(RunRow.session_id, func.count().label("count"))
+                    .where(RunRow.workspace_id == scope.workspace_id, RunRow.session_id.in_(candidates))
+                    .group_by(RunRow.session_id)
+                    .subquery()
+                )
+                query = query.outerjoin(counts, counts.c.session_id == SessionRow.id)
+                metric = func.coalesce(counts.c.count, 0)
+            else:
+                costs = session_costs(scope.workspace_id).where(RunRow.session_id.in_(candidates)).subquery()
+                query = query.outerjoin(costs, costs.c.session_id == SessionRow.id)
+                metric = costs.c.cost
+            rows, next_cursor = await _metric_page(session, query, metric, filters, owner)
         return SessionPage(items=await _views(session, rows), next_cursor=next_cursor)
+
+
+async def _metric_page(
+    session: AsyncSession, query: Select, metric: ColumnElement, filters: SessionQuery, owner: str
+) -> tuple[Sequence[SessionRow], str | None]:
+    """Exact numeric keysets, with unavailable cost last in either direction and identity breaking ties."""
+    descending = filters.direction == "desc"
+    if filters.cursor:
+        position = cursors.decode(filters.cursor, "sessions", owner)
+        try:
+            if len(position) != 2 or not isinstance(position[1], str) or len(position[1]) > 72:
+                raise ValueError("position")
+        except ValueError:
+            raise ServiceError("invalid_cursor", "Invalid collection cursor") from None
+        value = None if position[0] is None else cursors.numeric_value(position[0])
+        query = query.where(cursors.metric_after(metric, value, SessionRow.id > position[1], descending=descending))
+    values = (
+        await session.execute(
+            query.add_columns(metric)
+            .order_by((metric.desc() if descending else metric.asc()).nulls_last(), SessionRow.id)
+            .limit(filters.limit + 1)
+        )
+    ).all()
+    page = values[: filters.limit]
+    next_cursor = None
+    if len(values) > filters.limit:
+        row, value = page[-1]
+        next_cursor = cursors.encode("sessions", owner, None if value is None else str(value), row.id)
+    return [row for row, _ in page], next_cursor
 
 
 async def get_session(storage: Storage, actor: Principal, workspace_id: str, session_id: str) -> SessionView:
@@ -144,11 +274,13 @@ async def create_session(storage: Storage, actor: Principal, workspace_id: str, 
     """An empty session; threads join it through `POST /threads` with its ID."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        row = new_session(scope.organization_id, scope.workspace_id, actor.id)
-        row.labels = dict(body.labels)
+        row = new_session(scope.organization_id, scope.workspace_id, actor.id, body)
         session.add(row)
         await session.flush()
-        return SessionView.model_validate(row)
+        if body.memory is not None:
+            await configure(session, row, body.memory)
+            await session.flush()
+        return (await _views(session, [row]))[0]
 
 
 async def update_session(
@@ -158,6 +290,14 @@ async def update_session(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
-        row.labels = dict(body.labels)
+        if "title" in body.model_fields_set:
+            row.title = body.title
+        if "origin" in body.model_fields_set:
+            row.origin = body.origin.model_dump(mode="json") if body.origin is not None else None
+        if body.labels is not None:
+            row.labels = dict(body.labels)
+        if body.memory is not None:
+            require_conversation(row)
+            await configure(session, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

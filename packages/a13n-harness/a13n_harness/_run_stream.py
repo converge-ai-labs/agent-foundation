@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import aclosing
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -18,29 +18,39 @@ from opentelemetry.trace import StatusCode
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, UsageLimitExceeded, UserError
+from pydantic_ai.exceptions import (
+    AgentRunError,
+    ModelContextWindowExceededError,
+    ModelHTTPError,
+    RunCancelled,
+    UsageLimitExceeded,
+    UserError,
+)
 from pydantic_ai.messages import (
     AgentStreamEvent,
     EnqueuedMessagesEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._capability_contract import _validate_capability_source
+from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, record_outcome
 from a13n_harness._output_contract import _business_output_contains_deferred_value
-from a13n_harness.capabilities.context import (
-    COMPACTION_CAPABILITY_ID,
-    HANDOFF_CAPABILITY_ID,
-)
+from a13n_harness.capabilities.context import HANDOFF_CAPABILITY_ID
 from a13n_harness.capabilities.producer import ProducerCaptureCapability
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
+    steering_input_ids,
 )
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID, CompactionResult, _CompactionState, _prepare_compaction
 from a13n_harness.content import (
     content_items,
     merge_request_history,
@@ -103,6 +113,7 @@ from a13n_harness.plugins import (
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ToolRecoveryMode,
+    ToolRecoveryPlan,
     is_recoverable_model_failure,
     normalize_interrupted_history,
     prepare_tool_recovery,
@@ -124,6 +135,7 @@ if TYPE_CHECKING:
 
 
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
+_IMMEDIATE_STEERING_WAIT_SECONDS = 5.0
 
 
 def _report_model_failure(
@@ -263,20 +275,26 @@ def _reconcile_system_prompt(
         return tuple(messages)
 
     reconciled = list(messages)
-    first_request = True
     for index, message in enumerate(reconciled):
         if not isinstance(message, ModelRequest):
             continue
-        parts = [
-            (part, annotations)
-            for part, annotations in request_parts(message)
-            if not isinstance(part, SystemPromptPart)
-        ]
-        if first_request:
-            parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts]
-            first_request = False
+        parts = request_parts(message)
+        # Native construction places definition-owned static prompts at the front.
+        # Later prompts belong to conversation history, including capability nudges.
+        prefix_end = 0
+        for part, _ in parts:
+            if (
+                not isinstance(part, SystemPromptPart)
+                or part.dynamic_ref is not None
+                or part.scope != "conversation"
+                or part.metadata is not None
+            ):
+                break
+            prefix_end += 1
+        parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts[prefix_end:]]
         if tuple(part for part, _ in parts) != tuple(message.parts):
             reconciled[index] = replace_request_parts(message, parts)
+        break
     return tuple(reconciled)
 
 
@@ -294,6 +312,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -332,15 +351,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
         self.run_id = f"run-{uuid4().hex}"
         self._initial_history = self._previous_state.message_history
-        self._tool_recovery = (
-            prepare_tool_recovery(
-                self._initial_history,
-                tool_recovery,
-                deferred_resume,
-            )
-            if deferred_resume is None or deferred_resume.recovery
-            else None
-        )
+        self._compaction_result = compaction_result
+        self._tool_recovery_mode: ToolRecoveryMode = tool_recovery
+        self._accepted_deferred_resume = deferred_resume
         self._deferred_input = DeferredInputState(deferred_resume)
         self._deferred_resume = (
             deferred_resume if deferred_resume is not None and not deferred_resume.recovery else None
@@ -358,12 +371,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
         self._exchange: PluginRunExchange | None = None
         self._run_attachments_closed = False
+        self._attachments_retained = False
 
         # Native attempts update the complete live history while sharing usage and cancellation.
         self._attempt_events: AgentRunEvents[OutputT | DeferredToolRequests] | None = None
         self._latest_messages: tuple[ModelMessage, ...] = self._initial_history
         self._new_message_index = len(self._latest_messages)
         self._cancel_event = asyncio.Event()
+        self._preempt_requested = False
 
         self._emitter = _RunEventEmitter(self.thread_id, self.run_id, observer=self._bindings.producer_observer)
         self._environment_change_drain = _EnvironmentChangeDrain()
@@ -390,6 +405,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._consumer_claimed = False
         self._reading_next = False
         self._closed = False
+        self._steering_stopped = asyncio.Event()
         self._observation: _LogicalRunObservation | None = None
 
     @property
@@ -507,6 +523,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 phase.set_attribute("a13n.phase.step", "context")
                 context = await self._create_context(environment)
                 self._context = context
+                context._tool_executions.owner = self._environment_lifecycle_task
                 phase.set_attribute("a13n.phase.step", "plugins")
                 run_plugins = await bind_run_plugins(self._executable._plugins, context)
                 exchange = PluginRunExchange(
@@ -561,6 +578,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._usage.tool_calls += self._usage_snapshot.tool_calls
         usage_attribution.cost_capability = bindings._inherited_model_cost or self._executable._model_cost
         await usage_attribution.save()
+        if bindings.codeact_state is not None:
+            from a13n_harness.codeact.state import CODEACT_STATE_ID, CODEACT_STATE_VERSION, CodeActStoredValues
+
+            stored_values = await context_state.read(
+                CODEACT_STATE_ID, CodeActStoredValues, version=CODEACT_STATE_VERSION
+            )
+            await bindings.codeact_state.initialize(self.thread_id, stored_values or CodeActStoredValues())
         return AgentContext(
             run_id=self.run_id,
             thread_id=self._previous_state.thread_id,
@@ -590,10 +614,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             deferred_resume=self._deferred_resume,
             _deferred_input=self._deferred_input,
             deferred_tools_supported=bindings.deferred_tools_supported,
-            _tool_recovery=self._tool_recovery,
+            _tool_recovery=(ToolRecoveryPlan(self._tool_recovery_mode, ()) if self._deferred_resume is None else None),
             _storage=storage,
             _state_extensions=dict(self._previous_state.model_extra or {}),
             metadata=bindings.metadata,
+            request_context=bindings.request_context,
             _steering=SteeringBridge(
                 context_state,
                 run_id=self.run_id,
@@ -604,14 +629,19 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 events=self._emitter,
                 delivered=self._emitter.observe_input,
             ),
+            browser_backend=bindings.browser_backend,
             web=bindings.web,
             document_converter=bindings.document_converter,
             file_media_understanding=bindings.file_media_understanding,
             skill_selection=bindings.skill_selection,
             task_state=bindings.task_state,
+            tool_execution=bindings.tool_execution,
+            codeact_state=bindings.codeact_state,
             working_state_observer=bindings.working_state_observer,
             client_toolsets=bindings.client_toolsets,
             tool_result_directory=bindings.tool_result_directory,
+            context_recovery_scope_id=bindings.context_recovery_scope_id,
+            retained_history_directory=bindings.retained_history_directory,
             _capability_provenance=_CapabilityProvenance(
                 definition_ids=self._executable._definition_reserved_capability_ids,
                 run_ids=self._run_reserved_capability_ids,
@@ -632,6 +662,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 if not ready.done():
                     ready.set_result(environment)
                 await self._environment_close_requested.wait()
+                if self._attachments_retained:
+                    assert self._context is not None
+                    await self._context._tool_executions.drain()
+                    await self._close_run_attachments()
         except asyncio.CancelledError:
             if not ready.done():
                 ready.cancel()
@@ -644,6 +678,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
     async def _close_environment_lifecycle(self) -> None:
         task = self._environment_lifecycle_task
+        if self._attachments_retained:
+            self._environment_close_requested.set()
+            return
         self._environment_lifecycle_task = None
         if task is None:
             return
@@ -846,14 +883,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         drain = self._environment_change_drain
         if drain.terminal_sequence is not None:
             return
-        self._environment_runtime._begin_close()
+        if not self.context._tool_executions.retained:
+            self._environment_runtime._begin_close()
         drain.terminal_sequence = self.context.environment._change_sequence
         drain.requested.set()
 
     async def _execute(self) -> HarnessRunResult[OutputT]:
         """Own plugin and native scopes independently of bounded public consumption."""
         assert self._exchange is not None
-        result = await self._call_plugin(0, self._exchange)
+        try:
+            result = await self._call_plugin(0, self._exchange)
+        finally:
+            self._steering_stopped.set()
         self._install_terminal_fence()
         if result.status in {"failed", "cancelled"}:
             await self.context.usage_attribution._flush_cleanup()
@@ -1009,18 +1050,113 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._delivered_result is not None or self._closed:
             return
         self._cancel_event.set()
+        self._steering_stopped.set()
         if self._attempt_events is not None:
             self._attempt_events.cancel()
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str:
+    async def steer(
+        self,
+        input: RunInputValue,
+        *,
+        input_id: str | None = None,
+        immediate: bool = False,
+        best_effort: bool = False,
+        before_accept: Callable[[], None] | None = None,
+    ) -> str:
         """Deliver one user steering value through native Pydantic enqueue.
 
         `input_id` is the host's identity for the value; it is recorded on the delivered request, where
-        `steering_input_ids` reads it back from exported state.
+        `steering_input_ids` reads it back from exported state. Immediate steering waits up to five
+        seconds for native readiness and unsupported calls, without accepting input while waiting.
+        With `best_effort=True`, accept ordinary queued input when immediate handoff is unavailable.
+        This option only affects immediate steering; it does not suppress input or lifecycle errors.
+        `before_accept` runs synchronously under the native queue lock; raising rejects the input.
         """
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
-        return await self._context._steering.steer(input, input_id=input_id)
+        context = self._context
+        if not immediate:
+            return await context._steering.steer(input, input_id=input_id, before_accept=before_accept)
+        if context.tool_execution is None and not best_effort:
+            raise RunError(
+                "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
+                code="tool_execution_unbound",
+            )
+        # Detach caller-owned content once, before any readiness wait or retry.
+        normalized = deepcopy(normalize_input(input))
+        assert normalized.value is not None
+        waiting = asyncio.timeout(_IMMEDIATE_STEERING_WAIT_SECONDS)
+
+        def check_handoff() -> None:
+            if before_accept is not None:
+                before_accept()
+            if self._steering_stopped.is_set():
+                raise RunError("The run is not active.", code="run_not_active")
+            if context._tool_executions.unsupported_calls and not best_effort:
+                raise RunError(
+                    "An active tool does not support immediate handoff; ordinary steering remains available.",
+                    code="tool_handoff_unsupported",
+                )
+
+        def request_handoff() -> bool:
+            # Acceptance and this decision share the bridge lock, without yielding.
+            waiting.reschedule(None)
+            if context.tool_execution is None or context._tool_executions.unsupported_calls:
+                return False
+            if self._preempt_requested:
+                return True
+            if self._cancel_event.is_set():
+                return False
+            if context._steering.model_active:
+                self._preempt_requested = True
+                context._steering.pause()
+                if self._attempt_events is not None:
+                    self._attempt_events.cancel()
+            else:
+                # Review, preparation and native tool-result integration stay in
+                # the same attempt. Later admissions in this batch see this too.
+                context._tool_executions.handoff_requested.set()
+            return True
+
+        try:
+            async with waiting:
+                while True:
+                    if self._steering_stopped.is_set():
+                        raise RunError("The run is not active.", code="run_not_active")
+                    try:
+                        # Recheck under the bridge lock: readiness can change after notification.
+                        return await context._steering.steer(
+                            normalized.value,
+                            input_id=input_id,
+                            before_accept=check_handoff,
+                            after_accept=request_handoff,
+                        )
+                    except RunError as exc:
+                        if exc.code == "tool_handoff_unsupported":
+                            ready = context._tool_executions.handoff_ready
+                        elif exc.code == "run_not_active":
+                            ready = context._steering.ready
+                        else:
+                            raise
+                    await self._wait_for_steering(ready)
+        except TimeoutError as exc:
+            if not waiting.expired():
+                raise
+            raise RunError(
+                "Immediate steering did not become ready within five seconds; input was not accepted.",
+                code="steering_timeout",
+            ) from exc
+
+    async def _wait_for_steering(self, ready: asyncio.Event) -> None:
+        """Wait outside the acceptance lock, waking promptly when the Run stops."""
+        ready_task = asyncio.create_task(ready.wait())
+        stopped_task = asyncio.create_task(self._steering_stopped.wait())
+        try:
+            await asyncio.wait((ready_task, stopped_task), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            ready_task.cancel()
+            stopped_task.cancel()
+            await asyncio.gather(ready_task, stopped_task, return_exceptions=True)
 
     async def export_state(self) -> HarnessState:
         """Export active state or the detached checkpoint retained before shutdown."""
@@ -1072,12 +1208,75 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
     ) -> tuple[tuple[ModelMessage, ...], int]:
         self._deferred_input.reconcile(messages)
+        executions = self.context._tool_executions
+        messages = executions.settle(messages)
+        await executions.reconcile(self.context.tool_execution, self.thread_id, messages)
+        # Cancellation can bypass native result publication. Publish retained
+        # returns at their canonical boundary, once per observation channel.
+        for message in messages:
+            if not isinstance(message, ModelRequest):
+                continue
+            for part in message.parts:
+                if not isinstance(part, ToolReturnPart) or part.tool_call_id not in executions.returns:
+                    continue
+                event = FunctionToolResultEvent(part)
+                if part.tool_call_id not in executions.observed_returns:
+                    self._emitter.observe(event)
+                    executions.observed_returns.add(part.tool_call_id)
+                if not executions.closing and part.tool_call_id not in executions.streamed_returns:
+                    await self._emitter._put(self._adapt_event(event))
         remaining = self._deferred_input.pending
         return normalize_interrupted_history(
             messages,
             response_tracker=response_tracker,
             close_tool_calls=remaining is None,
         )
+
+    async def _prepare_history(self, current_input: SemanticRunInput) -> None:
+        """Jointly restore canonical history and ready work before recovery can rewrite it."""
+        context = self.context
+        history = await context._storage.resolve_messages(self._initial_history)
+        marker = None
+        if self._compaction_result is not None:
+            previous = await context.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+            messages, marker = _prepare_compaction(
+                self._compaction_result,
+                thread_id=self.thread_id,
+                messages=history,
+                previous=previous,
+                exact=self._accepted_deferred_resume is not None,
+                next_request=(
+                    ModelRequest(parts=[UserPromptPart(native_content(current_input.value))])
+                    if current_input.value is not None
+                    else None
+                ),
+            )
+            history = tuple(messages)
+        accepted = self._accepted_deferred_resume
+        recovery = (
+            prepare_tool_recovery(history, self._tool_recovery_mode, accepted)
+            if accepted is None or accepted.recovery
+            else None
+        )
+        history = _reconcile_system_prompt(
+            recovery.messages if recovery is not None else history, self._executable._system_prompt
+        )
+        if recovery is not None:
+            recovery.messages = history
+        # State.write suspends only before mutation. Publish history and recovery
+        # without another await so cancellation cannot checkpoint mismatched provenance.
+        if marker is not None:
+            await context.state.write(COMPACTION_CAPABILITY_ID, marker, version="1")
+        self._initial_history = history
+        self._latest_messages = history
+        self._new_message_index = len(history)
+        if recovery is not None:
+            target = context._tool_recovery
+            assert target is not None
+            target.messages = recovery.messages
+            target.pending = recovery.pending
+            target.results = recovery.results
+            target.retained_requests = recovery.retained_requests
 
     async def _run_attempts(
         self,
@@ -1096,8 +1295,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except HarnessError as exc:
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
-        await exchange.context._steering.prepare(
-            current_input,
+        await self._prepare_history(current_input)
+        restored_inputs = await exchange.context._steering.prepare(
             restore_retained=self._deferred_resume is not None,
         )
 
@@ -1105,21 +1304,40 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
         recovery = exchange.context._model_recovery
-        current_history = await exchange.context._storage.resolve_messages(
-            self._tool_recovery.messages if self._tool_recovery is not None else self._initial_history
+        context_recovery = await exchange.context.state.read(
+            CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1"
         )
+        recovery.context_recovery_pending = bool(
+            context_recovery is not None
+            and context_recovery.scope_id == (exchange.context.context_recovery_scope_id or self.run_id)
+            and context_recovery.pending
+        )
+        tool_recovery = exchange.context._tool_recovery
+        current_history = tool_recovery.messages if tool_recovery is not None else self._initial_history
         deferred_results = (
-            self._deferred_resume.results
+            self._deferred_resume.model_results()
             if self._deferred_resume is not None
-            else self._tool_recovery.results
-            if self._tool_recovery is not None
+            else tool_recovery.results
+            if tool_recovery is not None
             else None
         )
+        if deferred_results is None and restored_inputs:
+            incorporated = set(steering_input_ids(current_history))
+            current_history = (
+                *current_history,
+                *(
+                    request
+                    for request in restored_inputs
+                    if not incorporated.intersection(steering_input_ids((request,)))
+                ),
+            )
         current_history = _reconcile_system_prompt(
             current_history,
             self._executable._system_prompt,
         )
         self._latest_messages = current_history
+        await exchange.context._steering.resolve_delivered(current_history)
+        await exchange.context._steering.retain_initial(current_input)
 
         while True:
             current_history = merge_request_history(current_history)
@@ -1192,6 +1410,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         )
                         self._attempt_events = None
                         self._latest_messages = messages
+                        if self._preempt_requested and not self._cancel_event.is_set():
+                            self._preempt_requested = False
+                            current_input = normalize_input(None)
+                            current_history = messages
+                            attempt_index += 1
+                            continue
                         state = await exchange.context.export_state(messages)
                         yield self._record_inner_candidate(
                             HarnessRunResult(
@@ -1242,6 +1466,33 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 )
                             )
                             return
+
+                        if recovery.context_replacement is not None:
+                            replacement = recovery.context_replacement
+                            recovery.context_replacement = None
+                            current_history = replacement
+                            self._latest_messages = replacement
+                            self._new_message_index = 0
+                            current_input = normalize_input(None)
+                            attempt_index += 1
+                            continue
+
+                        if isinstance(error, ModelContextWindowExceededError):
+                            marker = await exchange.context.state.read(
+                                CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1"
+                            )
+                            if marker is not None and marker.scope_id == (
+                                exchange.context.context_recovery_scope_id or self.run_id
+                            ):
+                                await record_outcome(exchange.context, "overflow")
+                                recovery.context_recovery_pending = False
+                                yield await self._failed_candidate(
+                                    code="context_recovery_exhausted",
+                                    message="The model still exceeded its context window after context recovery. Immediate investigation is required.",
+                                    details={**marker.diagnostic, "outcome": "overflow"},
+                                    retry_hint="dependency_change",
+                                )
+                                return
 
                         model_failure = recovery.request_error is error and not isinstance(error, HarnessError)
                         retryable = policy.enabled and model_failure and is_recoverable_model_failure(error)
@@ -1389,7 +1640,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
-        deferred = result.output
+        deferred = self._deferred_input.export(result.output)
         return HarnessRunResult(
             thread_id=self.thread_id,
             run_id=self.run_id,
@@ -1411,6 +1662,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         details: dict[str, JsonValue] | None = None,
         retry_hint: RetryHint = "dependency_change",
     ) -> HarnessRunResult[OutputT]:
+        if self.context._model_recovery.context_recovery_pending:
+            await record_outcome(self.context, "failed")
+            self.context._model_recovery.context_recovery_pending = False
         state = await self.context.export_state(self._latest_messages)
         return self._record_inner_candidate(
             HarnessRunResult(
@@ -1498,6 +1752,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             ) from exc
 
     def _adapt_event(self, event: AgentStreamEvent) -> HarnessEvent:
+        if isinstance(event, FunctionToolResultEvent):
+            self.context._tool_executions.streamed_returns.add(event.part.tool_call_id)
         envelope = HarnessEvent(
             thread_id=self.thread_id,
             run_id=self.run_id,
@@ -1539,13 +1795,17 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if cancellation is not None:
                 raise cancellation
             return
+        self._steering_stopped.set()
         if failure is not None and cancellation is None:
             self._diagnostic_error = failure
 
         with observe_phase("finalize") as phase:
             fence_failure: BaseException | None = None
             try:
-                self._environment_runtime._begin_close()
+                if self._context is not None:
+                    self._context._tool_executions.closing = True
+                if self._context is None or not self._context._tool_executions.retained:
+                    self._environment_runtime._begin_close()
             except BaseException as exc:
                 fence_failure = exc
 
@@ -1596,7 +1856,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         # execution error or preventing resource cleanup.
                         self._shutdown_state_error = exc
             phase.set_attribute("a13n.phase.step", "attachments")
-            await finish_cleanup(self._close_run_attachments())
+            # Choose one cleanup owner before yielding: the last retained call may
+            # finish while foreground cleanup is progressing.
+            self._attachments_retained = self._context is not None and self._context._tool_executions.retained
+            if not self._attachments_retained:
+                await finish_cleanup(self._close_run_attachments())
             causes.extend(self._source_cleanup_failures)
             self._source_cleanup_failures.clear()
 

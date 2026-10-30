@@ -10,7 +10,6 @@ import keyword
 import re
 import time
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import partial
 from types import MappingProxyType
@@ -19,12 +18,11 @@ from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UserError
 from pydantic_ai.function_signature import FunctionSignature
 from pydantic_ai.messages import CachePoint, InstructionPart, TextContent, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
-from pydantic_ai.usage import RunUsage
 from pydantic_monty import (
     MontyConversionError,
     MontyCrashedError,
@@ -33,6 +31,7 @@ from pydantic_monty import (
     MontyTypingError,
 )
 
+from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
@@ -51,7 +50,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.tools.tool_proxy import proxy_control, proxy_membership, resolve_proxy_call
+from a13n_harness.tools.tool_search import proxy_control, proxy_membership, resolve_proxy_call
 
 from ._instructions import tool_instruction
 
@@ -215,25 +214,10 @@ class _ExecutionBudget:
     records: list[_CallRecord] = field(default_factory=list)
     supplemental: list[tuple[int, list[UserContent]]] = field(default_factory=list)
 
-    async def admit(self, ctx: RunContext[AgentContext]) -> int:
+    async def admit(self) -> int:
         async with self.lock:
-            while True:
-                if self.admitted >= self.config.max_tool_calls:
-                    raise RuntimeError(f"CodeAct nested tool-call limit ({self.config.max_tool_calls}) exceeded")
-                # Successful usage can already include pending callbacks that are
-                # still in after-execution hooks. If the conservative reservation
-                # cannot fit, wait for those callbacks to settle and recheck.
-                projected = _copy_usage(ctx.usage)
-                projected.tool_calls += 2 + self.pending
-                try:
-                    if ctx.usage_limits is not None:
-                        ctx.usage_limits.check_before_tool_call(projected)
-                except UsageLimitExceeded:
-                    if not self.pending:
-                        raise
-                    await self.lock.wait()
-                else:
-                    break
+            if self.admitted >= self.config.max_tool_calls:
+                raise RuntimeError(f"CodeAct nested tool-call limit ({self.config.max_tool_calls}) exceeded")
             self.admitted += 1
             self.pending += 1
             return self.admitted
@@ -297,6 +281,8 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         return await self.wrapped.get_instructions(ctx)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        if ctx.deps.tool_execution is not None and ctx.deps._tool_executions.enabled and ctx.deps.codeact_state is None:
+            raise UserError("Owned CodeAct execution requires RunBindings.codeact_state.")
         wrapped_tools = cast(dict[str, ToolsetTool[AgentContext]], await self.wrapped.get_tools(ctx))
         conflicts = _RESERVED_TOOL_NAMES.intersection(wrapped_tools)
         if conflicts:
@@ -312,7 +298,12 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     name=_RUN_CODE,
                     description=_RUN_CODE_DESCRIPTION,
                     sequential=True,
-                    metadata={"a13n.codeact.runner": True, "code_arg_name": "code", "code_arg_language": "python"},
+                    metadata={
+                        "a13n.codeact.runner": True,
+                        "code_arg_name": "code",
+                        "code_arg_language": "python",
+                        "a13n.tool-execution": "owned",
+                    },
                 )
             )
         if self.config.programs:
@@ -322,7 +313,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     name=_RUN_PROGRAM,
                     description=_RUN_PROGRAM_DESCRIPTION,
                     sequential=True,
-                    metadata={"a13n.codeact.runner": True, "a13n.codeact.program": True},
+                    metadata={
+                        "a13n.codeact.runner": True,
+                        "a13n.codeact.program": True,
+                        "a13n.tool-execution": "owned",
+                    },
                 )
             )
         own = await FunctionToolset(tools, id="a13n-codeact").get_tools(ctx)
@@ -403,7 +398,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             for name, tool in manager.tools.items()
             if name not in _RESERVED_TOOL_NAMES
         }
-        catalog = _build_catalog(active_tools)
+        catalog = _build_catalog(active_tools, ctx=ctx)
         execution_id = f"codeact-{uuid4().hex}"
         outer_call_id = ctx.tool_call_id or execution_id
         kind = "program" if source_path is not None else "inline"
@@ -424,7 +419,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         )
 
         async def admit(_name: str) -> int:
-            return await budget.admit(ctx)
+            return await budget.admit()
 
         async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
@@ -435,7 +430,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 if not is_codeact_tool_eligible(canonical_name, prepared):
                     raise RuntimeError(
                         f"Tool {canonical_name!r} is not enabled for CodeAct. "
-                        "Use an ordinary proxy call outside the runner, or ask the tool owner to enable its CodeAct policy."
+                        "Use the tool call outside the runner, or ask the tool owner to enable its CodeAct policy."
                     )
             current = manager.tools.get(canonical_name) if manager.tools is not None else None
             if current is not prepared:
@@ -493,7 +488,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.outcome = "completed"
                     return result
             except ValidationError as exc:
-                raise TypeError(_format_validation_error(exc)) from None
+                if nested_started is None:
+                    raise TypeError(_format_validation_error(exc)) from None
+                record.outcome = "failed"
+                record.error_type = type(exc).__name__
+                raise RuntimeError(f"Nested tool {canonical_name!r} failed with ValidationError") from None
             except (ApprovalRequired, CallDeferred) as exc:
                 record.outcome = "deferred"
                 record.error_type = type(exc).__name__
@@ -534,7 +533,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 await budget.add_bytes(input_size, label="program inputs")
             async with asyncio.timeout(self.config.timeout_seconds):
                 if source_path is None:
-                    execution = await self.state.execute_inline(
+                    result = await self.state.execute_inline(
                         code,
                         dispatch=dispatch,
                         admit=admit,
@@ -543,6 +542,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                         restart=restart,
+                        finish=partial(self._success_result, budget=budget),
                     )
                 else:
                     execution = await self.state.execute_program(
@@ -556,25 +556,16 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                     )
-            try:
-                result = await self._success_result(execution, budget=budget)
-            except BaseException:
-                if source_path is None:
-                    await self.state.reset_inline()
-                raise
+                    result = await self._success_result(execution, budget=budget)
             status = "completed"
             return result
         except asyncio.CancelledError as exc:
             status = "cancelled"
             error_type = type(exc).__name__
-            if source_path is None:
-                await self.state.reset_inline()
             raise
         except TimeoutError as exc:
             status = "timed_out"
             error_type = type(exc).__name__
-            if source_path is None:
-                await self.state.reset_inline()
             return self._fail_execution(exc, "CodeAct execution exceeded its timeout", execution_id, budget)
         except (MontySyntaxError, MontyTypingError) as exc:
             error_type = type(exc).__name__
@@ -583,8 +574,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             )
         except (MontyCrashedError, MontyConversionError) as exc:
             error_type = type(exc).__name__
-            if source_path is None:
-                await self.state.reset_inline()
             return self._fail_execution(exc, "CodeAct sandbox failed and inline state was reset", execution_id, budget)
         except MontyRuntimeError as exc:
             error_type = type(exc).__name__
@@ -597,11 +586,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         except BaseException as exc:
             error_type = type(exc).__name__
             if not is_sandbox_panic(exc):
-                if source_path is None:
-                    await self.state.reset_inline()
                 raise
-            if source_path is None:
-                await self.state.reset_inline()
             return self._fail_execution(exc, "CodeAct sandbox aborted and inline state was reset", execution_id, budget)
         finally:
             await _emit(
@@ -631,19 +616,41 @@ class CodeActToolset(WrapperToolset[AgentContext]):
 
     @staticmethod
     def _fail_execution(exc: BaseException, message: str, execution_id: str, budget: _ExecutionBudget) -> Any:
-        safe_message = _truncate_utf8(message, _MAX_DIAGNOSTIC_BYTES)
-        payload = {
-            "codeact": {
-                "contract_version": _CODEACT_CONTRACT_VERSION,
-                "status": "failed",
-                "execution_id": execution_id,
-                "tool_call_count": budget.started,
-                "cumulative_bytes": budget.cumulative_bytes,
-                "side_effect_uncertain": budget.started > 0,
-            },
-            "error": {"type": type(exc).__name__, "message": safe_message},
+        calls: list[dict[str, Any]] = []
+        metadata: dict[str, Any] = {
+            "contract_version": _CODEACT_CONTRACT_VERSION,
+            "status": "failed",
+            "execution_id": execution_id,
+            "tool_call_count": budget.started,
+            "cumulative_bytes": budget.cumulative_bytes,
+            "side_effect_uncertain": budget.started > 0,
+            "calls": calls,
+            "omitted_call_count": budget.started,
         }
-        raise ToolFailed(json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) from None
+        # Leave room for call identities even when diagnostic text needs JSON escaping.
+        payload = {
+            "codeact": metadata,
+            "error": {
+                "type": _truncate_utf8(type(exc).__name__, 128),
+                "message": _truncate_utf8(message, 256),
+            },
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        for record in sorted(budget.records, key=lambda record: record.ordinal):
+            calls.append(
+                {
+                    "call_id": record.call_id,
+                    "ordinal": record.ordinal,
+                    "canonical_tool_name": record.canonical_name,
+                    "outcome": record.outcome,
+                }
+            )
+            metadata["omitted_call_count"] = budget.started - len(calls)
+            candidate = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(candidate.encode("utf-8")) > _MAX_DIAGNOSTIC_BYTES:
+                break
+            encoded = candidate
+        raise ToolFailed(encoded) from None
 
 
 def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool:
@@ -653,19 +660,26 @@ def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool
         resolve_codeact_eligibility(name, tool)
         and definition.kind in {None, "function", "unapproved"}
         and definition.tool_kind is None
-        and not definition.defer_loading
         and not definition.unless_native
         and (definition.metadata or {}).get("a13n.codeact.runner") is not True
+        and (definition.metadata or {}).get(HANDOFF_TOOL_METADATA_KEY) is not True
     )
 
 
-def _build_catalog(tools: dict[str, ToolsetTool[AgentContext]]) -> _Catalog:
+def _build_catalog(
+    tools: dict[str, ToolsetTool[AgentContext]], *, ctx: RunContext[AgentContext] | None = None
+) -> _Catalog:
+    # Preparation checks names across all eligible tools. Presentation and execution
+    # additionally require current discovery/capability availability, not a cleared
+    # defer_loading flag: Pydantic retains that flag after discovery.
     definitions: dict[str, ToolDefinition] = {}
     sandbox_to_canonical: dict[str, str] = {}
     prepared_tools: dict[str, ToolsetTool[AgentContext]] = {}
     for canonical_name, tool in tools.items():
         definition = tool.tool_def
         if not is_codeact_tool_eligible(canonical_name, tool) or proxy_membership(definition) is not None:
+            continue
+        if ctx is not None and not ctx.is_tool_available(definition):
             continue
         sandbox_name = _sanitize_name(canonical_name)
         if sandbox_name in _RESERVED_TOOL_NAMES:
@@ -694,15 +708,14 @@ def _build_catalog(tools: dict[str, ToolsetTool[AgentContext]]) -> _Catalog:
     return _Catalog(definitions, sandbox_to_canonical, prepared_tools, fingerprint)
 
 
-def render_codeact_runner_description(
+def render_codeact_catalog(
     tools: dict[str, ToolsetTool[AgentContext]],
     *,
-    program: bool,
+    ctx: RunContext[AgentContext],
 ) -> str:
-    base = _RUN_PROGRAM_DESCRIPTION if program else _RUN_CODE_DESCRIPTION
-    catalog = _build_catalog(tools)
+    catalog = _build_catalog(tools, ctx=ctx)
     if not catalog.definitions:
-        return base + "\n\nNo host tools are callable from CodeAct in this run step."
+        return "No host tools are callable from CodeAct in this run step."
 
     entries: list[str] = []
     for sandbox_name, definition in sorted(catalog.definitions.items()):
@@ -735,7 +748,7 @@ def render_codeact_runner_description(
                 )
             )
         entries.append("\n".join(details))
-    return base + "\n\nCodeAct callable host tools:\n" + "\n".join(entries)
+    return "CodeAct callable host tools:\n" + "\n".join(entries)
 
 
 def _render_tool_declaration(definition: ToolDefinition) -> str:
@@ -825,10 +838,6 @@ def _format_validation_error(exc: ValidationError) -> str:
 def _truncate_utf8(value: str, limit: int) -> str:
     raw = value.encode("utf-8")
     return value if len(raw) <= limit else raw[:limit].decode("utf-8", errors="ignore")
-
-
-def _copy_usage(usage: RunUsage) -> RunUsage:
-    return deepcopy(usage)
 
 
 async def _emit(ctx: RunContext[AgentContext], payload: Any) -> None:

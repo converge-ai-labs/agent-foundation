@@ -11,6 +11,8 @@ from uuid import uuid4
 from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
+from a13n_harness_ui.model_accounts.provider_usage import GrokUsage
+from a13n_harness_ui.model_accounts.subscriptions import SubscriptionAccountUpdate, SubscriptionCatalog
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
 from a13n_harness_ui.storage.usage import ModelUsageView, ThreadUsageView, UsageTotals
 
@@ -211,6 +213,12 @@ def _diagnostic_lines(view: ThreadUsageView) -> list[str]:
     return lines
 
 
+def window_label(seconds: int, fallback: str) -> str:
+    return {18000: "5h", 86400: "Daily", 604800: "Weekly", 2592000: "30-day"}.get(
+        seconds, f"{fallback} ({seconds // 60}m)"
+    )
+
+
 def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
     now = (now or datetime.now(UTC)).astimezone()
     lines = [f"Codex subscription · {usage.plan_type} · account {usage.account_id}"]
@@ -223,20 +231,13 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
         for fallback, window in (("Primary", limits.primary_window), ("Secondary", limits.secondary_window)):
             if window is None:
                 continue
-            name = next(
-                (
-                    label
-                    for seconds, label in ((18000, "5h"), (86400, "Daily"), (604800, "Weekly"), (2592000, "Monthly"))
-                    if abs(window.limit_window_seconds - seconds) <= seconds * 0.05
-                ),
-                f"{fallback} ({window.limit_window_seconds // 60}m)",
-            )
+            name = window_label(window.limit_window_seconds, fallback)
             remaining = max(0, min(100, 100 - window.used_percent))
             reset = datetime.fromtimestamp(window.reset_at, UTC).astimezone()
             reset_text = reset.strftime("%H:%M" if reset.date() == now.date() else "%H:%M on %d %b %Y")
             filled = round(remaining / 10)
             lines.append(
-                f"{name} limit: {remaining}% remaining · [{'=' * filled}{'-' * (10 - filled)}] · resets {reset_text}"
+                f"{name} limit: {remaining:g}% remaining · [{'=' * filled}{'-' * (10 - filled)}] · resets {reset_text}"
             )
     if usage.reset_credits is not None:
         lines.append(f"Reset credits: {usage.reset_credits.available_count} · /usage reset")
@@ -254,13 +255,127 @@ async def show_subscription_usage(shell: CliShell) -> str:
             kind="info",
         )
         return ""
-    return await show_codex_usage(shell)
+    shell.emit(subscription_text(await shell.backend.app.subscriptions()), kind="info")
+    return ""
 
 
-async def show_codex_usage(shell: CliShell) -> str:
+def subscription_text(catalog: SubscriptionCatalog) -> str:
+    lines = ["Managed subscription accounts · request-driven updates · 10-minute idle refresh", ""]
+    names = {view.account.id: view.account.name for view in catalog.accounts}
+    for view in catalog.accounts:
+        account = view.account
+        state = "paused" if not account.enabled else view.authentication.availability.value
+        usage = view.usage.usage
+        windows = usage.rate_limit if isinstance(usage, CodexUsage) else None
+        remaining = (
+            " · ".join(
+                window_label(window.limit_window_seconds, label)
+                + f" {max(0, min(100, 100 - window.used_percent)):g}% left · resets "
+                + datetime.fromtimestamp(window.reset_at, UTC).astimezone().strftime("%d %b %H:%M %Z")
+                for label, window in (("Primary", windows.primary_window), ("Secondary", windows.secondary_window))
+                if window is not None
+            )
+            if windows and (windows.primary_window is not None or windows.secondary_window is not None)
+            else "Usage unknown"
+        )
+        if isinstance(usage, GrokUsage) and usage.config is not None:
+            billing = usage.config
+            percent = billing.usage_percent
+            remaining = (
+                f"Allowance {max(0, min(100, 100 - percent)):g}% left" if percent is not None else "Allowance unknown"
+            )
+            reset = (billing.current_period.end if billing.current_period else None) or billing.billing_period_end
+            if reset:
+                remaining += f" · resets {reset}"
+            if billing.prepaid_balance is not None:
+                remaining += f" · Purchased credits ${abs(billing.prepaid_balance.val) / 100:.2f}"
+        credits = usage.credits if isinstance(usage, CodexUsage) else None
+        balance = f" · Credits {credits.balance or ('available' if credits.has_credits else 'none')}" if credits else ""
+        observed = (
+            datetime.fromtimestamp(view.usage.observed_at, UTC).astimezone().strftime("%H:%M:%S")
+            if view.usage.observed_at
+            else "never"
+        )
+        lines.append(f"{account.name} · {account.provider} · {state} · {remaining}{balance} · updated {observed}")
+        if isinstance(usage, CodexUsage):
+            vouchers = usage.reset_credits or usage.rate_limit_reset_credits
+            if vouchers is not None:
+                lines.append(f"  Reset vouchers: {vouchers.available_count} available")
+        if view.usage.error:
+            lines.append(f"  Refresh failed: {view.usage.error}")
+    lines.extend(["", "Account groups"])
+    for group in catalog.groups:
+        members = ", ".join(
+            names.get(member.account, "Deleted account")
+            + (f" x{member.weight}" if group.strategy == "weighted" else "")
+            for member in group.accounts
+        )
+        lines.append(
+            f"{group.name} · {group.strategy} · {'credits allowed' if group.allow_credits else 'included only'} · {members or 'no members'}"
+        )
+    lines.extend(
+        [
+            "",
+            "/usage accounts: refresh or pause an account · /usage reset: select account and voucher",
+            "Manage group membership and logins in WebUI Accounts & API keys.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def choose_subscription_account(shell: CliShell, *, reset: bool = False) -> str:
+    assert shell.backend is not None
+    app = shell.backend.app
+    catalog = await app.subscriptions()
+
+    async def selected(value: str | tuple[str, ...]) -> None:
+        if value == "close":
+            return
+        account = next(view.account for view in catalog.accounts if view.account.id == value)
+        if reset:
+            await choose_codex_reset(shell, account_id=account.id)
+            return
+
+        async def action(value: str | tuple[str, ...]) -> None:
+            if value == "refresh":
+                await app.refresh_subscription_usage(account.id)
+            elif value == "toggle":
+                await app.update_subscription_account(
+                    account.id, SubscriptionAccountUpdate(enabled=not account.enabled)
+                )
+            else:
+                return
+            await show_subscription_usage(shell)
+
+        shell.open_menu(
+            account.name,
+            (
+                Choice("close", "Close"),
+                Choice("refresh", "Refresh usage now"),
+                Choice("toggle", "Pause account" if account.enabled else "Enable account"),
+            ),
+            action,
+        )
+
+    shell.open_menu(
+        "Select an account for reset vouchers" if reset else "Managed accounts",
+        (
+            Choice("close", "Close"),
+            *(
+                Choice(view.account.id, view.account.name, view.account.provider)
+                for view in catalog.accounts
+                if not reset or view.account.provider == "codex"
+            ),
+        ),
+        selected,
+    )
+    return ""
+
+
+async def show_codex_usage(shell: CliShell, account_id: str = "acct-codex-default") -> str:
     """Status never takes over the composer, including with an uncertain redemption."""
     assert shell.backend is not None
-    shell.emit(usage_text(await shell.backend.app.codex_usage()), kind="info")
+    shell.emit(usage_text(await shell.backend.app.codex_usage(account_id)), kind="info")
     if shell.pending_codex_reset is not None:
         shell.emit(
             f"Reset outcome is unconfirmed. Redemption ID: {shell.pending_codex_reset.redeem_request_id}. "
@@ -269,15 +384,20 @@ async def show_codex_usage(shell: CliShell) -> str:
     return ""
 
 
-async def choose_codex_reset(shell: CliShell) -> str:
+async def choose_codex_reset(shell: CliShell, *, account_id: str | None = None) -> str:
     assert shell.backend is not None
     app = shell.backend.app
     if shell.pending_codex_reset is not None:
         _confirm_reset(
-            shell, shell.pending_codex_reset, "Previous outcome is unknown; retry uses the same redemption ID."
+            shell,
+            shell.pending_codex_reset,
+            "Previous outcome is unknown; retry uses the same redemption ID.",
+            account_id=shell.pending_codex_account,
         )
         return ""
-    usage = await app.codex_usage()
+    if account_id is None:
+        return await choose_subscription_account(shell, reset=True)
+    usage = await app.codex_usage(account_id)
     shell.emit(usage_text(usage), kind="info")
     credits = (
         tuple(
@@ -293,7 +413,7 @@ async def choose_codex_reset(shell: CliShell) -> str:
         if value == "close":
             return
         if value == "refresh":
-            await choose_codex_reset(shell)
+            await choose_codex_reset(shell, account_id=account_id)
             return
         credit = next(item for item in credits if item.id == value)
         request = ResetRequest(account_id=usage.account_id, credit_id=credit.id, redeem_request_id=uuid4())
@@ -302,10 +422,11 @@ async def choose_codex_reset(shell: CliShell) -> str:
             shell,
             request,
             f"{credit.description or credit.title or ''} Expires: {credit.expires_at or 'not reported'}.",
+            account_id=account_id,
         )
 
     if not credits:
-        shell.emit("No eligible reset credits available. /status refreshes usage without redeeming.")
+        shell.emit("No eligible reset credits available. /usage accounts offers manual refresh without redeeming.")
         return ""
     shell.open_menu(
         "Codex reset credits — select a credit to review; nothing is redeemed yet",
@@ -326,7 +447,7 @@ async def choose_codex_reset(shell: CliShell) -> str:
     return ""
 
 
-def _confirm_reset(shell: CliShell, request: ResetRequest, detail: str) -> None:
+def _confirm_reset(shell: CliShell, request: ResetRequest, detail: str, *, account_id: str) -> None:
     async def confirm(answer: str | tuple[str, ...]) -> None:
         if answer != "yes":
             return
@@ -334,8 +455,9 @@ def _confirm_reset(shell: CliShell, request: ResetRequest, detail: str) -> None:
         # Preserve the operation outside the menu, including after Ctrl+C.
         was_pending = shell.pending_codex_reset is not None
         shell.pending_codex_reset = request
+        shell.pending_codex_account = account_id
         try:
-            result = await shell.backend.app.redeem_codex_reset(request)
+            result = await shell.backend.app.redeem_codex_reset(request, account_id=account_id)
         except UserError as exc:
             # Account/configuration rejection happened before this submission.
             # It cannot erase an earlier attempt with an unknown outcome.
@@ -356,13 +478,15 @@ def _confirm_reset(shell: CliShell, request: ResetRequest, detail: str) -> None:
         # The mutation is finished. A later read failure must never restore its
         # confirmation handler, even for authentication errors or cancellation.
         try:
-            await show_codex_usage(shell)
+            await show_codex_usage(shell, account_id)
         except asyncio.CancelledError:
-            shell.emit("Redemption is confirmed; usage refresh cancelled. /status refreshes without redeeming again.")
+            shell.emit(
+                "Redemption is confirmed; usage refresh cancelled. /usage accounts offers manual refresh without redeeming again."
+            )
             raise
         except Exception as exc:
             shell.emit(
-                f"Redemption outcome above is confirmed; usage refresh failed: {exc}. /status refreshes without redeeming again."
+                f"Redemption outcome above is confirmed; usage refresh failed: {exc}. /usage accounts offers manual refresh without redeeming again."
             )
 
     shell.open_menu(

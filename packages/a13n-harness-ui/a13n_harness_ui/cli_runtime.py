@@ -55,6 +55,7 @@ async def _run(request: CliRequest) -> int:
             configuration_error=source.candidate_error,
             host_mode="webui" if request.command == "webui" else "local",
             share_computer=request.command == "webui" and request.share_computer,
+            browser_no_sandbox=request.browser_no_sandbox,
             codex_login=(
                 None
                 if request.command == "webui"
@@ -233,13 +234,13 @@ async def _run_management(
             return 0
         if request.action == "show":
             configuration = await _require_configuration(app)
-            from a13n_harness_ui.configuration.views import agent_tool_proxy_view
+            from a13n_harness_ui.configuration.views import agent_tool_search_view
 
             payload = configuration.model_dump(mode="json")
-            payload["tool_proxy_previews"] = [
-                agent_tool_proxy_view(configuration, agent).model_dump(mode="json")
+            payload["tool_search_previews"] = [
+                agent_tool_search_view(configuration, agent).model_dump(mode="json")
                 for agent in configuration.agents.values()
-                if agent.tool_proxy is not None
+                if agent.tool_search is not None
             ]
             _print_projection(payload, request.output_format)
             return 0
@@ -268,7 +269,31 @@ async def _run_management(
         return 0 if all(item.status != "invalid" for item in preview.candidates) else 1
 
     if request.command == "environment":
-        _print_projection({"environment_profiles": await app.environment_profiles()}, request.output_format)
+        if request.action == "status":
+            _print_projection(await app.envd_runtime_status(), request.output_format)
+        elif request.action in {"check", "configure"}:
+            from typing import cast
+
+            from a13n_harness_ui.environment_profiles import LocalProfileId
+
+            profile = cast(LocalProfileId, request.environment_profile_id)
+            if request.output_format is OutputFormat.text and profile != "environment-native":
+                click.echo("Preparing local runtime; downloading the matching version if needed…", err=True)
+                if profile == "environment-desktop":
+                    click.echo(
+                        "Approve desktop permissions on the Harness Host. This may take up to two minutes.", err=True
+                    )
+            readiness = (
+                await app.configure_local_environment(profile)
+                if request.action == "configure"
+                else await app.preflight_environment(profile)
+            )
+            _print_projection(readiness, request.output_format)
+            if readiness.ready and request.action == "configure" and request.output_format is OutputFormat.text:
+                click.echo("Default saved for new conversations. Existing Threads are unchanged.")
+            return 0 if readiness.ready else 1
+        else:
+            _print_projection({"environment_profiles": await app.environment_profiles()}, request.output_format)
         return 0
 
     if request.command == "doctor":

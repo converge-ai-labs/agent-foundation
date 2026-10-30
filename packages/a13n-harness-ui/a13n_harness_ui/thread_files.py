@@ -10,8 +10,8 @@ import re
 import shutil
 import stat
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -158,7 +158,10 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool = False) -> I
 
 @contextmanager
 def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[BinaryIO]:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
     path, descriptor = directory
+    check_local_file_read(path / name)
     if descriptor is None:
         target = path / name
         if target.is_symlink() or not target.is_file():
@@ -183,6 +186,13 @@ def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[Binary
 def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> bytes:
     with _open_file(directory, name) as stream:
         return stream.read(limit)
+
+
+def _copy_file(source: str, destination: str) -> str:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
+    check_local_file_read(Path(source))
+    return shutil.copy2(source, destination)
 
 
 def _write_file(directory: tuple[Path, int | None], name: str, data: bytes) -> None:
@@ -236,6 +246,28 @@ class ThreadFiles:
     async def touch(self, thread_id: str) -> Path:
         async with self._mutex:
             return await to_thread.run_sync(self._touch, thread_id)
+
+    @asynccontextmanager
+    async def fork(self, source_id: str, destination_id: str) -> AsyncGenerator[None]:
+        """Copy owned files before publishing the destination Thread.
+
+        Keep scratch protected from pruning. Preserve symlinks as links rather
+        than following them into project directories or other external files.
+        """
+        source = await self.touch(source_id)
+        destination = self.directory(destination_id)
+        await to_thread.run_sync(lambda: destination.mkdir())
+        try:
+            await to_thread.run_sync(
+                lambda: shutil.copytree(
+                    source, destination, symlinks=True, dirs_exist_ok=True, copy_function=_copy_file
+                )
+            )
+            yield
+        except BaseException:
+            with CancelScope(shield=True):
+                await to_thread.run_sync(lambda: shutil.rmtree(destination))
+            raise
 
     async def stage(self, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         if len(upload.data) > MAX_ATTACHMENT_BYTES:
@@ -399,6 +431,30 @@ class ThreadFiles:
             except (OSError, Timeout):
                 logger.warning("Could not prune Thread scratch: %s", directory.name, exc_info=True)
         return tuple(removed)
+
+    async def remove(self, thread_id: str) -> None:
+        """Best-effort cleanup after the durable Thread identity has been deleted."""
+        async with self._mutex:
+            await to_thread.run_sync(self._remove, thread_id)
+
+    def _remove(self, thread_id: str) -> None:
+        directory = self.directory(thread_id)
+        try:
+            with self._gate(thread_id):
+                if (token := self._held.pop(thread_id, None)) is not None:
+                    token.release()
+                    Path(token.lock_file).unlink(missing_ok=True)
+                for path in (self._locks / thread_id).glob("use-*.lock"):
+                    token = FileLock(path, timeout=0, thread_local=False)
+                    with token:
+                        pass
+                    path.unlink(missing_ok=True)
+                if directory.is_symlink():
+                    directory.unlink()
+                elif directory.exists():
+                    shutil.rmtree(directory)
+        except (OSError, Timeout):
+            logger.warning("Could not remove deleted Thread files: %s", thread_id, exc_info=True)
 
     async def close(self) -> None:
         with CancelScope(shield=True):

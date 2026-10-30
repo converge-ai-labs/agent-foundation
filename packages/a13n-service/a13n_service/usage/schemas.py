@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, timedelta
 from decimal import Decimal
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -15,6 +16,9 @@ class UsageWindow(BaseModel):
 
     start: AwareDatetime
     end: AwareDatetime
+    principal_id: ObjectId | None = Field(
+        default=None, description="Filter by Run execution identity; requires workspace admin."
+    )
 
     @field_validator("start", "end")
     @classmethod
@@ -91,6 +95,20 @@ class AgentUsagePage(BaseModel):
     next_cursor: str | None
 
 
+class MemberUsage(BaseModel):
+    principal_id: str
+    name: str
+    kind: Literal["user", "service_account"]
+    status: Literal["active", "disabled"]
+    usage: ModelMetrics
+    runs: RunMetrics
+
+
+class MemberUsagePage(BaseModel):
+    items: list[MemberUsage]
+    next_cursor: str | None
+
+
 class ModelUsagePage(BaseModel):
     items: list[ModelUsageGroup]
     next_cursor: str | None
@@ -115,7 +133,60 @@ class ModelUsage(BaseModel):
     cache_write_tokens: int
     # The sum of the costs priced at dispatch; None when no record of the model was priced.
     cost: Decimal | None
+    # Mean first-chunk wait and output per full request second have independent eligibility.
+    # Missing eligible observations remain None.
+    average_time_to_first_chunk_seconds: float | None
+    output_tokens_per_second: float | None
+
+
+class RunUsage(BaseModel):
+    run_id: str
+    thread_id: str
+    run_number: int = Field(ge=1, description="One-based chronological position among all Runs in the Thread.")
+    models: list[ModelUsage]
 
 
 class UsageSummary(BaseModel):
     models: list[ModelUsage]
+
+
+class RunUsageQuery(UsageFilter):
+    limit: PageLimit = 50
+    cursor: str | None = Field(default=None, max_length=2048)
+
+
+class RunUsagePage(BaseModel):
+    items: list[RunUsage]
+    next_cursor: str | None
+
+
+class ModelRequestMetrics(BaseModel):
+    """Derived from the current model contribution."""
+
+    time_to_first_chunk_seconds: float | None
+    request_duration_seconds: float | None
+    output_tokens_per_second: float | None
+
+
+class ContextUsageQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    thread_id: ObjectId | None = None
+    run_id: ObjectId | None = None
+    record_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def one_scope(self) -> "ContextUsageQuery":
+        if sum(value is not None for value in (self.thread_id, self.run_id, self.record_id)) != 1:
+            raise ValueError("Provide exactly one thread_id, run_id or record_id")
+        return self
+
+
+class ContextUsage(BaseModel):
+    """A Run's configured window and its latest eligible generation, when available."""
+
+    run_id: str
+    record_id: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    context_window_tokens: int | None

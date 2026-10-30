@@ -10,15 +10,22 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
+import { DebugProvider } from "../shell/debug";
 import { ComposerStatus } from "./composer-status";
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.useRealTimers();
 });
-it.each(["off", "ultrafast"] as const)(
+it.each([
+  ["default", "Standard"],
+  ["off", "Standard"],
+  ["on", "Fast"],
+  ["ultrafast", "Ultrafast"],
+] as const)(
   "ticks the exact current receipt and paints live context and speed %s without waiting for a saved transcript",
-  async (speed) => {
+  async (speed, label) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const queries = new QueryClient({
@@ -59,6 +66,7 @@ it.each(["off", "ultrafast"] as const)(
         tokens: [
           ["input_tokens", 10000],
           ["output_tokens", 2345],
+          ["cache_read_tokens", 5000],
         ],
       },
     };
@@ -83,22 +91,37 @@ it.each(["off", "ultrafast"] as const)(
     const content = (liveTokens: number, busy: boolean) => (
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
-          <ComposerStatus
-            threadId="one"
-            receipt="current"
-            busy={busy}
-            liveTokens={liveTokens}
-          />
+          <DebugProvider>
+            <ComposerStatus
+              threadId="one"
+              receipt="current"
+              busy={busy}
+              liveTokens={liveTokens}
+            />
+          </DebugProvider>
         </TransportContext>
       </QueryClientProvider>
     );
     const view = render(content(250, true));
-    expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.getByText("(25%)")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Cost details" }).textContent,
+    ).toContain("0.025");
+    expect(screen.queryByText("Speed")).toBeNull();
+    expect(screen.getByText("0.25k")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cache details" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+    expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
+    expect(screen.getByText("Cache rate")).toBeTruthy();
+    expect(screen.getByText("40.5%")).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
     expect(
       screen.getByRole("button", { name: "Tokens details" }).textContent,
     ).toBe("Tokens 12.3K");
     expect(screen.getByText("0s")).toBeTruthy();
-    expect(screen.queryByText("On")).toBeNull();
+    expect(screen.getByText("Speed").textContent).toBe("Speed —");
     act(() =>
       queries.setQueryData(configurationKey, {
         capture_source: "active_operation",
@@ -110,9 +133,7 @@ it.each(["off", "ultrafast"] as const)(
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText("2s")).toBeTruthy();
-    expect(
-      screen.getByText(speed === "ultrafast" ? "Ultrafast" : "Off"),
-    ).toBeTruthy();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
     view.rerender(content(400, true));
     expect(screen.getByText("40%")).toBeTruthy();
     expect(screen.getByText("12.3K")).toBeTruthy();
@@ -124,6 +145,7 @@ it.each(["off", "ultrafast"] as const)(
           tokens: [
             ["input_tokens", 11000],
             ["output_tokens", 2345],
+            ["cache_read_tokens", 6000],
           ],
         },
       }),
@@ -134,24 +156,18 @@ it.each(["off", "ultrafast"] as const)(
     expect(screen.getByText("13.3K")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
     expect(screen.getByText("13,345")).toBeTruthy();
-    expect(screen.getByText("11,000")).toBeTruthy();
+    expect(screen.getByText("11,000", { selector: "strong" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Context details" }));
     expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
-    expect(
-      screen.queryByRole("heading", { name: "Conversation usage" }),
-    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Chat usage" })).toBeNull();
     expect(screen.getByText("400")).toBeTruthy();
     expect(screen.getByText("1,000")).toBeTruthy();
     expect(screen.getByText("600")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
-    expect(
-      screen.getByRole("heading", { name: "Conversation usage" }),
-    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cost details" }));
+    expect(screen.getByRole("heading", { name: "Chat usage" })).toBeTruthy();
     expect(screen.getByText("13,345")).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-    expect(
-      screen.getByText(speed === "ultrafast" ? "Ultrafast" : "Off"),
-    ).toBeTruthy();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
     operation.status = "completed";
     operation.completed_at = "2026-01-01T00:00:02Z";
     act(() => {
@@ -162,52 +178,15 @@ it.each(["off", "ultrafast"] as const)(
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(screen.getByText("2s")).toBeTruthy();
+    fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+    expect(screen.queryByRole("button", { name: "Tokens details" })).toBeNull();
+    expect(screen.queryByText("Time")).toBeNull();
+    expect(screen.queryByText("Speed")).toBeNull();
+    expect(screen.getByText("0.4k")).toBeTruthy();
+    expect(screen.getByText("(40%)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+    expect(screen.getByText("45.0%")).toBeTruthy();
     view.unmount();
     queries.clear();
   },
 );
-
-it("uses saved Goal state when idle and drops the old receipt Goal after clearing", () => {
-  const queries = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
-  const goal = {
-    objective: "Previous task",
-    status: "suspended",
-    iteration: 1,
-    max_iterations: 5,
-  } as Schema<"GoalView">;
-  queries.setQueryData(["thread", "one", "operation", "current"], {
-    receipt: { receipt_id: "current" },
-    status: "suspended",
-    goal,
-  });
-  queries.setQueryData(["thread", "one", "configuration"], {});
-  queries.setQueryData(["thread", "one", "context-usage"], {});
-  queries.setQueryData(["thread", "one", "usage"], {});
-  const transport = {
-    client: { GET: vi.fn(async () => ({ data: {} })) },
-  } as unknown as Transport;
-  const content = (savedGoal: Schema<"GoalView"> | null, busy = false) => (
-    <QueryClientProvider client={queries}>
-      <TransportContext value={transport}>
-        <ComposerStatus
-          threadId="one"
-          receipt="current"
-          savedGoal={savedGoal}
-          busy={busy}
-        />
-      </TransportContext>
-    </QueryClientProvider>
-  );
-  const view = render(content(goal));
-  expect(
-    screen.getByRole("button", { name: "Goal details" }).textContent,
-  ).toContain("Waiting for response");
-  view.rerender(content(null));
-  expect(screen.queryByRole("button", { name: "Goal details" })).toBeNull();
-  view.rerender(content(null, true));
-  expect(screen.getByRole("button", { name: "Goal details" })).toBeTruthy();
-  view.unmount();
-  queries.clear();
-});

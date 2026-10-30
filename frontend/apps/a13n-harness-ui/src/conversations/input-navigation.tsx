@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Button,
@@ -10,7 +10,12 @@ import {
   TooltipTrigger,
   TooltipPopup,
 } from "a13n-ui";
-import { ListBullets } from "@phosphor-icons/react";
+import {
+  ListBullets,
+  DotsThree,
+  CircleNotch,
+  ArrowClockwise,
+} from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { inputAttachment } from "./input-content";
@@ -58,11 +63,6 @@ export function InputNavigation({
       ),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-  // Fetch only the small directory, never the intervening execution transcript.
-  useEffect(() => {
-    if (query.hasNextPage && !query.isFetching && !query.isError)
-      void query.fetchNextPage();
-  }, [query.hasNextPage, query.isFetching, query.isError, query.fetchNextPage]);
   const items: Pick<
     Schema<"TranscriptTurn">,
     "turn_id" | "preview" | "output_preview"
@@ -86,21 +86,23 @@ export function InputNavigation({
           .slice(0, 512) || "Attachment",
     });
   }
+  const update = useCallback(() => {
+    const element = reader.current;
+    if (!element) return;
+    const top = element.getBoundingClientRect().top + 80;
+    const sections = [
+      ...element.querySelectorAll<HTMLElement>("[data-turn-id]"),
+    ];
+    const current =
+      sections.find(
+        (section) => section.getBoundingClientRect().bottom > top,
+      ) ?? sections.at(-1);
+    setActive(current?.dataset.turnId);
+  }, [reader]);
+  useEffect(update, [update, revision]);
   useEffect(() => {
     const element = reader.current;
     if (!element) return;
-    const update = () => {
-      const top = element.getBoundingClientRect().top + 80;
-      const sections = [
-        ...element.querySelectorAll<HTMLElement>("[data-turn-id]"),
-      ];
-      const current =
-        sections.find(
-          (section) => section.getBoundingClientRect().bottom > top,
-        ) ?? sections.at(-1);
-      setActive(current?.dataset.turnId);
-    };
-    update();
     element.addEventListener("scroll", update, { passive: true });
     const resize =
       typeof ResizeObserver === "undefined"
@@ -111,18 +113,28 @@ export function InputNavigation({
       element.removeEventListener("scroll", update);
       resize?.disconnect();
     };
-  }, [reader, revision]);
+  }, [reader, threadId, update]);
   const select = (id: string) => {
     setOpen(false);
     setActive(id);
     onSelect(id);
   };
-  if (!items.length && !query.isError) return null;
-  const retry = query.isError && (
-    <Button variant="ghost" size="sm" onClick={() => void query.refetch()}>
-      Retry input navigation
-    </Button>
-  );
+  if (items.length < 2 && !query.hasNextPage && !query.isError) return null;
+  const moreLabel = query.isFetchingNextPage
+    ? "Loading more inputs"
+    : query.isError
+      ? "Retry input navigation"
+      : "Load more inputs";
+  const loadMore = () => {
+    if (query.hasNextPage) void query.fetchNextPage();
+    else void query.refetch();
+  };
+  const canLoad = query.hasNextPage || query.isError;
+  const MoreIcon = query.isFetchingNextPage
+    ? CircleNotch
+    : query.isError
+      ? ArrowClockwise
+      : DotsThree;
   return (
     <>
       <nav
@@ -163,13 +175,24 @@ export function InputNavigation({
                     !item.output_preview ? styles.emptyOutput : undefined
                   }
                 >
-                  {item.output_preview || "No saved output yet"}
+                  {item.output_preview || "No saved output"}
                 </p>
               </div>
             </TooltipPopup>
           </Tooltip>
         ))}
-        {retry}
+        {canLoad && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={moreLabel}
+            title={moreLabel}
+            disabled={query.isFetching}
+            onClick={loadMore}
+          >
+            <MoreIcon aria-hidden="true" />
+          </Button>
+        )}
       </nav>
       <div className={styles.mobile}>
         <Popover open={open} onOpenChange={setOpen}>
@@ -201,13 +224,22 @@ export function InputNavigation({
                   <span className={styles.menuPreview}>
                     <span>{item.preview}</span>
                     <span className={styles.menuOutput}>
-                      Output: {item.output_preview || "No saved output yet"}
+                      Output: {item.output_preview || "No saved output"}
                     </span>
                   </span>
                 </button>
               ))}
             </nav>
-            {retry}
+            {canLoad && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={query.isFetching}
+                onClick={loadMore}
+              >
+                {moreLabel}
+              </Button>
+            )}
           </PopoverPopup>
         </Popover>
       </div>

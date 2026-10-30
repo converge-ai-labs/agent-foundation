@@ -25,7 +25,6 @@ const config = {
     {
       connection_id: "conn_0123456789abcdef0123",
       tools: ["search"],
-      defer_loading: true,
     },
   ],
   plugins: [
@@ -90,6 +89,24 @@ it("exports only metadata and authored configuration, without resource identity 
   expect(yaml).toContain(
     "default_environment_template_id: envtpl_0123456789abcdef0123",
   );
+});
+
+it("exports current builtin guidance with the saved supplement as an independent configuration", () => {
+  const file = agentFile(
+    { name: "Composer", description: null },
+    config,
+    "Official guidance.",
+  );
+  expect(parseAgentFile(serializeAgentFile(file)).config.instructions).toBe(
+    "Official guidance.\n\n" + config.instructions,
+  );
+  expect(file.config).toEqual({
+    ...config,
+    instructions: "Official guidance.\n\n" + config.instructions,
+  });
+  expect(
+    agentFile({ name: "Legacy", description: null }, config, null).config,
+  ).toEqual(config);
 });
 
 describe("invalid Agent files", () => {
@@ -166,4 +183,22 @@ it("remaps Web search and scrape independently while retaining complete toolset 
   expect(config.toolsets.web.tools.scrape.config.provider_id).toBe(
     "wprov_scrape",
   );
+});
+
+it("rejects mixed search selectors when importing", () => {
+  for (const search of [
+    { config: { mode: "native" }, native_search: true },
+    { config: { mode: "native", max_results: 3 } },
+    { config: { mode: "proxy", strategy: "bm25" } },
+  ]) {
+    expect(() =>
+      parseAgentFile(
+        JSON.stringify({
+          schema_version: 1,
+          name: "Invalid agent",
+          config: { model: "test", tool_search: search },
+        }),
+      ),
+    ).toThrow();
+  }
 });

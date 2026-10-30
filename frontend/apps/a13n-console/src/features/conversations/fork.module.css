@@ -11,7 +11,6 @@
 }
 .sourceHeading,
 .agent,
-.environmentChoice,
 .origin {
   display: flex;
   align-items: center;
@@ -57,9 +56,6 @@
   display: grid;
   gap: 8px;
 }
-.environment [data-slot="disclosure-surface"] {
-  background: transparent;
-}
 .warning {
   margin: 0;
   padding: 10px 12px;
@@ -99,8 +95,11 @@
   font-size: var(--a13n-text-2xs);
   color: var(--a13n-secondary);
 }
+/* The conversation name gives way before any other header control. */
 .branchTrigger {
-  max-width: 150px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 200px;
 }
 .branchTrigger span {
   overflow: hidden;

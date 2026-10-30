@@ -218,7 +218,6 @@ it("controller controls stay disabled until acknowledgement; collapse detaches w
 it("creation uses the reviewed native cwd, uncertain create cannot be repeated, and process closure requires explicit confirmation", async () => {
   const f = setup();
   const selected = vi.fn();
-  const collapse = vi.fn();
   f.post.mockRejectedValue(new Error("Response lost"));
   const props = {
     visible: true,
@@ -226,7 +225,6 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
     projectId: "project-one",
     selected: "",
     select: selected,
-    collapse,
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -252,9 +250,7 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   fireEvent.click(await screen.findByRole("button", { name: "End session" }));
   expect(f.remove).not.toHaveBeenCalled();
   f.remove.mockResolvedValue({ data: { ...view, state: "closed" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "End session for everyone" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "End session" }));
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   expect(f.remove.mock.calls[0]).toEqual([
     "/api/host/terminals/{terminal_id}",
@@ -285,7 +281,6 @@ it("the creator claims input once after attachment, waits for acknowledgement an
         projectId="project-one"
         selected={selected}
         select={select}
-        collapse={() => {}}
         unauthorized={unauthorized}
       />
     );
@@ -357,7 +352,6 @@ it("only shows the current Project's terminals and never ends another Project's 
     projectId: "project-one",
     selected: "",
     select: vi.fn(),
-    collapse: vi.fn(),
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -402,7 +396,6 @@ it("a terminal creation completing after a Project switch cannot select a termin
     projectId: "project-one",
     selected: "",
     select: vi.fn(),
-    collapse: vi.fn(),
     unauthorized: vi.fn(),
   };
   const component = render(<TerminalPanel {...props} />, {
@@ -437,13 +430,12 @@ it.each(["project-two", ""])(
         selected="terminal-one"
         select={vi.fn()}
         onActive={onActive}
-        collapse={vi.fn()}
         unauthorized={vi.fn()}
       />,
       { wrapper: f.Wrapper },
     );
     await screen.findByText(
-      "This terminal is not available in the current project. Open a conversation in its project to view it.",
+      "This terminal belongs to another project. Open a chat in that project to view it.",
     );
     expect(onActive).toHaveBeenLastCalledWith("");
     expect(onActive.mock.calls.some(([id]) => id)).toBe(false);
@@ -513,9 +505,7 @@ it("searches retained output and appends selection only to the currently selecte
     emulator.select();
   });
   component.rerender(content("two"));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add selection to message" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
   expect(one.doc.getText("text").toString()).toBe("Draft one");
   expect(two.doc.getText("text").toString()).toContain(
     "Draft two\n\nSelected output from Server terminal terminal-one",
@@ -526,7 +516,7 @@ it("searches retained output and appends selection only to the currently selecte
   expect(f.post).not.toHaveBeenCalled();
   expect(Socket.all).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Find in output" }));
-  fireEvent.change(screen.getByLabelText("Find in retained terminal output"), {
+  fireEvent.change(screen.getByLabelText("Find in terminal output"), {
     target: { value: "hello" },
   });
   expect(emulator.findNext).toHaveBeenLastCalledWith(
@@ -559,7 +549,7 @@ it("handles find and clipboard shortcuts only in their terminal context, leaving
   fireEvent.keyDown(output, { key: "d", ctrlKey: true });
   expect(nativeKey).toHaveBeenCalledTimes(2);
   fireEvent.keyDown(output, { key: "f", ctrlKey: true });
-  const input = screen.getByLabelText("Find in retained terminal output");
+  const input = screen.getByLabelText("Find in terminal output");
   expect(document.activeElement).toBe(input);
   expect(nativeKey).toHaveBeenCalledTimes(2);
   fireEvent.change(input, { target: { value: "hello" } });
@@ -576,9 +566,7 @@ it("handles find and clipboard shortcuts only in their terminal context, leaving
   fireEvent.keyDown(output, { key: "f", ctrlKey: true });
   expect(document.activeElement).toBe(input);
   fireEvent.keyDown(input, { key: "Escape" });
-  expect(
-    screen.queryByLabelText("Find in retained terminal output"),
-  ).toBeNull();
+  expect(screen.queryByLabelText("Find in terminal output")).toBeNull();
   expect(emulator.focused).toHaveBeenCalled();
   act(() => {
     emulator.selection = "selected output";
@@ -656,7 +644,6 @@ it("cycles only the current Project's sessions without creating or ending them",
       projectId="project-one"
       selected="terminal-one"
       select={select}
-      collapse={vi.fn()}
       unauthorized={vi.fn()}
     />,
     { wrapper: f.Wrapper },

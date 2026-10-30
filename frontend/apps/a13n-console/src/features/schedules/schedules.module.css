@@ -1,0 +1,137 @@
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+}
+.summary dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  margin-bottom: 6px;
+}
+.summary dd {
+  font-size: var(--a13n-text-sm);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.summary a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.notice {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.6;
+}
+.summary dd.resourceId {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  margin-top: 4px;
+}
+.instructions {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  margin-bottom: 24px;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+}
+.instructionText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--a13n-text-md);
+  line-height: 1.6;
+}
+.notice + section {
+  margin-top: 24px;
+}
+.timing {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+/* Trigger times line up with the fields above them. */
+.preview {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+/* The cadence leads; its zone is the caption beneath it. */
+.cadence {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.cadence code {
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+}
+.zone {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  white-space: nowrap;
+}
+.reason {
+  display: block;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+  margin-top: 6px;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .summary {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .timing {
+    grid-template-columns: 1fr;
+  }
+}
+
+.overview {
+  margin-top: 24px;
+  margin-bottom: 32px;
+  padding: 20px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.overview > .notice {
+  margin: 16px 0 0;
+}
+.summary > div {
+  min-width: 0;
+}
+.permissions {
+  margin-top: 12px;
+}
+.permissions p {
+  margin: 0;
+  max-width: 80ch;
+}
+.history {
+  margin-top: 28px;
+}
+.history [data-slot="empty"] {
+  padding-block: 32px;
+  border: 1px solid var(--a13n-border);
+  background: transparent;
+}
+@media (max-width: 640px) {
+  .overview {
+    padding: 16px;
+  }
+}

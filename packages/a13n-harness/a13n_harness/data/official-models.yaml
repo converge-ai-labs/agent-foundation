@@ -43,7 +43,20 @@ models:
     characteristics:
       capabilities:
       - image_understanding
+      context_window_tokens: 1000000
     source_url: https://platform.claude.com/docs/en/models/opus-5-5/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-21
+      source_url: https://platform.claude.com/docs/en/models/opus-5-5/overview
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 4}
+        - {price_key: output_mtok, price: 20}
+        - {price_key: cache_read_mtok, price: 0.2}
+        - {price_key: cache_write_mtok, price: 5}
+        - {price_key: cache_write_1h_mtok, price: 8}
   moonshotai:kimi-k3:
     characteristics:
       capabilities:
@@ -187,6 +200,62 @@ models:
         - {price_key: input_mtok, price: 2.7}
         - {price_key: output_mtok, price: 13.5}
         - {price_key: cache_read_mtok, price: 0.27}
+  google-gla:gemini-4-argon:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-4-argon
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-21
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
+      rules:
+      - rule_id: standard-intro
+        prices:
+        - {price_key: input_mtok, price: 2}
+        - {price_key: output_mtok, price: 10}
+        - {price_key: cache_read_mtok, price: 0.1}
+      - rule_id: standard-2026-12
+        constraint:
+          kind: start_date
+          start_date: 2026-12-01
+        prices:
+        - {price_key: input_mtok, price: 4}
+        - {price_key: output_mtok, price: 20}
+        - {price_key: cache_read_mtok, price: 0.2}
+      - rule_id: flex-intro
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1}
+        - {price_key: output_mtok, price: 5}
+        - {price_key: cache_read_mtok, price: 0.05}
+      - rule_id: flex-2026-12
+        service_tier: flex
+        constraint:
+          kind: start_date
+          start_date: 2026-12-01
+        prices:
+        - {price_key: input_mtok, price: 2}
+        - {price_key: output_mtok, price: 10}
+        - {price_key: cache_read_mtok, price: 0.1}
+      - rule_id: priority-intro
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 3.6}
+        - {price_key: output_mtok, price: 18}
+        - {price_key: cache_read_mtok, price: 0.18}
+      - rule_id: priority-2026-12
+        service_tier: priority
+        constraint:
+          kind: start_date
+          start_date: 2026-12-01
+        prices:
+        - {price_key: input_mtok, price: 7.2}
+        - {price_key: output_mtok, price: 36}
+        - {price_key: cache_read_mtok, price: 0.36}
   zai:glm-5.3-flash:
     characteristics:
       capabilities:
@@ -226,11 +295,11 @@ models:
       capabilities:
       - image_understanding
       context_window_tokens: 131072
-    source_url: https://console.groq.com/docs/model/qwen3.8-27b
+    source_url: https://console.groq.com/docs/model/qwen/qwen3.8-27b
     pricing:
       source: harness_overlay
-      source_revision: official-2026-10-08
-      source_url: https://console.groq.com/docs/model/qwen3.8-27b
+      source_revision: official-2026-10-21
+      source_url: https://console.groq.com/docs/model/qwen/qwen3.8-27b
       rules:
       - rule_id: standard
         prices:
@@ -1177,14 +1246,14 @@ models:
     source_url: https://docs.mistral.ai/models/mistral-large-4-0
     pricing:
       source: harness_overlay
-      source_revision: official-2026-10-08
+      source_revision: official-2026-10-21
       source_url: https://docs.mistral.ai/models/mistral-large-4-0
       rules:
       - rule_id: standard
         prices:
-        - {price_key: input_mtok, price: 0.68}
-        - {price_key: cache_read_mtok, price: 0.07}
-        - {price_key: output_mtok, price: 2.09}
+        - {price_key: input_mtok, price: 1.36}
+        - {price_key: cache_read_mtok, price: 0.14}
+        - {price_key: output_mtok, price: 4.18}
   fireworks:accounts/fireworks/models/ember-1:
     characteristics:
       context_window_tokens: 1040000
@@ -1248,6 +1317,20 @@ models:
         - {price_key: cache_read_mtok, price: 0.09, tiers: [{start: 512000, price: 0.18}]}
         - {price_key: output_mtok, price: 1.8, tiers: [{start: 512000, price: 3.6}]}
         service_tier: priority
+  minimax:MiniMax-M3.1-Flash:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://platform.minimax.io/docs/guides/models-intro
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-21
+      source_url: https://platform.minimax.io/docs/guides/pricing-paygo
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: cache_read_mtok, price: 0.015}
+        - {price_key: output_mtok, price: 0.6}
   alibaba:qwen3.8-max:
     characteristics:
       context_window_tokens: 1000000
@@ -1264,8 +1347,8 @@ models:
     source_url: https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max
   openai:gpt-5.5-pro:
     characteristics:
-      context_window_tokens: 1000000
-    source_url: https://developers.openai.com/api/docs/pricing
+      context_window_tokens: 1050000
+    source_url: https://developers.openai.com/api/docs/models/gpt-5.5-pro
     pricing:
       source: harness_overlay
       source_revision: official-2026-09-26
@@ -1445,8 +1528,8 @@ models:
         - {price_key: output_mtok, price: 0.2}
   openai:gpt-4.1:
     characteristics:
-      context_window_tokens: 1000000
-    source_url: https://developers.openai.com/api/docs/pricing
+      context_window_tokens: 1047576
+    source_url: https://developers.openai.com/api/docs/models/gpt-4.1
     pricing:
       source: harness_overlay
       source_revision: official-2026-09-26
@@ -1465,8 +1548,8 @@ models:
         - {price_key: output_mtok, price: 14.0}
   openai:gpt-4.1-mini:
     characteristics:
-      context_window_tokens: 1000000
-    source_url: https://developers.openai.com/api/docs/pricing
+      context_window_tokens: 1047576
+    source_url: https://developers.openai.com/api/docs/models/gpt-4.1-mini
     pricing:
       source: harness_overlay
       source_revision: official-2026-09-26
@@ -1485,8 +1568,8 @@ models:
         - {price_key: output_mtok, price: 2.8}
   openai:gpt-4.1-nano:
     characteristics:
-      context_window_tokens: 1000000
-    source_url: https://developers.openai.com/api/docs/pricing
+      context_window_tokens: 1047576
+    source_url: https://developers.openai.com/api/docs/models/gpt-4.1-nano
     pricing:
       source: harness_overlay
       source_revision: official-2026-09-26

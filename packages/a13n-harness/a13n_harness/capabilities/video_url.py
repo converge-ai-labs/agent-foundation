@@ -1,4 +1,4 @@
-"""Default bounded video URL acquisition and request video filtering."""
+"""Default bounded media URL acquisition and request video filtering."""
 
 from __future__ import annotations
 
@@ -10,11 +10,10 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
-from a13n_harness._video_urls import supports_video_urls
 from a13n_harness.context import AgentContext
 from a13n_harness.filters.video_url import project_video_urls
 from a13n_harness.model_context import ModelContextCoordinatorCapability
-from a13n_harness.toolsets.video_url import VideoUrlToolset
+from a13n_harness.toolsets.media_url import MediaUrlToolset
 
 VIDEO_URL_CAPABILITY_ID = "a13n.video_url"
 
@@ -32,10 +31,7 @@ class VideoUrlCapability(AbstractCapability[AgentContext]):
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id="a13n-video-url-tools")
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext] | None:
-        if not supports_video_urls(ctx.deps.model_characteristics, ctx.deps.configuration):
-            return None
-        assert ctx.deps.model_characteristics is not None
-        return VideoUrlToolset().get_toolset(ctx.deps.model_characteristics, ctx.deps.configuration)
+        return MediaUrlToolset().get_toolset(ctx)
 
     async def before_model_request(
         self,

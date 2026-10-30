@@ -2,7 +2,7 @@
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import AgentStreamEvent
+from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.context import AgentContext
@@ -23,3 +23,5 @@ class ProducerCaptureCapability(AbstractCapability[AgentContext]):
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
         if ctx.run_id == self.attempt_id:
             self.emitter.observe(event)
+            if isinstance(event, FunctionToolResultEvent):
+                ctx.deps._tool_executions.observed_returns.add(event.part.tool_call_id)

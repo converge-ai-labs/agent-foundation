@@ -54,6 +54,13 @@ export class UnsentStore {
     this.subscriptions.set(id, { draft, close: draft.subscribe(update) });
     update();
   }
+  forget(id: string) {
+    this.subscriptions.get(id)?.close();
+    this.subscriptions.delete(id);
+    this.snapshot = new Map(this.snapshot);
+    this.snapshot.delete(id);
+    this.listeners.forEach((listener) => listener());
+  }
   dispose() {
     for (const { close } of this.subscriptions.values()) close();
     this.subscriptions.clear();

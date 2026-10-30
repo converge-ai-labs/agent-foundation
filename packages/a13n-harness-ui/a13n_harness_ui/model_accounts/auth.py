@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ _LIMIT = 2 * 1024 * 1024
 class HostAuthDocument:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._observation_read = threading.Lock()
 
     def _read(self) -> dict[str, Any]:
         try:
@@ -35,16 +37,28 @@ class HostAuthDocument:
             raise ValueError("incompatible auth document")
         return value
 
-    async def read(self) -> dict[str, Any]:
+    async def read(self, *, observation: bool = False) -> dict[str, Any]:
+        if observation:
+            return await self._run(self._read_observation, abandon_on_cancel=True)
         return await self._run(self._read)
+
+    def _read_observation(self) -> dict[str, Any]:
+        # A stalled read may outlive its caller, but repeated monitoring deadlines
+        # must not create more blocked filesystem threads or delay Host shutdown.
+        if not self._observation_read.acquire(blocking=False):
+            raise HarnessUiError("An authentication observation is pending.", code="auth_observation_pending")
+        try:
+            return self._read()
+        finally:
+            self._observation_read.release()
 
     async def update[T](self, change: Callable[[dict[str, Any]], T]) -> T:
         return await self._run(lambda: self._change(change))
 
     @staticmethod
-    async def _run[T](operation: Callable[[], T]) -> T:
+    async def _run[T](operation: Callable[[], T], *, abandon_on_cancel: bool = False) -> T:
         try:
-            return await to_thread.run_sync(operation)
+            return await to_thread.run_sync(operation, abandon_on_cancel=abandon_on_cancel)
         except (OSError, ValueError, ValidationError, Timeout):
             raise HarnessUiError(
                 "The Host authentication store could not be read or updated.", code="api_key_store_unavailable"

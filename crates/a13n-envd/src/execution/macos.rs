@@ -19,7 +19,7 @@ pub(crate) fn command(
     egress: Egress,
     state: &Path,
 ) -> io::Result<Command> {
-    let Sandbox::Restricted { grants } = sandbox else {
+    let Sandbox::Restricted { grants, .. } = sandbox else {
         return Err(io::Error::other("Seatbelt requires restricted Sandbox"));
     };
     if sources.len() != grants.len() || egress.controlled() {

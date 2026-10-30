@@ -130,6 +130,7 @@ async def test_present_supersession_cycle_fails_before_model_exposure() -> None:
 
 async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
     runner_description = ""
+    catalog = ""
     policy_toolset = CodeActPolicyToolset(
         wrapped=FunctionToolset(
             [
@@ -142,9 +143,10 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
     )
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal runner_description
+        nonlocal runner_description, catalog
         del messages
         runner_description = next(tool.description or "" for tool in info.function_tools if tool.name == "run_code")
+        catalog = info.instructions or ""
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -160,8 +162,9 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
     result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
-    assert "preferred" in runner_description
-    assert "fallback" not in runner_description
+    assert "async def preferred" in catalog
+    assert "async def fallback" not in catalog
+    assert "async def preferred" not in runner_description
 
 
 async def test_wrapper_cannot_be_ordered_outside_the_mandatory_surface() -> None:

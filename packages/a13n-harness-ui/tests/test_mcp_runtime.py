@@ -268,14 +268,16 @@ async def test_sdk_send_boundary_checks_every_business_round(tmp_path: Path, mon
             checks += 1
 
         task = asyncio.create_task(
-            connection.client.call_app_tool("confirm", {}, authorize=authorize, operation=Operation(view_id="view-one"))
+            HostToolset(connection).call_app_tool(
+                "confirm", {}, authorize=authorize, operation=Operation(view_id="view-one")
+            )
         )
         pending = await _pending(inputs)
         assert pending.view_id == "view-one" and pending.run_id is None
         await inputs.respond(
             {"thread-one"}, pending.request_id, McpInputResponse(action="accept", content={"name": "Ada"})
         )
-        assert not (await task).is_error
+        assert not (await task)["isError"]
         assert rounds == [False, True]
         assert checks >= 5  # lane admission, both SDK sends, before/after the human wait
     finally:

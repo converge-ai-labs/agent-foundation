@@ -6,7 +6,6 @@ import itertools
 import json
 import shlex
 from collections.abc import AsyncIterator
-from importlib.resources import files
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from pydantic import JsonValue, TypeAdapter
@@ -32,10 +31,9 @@ class GuestCommands:
         self._operations = itertools.count(1)
         self._sources = {
             "files": file_helper_source(),
-            "ports": files(__package__).joinpath("guest", "ports.py").read_text(),
         }
 
-    def command(self, module: Literal["files", "ports"], arguments: dict[str, JsonValue]) -> str:
+    def command(self, module: Literal["files"], arguments: dict[str, JsonValue]) -> str:
         if self.closed:
             raise EnvironmentError("E2B operations are closed.", code="environment_closed")
         return shlex.join(
@@ -43,7 +41,7 @@ class GuestCommands:
         )
 
     async def _execute(
-        self, module: Literal["files", "ports"], arguments: dict[str, JsonValue], *, mutation: bool
+        self, module: Literal["files"], arguments: dict[str, JsonValue], *, mutation: bool
     ) -> dict[str, JsonValue]:
         from e2b.sandbox.commands.command_handle import CommandExitException
 
@@ -92,9 +90,6 @@ class GuestCommands:
             mutation=mutation,
         )
 
-    async def port(self, port: int) -> dict[str, JsonValue]:
-        return await self._execute("ports", {"port": port}, mutation=False)
-
     async def read_stream(self, path: str) -> AsyncIterator[bytes]:
         with sdk_errors():
             reader = await self.sandbox.files.read(
@@ -106,6 +101,22 @@ class GuestCommands:
             async with reader:
                 async for chunk in reader:
                     yield chunk
+
+    async def read_range(self, path: str, offset: int, length: int) -> bytes:
+        # E2B's SDK has no ranges; preserve its seek-based helper for bounded
+        # range reads rather than downloading an arbitrarily large prefix.
+        from a13n_harness.providers.environment._guest_commands import decoded_bytes
+
+        result = bytearray()
+        while len(result) < length:
+            size = min(65536, length - len(result))
+            chunk = decoded_bytes(
+                await self.files("read", {"path": path, "offset": offset + len(result), "length": size})
+            )
+            result.extend(chunk)
+            if len(chunk) < size:
+                break
+        return bytes(result)
 
     async def write_stream(self, path: str, source: BinaryIO) -> None:
         with sdk_errors(mutation=True):

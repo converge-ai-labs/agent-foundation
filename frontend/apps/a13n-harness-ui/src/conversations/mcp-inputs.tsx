@@ -33,10 +33,11 @@ function enumOptions(field: Record<string, unknown>) {
   return undefined;
 }
 
-export function McpInputs({ threadId }: { threadId: string }) {
+export function useMcpInputRequests(threadId: string, enabled = true) {
   const { client } = useTransport();
-  const requests = useQuery({
+  return useQuery({
     queryKey: ["thread", threadId, "mcp-inputs"],
+    enabled,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/mcp/inputs", {
@@ -45,20 +46,27 @@ export function McpInputs({ threadId }: { threadId: string }) {
         }),
       ),
   });
+}
+
+export function McpInputs({
+  threadId,
+  requests,
+  reconcile,
+}: {
+  threadId: string;
+  requests?: Request[];
+  reconcile: () => void;
+}) {
   return (
     <>
-      <ErrorNotice
-        error={requests.error}
-        retry={() => void requests.refetch()}
-      />
-      {requests.data
+      {requests
         ?.filter((request) => request.state === "pending")
         .map((request) => (
           <McpInput
             key={request.request_id}
             threadId={threadId}
             request={request}
-            reconcile={() => void requests.refetch()}
+            reconcile={reconcile}
           />
         ))}
     </>
@@ -129,8 +137,8 @@ function McpInput({
         )}
         <p className={styles.reason}>{request.message}</p>
         <p className={styles.hint}>
-          Your response goes to this MCP server. Do not enter passwords, access
-          tokens, or other secrets here.
+          Your response goes to this MCP server. Don't include passwords, tokens
+          or other secrets.
         </p>
         {request.mode === "url" ? (
           <>
@@ -142,8 +150,8 @@ function McpInput({
               Open external page
             </a>
             <p className={styles.hint}>
-              Confirm only after completing the action in your browser. This
-              does not send Host credentials to the page.
+              Finish the action in your browser, then choose Done. Server
+              credentials aren't sent to that page.
             </p>
           </>
         ) : (
@@ -288,7 +296,7 @@ function McpInput({
               disabled={locked}
               onClick={() => send({ action: "accept" })}
             >
-              I completed the action
+              Done
             </Button>
           )}
           <Button
@@ -317,8 +325,8 @@ function McpInput({
             isConnectionError(answer.error)) && (
             <>
               <p className={styles.hint}>
-                Delivery is uncertain. Check the request before retrying; the
-                business tool is never repeated.
+                Couldn't confirm delivery. Check the request before retrying.
+                The tool itself won't run again.
               </p>
               <div className={styles.actions}>
                 <Button variant="ghost" onClick={reconcile}>
@@ -329,7 +337,7 @@ function McpInput({
                   disabled={answer.isPending || !submitted}
                   onClick={() => submitted && answer.mutate(submitted)}
                 >
-                  Retry same response
+                  Retry response
                 </Button>
               </div>
             </>

@@ -4,12 +4,10 @@ import inspect
 
 import pytest
 from a13n_harness.providers.environment._backend import ExecutionBackend
-from a13n_harness.providers.environment.daytona.execution import DaytonaExecution
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
 from a13n_harness.providers.environment.local_envd.provider import LocalEnvdExecution
-from a13n_harness.providers.environment.modal.execution import ModalExecution
 from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 from a13n_harness.providers.environment.runloop.execution import RunloopExecution
 from a13n_harness.providers.environment.sprites.execution import SpritesExecution
@@ -27,12 +25,10 @@ from a13n_service.providers.environments.vercel.management import VercelManageme
 @pytest.mark.parametrize(
     "implementation",
     [
-        DaytonaExecution,
         DirectLocalExecution,
         DockerExecution,
         E2BExecution,
         LocalEnvdExecution,
-        ModalExecution,
         RemoteEnvdExecution,
         RunloopExecution,
         SpritesExecution,
@@ -43,7 +39,7 @@ def test_execution_implementation_has_no_management_authority(implementation):
     assert issubclass(implementation, ExecutionBackend)
     assert not issubclass(implementation, ManagementBackend)
     assert not inspect.isabstract(implementation)
-    for name in ("create", "start", "inspect", "stop", "destroy", "keepalive", "_cache_state"):
+    for name in ("create", "start", "inspect", "stop", "destroy", "keepalive", "desktop_access", "_cache_state"):
         assert not hasattr(implementation, name), (implementation, name)
     assert "operation_id" not in inspect.signature(implementation).parameters
 

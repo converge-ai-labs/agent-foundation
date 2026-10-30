@@ -8,7 +8,9 @@ from a13n_harness import (
     AgentContext,
     HarnessBuilder,
     ModelRecoveryPolicy,
+    RequestContext,
     RunBindings,
+    RunConfiguration,
 )
 from a13n_harness.context import (
     RunSkillPaths,
@@ -69,6 +71,63 @@ def test_run_bindings_metadata_detaches_nested_caller_values() -> None:
     assert bindings.metadata == {"correlation": {"labels": ["initial"]}}
     with pytest.raises(TypeError):
         bindings.metadata["other"] = "value"  # type: ignore[index]
+
+
+def test_run_bindings_preserves_positional_arguments_before_request_context() -> None:
+    instance = RunBindings.embedded().instance
+    configuration = RunConfiguration()
+
+    bindings = RunBindings(instance, configuration, None, None, False, False)
+
+    assert bindings.instance is instance
+    assert bindings.configuration is configuration
+    assert bindings.environment is None
+    assert bindings.model_resolver is None
+    assert bindings.toolset_instructions is False
+    assert bindings.deferred_tools_supported is False
+    assert bindings.request_context.headers == {}
+
+    context = RequestContext(headers={"x-trace": "private-context"})
+    assert RunBindings(instance, configuration, None, request_context=context).request_context is context
+
+
+def test_request_context_is_detached_readonly_and_not_metadata() -> None:
+    source = {"X-Trace": "private-context"}
+    context = RequestContext(headers=source)
+    source["X-Trace"] = "changed"
+    bindings = RunBindings.embedded(request_context=context)
+    assert bindings.request_context.headers == {"x-trace": "private-context"}
+    assert bindings.metadata == {}
+    assert "private-context" not in repr(bindings)
+    with pytest.raises(TypeError):
+        context.headers["x-trace"] = "changed"  # type: ignore[index]
+    with pytest.raises(ValueError, match="unique ignoring case"):
+        RequestContext(headers={"X-Trace": "one", "x-trace": "two"})
+
+
+@pytest.mark.anyio
+async def test_request_context_is_runtime_only_and_new_run_defaults_empty() -> None:
+    seen: list[dict[str, str]] = []
+
+    class Observe(AbstractCapability[AgentContext]):
+        async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+            seen.append(dict(ctx.deps.request_context.headers))
+            return self
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        assert "private-context" not in repr(messages)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream), capabilities=(Observe(),)
+    )
+    result = await executable.run(
+        "start", bindings=RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "private-context"}))
+    )
+    assert result.state is not None
+    assert "private-context" not in result.state.model_dump_json()
+    await executable.run("next", bindings=RunBindings.embedded(), previous_state=result.state)
+    assert seen == [{"x-trace": "private-context"}, {}]
 
 
 def test_skill_paths_publish_immutable_owner_bound_snapshots() -> None:

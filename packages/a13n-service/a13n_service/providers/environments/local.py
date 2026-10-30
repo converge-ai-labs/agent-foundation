@@ -8,6 +8,7 @@ from pathlib import Path
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.configuration import (
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 from a13n_service.infra.ids import OBJECT_ID_PATTERN
 from a13n_service.providers.environment.definition import management_definition
 from a13n_service.providers.environment.management import EnvironmentProvider, EnvironmentStatus
+from a13n_service.providers.environment.metrics import MetricsLaunch
 
 LOCAL_TYPE = "local"
 _ENVIRONMENT_ID = re.compile(OBJECT_ID_PATTERN)
@@ -41,8 +43,16 @@ class LocalProvider(EnvironmentProvider[DirectLocalEnvironmentConfiguration]):
     """Own directory lifecycle; Direct Local owns only executions inside existing directories."""
 
     async def create(
-        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None = None
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        operation_id: str,
+        state: EnvironmentState | None = None,
+        metrics: MetricsLaunch | None = None,
     ) -> EnvironmentState | None:
+        if metrics is not None:
+            raise provider_error(LOCAL_TYPE, "native_metrics_unsupported", EnvironmentProviderErrorCategory.UNSUPPORTED)
         directory = _recipe(environment, environment_id, state).root.path
         await to_thread.run_sync(lambda: directory.mkdir(mode=0o700, parents=True, exist_ok=True))
         return None
@@ -115,8 +125,11 @@ def _connector(
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
+    session_recovery: EnvdSessionRecovery | None = None,
 ) -> EnvironmentConnector:
-    return DIRECT_LOCAL.execution_connector(_recipe(environment, environment_id, state), environment_id=environment_id)
+    return DIRECT_LOCAL.execution_connector(
+        _recipe(environment, environment_id, state), environment_id=environment_id, session_recovery=session_recovery
+    )
 
 
 _EXECUTION = EnvironmentProviderDefinition(

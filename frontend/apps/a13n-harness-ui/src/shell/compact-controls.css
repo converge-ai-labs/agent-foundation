@@ -1,0 +1,38 @@
+/* Inputs, buttons and selectors share the narrow-screen control height.
+   Text entry remains 16px to avoid focus zoom; compact labels stay 14px.
+   Coarse pointers retain the primitives' enlarged hit areas. */
+@media (max-width: 639px) {
+  :is([data-slot="button"], [data-a13n-button]),
+  [data-slot="select-trigger"],
+  [data-slot="toggle"] {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  [data-slot="label"],
+  [data-slot="field-label"] {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  :is([data-slot="button"], [data-a13n-button])[class~="sm:h-8"] {
+    height: var(--harness-control-height);
+  }
+  :is([data-slot="button"], [data-a13n-button])[class~="sm:h-7"] {
+    height: var(--harness-control-height);
+  }
+  :is([data-slot="button"], [data-a13n-button])[class~="sm:size-8"] {
+    width: var(--harness-control-height);
+    height: var(--harness-control-height);
+  }
+  :is([data-slot="button"], [data-a13n-button])[class~="sm:size-7"] {
+    width: var(--harness-control-height);
+    height: var(--harness-control-height);
+  }
+  [data-slot="select-trigger"] {
+    min-height: var(--harness-control-height);
+  }
+  :is([data-slot="button"], [data-a13n-button]) svg:not([class*="size-"]),
+  [data-slot="select-trigger"] svg:not([class*="size-"]) {
+    width: 1rem;
+    height: 1rem;
+  }
+}

@@ -199,10 +199,13 @@ async def test_websocket_shared_scopes_leave_connection_alive_until_disconnect(i
         assert not acquire.done()
         connection = Connection()
         attachment = asyncio.create_task(hub.attach("env-native", connection))
-        session = await acquire
+        binding = await acquire
+        session = binding.session
+        assert binding.device_descriptor is initialized[0].descriptor
         assert session is initialized[0].sessions[0]
         assert session.ready_calls == 1
-        async with hub.open_session(expected_device_id="env-native", required_methods=frozenset()) as shared:
+        async with hub.open_session(expected_device_id="env-native", required_methods=frozenset()) as binding:
+            shared = binding.session
             assert shared is not session
             assert shared.device is session.device
         assert shared.closed and not session.closed
@@ -219,7 +222,7 @@ async def test_websocket_shared_scopes_leave_connection_alive_until_disconnect(i
         replacement_connection = Connection()
         replacement = asyncio.create_task(hub.attach("env-native", replacement_connection))
         async with hub.open_session(expected_device_id="env-native", required_methods=frozenset(), timeout=1) as second:
-            assert second is not session
+            assert second.session is not session
         await replacement_connection.close()
         await replacement
 
@@ -351,7 +354,7 @@ async def test_websocket_scope_exit_closes_only_its_session(initialized):
     connection = Connection()
     attached = asyncio.create_task(hub.attach("env-native", connection))
     context = hub.open_session(expected_device_id="env-native", required_methods=frozenset())
-    session = await context.__aenter__()
+    session = (await context.__aenter__()).session
     await asyncio.wait_for(context.__aexit__(None, None, None), timeout=1)
     assert session.closed and not connection.closed.is_set()
     await hub.close()

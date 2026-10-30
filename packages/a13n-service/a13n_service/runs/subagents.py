@@ -37,6 +37,7 @@ from a13n_harness.capabilities import (
     SubagentWaitResult,
 )
 from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.tool_execution import current_execution
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -46,10 +47,11 @@ from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.runs import inbox
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
-from a13n_service.runs.attempts import AttemptControl, Lease, lock_lease, lock_thread_lease
-from a13n_service.runs.environments.mounts import adopt_mounts, reserve_primary
+from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
+from a13n_service.runs.environments.mounts import adopt_mounts
 from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.origin import origins
 from a13n_service.runs.schemas import (
     Delivery,
     EnvironmentMount,
@@ -62,9 +64,9 @@ from a13n_service.runs.schemas import (
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import new_thread
+from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
-from a13n_service.tenancy.access import principal_for
-from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
+from a13n_service.tenancy.authorize import ExecutionAuthority
 
 _STATUS: dict[str, SubagentStatus] = {
     "accepted": "running",
@@ -115,7 +117,10 @@ class ChildRuns(SubagentOperator):
         payload = _payload(plan.context.input, request.prompt)
         settings = self.runtime.settings.worker
         async with transaction(self.runtime.storage) as session:
-            thread, run, _, _ = await lock_thread_lease(session, self.lease)
+            thread = await lock(session, ThreadRow, self.lease.thread_id)
+            if thread is None or thread.archived_at is not None:
+                raise LeaseLost()
+            run, _ = await lock_owner(session, self.runtime, self.lease)
             existing = await session.scalar(
                 select(ThreadRow).where(
                     ThreadRow.origin_run_id == run.id, ThreadRow.origin_tool_call_id == tool_call.tool_call_id
@@ -132,6 +137,7 @@ class ChildRuns(SubagentOperator):
             if (spawned or 0) >= settings.child_count:
                 raise conflict("run", run.id, "child_count_exceeded")
             owner = await session.get_one(SessionRow, run.session_id)
+            origin = (await origins(session, [run.id])).get(run.id) if run.occurrence_trigger_entry_id else None
             child = new_thread(
                 owner,
                 mcp_headers=run.mcp_headers,
@@ -140,10 +146,14 @@ class ChildRuns(SubagentOperator):
                 origin_run_id=run.id,
                 origin_tool_call_id=tool_call.tool_call_id,
                 subagent=request.subagent_name,
+                schedule_occurrence_id=origin.occurrence_id if origin else None,
             )
             session.add(child)
             await session.flush()
-            await self._environments(session, child, run, edge)
+            # A child's environments come from its edge, never its agent's template: a shared child mounts what the
+            # parent run froze, and acceptance reserves a dedicated child's primary from the edge's template.
+            if edge.selection.environment.mode == "shared":
+                await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
             await adopt_memory_mounts(session, child, run.memory_mounts)
             # A run's `max_usage` bounds model requests only, so the edge's request limit is all a child run
             # carries; the edge's token and tool-call limits apply to inline delegation.
@@ -156,6 +166,7 @@ class ChildRuns(SubagentOperator):
                 options=RunOptions(
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
                     configuration=RunOptions.model_validate(run.options).configuration,
+                    context=RunOptions.model_validate(run.options).context,
                 ),
             )
             entry = await inbox.append_message(
@@ -277,27 +288,11 @@ class ChildRuns(SubagentOperator):
     def _leaving(self) -> bool:
         """The parent must stop, or its worker is draining: a wait returns what it has, so the attempt can end
         or yield at its next boundary instead of outwaiting the drain."""
-        return self.control.stopped.is_set() or self.control.handoff.is_set()
-
-    async def _environments(self, session: AsyncSession, child: ThreadRow, run: RunRow, edge: ResolvedSubagent) -> None:
-        """A child's environments are decided here, by its edge; its agent's own template never applies."""
-        policy = edge.selection.environment
-        if policy.mode == "shared":
-            await adopt_mounts(session, child, [EnvironmentMount.model_validate(m) for m in run.environment_mounts])
-        elif policy.template_id is not None:  # Exactly a dedicated policy names its template.
-            scope = WorkspaceScope(run.organization_id, run.workspace_id)
-            principal = await principal_for(session, self.runtime.access, run.principal_id, confinement=scope)
-            await reserve_primary(
-                session,
-                principal,
-                child,
-                template_id=policy.template_id,
-                limit=self.runtime.settings.environments.managed_count,
-            )
+        return current_execution() is None and (self.control.stopped.is_set() or self.control.handoff.is_set())
 
     async def _child(self, session: AsyncSession, run_id: str) -> tuple[ThreadRow, RunRow]:
         """Prove the parent's lease, then lock the child thread and its run; only this thread's children."""
-        parent, _, _ = await lock_lease(session, self.lease)
+        parent, _ = await lock_owner(session, self.runtime, self.lease)
         run = await session.get(RunRow, run_id)
         thread = await lock(session, ThreadRow, run.thread_id) if run is not None else None
         if run is None or thread is None or thread.origin != "child" or thread.origin_thread_id != parent.thread_id:
@@ -327,11 +322,13 @@ class ChildRuns(SubagentOperator):
             request=None,
             control=self.runtime.settings.control,
         )
+        self.runtime.mailbox.notify(session, entry)
         return entry
 
     async def _page(self, execution_id: str | None, offset: int, limit: int) -> tuple[list[_Execution], int]:
         """One page of the executions of the parent thread's children, in the order the children and their runs
         started, and how many there are: all of them, or the one named."""
+        await prove(self.runtime, self.lease)
         earlier = aliased(RunRow)
         segment = (
             select(func.count())
@@ -371,6 +368,7 @@ class ChildRuns(SubagentOperator):
         return executions, total
 
     async def _statuses(self, run_ids: Iterable[str]) -> dict[str, str]:
+        await prove(self.runtime, self.lease)
         async with short_session(self.runtime.storage) as session:
             rows = await session.execute(select(RunRow.id, RunRow.status).where(RunRow.id.in_(list(run_ids))))
             return dict(rows.tuples().all())

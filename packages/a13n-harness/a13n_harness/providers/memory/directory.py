@@ -6,7 +6,7 @@ import hashlib
 import os
 import shutil
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -44,21 +44,44 @@ class DirectoryFileStore:
             raise MemoryStoreError("not_found", f"{path} does not exist.")
         return current
 
-    async def write(self, path: str, text: str, *, expected: str | None, origin: Origin) -> str:
+    async def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected: str | None,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         del origin
         path = self._validate(path)
         describe(text, self.format)
-        return await to_thread.run_sync(self._write, path, text, expected)
+        return await to_thread.run_sync(self._write, path, text, expected, dict(dependencies or {}))
 
-    async def move(self, source: str, destination: str, *, expected: str, origin: Origin) -> str:
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> str:
         del origin
         source, destination = self._validate(source), self._validate(destination)
-        return await to_thread.run_sync(self._move, source, destination, expected)
+        return await to_thread.run_sync(self._move, source, destination, expected, dict(dependencies or {}))
 
-    async def delete(self, path: str, *, expected: str, origin: Origin) -> None:
+    async def delete(
+        self,
+        path: str,
+        *,
+        expected: str,
+        origin: Origin,
+        dependencies: Mapping[str, str | None] | None = None,
+    ) -> None:
         del origin
         path = self._validate(path)
-        await to_thread.run_sync(self._delete, path, expected)
+        await to_thread.run_sync(self._delete, path, expected, dict(dependencies or {}))
 
     async def changes(self, since: str | None) -> Changes | FullResync:
         entries = await self.list()
@@ -66,8 +89,18 @@ class DirectoryFileStore:
         return Changes(cursor=digest, paths=()) if since == digest else FullResync(cursor=digest)
 
     async def purge(self) -> None:
-        if self.root.exists():
-            await to_thread.run_sync(shutil.rmtree, self.root)
+        await to_thread.run_sync(self._purge)
+
+    def _purge(self) -> None:
+        # Retain the lock inode so writers already waiting on it still serialize.
+        with self._locked():
+            for child in self.root.iterdir():
+                if child.name == _BOOKKEEPING:
+                    continue
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
 
     def _validate(self, path: str) -> str:
         path = validate_path(path, self.format)
@@ -127,9 +160,20 @@ class DirectoryFileStore:
         if (current.version if current is not None else None) != expected:
             raise MemoryStoreError("version_mismatch", f"{path} changed since it was read.", current=current)
 
-    def _write(self, path: str, text: str, expected: str | None) -> str:
+    def _check_dependencies(self, dependencies: Mapping[str, str | None]) -> None:
+        for path, version in dependencies.items():
+            current = self._current(self._validate(path))
+            if (current.version if current is not None else None) != version:
+                raise MemoryStoreError(
+                    "read_conflict",
+                    f"{path} changed since it was observed; reread it and reconsider the write.",
+                    current=current,
+                )
+
+    def _write(self, path: str, text: str, expected: str | None, dependencies: Mapping[str, str | None]) -> str:
         data = text.encode()
         with self._locked():
+            self._check_dependencies(dependencies)
             self._check(path, expected)
             with tempfile.NamedTemporaryFile(dir=self.root / _BOOKKEEPING, delete=False) as staged:
                 staged.write(data)
@@ -143,8 +187,9 @@ class DirectoryFileStore:
                 raise
         return _version(data)
 
-    def _move(self, source: str, destination: str, expected: str) -> str:
+    def _move(self, source: str, destination: str, expected: str, dependencies: Mapping[str, str | None]) -> str:
         with self._locked():
+            self._check_dependencies(dependencies)
             self._check(source, expected)
             if (existing := self._current(destination)) is not None:
                 raise MemoryStoreError("already_exists", f"{destination} already exists.", current=existing)
@@ -155,8 +200,9 @@ class DirectoryFileStore:
             self._prune(file.parent)
         return expected
 
-    def _delete(self, path: str, expected: str) -> None:
+    def _delete(self, path: str, expected: str, dependencies: Mapping[str, str | None]) -> None:
         with self._locked():
+            self._check_dependencies(dependencies)
             self._check(path, expected)
             file = self._locate(path)
             file.unlink()

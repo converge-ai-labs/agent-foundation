@@ -33,3 +33,19 @@ it("keeps code-block controls mounted as later streamed prose arrives", async ()
   expect(screen.getByRole("button", { name: "Copied" })).toBe(copy);
   expect(screen.getByText("More explanation.")).toBeTruthy();
 });
+
+it("can omit syntax highlighting while preserving Markdown and complete code copy", async () => {
+  const user = userEvent.setup();
+  const write = vi.spyOn(navigator.clipboard, "writeText");
+  const code = "const value = 1;\n";
+  const { container } = render(
+    <MarkdownContent
+      text={`**Title**\n\n\`\`\`javascript\n${code}\`\`\``}
+      highlight={false}
+    />,
+  );
+  expect(screen.getByText("Title").tagName).toBe("STRONG");
+  expect(container.querySelector(".hljs")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Copy code" }));
+  expect(write).toHaveBeenCalledExactlyOnceWith(code);
+});

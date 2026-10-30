@@ -78,7 +78,7 @@ Every string, collection, script, environment entry, stdin body, and limit is fi
 
 `kind="argv"` executes exactly one selected executable with the supplied arguments and never reparses them through a shell.
 
-- `ExecutableName` is one bare name with no path separator. Envd resolves it only through trusted configured search roots, never ambient or request-controlled `PATH`.
+- `ExecutableName` is one bare name with no path separator. Envd resolves it only through trusted configured search roots, never ambient or request-controlled `PATH`. Executable roots and shell-profile search roots retain configured order after canonicalization and deduplication; the first matching executable wins.
 - `ExecutablePath` is an absolute Device `EIPPath`, independent of Session cwd.
 
 Envd canonicalizes the selected executable, validates that it is an executable regular file under the selected configured authority, and passes the resulting native path to the platform launcher. As with ordinary `posix_spawn`, `execve`, and `CreateProcess` pathname launch, this admission check does not create an immutable executable snapshot or promise portable descriptor-based execution. Another native actor with independent write authority can replace authorized path content between validation and OS launch; envd neither treats that race as pathname compare-and-swap nor adds a private copy, hard link, wrapper script, or retry path. A missing or unlaunchable final path fails command start.

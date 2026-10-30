@@ -1,46 +1,37 @@
-import { DisclosureSection } from "a13n-ui";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
-import { Section } from "../../../shared/page";
+import { advancedConfig } from "../configuration";
 import type { AgentDraft } from "./draft";
 
 /** Structured output, retries, and subagents. */
 export function AdvancedSection({
   draft,
   readOnly,
-  expanded,
-  onExpandedChange,
+  mark,
   validation,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
-  expanded: boolean;
-  onExpandedChange: (value: boolean) => void;
+  /** Says how a read-only view's value differs, beside the title. */
+  mark?: ReactNode;
   validation?: Error;
 }) {
   const { t } = useTranslation();
   return (
-    <Section
-      title={t("Advanced configuration")}
-      description={t("Structured output, retries, and subagents.")}
-    >
-      <DisclosureSection
-        open={expanded}
-        onOpenChange={onExpandedChange}
-        title={t(readOnly ? "Configuration" : "Edit configuration JSON")}
-      >
-        <TextAreaField
-          readOnly={readOnly}
-          label={t("Configuration JSON")}
-          hideLabel
-          code
-          value={draft.advanced}
-          onChange={draft.setAdvanced}
-          rows={18}
-        />
-        <ErrorNotice error={validation} />
-      </DisclosureSection>
-    </Section>
+    <>
+      {mark}
+      <TextAreaField
+        readOnly={readOnly}
+        label={t("Configuration JSON")}
+        hideLabel
+        code
+        value={readOnly ? advancedConfig(draft.initial) : draft.advanced}
+        onChange={draft.setAdvanced}
+        rows={8}
+      />
+      <ErrorNotice error={validation} />
+    </>
   );
 }

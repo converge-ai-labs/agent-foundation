@@ -91,8 +91,10 @@ def redact_bearer(value: str) -> str:
     return _BEARER_VALUE.sub("Bearer [REDACTED]", value)
 
 
-def is_sensitive_key(key: str) -> bool:
-    """Identify authority-bearing JSON fields without hiding usage token counts."""
+def is_sensitive_key(key: str, *, value: JsonValue = None) -> bool:
+    """Identify authority-bearing fields, preserving only typed, known-safe status metadata."""
+    if key == "credential_configured" and isinstance(value, bool):
+        return False
     normalized = key.lower().replace("-", "_").replace(".", "_")
     segments = frozenset(normalized.split("_"))
     return bool(segments & _SENSITIVE_KEY_SEGMENTS) or "api_key" in normalized
@@ -102,8 +104,9 @@ def redact_json(value: JsonValue) -> JsonValue:
     """Return a detached JSON value with common authority-bearing content removed.
 
     Object members whose key names an authority, such as `authorization`, `api_key`, `password`, `secret` or
-    `token` (but not token counts such as `input_tokens`), become `"[REDACTED]"`, and every string has its
-    `Bearer <credential>` values replaced. This is the rule the Harness applies to extension event payloads;
+    `token` (but not token counts such as `input_tokens`), become `"[REDACTED]"`. Boolean
+    `credential_configured` values remain visible; other values under that key are still redacted. Every string
+    has its `Bearer <credential>` values replaced. This is the rule the Harness applies to extension event payloads;
     Hosts apply it to trace content they read back from a collector.
     """
     if isinstance(value, str):
@@ -111,7 +114,9 @@ def redact_json(value: JsonValue) -> JsonValue:
     if isinstance(value, list):
         return [redact_json(item) for item in value]
     if isinstance(value, dict):
-        return {key: "[REDACTED]" if is_sensitive_key(key) else redact_json(item) for key, item in value.items()}
+        return {
+            key: "[REDACTED]" if is_sensitive_key(key, value=item) else redact_json(item) for key, item in value.items()
+        }
     return value
 
 

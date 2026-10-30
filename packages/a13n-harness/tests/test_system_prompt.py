@@ -136,12 +136,13 @@ def test_reconciliation_preserves_request_fields_and_skips_provider_suspension()
         conversation_id="thread-original",
         metadata={"owner": "test"},
     )
-    later = ModelRequest(parts=[SystemPromptPart("stale"), UserPromptPart("continue")])
+    later = ModelRequest(parts=[SystemPromptPart("historical reminder"), UserPromptPart("continue")])
     complete = ModelResponse(parts=[TextPart("complete")])
 
     reconciled = _reconcile_system_prompt((first, complete, later), ("new one", "new two"))
 
-    assert _system_prompt_contents(reconciled) == ["new one", "new two"]
+    assert _system_prompt_contents(reconciled) == ["new one", "new two", "historical reminder"]
+    assert reconciled[2] is later
     reconciled_first = reconciled[0]
     assert isinstance(reconciled_first, ModelRequest)
     assert reconciled_first.instructions == "keep instructions"
@@ -158,3 +159,62 @@ def test_reconciliation_preserves_request_fields_and_skips_provider_suspension()
 
     assert unchanged == (first, suspended)
     assert _system_prompt_contents(unchanged) == ["old"]
+
+
+@pytest.mark.parametrize("current_prompt", [None, "new definition"])
+async def test_resume_preserves_scoped_and_identified_historical_prompts(current_prompt: str | None) -> None:
+    from a13n_harness import HarnessState
+
+    identified = SystemPromptPart("catalog note", metadata={"capability": "catalog"})
+    request_only = SystemPromptPart("old request budget", scope="request")
+    dynamic = SystemPromptPart("dynamic note", dynamic_ref="custom_prompt")
+    reminder = SystemPromptPart("choose a different approach")
+    history = [
+        ModelRequest(parts=[SystemPromptPart("old definition"), identified, UserPromptPart("start"), request_only]),
+        ModelResponse(parts=[TextPart("working")]),
+        ModelRequest(parts=[dynamic, reminder, UserPromptPart("continue")]),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+    saved = HarnessState.new(message_history=history)
+    restored = HarnessState.model_validate_json(saved.to_json_bytes())
+    observed: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        observed.append(deepcopy(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(system_prompt=current_prompt),
+        model=FunctionModel(stream_function=stream, profile={"supports_inline_system_prompts": True}),
+        output_type=str,
+    )
+    result = await executable.run("next", previous_state=restored)
+    expected = ([current_prompt] if current_prompt else []) + [
+        identified.content,
+        request_only.content,
+        dynamic.content,
+        reminder.content,
+    ]
+    # The adapter expires request-scoped prompts without deleting them from saved history.
+    assert _system_prompt_contents(observed[0]) == [text for text in expected if text != request_only.content]
+    assert _system_prompt_contents(result.all_messages()) == expected
+    retained = [part for msg in result.all_messages() if isinstance(msg, ModelRequest) for part in msg.parts]
+    for part in (identified, request_only, dynamic, reminder):
+        assert part in retained
+    assert saved.to_json_bytes() == restored.to_json_bytes()
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        SystemPromptPart("identified", metadata={"owner": "custom"}),
+        SystemPromptPart("request", scope="request"),
+        SystemPromptPart("dynamic", dynamic_ref="custom"),
+    ],
+)
+def test_reconciliation_keeps_non_definition_prompt_at_start(prompt: SystemPromptPart) -> None:
+    history = (ModelRequest(parts=[prompt, UserPromptPart("start")]),)
+    reconciled = _reconcile_system_prompt(history, ("definition",))
+    assert _system_prompt_contents(reconciled) == ["definition", prompt.content]
+    assert isinstance(reconciled[0], ModelRequest)
+    assert reconciled[0].parts[1] is prompt

@@ -14,9 +14,14 @@ const model: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "on" },
 };
 
-it.each(["default", "off"] as const)(
-  "does not mistake inherited %s for explicit Off",
-  async (state) => {
+it.each([
+  ["default", "Standard"],
+  ["off", "Standard"],
+  ["on", "Fast"],
+  ["ultrafast", "Ultrafast"],
+] as const)(
+  "shows inherited %s as %s separately from explicit overrides",
+  async (state, label) => {
     const user = userEvent.setup();
     const change = vi.fn();
     render(
@@ -27,12 +32,12 @@ it.each(["default", "off"] as const)(
     );
     expect(
       screen
-        .getByRole("button", { name: "Use default Fast mode" })
+        .getByRole("button", { name: "Use model speed" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(
-      screen.getByText(state === "default" ? "Provider default" : "Off"),
-    ).toBeTruthy();
+      screen.getByRole("button", { name: "Use model speed" }).textContent,
+    ).toBe(`Model setting · ${label}`);
     expect(change).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Fast mode" }));
     expect(change).toHaveBeenLastCalledWith(true);
@@ -42,20 +47,25 @@ it.each(["default", "off"] as const)(
 it("follows changed model settings without overriding explicit Off", () => {
   const change = vi.fn();
   const view = render(<FastPicker model={model} onChange={change} />);
+  expect(
+    screen.getByRole("button", { name: "Use model speed" }).textContent,
+  ).toBe("Model setting · Fast");
   view.rerender(
     <FastPicker
       model={{ ...model, fast: { supported: true, state: "off" } }}
       onChange={change}
     />,
   );
-  expect(screen.getByText("Off")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Use model speed" }).textContent,
+  ).toBe("Model setting · Standard");
   view.rerender(<FastPicker model={model} value={false} onChange={change} />);
   expect(
     screen
       .getByRole("button", { name: "Fast mode" })
       .getAttribute("aria-pressed"),
   ).toBe("false");
-  expect(screen.getByText("Off")).toBeTruthy();
+  expect(screen.getByText("Standard")).toBeTruthy();
   expect(change).not.toHaveBeenCalled();
 });
 
@@ -83,9 +93,7 @@ it("explains unavailable controls and only allows resetting a stale override", a
   expect(screen.getByText("Unavailable connection")).toBeTruthy();
   await user.click(toggle);
   expect(change).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole("button", { name: "Use default Fast mode" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Use model speed" }));
   expect(change).toHaveBeenCalledWith(null);
 });
 
@@ -95,7 +103,7 @@ const astra: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "ultrafast", ultrafast_supported: true },
 };
 
-it("switches exclusively between inherited Ultrafast, Fast and Off, then resets", async () => {
+it("switches exclusively between inherited Ultrafast, Fast and Standard, then resets", async () => {
   const user = userEvent.setup();
   function Control() {
     const [value, setValue] = useState<Schema<"SubmitRequest">["fast"]>(null);
@@ -105,24 +113,39 @@ it("switches exclusively between inherited Ultrafast, Fast and Off, then resets"
   const fast = screen.getByRole("button", { name: "Fast mode" });
   const ultra = screen.getByRole("button", { name: "Ultrafast mode" });
   expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
-  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
   expect(fast.getAttribute("aria-pressed")).toBe("false");
-  expect(screen.getByText(/Pro \$500/)).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Use model speed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.getByTitle(/Pro \$500/)).toBeTruthy();
   await user.click(fast);
   expect(fast.getAttribute("aria-pressed")).toBe("true");
   expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByText("Fast", { selector: "span" })).toBeTruthy();
   ultra.focus();
   await user.keyboard("[Space]");
   expect(ultra.getAttribute("aria-pressed")).toBe("true");
   expect(fast.getAttribute("aria-pressed")).toBe("false");
   await user.click(ultra);
-  expect(screen.getByText("Off")).toBeTruthy();
-  expect(ultra.getAttribute("aria-pressed")).toBe("false");
-  await user.click(
-    screen.getByRole("button", { name: "Use default Fast mode" }),
-  );
-  expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
   expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Standard mode" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Standard mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  await user.click(screen.getByRole("button", { name: "Use model speed" }));
+  expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  expect(
+    screen
+      .getByRole("button", { name: "Use model speed" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });
 
 it("disables an unsupported Ultrafast selection without misrepresenting it as Fast", async () => {
@@ -160,11 +183,11 @@ it("disables an unsupported Ultrafast selection without misrepresenting it as Fa
       .getByRole("button", { name: "Fast mode" })
       .getAttribute("aria-pressed"),
   ).toBe("false");
-  expect(screen.getByText(reason)).toBeTruthy();
-  expect(screen.getByText("Unavailable selection — use default.")).toBeTruthy();
-  await user.click(
-    screen.getByRole("button", { name: "Use default Fast mode" }),
-  );
+  expect(screen.getByTitle(reason)).toBeTruthy();
+  expect(
+    screen.getByText("Unavailable selection — use the model setting."),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Use model speed" }));
   expect(change).toHaveBeenCalledWith(null);
   view.rerender(
     <FastPicker model={astra} value="ultrafast" disabled onChange={change} />,

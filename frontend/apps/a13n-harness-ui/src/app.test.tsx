@@ -43,6 +43,34 @@ function json(body: unknown, code = 200) {
 }
 function fixture(request: Request): Response | Promise<Response> {
   const path = decodeURIComponent(new URL(request.url).pathname);
+  if (path === "/api/subscriptions")
+    return json({
+      accounts: [
+        {
+          account: {
+            id: "acct-codex-default",
+            name: "Codex default",
+            provider: "codex",
+            enabled: true,
+          },
+          authentication: {
+            usable: false,
+            availability: "absent",
+            required_action: "login",
+          },
+          usage: { observed_at: 0 },
+        },
+      ],
+      groups: [],
+      adoption: {},
+    });
+  if (path.startsWith("/api/subscriptions/accounts/"))
+    return json({
+      usable: false,
+      availability: "absent",
+      required_action: "login",
+      shared_with_cli: false,
+    });
   if (path === "/api/status") return json(status);
   if (path === "/api/threads/activity")
     return json({ rows: [], total: 0, next_cursor: null });
@@ -77,10 +105,10 @@ function fixture(request: Request): Response | Promise<Response> {
         },
       ],
     });
-  if (path === "/api/agents/agent-assistant/tool-proxy")
+  if (path === "/api/agents/agent-assistant/tool-search")
     return json({
       agent_id: "agent-assistant",
-      tool_proxy: { groups: {} },
+      tool_search: { groups: {} },
       sources: [],
     });
   if (path === "/api/selectors")
@@ -230,7 +258,12 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   });
   render(<BrowserApp />);
   await screen.findByText("Global-only memory");
-  await screen.findByRole("button", { name: "Inspect & usage" });
+  expect(
+    screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "History" }));
+  await screen.findByRole("button", { name: "Usage & details" });
   await waitFor(() =>
     expect(
       vi
@@ -248,15 +281,21 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
       /memory-global\/draft|configuration-preview/.test(path),
     ),
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Inspect & usage" }));
-  await screen.findByRole("dialog");
-  expect(screen.getByText("Inspect")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Usage & details" }));
+  await screen.findByRole("dialog", { name: "Chat details" });
+  expect(
+    screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
+  ).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("link", { name: "Main" }));
   await screen.findByText("Project-only memory");
-  await screen.findByText("No organization history yet");
+  expect(
+    screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("tab", { name: "History" }));
+  await screen.findByText("No updates yet");
   expect(screen.queryByText("Global-only memory")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Inspect & usage" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
   expect(reads.some((path) => path.includes("project_id=project-main"))).toBe(
     true,
   );
@@ -316,7 +355,10 @@ it("distinguishes an unavailable listener from rejected credentials and retries 
   expect(screen.queryByLabelText("API key")).toBeNull();
   unavailable = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
 });
 
@@ -330,9 +372,34 @@ it("consumes the fragment before all network requests and retains only an accept
   });
   vi.stubGlobal("fetch", fetcher);
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("generated+key");
   expect(document.body.textContent).not.toContain("generated+key");
+});
+
+it("starts login quietly and reports a rejected key only after an attempt", async () => {
+  const fetcher = vi.fn(() => Promise.resolve(json({}, 401)));
+  vi.stubGlobal("fetch", fetcher);
+  render(<BrowserApp />);
+  const input = await screen.findByLabelText("Instance API key");
+  expect(document.activeElement).toBe(input);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "Log in" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  const user = userEvent.setup();
+  await user.type(input, "incorrect-key");
+  await user.click(screen.getByRole("button", { name: "Log in" }));
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "This instance key wasn't accepted. Check it and try again.",
+  );
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
 it("accepts a replacement key after authentication failure without replaying mutations", async () => {
@@ -349,13 +416,16 @@ it("accepts a replacement key after authentication failure without replaying mut
   );
   render(<BrowserApp />);
   await screen.findByText(
-    "Access expired. Enter the API key printed by this server.",
+    "This instance key wasn't accepted. Check it and try again.",
   );
   fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "new-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Log in" }));
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("new-key");
 });
 
@@ -372,8 +442,11 @@ it("supports explicit server bypass without inventing a frontend version", async
     }),
   );
   render(<BrowserApp />);
-  await screen.findByText("0.0.0");
-  expect(screen.getByText(/Instance authentication is disabled/)).toBeTruthy();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 0.0.0");
+  expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
 
 it("rejects incompatible status without caching access", async () => {
@@ -396,14 +469,16 @@ it("forgets the retained credential and closes protected views", async () => {
     ),
   );
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
-  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
-  await screen.findByText(
-    "Access expired. Enter the API key printed by this server.",
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
   );
+  await screen.findByText("Harness UI · 1.2.3rc2");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in to Harness UI" });
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
   expect(
-    screen.queryByRole("heading", { name: "What would you like to build?" }),
+    screen.queryByRole("heading", { name: "What can I help with?" }),
   ).toBeNull();
 });
 
@@ -435,13 +510,16 @@ it("keeps logout cleanup authenticated and warns when background delivery cannot
     }),
   );
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
-  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",
     expect.stringContaining(
-      "Block notifications in this site's browser settings",
+      "Block this site's notifications in your browser settings",
     ),
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
@@ -457,9 +535,9 @@ it("retains dirty source fields through navigation and external invalidation", a
   render(<BrowserApp />);
   const name = await screen.findByLabelText("Name");
   fireEvent.change(name, { target: { value: "My draft" } });
-  fireEvent.click(screen.getByRole("link", { name: "Projects" }));
-  await screen.findByRole("heading", { name: "Projects" });
-  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("link", { name: "Models" }));
+  await screen.findByRole("heading", { name: "Models" });
+  fireEvent.click(screen.getByRole("link", { name: "Configuration files" }));
   fireEvent.click(await screen.findByRole("link", { name: /agent-assistant/ }));
   await waitFor(() =>
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
@@ -489,19 +567,36 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
               content_available: false,
               content: null,
             })
-          : fixture(request),
+          : /^\/api\/mcp\/mcp-(one|two)\/tools$/.test(
+                new URL(request.url).pathname,
+              )
+            ? json({
+                server_id: new URL(request.url).pathname.split("/")[3],
+                name: "Private MCP server",
+                resource_digest: "a",
+                tools: null,
+              })
+            : fixture(request),
       ),
     ),
   );
   render(<BrowserApp />);
+  const connection = await screen.findByText("Server connection");
+  expect(connection.closest("details")?.open).toBe(false);
+  expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+  await userEvent.click(connection);
   await screen.findByRole("heading", {
-    name: "Saved configuration is hidden",
+    name: "Saved connection details are hidden",
   });
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
-  expect(
-    screen.getByRole("button", { name: "Replace configuration file" }),
-  ).toBeTruthy();
-  expect(screen.getByText(/mcp-one, mcp-two/)).toBeTruthy();
+  const connectionDetails = within(connection.closest("details")!);
+  expect(connectionDetails.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(screen.queryByLabelText("YAML source")).toBeNull();
+  const toolSaves = await screen.findAllByRole("button", { name: "Save" });
+  expect(toolSaves).toHaveLength(2);
+  for (const button of toolSaves)
+    expect(button).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Replace file" })).toBeTruthy();
+  expect(connectionDetails.getByText(/mcp-one, mcp-two/)).toBeTruthy();
 });
 
 it("reopens an unpublished resource draft without treating it as a missing server source", async () => {
@@ -514,7 +609,7 @@ it("reopens an unpublished resource draft without treating it as a missing serve
   fireEvent.change(await screen.findByLabelText("Name"), {
     target: { value: "Unpublished model" },
   });
-  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("link", { name: "Configuration files" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "Add configuration" }),
   );
@@ -524,7 +619,7 @@ it("reopens an unpublished resource draft without treating it as a missing serve
       "Unpublished model",
     ),
   );
-  expect(screen.getByRole("button", { name: "Create model" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create" })).toBeTruthy();
   expect(window.location.search).toContain("new=1");
 });
 
@@ -532,9 +627,7 @@ it("keeps incomplete existing configuration in focused repair without initializa
   window.history.replaceState(null, "", "/setup");
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Setup & readiness" });
-  expect(
-    screen.getByRole("link", { name: "Repair agent connection" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Fix connection" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Save and start/ })).toBeNull();
   expect(
     vi
@@ -566,7 +659,7 @@ it("attempts offline publication immediately and does not queue it for reconnect
   });
   try {
     onlineManager.setOnline(false);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText(
       "Unable to reach the server. Check your connection and try again.",
     );
@@ -620,7 +713,7 @@ it("keeps a dirty draft when summary invalidation discovers an external publicat
     resume_cursor: "epoch:2",
     event: { kind: "configuration" },
   });
-  await screen.findByText(/This configuration changed elsewhere/);
+  await screen.findByText(/This file changed elsewhere/);
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Retained local name",
   );
@@ -647,11 +740,19 @@ it("retains source edits across rejected access and reauthentication", async () 
   fireEvent.click(
     screen.getByText("Advanced configuration", { selector: "summary" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Check configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check settings" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
-  expect(screen.getByText(/unsaved/i)).toBeTruthy();
+  expect(screen.getByText(/Your edits are still here/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Instance API key"), {
+    target: { value: "incorrect-replacement" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+  await screen.findByText(
+    "This instance key wasn't accepted. Check it and try again.",
+  );
+  expect(screen.getByText(/Your edits are still here/)).toBeTruthy();
   expire = false;
   fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "replacement" },
@@ -714,10 +815,13 @@ it("works without browser storage", async () => {
   try {
     render(<BrowserApp />);
     await screen.findByRole("heading", {
-      name: "What would you like to build?",
+      name: "What can I help with?",
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Switch to dark theme" }),
+    await userEvent.click(
+      screen.getByRole("button", { name: "Workspace menu" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Dark appearance" }),
     );
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   } finally {
@@ -727,7 +831,7 @@ it("works without browser storage", async () => {
   }
 });
 
-it("retains login across navigation, requires switch authorization and respects completed cancellation", async () => {
+it("restores the native account login across navigation and respects completed cancellation", async () => {
   window.history.replaceState(null, "", "/settings/accounts");
   const starts: Record<string, unknown>[] = [];
   let succeeded = false;
@@ -735,25 +839,25 @@ it("retains login across navigation, requires switch authorization and respects 
     session_id: "login-one",
     provider: "codex",
     method: "device",
-    state: "failed",
-    error_code: "account_switch_confirmation_required",
+    account_id: "acct-codex-default",
+    state: "waiting",
+    error_code: "",
   };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (path.startsWith("/api/subscriptions/accounts/"))
         return json({
-          provider: path.split("/").at(-1),
+          provider: "codex",
           usable: succeeded,
           source: "file",
           expiry: "not_applicable",
           required_action: "none",
         });
       if (path === "/api/auth/logins") {
+        if (request.method === "GET") return json(starts.length ? login : null);
         starts.push(await request.json());
-        if (starts.length > 1)
-          login = { ...login, state: "waiting", error_code: "" };
         return json(login);
       }
       if (path === "/api/auth/logins/login-one") {
@@ -769,32 +873,38 @@ it("retains login across navigation, requires switch authorization and respects 
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Accounts & API keys" });
   fireEvent.click(
-    (await screen.findAllByRole("button", { name: "Connect account" }))[0],
+    await screen.findByRole("button", { name: "Manage account" }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Switch account…" }),
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
   );
-  expect(starts).toHaveLength(1);
-  expect(starts[0].allow_account_switch).toBe(false);
   fireEvent.click(
-    screen.getByRole("button", { name: "Allow switch and log in" }),
+    await screen.findByRole("button", { name: "Connect account" }),
   );
   await screen.findByRole("button", { name: "Cancel login" });
-  fireEvent.click(screen.getByRole("link", { name: "Projects" }));
-  await screen.findByRole("heading", { name: "Projects" });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(screen.getByRole("link", { name: "Models" }));
+  await screen.findByRole("heading", { name: "Models" });
   fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
+  );
   fireEvent.click(await screen.findByRole("button", { name: "Cancel login" }));
   await screen.findByText("Login: succeeded");
-  expect(starts[1].allow_account_switch).toBe(true);
+  expect(starts).toHaveLength(1);
+  expect(starts[0]).toMatchObject({
+    account_id: "acct-codex-default",
+    allow_account_switch: false,
+  });
   expect(screen.queryByText("Login: cancelled")).toBeNull();
 });
 
 it.each([
-  ["kind: project\nroots: [null]\n", /Repair the host root list/],
-  [
-    "kind: agent\ncapabilities: null\n",
-    /Repair the capability, subagent or tool list/,
-  ],
+  ["kind: project\nroots: [null]\n", /Fix the folder list/],
+  ["kind: agent\ncapabilities: null\n", /Fix the tool and subagent lists/],
 ])(
   "keeps incomplete advanced YAML repairable: %s",
   async (content, message) => {
@@ -820,9 +930,7 @@ it.each([
       screen.getByText("Advanced configuration", { selector: "summary" }),
     );
     expect(screen.getByText("Configuration file")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Check configuration" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check settings" })).toBeTruthy();
   },
 );
 
@@ -872,40 +980,47 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  const catalog = await screen.findByRole("region", {
-    name: "Installed capabilities",
-  });
-  expect(await within(catalog).findByText("available")).toBeTruthy();
+  await user.click(await screen.findByText("Installed capabilities"));
+  const catalog = screen.getByText("Installed capabilities").parentElement!;
+  expect(await within(catalog).findByText("Available")).toBeTruthy();
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
   expect(within(catalog).getByText("example-capabilities")).toBeTruthy();
-  expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(within(catalog).getByText("No setup form")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   await user.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
   expect(window.location.search).toBe("?path=agents%2Fassistant.yaml");
-  fireEvent.change(await screen.findByLabelText("Instructions"), {
+  fireEvent.change(await screen.findByLabelText("Additional instructions"), {
     target: { value: "Unfinished instructions" },
   });
-  await user.click(screen.getByRole("link", { name: "Capabilities" }));
   await user.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    within(
+      screen.getByRole("navigation", { name: "Settings sections" }),
+    ).getByRole("link", { name: "Agents" }),
+  );
+  await user.click(
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
   expect(
-    ((await screen.findByLabelText("Instructions")) as HTMLTextAreaElement)
-      .value,
+    (
+      (await screen.findByLabelText(
+        "Additional instructions",
+      )) as HTMLTextAreaElement
+    ).value,
   ).toBe("Unfinished instructions");
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   await user.click(
     await screen.findByRole("combobox", { name: "Add capability" }),
   );
-  expect(screen.queryByRole("option", { name: "ambiguous" })).toBeNull();
-  await user.click(await screen.findByRole("option", { name: "available" }));
+  expect(screen.queryByRole("option", { name: "Ambiguous" })).toBeNull();
+  await user.click(await screen.findByRole("option", { name: "Available" }));
   expect(saved).toBe("");
   expect(
-    screen.getByRole("button", { name: "Remove capability available" }),
+    screen.getByRole("button", { name: "Remove capability Available" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(saved).toContain("capability: available"));
   expect(saved).toContain("keep: true");
   expect(saved).toContain("retain: 42");
@@ -933,16 +1048,14 @@ it("opens the owning agent editor to repair malformed capability YAML", async ()
   );
   render(<BrowserApp />);
   fireEvent.click(
-    await screen.findByRole("link", { name: "Edit agent capabilities" }),
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
-  await screen.findByText(/Structured fields are unavailable/);
+  await screen.findByText(/Edit this document in the source editor/);
   fireEvent.click(
     screen.getByText("Advanced configuration", { selector: "summary" }),
   );
   expect(screen.getByText("Configuration file")).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Check configuration" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Check settings" })).toBeTruthy();
 });
 
 it.each(["read-only", "missing"])(
@@ -974,14 +1087,17 @@ it.each(["read-only", "missing"])(
       }),
     );
     render(<BrowserApp />);
+    fireEvent.click(await screen.findByText("Installed capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (availability === "missing") {
-      await screen.findByText(
-        "This agent has no configuration file available here.",
-      );
+      expect(
+        screen.queryByRole("link", { name: /Assistant.*No model selected/ }),
+      ).toBeNull();
     } else {
       fireEvent.click(
-        await screen.findByRole("link", { name: "View agent configuration" }),
+        await screen.findByRole("link", {
+          name: /Assistant.*No model selected/,
+        }),
       );
       expect(
         (await screen.findByLabelText("YAML source")).getAttribute(
@@ -989,10 +1105,8 @@ it.each(["read-only", "missing"])(
         ),
       ).toBe("false");
     }
-    expect(
-      screen.queryByRole("link", { name: "Edit agent capabilities" }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(
       vi
         .mocked(fetch)
@@ -1024,16 +1138,17 @@ it.each([false, true])(
       }),
     );
     render(<BrowserApp />);
+    fireEvent.click(await screen.findByText("Installed capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (failed) {
       await screen.findByText("Agent list unavailable");
-      expect(screen.queryByRole("button", { name: "Add agent" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Add agent" })).toBeTruthy();
     } else {
       expect(
         await screen.findByRole("button", { name: "Add agent" }),
       ).toBeTruthy();
     }
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   },
 );
 
@@ -1047,12 +1162,20 @@ it("reopens a one-click agent draft from its own settings list without writing o
   });
   const draftPath = new URLSearchParams(window.location.search).get("path")!;
   expect(
-    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+    within(screen.getByRole("navigation", { name: "Settings sections" }))
+      .getByRole("link", { name: "Agents" })
+      .getAttribute("aria-current"),
   ).toBe("page");
   expect(
-    screen.getByRole("link", { name: "Advanced" }).getAttribute("aria-current"),
+    screen
+      .getByRole("link", { name: "Configuration files" })
+      .getAttribute("aria-current"),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "Agents" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Settings sections" }),
+    ).getByRole("link", { name: "Agents" }),
+  );
   fireEvent.click(
     await screen.findByRole("link", {
       name: /Unfinished assistant.*Unsaved draft/,
@@ -1063,7 +1186,9 @@ it("reopens a one-click agent draft from its own settings list without writing o
   ).toBe("Unfinished assistant");
   expect(window.location.search).toContain("new=1");
   expect(
-    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+    within(screen.getByRole("navigation", { name: "Settings sections" }))
+      .getByRole("link", { name: "Agents" })
+      .getAttribute("aria-current"),
   ).toBe("page");
   expect(
     fetcher.mock.calls.some(
@@ -1080,7 +1205,7 @@ it("reopens a one-click agent draft from its own settings list without writing o
 });
 
 it("shows built-in environments as read-only and does not offer configuration for an unavailable provider", async () => {
-  window.history.replaceState(null, "", "/settings/environments");
+  window.history.replaceState(null, "", "/settings/environments?tab=profiles");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
@@ -1114,17 +1239,15 @@ it("shows built-in environments as read-only and does not offer configuration fo
   render(<BrowserApp />);
   await screen.findByText("Built in");
   const profiles = screen.getByRole("region", {
-    name: "Local execution profiles",
+    name: "Local profiles",
   });
   expect(
     within(profiles).getByRole("button", { name: "Add local profile" }),
   ).toBeTruthy();
-  const providers = screen.getByText("Installed environment providers", {
-    selector: "summary",
-  });
+  const providers = screen.getByText("Environment providers");
   expect(providers.closest("details")?.open).toBe(false);
   fireEvent.click(providers);
-  await screen.findByText("Unavailable to configure");
+  await screen.findByText("No setup form");
   expect(screen.queryByRole("link", { name: /Full Control/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Configure" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
@@ -1179,7 +1302,7 @@ it("edits project defaults directly while preserving unknown project fields", as
     await screen.findByRole("combobox", { name: "Default agent" }),
   );
   await user.click(await screen.findByRole("option", { name: "Assistant" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(saved).toContain("agent: agent-assistant"));
   expect(saved).toContain("retain: true");
   expect(saved).toContain("/test");
@@ -1189,7 +1312,7 @@ it("persists generated and edited collaboration names across visits and rejects 
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
   let component = render(<BrowserApp />);
   await screen.findByRole("button", {
-    name: /^Your collaboration name: Guest /,
+    name: "Workspace menu",
   });
   const generated = localStorage.getItem("a13n-harness-ui.display-name");
   expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
@@ -1197,8 +1320,11 @@ it("persists generated and edited collaboration names across visits and rejects 
   component = render(<BrowserApp />);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Your collaboration name: ${generated}`,
+      name: "Workspace menu",
     }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "People & profile" }),
   );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
@@ -1208,14 +1334,78 @@ it("persists generated and edited collaboration names across visits and rejects 
   expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(generated);
   fireEvent.change(input, { target: { value: "  Alex  " } });
   fireEvent.click(screen.getByRole("button", { name: "Save name" }));
-  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  await screen.findByRole("button", { name: "Workspace menu" });
   expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
   component.unmount();
   render(<BrowserApp />);
-  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  await screen.findByRole("button", { name: "Workspace menu" });
 });
 
-it("configures Sidekick in General without changing defaults or starting conversations", async () => {
+it("shows Live entries only after enabling and saving, and hides them again without a reload", async () => {
+  window.history.replaceState(null, "", "/settings");
+  const rootSource = {
+    ...source,
+    relative_path: "custom-root.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    'schema_version: "1"\nlive: {enabled: false, model: model-codex}\n';
+  let writes = 0;
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const path = decodeURIComponent(new URL(request.url).pathname);
+    if (path === "/api/voice")
+      return json({ enabled: parse(content).live.enabled });
+    if (path === "/api/configuration/sources")
+      return json({ generation_digest: "g", sources: [rootSource] });
+    if (path === "/api/configuration/sources/custom-root.yaml") {
+      if (request.method === "PUT") {
+        content = (await request.json()).content;
+        writes += 1;
+        return json({ source_digest: `saved-${writes}` });
+      }
+      return json({ ...rootSource, source_digest: `saved-${writes}`, content });
+    }
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const live = await screen.findByRole("switch", {
+    name: "Live",
+  });
+  const expectHidden = () => {
+    expect(screen.queryByRole("link", { name: "Live" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Set up voice" })).toBeNull();
+  };
+  expectHidden();
+  await user.click(live);
+  expectHidden();
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(
+    await screen.findByRole("button", { name: "Start voice" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  expect(await screen.findByRole("link", { name: "Live" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+  await user.click(await screen.findByRole("switch", { name: "Live" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  await waitFor(expectHidden);
+  expect(writes).toBe(2);
+  const writesToExecution = vi.mocked(fetch).mock.calls.filter(([input]) => {
+    const request = input as Request;
+    return (
+      request.method === "POST" &&
+      new URL(request.url).pathname !== "/api/threads/configuration-preview"
+    );
+  });
+  expect(writesToExecution).toEqual([]);
+});
+
+it("configures Sidekick in General without changing defaults or starting chats", async () => {
   window.history.replaceState(null, "", "/settings");
   const rootSource = {
     ...source,
@@ -1291,18 +1481,21 @@ it("configures Sidekick in General without changing defaults or starting convers
   render(<BrowserApp />);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("combobox", { name: "Sidekick" })).textContent,
-  ).toContain("Enabled");
+    (await screen.findByRole("switch", { name: "Sidekick" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
+  await user.click(screen.getByText("Subagent defaults"));
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
-  ).toContain("Inherit current agent");
+  ).toContain("Use current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
   await user.click(await screen.findByRole("option", { name: "Worker model" }));
   expect(parse(content).webui.sidekick).toBeUndefined();
   await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
   await user.click(await screen.findByRole("option", { name: "Worker" }));
   expect(writes).toBe(0);
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(1));
   expect(parse(content).webui.sidekick).toEqual({
     agent: "agent-worker",
@@ -1317,9 +1510,8 @@ it("configures Sidekick in General without changing defaults or starting convers
       screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
     ).toContain("Worker"),
   );
-  await user.click(screen.getByRole("combobox", { name: "Sidekick" }));
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("switch", { name: "Sidekick" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(2));
   expect(parse(content).webui.sidekick).toBeNull();
   expect(content).toContain("custom: keep");
@@ -1335,10 +1527,13 @@ it("persists the initial collaboration color and restores explicit changes", asy
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
     );
-    const color = await screen.findByRole("combobox", { name: "Your color" });
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & profile" }),
+    );
+    const color = await screen.findByRole("combobox", { name: "Color" });
     expect(color.textContent).toBe("Purple");
     expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
     component.unmount();
@@ -1347,11 +1542,14 @@ it("persists the initial collaboration color and restores explicit changes", asy
     const reopened = render(<BrowserApp />);
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
     );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & profile" }),
+    );
     const remembered = await screen.findByRole("combobox", {
-      name: "Your color",
+      name: "Color",
     });
     expect(remembered.textContent).toBe("Purple");
     await user.click(remembered);
@@ -1365,11 +1563,14 @@ it("persists the initial collaboration color and restores explicit changes", asy
     render(<BrowserApp />);
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
     );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & profile" }),
+    );
     expect(
-      (await screen.findByRole("combobox", { name: "Your color" })).textContent,
+      (await screen.findByRole("combobox", { name: "Color" })).textContent,
     ).toBe("Green");
   } finally {
     random.mockRestore();
@@ -1387,9 +1588,7 @@ it("keeps destructive configuration actions secondary and requires named confirm
   await user.click(
     await screen.findByRole("button", { name: "More configuration actions" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Delete configuration" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
   const dialog = await screen.findByRole("dialog", {
     name: "Delete this configuration?",
   });
@@ -1443,7 +1642,7 @@ it("shows one connection notice for server loss and reconciles on retry without 
   expect(screen.queryByText("Failed to fetch")).toBeNull();
   expect(screen.queryByText("0 online")).toBeNull();
   expect(
-    screen.getByRole("heading", { name: "What would you like to build?" }),
+    screen.getByRole("complementary", { name: "Workbench navigation" }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
@@ -1462,6 +1661,11 @@ it("shows one connection notice for server loss and reconciles on retry without 
     ).toBeNull();
     expect(screen.queryAllByRole("alert")).toHaveLength(0);
   });
+  expect(
+    await screen.findByRole("heading", {
+      name: "What can I help with?",
+    }),
+  ).toBeTruthy();
   expect(
     fetcher.mock.calls.every(
       ([request]) =>
@@ -1519,31 +1723,163 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
   await user.click(
     screen.getByRole("button", { name: "Actions for Test project" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Rename project" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   fireEvent.change(
     await screen.findByRole("textbox", { name: "Project name" }),
     { target: { value: "Renamed" } },
   );
   await user.click(screen.getByRole("button", { name: "Save name" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Rename project" })).toBeNull(),
+  );
   await waitFor(() =>
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );
-  expect(
-    screen
-      .getByRole("button", { name: "Save changes" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/changed" },
   });
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toHaveLength(2));
   expect(parse(writes[1])).toMatchObject({
     id: "project-test",
     name: "Renamed",
     roots: [{ path: "/changed" }],
   });
+});
+
+it("shares the root draft across General, execution, runtime and connection settings", async () => {
+  window.history.replaceState(null, "", "/settings#live");
+  const rootSource = {
+    ...source,
+    relative_path: "config.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    '# Preserve me\nschema_version: "1"\ndefaults: {environment_profile: environment-native}\nlive: {enabled: false}\n';
+  const writes: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const path = decodeURIComponent(new URL(request.url).pathname);
+    if (path === "/api/configuration/sources")
+      return json({ generation_digest: "g", sources: [rootSource] });
+    if (path === "/api/configuration/sources/config.yaml") {
+      if (request.method === "PUT") {
+        content = (await request.json()).content;
+        writes.push(content);
+      }
+      return json({
+        ...rootSource,
+        content,
+        source_digest: String(writes.length),
+      });
+    }
+    if (path === "/api/envd")
+      return json({
+        host: "test-host",
+        readiness: [],
+        instances: [],
+        phase: "idle",
+        cached_versions: [],
+        computer_use: false,
+      });
+    expect(request.method).toBe("GET");
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const live = await screen.findByRole("switch", { name: "Live" });
+  expect(screen.getByText("Voice settings").closest("details")?.open).toBe(
+    true,
+  );
+  await user.click(live);
+  await user.click(screen.getByRole("link", { name: "Environments" }));
+  await user.click(await screen.findByRole("combobox", { name: "Runtime" }));
+  await user.click(await screen.findByRole("option", { name: "envd" }));
+  await user.click(screen.getByRole("link", { name: "Local runtime" }));
+  await user.click(
+    await screen.findByRole("switch", { name: "Desktop capability" }),
+  );
+  await user.click(screen.getByRole("link", { name: "Connections" }));
+  await user.click(await screen.findByText("Chat defaults", { exact: true }));
+  expect(writes).toEqual([]);
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(parse(content)).toMatchObject({
+    live: { enabled: true },
+    defaults: { environment_profile: "environment-envd" },
+    envd: { computer_use: true },
+  });
+  expect(content).toContain("# Preserve me");
+  await user.click(screen.getByRole("link", { name: "General" }));
+  expect(
+    (await screen.findByRole("switch", { name: "Live" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+});
+
+it.each([
+  ["/settings/notifications", "/settings", "#notifications"],
+  ["/settings/capabilities", "/settings/agents", ""],
+  ["/settings/catalog", "/settings/agents", ""],
+  ["/settings/runtime", "/settings/environments", ""],
+  ["/settings/envd", "/settings/environments", ""],
+])("redirects the legacy settings route %s", async (legacy, pathname, hash) => {
+  window.history.replaceState(null, "", legacy);
+  render(<BrowserApp />);
+  await waitFor(() => expect(window.location.pathname).toBe(pathname));
+  expect(window.location.hash).toBe(hash);
+  if (legacy.endsWith("runtime") || legacy.endsWith("envd"))
+    expect(window.location.search).toBe("?tab=runtime");
+  if (hash)
+    await waitFor(() =>
+      expect(
+        within(document.getElementById("notifications")!).getByRole("switch", {
+          name: "Enable browser notifications",
+        }),
+      ).toBeTruthy(),
+    );
+  const navigation = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  expect(
+    within(navigation)
+      .getAllByRole("link")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "General",
+    "Agents",
+    "Models",
+    "Environments",
+    "Accounts & API keys",
+    "Connections",
+    "Configuration files",
+  ]);
+});
+
+it("replaces chat navigation in Settings and returns to the same chat route", async () => {
+  window.history.replaceState(null, "", "/?project=project-test");
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await screen.findByRole("navigation", { name: "Chat shortcuts" });
+  const chatRoute = window.location.pathname + window.location.search;
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+  await screen.findByRole("navigation", { name: "Settings sections" });
+  expect(
+    screen.queryByRole("navigation", { name: "Chat shortcuts" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Search chats" })).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Back to chats" }).getAttribute("href"),
+  ).toBe(chatRoute);
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  await screen.findByRole("navigation", { name: "Chat shortcuts" });
+  expect(
+    screen.queryByRole("navigation", { name: "Settings sections" }),
+  ).toBeNull();
+  expect(window.location.pathname + window.location.search).toBe(chatRoute);
 });

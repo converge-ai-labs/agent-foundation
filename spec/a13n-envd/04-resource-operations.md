@@ -453,7 +453,7 @@ class FileMoveResult(BaseModel):
     receipt: OperationReceipt
 ```
 
-Move is available only when envd can provide one atomic rename within the same filesystem. Cross-filesystem or copy-then-delete move returns `unsupported` rather than presenting two mutations as atomic. Destination replacement intent is explicit, but another native writer can race before or after the rename.
+Move stays within one filesystem; cross-filesystem or copy-then-delete moves return `unsupported`. `replace=False` atomically refuses an existing destination. `replace=True` also replaces nonempty directories of the same kind: Linux and macOS atomically exchange the two directory entries, then remove the displaced directory at the source path. A cleanup failure after publication has an unknown outcome and requires reconciliation. Windows replaces existing directories by removing the destination and renaming the source, accepting a visibility gap and incomplete outcomes on failure or concurrent writes. Other platforms or filesystems without atomic directory replacement return `unsupported` and preserve the old destination. Callers own the source until completion and must not concurrently reuse it. Linux and macOS destination publication is atomic on supported filesystems; recursive displaced-directory cleanup and subsequent reads are not a multi-file snapshot. Another native writer can race before or after publication.
 
 ### `file.remove`
 

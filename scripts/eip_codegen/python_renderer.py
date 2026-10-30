@@ -157,7 +157,13 @@ def _base_field_type(
         )
         return f"Annotated[StrictInt, Field(ge={-(2 ** (bits - 1))}, le={2 ** (bits - 1) - 1})]"
     if field.type in {descriptor_pb2.FieldDescriptorProto.TYPE_FLOAT, descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE}:
-        return "StrictFloat"
+        constraints = ["allow_inf_nan=False"]
+        if field_option is not None:
+            if field_option.HasField("minimum"):
+                constraints.append(f"ge={field_option.minimum}.0")
+            if field_option.HasField("maximum"):
+                constraints.append(f"le={field_option.maximum}.0")
+        return f"Annotated[StrictFloat, Field({', '.join(constraints)})]"
     raise ValueError(f"unsupported field type for {field.name}: {field.type}")
 
 
@@ -188,6 +194,10 @@ def _field_annotation(
             return f"Annotated[{annotation}, {constraint}]", default
         return annotation, "()"
     if is_map:
+        field_option = _field_option(field, options)
+        if field_option is not None and (constraint := _length_constraint(field_option)):
+            default = None if field_option.min_length > 0 else "Field(default_factory=dict)"
+            return f"Annotated[{base_type}, {constraint}]", default
         return base_type, "Field(default_factory=dict)"
 
     field_option = _field_option(field, options)
@@ -520,7 +530,7 @@ def method_records(index: SchemaIndex, options: OptionReader) -> list[dict[str, 
             raise ValueError(f"duplicate EIP JSON-RPC method: {name}")
         names.add(name)
         if record["kind"] != "request_response":
-            raise ValueError(f"EIP 0.1 method {name} must use correlated request-response")
+            raise ValueError(f"EIP 0.3 method {name} must use correlated request-response")
         if record["replay_class"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified replay class")
         if record["error_family"] == "unspecified":
@@ -845,9 +855,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError, Identifier
 
-EIP_PROTOCOL_VERSION: Final = "0.1"
+EIP_PROTOCOL_VERSION: Final = "0.3"
 EIP_PROTOCOL_MAJOR: Final = 0
-EIP_PROTOCOL_MINOR: Final = 1
+EIP_PROTOCOL_MINOR: Final = 2
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 

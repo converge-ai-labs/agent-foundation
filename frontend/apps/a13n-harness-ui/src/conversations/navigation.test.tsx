@@ -34,7 +34,11 @@ function thread(id: string, project: string | null = "project-one") {
   return {
     thread_id: id,
     title: id,
-    configuration: { project_id: project },
+    configuration: {
+      project_id: project,
+      version: 1,
+      agent_source: { kind: "agent", id: "assistant" },
+    },
     root_activity: { state: "inactive" },
     archived: false,
     starred: false,
@@ -121,6 +125,7 @@ beforeEach(() => {
     },
     { ...thread("Older chat"), touched_at: "2026-10-30T01:00:00Z" },
   ];
+
   vi.mocked(watchSummary).mockClear();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -365,7 +370,12 @@ beforeEach(() => {
     },
   });
 });
+const elementFromPoint = document.elementFromPoint;
 afterEach(() => {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: elementFromPoint,
+  });
   cleanup();
   queryClient.clear();
   vi.unstubAllGlobals();
@@ -420,10 +430,15 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   await screen.findByText("Recent 5");
   expect(activity).toHaveLength(1);
   expect(activity[0].searchParams.get("limit")).toBe("5");
+  expect(
+    within(screen.getByRole("region", { name: "One" })).queryAllByRole(
+      "heading",
+    ),
+  ).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Two" }));
   await screen.findByText("Other project");
   fireEvent.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByText("Older two");
   expect(
@@ -437,14 +452,19 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   fireEvent.click(screen.getByRole("button", { name: "One" }));
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   const calls = activity.length;
+  if (!screen.queryByRole("searchbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
   fireEvent.change(screen.getByRole("searchbox"), {
     target: { value: "match" },
   });
   await screen.findByText("Global match");
   expect(activity).toHaveLength(calls + 1);
   expect(activity.at(-1)?.searchParams.has("project_id")).toBe(false);
-  expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+  expect(screen.queryByRole("button", { name: "One" })).toBeNull();
+  if (!screen.queryByRole("searchbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   expect(activity).toHaveLength(calls + 1);
 });
@@ -457,9 +477,7 @@ it("locates a deep-linked selected row without fetching preceding pages and pres
       .getByRole("link", { name: "selected-old" })
       .getAttribute("aria-current"),
   ).toBe("page");
-  expect(
-    screen.queryByText("Selected conversation · outside this page"),
-  ).toBeNull();
+  expect(screen.queryByText("Selected chat · outside this page")).toBeNull();
   expect(activity).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "One" }));
   await act(() =>
@@ -476,7 +494,7 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
   await screen.findByText("Recent 5");
   failMore = true;
   fireEvent.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByText("Page temporarily unavailable");
   expect(screen.getByText("Recent 5")).toBeTruthy();
@@ -484,7 +502,7 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
   await screen.findByText("Other project");
   failMore = false;
   fireEvent.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByText("Older two");
   fireEvent.click(screen.getByRole("button", { name: "Without a project" }));
@@ -505,19 +523,19 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
   expect(
     screen.queryByRole("checkbox", { name: "Include archived" }),
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: "New conversation" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 });
 
 it("reorders whole project groups with keyboard, cancels preview, and persists only in this browser", async () => {
   const first = mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
-  fireEvent.keyDown(handle, { key: " " });
+  const handle = await screen.findByRole("button", { name: "One" });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   expect(groupNames()).toEqual(["Two", "One"]);
   fireEvent.keyDown(handle, { key: "Escape" });
   expect(groupNames()).toEqual(["One", "Two"]);
   expect(localStorage.getItem("a13n-harness-ui.project-order")).toBeNull();
-  fireEvent.keyDown(handle, { key: " " });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   fireEvent.keyDown(handle, { key: "Enter" });
   expect(
@@ -526,7 +544,7 @@ it("reorders whole project groups with keyboard, cancels preview, and persists o
   expect(writes).toHaveLength(0);
   first.unmount();
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["Two", "One"]);
 });
 
@@ -534,17 +552,24 @@ it("uses the existing validated source publication to add a project without crea
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Add project" }));
   const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).queryByRole("combobox", { name: "Default folder" }),
+  ).toBeNull();
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: "Project name" }),
     { target: { value: "Example: workspace" } },
   );
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Add local directory" }),
+    within(dialog).getByRole("button", { name: "Add local folder" }),
   );
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: "Server directory" }),
     { target: { value: "/srv/my project" } },
   );
+  expect(
+    within(dialog).getByRole("combobox", { name: "Default folder" })
+      .textContent,
+  ).toContain("/srv/my project");
   failSave = true;
   fireEvent.click(within(dialog).getByRole("button", { name: "Add project" }));
   await screen.findByText("Invalid server directory");
@@ -579,10 +604,10 @@ it("uses the existing validated source publication to add a project without crea
   expect(document.position).toBeUndefined();
 });
 
-it("opens a local blank conversation in the selected project without a creation dialog or write", async () => {
+it("opens a local blank chat in the selected project without a creation dialog or write", async () => {
   mount();
   fireEvent.click(
-    await screen.findByRole("button", { name: "New conversation in Two" }),
+    await screen.findByRole("button", { name: "New chat in Two" }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByLabelText("Current route").textContent).toBe(
@@ -598,15 +623,15 @@ it("ignores corrupt or stale browser ordering without hiding newly added project
   );
   localStorage.setItem("a13n-harness-ui.project-expansion", "invalid json");
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["Two", "One"]);
 });
 
 it("retains keyboard focus when a project DOM group moves", async () => {
   mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
+  const handle = await screen.findByRole("button", { name: "One" });
   handle.focus();
-  fireEvent.keyDown(handle, { key: " " });
+  fireEvent.keyDown(handle, { key: " ", altKey: true });
   fireEvent.keyDown(handle, { key: "ArrowDown" });
   expect(document.activeElement).toBe(handle);
   fireEvent.keyDown(handle, { key: "Enter" });
@@ -615,14 +640,32 @@ it("retains keyboard focus when a project DOM group moves", async () => {
 
 it("captures pointer drags on the stable scroller and never turns a click into a move", async () => {
   mount();
-  const handle = await screen.findByRole("button", { name: "Reorder One" });
+  const handle = await screen.findByRole("button", { name: "One" });
   const scroller = document.querySelector<HTMLElement>(
     "[data-project-scroll]",
   )!;
   scroller.setPointerCapture = vi.fn();
+  scroller.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 0,
+      right: 220,
+      bottom: 800,
+      width: 220,
+      height: 800,
+    }) as DOMRect;
   const target = document.querySelector<HTMLElement>(
     '[data-project-key="project-two"]',
   )!;
+  target.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 40,
+      right: 220,
+      bottom: 120,
+      width: 220,
+      height: 80,
+    }) as DOMRect;
   Object.defineProperty(document, "elementFromPoint", {
     configurable: true,
     value: () => target,
@@ -632,10 +675,17 @@ it("captures pointer drags on the stable scroller and never turns a click into a
     kind: "pointerDown" | "pointerMove" | "pointerUp",
     x: number,
     y: number,
+    buttons = kind === "pointerUp" ? 0 : 1,
   ) => {
     const event = new MouseEvent(
       kind.replace(/[A-Z]/, (letter) => letter.toLowerCase()),
-      { bubbles: true, button: 0, clientX: x, clientY: y },
+      {
+        bubbles: true,
+        button: 0,
+        buttons,
+        clientX: x,
+        clientY: y,
+      },
     );
     Object.defineProperty(event, "pointerId", { value: 1 });
     fireEvent(element, event);
@@ -644,11 +694,26 @@ it("captures pointer drags on the stable scroller and never turns a click into a
   point(scroller, "pointerMove", 12, 11);
   point(scroller, "pointerUp", 12, 11);
   expect(localStorage.getItem("a13n-harness-ui.project-order")).toBeNull();
+  const initialExpanded = handle.getAttribute("aria-expanded");
+  fireEvent.click(handle);
+  expect(handle.getAttribute("aria-expanded")).not.toBe(initialExpanded);
+  const expandedBeforeDrag = handle.getAttribute("aria-expanded");
+  // A press released outside the scroller must not start a later hover drag.
   point(handle, "pointerDown", 10, 10);
-  expect(scroller.setPointerCapture).toHaveBeenCalledWith(1);
+  point(scroller, "pointerMove", 50, 100, 0);
+  expect(groupNames()).toEqual(["One", "Two"]);
+  expect(scroller.setPointerCapture).not.toHaveBeenCalled();
+  point(handle, "pointerDown", 10, 10);
+  expect(scroller.setPointerCapture).not.toHaveBeenCalled();
   point(scroller, "pointerMove", 50, 100);
-  expect(groupNames()).toEqual(["Two", "One"]);
+  expect(scroller.setPointerCapture).toHaveBeenCalledWith(1);
+  // The list stays still under the pointer; commit exactly once on release.
+  expect(groupNames()).toEqual(["One", "Two"]);
   point(scroller, "pointerUp", 50, 100);
+  expect(groupNames()).toEqual(["Two", "One"]);
+  fireEvent.click(handle, { detail: 1 });
+  expect(handle.getAttribute("aria-expanded")).toBe(expandedBeforeDrag);
+  expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
   expect(
     JSON.parse(localStorage.getItem("a13n-harness-ui.project-order")!),
   ).toEqual(["project-two", "project-one"]);
@@ -664,7 +729,7 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
     release = resolve;
   });
   fireEvent.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await waitFor(() =>
     expect(activity.at(-1)?.searchParams.get("cursor")).toBe("one-next"),
@@ -684,43 +749,47 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
   expect(pageAborted).toBe(false);
 });
 
-it("preserves project scope filtering and cached independent pages through scoped search", async () => {
+it("scopes the search dialog without resetting the sidebar's loaded pages", async () => {
   mount();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByText("Recent 5");
   await user.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByText("Older two");
-  await user.click(screen.getByRole("button", { name: "Two" }));
-  await screen.findByText("Other project");
-  await user.click(screen.getByRole("button", { name: "Filter by project" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Project scope" }),
-  );
+  const calls = activity.length;
+  const trigger = screen.getByRole("button", { name: "Search chats" });
+  await user.click(trigger);
+  const search = screen.getByRole("searchbox", { name: "Find chats" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  expect(activity).toHaveLength(calls);
+  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
   await user.click(await screen.findByRole("option", { name: "Two" }));
-  expect(screen.queryByRole("button", { name: "One" })).toBeNull();
-  expect(screen.getByRole("link", { name: "Other project" })).toBeTruthy();
-  fireEvent.change(
-    screen.getByRole("searchbox", { name: "Find conversations" }),
-    { target: { value: "match" } },
-  );
+  expect(activity).toHaveLength(calls);
+  fireEvent.change(search, { target: { value: "match" } });
   await screen.findByText("Global match");
   expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
-  expect(screen.getByText("Results from Two")).toBeTruthy();
-  fireEvent.change(
-    screen.getByRole("searchbox", { name: "Find conversations" }),
-    { target: { value: "" } },
-  );
-  const calls = activity.length;
-  await user.click(screen.getByRole("button", { name: "Filter by project" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Project scope" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "All Projects" }));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(trigger);
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
-  expect(activity).toHaveLength(calls);
+  expect(activity).toHaveLength(calls + 1);
+  await user.click(trigger);
+  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("combobox", { name: "Project scope" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Clear project filter" }),
+  ).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "match" },
+  });
+  const match = await screen.findByRole("link", { name: "Global match" });
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(match);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByText("/threads/Global%20match")).toBeTruthy();
 });
 
 it("preserves status labels, title tooltips and independent action menus from the polished navigation", async () => {
@@ -771,15 +840,13 @@ it("preserves status labels, title tooltips and independent action menus from th
     screen.getByRole("button", { name: "Actions for Review configuration" }),
   );
   expect(
-    await screen.findByRole("menuitem", { name: "Rename conversation" }),
+    await screen.findByRole("menuitem", { name: "Rename chat" }),
   ).toBeTruthy();
-  expect(
-    screen.getByRole("menuitem", { name: "Share conversation" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("menuitem", { name: "Share chat" })).toBeTruthy();
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Actions for One" }));
   expect(
-    await screen.findByRole("menuitem", { name: "Project settings" }),
+    await screen.findByRole("menuitem", { name: "Settings" }),
   ).toBeTruthy();
   await user.keyboard("{Escape}");
   expect(
@@ -791,17 +858,18 @@ it("does not claim empty search results when the list fails", async () => {
   mount();
   await screen.findByRole("button", { name: "One" });
   vi.mocked(fetch).mockResolvedValue(
-    json({ error: { message: "Conversations unavailable" } }, 503),
+    json({ error: { message: "Chats unavailable" } }, 503),
   );
-  fireEvent.change(
-    screen.getByRole("searchbox", { name: "Find conversations" }),
-    { target: { value: "missing" } },
-  );
+  if (!screen.queryByRole("searchbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+  fireEvent.change(screen.getByRole("searchbox", { name: "Find chats" }), {
+    target: { value: "missing" },
+  });
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "Conversations unavailable",
+    "Chats unavailable",
   );
-  expect(screen.queryByText("No matching conversations.")).toBeNull();
-  expect(screen.queryByText("No conversations yet")).toBeNull();
+  expect(screen.queryByText("No matching chats.")).toBeNull();
+  expect(screen.queryByText("No chats yet")).toBeNull();
 });
 
 it("keeps rows, title and DOM identity across a failed background refresh", async () => {
@@ -829,7 +897,7 @@ it("keeps rows, title and DOM identity across a failed background refresh", asyn
     void queryClient.invalidateQueries({ queryKey: ["threads"] });
   });
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
-  expect(screen.queryByLabelText("Loading conversations")).toBeNull();
+  expect(screen.queryByLabelText("Loading chats")).toBeNull();
   expect(screen.getByRole("button", { name: "One" }).textContent).toBe("One");
   expect(scroller.scrollTop).toBe(40);
   await act(async () => release());
@@ -915,12 +983,12 @@ it("puts the current server directory first by default and on reset, while respe
     JSON.stringify(["project-one", "project-two"]),
   );
   mount();
-  await screen.findByRole("button", { name: "Reorder One" });
+  await screen.findByRole("button", { name: "One" });
   expect(groupNames()).toEqual(["One", "Two"]);
   await user.click(screen.getByRole("button", { name: "Actions for One" }));
   await user.click(
     await screen.findByRole("menuitem", {
-      name: "Reset project order in this browser",
+      name: "Reset order",
     }),
   );
   expect(groupNames()).toEqual(["Two", "One"]);
@@ -933,9 +1001,7 @@ it("opens project rename directly from the secondary menu without expanding or n
   await user.click(
     await screen.findByRole("button", { name: "Actions for One" }),
   );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Rename project" }),
-  );
+  await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
   await screen.findByRole("dialog", { name: "Rename project" });
   expect(
     screen
@@ -946,7 +1012,7 @@ it("opens project rename directly from the secondary menu without expanding or n
   expect(writes).toHaveLength(0);
 });
 
-it("shows every active conversation before five recent rows and reconciles completion without duplicates", async () => {
+it("shows every active chat before five recent rows and reconciles completion without duplicates", async () => {
   activeThreads = Array.from({ length: 6 }, (_, index) => ({
     ...thread(`Active ${index}`),
     root_activity: { state: index === 0 ? "preparing" : "running" },
@@ -1022,7 +1088,7 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   await waitFor(() => expect(within(row).queryByText("Running")).toBeNull());
   const more = within(project).getByRole("button", { name: /Show more/ });
   expect(more.textContent).toBe("Show more");
-  expect(more.getAttribute("title")).toBe("Show more conversations in One");
+  expect(more.getAttribute("title")).toBe("Show more chats in One");
   fireEvent.click(more);
   await within(project).findByRole("link", { name: /Older one/ });
   expect(within(row).queryByText("Running")).toBeNull();
@@ -1071,9 +1137,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   }
   mount("/", false, results);
   const group = await screen.findByRole("region", { name: "One" });
-  expect(
-    within(group).getByLabelText("2 conversations with new results"),
-  ).toBeTruthy();
+  expect(within(group).getByLabelText("2 chats with new results")).toBeTruthy();
   expect(
     within(group).queryByRole("link", { name: /Off-page result/ }),
   ).toBeNull();
@@ -1082,8 +1146,12 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   );
   await screen.findByText("Recent 5");
   expect(
-    within(group).getByRole("heading", { name: "New results · 1" }),
-  ).toBeTruthy();
+    within(group)
+      .getAllByRole("heading")
+      .map(
+        (heading) => heading.getAttribute("aria-label") ?? heading.textContent,
+      ),
+  ).toEqual(["Active", "New results · 1", "History"]);
   expect(
     within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
@@ -1097,8 +1165,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   expect(activity).toHaveLength(1);
   expect(activity[0].searchParams.get("cursor")).toBeNull();
   const otherProject = {
-    ...thread("Other project result"),
-    configuration: { project_id: "project-two" },
+    ...thread("Other project result", "project-two"),
     completion,
   } as Schema<"ThreadSummary">;
   await act(async () => {
@@ -1115,13 +1182,21 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   expect(
     within(group).queryByRole("link", { name: /Off-page result/ }),
   ).toBeNull();
-  expect(
-    within(group).queryByLabelText(/conversations with new results/),
-  ).toBeNull();
+  expect(within(group).queryByLabelText(/chats with new results/)).toBeNull();
   expect(within(group).queryByText(/New results/)).toBeNull();
   expect(
     within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
+  expect(
+    within(group)
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent),
+  ).toEqual(["Active", "History"]);
+  activeThreads = [];
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(within(group).queryAllByRole("heading")).toEqual([]),
+  );
   expect(writes).toEqual([]);
   vi.restoreAllMocks();
 });
@@ -1193,14 +1268,17 @@ it("keeps the entry and project rows stable while local drafts appear and clear"
   await screen.findByText("No unsent drafts.");
   await user.keyboard("{Escape}");
   await waitFor(() => expect(document.activeElement).toBe(trigger));
+  fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
   const search = screen.getByRole("searchbox");
   search.focus();
   act(() => {
     draft.doc.getText("text").insert(0, "Remember me");
   });
-  expect(await screen.findByRole("button", { name: "Drafts 1" })).toBe(trigger);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(document.activeElement).toBe(search);
+  await waitFor(() => expect(trigger.textContent).toContain("1"));
+  expect(screen.getByRole("dialog", { name: "Search chats" })).toBeTruthy();
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "One" })).toBe(project);
   await user.click(trigger);
   await screen.findByRole("link", { name: /old-draft/ });
@@ -1352,7 +1430,9 @@ it("groups only owners of active unarchived workers under Running and returns th
   const owner = within(project).getByRole("link", { name: /busy-owner/ });
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(within(owner).queryByText("Running")).toBeNull();
-  const summary = within(owner).getByText("2 workers active").closest("small")!;
+  const summary = within(owner)
+    .getByLabelText("2 workers active")
+    .closest("small")!;
   expect(
     screen.queryByRole("link", { name: /worker-one|worker-two/ }),
   ).toBeNull();
@@ -1368,7 +1448,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   ).toBeTruthy();
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(
-    (await within(owner).findByText("1 worker active")).closest("small"),
+    (await within(owner).findByLabelText("1 worker active")).closest("small"),
   ).toBe(summary);
 
   activeThreads = [];
@@ -1450,6 +1530,8 @@ it("finds workers through ordinary global search without expanding the Coordinat
     },
   ];
   mount();
+  if (!screen.queryByRole("searchbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
   fireEvent.change(screen.getByRole("searchbox"), {
     target: { value: "worker" },
   });
@@ -1462,7 +1544,7 @@ it("finds workers through ordinary global search without expanding the Coordinat
   expect(request.searchParams.get("independent_only")).toBe("false");
 });
 
-it("promotes the selected ordinary conversation without replacing its identity or route", async () => {
+it("promotes the selected ordinary chat without replacing its identity or route", async () => {
   mount("/threads/selected-old");
   await screen.findByRole("link", { name: "selected-old" });
   await userEvent.click(
@@ -1472,7 +1554,7 @@ it("promotes the selected ordinary conversation without replacing its identity o
     await screen.findByRole("menuitem", { name: "Make Coordinator" }),
   );
   const confirmation = await screen.findByRole("dialog", {
-    name: "Make this conversation a Coordinator?",
+    name: "Make this chat a coordinator?",
   });
   expect(writes).toHaveLength(0);
   await userEvent.click(
@@ -1520,7 +1602,7 @@ it("renders multiple Coordinators with disjoint workers and independent follow-u
     screen.getByRole("button", { name: "Actions for alpha" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+    await screen.findByRole("menuitem", { name: "Pause follow-ups" }),
   );
   await waitFor(() => expect(coordinators[0].auto_followup).toBe(false));
   expect(coordinators[1].auto_followup).toBe(true);
@@ -1555,7 +1637,7 @@ it("keeps an archived owner reachable for a visible worker outside the owner pag
   );
 });
 
-it("does not offer promotion to workers or running conversations", async () => {
+it("does not offer promotion to workers or running chats", async () => {
   coordinators = [{ ...thread("owner"), role: "coordinator" }];
   workerThreads = [
     { ...thread("worker"), role: "worker", coordinator_thread_id: "owner" },
@@ -1593,7 +1675,7 @@ it("reports failed follow-up changes without hiding or changing the Coordinator"
     await screen.findByRole("button", { name: "Actions for owner" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Pause automatic follow-up" }),
+    await screen.findByRole("menuitem", { name: "Pause follow-ups" }),
   );
   await screen.findByText("Coordinator update failed");
   expect(coordinators[0].auto_followup).toBe(true);
@@ -1618,18 +1700,11 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
   results.observe(unread);
   mount("/", false, results);
   const group = await screen.findByRole("region", { name: "One" });
-  expect(
-    within(group).getByLabelText("1 conversations with new results"),
-  ).toBeTruthy();
+  expect(within(group).getByLabelText("1 chats with new results")).toBeTruthy();
   fireEvent.click(
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   await within(group).findByRole("link", { name: /owner.*Coordinator/ });
-  fireEvent.click(
-    await within(group).findByRole("button", {
-      name: "Recent conversations in One",
-    }),
-  );
   expect(
     within(group).getByRole("link", { name: /owner.*Coordinator/ }),
   ).toBeTruthy();
@@ -1637,11 +1712,8 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
     within(group).getByRole("heading", { name: "New results · 1" }),
   ).toBeTruthy();
   fireEvent.click(
-    within(group).getByRole("button", { name: "Recent conversations in One" }),
-  );
-  fireEvent.click(
     await screen.findByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   await screen.findByRole("link", { name: "Older one" });
@@ -1667,7 +1739,7 @@ it("keeps an expanded archived owner mounted while pagination discovers another 
   await screen.findByText("earlier");
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   fireEvent.click(
@@ -1676,7 +1748,7 @@ it("keeps an expanded archived owner mounted while pagination discovers another 
   const worker = await screen.findByRole("link", { name: "earlier-worker" });
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   await screen.findByRole("link", { name: /older.*Coordinator.*Archived/ });
@@ -1721,7 +1793,7 @@ it("keeps all project stars above ordinary recent rows across More and shared up
   ]);
   fireEvent.click(
     within(group).getByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   expect(activity).toHaveLength(1);
@@ -1738,7 +1810,7 @@ it("keeps all project stars above ordinary recent rows across More and shared up
   expect(within(group).queryByText("Other project star")).toBeNull();
   await userEvent.click(
     within(group).getByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   await within(group).findByText("Older two");
@@ -1772,19 +1844,19 @@ it("moves a starred row only after its save and restores ordinary recency withou
     name: "Actions for Recent 3",
   });
   expect(
-    within(group).getByRole("img", { name: "Starred conversation: Recent 3" }),
+    within(group).getByRole("img", { name: "Starred chat: Recent 3" }),
   ).toBeTruthy();
   expect(within(group).getAllByRole("link")[0].textContent).toContain(
     "Recent 3",
   );
   await userEvent.click(button);
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Unstar conversation" }),
+    await screen.findByRole("menuitem", { name: "Unstar chat" }),
   );
   await waitFor(() =>
     expect(
       within(group).queryByRole("img", {
-        name: "Starred conversation: Recent 3",
+        name: "Starred chat: Recent 3",
       }),
     ).toBeNull(),
   );
@@ -1823,15 +1895,15 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const owner = await screen.findByRole("link", { name: /owner.*Running/ });
   const summary = within(owner)
-    .getByText("Running · 2 workers active")
+    .getByLabelText("2 workers active")
     .closest("small")!;
-  const spinner = summary.querySelector("svg");
+  const spinner = within(owner).getByTitle("Running").querySelector("svg");
   await within(owner).findByRole("img", { name: "Draft · Unsent input" });
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for owner" }),
   );
   await screen.findByRole("link", { name: /worker-one/ });
-  expect(summary.textContent).toBe("Running · 2 workers active");
+  expect(summary.textContent).toBe("2 active");
 
   let release!: () => void;
   pauseActivity = new Promise<void>((resolve) => {
@@ -1848,8 +1920,10 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
       .getByRole("button", { name: "Collapse workers for owner" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
-  expect(summary.textContent).toBe("Running · 2 workers active");
-  expect(summary.querySelector("svg")).toBe(spinner);
+  expect(summary.textContent).toBe("2 active");
+  expect(within(owner).getByTitle("Running").querySelector("svg")).toBe(
+    spinner,
+  );
   expect(screen.getByRole("link", { name: /owner.*Running/ })).toBe(owner);
 
   coordinators[0].root_activity.state = "inactive";
@@ -1859,19 +1933,19 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
     release();
     await refresh;
   });
-  await waitFor(() => expect(summary.textContent).toBe("1 worker active"));
+  await waitFor(() => expect(summary.textContent).toBe("1 active"));
   expect(summary.querySelector("svg")).toBeNull();
   expect(owner.contains(summary)).toBe(true);
   fireEvent.click(
     screen.getByRole("button", { name: "Collapse workers for owner" }),
   );
-  expect(summary.textContent).toBe("1 worker active");
+  expect(summary.textContent).toBe("1 active");
   expect(screen.getByRole("link", { name: /owner.*1 worker active/ })).toBe(
     owner,
   );
 });
 
-it("collapses only read history while retaining every active and unread conversation", async () => {
+it("limits read history while retaining every active, unread and selected chat", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
@@ -1896,41 +1970,39 @@ it("collapses only read history while retaining every active and unread conversa
   const group = await screen.findByRole("region", { name: "One" });
   await within(group).findByRole("link", { name: /Active 6/ });
   const selected = within(group).getByRole("link", { name: "selected-old" });
-  const recent = within(group).getByRole("button", {
-    name: "Recent conversations in One",
-  });
-  fireEvent.click(recent);
-  expect(recent.getAttribute("aria-expanded")).toBe("false");
-  expect(within(group).getAllByRole("link")).toHaveLength(14);
+  expect(within(group).getAllByRole("link")).toHaveLength(19);
   expect(
     within(group).getAllByRole("img", { name: "New result" }),
   ).toHaveLength(6);
-  expect(within(group).queryByRole("link", { name: "Recent 1" })).toBeNull();
+  expect(within(group).getByRole("link", { name: "Recent 1" })).toBeTruthy();
   expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
     selected,
   );
   expect(activity).toHaveLength(1);
-  fireEvent.click(recent);
   fireEvent.click(
     within(group).getByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   await within(group).findByRole("link", { name: "Older two" });
   fireEvent.click(
     within(group).getByRole("button", {
-      name: "Show fewer conversations in One",
+      name: "Show fewer chats in One",
     }),
   );
   expect(within(group).queryByRole("link", { name: "Older two" })).toBeNull();
-  expect(document.activeElement).toBe(recent);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      within(group).getByRole("button", { name: "Show more chats in One" }),
+    ),
+  );
   expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
     selected,
   );
   const requests = activity.length;
   fireEvent.click(
     within(group).getByRole("button", {
-      name: "Show more conversations in One",
+      name: "Show more chats in One",
     }),
   );
   expect(within(group).getByRole("link", { name: "Older two" })).toBeTruthy();
@@ -1947,30 +2019,27 @@ it("previews project paths on keyboard focus without loading collapsed history",
   act(() => project.focus());
   const preview = await screen.findByRole("tooltip");
   expect(within(preview).getByText("/one")).toBeTruthy();
-  expect(within(preview).queryByText(/conversations/)).toBeNull();
+  expect(within(preview).queryByText(/chats/)).toBeNull();
   expect(activity).toHaveLength(0);
   await user.keyboard("{Escape}");
   await user.click(project);
   await screen.findByRole("link", { name: "Recent 5" });
   await user.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
   const populated = await screen.findByRole("tooltip");
-  expect(within(populated).getByText("7 conversations")).toBeTruthy();
+  expect(within(populated).getByText("7 chats")).toBeTruthy();
   expect(activity).toHaveLength(1);
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
   expect(document.activeElement).toBe(project);
 });
 
-it("keeps collapsed history reachable when every loaded recent row becomes unread", async () => {
+it("keeps older history reachable when every loaded recent row becomes unread", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   mount("/", false, results);
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByRole("link", { name: "Recent 5" });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Recent conversations in One" }),
-  );
   await act(async () => {
     for (let i = 1; i <= 5; i++) {
       const item = {
@@ -1989,19 +2058,13 @@ it("keeps collapsed history reachable when every loaded recent row becomes unrea
   expect(screen.getByRole("heading", { name: "New results · 5" })).toBeTruthy();
   expect(screen.getByRole("link", { name: /Recent 5/ })).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", {
-      name: "Recent conversations in One",
-      expanded: false,
-    }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show more conversations in One" }),
+    screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByRole("link", { name: "Older two" });
   vi.restoreAllMocks();
 });
 
-it("keeps the owner of an unread worker above collapsed history", async () => {
+it("keeps the owner of an unread worker above read history", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   coordinators = [
     { ...thread("worker-owner"), role: "coordinator", archived: true },
@@ -2026,9 +2089,6 @@ it("keeps the owner of an unread worker above collapsed history", async () => {
   const owner = await screen.findByRole("link", {
     name: /worker-owner.*Coordinator/,
   });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Recent conversations in One" }),
-  );
   expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
     owner,
   );
@@ -2043,6 +2103,198 @@ it("keeps the owner of an unread worker above collapsed history", async () => {
   vi.restoreAllMocks();
 });
 
+it("forks from the thread menu, refreshes navigation and opens the new chat", async () => {
+  const fetchOriginal = vi.mocked(fetch).getMockImplementation()!;
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const forkRequests: Request[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/fork")) {
+      forkRequests.push(request);
+      await pending;
+      return json({ ...thread("forked"), title: "Recent 1" });
+    }
+    return fetchOriginal(input, init);
+  });
+  mount("/threads/Recent%201");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Recent 1" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "Fork chat" }));
+  await waitFor(() => expect(forkRequests).toHaveLength(1));
+  expect(forkRequests[0].method).toBe("POST");
+  expect(new URL(forkRequests[0].url).pathname).toBe(
+    "/api/threads/Recent%201/fork",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Actions for Recent 1" }),
+  );
+  expect(
+    (await screen.findByRole("menuitem", { name: "Fork chat" })).getAttribute(
+      "aria-disabled",
+    ),
+  ).toBe("true");
+  const before = activity.length;
+  await act(async () => {
+    finish();
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/forked",
+    ),
+  );
+  await waitFor(() => expect(activity.length).toBeGreaterThan(before));
+});
+
+it("keeps the source open and displays a fork failure without retrying the mutation", async () => {
+  const fetchOriginal = vi.mocked(fetch).getMockImplementation()!;
+  let forks = 0;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/fork")) {
+      forks++;
+      return json(
+        {
+          error: {
+            message: "The original chat changed while copying.",
+          },
+        },
+        409,
+      );
+    }
+    return fetchOriginal(input, init);
+  });
+  mount("/threads/source");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Recent 1" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "Fork chat" }));
+  expect(
+    await screen.findByText("The original chat changed while copying."),
+  ).toBeTruthy();
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/threads/source",
+  );
+  expect(forks).toBe(1);
+});
+
+it("keeps Fork unavailable in Coordinator and worker action menus", async () => {
+  coordinators = [
+    { ...thread("Lead"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = [
+    { ...thread("Worker"), role: "worker", coordinator_thread_id: "Lead" },
+  ];
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Lead" }),
+  );
+  await screen.findByRole("menuitem", { name: "New worker" });
+  expect(screen.queryByRole("menuitem", { name: "Fork chat" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(
+    screen.getByRole("button", { name: "Expand workers for Lead" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for Worker" }),
+  );
+  await screen.findByRole("menuitem", { name: "Rename chat" });
+  expect(screen.queryByRole("menuitem", { name: "Fork chat" })).toBeNull();
+});
+
+it("orders chats locally without navigating or writing server metadata, and restores touch order on reset", async () => {
+  const mounted = mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const link = await screen.findByRole("link", { name: "Recent 2" });
+  const titles = () =>
+    within(screen.getByRole("region", { name: "One" }))
+      .getAllByRole("link")
+      .map((node) => node.textContent);
+  const original = titles();
+  fireEvent.keyDown(link, { key: "ArrowUp", altKey: true });
+  expect(titles().indexOf("Recent 2")).toBe(original.indexOf("Recent 2") - 1);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
+  expect(writes).toHaveLength(0);
+  mounted.unmount();
+  mount();
+  await screen.findByRole("link", { name: "Recent 2" });
+  expect(titles().indexOf("Recent 2")).toBe(original.indexOf("Recent 2") - 1);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Actions for One" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Reset chat order" }),
+  );
+  expect(titles()).toEqual(original);
+});
+
+it("version-checks cross-project drops and leaves the original chat in place on failure", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const requests: unknown[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (
+      request.method === "PATCH" &&
+      new URL(request.url).pathname.endsWith("/configuration")
+    ) {
+      requests.push(await request.json());
+      return json(
+        { error: { message: "Chat changed. Try moving it again." } },
+        409,
+      );
+    }
+    return original(input, init);
+  });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const chat = await screen.findByRole("link", { name: "Recent 1" });
+  const target = screen.getByRole("button", { name: "Two" });
+  const scroller = document.querySelector<HTMLElement>(
+    "[data-project-scroll]",
+  )!;
+  scroller.setPointerCapture = vi.fn();
+  scroller.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, right: 220, bottom: 800 }) as DOMRect;
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => target,
+  });
+  const pointer = (element: Element | Window, type: string, y: number) => {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      button: 0,
+      buttons: type === "pointerup" ? 0 : 1,
+      clientX: 20,
+      clientY: y,
+    });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(element, event);
+  };
+  pointer(chat, "pointerdown", 20);
+  pointer(window, "pointermove", 300);
+  pointer(window, "pointerup", 300);
+  expect(
+    await screen.findByText("Chat changed. Try moving it again."),
+  ).toBeTruthy();
+  expect(requests).toEqual([
+    { expected_version: 1, patch: { project_id: "project-two" } },
+  ]);
+  expect(
+    within(screen.getByRole("region", { name: "One" })).getByRole("link", {
+      name: "Recent 1",
+    }),
+  ).toBe(chat);
+  expect(screen.getByLabelText("Current route").textContent).toBe("/");
+});
+
 it("switches between project groups and recent chats, retains pages, and changes the plus action", async () => {
   const user = userEvent.setup();
   const view = mount();
@@ -2055,7 +2307,7 @@ it("switches between project groups and recent chats, retains pages, and changes
     await screen.findByRole("menuitemradio", { name: "Conversations" }),
   );
   const recent = await screen.findByRole("region", {
-    name: "Recent conversations",
+    name: "Recent chats",
   });
   await within(recent).findByText("Newest chat");
   expect(within(recent).queryByText("Two")).toBeNull();
@@ -2066,7 +2318,7 @@ it("switches between project groups and recent chats, retains pages, and changes
   failMore = true;
   await user.click(
     within(recent).getByRole("button", {
-      name: "Show more recent conversations",
+      name: "Show more recent chats",
     }),
   );
   await within(recent).findByText("Recent list unavailable");
@@ -2074,11 +2326,11 @@ it("switches between project groups and recent chats, retains pages, and changes
   failMore = false;
   await user.click(
     within(recent).getByRole("button", {
-      name: "Show more recent conversations",
+      name: "Show more recent chats",
     }),
   );
   await within(recent).findByText("Older chat");
-  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  await user.click(screen.getByRole("button", { name: "New chat" }));
   expect(screen.getByLabelText("Current route").textContent).toBe(
     "/new?project=",
   );
@@ -2104,9 +2356,9 @@ it("switches between project groups and recent chats, retains pages, and changes
   view.unmount();
   mount();
   expect(
-    await screen.findByRole("region", { name: "Recent conversations" }),
+    await screen.findByRole("region", { name: "Recent chats" }),
   ).toBeTruthy();
-  expect(screen.getByRole("button", { name: "New conversation" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
 });
 
 it("keeps server recency order on refresh without promoting stars or running chats", async () => {
@@ -2116,10 +2368,10 @@ it("keeps server recency order on refresh without promoting stars or running cha
   mount();
   await screen.findByText("Newest chat");
   fireEvent.click(
-    screen.getByRole("button", { name: "Show more recent conversations" }),
+    screen.getByRole("button", { name: "Show more recent chats" }),
   );
   await screen.findByText("Older chat");
-  const list = screen.getByRole("region", { name: "Recent conversations" });
+  const list = screen.getByRole("region", { name: "Recent chats" });
   expect(
     within(list)
       .getAllByRole("link")
@@ -2137,31 +2389,6 @@ it("keeps server recency order on refresh without promoting stars or running cha
   );
 });
 
-it("scopes Recent and its new-chat action without losing global pages during search", async () => {
-  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
-  const user = userEvent.setup();
-  mount();
-  await screen.findByText("Newest chat");
-  await user.click(screen.getByRole("button", { name: "Filter by project" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Project scope" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "One" }));
-  await screen.findByText("Older chat");
-  expect(screen.queryByRole("link", { name: "Newest chat" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "New conversation" }));
-  expect(screen.getByLabelText("Current route").textContent).toBe(
-    "/new?project=project-one",
-  );
-  fireEvent.change(screen.getByRole("searchbox"), {
-    target: { value: "match" },
-  });
-  await screen.findByText("Global match");
-  expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-one");
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
-  expect(screen.getByRole("link", { name: "Older chat" })).toBeTruthy();
-});
-
 it("retains an off-page selected worker under its Coordinator in Recent", async () => {
   localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
   coordinators = [{ ...thread("older-coordinator"), role: "coordinator" }];
@@ -2174,7 +2401,7 @@ it("retains an off-page selected worker under its Coordinator in Recent", async 
   ];
   mount("/threads/selected-worker");
   const recent = await screen.findByRole("region", {
-    name: "Recent conversations",
+    name: "Recent chats",
   });
   await within(recent).findByRole("link", { name: /older-coordinator/ });
   expect(
@@ -2211,10 +2438,10 @@ it("shows active worker counts in Recent without changing chronological order or
   });
   mount();
   const recent = await screen.findByRole("region", {
-    name: "Recent conversations",
+    name: "Recent chats",
   });
   const owner = await within(recent).findByRole("link", { name: /busy-owner/ });
-  expect(within(owner).getByText("2 workers active")).toBeTruthy();
+  expect(within(owner).getByLabelText("2 workers active")).toBeTruthy();
   expect(within(recent).getAllByRole("link")[0].textContent).toBe(
     "Newest chat",
   );
@@ -2227,29 +2454,29 @@ it("shows active worker counts in Recent without changing chronological order or
   // Keep the old owner's history page loaded so it remains after its workers stop.
   fireEvent.click(
     within(recent).getByRole("button", {
-      name: "Show more recent conversations",
+      name: "Show more recent chats",
     }),
   );
   await within(recent).findByRole("link", { name: "Older chat" });
   fireEvent.click(
     within(recent).getByRole("button", {
-      name: "Show more recent conversations",
+      name: "Show more recent chats",
     }),
   );
   await waitFor(() =>
     expect(
       within(recent).queryByRole("button", {
-        name: "Show more recent conversations",
+        name: "Show more recent chats",
       }),
     ).toBeNull(),
   );
   activeThreads = activeThreads.slice(1);
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
-  await within(owner).findByText("1 worker active");
+  await within(owner).findByLabelText("1 worker active");
   activeThreads = [];
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   await waitFor(() =>
-    expect(within(owner).queryByText(/worker.*active/)).toBeNull(),
+    expect(within(owner).queryByLabelText(/worker.*active/)).toBeNull(),
   );
   expect(within(recent).getAllByRole("link")[0].textContent).toBe(
     "Newest chat",
@@ -2271,7 +2498,7 @@ it("keeps an archived Coordinator reachable for an unselected active worker in R
   workerThreads = [worker];
   mount();
   const recent = await screen.findByRole("region", {
-    name: "Recent conversations",
+    name: "Recent chats",
   });
   await within(recent).findByRole("link", { name: /archived-owner/ });
   expect(
@@ -2317,7 +2544,7 @@ it("keeps the archived owner of an off-page unread worker reachable in Recent", 
   results.observe(worker);
   mount("/", false, results);
   const recent = await screen.findByRole("region", {
-    name: "Recent conversations",
+    name: "Recent chats",
   });
   await within(recent).findByRole("link", { name: /unread-owner/ });
   expect(

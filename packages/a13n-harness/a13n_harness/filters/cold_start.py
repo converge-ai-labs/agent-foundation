@@ -55,6 +55,8 @@ class ColdStartFilterCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         last_response = _last_response(request_context.messages)
         if last_response is None or _idle_seconds(last_response[1].timestamp) < self.configuration.idle_seconds:
             return request_context
@@ -121,15 +123,26 @@ def _trim_value(value: Any, configuration: ColdStartFilterConfiguration) -> tupl
             f"{value[: configuration.keep_head_chars]}\n[... {omitted} chars removed after cold start ...]\n{tail}",
             True,
         )
-    if isinstance(value, list):
-        items = [_trim_value(item, configuration) for item in value]
-        return [item for item, _ in items], any(changed for _, changed in items)
-    if isinstance(value, tuple):
-        items = [_trim_value(item, configuration) for item in value]
-        return tuple(item for item, _ in items), any(changed for _, changed in items)
+    if isinstance(value, (list, tuple)):
+        replacement: list[Any] | None = None
+        for index, item in enumerate(value):
+            trimmed, changed = _trim_value(item, configuration)
+            if changed and replacement is None:
+                replacement = list(value[:index])
+            if replacement is not None:
+                replacement.append(trimmed)
+        if replacement is None:
+            return value, False
+        return (tuple(replacement) if isinstance(value, tuple) else replacement), True
     if isinstance(value, dict):
-        items = {key: _trim_value(item, configuration) for key, item in value.items()}
-        return {key: item for key, (item, _) in items.items()}, any(changed for _, changed in items.values())
+        updated: dict[Any, Any] | None = None
+        for key, item in value.items():
+            trimmed, changed = _trim_value(item, configuration)
+            if changed:
+                if updated is None:
+                    updated = dict(value)
+                updated[key] = trimmed
+        return (value, False) if updated is None else (updated, True)
     return value, False
 
 

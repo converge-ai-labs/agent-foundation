@@ -27,6 +27,7 @@ from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import LOCAL_ENVD_ADAPTER_KEY, LOCAL_ENVD_PROVIDER_KEY, HarnessUiExtensionCatalog
+from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ObjectKind, open_local_store
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -231,7 +232,7 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
     }
 
 
-async def test_reconstruction_disables_request_limit_for_root_and_children(tmp_path: Path) -> None:
+async def test_reconstruction_run_defaults_for_root_and_children(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
     reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
@@ -241,6 +242,12 @@ async def test_reconstruction_disables_request_limit_for_root_and_children(tmp_p
     assert len(definition.subagents) == 2
     for child in definition.subagents:
         assert child.agent.agent.usage_limits.request_limit is None
+    for executable in (
+        reconstructed.executable,
+        *(child.executable for child in reconstructed.executable.subagents.values()),
+    ):
+        assert executable._agent._max_tool_retries == 5
+        assert executable._agent._max_output_retries == 3
 
 
 async def test_resolves_release_owned_sandbox_profile_without_configuration_resource(tmp_path: Path) -> None:
@@ -517,6 +524,7 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
         leaves = []
         executable._agent.root_capability.apply(leaves.append)
         assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
+        assert sum(isinstance(capability, CurrentAgentContextCapability) for capability in leaves) == 1
     # Builder defaults are execution behavior, not authored capture selections.
     assert "a13n.model.self-healing" not in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.definition_id == "a13n-harness-ui:agent:agent-assistant"
@@ -525,6 +533,9 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.model_recovery.enabled
     assert reconstructed.executable.definition.model_recovery.max_attempts == 5
+    from a13n_harness import ContextRecoveryPolicy
+
+    assert reconstructed.executable.definition.context_recovery == ContextRecoveryPolicy()
     from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
     from pydantic_ai.messages import TextContent
 
@@ -536,6 +547,7 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
         assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery
+        assert child.definition.context_recovery == ContextRecoveryPolicy()
 
 
 @pytest.mark.parametrize("profile", ["native", "sandbox", "custom"])
@@ -1085,15 +1097,23 @@ async def test_explicit_notes_opt_out_overrides_the_enabled_default(tmp_path: Pa
     assert len(native) == 1 and native[0].configuration.notes_enabled is False
 
 
-@pytest.mark.parametrize("tier", [None, "auto", "default", "flex", "priority"])
 @pytest.mark.parametrize(
-    "route,tier_key,configured",
+    "tier,route,tier_key,configured",
     [
-        ("openai:gpt-5", "service_tier", "default"),
-        ("openai:gpt-5", "openai_service_tier", "priority"),
-        ("anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
-        ("google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
-        ("deepseek:deepseek-chat", "openai_service_tier", "flex"),
+        # Exercise every tier once, and absent/present overrides for each key owner.
+        (None, "openai:gpt-5", "openai_service_tier", "priority"),
+        ("auto", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("default", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("flex", "openai:gpt-5", "openai_service_tier", "priority"),
+        ("priority", "openai:gpt-5", "openai_service_tier", "priority"),
+        (None, "openai:gpt-5", "service_tier", "default"),
+        ("priority", "openai:gpt-5", "service_tier", "default"),
+        (None, "anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
+        ("priority", "anthropic:claude-sonnet-4-6", "anthropic_service_tier", "standard_only"),
+        (None, "google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
+        ("priority", "google:gemini-2.5-pro", "google_cloud_service_tier", "priority_only"),
+        (None, "deepseek:deepseek-chat", "openai_service_tier", "flex"),
+        ("priority", "deepseek:deepseek-chat", "openai_service_tier", "flex"),
     ],
 )
 async def test_generic_service_tier_override_only_changes_root_and_inherited_children(
@@ -1188,35 +1208,43 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         await environment.close()
 
 
-async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(tmp_path: Path) -> None:
+@pytest.mark.parametrize("explicit_config", [False, True])
+async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(
+    tmp_path: Path, explicit_config: bool
+) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent_path.write_text(
         agent_path.read_text()
         + """
-tool_proxy:
+tool_search:
   groups:
     knowledge:
       description: Search documents and memory.
       mcp_servers: [mcp-docs]
       harness_plugins: [plugin-memory]
-  config: {max_results: 5}
 """
+        + ("  config: {mode: proxy, max_results: 5}\n" if explicit_config else "")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     selection = replace(_selection(), mcp_server_ids=())
     composition = resolver.resolve_run(source, selection)
-    proxy = composition.root.tool_proxy
+    proxy = composition.root.tool_search
     assert proxy is not None
-    assert proxy.config.max_results == 5
+    if explicit_config:
+        assert proxy.config.max_results == 5
+    assert proxy.config.mode == "proxy"
+    payload = composition.model_dump_json()
+    assert '"native_search"' not in payload
+    assert type(composition).model_validate_json(payload).model_dump_json() == payload
     assert proxy.groups["knowledge"].mcp_servers == ()
     assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
-    assert composition.root.children[0].definition.tool_proxy == proxy
-    assert composition.root.children[1].definition.tool_proxy is None
+    assert composition.root.children[0].definition.tool_search == proxy
+    assert composition.root.children[1].definition.tool_search is None
     assert type(composition).model_validate_json(composition.model_dump_json()) == composition
     AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
-    assert source.agents["agent-assistant"].tool_proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+    assert source.agents["agent-assistant"].tool_search.groups["knowledge"].mcp_servers == ("mcp-docs",)
 
 
 @pytest.mark.parametrize("host_mode", ["local", "webui"])
@@ -1239,7 +1267,7 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     agent_path = tmp_path / "agents/assistant.yaml"
     agent_path.write_text(
         agent_path.read_text()
-        + "tool_proxy:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
+        + "tool_search:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
     )
     # Exercise nested Agent-resource children as well as root Markdown inheritance.
     reviewer_path = tmp_path / "agents/reviewer.yaml"
@@ -1255,12 +1283,12 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     assert tuple(item.server_id for item in root.mcp_servers) == expected
     assert tuple(item.server_id for item in root.mcp_servers if item.generic_selected) == generic_ids
     assert all(item.apps_enabled == injected for item in root.mcp_servers)
-    assert root.tool_proxy is not None
+    assert root.tool_search is not None
     if injected:
-        assert root.tool_proxy.groups["apps"].mcp_servers == ("mcp-app",)
+        assert root.tool_search.groups["apps"].mcp_servers == ("mcp-app",)
     else:
-        assert root.tool_proxy.groups == {}
-    assert root.children[0].definition.tool_proxy == root.tool_proxy
+        assert root.tool_search.groups == {}
+    assert root.children[0].definition.tool_search == root.tool_search
     assert root.children[0].definition.tools == ("glob", "grep")
     assert source.agents["agent-assistant"].mcp_servers is None
     assert source.agents["agent-reviewer"].mcp_servers == ()
@@ -1338,9 +1366,9 @@ async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payl
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
     payload = composition.model_dump_json()
-    assert '"tool_proxy"' not in payload
+    assert '"tool_search"' not in payload
     restored = type(composition).model_validate_json(payload)
-    assert restored.root.tool_proxy is None
+    assert restored.root.tool_search is None
     assert restored.model_dump_json() == payload
 
 
@@ -1721,7 +1749,7 @@ async def test_run_configuration_is_captured_for_root_and_children(tmp_path: Pat
     assert root.model_resolver.configuration == child.model_resolver.configuration == captured.run_configuration
 
 
-@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3}])
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3, "image_retention_ratio": 0.75}])
 async def test_image_input_policy_is_captured_per_model_and_reconstructed(tmp_path, policy):
     import yaml
     from a13n_harness import ImageInputPolicy

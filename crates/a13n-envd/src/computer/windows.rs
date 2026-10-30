@@ -1,11 +1,11 @@
-//! Native Windows shared-desktop capture and bounded input. No elevation or clipboard.
+//! Native Windows shared-desktop capture and bounded input. No elevation.
 #![allow(
     unsafe_code,
     reason = "Win32 desktop APIs require scoped native handles and input buffers"
 )]
 
 use super::*;
-use image::{DynamicImage, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::{DynamicImage, RgbImage};
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
@@ -24,6 +24,24 @@ use windows_sys::core::BOOL;
 
 #[derive(Default)]
 pub(super) struct Backend {}
+
+impl Backend {
+    pub(super) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        super::windows_clipboard::read(max, interrupted)
+    }
+    pub(super) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        super::windows_clipboard::write(text, interrupted)
+    }
+    pub(super) fn close_clipboard(&self) {}
+}
 
 fn unavailable() -> EIPError {
     reason(
@@ -49,7 +67,7 @@ fn session_ready(info: &WTSINFOEXW) -> bool {
 }
 
 // A successful OpenInputDesktop is not sufficient: it also succeeds while disconnected.
-fn ready() -> Result<(), EIPError> {
+pub(super) fn ready() -> Result<(), EIPError> {
     unsafe {
         let mut session = 0;
         if ProcessIdToSessionId(GetCurrentProcessId(), &mut session) == 0 || session == 0 {
@@ -260,7 +278,9 @@ fn capture_pixels(g: &Geometry) -> Result<RgbImage, EIPError> {
         let pixels =
             std::slice::from_raw_parts(bits.cast::<u8>(), width as usize * height as usize * 4);
         let rgb = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect();
         RgbImage::from_raw(width, height, rgb).ok_or_else(unavailable)
@@ -290,13 +310,12 @@ impl Backend {
         &self,
         target: Option<&str>,
         max_dimension: u32,
+        zoom: Option<(&Basis, &ComputerRegion)>,
     ) -> Result<Capture, EIPError> {
         ready()?;
         let _dpi = Dpi::enter()?;
         let geometry = select(target)?;
-        let image = DynamicImage::ImageRgb8(capture_pixels(&geometry)?)
-            .resize(max_dimension, max_dimension, FilterType::Triangle)
-            .to_rgb8();
+        let image = DynamicImage::ImageRgb8(capture_pixels(&geometry)?);
         ready()?;
         if select(Some(&geometry.target_id))? != geometry {
             return Err(error(
@@ -304,16 +323,7 @@ impl Backend {
                 "display layout changed during capture",
             ));
         }
-        let mut bytes = Vec::new();
-        JpegEncoder::new_with_quality(&mut bytes, 80)
-            .encode_image(&image)
-            .map_err(|_| unavailable())?;
-        Ok(Capture {
-            geometry,
-            width: image.width(),
-            height: image.height(),
-            bytes,
-        })
+        encode_capture(image, geometry, max_dimension, zoom)
     }
     pub(super) fn execute(
         &self,

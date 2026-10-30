@@ -59,6 +59,16 @@ class LocalEnvdProviderRuntime:
         self._close_task: asyncio.Task[None] | None = None
 
     @property
+    def device_id(self) -> str:
+        """The process-local identity reserved for this daemon owner."""
+        return self._device_id
+
+    def running_device(self) -> EIPDeviceConnection | None:
+        """Inspect an existing carrier without downloading, launching or restarting it."""
+        device = None if self._owner is None else self._owner.device
+        return None if self._closed or device is None or device.is_closed else device
+
+    @property
     def effective_configuration(self) -> LocalEnvdLaunchConfiguration:
         if self._owner is None or self._owner.configuration is None:
             raise RuntimeError("Local Envd runtime has not launched")

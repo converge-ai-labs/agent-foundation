@@ -2,6 +2,7 @@ import {
   AppBridge,
   PostMessageTransport,
   type McpUiHostCapabilities,
+  type McpUiHostContext,
   type McpUiResourceCsp,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult } from "@modelcontextprotocol/client";
@@ -58,10 +59,20 @@ export function AppFrame(props: Props) {
     frame.referrerPolicy = "no-referrer";
     frame.style.cssText =
       "width:100%;height:320px;max-height:720px;border:0;display:block";
+    const readHostContext = (): McpUiHostContext => ({
+      theme: document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light",
+      locale: document.documentElement.lang || navigator.language,
+      displayMode: "inline",
+      availableDisplayModes: ["inline"],
+      containerDimensions: { maxHeight: 720 },
+    });
     const bridge = new AppBridge(
       null,
       { name: "Harness UI", version: "1.0.0" },
       props.capabilities,
+      { hostContext: readHostContext() },
     );
     const unsupported = () =>
       Promise.reject(new Error("This operation is unavailable in this View."));
@@ -76,28 +87,13 @@ export function AppFrame(props: Props) {
     bridge.onupdatemodelcontext = (params, extra) =>
       handlers.current.onupdatemodelcontext?.(params, extra) ?? unsupported();
     bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
-    const updateHostContext = () =>
-      bridge.setHostContext({
-        theme: document.documentElement.classList.contains("dark")
-          ? "dark"
-          : "light",
-        locale: document.documentElement.lang || navigator.language,
-        displayMode: "inline",
-        availableDisplayModes: ["inline"],
-        containerDimensions: { maxHeight: 720 },
-      });
-    updateHostContext();
+    const updateHostContext = () => bridge.setHostContext(readHostContext());
     const observer = new MutationObserver(updateHostContext);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "lang"],
-    });
-    window.addEventListener("languagechange", updateHostContext);
     const startup = setTimeout(
       () =>
         fail(
           new Error(
-            "The App did not initialize. Check that the sandbox origin is reachable from this browser.",
+            "The app didn't load. Check that your browser can reach its sandbox address.",
           ),
         ),
       15000,
@@ -114,8 +110,15 @@ export function AppFrame(props: Props) {
         .catch(fail);
     };
     bridge.oninitialized = () => {
+      if (disposed) return;
       clearTimeout(startup);
-      if (!disposed) setError(undefined);
+      setError(undefined);
+      updateHostContext();
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class", "lang"],
+      });
+      window.addEventListener("languagechange", updateHostContext);
       void (async () => {
         await bridge.sendToolInput({ arguments: props.arguments });
         await bridge.sendToolResult(props.result);
@@ -154,8 +157,8 @@ export function AppFrame(props: Props) {
     <div>
       {error && (
         <p role="alert">
-          {error} The original tool result remains in the conversation. Close
-          and reopen the View to retry; the tool will not be called again.
+          {error} Close and reopen this view to retry. The saved tool result
+          stays in the chat; the tool won't run again.
         </p>
       )}
       <div ref={container} />

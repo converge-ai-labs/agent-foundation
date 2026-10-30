@@ -13,14 +13,22 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
-from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
+from a13n_harness.http import (
+    FORWARD_CONTEXT_HEADERS_ENV,
+    OUTBOUND_TLS_VERIFY_ENV,
+    forward_context_headers_default,
+    outbound_tls_verify,
+)
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.model.oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
 
 from a13n_service.infra.outbox import OutboxKind, Policy
+from a13n_service.providers.collectors import Configuration as CollectorConfiguration
+from a13n_service.providers.collectors import Kind as CollectorKind
+from a13n_service.providers.metrics import Endpoint as MetricsEndpoint
 from a13n_service.providers.tools.mcp_catalog import McpServers
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
@@ -65,6 +73,8 @@ class Server(Section):
     # The externally reachable URL: links, browser redirects such as OAuth callbacks, and the origin browser
     # requests may change state from. Its scheme decides whether cookies are `Secure`.
     public_url: str = Field(default="http://127.0.0.1:8000", max_length=2048)
+    # Trusted worker-to-control address for platform MCP; defaults to the public URL.
+    control_url: str | None = Field(default=None, max_length=2048)
     # Proxy addresses (IPs or CIDRs) whose X-Forwarded-For and X-Forwarded-Proto headers are trusted, so client
     # addresses, which rate limits key on, are the real clients' behind a reverse proxy.
     trusted_proxies: tuple[str, ...] = ()
@@ -101,7 +111,7 @@ class Server(Section):
 class Database(Section):
     url: SecretStr = SecretStr("postgresql+psycopg://localhost/a13n_service")
     auto_migrate: bool = True
-    pool_size: int = Field(default=5, ge=1, le=100)
+    pool_size: int = Field(default=32, ge=1, le=1024)
     connect_timeout: int = Field(default=5, ge=1, le=60)
     statement_timeout: int = Field(default=10, ge=1, le=300)
     migration_advisory_lock_timeout: int = Field(default=900, ge=1, le=3600)
@@ -211,14 +221,48 @@ class Control(Section):
     sweep_batch: int = Field(default=100, ge=1, le=10000)
     inbox_count: int = Field(default=128, ge=1, le=10000)
     inbox_bytes: int = Field(default=2097152, ge=1024, le=16777216)
+    # Browser-wide control intent includes draining; applications renew while human input is needed.
+    browser_control_min_seconds: int = Field(default=60, ge=1)
+    # Match the one-year bound used for other long-lived service durations.
+    browser_control_max_seconds: int = Field(default=3600, ge=1, le=31536000)
+    browser_control_seconds: int = Field(default=300, ge=1)
+    # Starts only when viewer revocation and inventory synchronization complete successfully.
+    browser_notice_seconds: int = Field(default=86400, ge=60, le=604800)
     # Per workspace; also bounds the subscriptions one transition stages deliveries for.
     subscriptions: int = Field(default=32, ge=1, le=1000)
     # One whole webhook POST.
     webhook_timeout: float = Field(default=10, gt=0, le=30)
     # Each request of a GitHub skill import, including the repository archive download.
     import_timeout: float = Field(default=30, gt=0, le=120)
-    # How stale a thread stream's authority and thread snapshot may become while it is idle.
+    # How stale a session stream's authority and thread states may become while no reader asks for a refresh.
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
+
+    @field_validator(
+        "browser_control_min_seconds", "browser_control_max_seconds", "browser_control_seconds", mode="before"
+    )
+    @classmethod
+    def control_seconds_integer(cls, value: object) -> int:
+        if isinstance(value, str) and value.isdecimal():
+            return int(value)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        raise ValueError("browser control duration must be a positive integer")
+
+    @model_validator(mode="after")
+    def control_bounds(self) -> "Control":
+        if not self.browser_control_min_seconds <= self.browser_control_seconds <= self.browser_control_max_seconds:
+            raise ValueError(
+                "control.browser_control_min_seconds must not exceed control.browser_control_seconds, "
+                "which must not exceed control.browser_control_max_seconds"
+            )
+        return self
+
+
+class Schedules(Section):
+    scan_seconds: float = Field(default=5, gt=0, le=300)
+    batch: int = Field(default=100, ge=1, le=1000)
+    max_per_workspace: int = Field(default=1000, ge=1, le=100000)
+    dispatch_max_attempts: int = Field(default=5, ge=1, le=20)
 
 
 class Outbox(Section):
@@ -247,6 +291,15 @@ class Outbox(Section):
         return self
 
 
+class ToolExecutions(Section):
+    max_active: int = Field(default=64, ge=1, le=1024)
+    foreground_wait_seconds: float = Field(default=5, ge=0, le=300)
+    delivered_retention_seconds: int = Field(default=3600, ge=1, le=31536000)
+    max_retention_seconds: int = Field(default=86400, ge=1, le=31536000)
+    shutdown_grace_seconds: float = Field(default=300, ge=0, le=3600)
+    finalization_seconds: float = Field(default=10, gt=0, le=300)
+
+
 class Worker(Section):
     slots: int = Field(default=4, ge=1, le=128)
     max_attempts: int = Field(default=3, ge=1, le=20)
@@ -265,7 +318,7 @@ class Worker(Section):
     content_bytes: int = Field(default=65536, ge=1024, le=16777216)
     # The zstd level of every run object a worker writes.
     compression_level: int = Field(default=3, ge=1, le=19)
-    # The thread stream's backstop cap. Coalesced text and reasoning append about ten entries a second, so one step
+    # A thread's Redis stream's backstop cap. Coalesced text and reasoning append about ten entries a second, so one step
     # streams for about a quarter of an hour before the cap removes its start; boundaries trim covered entries first.
     stream_length: int = Field(default=10000, ge=16, le=100000)
     stream_ttl: int = Field(default=600, ge=1, le=86400)
@@ -404,6 +457,9 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
+    forward_model_context_headers: bool = True
+    forward_mcp_context_headers: bool = True
+
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the
@@ -422,27 +478,21 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
-    # Explicitly provisioned public SIWC client; an OSS-issued ID does not authorize HTTPS callbacks.
+    # Public ChatGPT registration and loopback callback.
     chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
     chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
 
     @model_validator(mode="after")
     def chatgpt_callback(self) -> "Providers":
         if self.chatgpt_client_id is not None and (
-            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == DYNAMIC_CLIENT_ID
+            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == "dynamic_agent_client"
         ):
-            raise ValueError("providers.chatgpt_client_id must be an explicitly provisioned client ID")
+            raise ValueError("providers.chatgpt_client_id must be an issued public client ID")
         try:
-            validate_chatgpt_redirect_uri(
-                self.chatgpt_redirect_uri, preconfigured_client=self.chatgpt_client_id is not None
-            )
+            OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.chatgpt_redirect_uri)
         except UserError as error:
             raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
         return self
-
-    @property
-    def chatgpt_browser_callback(self) -> bool:
-        return urlsplit(self.chatgpt_redirect_uri).scheme == "https"
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:
@@ -513,6 +563,75 @@ class Telemetry(Section):
                 )
 
 
+class MonitoringPreset(Section):
+    """Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin."""
+
+    name: str = Field(default="Deployment metrics", min_length=1, max_length=128)
+    collector: CollectorKind = "vmagent"
+    query_endpoint: MetricsEndpoint
+    workspace_ids: list[str] = Field(default_factory=list, max_length=1024)
+
+
+class Monitoring(Section):
+    """Small-deployment Device monitoring; external export and history query are independent."""
+
+    enabled: bool = True
+    allow_loopback_ws: bool = False
+    max_devices: int = Field(default=64, ge=1, le=512)
+    poll_seconds: float = Field(default=10, ge=5, le=60)
+    request_seconds: float = Field(default=5, ge=1, le=30)
+    query_concurrency: int = Field(default=8, ge=1, le=64)
+    query_seconds: float = Field(default=5, ge=1, le=30)
+    query_bytes: int = Field(default=4194304, ge=65536, le=16777216)
+    deployment_preset: MonitoringPreset | None = None
+    deployment_query_bearer_token: SecretStr | None = Field(default=None, repr=False)
+    collectors: dict[CollectorKind, CollectorConfiguration] = Field(default_factory=dict)
+    collector_seconds: float = Field(default=30, ge=10, le=300)
+    collector_targets: int = Field(default=512, ge=1, le=4096)
+
+    @field_validator("deployment_preset", mode="before")
+    @classmethod
+    def decode_preset(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
+
+    @field_validator("deployment_query_bearer_token")
+    @classmethod
+    def valid_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            token = value.get_secret_value()
+            if not token or any(char.isspace() or ord(char) < 32 or ord(char) > 126 for char in token):
+                raise ValueError("Query bearer token must be a nonempty ASCII token without whitespace")
+        return value
+
+    @model_validator(mode="after")
+    def collector_receivers(self) -> "Monitoring":
+        for kind, collector in self.collectors.items():
+            if kind == "alloy" and collector.receiver is None:
+                raise ValueError("Alloy requires an operator-owned receiver")
+            if kind == "vmagent" and collector.receiver is not None:
+                raise ValueError("vmagent delivery is configured through its remoteWrite flags")
+        return self
+
+
+class RunSearch(Section):
+    """UTF-8 excerpt budgets and stripped PostgreSQL vector retention limits."""
+
+    user_head_bytes: int = Field(default=6144, ge=256, le=6144)
+    user_tail_bytes: int = Field(default=2048, ge=256, le=2048)
+    assistant_head_bytes: int = Field(default=4096, ge=256, le=4096)
+    assistant_tail_bytes: int = Field(default=12288, ge=256, le=12288)
+    vector_bytes: int = Field(default=524288, ge=393216, le=786432)
+    target_bytes: int = Field(default=393216, ge=327680, le=655360)
+    # Identical messages do not grow the vector, but still need a bounded retention ledger.
+    messages: int = Field(default=512, ge=8, le=4096)
+
+    @model_validator(mode="after")
+    def target_below_limit(self) -> "RunSearch":
+        if self.target_bytes >= self.vector_bytes:
+            raise ValueError("run_search.target_bytes must be below vector_bytes")
+        return self
+
+
 class Settings(Section):
     server: Server = Field(default_factory=Server)
     database: Database = Field(default_factory=Database)
@@ -521,8 +640,11 @@ class Settings(Section):
     auth: Authentication = Field(default_factory=Authentication)
     encryption: Encryption = Field(default_factory=Encryption)
     control: Control = Field(default_factory=Control)
+    schedules: Schedules = Field(default_factory=Schedules)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
+    tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
+    run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
     provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)
@@ -530,19 +652,9 @@ class Settings(Section):
     plugins: Plugins = Field(default_factory=Plugins)
     composer: Composer = Field(default_factory=Composer)
     telemetry: Telemetry = Field(default_factory=Telemetry)
+    monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def chatgpt_callback_origin(self) -> "Settings":
-        if self.providers.chatgpt_browser_callback:
-            parts = urlsplit(self.providers.chatgpt_redirect_uri)
-            origin = f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}"
-            if origin != self.server.public_origin:
-                raise ValueError(
-                    "providers.chatgpt_redirect_uri must share server.public_url's origin for browser cookies"
-                )
-        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":
@@ -563,7 +675,7 @@ class Settings(Section):
         nested = (
             # A blocking Redis read must return before the client's socket timeout cuts it off.
             ("worker.scan_seconds", worker.scan_seconds, "redis.timeout", self.redis.timeout),
-            ("thread stream block (1 s)", 1, "redis.timeout", self.redis.timeout),
+            ("session stream block (1 s)", 1, "redis.timeout", self.redis.timeout),
             # An attempt survives one failed renewal, and still has room to write an object before it expires.
             ("worker.authority_seconds", 3 * worker.authority_seconds, "worker.lease_seconds", worker.lease_seconds),
             ("objects.timeout", 3 * self.objects.timeout, "worker.lease_seconds", worker.lease_seconds),
@@ -616,13 +728,18 @@ class Settings(Section):
 
 def load_settings(path: Path | None = None, *, extensions: Mapping[str, type[Section]] = {}) -> Settings:
     outbound_tls_verify()
+    forward_context_headers_default()
     selected = path or (Path(os.environ["A13N_SETTINGS_FILE"]) if "A13N_SETTINGS_FILE" in os.environ else None)
     values: dict[str, Any] = tomllib.loads(selected.read_text()) if selected else {}
     known = set(Settings.model_fields) - {"extensions"}
     if shadowed := known & set(extensions):
         raise ValueError(f"Distribution settings sections shadow core sections: {sorted(shadowed)}")
     for name, value in os.environ.items():
-        if not name.startswith("A13N_") or name in {"A13N_SETTINGS_FILE", OUTBOUND_TLS_VERIFY_ENV}:
+        if not name.startswith("A13N_") or name in {
+            "A13N_SETTINGS_FILE",
+            OUTBOUND_TLS_VERIFY_ENV,
+            FORWARD_CONTEXT_HEADERS_ENV,
+        }:
             continue
         parts = name.removeprefix("A13N_").lower().split("__")
         if len(parts) != 2 or parts[0] not in known | set(extensions):

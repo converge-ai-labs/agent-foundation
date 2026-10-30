@@ -1,21 +1,95 @@
+import {
+  SettingsTextField as TextField,
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+} from "../shell/settings";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
+import styles from "./environments.module.css";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { DeviceDirectory, useDeviceInfo } from "./device-directory";
 import { ConnectDevice } from "./connect-device";
-
 import {
   fullControl,
   readOnly,
   permissionLabel,
   permissionPreset,
 } from "./environment-permissions";
+import {
+  deviceEnvironments,
+  directoryCount,
+  replaceDeviceEnvironment,
+  selectedWorkingDirectory,
+  workingDirectories,
+  type DeviceEnvironment,
+  type EnvironmentBinding,
+  type EnvironmentSelection,
+} from "./environment-selection";
 
-export type EnvironmentBinding = Schema<"EnvironmentBindingSelection">;
+export type { EnvironmentBinding } from "./environment-selection";
+
+function useDevices(enabled = true) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["devices"],
+    queryFn: ({ signal }) => result(client.GET("/api/devices", { signal })),
+    enabled,
+  });
+}
+
+export function DefaultWorkingDirectory({
+  value,
+  allowUnsetDefault = false,
+  onChange,
+}: {
+  value: EnvironmentSelection;
+  allowUnsetDefault?: boolean;
+  onChange: (alias: string | null) => void;
+}) {
+  const devices = useDevices(!!value.environment_bindings?.length);
+  const choices = workingDirectories(value, devices.data);
+  const selected =
+    value.default_environment ??
+    (allowUnsetDefault ? "" : selectedWorkingDirectory(value));
+  const missing =
+    !!selected && !choices.some((item) => item.value === selected);
+  if (choices.length === 1 && !missing && !allowUnsetDefault) return null;
+  return (
+    <SettingsSection className={styles.defaultDirectory}>
+      <ChoiceField
+        label="Default folder"
+        popupClassName={styles.directoryOptions}
+        value={selected}
+        onValueChange={(alias) => onChange(alias || null)}
+        options={[
+          ...(allowUnsetDefault && !value.environment_bindings?.length
+            ? [
+                {
+                  value: "",
+                  label: "Use chat default",
+                },
+              ]
+            : []),
+          ...(missing
+            ? [
+                {
+                  value: selected,
+                  label: "Removed directory · Choose a replacement",
+                  disabled: true,
+                },
+              ]
+            : []),
+          ...choices,
+        ]}
+      />
+      {missing && <p role="alert">Choose a default folder before saving.</p>}
+    </SettingsSection>
+  );
+}
 
 export function BindingSummary({
   bindings,
@@ -24,242 +98,218 @@ export function BindingSummary({
   bindings: readonly EnvironmentBinding[];
   defaultEnvironment?: string | null;
 }) {
-  const { client } = useTransport();
-  const devices = useQuery({
-    queryKey: ["devices"],
-    queryFn: ({ signal }) => result(client.GET("/api/devices", { signal })),
-    enabled: bindings.length > 0,
-  });
+  const devices = useDevices(bindings.length > 0);
   return (
-    <div className="flex flex-col gap-2">
-      <p>Default: {defaultEnvironment ?? "Local workspace or Thread files"}</p>
-      {bindings.map((binding) => (
-        <div key={binding.alias} className="flex flex-col gap-1 text-sm">
-          <strong>{binding.alias}</strong>
-          <span>
-            {devices.data?.find((item) => item.id === binding.device_id)
-              ?.name ?? binding.device_id}
-          </span>
-          <span className="break-all">{binding.working_directory}</span>
-          <span>{permissionLabel(binding.permission_ceiling)}</span>
-          {binding.permission_ceiling && (
-            <details>
-              <summary className="cursor-pointer text-muted-foreground">
-                Allowed actions
-              </summary>
-              <small>
-                {binding.permission_ceiling.operations?.join(", ") || "None"}
-              </small>
-            </details>
-          )}
-        </div>
+    <>
+      {deviceEnvironments(bindings).map((group) => (
+        <section key={group.key} className={styles.summaryEnvironment}>
+          <p className="font-medium">
+            {devices.data?.find((item) => item.id === group.deviceId)?.name ??
+              group.deviceId}
+            {" · "}
+            {permissionLabel(group.directories[0].permission_ceiling)}
+          </p>
+          <p className="text-muted-foreground">
+            {directoryCount(group.directories.length)}
+          </p>
+          {group.directories.map((binding) => (
+            <p key={binding.alias} className={styles.summaryPath}>
+              {binding.working_directory}
+              {binding.alias === defaultEnvironment && (
+                <span className="ml-2 text-muted-foreground">Default</span>
+              )}
+            </p>
+          ))}
+        </section>
       ))}
-    </div>
+    </>
   );
 }
+
+type EditingEnvironment = { group?: DeviceEnvironment; addDirectory?: boolean };
 
 export function EnvironmentBindings({
   bindings,
   defaultEnvironment,
   localRoots,
-  allowUnsetDefault = false,
   allowEmpty = true,
   onChange,
 }: {
   bindings: EnvironmentBinding[];
   defaultEnvironment?: string | null;
   localRoots: readonly string[];
-  allowUnsetDefault?: boolean;
   allowEmpty?: boolean;
   onChange: (
     bindings: EnvironmentBinding[],
     defaultEnvironment: string | null,
   ) => void;
 }) {
-  const { client } = useTransport();
-  const devices = useQuery({
-    queryKey: ["devices"],
-    queryFn: ({ signal }) => result(client.GET("/api/devices", { signal })),
-  });
-  const [editing, setEditing] = useState<number | "new" | null>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
+  const devices = useDevices();
+  const [editing, setEditing] = useState<EditingEnvironment>();
+  const [removing, setRemoving] = useState<EnvironmentBinding>();
   const [replacement, setReplacement] = useState("");
-  const local = localRoots.map((path, index) => ({
-    value: index ? `workspace-${index + 1}` : "workspace",
-    label: `${index ? `workspace-${index + 1}` : "workspace"} · ${path}`,
-  }));
-  const choices = [
-    ...local,
-    { value: "thread-files", label: "Thread files" },
-    ...bindings.map((item) => ({
-      value: item.alias,
-      label: `${item.alias} · ${item.working_directory}`,
-    })),
-  ];
-  const selectedDefault =
-    defaultEnvironment ??
-    (allowUnsetDefault ? "" : localRoots.length ? "workspace" : "thread-files");
-  const missingDefault =
-    !!selectedDefault &&
-    !choices.some((item) => item.value === selectedDefault);
-  const removingDefault = removing === selectedDefault;
+  const value = {
+    local_roots: [...localRoots],
+    environment_bindings: bindings,
+    default_environment: defaultEnvironment,
+  };
+  const choices = workingDirectories(value, devices.data);
+  const selectedDefault = selectedWorkingDirectory(value);
+  const removingDefault = removing?.alias === selectedDefault;
   return (
-    <section className="flex flex-col gap-4" aria-label="Environment bindings">
-      <p className="text-sm text-muted-foreground">
-        Each added environment selects a Device and working directory. Changes
-        are saved with the enclosing settings; they do not change active or
-        historical Runs.
-      </p>
+    <section className={styles.remote} aria-label="Remote environments">
       <ErrorNotice error={devices.error} />
-      {!allowEmpty && bindings.length === 1 && (
-        <p className="text-sm text-muted-foreground">
-          Add a local Project folder or another environment before removing the
-          last binding.
-        </p>
-      )}
-      {bindings.map((binding, index) => (
-        <div
-          key={binding.alias}
-          className="flex flex-col gap-3 rounded-lg bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="min-w-0 flex-1">
-            <strong>{binding.alias}</strong>
-            <p className="text-sm">
-              {devices.data?.find((item) => item.id === binding.device_id)
-                ?.name ?? binding.device_id}
-              {devices.data &&
-                !devices.data.some((item) => item.id === binding.device_id) &&
-                " · Not configured"}
-            </p>
-            <p className="break-all text-sm">{binding.working_directory}</p>
-            <p className="text-xs text-muted-foreground">
-              {permissionLabel(binding.permission_ceiling)}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <BindingStatus deviceId={binding.device_id} />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing(index)}
-              aria-label={`Edit ${binding.alias}`}
-            >
-              Edit
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setRemoving(binding.alias);
-                setReplacement("");
-              }}
-              aria-label={`Remove ${binding.alias}`}
-              disabled={!allowEmpty && bindings.length === 1}
-            >
-              Remove
-            </Button>
-          </div>
-        </div>
-      ))}
-      <ChoiceField
-        label="Default working location"
-        value={selectedDefault}
-        onValueChange={(value) => onChange(bindings, value || null)}
-        options={[
-          ...(allowUnsetDefault && !bindings.length
-            ? [
-                {
-                  value: "",
-                  label:
-                    "Keep Thread default / automatic for new conversations",
-                },
-              ]
-            : []),
-          ...(missingDefault
-            ? [
-                {
-                  value: selectedDefault,
-                  label:
-                    selectedDefault === "workspace-0"
-                      ? "Removed local folder · Choose a replacement"
-                      : `${selectedDefault} · Not selected`,
-                  disabled: true,
-                },
-              ]
-            : []),
-          ...choices,
-        ]}
-      />
-      {missingDefault && (
-        <p role="alert">
-          Choose a default from the selected environments before saving.
-        </p>
-      )}
+      {deviceEnvironments(bindings).map((group) => {
+        const name =
+          devices.data?.find((item) => item.id === group.deviceId)?.name ??
+          group.deviceId;
+        const policy = group.directories[0];
+        return (
+          <section
+            key={group.key}
+            className={styles.environment}
+            aria-label={`${name} environment`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="font-medium">{name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {permissionLabel(policy.permission_ceiling)} ·{" "}
+                  {directoryCount(group.directories.length)}
+                </p>
+                {devices.data &&
+                  !devices.data.some((item) => item.id === group.deviceId) && (
+                    <p className="text-sm">Device not configured</p>
+                  )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                <BindingStatus deviceId={group.deviceId} />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditing({ group })}
+                  aria-label={`Edit ${name} environment`}
+                >
+                  Edit
+                </Button>
+              </div>
+            </div>
+            <ul className={styles.directoryList}>
+              {group.directories.map((binding) => (
+                <li key={binding.alias} className={styles.directory}>
+                  <div className="min-w-0 text-sm">
+                    <p className="break-all">{binding.working_directory}</p>
+                    {binding.alias === selectedDefault && (
+                      <span className="text-xs text-muted-foreground">
+                        Default folder
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Remove directory ${binding.working_directory}`}
+                    disabled={!allowEmpty && bindings.length === 1}
+                    onClick={() => {
+                      setRemoving(binding);
+                      setReplacement("");
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={bindings.length >= 64}
+                aria-label={`Add directory to ${name}`}
+                onClick={() => setEditing({ group, addDirectory: true })}
+              >
+                <PlusIcon />
+                Add directory
+              </Button>
+            </div>
+            <details className={styles.advanced}>
+              <summary className="cursor-pointer">Run details</summary>
+              <p className="mt-2">
+                {policy.permission_ceiling?.operations?.join(", ") ??
+                  "Files and execution"}
+              </p>
+              {(policy.egress || policy.expected_boundary) && (
+                <p>Custom network and access rules are kept.</p>
+              )}
+              {group.directories.map((binding) => (
+                <p key={binding.alias} className="mt-1 break-all">
+                  {binding.alias} · {binding.working_directory}
+                </p>
+              ))}
+            </details>
+          </section>
+        );
+      })}
       <div>
         <Button
           type="button"
-          variant="outline"
-          onClick={() => setEditing("new")}
+          variant="ghost"
+          size="sm"
+          className={styles.addEnvironment}
+          disabled={bindings.length >= 64}
+          onClick={() => setEditing({})}
         >
           <PlusIcon />
           Add environment
         </Button>
       </div>
       <ModalFrame
-        open={editing !== null}
+        open={editing !== undefined}
         onOpenChange={(open) => {
-          if (!open) setEditing(null);
+          if (!open) setEditing(undefined);
         }}
-        title={editing === "new" ? "Add environment" : "Edit environment"}
-        description="Choose a known path or browse the Device. This does not start a Run or create a directory."
-        closeLabel="Cancel"
+        title={editing?.group ? "Edit environment" : "Add environment"}
+        closeLabel="Close"
       >
-        {editing !== null && (
-          <BindingEditor
-            key={editing}
-            initial={editing === "new" ? undefined : bindings[editing]}
+        {editing && (
+          <DeviceEnvironmentEditor
+            initial={editing.group?.directories ?? []}
+            addDirectory={editing.addDirectory}
             devices={devices.data ?? []}
-            usedAliases={bindings
-              .filter((_, index) => index !== editing)
-              .map((item) => item.alias)}
-            save={(binding) => {
-              const previous =
-                editing === "new" ? undefined : bindings[editing];
-              const next =
-                editing === "new"
-                  ? [...bindings, binding]
-                  : bindings.map((item, index) =>
-                      index === editing ? binding : item,
-                    );
-              onChange(
+            otherBindings={bindings.filter(
+              (binding) => !editing.group?.directories.includes(binding),
+            )}
+            save={(next) => {
+              const patch = replaceDeviceEnvironment(
+                bindings,
+                editing.group?.directories ?? [],
                 next,
-                previous?.alias === selectedDefault
-                  ? binding.alias
-                  : selectedDefault ||
-                      (localRoots.length ? "workspace" : "thread-files"),
+                selectedDefault,
               );
-              setEditing(null);
+              onChange(patch.environment_bindings, patch.default_environment);
+              setEditing(undefined);
             }}
-            cancel={() => setEditing(null)}
+            cancel={() => setEditing(undefined)}
           />
         )}
       </ModalFrame>
       <ModalFrame
-        open={removing !== null}
+        open={!!removing}
         onOpenChange={(open) => {
-          if (!open) setRemoving(null);
+          if (!open) setRemoving(undefined);
         }}
-        title="Remove environment selection?"
-        description="This forgets the selection only. It does not delete remote files, stop the Device, or rewrite captured Runs. No Device connection is required."
-        closeLabel="Cancel"
+        title="Remove directory selection?"
+        description="Remove this folder from the selection? Files, the device connection and run history are kept."
+        closeLabel="Close"
         footer={
           <>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setRemoving(null)}
+              onClick={() => setRemoving(undefined)}
             >
               Cancel
             </Button>
@@ -268,10 +318,10 @@ export function EnvironmentBindings({
               disabled={removingDefault && !replacement}
               onClick={() => {
                 onChange(
-                  bindings.filter((item) => item.alias !== removing),
-                  removingDefault ? replacement : selectedDefault || null,
+                  bindings.filter((item) => item.alias !== removing?.alias),
+                  removingDefault ? replacement : selectedDefault,
                 );
-                setRemoving(null);
+                setRemoving(undefined);
               }}
             >
               Remove selection
@@ -279,14 +329,14 @@ export function EnvironmentBindings({
           </>
         }
       >
-        <p>{removing}</p>
+        <p className="break-all">{removing?.working_directory}</p>
         {removingDefault && (
           <ChoiceField
             label="Replacement default"
-            placeholder="Choose a default"
+            placeholder="Choose a directory"
             value={replacement}
             onValueChange={setReplacement}
-            options={choices.filter((item) => item.value !== removing)}
+            options={choices.filter((item) => item.value !== removing?.alias)}
           />
         )}
       </ModalFrame>
@@ -294,24 +344,32 @@ export function EnvironmentBindings({
   );
 }
 
-function BindingEditor({
+function DeviceEnvironmentEditor({
   initial,
+  addDirectory = false,
   devices,
-  usedAliases,
+  otherBindings,
   save,
   cancel,
 }: {
-  initial?: EnvironmentBinding;
+  initial: EnvironmentBinding[];
+  addDirectory?: boolean;
   devices: Schema<"DeviceSummary">[];
-  usedAliases: string[];
-  save: (binding: EnvironmentBinding) => void;
+  otherBindings: EnvironmentBinding[];
+  save: (bindings: EnvironmentBinding[]) => void;
   cancel: () => void;
 }) {
-  const [deviceId, setDeviceId] = useState(initial?.device_id ?? "");
-  const [alias, setAlias] = useState(initial?.alias ?? "");
-  const [path, setPath] = useState(initial?.working_directory ?? "");
+  const first = initial[0];
+  const [deviceId, setDeviceId] = useState(first?.device_id ?? "");
+  const [directories, setDirectories] = useState(() => [
+    ...initial.map((item) => ({
+      path: item.working_directory,
+      alias: item.alias,
+    })),
+    ...(!initial.length || addDirectory ? [{ path: "", alias: "" }] : []),
+  ]);
   const [permission, setPermission] = useState<string | undefined>(
-    initial ? permissionPreset(initial.permission_ceiling) : "full",
+    first ? permissionPreset(first.permission_ceiling) : "full",
   );
   const [error, setError] = useState<Error>();
   const [connected, setConnected] = useState<Schema<"DeviceSummary">>();
@@ -319,114 +377,184 @@ function BindingEditor({
     connected && !devices.some((item) => item.id === connected.id)
       ? [...devices, connected]
       : devices;
-  const selectDevice = (id: string, name: string) => {
+  const name =
+    availableDevices.find((item) => item.id === deviceId)?.name ?? deviceId;
+  const selectDevice = (id: string) => {
     setDeviceId(id);
-    setPath("");
-    if (!alias) setAlias(suggestAlias(name, usedAliases));
+    // Existing directory references are retained; changing a Device is an explicit group edit.
+    if (!first) setDirectories([{ path: "", alias: "" }]);
   };
-  const missingDevice =
-    deviceId && !availableDevices.some((item) => item.id === deviceId);
+  const updateDirectory = (
+    index: number,
+    patch: Partial<(typeof directories)[number]>,
+  ) =>
+    setDirectories(
+      directories.map((item, i) =>
+        i === index ? { ...item, ...patch } : item,
+      ),
+    );
   return (
-    <div className="flex flex-col gap-4">
-      <ChoiceField
-        label="Device"
-        placeholder="Choose a Device"
-        value={deviceId}
-        onValueChange={(value) => {
-          selectDevice(
-            value,
-            availableDevices.find((item) => item.id === value)?.name ??
-              "device",
-          );
-        }}
-        options={[
-          ...(missingDevice
-            ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
-            : []),
-          ...availableDevices.map((item) => ({
-            value: item.id,
-            label: item.name,
-          })),
-        ]}
-      />
-      <ConnectDevice
-        label="Connect new Device"
-        onConnected={(device) => {
-          setConnected(device);
-          selectDevice(device.id, device.name);
-        }}
-      />
-      {deviceId && (
-        <DeviceDirectory
-          key={deviceId}
-          deviceId={deviceId}
-          value={path}
-          onChange={setPath}
+    <div className={styles.editor}>
+      <SettingsSection>
+        <ChoiceField
+          label="Device"
+          placeholder={
+            availableDevices.length ? "Choose a device" : "No devices connected"
+          }
+          disabled={!availableDevices.length && !deviceId}
+          description={
+            !availableDevices.length && !deviceId
+              ? "Connect a device to add a remote environment."
+              : undefined
+          }
+          value={deviceId}
+          onValueChange={selectDevice}
+          options={[
+            ...(deviceId &&
+            !availableDevices.some((item) => item.id === deviceId)
+              ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
+              : []),
+            ...availableDevices.map((item) => ({
+              value: item.id,
+              label: item.name,
+            })),
+          ]}
         />
+        {deviceId && (
+          <ChoiceField
+            label="Allowed actions"
+            value={permission}
+            onValueChange={setPermission}
+            placeholder="Keep existing permissions"
+            options={[
+              { value: "read_only", label: "Read only" },
+              { value: "full", label: "Full control" },
+            ]}
+            description={
+              permission === "full"
+                ? "Applies to the folders below. Allows files, commands and any enabled desktop controls. Desktop access extends beyond these folders. Screenshots may be sent to the model and saved in chat history."
+                : permission === "read_only"
+                  ? "Read files in the folders below. No file changes, commands or desktop access."
+                  : "Keep each folder's current permissions unless you choose an option."
+            }
+          />
+        )}
+      </SettingsSection>
+      <div>
+        <ConnectDevice
+          label="Connect new device"
+          onConnected={(device) => {
+            setConnected(device);
+            selectDevice(device.id);
+          }}
+        />
+      </div>
+      {deviceId &&
+        directories.map((directory, index) => (
+          <div key={`${deviceId}:${index}`} className={styles.draftDirectory}>
+            <DeviceDirectory
+              deviceId={deviceId}
+              value={directory.path}
+              onChange={(path) => updateDirectory(index, { path })}
+              label={
+                index === 0
+                  ? "Working directory"
+                  : `Working directory ${index + 1}`
+              }
+            />
+            <details className={styles.advanced}>
+              <summary>Advanced routing</summary>
+              <TextField
+                label={
+                  index === 0
+                    ? "Directory alias"
+                    : `Directory alias ${index + 1}`
+                }
+                value={directory.alias}
+                onChange={(alias) => updateDirectory(index, { alias })}
+                description="An internal name for this connection. Leave blank to generate one."
+              />
+            </details>
+            {index >= initial.length &&
+              directories.length > Math.max(initial.length, 1) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setDirectories(directories.filter((_, i) => i !== index))
+                  }
+                >
+                  Discard directory
+                </Button>
+              )}
+          </div>
+        ))}
+      {deviceId && (
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={directories.length + otherBindings.length >= 64}
+            onClick={() =>
+              setDirectories([...directories, { path: "", alias: "" }])
+            }
+          >
+            <PlusIcon />
+            Add folder
+          </Button>
+        </div>
       )}
-      <ChoiceField
-        label="Allowed actions"
-        value={permission}
-        onValueChange={setPermission}
-        placeholder="Keep existing permissions"
-        options={[
-          { value: "read_only", label: "Read only" },
-          { value: "full", label: "Full control" },
-        ]}
-        description={
-          permission === "full"
-            ? "Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to this directory; screenshots may be sent to the model and saved in history."
-            : permission === "read_only"
-              ? "Read and browse files without changes, commands or desktop access."
-              : "Existing permissions stay unchanged unless you choose an option."
-        }
-      />
-      <TextField
-        label="Environment alias"
-        value={alias}
-        onChange={setAlias}
-        description="A unique name such as build or references. Host mount names are reserved."
-      />
       <ErrorNotice error={error} />
-      <div className="flex justify-end gap-2">
+      <div data-a13n-form-actions className={styles.actions}>
         <Button type="button" variant="outline" onClick={cancel}>
           Cancel
         </Button>
         <Button
           type="button"
-          disabled={!deviceId || !path || !alias}
+          disabled={!deviceId || directories.some((item) => !item.path.trim())}
           onClick={() => {
-            if (usedAliases.includes(alias) || reservedAlias(alias)) {
-              setError(
-                new Error(
-                  "Choose a unique alias that is not reserved for Host mounts.",
-                ),
-              );
-              return;
+            const aliases = [...otherBindings.map((item) => item.alias)];
+            const next: EnvironmentBinding[] = [];
+            for (const [index, directory] of directories.entries()) {
+              const alias =
+                directory.alias ||
+                suggestAlias(name, [
+                  ...aliases,
+                  ...directories.map((item) => item.alias),
+                ]);
+              if (
+                aliases.includes(alias) ||
+                reservedAlias(alias) ||
+                !/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(alias) ||
+                alias.length > 63
+              ) {
+                setError(
+                  new Error(
+                    "Choose unique directory aliases using lowercase letters, numbers, hyphens or underscores. Host mount names are reserved.",
+                  ),
+                );
+                return;
+              }
+              aliases.push(alias);
+              const existing = initial[index] ?? first;
+              next.push({
+                ...existing,
+                device_id: deviceId,
+                alias,
+                working_directory: directory.path,
+                permission_ceiling:
+                  permission === permissionPreset(existing?.permission_ceiling)
+                    ? existing?.permission_ceiling
+                    : permission === "read_only"
+                      ? { operations: readOnly }
+                      : permission === "full"
+                        ? { operations: fullControl }
+                        : existing?.permission_ceiling,
+              });
             }
-            if (
-              !/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/.test(alias) ||
-              alias.length > 63
-            ) {
-              setError(
-                new Error(
-                  "Use a lowercase alias with letters, numbers, hyphens or underscores.",
-                ),
-              );
-              return;
-            }
-            save({
-              ...initial,
-              device_id: deviceId,
-              alias,
-              working_directory: path,
-              permission_ceiling:
-                permission === "read_only"
-                  ? { operations: readOnly }
-                  : permission === "full"
-                    ? { operations: fullControl }
-                    : initial?.permission_ceiling,
-            });
+            save(next);
           }}
         >
           Use environment

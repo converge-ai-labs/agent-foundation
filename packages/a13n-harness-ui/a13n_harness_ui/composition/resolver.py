@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_harness import RunConfiguration
+from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
     EnvironmentRunExtensionFactoryRegistration,
@@ -34,7 +34,13 @@ from a13n_harness_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
-from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection, SidekickConfiguration
+from a13n_harness_ui.configuration.models import (
+    DEFAULT_CAPABILITY_KEYS,
+    CapabilitySelection,
+    MarkdownSubagentSelection,
+    SidekickConfiguration,
+    SubscriptionGroupResource,
+)
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
@@ -86,7 +92,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown"]
+    agent_source_kind: Literal["agent", "markdown", "live"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -148,6 +154,7 @@ class AgentCompositionResolver:
             ResolvedMcpRecipe(
                 server_id=item,
                 transport=source.mcp_servers[item].transport,
+                tools=source.mcp_servers[item].tools,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,
                 host_owned=item in source.document.mcp.host_owned_servers,
@@ -195,7 +202,7 @@ class AgentCompositionResolver:
             )
 
         for model in source.models.values():
-            self.model_recipe(model)
+            self.model_recipe(model, source)
         for agent in source.agents.values():
             self._capability_recipes(source, agent, warnings=warnings)
 
@@ -209,6 +216,8 @@ class AgentCompositionResolver:
     ) -> ResolvedAgentNode:
         """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
+        if selection.agent_source_kind == "live":
+            return self._live_node(source)
         self._validate_selection(source, selection)
         if selection.default_model_id is not None and (model_overrides is None or model_overrides.model_id is None):
             model_overrides = (model_overrides or RunModelOverrides()).model_copy(
@@ -256,6 +265,21 @@ class AgentCompositionResolver:
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
+        if selection.agent_source_kind == "live":
+            if model_overrides is not None:
+                raise CompositionError("Select the Live executor Model in Live settings.", code="live_model_override")
+            return ResolvedRunComposition(
+                package_prompt_revision=PACKAGE_PROMPT_REVISION,
+                generation_digest=source.source_digest,
+                thread_id=selection.thread_id,
+                thread_configuration_version=selection.version,
+                project_roots=selection.local_roots,
+                memory_enabled=source.document.memory.enabled,
+                run_configuration=source.document.run_configuration,
+                tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+                root=self._live_node(source),
+                environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
+            )
         root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
         environment = self._environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
@@ -284,12 +308,14 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
+            background_compaction=source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
+            tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
             media_understanding={
-                kind: self.model_recipe(source.models[model_id])
+                kind: self.model_recipe(source.models[model_id], source)
                 for kind, model_id in source.document.media_understanding.selections().items()
             },
             webui_sidekick=(
@@ -384,7 +410,7 @@ class AgentCompositionResolver:
                 effective.pop(service_tier_setting(resource.route), None)
                 effective["service_tier"] = model_overrides.service_tier
             resource = resource.model_copy(update={"settings": effective})
-        model = self.model_recipe(resource)
+        model = self.model_recipe(resource, source)
         if model_overrides is not None and model_overrides.thinking is not None:
             model = model.model_copy(update={"thinking_override": model_overrides.thinking})
         capabilities = self._capability_recipes(source, agent, active_model=model)
@@ -401,11 +427,13 @@ class AgentCompositionResolver:
             harness_plugins=plugins,
             mcp_servers=mcp,
             tools=agent.tools,
-            tool_proxy=(
-                agent.tool_proxy.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+            tool_search=(
+                agent.tool_search.selected(
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids),
+                    harness_plugins=plugin_ids,
+                    capabilities=tuple(item.capability for item in capabilities),
                 )
-                if agent.tool_proxy is not None
+                if agent.tool_search is not None
                 else None
             ),
             children=(),
@@ -494,7 +522,7 @@ class AgentCompositionResolver:
                 code="composition_subagent_model_unavailable",
                 details={"subagent_id": child.id, "model_id": child.model},
             )
-        model = parent.model if child.model is None else self.model_recipe(source.models[child.model])
+        model = parent.model if child.model is None else self.model_recipe(source.models[child.model], source)
         capabilities = parent.capabilities
         if not supports_guardian_credits(model.route) and any(item.guardian_credits for item in capabilities):
             _LOGGER.warning(
@@ -520,14 +548,50 @@ class AgentCompositionResolver:
             ),
             mcp_servers=self._mcp_recipes(source, mcp_ids),
             tools=parent.tools if child.tools is None else child.tools,
-            tool_proxy=(
-                parent.tool_proxy.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+            tool_search=(
+                parent.tool_search.selected(
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids),
+                    harness_plugins=plugin_ids,
+                    capabilities=tuple(item.capability for item in capabilities),
                 )
-                if parent.tool_proxy is not None
+                if parent.tool_search is not None
                 else None
             ),
             children=(),
+        )
+
+    def _live_node(self, source: LoadedHarnessUiConfiguration) -> ResolvedAgentNode:
+        settings = source.document.live
+        if settings is None or not settings.enabled or settings.model is None:
+            raise CompositionError("Enable Live and select a Codex subscription Model.", code="live_disabled")
+        return ResolvedAgentNode(
+            source_kind="live",
+            source_id="live",
+            roster_name="live",
+            system_prompt=(
+                "You are the user's Live task coordinator. Voice conversation is handled by the voice model; "
+                "execute its delegated tasks using the available tools and ordinary Threads. Discover Projects, "
+                "Agents and Models before selecting them. Keep substantial work in target Threads; inspect their "
+                "saved outcomes. Ask target Threads to report to your Thread with send_thread_message. "
+                "Reports are received only during an active voice session; offline reports are skipped. "
+                "Keep final replies concise and suitable for speech. Do not forward private reasoning. "
+                "Stopping voice does not stop dispatched work. Use notes and tasks for ongoing coordination.",
+            ),
+            instructions=(settings.instructions,) if settings.instructions else (),
+            model=self.model_recipe(source.models[settings.model], source),
+            capabilities=(
+                ResolvedCapabilityRecipe(capability="working_state"),
+                ResolvedCapabilityRecipe(capability="runtime_context"),
+                ResolvedCapabilityRecipe(capability="user_interaction"),
+                ResolvedCapabilityRecipe(
+                    capability="dynamic_environment",
+                    configuration={
+                        "files_enabled": settings.files_enabled,
+                        "shell_enabled": False,
+                        "computer_enabled": False,
+                    },
+                ),
+            ),
         )
 
     def resolve_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> ResolvedRunComposition:
@@ -548,22 +612,39 @@ class AgentCompositionResolver:
                 roster_name="memory",
                 system_prompt=(ORGANIZATION_PROMPT,),
                 instructions=(settings.instructions,) if settings.instructions else (),
-                model=self.model_recipe(source.models[model_id]),
+                model=self.model_recipe(source.models[model_id], source),
             ),
             # Retained for the shared composition schema; memory execution never
             # enters this profile or grants Environment capabilities.
             environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
         )
 
-    def model_recipe(self, item: ModelResource) -> ResolvedModelRecipe:
+    def model_recipe(self, item: ModelResource, source: LoadedHarnessUiConfiguration) -> ResolvedModelRecipe:
         _validate_auth_route(item)
         normalized = self._model_adapter.validate(
             route=item.route,
             settings=item.settings,
             model_cfg=item.model_configuration,
         )
+        group = None
+        auth = item.authentication
+        if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
+            provider = "codex" if isinstance(auth, CodexSubscriptionAuthentication) else "grok"
+            group_id = auth.group or f"{provider}-default"
+            group = source.subscription_groups.get(group_id)
+            if group is None:
+                # Capture absence explicitly: only historical recipes use singleton compatibility.
+                group = SubscriptionGroupResource(
+                    schema_version="1",
+                    kind="subscription_group",
+                    id=group_id,
+                    name=f"{provider.title()} default",
+                    provider=provider,
+                    accounts=(),
+                )
         return ResolvedModelRecipe(
             model_id=item.id,
+            subscription_group=group,
             route=normalized.route,
             authentication=item.authentication,
             settings=normalized.settings,
@@ -614,13 +695,13 @@ class AgentCompositionResolver:
                         model = active_model
                         if model is None:
                             assert agent.model is not None
-                            model = self.model_recipe(source.models[agent.model])
+                            model = self.model_recipe(source.models[agent.model], source)
                         review["model"] = model.model_id
                         configuration["review"] = review
                     else:
                         if not isinstance(model_id, str) or model_id not in source.models:
                             raise self._review_model_error(source, agent, model_id=model_id)
-                        model = self.model_recipe(source.models[model_id])
+                        model = self.model_recipe(source.models[model_id], source)
                     overrides = review.get("model_settings", {})
                     if not isinstance(overrides, dict):
                         raise CompositionError(
@@ -673,7 +754,7 @@ class AgentCompositionResolver:
                     guardian_credits=guardian_credits,
                 )
             )
-        for default in ("file_context", "working_state", "user_interaction", "codeact"):
+        for default in DEFAULT_CAPABILITY_KEYS:
             # An invalid explicit selection is skipped, never replaced with broader defaults.
             if default not in disabled and not any(item.capability == default for item in agent.capabilities):
                 recipes.append(
@@ -791,7 +872,7 @@ class AgentCompositionResolver:
         if built_in is not None:
             behavior = {
                 "provider_key": built_in.provider_key,
-                "provider_configuration": {},
+                "provider_configuration": built_in.provider_configuration,
                 "adapter_key": built_in.adapter_key,
                 "adapter_configuration": {},
             }
@@ -799,7 +880,7 @@ class AgentCompositionResolver:
                 profile_id=profile_id,
                 behavior_digest=canonical_digest(behavior),
                 provider_key=built_in.provider_key,
-                provider_configuration={},
+                provider_configuration=built_in.provider_configuration,
                 adapter_key=built_in.adapter_key,
                 adapter_configuration={},
             )

@@ -51,3 +51,22 @@ class AdmissionPolicy(Protocol):
     async def accept(self, session: AsyncSession, intent: AcceptedIntent) -> None: ...
 
     async def proceed(self, session: AsyncSession, call: CallContext) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AppCallContext:
+    """A direct user action attributed to a saved App, without inventing a worker attempt."""
+
+    workspace_id: str
+    principal_id: str
+    run_id: str
+    app_id: str
+    connection_id: str
+    tool_name: str
+    call_id: str
+
+
+class AppAdmissionPolicy(Protocol):
+    """Optional extension; deployments with admission must opt in before direct App tool use."""
+
+    async def proceed_app(self, session: AsyncSession, call: AppCallContext) -> None: ...

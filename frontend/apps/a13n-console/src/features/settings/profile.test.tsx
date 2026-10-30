@@ -1,3 +1,4 @@
+import { preparedImage } from "../../../tests/image-crop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -56,16 +57,18 @@ it("opens image selection from the avatar and preserves the upload version and m
   expect(click).toHaveBeenCalledOnce();
   const file = new File(["image"], "avatar.png", { type: "image/png" });
   await user.upload(input, file);
+  expect(http.PUT).not.toHaveBeenCalled();
+  await user.click(await screen.findByRole("button", { name: "Use image" }));
   await waitFor(() => expect(http.PUT).toHaveBeenCalledOnce());
   expect(http.PUT).toHaveBeenCalledWith(
     "/api/v1/workspaces/{workspace_id}/icon",
     {
-      headers: { "If-Match": '"v1"', "Content-Type": "image/png" },
+      headers: { "If-Match": '"v1"', "Content-Type": "image/webp" },
       params: {
-        header: { "If-Match": '"v1"', "Content-Type": "image/png" },
+        header: { "If-Match": '"v1"', "Content-Type": "image/webp" },
         path: { workspace_id: "ws_preview" },
       },
-      body: file,
+      body: preparedImage,
     },
   );
   expect(input.value).toBe("");

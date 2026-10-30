@@ -81,7 +81,7 @@ async def main() -> None:
         if not setup:
             timeout = 120 if "--hitl" in sys.argv else 30 if "--slow" in sys.argv else 2
             configuration.write_text(
-                'schema_version: "1"\ndefaults:\n  agent: agent-fixture\n'
+                'schema_version: "1"\ndefaults:\n  agent: agent-fixture\nbrowser:\n  mode: disabled\n'
                 f"tools:\n  interaction_timeout_seconds: {timeout}\n",
                 encoding="utf-8",
             )

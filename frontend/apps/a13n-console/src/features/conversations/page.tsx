@@ -1,6 +1,10 @@
 import { Button, SearchPicker } from "a13n-ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -20,6 +24,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
+import { prepareConversationAgent } from "../agents/prepare";
 import { createManagedEnvironment } from "../environments/api";
 import {
   CONSOLE_SESSION_LABELS,
@@ -29,11 +34,16 @@ import {
 } from "./api";
 import { Composer, RunOptions, useRunOptions } from "./composer";
 import type { EnvironmentChoice } from "./composer/options-dialog";
+import { SessionBodyLoading, SessionError } from "./session-feedback";
 import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
+import { SessionStreamProvider } from "./session-stream";
+import { useSession } from "./queries";
+import { validSpaceSelection } from "../memories/session-settings";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadInbox } from "./transcript/inbox";
+import { SessionMemoryControl } from "./composer/session-memory";
 import styles from "./conversations.module.css";
 
 export function ConversationsPage() {
@@ -67,15 +77,22 @@ export function NewConversation() {
   // What the first submission created before its Thread: a retry reuses it,
   // so it replays that submission instead of leaving another one behind.
   const prepared = useRef<{
+    agentId?: string;
     session?: Schema["SessionView"];
     environment?: Schema["EnvironmentView"];
   }>({});
+  const [memoryLocked, setMemoryLocked] = useState(false);
   async function consoleSession() {
     prepared.current.session ??= data(
       await client.workspace(workspace.id).POST("/api/v1/sessions", {
-        body: { labels: CONSOLE_SESSION_LABELS },
+        body: {
+          labels: CONSOLE_SESSION_LABELS,
+          origin: { application: "a13n-console", name: "Console" },
+          ...(memory === null ? {} : { memory }),
+        },
       }),
     );
+    setMemoryLocked(true);
     return prepared.current.session;
   }
   /** A template choice reserves its environment first, then mounts it. */
@@ -106,6 +123,9 @@ export function NewConversation() {
           .then(data),
       ),
   });
+  const [memory, setMemory] = useState<Schema["SessionMemorySettings"] | null>(
+    null,
+  );
   const enabled = agents.data ?? [];
   const selected = enabled.find((agent) => agent.id === agentId);
   return (
@@ -148,11 +168,49 @@ export function NewConversation() {
           initial={
             message ? { content: [{ type: "text", text: message }] } : undefined
           }
-          disabled={!can("run") || !agentId}
+          disabled={!can("run") || !selected}
+          submitDisabled={memory !== null && !validSpaceSelection(memory)}
           agentName={selected?.name}
-          options={<RunOptions options={options} showAgent={false} />}
+          options={
+            <>
+              <RunOptions
+                options={options}
+                showAgent={false}
+                agentId={agentId}
+              />
+              {can("run") && (
+                <SessionMemoryControl
+                  value={memory}
+                  onChange={setMemory}
+                  locked={memoryLocked}
+                />
+              )}
+            </>
+          }
           submit={async (payload) => {
             const { environment, ...choice } = options.build();
+            if (!selected) return;
+            if (
+              !choice.agent_revision_id &&
+              prepared.current.agentId !== agentId
+            ) {
+              if (
+                await prepareConversationAgent(
+                  client,
+                  workspace.id,
+                  selected,
+                  can("write"),
+                )
+              ) {
+                void cache.invalidateQueries({
+                  queryKey: ["agents", workspace.id],
+                });
+                void cache.invalidateQueries({
+                  queryKey: ["agent-picker", workspace.id],
+                });
+              }
+              prepared.current.agentId = agentId;
+            }
             const body = {
               ...choice,
               agent_id: agentId,
@@ -181,7 +239,7 @@ export function NewConversation() {
                     session_id: run.session_id,
                     thread_id: run.thread_id,
                     run_id: run.id,
-                  })
+                  }) + "?follow=latest"
                 : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
             );
           }}
@@ -192,75 +250,163 @@ export function NewConversation() {
 }
 
 export function SessionLayout() {
-  const { t } = useTranslation(),
-    { sessionId = "", threadId } = useParams(),
-    { workspace } = useWorkspace(),
-    client = useClient(),
-    queries = conversationQueries(client, workspace.id);
-  const threads = useQuery(queries.threads(sessionId));
-  // Chat returns to the main conversation, never the most recently listed child.
-  // An explicit Thread URL remains authoritative, including forks and children.
+  const { t } = useTranslation();
+  const { sessionId = "", threadId, runId } = useParams();
+  const { workspace } = useWorkspace();
   const { search } = useLocation();
+  const client = useClient(),
+    cache = useQueryClient();
+  const queries = conversationQueries(client, workspace.id);
+  const session = useSession(sessionId);
   const chat = new URLSearchParams(search).get("view") === "chat";
-  const roots = threads.data?.filter((thread) => thread.origin === "new") ?? [];
-  const first = chat
-    ? roots.length === 1
-      ? roots[0]
-      : undefined
-    : threads.data?.[0];
+  const roots = useQuery({
+    ...queries.threads(
+      sessionId,
+      chat ? { origin: ["new"], limit: 2 } : { limit: 1 },
+    ),
+    enabled: !!session.data && !threadId,
+  });
+  const fallback = useQuery({
+    ...queries.threads(sessionId, { limit: 1 }),
+    enabled:
+      !!session.data && !threadId && chat && roots.data?.items.length === 0,
+  });
+  const first =
+    chat && roots.data?.items.length !== 1 ? undefined : roots.data?.items[0];
+  const targetThread = threadId ?? first?.id;
+  const selectedThread = useQuery({
+    ...queries.thread(targetThread ?? ""),
+    enabled: !!targetThread,
+    initialData: first?.id === targetThread ? first : undefined,
+    initialDataUpdatedAt: roots.dataUpdatedAt,
+  });
+  const target =
+    selectedThread.data ?? (first?.id === targetThread ? first : undefined);
+  const selectedRun = runId ?? target?.current_run_id ?? target?.last_run_id;
+  useEffect(() => {
+    // Start loading the transcript module while the target is being resolved.
+    void import("./transcript").catch(() => undefined);
+  }, [sessionId]);
+  useEffect(() => {
+    if (selectedRun) {
+      void cache.prefetchQuery(queries.run(selectedRun));
+      void cache.prefetchQuery(queries.items(selectedRun));
+      if (targetThread)
+        void cache.prefetchQuery(
+          queries.runs(targetThread, { anchor: selectedRun }),
+        );
+    }
+  }, [client, cache, workspace.id, targetThread, selectedRun]);
   return (
-    // The header and the run sections share one owner for what is collapsed.
     <SessionAuthorsProvider
       key={`${workspace.id}:${sessionId}`}
       sessionId={sessionId}
     >
-      <RunCollapseProvider>
-        <div className={styles.sessionDetail}>
-          <SessionHeader threads={threads.data ?? []} />
-          <ErrorNotice
-            error={threads.error}
-            retry={() => void threads.refetch()}
-          />
-          <div
-            className={`${styles.sessionContent} a13n-scrollbar`}
-            data-session-stage
-          >
-            {threadId ? (
-              <Outlet />
-            ) : first ? (
-              <Navigate to={`threads/${first.id}${search}`} replace />
-            ) : threads.isPending ? (
-              <Loading variant="list" rows={3} />
-            ) : threads.data?.length ? (
-              <div className="grid gap-3 p-6">
-                <h2>{t("Choose a conversation")}</h2>
-                <p>{t("Choose which conversation history to open.")}</p>
-                <ul className="grid gap-2">
-                  {threads.data.map((thread) => (
-                    <li key={thread.id}>
-                      <Button
-                        variant="outline"
-                        render={<Link to={`threads/${thread.id}${search}`} />}
-                      >
-                        {thread.id} · {t(`origin.${thread.origin}`)}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : !threads.error ? (
-              <Empty
-                icon={<ChatsIcon aria-hidden="true" />}
-                title={t("No threads yet")}
-                description={t(
-                  "Threads created by the host application appear here.",
-                )}
+      <SessionStreamProvider
+        sessionId={sessionId}
+        enabled={!!session.data}
+        onEvent={(event) => {
+          if (
+            session.data?.schedule_id &&
+            event.type === "connection" &&
+            event.state === "live"
+          )
+            void invalidateConversation(cache, workspace.id, {
+              threadId,
+              runId: selectedRun,
+            });
+        }}
+      >
+        <RunCollapseProvider>
+          <div className={styles.sessionDetail}>
+            <SessionHeader />
+            <div
+              className={`${styles.sessionContent} a13n-scrollbar`}
+              data-session-stage
+            >
+              <SessionError
+                error={
+                  session.error ??
+                  (!threadId ? (roots.error ?? fallback.error) : null)
+                }
+                retry={() => {
+                  void session.refetch();
+                  if (!threadId) {
+                    void roots.refetch();
+                    if (chat) void fallback.refetch();
+                  }
+                }}
               />
-            ) : null}
+              <Suspense fallback={<SessionBodyLoading />}>
+                {session.isPending ? (
+                  <SessionBodyLoading />
+                ) : !session.data ? null : threadId ? (
+                  <Outlet />
+                ) : first ? (
+                  <Navigate to={`threads/${first.id}${search}`} replace />
+                ) : roots.isPending ||
+                  (chat &&
+                    roots.data?.items.length === 0 &&
+                    fallback.isPending) ? (
+                  <SessionBodyLoading />
+                ) : roots.data?.items.length || fallback.data?.items.length ? (
+                  <ThreadChoices sessionId={sessionId} />
+                ) : !roots.error && !fallback.error ? (
+                  <Empty
+                    icon={<ChatsIcon aria-hidden="true" />}
+                    title={t("No threads yet")}
+                    description={t(
+                      "Threads created by the host application appear here.",
+                    )}
+                  />
+                ) : null}
+              </Suspense>
+            </div>
           </div>
-        </div>
-      </RunCollapseProvider>
+        </RunCollapseProvider>
+      </SessionStreamProvider>
     </SessionAuthorsProvider>
+  );
+}
+
+function ThreadChoices({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation(),
+    { search } = useLocation(),
+    { workspace } = useWorkspace(),
+    client = useClient();
+  const threads = useInfiniteQuery(
+    conversationQueries(client, workspace.id).threadPages(sessionId),
+  );
+  return (
+    <div className="grid gap-3 p-6">
+      <h2>{t("Choose a thread")}</h2>
+      <p>{t("Choose which thread history to open.")}</p>
+      <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
+      {threads.isPending && <SessionBodyLoading />}
+      <ul className="grid gap-2">
+        {threads.data?.pages
+          .flatMap((page) => page.items)
+          .map((thread) => (
+            <li key={thread.id}>
+              <Button
+                variant="outline"
+                render={<Link to={`threads/${thread.id}${search}`} />}
+              >
+                {thread.id} · {t(`origin.${thread.origin}`)}
+              </Button>
+            </li>
+          ))}
+      </ul>
+      {threads.hasNextPage && (
+        <Button
+          variant="outline"
+          disabled={threads.isFetchingNextPage}
+          onClick={() => void threads.fetchNextPage()}
+        >
+          {t("Load more")}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -277,26 +423,27 @@ export function ThreadLayout() {
     runId ?? thread.data?.current_run_id ?? thread.data?.last_run_id;
   if (thread.data && thread.data.session_id !== sessionId)
     return (
-      <ErrorNotice
-        error={
-          new Error(t("This thread does not belong to this conversation."))
-        }
+      <SessionError
+        error={new Error(t("This thread does not belong to this session."))}
       />
     );
   return (
     <>
-      <ErrorNotice
+      <SessionError
         error={thread.error}
         retry={() => {
           void thread.refetch();
         }}
       />
       {thread.isPending ? (
-        <Loading variant="detail" />
+        <SessionBodyLoading />
       ) : runId ? (
         <Outlet />
       ) : selected ? (
-        <Navigate to={`runs/${selected}${search}`} replace />
+        <Navigate
+          to={`runs/${selected}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
+          replace
+        />
       ) : (
         thread.data && (
           <div className={styles.emptyThread}>

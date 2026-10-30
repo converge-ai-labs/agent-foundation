@@ -1,71 +1,172 @@
 .strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px;
+  position: relative;
+  container: activity-strip / inline-size;
+  display: grid;
+  gap: 4px;
   flex-shrink: 0;
-  max-width: 860px;
-  width: 100%;
-  margin: 0 auto 6px;
+  /* Same column as the composer (see conversation.module.css). */
+  width: min(var(--harness-reading-width), 100% - 84px);
+  margin: 0 auto;
+  padding-inline: 8px;
   color: var(--a13n-secondary);
   min-width: 0;
 }
 .strip button {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
-.strip button:hover,
-.strip button[data-popup-open] {
+.shortcuts,
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.shortcuts > button {
+  flex-shrink: 0;
+  padding-inline: 8px;
+}
+.shortcuts button:is(:hover, [data-popup-open]) {
   color: var(--a13n-text);
-  background: var(--a13n-surface);
+}
+.shortcuts .more {
+  display: none;
+}
+.backgroundActivity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+@container activity-strip (max-width: 600px) {
+  .shortcuts .secondaryShortcut {
+    display: none;
+  }
+  .shortcuts .more {
+    display: inline-flex;
+  }
+}
+@container activity-strip (max-width: 360px) {
+  .shortcuts > button {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .shortcuts > button > svg {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .shortcuts > button {
+    min-height: 44px;
+  }
 }
 .count {
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--a13n-secondary);
 }
 .active {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
+  flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
+  padding-inline: 8px;
+  font-size: 14px;
 }
 .active > svg {
   flex-shrink: 0;
 }
-.popup {
-  width: min(600px, calc(100vw - 24px));
-  max-height: min(640px, calc(100dvh - 40px));
+.active > span {
   overflow: hidden;
-  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popup {
+  width: min(800px, calc(100vw - 32px));
+  max-width: 800px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  font-size: 14px;
   line-height: 1.6;
 }
-.popup > [data-slot="popover-viewport"] {
-  max-height: min(640px, calc(100dvh - 40px), var(--available-height));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.activityLayout {
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+  min-height: min(440px, 60dvh);
 }
 .heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 4px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
 .heading h2 {
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 500;
+}
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px;
+  background: var(--a13n-surface);
+}
+.tabs button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: var(--harness-control-height);
+  gap: 8px;
+}
+.tabs .count {
+  margin-left: auto;
+}
+.tabs button[aria-pressed="true"] {
+  color: var(--a13n-text);
+  background: var(--a13n-selected);
+  font-weight: 500;
+}
+.inspectorBody {
+  min-height: 0;
+  max-height: min(560px, 65dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+@media (max-width: 600px) {
+  .activityLayout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-content: start;
+    padding: 8px;
+  }
+  .tabs button {
+    min-height: var(--harness-control-height);
+    padding: 4px 8px;
+    font-size: 14px;
+    gap: 4px;
+  }
+  .tabs button svg {
+    width: 14px;
+  }
+  .inspectorBody {
+    padding: 16px;
+    max-height: 50dvh;
+  }
 }
 .caption {
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  margin: 0 0 12px;
+  font-size: 14px;
+  margin: 0 0 8px;
 }
 .tasks {
   list-style: none;
@@ -75,14 +176,16 @@
 .tasks li {
   display: flex;
   align-items: start;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 8px;
+  padding: 8px 0;
 }
 .tasks li + li {
-  border-top: 1px solid var(--a13n-border);
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .tasks li > svg {
-  margin-top: 4px;
+  width: 16px;
+  height: 16px;
+  margin-top: calc((var(--harness-control-height) - 16px) / 2);
   flex-shrink: 0;
 }
 .tasks details {
@@ -99,7 +202,7 @@
 .tasks dl {
   display: grid;
   gap: 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .tasks dl > div {
   display: flex;
@@ -114,8 +217,53 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.dependencies {
+  display: grid;
+  gap: 4px;
+}
+.processSummary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding-block: 4px;
+}
+.processSummary::before {
+  align-self: flex-start;
+  width: 8px;
+  height: 8px;
+  margin: 8px 4px 0;
+}
+.processSummary > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.processSummary > :last-child {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 .processSummary code {
   font-size: 12px;
+  line-height: 1.8;
+}
+.executionBody {
+  margin: 8px 0 8px 24px;
+  display: grid;
+  gap: 12px;
+}
+.executionBody p {
+  margin: 0;
+}
+.executionBody button {
+  justify-self: start;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
 }
 .tasks summary:focus-visible,
 .notes summary:focus-visible {
@@ -130,17 +278,23 @@
   color: var(--a13n-secondary);
 }
 .notes > details {
-  padding: 10px 0;
+  padding: 0;
 }
 .notes > details + details {
-  border-top: 1px solid var(--a13n-border);
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .notes summary {
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 .notes details > div {
-  margin-top: 12px;
+  margin: 8px 0 0;
+}
+.notes details > div > :first-child {
+  margin-top: 0;
+}
+.notes details > div > :last-child {
+  margin-bottom: 0;
 }
 .loading {
   display: grid;
@@ -148,10 +302,89 @@
   padding: 16px 0;
 }
 @media (max-width: 700px) {
-  .active {
+  .processSummary {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+  .strip button svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@container conversation-page (max-width: 600px) {
+  .strip {
+    width: 100%;
+  }
+}
+
+.heading h2 {
+  flex: 1;
+}
+
+/* Activity uses the same grouped rows as Settings. */
+.tasks:not(:empty),
+.notes:has(> details) {
+  padding: 4px var(--harness-group-inset);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.notes > details {
+  padding-block: 8px;
+}
+.panelToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--a13n-secondary);
+}
+.panelToolbar > span:first-child {
+  flex: 1;
+  font-weight: 500;
+}
+.emptyState {
+  display: grid;
+  place-content: center;
+  min-height: 128px;
+  margin: 0;
+  padding: 24px 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  text-align: center;
+}
+
+.panelTitle {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
+}
+
+.children {
+  margin-top: 0;
+}
+
+.connection {
+  container: connection-slot / inline-size;
+  flex: 1;
+  min-width: 32px;
+}
+.status {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+@media (pointer: coarse) {
+  .connection {
+    min-width: 44px;
+  }
+}
+@container activity-strip (max-width: 680px) {
+  .shortcuts > button:not(.more) {
     display: none;
   }
-  .strip {
-    justify-content: space-between;
+  .shortcuts .more {
+    display: inline-flex;
   }
 }

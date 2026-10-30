@@ -3,17 +3,17 @@ import {
   IdentificationBadgeIcon,
   RobotIcon,
   ClipboardTextIcon,
-  KeyIcon,
   StackIcon,
-  EnvelopeIcon,
   EyeIcon,
-  MonitorIcon,
+  DevicesIcon,
   GearSixIcon,
   SlidersIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  TranslateIcon,
   UserIcon,
   UsersIcon,
+  WebhooksLogoIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { workspacePath } from "../../shared/paths";
@@ -34,8 +34,6 @@ export type SettingsSectionDefinition = {
   /** Content title when it differs from the navigation label. */
   title?: string;
   description?: string;
-  /** Forms keep the 760px column; collections need room for their table. */
-  layout?: "form" | "collection";
   icon: Icon;
   permission?: Schema["Verb"];
 };
@@ -44,21 +42,24 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   personal: [
     {
       value: "preferences",
-      layout: "form",
       label: "Preferences",
       description: "Choose how Console looks and feels.",
       icon: SlidersHorizontalIcon,
     },
     {
+      value: "language",
+      label: "Language",
+      description: "Used for navigation, dates, and controls.",
+      icon: TranslateIcon,
+    },
+    {
       value: "profile",
-      layout: "form",
       label: "Profile",
       description: "Manage your name and image.",
       icon: UserIcon,
     },
     {
       value: "security",
-      layout: "form",
       label: "Security",
       description: "Manage how you sign in and keep your account secure.",
       icon: ShieldCheckIcon,
@@ -67,7 +68,7 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "sessions",
       label: "Login sessions",
       description: "Manage browsers signed in to your account.",
-      icon: MonitorIcon,
+      icon: DevicesIcon,
     },
     {
       value: "activity",
@@ -79,7 +80,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   workspace: [
     {
       value: "general",
-      layout: "form",
       label: "General",
       description: "Manage this workspace's name and icon.",
       icon: GearSixIcon,
@@ -91,7 +91,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
     },
     {
       value: "media-understanding",
-      layout: "form",
       label: "Media understanding",
       description:
         "Models that read images, video and audio for agents whose model cannot.",
@@ -104,20 +103,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       description: "Manage the people who can access this workspace.",
       icon: UsersIcon,
       permission: "admin",
-    },
-    {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
-      permission: "admin",
-    },
-    {
-      value: "api-keys",
-      label: "My API keys",
-      description:
-        "Your own credentials for this workspace. Keep them private.",
-      icon: KeyIcon,
     },
     {
       value: "member-keys",
@@ -134,6 +119,14 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       permission: "admin",
     },
     {
+      value: "webhooks",
+      label: "Webhooks",
+      description:
+        "Send Run and Attempt lifecycle changes to your application.",
+      icon: WebhooksLogoIcon,
+      permission: "admin",
+    },
+    {
       value: "audit",
       label: "Audit",
       description: "Review changes to access and account security.",
@@ -144,7 +137,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   organization: [
     {
       value: "general",
-      layout: "form",
       label: "General",
       description: "Manage this organization's name and icon.",
       icon: GearSixIcon,
@@ -154,12 +146,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Members",
       description: "Manage the people who belong to this organization.",
       icon: UsersIcon,
-    },
-    {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
     },
     {
       value: "workspaces",

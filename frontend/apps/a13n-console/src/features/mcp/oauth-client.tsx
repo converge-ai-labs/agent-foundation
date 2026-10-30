@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, formSectionStyles } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { CallbackUrlField } from "../connections/callback-url";
 
@@ -93,7 +93,7 @@ export function MCPOAuthClientEditor({
   };
   return (
     <form
-      className={styles.form}
+      className={`${styles.form} ${formSectionStyles.fieldRows}`}
       autoComplete="off"
       onSubmit={(event) => {
         event.preventDefault();
@@ -101,8 +101,7 @@ export function MCPOAuthClientEditor({
       }}
     >
       <div className="grid gap-1">
-        <h3 className="text-sm font-medium">{t("Use your own OAuth app")}</h3>
-        <p className={styles.muted}>
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {t(
             grant === "authorization_code"
               ? "Register an OAuth app with the provider, then enter its client credentials."
@@ -186,34 +185,25 @@ export function MCPOAuthClientEditor({
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}
+        onCancel={onCancel}
         label={t(
           grant === "client_credentials"
             ? "Save and connect"
             : "Save and authorize",
         )}
+        leading={
+          saved?.client_id && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={save.isPending}
+              onClick={() => save.mutate(true)}
+            >
+              {t("Use automatic setup")}
+            </Button>
+          )
+        }
       />
-      <div className={styles.actions}>
-        {onCancel && (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={save.isPending}
-            onClick={onCancel}
-          >
-            {t("Cancel")}
-          </Button>
-        )}
-        {saved?.client_id && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={save.isPending}
-            onClick={() => save.mutate(true)}
-          >
-            {t("Use automatic setup")}
-          </Button>
-        )}
-      </div>
     </form>
   );
 }

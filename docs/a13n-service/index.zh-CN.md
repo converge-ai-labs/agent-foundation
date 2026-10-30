@@ -1,62 +1,71 @@
 ---
 title: Service
 sidebarTitle: 概览
-description: 通过 Console 和 HTTP API 为用户与应用运行 agent 的自托管平台。
+description: 在 Console 中构建 agent，与团队共享，并从应用中运行。
 ---
 
-Service 管理工作空间、访问权限、agent 及其修订版本，以及对话；客户端断开连接后，运行仍会继续。从[入门指南](get-started.md)开始本地部署并试用第一个 agent。
+Service 为团队和应用运行 agent。在 Console 中构建 agent，通过对话试用，再通过 HTTP API 调用同一个 agent。Service 管理访问权限、保存对话历史，并在客户端断开连接后继续执行已接受的工作。
 
 ## 从这里开始
 
-| 你的情况                    | 指南                                   |
-| --------------------------- | -------------------------------------- |
-| 部署 Service 并获得首次回复 | [本地部署与试用](get-started.md)       |
-| 团队已经在运行 Service      | [使用已有平台](use-platform.md)        |
-| 从应用中调用 agent          | [连接你的应用](connect-application.md) |
+根据已有条件选择路径：
 
-## 概念
+| 已有条件                    | 指南                                   | 完成后的结果                             |
+| --------------------------- | -------------------------------------- | ---------------------------------------- |
+| Docker 和模型 provider 账号 | [本地部署 Service](get-started.md)     | 可用的 Console 和 agent 的首次回复       |
+| 团队 Service 的访问权限     | [使用 Console](use-platform.md)        | 可以返回并继续的对话                     |
+| 想接入产品的可用 agent      | [连接你的应用](connect-application.md) | 能通过身份验证、提交工作并读取结果的应用 |
 
-- **组织与工作空间：** 组织管理成员；每个工作空间包含自己的 agent、资源和对话。
-- **Agent 与修订版本：** 配置变更会创建不可变的修订版本；运行使用 agent 的默认修订版本，除非消息固定了另一个修订版本。
-- **会话、线程与运行：** 会话组织相关线程；线程保存一段历史及其收件箱；每次运行推进该线程。
-- **Provider 与环境：** provider 是为模型、环境、connector、Web 工具和记忆配置的账号；线程可以挂载环境来操作文件和终端。
+## 为你的工作构建 agent
 
-[核心概念](../overview/core-concepts.md)通过一次对话介绍这些组件。
+从一个模型和指令开始。例如，创建一个将项目笔记整理成具体后续行动的 agent。先验证回复，再添加其他资源。
 
-## 组件如何协作
+| 按任务需要添加             | 指南                                    |
+| -------------------------- | --------------------------------------- |
+| 协助创建或修改 agent 配置  | [Agent Composer](agent-composer.md)     |
+| 其他模型或 provider 账号   | [模型](models.md)                       |
+| 业务系统操作或 MCP 工具    | [工具与连接](tools.md)                  |
+| 可复用的操作流程和配套文件 | [Skill](skills.md)                      |
+| 文件、命令或桌面           | [环境](environments.md)                 |
+| 在多个对话间共享的知识     | [Memory Space](memory.md#memory-spaces) |
+
+Composer 会提出资源变更方案，等待你的批准。Provider 凭据填写在它的[私密配置卡片](agent-composer.md#configure-a-provider)中。
+
+## 在对话中工作
+
+发送请求、检查回复，再在同一线程中追问。**会话**（session）组织相关线程；**线程**（thread）保存一段对话的历史；每次**运行**（run）使用一个已保存的 agent 修订版本推进历史。
 
 ```mermaid
 flowchart TB
-    Client["Console 或 API 客户端"] -->|"提交输入"| Control["Control：授权并接收"]
-    Control -->|"保存收件箱和运行"| Postgres[(PostgreSQL)]
-    Postgres -->|"领取任务"| Worker["Worker：运行 Harness"]
-    Worker -->|"检查点和文件"| Objects[(对象存储)]
-    Worker --> External["模型、工具和环境"]
-    Worker -->|"实时事件"| Redis[(Redis)]
-    Redis -->|"实时输出"| Control
-    Control -->|"线程事件流"| Client
+    Agent["选择 agent"] --> Input["发送请求"]
+    Input --> Work["查看回复与工具活动"]
+    Work --> Decision["回答问题或审批"]
+    Decision --> Work
+    Work --> Result["读取结果"]
+    Result --> Continue["继续或创建分支"]
 
-    class Client app
-    class Control,Worker a13n
-    class Postgres,Objects,Redis store
-    class External ext
+    class Agent,Work a13n
+    class Input,Decision,Continue app
+    class Result success
 ```
 
-1. 客户端发送消息。Service 将其加入线程收件箱；线程上没有进行中或等待中的运行时，启动一次运行。
-2. Worker 使用 Harness 执行运行，保存进度，并将实时输出流式传给客户端。
-3. 运行以结果完成、失败、被取消，或等待审批、客户端工具结果或回答。等待需要显式恢复；普通消息仍留在收件箱中。继续对话的方法请参阅 [Agent、线程与运行](agents-and-runs.md)。
+使用 Chat 进行对话，使用 Debug 查看执行细节、配置、用量和费用。返回保存的线程即可继续，也可以创建分支尝试另一种方向。
 
-Control 和 worker 是同一个可执行程序的运行角色，单个进程可以同时承担两种角色。请参阅[运维 Service](operations.md)。
+运行等待输入时，完成所有待处理问题和审批，再选择**提交回应**。API 客户端通过 `/resume` 提交完整批次。[使用 Console](use-platform.md)介绍这些操作，[Agent、线程与运行](agents-and-runs.md)说明它们如何影响执行。
 
-## 指南
+## 连接你的应用
 
-- [快速入门](get-started.md)：部署、连接模型并发送第一条消息；在已有部署上[使用 Console](use-platform.md)。
-- [身份与访问](identity.md)：工作空间、成员、API 密钥和服务账号。
-- [Agent、线程与运行](agents-and-runs.md)：配置 agent，然后开始、跟踪和恢复运行；[Agent Composer](agent-composer.md)可以协助构建 agent。
-- [资源](resources.md)：了解[模型](models.md)、[工具与连接](tools.md)、[skill](skills.md)、[环境](environments.md)、[记忆](memory.md)以及[文件与 webhook](files-and-webhooks.md)。
-- [HTTP 约定](http.md)、[API 参考](api-reference/index.md)和 [SDK 与 CLI](sdks.md)：构建集成。
-- [配置](configuration.md)、[运维](operations.md)、[监控](monitoring.md)和[设置参考](configuration-reference.md)：运行部署。
+打开 agent 的**接入应用**操作，获取其 ID 和你的 Service URL。按照[连接你的应用](connect-application.md)创建凭据、发送第一条消息、读取实时输出并继续线程。可以使用 [SDK 或远程 CLI](sdks.md)，也可以直接调用 [HTTP API](http.md)。
 
-## 接口
+其他集成方式包括：将 MCP 客户端连接到 [Service MCP 端点](mcp.md)，查看和配置工作空间资源；使用 [webhook](files-and-webhooks.md)，将执行事件传递给应用。
 
-Console 和 API 使用同一个源；API 操作位于 `/api/v1`。`a13n-service` 可执行程序用于运行服务器和运维命令。已接受的约定请参阅 [Service 规范](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-service/00-overview.md)。
+## 运维共享部署
+
+**组织**管理成员，**工作空间**保存 agent、资源和对话。通过[角色](identity.md#roles)控制谁可以运行 agent、构建资源或管理访问权限。
+
+- [配置](configuration.md)：连接存储、provider 和部署服务。
+- [运维](operations.md)：部署、升级、备份和恢复 Service。
+- [监控](monitoring.md)：调查用量、追踪及失败的请求或运行。
+- [设置参考](configuration-reference.md)和 [API 参考](api-reference/index.md)：查找准确的字段和操作。
+
+Console 和 API 使用同一个源。`a13n-service` 可执行程序支持合并或分别运行 control 与 worker 角色；规划部署规模时请参阅[运维指南](operations.md)。

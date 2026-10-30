@@ -11,22 +11,37 @@ from typing import Literal
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import exists, func, select, true, update
+from sqlalchemy import and_, case, exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride
 from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
-from a13n_service.resources.agents.service import SelectedRevision, select_revision, validate_override
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.resources.agents.service import (
+    SelectedRevision,
+    load_revision,
+    select_revision,
+    validate_override,
+)
 from a13n_service.runs import inbox
 from a13n_service.runs.admission import AcceptedIntent
 from a13n_service.runs.attachments import require_readable
-from a13n_service.runs.environments.mounts import freeze_mounts, has_primary, reserve_primary
+from a13n_service.runs.environments.mounts import (
+    adopt_mounts,
+    freeze_mounts,
+    has_primary,
+    primary_mount,
+    reserve_primary,
+    thread_has_primary,
+)
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
+from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Failure, MessagePayload, Resume, RunOptions, Trigger
+from a13n_service.runs.schemas import EnvironmentMount, Failure, MessagePayload, Resume, RunOptions, Trigger
+from a13n_service.runs.search import seed, vector
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
@@ -100,6 +115,7 @@ class Source:
     options: RunOptions
     # The digest of the options as submitted, which inherited sources keep from the run they come from.
     options_digest: str
+    occurrence_trigger_entry_id: str | None = None
     entry: InboxEntryRow | None = None
     resume: Resume | None = None
     resumed_by_id: str | None = None
@@ -127,6 +143,7 @@ class Source:
                 update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
             ),
             options_digest=options.digest(),
+            occurrence_trigger_entry_id=entry.id if entry.schedule_occurrence_id is not None else None,
             entry=entry,
         )
 
@@ -171,6 +188,7 @@ class Source:
             revision_selection="inherited",
             options=RunOptions.model_validate(run.options),
             options_digest=run.options_digest,
+            occurrence_trigger_entry_id=run.occurrence_trigger_entry_id if trigger == "resume" else None,
             entry=entry,
             resume=resume,
             resumed_by_id=resumed_by_id,
@@ -217,10 +235,24 @@ async def delegation(session: AsyncSession, thread: ThreadRow, run_id: str) -> D
     return Delegation(root_run_id=run_id, depth=depth)
 
 
-def primary_template(thread: ThreadRow, config: AgentConfig) -> str | None:
-    """The template acceptance reserves a primary sandbox from when the thread mounts none: the agent's, except on
-    a child thread, whose environments the edge that delegates it decides when it is spawned."""
-    return None if thread.origin == "child" else config.default_environment_template_id
+async def primary_source(
+    session: AsyncSession, thread: ThreadRow, config: AgentConfig
+) -> str | EnvironmentMount | None:
+    """Where acceptance gets a primary sandbox for a thread that mounts none: a template to reserve it from, or a
+    mount to share. It is the agent's default template, except on a child thread, whose spawning edge decides, never
+    the child agent: the edge's template when dedicated, and when shared the parent thread's primary, which a parent
+    without one cannot give until its own acceptance reserves one."""
+    if thread.origin != "child":
+        return config.default_environment_template_id
+    origin = await session.get(RunRow, thread.origin_run_id)
+    assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
+    revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
+    override = RunOptions.model_validate(origin.options).overrides
+    spawning = revision.config if override is None else apply_override(revision.config, override)
+    policy = spawning.subagents[thread.subagent].environment
+    if policy.mode == "shared":
+        return await primary_mount(session, thread.origin_thread_id)
+    return policy.template_id
 
 
 async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, source: Source) -> RunRow:
@@ -232,16 +264,48 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     await require_active_workspace(session, thread.workspace_id)
     principal, revision, options = source.principal, source.revision, source.options
+    if source.revision_selection != "inherited":
+        policy = ExecutionPolicy().overlay(
+            ExecutionOverride(
+                tools=ToolExecutionOverride(
+                    foreground_wait_seconds=runtime.settings.tool_executions.foreground_wait_seconds
+                )
+            ),
+            revision.config.execution,
+            ExecutionOverride.model_validate(thread.execution or {}),
+            options.execution,
+        )
+        options = options.model_copy(update={"execution": policy.override()})
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
-    template_id = primary_template(thread, revision.config)
-    if template_id is not None:
-        await reserve_primary(
-            session, principal, thread, template_id=template_id, limit=runtime.settings.environments.managed_count
-        )
-    mounts = await freeze_mounts(session, thread, principal_id=principal.id)
-    memories = await freeze_memories(
-        session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
+    if not await thread_has_primary(session, thread):
+        primary = await primary_source(session, thread, revision.config)
+        if isinstance(primary, EnvironmentMount):
+            await adopt_mounts(session, thread, [primary])
+        elif primary is not None:
+            await reserve_primary(
+                session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
+            )
+    from a13n_service.runs.browsers.service import freeze as freeze_browser
+
+    browser_binding = await freeze_browser(
+        session,
+        principal,
+        thread,
+        source.authority,
+        inherited=(
+            await _run(session, source.entry.origin_run_id)
+            if source.trigger == "browser_handback" and source.entry is not None
+            else parent
+            if source.trigger == "resume"
+            else None
+        ),
+    )
+    mounts = await freeze_mounts(
+        session,
+        thread,
+        principal_id=principal.id,
+        resume_run_id=parent.id if source.trigger == "resume" and parent else None,
     )
     payload = source.resume.input if source.resume is not None else None
     if source.entry is not None and source.entry.kind == "message":
@@ -274,6 +338,11 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
                 root_run_id=(await delegation(session, thread, run_id)).root_run_id,
             ),
         )
+    if thread.purpose == "conversation":
+        await inherit_defaults(session, thread.session_id, revision.config.memory)
+    memories = await freeze_memories(
+        session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
+    )
     current = await now(session)
     run = RunRow(
         id=run_id,
@@ -291,9 +360,11 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         # Frozen here: the thread's headers apply to this run even if the thread is edited later.
         mcp_headers=thread.mcp_headers,
         environment_mounts=mounts,
+        browser_binding=browser_binding,
         memory_mounts=memories,
         memory_cursors=inherited_cursors(parent, memories),
         source_entry_id=source.entry.id if source.entry is not None else None,
+        occurrence_trigger_entry_id=source.occurrence_trigger_entry_id,
         resume=source.resume.model_dump(mode="json") if source.resume is not None else None,
         resumed_by_id=source.resumed_by_id,
         request_key=source.request_key,
@@ -301,6 +372,13 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         trigger=source.trigger,
         lineage=lineage,
         parent_run_id=parent.id if parent is not None else None,
+        search_vector=vector(
+            seed(
+                payload.text() if payload else "",
+                source.entry.id if source.entry else run_id,
+                runtime.settings.run_search,
+            ).counts
+        ),
         status="accepted",
         available_at=current,
         max_attempts=runtime.settings.worker.max_attempts,
@@ -311,11 +389,19 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     if source.entry is not None:
         inbox.assign(source.entry, run)
     thread.current_run_id = run.id
-    await session.execute(
-        update(SessionRow)
-        .where(SessionRow.id == thread.session_id)
-        .values(last_run_id=run.id, updated_at=func.clock_timestamp())
-    )
+    if thread.purpose == "conversation":
+        # The first accepted input names an untitled Session; the savepoint discards it with a refusal.
+        first_input = " ".join(payload.text().split())[:256] if payload is not None else ""
+        untitled = and_(SessionRow.title.is_(None), SessionRow.last_run_id.is_(None))
+        await session.execute(
+            update(SessionRow)
+            .where(SessionRow.id == thread.session_id)
+            .values(
+                last_run_id=run.id,
+                updated_at=func.clock_timestamp(),
+                title=case((untitled, first_input or None), else_=SessionRow.title),
+            )
+        )
     await session.flush()
     await notify_subscribers(session, runtime, run, ["run.accepted"], at=current)
     runtime.wake_workers(session)
@@ -336,9 +422,17 @@ async def _source(
         return explicit
     if entry.kind == "message":
         return await Source.load(session, runtime, thread, entry, "queued")
+    if entry.kind == "browser_handback":
+        from a13n_service.runs.browsers.delivery import require_notice
+
+        await require_notice(session, runtime, entry)
+        origin = await session.get_one(RunRow, entry.origin_run_id)
+        return await Source.inherited(session, runtime, origin, "browser_handback", entry=entry)
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
-    return await Source.inherited(session, runtime, origin, "child_result", entry=entry)
+    return await Source.inherited(
+        session, runtime, origin, "tool_result" if entry.kind == "tool_result" else "child_result", entry=entry
+    )
 
 
 async def accept(

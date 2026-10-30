@@ -2,27 +2,38 @@
  * File browser: the one two-column anatomy for a tree of text files and the
  * chosen file, used by skill packages and memories.
  */
+/* One surface sized to its content, from a short file up to the viewport;
+   the tree and the document scroll inside it. */
 .browser {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
-}
-.tree {
-  min-width: 0;
-  max-height: min(640px, calc(100dvh - 300px));
-  overflow: auto;
-  padding: 10px 8px 12px;
+  min-height: 320px;
+  max-height: max(480px, calc(100dvh - 260px));
+  overflow: hidden;
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
+}
+.tree {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 8px 12px;
+}
+.treeBody {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
 }
 .treeHeading {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 24px;
-  margin: 0 8px 8px;
+  min-height: 46px;
+  flex: none;
+  margin: 0 8px 6px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
@@ -67,11 +78,28 @@
 .tree svg {
   flex: none;
 }
-.fileButton {
+.fileRow {
   display: flex;
   align-items: center;
+  border-radius: var(--a13n-radius-row);
+}
+.fileRow:hover {
+  background: var(--a13n-hover);
+}
+.fileRow[data-selected] {
+  background: var(--a13n-selected);
+}
+.fileActions {
+  flex: none;
+  margin-right: 4px;
+  color: var(--a13n-secondary);
+}
+.fileButton {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
   gap: 8px;
-  width: 100%;
   padding: 6px 8px;
   border-radius: 7px;
   color: var(--a13n-text-supporting);
@@ -85,12 +113,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fileButton:hover {
-  background: var(--a13n-hover);
-  color: var(--a13n-text);
-}
+.fileButton:hover,
 .fileButton[aria-current="true"] {
-  background: var(--a13n-selected);
   color: var(--a13n-text);
 }
 .fileButton:focus-visible {
@@ -98,10 +122,18 @@
   outline-offset: -2px;
 }
 .document {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
+  min-height: 0;
   overflow: hidden;
+  border-left: 1px solid var(--a13n-border-soft);
+}
+.documentBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 .documentHeader {
   display: flex;
@@ -110,6 +142,7 @@
   flex-wrap: wrap;
   gap: 8px 12px;
   min-height: 46px;
+  flex: none;
   padding: 8px 12px 8px 18px;
   border-bottom: 1px solid var(--a13n-border-soft);
 }
@@ -141,7 +174,6 @@
   padding: 20px 28px 32px;
 }
 .source {
-  max-height: min(640px, calc(100dvh - 350px));
   margin: 0;
   padding: 18px 20px;
   overflow: auto;
@@ -162,9 +194,19 @@
 @media (max-width: 900px) {
   .browser {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    min-height: 0;
+    max-height: none;
   }
   .tree {
-    max-height: 220px;
+    max-height: min(360px, 45dvh);
+  }
+  .document {
+    border-top: 1px solid var(--a13n-border-soft);
+    border-left: 0;
+  }
+  .documentBody {
+    max-height: 65dvh;
   }
   .markdown {
     padding: 16px 18px 24px;

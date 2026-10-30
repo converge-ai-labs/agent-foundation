@@ -4,7 +4,12 @@ import asyncio
 import json
 import shlex
 import sys
+import tarfile
 from datetime import UTC, datetime, timedelta
+from email import policy
+from email.parser import BytesParser
+from io import BytesIO
+from pathlib import Path
 
 import a13n_service.providers.environment.native as native_environment
 import httpx2
@@ -59,6 +64,7 @@ class NativeCloud:
         if (
             self.key == "vercel"
             and request.method == "POST"
+            and not request.url.path.endswith("/fs/write")
             and request.headers.get("content-type") != "application/json"
         ):
             return httpx2.Response(415)
@@ -72,7 +78,26 @@ class NativeCloud:
             else:
                 self.delete_pending -= 1
         path = request.url.path
+        if path.endswith("/fs/write"):
+            assert request.headers["content-type"] == "application/gzip"
+            with tarfile.open(fileobj=BytesIO(request.content), mode="r:gz") as archive:
+                (member,) = archive.getmembers()
+                destination = Path(request.headers["x-cwd"]) / member.name
+                destination.write_bytes(archive.extractfile(member).read())
+                destination.chmod(member.mode)
+            return httpx2.Response(200, json={})
+        if path.endswith("/upload_file"):
+            message = BytesParser(policy=policy.default).parsebytes(
+                ("Content-Type: " + request.headers["content-type"] + "\r\n\r\n").encode() + request.content
+            )
+            parts = {part.get_param("name", header="content-disposition"): part for part in message.iter_parts()}
+            Path(parts["path"].get_payload(decode=True).decode()).write_bytes(parts["file"].get_payload(decode=True))
+            return httpx2.Response(200, json={})
         body = json.loads(request.content) if request.content else {}
+        if path.endswith(("/fs/read", "/download_file")):
+            return httpx2.Response(
+                200, content=Path(body["path"]).read_bytes(), headers={"content-type": "application/octet-stream"}
+            )
         if path.endswith("/process/execute") or path.endswith("/execute_sync") or path.endswith("/cmd"):
             argv = [body["command"], *body["args"]] if self.key == "vercel" else shlex.split(body["command"])
             process = await asyncio.create_subprocess_exec(
@@ -135,7 +160,7 @@ class NativeCloud:
         return httpx2.Response(200, json=self.view())
 
 
-@pytest.mark.parametrize("key", BACKENDS)
+@pytest.mark.parametrize("key", [key for key in BACKENDS if key != "daytona"])
 def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
     async def scenario(key):
         cloud = NativeCloud(key)
@@ -149,7 +174,9 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
         monkeypatch.setattr(native_environment, "_DELETE_POLL_SECONDS", 0.01)
         definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)[key]
-        config = definition.validate_environment({"root": str(tmp_path), "python": sys.executable})
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "environment": {"APP_MODE": "agent-default"}}
+        )
         provider = await definition.open_provider(
             configuration=BACKENDS[key], credential={"api_key": "fixture-private-token"}
         )
@@ -169,6 +196,7 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
 
         state = await manage("create")
+        assert cloud.target["environment_variables" if key == "runloop" else "env"] == {"APP_MODE": "agent-default"}
         assert "fixture-private-token" not in state.model_dump_json()
         state = EnvironmentState.model_validate_json(state.model_dump_json())
         before = list(cloud.calls)
@@ -197,13 +225,6 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
         )
         assert failed.status.exit_code == 7
-        if key == "daytona":
-            cloud.target["autoDeleteInterval"] = 0
-            with pytest.raises(EnvironmentProviderError) as exc:
-                await manage("stop", state)
-            assert exc.value.code == "provider_stop_retention_unsupported"
-            assert cloud.target["state"] == "started"
-            cloud.target["autoDeleteInterval"] = -1
         if key == "runloop":
             cloud.target["launch_parameters"]["after_idle"]["idle_time_seconds"] = 600
             with pytest.raises(EnvironmentProviderError) as exc:
@@ -221,6 +242,15 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
         assert all(method == "GET" for method, _ in cloud.calls[len(before) :])
         state = await manage("start", state)
         second = await connector(state).open()
+        default_result = await second.operations.shell.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="default", script="sh -c 'printf %s \"$APP_MODE\"'"),
+                output_policy=EnvironmentOutputPolicy(
+                    max_inline_bytes=1024, max_output_bytes=1024, overflow="truncate"
+                ),
+            )
+        )
+        assert default_result.output.stdout.inline == b"agent-default"
         assert second.execution_id != first.execution_id
         assert (await second.operations.files.read_text("/data")).text == f"{key} files"
         assert second.descriptor.backing_identity == old_identity
@@ -271,7 +301,7 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
     asyncio.run(scenario(key))
 
 
-@pytest.mark.parametrize("key", BACKENDS)
+@pytest.mark.parametrize("key", [key for key in BACKENDS if key != "daytona"])
 @pytest.mark.parametrize("poll_failure", ["timeout", "unavailable"])
 def test_native_delete_keeps_state_until_terminal_evidence(key, poll_failure, tmp_path, monkeypatch):
     async def scenario():

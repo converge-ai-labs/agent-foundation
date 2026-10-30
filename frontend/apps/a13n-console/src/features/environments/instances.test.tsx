@@ -14,6 +14,7 @@ vi.mock("../../auth/context", () => ({
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
+    basePath: "/workspace/ws_test",
     organization: { id: "org_test" },
     can: () => true,
   }),
@@ -23,6 +24,15 @@ vi.mock("react-i18next", () => ({
 }));
 
 const collections: Record<string, unknown[]> = {
+  "/api/v1/metrics-data-sources": [
+    {
+      id: "mds_local",
+      name: "Local Cache",
+      enabled: true,
+      builtin: true,
+      config: { collection: "proxy" },
+    },
+  ],
   "/api/v1/environment-providers": [
     { id: "eprov_docker", name: "Docker host", type: "docker", enabled: true },
   ],
@@ -46,7 +56,10 @@ const collections: Record<string, unknown[]> = {
 
 beforeEach(() => {
   http.GET.mockImplementation(async (path: string) => ({
-    data: { items: collections[path] ?? [], next_cursor: null },
+    data:
+      path === "/api/v1/metrics-data-sources/capabilities"
+        ? { proxy: true, native: true, pull: false, collectors: [] }
+        : { items: collections[path] ?? [], next_cursor: null },
   }));
   http.POST.mockReset().mockResolvedValue({ data: { id: "env_test" } });
 });
@@ -91,7 +104,14 @@ it.each([
       </QueryClientProvider>,
     );
     await screen.findByText(empty);
-    const create = screen.getByRole("button", { name: action });
+    const create = screen.getByRole(
+      section === "templates" ? "link" : "button",
+      { name: action },
+    );
+    if (section === "templates")
+      expect(create.getAttribute("href")).toBe(
+        "/workspace/ws_test/environments/new",
+      );
     expect(create.closest("header")).toBeNull();
     const manage = screen.getByRole("link", { name: "Manage providers" });
     expect(manage.closest("header")).not.toBeNull();
@@ -102,29 +122,46 @@ it.each([
   },
 );
 
-it("allocates a managed environment from an enabled template", async () => {
-  const { cache, user } = await openCreate();
-  await user.type(screen.getByRole("textbox", { name: "Name" }), "Scratch");
-  await user.click(screen.getByRole("combobox", { name: "Template" }));
-  const python = await screen.findByRole("option", { name: /Python/ });
-  expect(screen.queryByRole("option", { name: /Retired/ })).toBeNull();
-  await user.click(python);
-  await user.click(screen.getByRole("button", { name: "Create environment" }));
-  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
-  expect(http.POST.mock.calls[0]).toEqual([
-    "/api/v1/environments",
-    {
-      body: { template_id: "envtpl_python", name: "Scratch" },
-    },
-  ]);
-  cache.clear();
-});
+it.each([null, "mds_local"])(
+  "allocates a managed environment with monitoring selection %s",
+  async (sourceId) => {
+    const { cache, user } = await openCreate();
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Scratch");
+    await user.click(screen.getByRole("combobox", { name: "Template" }));
+    const python = await screen.findByRole("option", { name: /Python/ });
+    expect(screen.queryByRole("option", { name: /Retired/ })).toBeNull();
+    await user.click(python);
+    if (sourceId) {
+      await user.click(
+        screen.getByRole("combobox", { name: "Metrics data source" }),
+      );
+      await user.click(
+        await screen.findByRole("option", { name: "Local Cache" }),
+      );
+    }
+    await user.click(
+      screen.getByRole("button", { name: "Create environment" }),
+    );
+    await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+    expect(http.POST.mock.calls[0]).toEqual([
+      "/api/v1/environments",
+      {
+        body: {
+          template_id: "envtpl_python",
+          name: "Scratch",
+          metrics_data_source_id: sourceId,
+        },
+      },
+    ]);
+    cache.clear();
+  },
+);
 
 it("registers an external target by its endpoint and token, with no provider to pick", async () => {
   const { cache, user } = await openCreate();
   await user.click(screen.getByRole("combobox", { name: "Ownership" }));
   await user.click(
-    await screen.findByRole("option", { name: /^External target/ }),
+    await screen.findByRole("option", { name: /^External environment/ }),
   );
   expect(screen.queryByRole("combobox", { name: "Provider" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Template" })).toBeNull();
@@ -143,8 +180,66 @@ it("registers an external target by its endpoint and token, with no provider to 
       body: {
         endpoint: "https://laptop.example.com:8443",
         token: "daemon-token",
+        metrics_data_source_id: null,
       },
     }),
   ]);
+  cache.clear();
+});
+
+it("distinguishes lost and permanently unavailable targets from ready instances", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: {
+      items:
+        path === "/api/v1/environments"
+          ? [
+              {
+                id: "env_lost",
+                name: "Lost sandbox",
+                status: "ready",
+                failure: { code: "environment_lost", permanent: true },
+              },
+              {
+                id: "env_unavailable",
+                name: "Unavailable sandbox",
+                status: "ready",
+                failure: { code: "provider_invalid", permanent: true },
+              },
+              {
+                id: "env_ready",
+                name: "Healthy sandbox",
+                status: "ready",
+                failure: null,
+              },
+              {
+                id: "env_retrying",
+                name: "Retrying sandbox",
+                status: "ready",
+                failure: {
+                  code: "provider_credential_changed",
+                  permanent: false,
+                },
+              },
+            ]
+          : (collections[path] ?? []),
+      next_cursor: null,
+    },
+  }));
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <Page title="Environment instances">
+          <EnvironmentInstances />
+        </Page>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Lost sandbox");
+  expect(screen.getByText("Environment lost")).toBeTruthy();
+  expect(screen.getByText("Environment unavailable")).toBeTruthy();
+  expect(screen.getAllByText("state.ready")).toHaveLength(2);
   cache.clear();
 });

@@ -18,13 +18,14 @@ from a13n_harness.providers.web.definition import WebProviderDefinition
 from pydantic import JsonValue
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.model_settings import check_settings, settings_schema
 
 type RegisteredProvider = ProviderDefinition
 
-type ProviderKind = Literal["model", "environment", "connector", "web", "memory"]
+type ProviderKind = Literal["model", "environment", "connector", "web", "memory", "browser"]
 type WebOperation = Literal["search", "scrape"]
 
 
@@ -44,6 +45,7 @@ class Registry:
     connectors: ProviderCatalog[ConnectorProviderDefinition]
     web: ProviderCatalog[WebProviderDefinition]
     memory: ProviderCatalog[MemoryProviderDefinition]
+    browsers: ProviderCatalog[BrowserProviderDefinition]
     # The settings schema of each calling API a model type offers, derived once, at assembly.
     model_settings: Mapping[str, Mapping[str, JsonValue]]
 
@@ -58,6 +60,7 @@ class Registry:
         connectors: list[ConnectorProviderDefinition] = []
         web: list[WebProviderDefinition] = []
         memory: list[MemoryProviderDefinition] = []
+        browsers: list[BrowserProviderDefinition] = []
         for definition in definitions:
             match definition:
                 case ModelProviderDefinition():
@@ -70,6 +73,8 @@ class Registry:
                     web.append(definition)
                 case MemoryProviderDefinition():
                     memory.append(definition)
+                case BrowserProviderDefinition():
+                    browsers.append(definition)
                 case _:
                     raise ValueError(f"Unsupported provider domain: {definition.DOMAIN}")
         apis = {api for definition in models for api in definition.supported_model_apis}
@@ -79,6 +84,7 @@ class Registry:
             ProviderCatalog(connectors),
             ProviderCatalog(web),
             ProviderCatalog(memory),
+            ProviderCatalog(browsers),
             {api: settings_schema(api) for api in sorted(apis)},
         )
 
@@ -94,6 +100,8 @@ class Registry:
                 return self.web
             case "memory":
                 return self.memory
+            case "browser":
+                return self.browsers
 
     def types(self, kind: ProviderKind) -> list[RegisteredProvider]:
         return sorted(self.catalog(kind).values(), key=lambda definition: definition.type)
@@ -108,6 +116,8 @@ class Registry:
     def get(self, kind: Literal["web"], type_: str) -> WebProviderDefinition: ...
     @overload
     def get(self, kind: Literal["memory"], type_: str) -> MemoryProviderDefinition: ...
+    @overload
+    def get(self, kind: Literal["browser"], type_: str) -> BrowserProviderDefinition: ...
     @overload
     def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider: ...
     def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider:

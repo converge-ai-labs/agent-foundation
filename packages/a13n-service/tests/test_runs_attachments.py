@@ -257,7 +257,7 @@ async def test_other_files_are_placed_in_the_primary_environment(
             service,
             "unpacker",
             await _model(service, scripted_model),
-            toolsets={"configuration": {"enabled": True}},
+            **runs_kit.LOOKUP,
             default_environment_template_id=await _local_template(service, tmp_path),
         )
         # A name longer than a file name may be is cut to 200 UTF-8 bytes, keeping its extension.
@@ -267,7 +267,7 @@ async def test_other_files_are_placed_in_the_primary_environment(
         report = await _asset(service, runs_kit, "report.pdf", "application/pdf", PDF)
         blocked = await _asset(service, runs_kit, "blocked.zip", "application/zip", BLOCKED)
         gate = asyncio.Event()
-        scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+        runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
         scripted_model.say("Unpacked")
         # Control characters in a URL's last segment are left out of the name.
         url = {"type": "url", "url": f"{origin}/files/data%0A%00.bin"}

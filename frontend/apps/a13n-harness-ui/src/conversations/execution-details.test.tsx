@@ -77,7 +77,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     <ConversationTranscript {...base} blocks={[tool]} activity={working} />,
   );
   const trigger = screen.getByRole("button", {
-    name: /Execution details\s*· 1 tool call · 1 running/,
+    name: /Work log/,
     expanded: false,
   });
   const status = screen.getByRole("status");
@@ -86,9 +86,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     trigger.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(status.closest("[data-execution-reader]")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
   view.rerender(
     <ConversationTranscript
       {...base}
@@ -98,7 +96,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
   );
   expect(
     screen.getByRole("button", {
-      name: /Execution details\s*· 1 tool call$/,
+      name: /Work log/,
       expanded: false,
     }),
   ).toBe(trigger);
@@ -159,7 +157,7 @@ it.each([
     );
     expect(
       screen.getByRole("button", {
-        name: /Execution details\s*· 1 tool call$/,
+        name: /Work log/,
       }),
     ).toBeTruthy();
     expect(screen.queryByText(/running/)).toBeNull();
@@ -234,25 +232,23 @@ function transcript(complete = false) {
 it("shows a compact mobile preview and opens only one execution reader on demand", async () => {
   viewport();
   const view = render(transcript());
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
   expect(screen.queryByText("A long internal plan")).toBeNull();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Work log/ });
   const user = userEvent.setup();
   await user.click(trigger);
   const dialog = await screen.findByRole("dialog", {
-    name: "Execution details",
+    name: "Work log",
   });
   expect(within(dialog).getByText("A long internal plan")).toBeTruthy();
   expect(within(dialog).queryByText("Investigate scrolling")).toBeNull();
   expect(document.querySelectorAll("[data-execution-reader]")).toHaveLength(1);
   view.rerender(transcript(true));
   expect(screen.getByRole("dialog")).toBe(dialog);
-  expect(within(dialog).getByText("Completed")).toBeTruthy();
+  expect(within(dialog).getByText("Recorded steps")).toBeTruthy();
   expect(within(dialog).queryByText("The final answer")).toBeNull();
   await user.click(
-    within(dialog).getByRole("button", { name: "Back to conversation" }),
+    within(dialog).getByRole("button", { name: "Back to chat" }),
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
@@ -261,48 +257,49 @@ it("shows a compact mobile preview and opens only one execution reader on demand
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
-it("retains inner disclosure state and reader identity across visits and supports Escape", async () => {
+it("retains Thought disclosure, scroll and reader identity across visits and supports Escape", async () => {
   viewport();
   render(transcript());
   const user = userEvent.setup();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Work log/ });
   await user.click(trigger);
   const reader = await screen.findByRole("region", {
-    name: "Execution details",
+    name: "Work log",
   });
-  const reasoning = screen
-    .getByText("A long internal plan")
-    .closest("details")!;
-  fireEvent.click(within(reader).getByText("Reasoning"));
-  expect(reasoning.open).toBe(false);
+  const thought = within(reader).getByText("Thought");
+  expect(thought.closest("details")?.open).toBe(false);
+  await user.click(thought);
+  const reasoning = within(reader).getByRole("region", {
+    name: "Thought content",
+  });
+  fireEvent.scroll(reasoning, { target: { scrollTop: 80 } });
   reader.focus();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(trigger);
-  expect(await screen.findByRole("region", { name: "Execution details" })).toBe(
-    reader,
+  expect(await screen.findByRole("region", { name: "Work log" })).toBe(reader);
+  expect(within(reader).getByRole("region", { name: "Thought content" })).toBe(
+    reasoning,
   );
-  expect(reasoning.open).toBe(false);
+  expect(reasoning.scrollTop).toBe(80);
 });
 
 it("switches between mobile inspection and the existing desktop disclosure", async () => {
   const resize = viewport();
   render(transcript());
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Execution details/ }));
+  await user.click(screen.getByRole("button", { name: /Work log/ }));
   await screen.findByRole("dialog");
   resize(false);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "Execution details" })
+      .getByRole("button", { name: /Work log/ })
       .getAttribute("aria-expanded"),
   ).toBe("false");
   resize(true);
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
 });
 
 it("mounts desktop details on first expansion and preserves the reader and disclosures on collapse", async () => {
@@ -311,26 +308,203 @@ it("mounts desktop details on first expansion and preserves the reader and discl
   expect(document.querySelectorAll("[data-execution-reader]")).toHaveLength(0);
   expect(screen.queryByText("A long internal plan")).toBeNull();
   const user = userEvent.setup();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  const label = trigger.textContent;
   await user.click(trigger);
-  const reader = screen.getByRole("region", { name: "Execution details" });
-  const reasoning = within(reader)
-    .getByText("A long internal plan")
-    .closest("details")!;
-  fireEvent.click(within(reader).getByText("Reasoning"));
-  expect(reasoning.open).toBe(false);
+  expect(trigger.textContent).toBe(label);
+  const reader = screen.getByRole("region", { name: "Work log" });
+  await user.click(within(reader).getByText("Thought"));
+  const reasoning = within(reader).getByRole("region", {
+    name: "Thought content",
+  });
+  fireEvent.scroll(reasoning, { target: { scrollTop: 80 } });
   await user.click(trigger);
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(trigger.textContent).toBe(label);
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
   expect(reader.isConnected).toBe(true);
   view.rerender(transcript(true));
   await user.click(trigger);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
+  expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
+  expect(within(reader).getByRole("region", { name: "Thought content" })).toBe(
+    reasoning,
   );
-  expect(reasoning.open).toBe(false);
+  expect(reasoning.scrollTop).toBe(80);
   expect(
     screen.getByText("The final answer").closest("[data-execution-reader]"),
+  ).toBeNull();
+});
+
+it("folds completed progress, thoughts and tools together while keeping the final response visible", async () => {
+  viewport()(false);
+  const saved: Schema<"TranscriptEntry">[] = [
+    entries[0],
+    {
+      position: 1,
+      message_kind: "response",
+      parts: [
+        { kind: "assistant", text: "I will inspect the submit handler." },
+        {
+          kind: "thinking",
+          text: "Consider duplicate requests.",
+          duration_ms: 2400,
+        },
+        {
+          kind: "tool_call",
+          tool_name: "view",
+          tool_call_id: "read",
+          value: { path: "checkout.ts" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "view",
+          tool_call_id: "read",
+          value: "source",
+          duration_ms: 1200,
+        },
+      ],
+    },
+    {
+      position: 2,
+      message_kind: "response",
+      parts: [{ kind: "assistant", text: "The handler needs a guard." }],
+    },
+    {
+      position: 3,
+      message_kind: "response",
+      parts: [{ kind: "assistant", text: "The final answer" }],
+    },
+  ];
+  const props = {
+    threadId: "one",
+    entries: saved,
+    blocks: [],
+    localInputs: [],
+    turns: [
+      {
+        turn_id: "finished",
+        input_position: 0,
+        end_position: 4,
+        final_position: 3,
+        preview: "Investigate scrolling",
+        duration_ms: 65200,
+      },
+    ],
+  };
+  const view = render(
+    <ConversationTranscript
+      {...props}
+      turns={[{ ...props.turns[0], final_position: null }]}
+    />,
+  );
+  expect(screen.getByText("I will inspect the submit handler.")).toBeTruthy();
+  view.rerender(<ConversationTranscript {...props} />);
+  const trigger = screen.getByRole("button", {
+    name: /Worked for 1m 5s/,
+    expanded: false,
+  });
+  expect(screen.queryByText("I will inspect the submit handler.")).toBeNull();
+  expect(screen.queryByText("The handler needs a guard.")).toBeNull();
+  expect(
+    screen.getByText("The final answer").closest("[data-execution-reader]"),
+  ).toBeNull();
+  const user = userEvent.setup();
+  await user.click(trigger);
+  const reader = screen.getByRole("region", { name: "Work log" });
+  expect(
+    within(reader).getByText("I will inspect the submit handler."),
+  ).toBeTruthy();
+  expect(within(reader).getByText("The handler needs a guard.")).toBeTruthy();
+  expect(within(reader).getByText("for 2s")).toBeTruthy();
+  const thought = within(reader).getByText("Thought").closest("details")!;
+  expect(thought.open).toBe(false);
+  expect(within(reader).queryByText("1s")).toBeNull();
+  expect(within(reader).queryByText("The final answer")).toBeNull();
+  expect(reader.scrollTop).toBe(0);
+  await user.click(trigger);
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.getByText("The final answer")).toBeTruthy();
+});
+
+it("does not create an empty Worked disclosure for a direct answer", () => {
+  viewport()(false);
+  render(
+    <ConversationTranscript
+      threadId="one"
+      localInputs={[]}
+      blocks={[]}
+      entries={[
+        entries[0],
+        {
+          position: 1,
+          message_kind: "response",
+          parts: [{ kind: "assistant", text: "Direct answer" }],
+        },
+      ]}
+      turns={[
+        {
+          turn_id: "one",
+          input_position: 0,
+          end_position: 2,
+          final_position: 1,
+          preview: "Question",
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Direct answer")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Work log/ })).toBeNull();
+});
+
+it("keeps an explicitly opened reader when completion gathers the preceding progress into it", async () => {
+  viewport()(false);
+  const history: Schema<"TranscriptEntry">[] = [
+    entries[0],
+    {
+      position: 1,
+      message_kind: "response",
+      parts: [
+        { kind: "assistant", text: "Looking into this now." },
+        { kind: "thinking", text: "Plan the checks." },
+      ],
+    },
+  ];
+  const props = {
+    threadId: "one",
+    entries: history,
+    blocks: [],
+    localInputs: [],
+    turns: [
+      { turn_id: "one", input_position: 0, end_position: 2, preview: "Check" },
+    ],
+  };
+  const view = render(<ConversationTranscript {...props} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Work log/ }));
+  const reader = screen.getByRole("region", { name: "Work log" });
+  await user.click(within(reader).getByText("Thought"));
+  const thought = within(reader).getByRole("region", {
+    name: "Thought content",
+  });
+  view.rerender(
+    <ConversationTranscript
+      {...props}
+      entries={[
+        ...history,
+        {
+          position: 2,
+          message_kind: "response",
+          parts: [{ kind: "assistant", text: "Finished." }],
+        },
+      ]}
+      turns={[{ ...props.turns[0], end_position: 3, final_position: 2 }]}
+    />,
+  );
+  expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
+  expect(within(reader).getByRole("region", { name: "Thought content" })).toBe(
+    thought,
+  );
+  expect(within(reader).getByText("Looking into this now.")).toBeTruthy();
+  expect(
+    screen.getByText("Finished.").closest("[data-execution-reader]"),
   ).toBeNull();
 });

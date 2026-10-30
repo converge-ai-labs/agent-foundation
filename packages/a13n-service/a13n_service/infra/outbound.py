@@ -5,18 +5,42 @@ address pinning. Native transports and operator-configured proxies own resolutio
 The URL and TLS identity are never rewritten.
 """
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from urllib.parse import urlsplit
 
 import anyio
 import httpx2
 from a13n_harness.http import outbound_tls_verify
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.http_transport import EnvironmentProxyClient
 
 from a13n_service.infra.errors import ServiceError
 
 _LIMITS = httpx2.Limits(max_connections=4, max_keepalive_connections=2)
+
+
+async def validate_cdp_endpoint(policy: EndpointPolicy, endpoint: str) -> None:
+    """Authorize the destination separately from the encrypted CDP URL's secret query."""
+    try:
+        parsed = urlsplit(endpoint)
+        if (
+            parsed.scheme not in {"ws", "wss"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+            or parsed.path.startswith("/devtools/page/")
+            or any(character.isspace() or ord(character) < 32 for character in endpoint)
+        ):
+            raise ValueError
+        # Only this secret-bearing connection input omits the query from policy validation.
+        # General HTTP endpoints retain their sensitive-query prohibition.
+        destination = parsed._replace(scheme="https" if parsed.scheme == "wss" else "http", query="").geturl()
+        await replace(policy, require_https=True).validate(destination)
+    except (ValueError, EndpointPolicyError):
+        raise EndpointPolicyError("CDP destination is not permitted") from None
 
 
 class BoundedBody(httpx2.AsyncByteStream):
@@ -50,7 +74,7 @@ async def open_http(
     max_bytes: int,
     before_request: Callable[[httpx2.Request], Awaitable[None]] | None = None,
     after_response: Callable[[httpx2.Response], Awaitable[None]] | None = None,
-) -> AsyncIterator[httpx2.AsyncClient]:
+) -> AsyncGenerator[httpx2.AsyncClient]:
     async def check_request(request: httpx2.Request) -> None:
         await policy.validate(str(request.url))
         if before_request is not None:

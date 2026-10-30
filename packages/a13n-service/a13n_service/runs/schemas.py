@@ -3,11 +3,12 @@
 import hashlib
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from decimal import Decimal
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
-from a13n_stream_protocol.display import DisplayContinuation
+from a13n_harness.environment.models import EnvironmentPermissionSet
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -15,28 +16,32 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
-from a13n_service.resources.agents.schemas import AgentOverride
+from a13n_service.infra.reads import tool_response
+from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
-from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
+from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
 from a13n_service.runs.display import Item
-from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
+from a13n_service.runs.environments.schemas import DEFAULT_MOUNT_PERMISSIONS, MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
+from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
-type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
+type Trigger = Literal["input", "queued", "resume", "child_result", "tool_result", "browser_handback", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
-type WaitReason = Literal["approval", "call", "multiple"]
+type WaitReason = Literal["approval", "call", "multiple", "desktop_control"]
 type Sealed = Literal["waiting", "completed", "failed", "cancelled"]
 
 MAX_FAILURE_MESSAGE_CHARS = 4096
@@ -136,12 +141,28 @@ class UsageLimit(_Frozen):
     requests: int = Field(ge=1, le=10000)
 
 
+class RequestContext(_Frozen):
+    """Explicit business headers, frozen in accepted Run options and kept out of model projections."""
+
+    headers: dict[str, str] = Field(default_factory=dict, repr=False)
+
+    @field_validator("headers")
+    @classmethod
+    def normalized_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        headers = normalize_headers(value)
+        if headers.keys() & {"api-key", "x-api-key", "x-goog-api-key", "user-agent"}:
+            raise ValueError("Reserved authentication or transport header")
+        return headers
+
+
 class RunOptions(_Frozen):
     """What a message may choose for the run it starts. A steer joins a run with the defaults or equal options."""
 
     labels: Labels = Field(default_factory=dict)
+    context: RequestContext | None = Field(default=None, exclude_if=lambda value: value is None, repr=False)
     # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
     configuration: RunConfiguration | None = None
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     max_usage: UsageLimit | None = None
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
@@ -149,7 +170,28 @@ class RunOptions(_Frozen):
 
     def digest(self) -> str:
         """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
-        return hashlib.sha256(canonical_json(self.model_dump(mode="json", exclude={"configuration"}))).hexdigest()
+        return hashlib.sha256(
+            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution", "context"}))
+        ).hexdigest()
+
+
+def context_response[T: BaseModel](value: T) -> T:
+    """Project typed Run options at HTTP response boundaries before fragmenting MCP reads.
+
+    Input and storage serialization stay unchanged. Business JSON keys named context are not touched.
+    """
+    if not tool_response.get():
+        return value
+    if isinstance(value, RunOptions):
+        return value.model_copy(update={"context": None})
+    updates: dict[str, object] = {}
+    for name in type(value).model_fields:
+        item = getattr(value, name)
+        if isinstance(item, BaseModel):
+            updates[name] = context_response(item)
+        elif isinstance(item, list):
+            updates[name] = [context_response(child) if isinstance(child, BaseModel) else child for child in item]
+    return value.model_copy(update=updates)
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
@@ -170,6 +212,25 @@ type McpHeaders = Annotated[
 type InitialMounts = Annotated[tuple[MountCreate, ...], Field(max_length=MAX_MOUNTS)]
 
 
+SessionTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+
+
+class SessionOrigin(_Frozen):
+    """Caller-supplied display context, not execution provenance or an authorization boundary."""
+
+    application: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)] | None = None
+    external_id: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+class SessionCreate(_Frozen):
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
+    labels: Labels = Field(default_factory=dict)
+    # Omitted/null inherits the first accepted business Agent revision's defaults.
+    memory: SessionMemorySettings | None = None
+
+
 class Message(_Frozen):
     kind: Literal["message"] = "message"
     delivery: Delivery = "steer"
@@ -182,10 +243,19 @@ class Message(_Frozen):
 class NewThread(Message):
     message_history: MessageHistory = Field(default_factory=list)
     session_id: ObjectId | None = None
+    # Preserve the canonical digest of requests submitted before this optional field existed.
+    session: SessionCreate | None = Field(default=None, exclude_if=lambda value: value is None)
     mcp_headers: McpHeaders = Field(default_factory=dict)
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     environments: InitialMounts = ()
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
+
+    @model_validator(mode="after")
+    def new_or_existing_session(self) -> Self:
+        if self.session_id is not None and self.session is not None:
+            raise ValueError("Session creation details cannot be combined with session_id")
+        return self
 
 
 class Fork(Message):
@@ -200,6 +270,7 @@ class Fork(Message):
 class ThreadUpdate(_Frozen):
     labels: Labels | None = None
     mcp_headers: McpHeaders | None = None
+    execution: ExecutionOverride | None = None
 
 
 class EntryUpdate(_Frozen):
@@ -280,11 +351,12 @@ class Pending(_Frozen):
 
     approvals: tuple[PendingCall, ...]
     calls: tuple[PendingCall, ...]
+    desktop_control_id: str | None = None
 
     @model_validator(mode="after")
     def bounded(self) -> "Pending":
         items = (*self.approvals, *self.calls)
-        if not 1 <= len(items) <= 128:
+        if not (1 <= len(items) <= 128 or (not items and self.desktop_control_id is not None)):
             raise ValueError("Pending requires one to 128 calls")
         if len({item.tool_call_id for item in items}) != len(items):
             raise ValueError("Pending call IDs must be unique across categories")
@@ -292,6 +364,8 @@ class Pending(_Frozen):
 
     @property
     def reason(self) -> WaitReason:
+        if self.desktop_control_id:
+            return "multiple" if self.approvals or self.calls else "desktop_control"
         if self.approvals and self.calls:
             return "multiple"
         return "approval" if self.approvals else "call"
@@ -332,27 +406,49 @@ class EnvironmentMount(_Frozen):
     name: str
     environment_id: str
     working_directory: str | None = None
+    permission_ceiling: EnvironmentPermissionSet = DEFAULT_MOUNT_PERMISSIONS
 
 
-class SessionCreate(_Frozen):
-    labels: Labels = Field(default_factory=dict)
+class SpaceOrganizationStatus(_Frozen):
+    session_id: str | None = None
+    history_gap: bool = False
+    pending: bool = False
+    active_run_id: str | None = None
+    last_run_id: str | None = None
+    due_at: datetime | None = None
+    processed_seq: int = 0
+    failure: Failure | None = None
 
 
 class SessionUpdate(_Frozen):
-    labels: Labels
+    # Omission preserves the value; explicit null clears it.
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
+    labels: Labels | None = None
+    memory: SessionMemorySettings | None = None
 
 
 class SessionQuery(_Frozen):
     """One page of the session list and its filters. Agent, status and trigger match the session's latest run,
     the one its preview shows."""
 
-    q: str | None = Field(default=None, max_length=72, description="A session or thread ID")
+    text_query: str | None = Field(
+        default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
+    )
+    q: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="Session/thread ID, title, origin, label value or retained conversation text",
+    )
+    application: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, max_length=72)
     status: tuple[RunStatus, ...] = Field(default=(), max_length=6)
     trigger: tuple[Trigger, ...] = Field(default=(), max_length=5)
     updated_after: AwareDatetime | None = None
     updated_before: AwareDatetime | None = None
     label: tuple[str, ...] = Field(default=(), max_length=8)
+    sort: Literal["updated_at", "runs", "cost"] = "updated_at"
+    direction: Literal["asc", "desc"] = "desc"
     limit: PageLimit = 50
     cursor: str | None = None
 
@@ -371,13 +467,20 @@ class SessionPreview(BaseModel):
 
 
 class SessionView(BaseModel):
+    schedule_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
+    title: str | None = None
+    origin: SessionOrigin | None = None
     labels: dict[str, str]
     created_by_id: str
     last_run_id: str | None
-    run_count: int = 0
+    run_count: int
+    cost: Decimal | None
+    unpriced_requests: int
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     preview: SessionPreview | None = None
     version: int
     created_at: datetime
@@ -390,8 +493,9 @@ class SessionPage(BaseModel):
 
 
 class ThreadView(BaseModel):
+    schedule_occurrence_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
-    message_history: MessageHistory
+    purpose: Literal["conversation", "memory_organization"] = "conversation"
     id: str
     workspace_id: str
     session_id: str
@@ -405,6 +509,7 @@ class ThreadView(BaseModel):
     # The most recently sealed run: the history the thread's next run continues.
     last_run_id: str | None
     mcp_headers: dict[str, dict[str, str]]
+    execution: ExecutionOverride | None = None
     labels: dict[str, str]
     archived_at: datetime | None
     version: int
@@ -417,11 +522,32 @@ class ThreadPage(BaseModel):
     next_cursor: str | None
 
 
+class ThreadReference(BaseModel):
+    id: str
+    origin: Literal["new", "fork", "child"]
+    subagent: str | None
+    origin_number: int
+    origin_count: int
+
+
+class ThreadNavigation(ThreadReference):
+    """Bounded navigation metadata; positions count the complete Session before filtering."""
+
+    session_id: str
+    origin_thread: ThreadReference | None
+    created_at: datetime
+
+
+class ThreadNavigationPage(BaseModel):
+    items: list[ThreadNavigation]
+    next_cursor: str | None
+
+
 class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result"]
+    kind: Literal["message", "child_result", "tool_result", "browser_handback"]
     delivery: Delivery
     position: int
     status: EntryStatus
@@ -444,7 +570,13 @@ class EntryPage(BaseModel):
     next_cursor: str | None
 
 
+class ScheduleOrigin(BaseModel):
+    schedule_id: str
+    occurrence_id: str
+
+
 class RunView(BaseModel):
+    schedule_origin: ScheduleOrigin | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
@@ -466,7 +598,7 @@ class RunView(BaseModel):
     wait_reason: WaitReason | None
     pending: Pending | None
     environment_mounts: list[EnvironmentMount]
-    memory_mounts: list[MemoryMount]
+    memory_mounts: list[MemoryMount | FrozenMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.
     options: RunOptions
     current_attempt_id: str | None
@@ -477,8 +609,6 @@ class RunView(BaseModel):
     output: JsonValue | None
     failure: Failure | None
     usage_at_seal: dict[str, JsonValue] | None
-    # Durable display progress from the existing tail pointer; no object read required.
-    display_position: str | None = None
     labels: dict[str, str]
     cancel_requested_at: datetime | None
     version: int
@@ -488,9 +618,95 @@ class RunView(BaseModel):
     updated_at: datetime
 
 
+class RunQuery(_Frozen):
+    """Workspace execution search; timestamps bound creation time, newest first."""
+
+    text_query: str | None = Field(
+        default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
+    )
+    agent_id: ObjectId | None = None
+    session_id: ObjectId | None = None
+    thread_id: ObjectId | None = None
+    principal_id: ObjectId | None = None
+    status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
+    created_after: AwareDatetime | None = None
+    created_before: AwareDatetime | None = None
+    limit: PageLimit = 50
+    cursor: str | None = None
+
+    @model_validator(mode="after")
+    def ordered_time_range(self) -> Self:
+        if (
+            self.created_after is not None
+            and self.created_before is not None
+            and self.created_after >= self.created_before
+        ):
+            raise ValueError("created_after must precede created_before")
+        return self
+
+
+class RunInputPreview(BaseModel):
+    text: str = Field(max_length=200, description="At most 200 Unicode code points of input text, in content order.")
+    truncated: bool
+
+
+class RunListItem(BaseModel):
+    """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    workspace_id: str
+    session_id: str
+    thread_id: str
+    agent_id: str
+    agent_revision_id: str
+    principal_id: str
+    status: RunStatus
+    trigger: Trigger
+    lineage: Lineage
+    parent_run_id: str | None
+    source_entry_id: str | None
+    current_attempt_id: str | None
+    attempts: int
+    max_attempts: int
+    wait_reason: WaitReason | None
+    version: int
+    created_at: datetime
+    started_at: datetime | None
+    sealed_at: datetime | None
+    updated_at: datetime
+    input_preview: RunInputPreview
+
+
 class RunPage(BaseModel):
-    items: list[RunView]
+    items: list[RunListItem]
     next_cursor: str | None
+
+
+class ThreadRunItem(RunListItem):
+    """Bounded navigation metadata and recorded model usage within one Thread."""
+
+    number: int
+    cost: Decimal | None
+    model_calls: int
+    unpriced_requests: int
+
+
+class ThreadRunPage(BaseModel):
+    """Chronological history or a metric ranking, retaining each item's chronological number."""
+
+    items: list[ThreadRunItem]
+    next_cursor: str | None
+    previous_cursor: str | None
+    total: int
+
+
+class RunAgent(BaseModel):
+    """The agent a run executes: its frozen revision, and that revision's configuration with the run's override
+    applied. Models, connections and templates the configuration names stay live."""
+
+    revision: AgentRevision
+    config: AgentConfig
 
 
 class RunLabels(_Frozen):
@@ -508,18 +724,11 @@ class RunContent(BaseModel):
 
 class RunItems(BaseModel):
     """Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
-    so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`."""
+    so the first item's ordinal tells whether earlier ones exist."""
 
     run: RunView
     items: list[Item]
-    # Only an unwindowed read contains the whole mutable tail and can seed a live consumer.
-    baseline: bool
-    continuation: DisplayContinuation | None = None
-    # The "{attempt}-{sequence}" stream position the display covers; None until the first checkpoint.
-    position: str | None
-    # A confirmed Redis delta ID covered by this display, usable as SSE Last-Event-ID while retained.
-    resume_after: str | None = None
-    # Execution sealed: the items are final and live output no longer applies.
+    # Execution sealed: the items are final.
     complete: bool
 
 

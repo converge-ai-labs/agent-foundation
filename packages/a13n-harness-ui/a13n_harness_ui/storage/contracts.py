@@ -5,16 +5,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
-from a13n_harness import DeferredToolResume, HarnessState, SafeFailure
+from a13n_harness import DeferredToolRequests, DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 
+from .display import DisplayArchive
 from .objects import ObjectKind, ObjectRef
 
 type Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -47,7 +49,14 @@ class MemoryAgentSource(StoredContract):
     id: str = "memory"
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource
+class LiveAgentSource(StoredContract):
+    """Application-owned voice executor; not a selectable Agent resource."""
+
+    kind: Literal["live"] = "live"
+    id: Literal["live"] = "live"
+
+
+type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource
 
 
 class ThreadConfiguration(StoredContract):
@@ -142,6 +151,7 @@ class ThreadExecution(StoredContract):
     completed_at: datetime | None = None
     error_code: str | None = Field(default=None, max_length=256)
     error_message: str | None = Field(default=None, max_length=4096)
+    main_account: MainAccountSelection | None = None
 
 
 class RetainedActivity(StoredContract):
@@ -216,7 +226,10 @@ class StoredDeferredInput(StoredContract):
         return cls(
             requests=remaining.requests,
             results=DeferredToolResults(
-                calls={call.tool_call_id: native[call.tool_call_id] for call in remaining.requests.calls},
+                calls={
+                    call.tool_call_id: native[call.tool_call_id]
+                    for call in (entry.target_call for entry in remaining.requests.calls)
+                },
                 approvals=remaining.results.approvals,
                 metadata=remaining.results.metadata,
             ),
@@ -226,20 +239,16 @@ class StoredDeferredInput(StoredContract):
         return DeferredToolResume(self.requests, self.results, recovery=True)
 
 
-class StoredContinuation(StoredContract):
-    schema_version: Literal["1"] = "1"
+class ContinuationMetadata(StoredContract):
+    model_config = ConfigDict(frozen=True, extra="allow", strict=True)
+
     harness_release: str = Field(min_length=1, max_length=128)
     run_composition: ObjectRef
-    harness_state: HarnessState
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
-
-    @property
-    def display_history(self) -> DisplayHistory | None:
-        return saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod
@@ -253,6 +262,46 @@ class StoredContinuation(StoredContract):
         if self.run_composition.object_kind is not ObjectKind.run_composition:
             raise ValueError("continuation must reference a Run composition")
         return self
+
+
+class StoredContinuation(ContinuationMetadata):
+    """Released inline checkpoint; read compatibility only."""
+
+    schema_version: Literal["1"] = "1"
+    harness_state: HarnessState
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return saved_display_history(self.harness_state)
+
+
+class ReferencedContinuation(ContinuationMetadata):
+    """Root checkpoint manifest; each payload belongs exclusively to this checkpoint."""
+
+    schema_version: Literal["2"] = "2"
+    checkpoint_id: str = Field(min_length=1)
+    native_state: ObjectRef
+    display: ObjectRef | None = None
+
+    @model_validator(mode="after")
+    def _payload_kinds(self) -> Self:
+        if self.native_state.object_kind is not ObjectKind.continuation_state:
+            raise ValueError("continuation must reference native state")
+        if self.display is not None and self.display.object_kind is not ObjectKind.continuation_display:
+            raise ValueError("continuation must reference display archive")
+        return self
+
+
+class Continuation(ContinuationMetadata):
+    """Resolved root checkpoint, never a persisted wire format."""
+
+    harness_state: HarnessState
+    display: DisplayArchive | None = None
+    display_loaded: bool = Field(default=True, exclude=True)
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return self.display.tail if self.display is not None else None
 
 
 class AppReference(BaseModel):

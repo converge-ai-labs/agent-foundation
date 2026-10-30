@@ -45,7 +45,7 @@ it("replaces, cancels and removes a saved secret without leaking the draft", asy
   expect(screen.getByTestId("draft").textContent).toBe("new-secret");
 
   // Dismissing the expanded input discards what was typed into it.
-  await user.click(screen.getByRole("button", { name: "Keep the saved key" }));
+  await user.click(screen.getByRole("button", { name: "Cancel replacement" }));
   expect(screen.queryByLabelText("API key")).toBeNull();
   expect(screen.getByTestId("draft").textContent).toBe("empty");
   expect(screen.getByText("Saved")).toBeTruthy();

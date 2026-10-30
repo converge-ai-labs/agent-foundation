@@ -268,12 +268,14 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path, t
     """Real prompt-toolkit input dispatch, also runnable on Windows without a PTY."""
     ready = asyncio.Event()
     submitted = asyncio.Event()
+    finish_execution = asyncio.Event()
     allow_decision = asyncio.Event()
     responses = []
 
     class Backend:
         app = terminal_app
         thread_id = None
+        receipt_id = None
         resumed_transcript = None
 
         async def skill_catalog(self):
@@ -294,6 +296,7 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path, t
                 responses.append(response)
                 allow_decision.clear()
             submitted.set()
+            await finish_execution.wait()
             return ""
 
         async def cancel(self):
@@ -325,6 +328,9 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path, t
             pipe.send_text("yes\r")
             await asyncio.wait_for(submitted.wait(), 3)
             assert len(responses) == 1
+            assert shell.busy
+            assert not shell.can_steer
+            finish_execution.set()
             async with asyncio.timeout(3):
                 while shell.composer.buffer.text != "keep this draft":
                     await asyncio.sleep(0.01)
@@ -336,6 +342,7 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path, t
             pipe.send_text("\x03/quit\r")
             await asyncio.wait_for(task, 3)
         finally:
+            finish_execution.set()
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)

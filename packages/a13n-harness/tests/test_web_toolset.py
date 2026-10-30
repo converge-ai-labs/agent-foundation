@@ -40,9 +40,8 @@ class _Context:
         self.toolset_instructions = True
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
-        assert suffix == ".json"
         self.spills.append(data)
-        return f"/workspace/tool-result-{len(self.spills)}.json"
+        return f"/workspace/tool-result-{len(self.spills)}{suffix}"
 
     async def record_provider_usage(self, *args: Any, **kwargs: Any) -> None:
         del args, kwargs

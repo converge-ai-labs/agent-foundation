@@ -49,6 +49,7 @@ export function ProviderTable<T extends { id: string }>({
   nextCursor,
   onRowActivate,
   canActivateRow,
+  rowActionLabel = "Edit",
   rowMenu,
   action,
   notice,
@@ -63,6 +64,7 @@ export function ProviderTable<T extends { id: string }>({
   nextCursor?: string | null;
   onRowActivate?: (item: T, element: HTMLElement) => void;
   canActivateRow?: (item: T) => boolean;
+  rowActionLabel?: string;
   /** Extra overflow entries after Edit; each is a `MenuItem`. */
   rowMenu?: (item: T) => ReactNode;
   /** Rendered above the table, before the collection. */
@@ -119,6 +121,7 @@ export function ProviderTable<T extends { id: string }>({
           onRowActivate || rowMenu
             ? (item) => (
                 <ProviderRowMenu
+                  label={rowActionLabel}
                   edit={
                     opens(item)
                       ? (element) => onRowActivate?.(item, element)
@@ -160,7 +163,11 @@ export function ProviderTable<T extends { id: string }>({
         ]}
       />
       <CollectionFooter
-        count={t("{{count}} providers", { count: items.length })}
+        count={
+          page?.previous || nextCursor
+            ? t("{{count}} providers on this page", { count: items.length })
+            : t("{{count}} providers", { count: items.length })
+        }
       >
         {page && <Pagination page={page} next={nextCursor} />}
       </CollectionFooter>
@@ -169,9 +176,11 @@ export function ProviderTable<T extends { id: string }>({
 }
 
 function ProviderRowMenu({
+  label,
   edit,
   children,
 }: {
+  label: string;
   edit?: (element: HTMLElement) => void;
   children?: ReactNode;
 }) {
@@ -182,7 +191,7 @@ function ProviderRowMenu({
       {edit && (
         <MenuItem onClick={(event) => edit(event.currentTarget as HTMLElement)}>
           <PencilSimpleIcon aria-hidden="true" />
-          {t("Edit")}
+          {t(label)}
         </MenuItem>
       )}
       {children}

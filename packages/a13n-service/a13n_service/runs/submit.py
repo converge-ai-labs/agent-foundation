@@ -12,6 +12,7 @@ from a13n_harness.configuration import RunConfiguration
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.resources.agents.schemas import AgentOverride
@@ -19,15 +20,16 @@ from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
 from a13n_service.runs import checkpoints
-from a13n_service.runs.accept import Source, accept, primary_template, run_revision
+from a13n_service.runs.accept import Source, accept, primary_source, run_revision
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
+from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, RunOptions, Submitted, ThreadView
-from a13n_service.runs.sessions import find_session, new_session
+from a13n_service.runs.sessions import find_session, new_session, require_conversation
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, new_thread, refresh_version, require_open
 from a13n_service.tenancy.access import workspace_scope
@@ -62,6 +64,11 @@ async def validate_message(
         accepted = RunOptions.model_validate(current.options).configuration or RunConfiguration()
         if message.options.configuration != accepted:
             raise conflict("run", current.id, "run_configuration_immutable")
+    if message.delivery == "steer" and thread.current_run_id is not None and message.options.execution is not None:
+        current = await session.get(RunRow, thread.current_run_id)
+        assert current is not None
+        if not matches(RunOptions.model_validate(current.options).execution, message.options.execution):
+            raise conflict("run", current.id, "execution_policy_immutable")
     revision, overrides = await run_revision(
         session,
         runtime,
@@ -73,24 +80,28 @@ async def validate_message(
         authority=authority,
     )
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
-    primary = await thread_has_primary(session, thread) or primary_template(thread, revision.config) is not None
+    primary = (
+        await thread_has_primary(session, thread) or await primary_source(session, thread, revision.config) is not None
+    )
     await require_readable(
         session, principal, scope, revision, overrides, message.payload, authority=authority, primary=primary
     )
     return revision, overrides
 
 
-async def _append(
+async def prepare_message(
     session: AsyncSession,
     runtime: Runtime,
     actor: Principal,
     scope: WorkspaceScope,
     thread: ThreadRow,
     message: Message,
-    request: Request,
+    request: Request | None,
+    *,
+    authority: ExecutionAuthority,
+    schedule_occurrence_id: str | None = None,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
-    authority = execution_authority(actor, scope)
     revision, overrides = await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
     entry = await append_message(
         session,
@@ -100,7 +111,9 @@ async def _append(
         authority=authority,
         request=request,
         control=runtime.settings.control,
+        schedule_occurrence_id=schedule_occurrence_id,
     )
+    runtime.mailbox.notify(session, entry)
     return Source.message(entry, "input", actor, revision, overrides)
 
 
@@ -161,10 +174,58 @@ async def submit_message(
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         thread = await get_thread(session, scope.workspace_id, thread_id, lock=True)
         require_open(thread)
-        return thread, await _append(session, runtime, actor, scope, thread, message, request)
+        return thread, await prepare_message(
+            session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(
         runtime, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message), create
+    )
+
+
+async def prepare_thread(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: NewThread,
+    *,
+    request: Request | None,
+    authority: ExecutionAuthority,
+    schedule_occurrence_id: str | None = None,
+) -> tuple[ThreadRow, Source]:
+    """Create a new Thread and validated first Entry in the caller's transaction, ready for ordinary acceptance."""
+    await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
+    if body.session_id is not None:
+        owner = await find_session(session, scope.workspace_id, body.session_id)
+        require_conversation(owner)
+    else:
+        owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session)
+        session.add(owner)
+    thread = new_thread(
+        owner,
+        mcp_headers=body.mcp_headers,
+        execution=body.execution,
+        message_history=body.message_history,
+        schedule_occurrence_id=schedule_occurrence_id,
+    )
+    session.add(thread)
+    await session.flush()
+    if body.session is not None and body.session.memory is not None:
+        await configure(session, owner, body.session.memory)
+        await session.flush()
+    await mount_environments(session, thread, body.environments, principal_id=actor.id)
+    await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
+    return thread, await prepare_message(
+        session,
+        runtime,
+        actor,
+        scope,
+        thread,
+        body,
+        request,
+        authority=authority,
+        schedule_occurrence_id=schedule_occurrence_id,
     )
 
 
@@ -172,18 +233,9 @@ async def create_thread(
     runtime: Runtime, actor: Principal, workspace_id: str, body: NewThread, *, request_key: str
 ) -> tuple[Submitted, bool]:
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
-        await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
-        if body.session_id is not None:
-            owner = await find_session(session, scope.workspace_id, body.session_id)
-        else:
-            owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
-            session.add(owner)
-        thread = new_thread(owner, mcp_headers=body.mcp_headers, message_history=body.message_history)
-        session.add(thread)
-        await session.flush()
-        await mount_environments(session, thread, body.environments, principal_id=actor.id)
-        await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
-        return thread, await _append(session, runtime, actor, scope, thread, body, request)
+        return await prepare_thread(
+            session, runtime, actor, scope, body, request=request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(
         runtime, actor, workspace_id, lambda scope: Request.of(request_key, "thread", scope.workspace_id, body), create
@@ -204,6 +256,7 @@ async def fork(
         checkpoints.require_compatible(origin)
         owner = await session.get(SessionRow, origin.session_id)
         assert owner is not None
+        require_conversation(owner)
         thread = new_thread(
             owner,
             mcp_headers=origin_thread.mcp_headers,
@@ -217,6 +270,8 @@ async def fork(
         await mount_environments(session, thread, [*shared, *body.environments], principal_id=actor.id)
         memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
         await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
-        return thread, await _append(session, runtime, actor, scope, thread, body, request)
+        return thread, await prepare_message(
+            session, runtime, actor, scope, thread, body, request, authority=execution_authority(actor, scope)
+        )
 
     return await _submit(runtime, actor, workspace_id, lambda _: Request.of(request_key, "fork", run_id, body), create)

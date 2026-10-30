@@ -86,12 +86,16 @@ it("reads a failed request as an error and keeps an unknown model unknown", () =
   const { entries } = timeline(
     lifecycle("model_request_started"),
     lifecycle("model_request_failed", "model-request-1", {
-      error_code: "provider_timeout",
+      error_code: "model_request_failed",
+      status_code: 400,
+      detail: "prompt is too long: 1006745 tokens > 1000000 maximum",
     }),
   );
   expect(models(entries)[0]).toMatchObject({
     stopReason: "error",
-    errorCode: "provider_timeout",
+    errorCode: "model_request_failed",
+    errorStatus: 400,
+    errorDetail: "prompt is too long: 1006745 tokens > 1000000 maximum",
     model: null,
     usage: null,
   });
@@ -117,6 +121,36 @@ it("treats later user text as guidance and never the Run input", () => {
       (entry) => "text" in entry && entry.text === "Ship the release",
     ),
   ).toBe(false);
+});
+
+it("reads guidance before the request that read it", () => {
+  const { entries } = timeline(
+    text("input", "user", "Which colour is the banner?"),
+    lifecycle("model_request_started", "model-request-1"),
+    text("first", "assistant", "Cobalt"),
+    lifecycle("model_request_completed", "model-request-1"),
+    lifecycle("model_request_started", "model-request-2"),
+    text("steer", "user", "Use the new palette"),
+    text("second", "assistant", "Amber"),
+    lifecycle("model_request_completed", "model-request-2"),
+  );
+  expect(kinds(entries)).toEqual(["model", "guidance", "model"]);
+  expect(kinds(models(entries)[1]!.children)).toEqual(["reply"]);
+});
+
+it("keeps input hidden from Chat as an entry read before its request", () => {
+  const reminder =
+    "<system-reminder>Environment mounts changed</system-reminder>";
+  const { entries } = timeline(
+    lifecycle("model_request_started", "model-request-1"),
+    text("reminder", "user", reminder, { display: false }),
+    text("input", "user", "Ship the release"),
+    text("reply", "assistant", "Released"),
+    lifecycle("model_request_completed", "model-request-1"),
+  );
+  expect(kinds(entries)).toEqual(["hidden", "model"]);
+  expect(entries[0]).toMatchObject({ text: reminder });
+  expect(kinds(models(entries)[0]!.children)).toEqual(["reply"]);
 });
 
 it("presents an inline delegation on its call and keeps a dispatch a dispatch", () => {
@@ -240,7 +274,11 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
           record_id: "record-2",
           response_ordinal: 1,
           model_name: "claude-sonnet",
-          request_usage: { input_tokens: 80, output_tokens: 10 },
+          request_usage: {
+            input_tokens: 80,
+            output_tokens: 10,
+            cache_read_tokens: 64,
+          },
         },
       ],
     }),
@@ -248,10 +286,29 @@ it("sums reported usage and refuses to complete a total that lost a price", () =
   expect(totals).toMatchObject({
     inputTokens: 200,
     outputTokens: 40,
+    // Cached input is the part of input the provider served from its cache.
+    cacheReadTokens: 64,
     costUsd: "0.01",
     costComplete: false,
     durationMs: 9000,
   });
+});
+
+it("counts model requests from usage when no lifecycle steps were retained", () => {
+  const { totals } = timeline(
+    custom("a13n.harness.usage", {
+      type: "usage_report",
+      reason: "model_request",
+      records: [0, 1].map((ordinal) => ({
+        kind: "model",
+        record_id: `record-${ordinal}`,
+        response_ordinal: ordinal,
+        model_name: "claude-sonnet",
+        request_usage: { input_tokens: 100, output_tokens: 5 },
+      })),
+    }),
+  );
+  expect(totals).toMatchObject({ modelCalls: 2, inputTokens: 200 });
 });
 
 it("computes a patch from the reported edit content", () => {
@@ -454,4 +511,27 @@ it("retains the source entry of steering even when historical paging omits the i
       text: "Use revised numbers",
     },
   ]);
+});
+
+it("shows context recovery warnings in a completed run and retains their raw diagnostics", () => {
+  const { entries } = timeline(
+    custom("a13n.harness.recovery", {
+      type: "context_recovery",
+      outcome: "resumed",
+      warning: "Immediate root-cause investigation is required.",
+      before_chars: 100000,
+    }),
+    text("answer", "assistant", "Completed"),
+  );
+  expect(entries.find((entry) => entry.kind === "event")).toMatchObject({
+    notice: {
+      kind: "context-recovery",
+      tone: "warning",
+      outcome: "resumed",
+      message: "Immediate root-cause investigation is required.",
+    },
+  });
+  expect(entries.find((entry) => entry.kind === "other")).toMatchObject({
+    observations: [{ detail: { payload: { before_chars: 100000 } } }],
+  });
 });

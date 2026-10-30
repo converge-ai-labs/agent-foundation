@@ -122,7 +122,7 @@ async def test_builtin_skill_discovery_and_read_only_environment(
 
 @pytest.mark.parametrize("override_source", ["user", "project"])
 async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
-    tmp_path: Path, override_source: str
+    tmp_path: Path, override_source: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     path = _write_configuration(tmp_path)
     agent = tmp_path / "agents/assistant.yaml"
@@ -131,10 +131,19 @@ async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
     document = root / ".agents/skills/custom/SKILL.md"
     document.parent.mkdir(parents=True)
     document.write_text(f"---\nname: {SKILL_NAME}\ndescription: My override.\n---\n\nCustom instructions.\n")
+    invalid = root / ".agents/skills/invalid/SKILL.md"
+    invalid.parent.mkdir(parents=True)
+    invalid.write_text("Incomplete frontmatter")
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
-        item = next(item for item in (await app.skill_catalog()).items if item.name == SKILL_NAME)
+        preview = await app.skill_catalog()
+        item = next(item for item in preview.items if item.name == SKILL_NAME)
+        assert all(entry.logical_path != str(invalid.parent) for entry in preview.items)
+        warning = next(record for record in caplog.records if record.message == "skill_catalog_entry_skipped")
+        assert warning.levelname == "WARNING"
+        assert warning.path == str(invalid)
+        assert warning.code == "skill_catalog_invalid"
         expected_source = f"a13n-harness-ui:{'user-skills' if override_source == 'user' else 'project:workspace'}"
-        assert item.source_id == expected_source
+        assert item.source_id == warning.source_id == expected_source
         thread = await app.create_thread()
         executor = app._root_runs._executor
         source = await app.current_configuration()

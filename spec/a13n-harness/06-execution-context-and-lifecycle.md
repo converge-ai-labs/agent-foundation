@@ -4,9 +4,11 @@
 
 One Harness Run is one process-local logical invocation of an `ExecutableAgent`. It validates already constructed Environment inputs, enters a fresh Run-local mount aggregate, creates one outer `AgentContext`, binds one plugin chain, owns one shared `RunUsage` accumulator, and produces at most one terminal Harness result.
 
-A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service run attempts, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
+A logical Harness Run may contain several sequential `ModelAttempt` values for `ModelRecoveryPolicy`, immediate steering, or [context recovery](09-context-and-memory.md#context-recovery). A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Service run attempts, plugin invocations, contexts, Environment adapter lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Runs retain its native deferred boundary when current Host bindings support it, independently of parent lineage. Unsupported Runs resolve runtime deferral as denied tool results inside the same loop and reserve terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
+
+`ExecutableAgent.compact(previous_state=..., instruction=None, ...)` uses this same outer Run lifecycle for a summary-only state transition. Its eligibility, cache-compatible request, and restoration contract are owned by [Host-Triggered Compaction](09-context-and-memory.md#host-triggered-compaction). It returns a string summary rather than the Agent's business output and stops before business tool execution or semantic recovery.
 
 ## Live Runs
 
@@ -43,6 +45,8 @@ class RunBindings:
     ] = ()
     metadata: Mapping[str, JsonValue] = {}
     model_context: ModelContextMiddleware | None = None
+    context_recovery_scope_id: str | None = None
+    retained_history_directory: str | None = None
 ```
 
 The trusted caller may supply fresh bindings for a logical run; an embedded call that omits them receives fresh embedded bindings. The Harness:
@@ -63,6 +67,8 @@ The logical Run receives one `run_id`, and each internal `ModelAttempt` receives
 
 `RunBindings.embedded()` creates a process-local Agent instance and accepts an optional model resolver, model-context middleware, Capabilities, metadata, and bounded Host references. When neither adapter inputs nor an explicit `RunBindings.environment` runtime are supplied, Harness creates an empty bound facade. It never discovers a Provider or hidden provider configuration.
 
+The context recovery scope identifies one Host logical Run across restored Harness invocations; it grants no execution authority. `AgentContext.context_recovery_pending` lets a Host require its existing checkpoint commit before dispatching the reconstructed request. The retained-history directory is an Environment path governed by current routing and permissions, with retention owned by the Host. [Context Recovery](09-context-and-memory.md#context-recovery) owns the allowance and preservation rules.
+
 ## Run Configuration
 
 `RunConfiguration` is one immutable caller-owned value shared through `RunBindings.configuration` and `AgentContext.configuration`. It is independent of Agent definitions, Capability constructor configuration, mutable state and metadata. Embedded bindings default to an unrestricted empty configuration. One logical Run and all its internal `ModelAttempt` values use the same snapshot; inline child bindings inherit it and cannot replace it through their factory. Hosts own durable capture, async-child inheritance and continuation reconstruction.
@@ -81,7 +87,7 @@ Every logical Run passes one native Pydantic AI `UsageLimits` value to each inte
 
 A caller can author or invoke `UsageLimits(request_limit=None)` to disable the request-count ceiling while retaining any other explicitly selected fields. `None` as the run argument means “use the definition baseline,” not “disable limits.” Pydantic AI owns provider counter semantics and native tool-call enforcement. Harness checks model request/token/cost limits against current Context accounting at the public Model boundary; cumulative continuation observations do not consume another request slot. Limit failures remain `UsageLimitExceeded`. The shared Run accumulator and child narrowing contract are defined by [Delegation and Subagents](11-delegation-and-subagents.md#child-usage-limits).
 
-Pydantic AI also owns the native `AgentSpec.retries` budgets. The upstream default is one function-tool retry and one output-validation retry; an authored integer or `AgentRetries` mapping changes those budgets. They remain independent of provider/client transport retry, one-shot exact-history repair, Harness `ModelRecoveryPolicy`, and Host durable retries. A retry still consumes and checks the same effective `UsageLimits`; exhaustion and `UsageLimitExceeded` are terminal for the current Harness recovery path rather than reasons to start another `ModelAttempt`.
+Pydantic AI owns enforcement of the native `AgentSpec.retries` budgets. Harness supplies the [construction defaults and override rules](03-agent-definition-and-build.md#agentdefinition): five function-tool retries and three output-validation retries. Five tool retries allow five retry prompts; a sixth failed call exhausts that tool's budget. They remain independent of provider/client transport retry, one-shot exact-history repair, Harness `ModelRecoveryPolicy`, and Host durable retries. A retry still consumes and checks the same effective `UsageLimits`; exhaustion and `UsageLimitExceeded` are terminal for the current Harness recovery path rather than reasons to start another `ModelAttempt`.
 
 ## Logical Lifecycle
 
@@ -137,6 +143,29 @@ sequenceDiagram
 
 The stream is lazy: entering it performs preparation but no model or tool work. First iteration starts the async plugin invocation and, if middleware reaches the inner path, starts the first `ModelAttempt`. A plugin short-circuit starts no `ModelAttempt`.
 
+## Immediate Steering
+
+`HarnessRunStream.steer(..., immediate=False)` preserves ordinary queued steering. Strict immediate steering (`immediate=True`, `best_effort=False`) requires a Host-supplied `RunBindings.tool_execution`, even during model-only generation. A missing runtime rejects the request immediately. With the binding, Harness waits up to five seconds for native steering readiness and for active unsupported calls to finish. This is one admission budget across readiness transitions, including initial native binding and model-retry backoff. Waiting uses lifecycle notifications and leaves the input unaccepted. Readiness is rechecked at acceptance; waking alone grants no handoff authority. Expiry raises `RunError(code="steering_timeout")`; Run cancellation, closure, or completion ends the wait with `run_not_active`. Caller cancellation before acceptance also leaves no queued input. Once ready, immediate steering accepts input into the ordered mailbox and selects a handoff according to the active phase:
+
+| Active phase                                                                    | Handoff                                                                                                                                                          |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary model request, including its request hooks                              | Cancel and drain the native attempt, settle usable partial history, then continue with pending input.                                                            |
+| Tool review, argument validation, preparation, execution, or result integration | Keep the native attempt and original invocations running. Release supported foreground waits cooperatively, including calls admitted later in the current batch. |
+
+Auxiliary model requests used by tools belong to the tool phase. Tool-phase handoff preserves policy checks and the full native batch: each call produces its real result or retained execution receipt, or the batch suspends through native deferral, before a later primary model request. Input acceptance, phase selection and signaling form one non-yielding transition. Repeated requests add ordered input without cancelling tool work or repeatedly cancelling model-attempt cleanup. The next primary request starts with ordinary foreground-wait policy again. Run identity, usage accounting and bindings remain unchanged; immediate steering does not spend the model-failure retry budget.
+
+[Host-held tool execution](07-tool-execution.md#host-held-tool-executions) preserves an admitted invocation and its scope. Interruption settlement keeps an existing result, uses an available completed result, or records the accepted execution receipt. A recorded receipt remains unchanged when its result later arrives. Whole CodeAct runners and top-level Shell calls use this boundary; their nested tool calls await native results without independent runtime admission. Unsupported calls retain their original execution and ownership while admission waits; expiry rejects the input without cancelling or reissuing the operation. Immediate scheduling and automatic timeout-based offload are independent options.
+
+The admission deadline ends at acceptance, before asynchronous event delivery. It does not bound completed handoff or model incorporation, and the returned enqueue identity acknowledges acceptance only. Strict immediate steering (`best_effort=False`, the default) never falls back to ordinary queued steering. Accepted input remains pending until canonical history proves incorporation. Export and graceful interrupt-save retain pending input through existing state-publication boundaries; immediate steering adds no unconditional checkpoint write. At a terminal boundary, pending input either continues the current Run or follows the Host's next-Run policy. Explicit cancellation ends the conversation Run. Hosts separately cancel retained executions and control automatic wake after Stop.
+
+A Host may supply a synchronous `before_accept` guard to ordinary or immediate steering. Harness invokes it under the native mailbox lock, after readiness waits and before enqueue. A raised exception leaves the input unaccepted. This lets process-local lifecycle notices recheck their source authority at the acceptance boundary.
+
+### Best-Effort Immediate Steering
+
+`steer(..., immediate=True, best_effort=True)` accepts ordinary queued input when an unsupported call is active or no `ToolExecutionRuntime` is bound. It does not wait for an unsupported call to finish. When immediate handoff is available, it preserves the same phase-specific behavior as strict immediate steering. Acceptance and handoff selection form one non-yielding transition under the mailbox lock, with one enqueue and no catch-and-resubmit fallback. Input ordering and pending-input retention remain unchanged.
+
+Before native steering is ready, best effort uses the same five-second admission budget. Invalid input, Run termination, caller cancellation, and readiness timeout remain failures; best effort relaxes handoff requirements, not input acceptance or execution authority. `best_effort` has no effect when `immediate=False`. The `steering_input_enqueued` event's `handoff_requested` boolean distinguishes an accepted immediate handoff request from ordinary queueing; it does not assert completed handoff or model incorporation. Lifecycle notices report `false`.
+
 ## Model Attempt Recovery
 
 `ModelRecoveryPolicy` is disabled by default. When enabled, `max_attempts` bounds consecutive failed attempts without an accepted primary model response, including the initial failed attempt. It defaults to five: one initial attempt and at most four recovery continuations in each failure streak. It does not cap the cumulative number of `ModelAttempt` values in a logical Run. The policy owns:
@@ -166,7 +195,9 @@ A finalized ordinary tool call missing a result at an explicitly interrupted bou
 
 This preserves a valid conversation shape without claiming rollback, non-execution, or exactly-once behavior.
 
-Recovery requires both a failure observed at the primary model-request boundary and a recognized transient cause. Eligible causes are explicit timeout, connection, read/write, and remote-protocol failures, including transport causes retained through provider exceptions; HTTP `408`, `429`, `500`, `502`, `503`, `504`, and `529`; and the supported upstream empty-stream or missing-finish-marker errors. A generic provider exception or interrupted message alone is not evidence of a transient failure. Certificate verification failures and recognized structured permanent quota/billing codes are terminal even when wrapped in a connection error or returned with a retryable HTTP status. Unknown failures, other HTTP statuses, content filtering, and malformed model output are not automatically retried. Exact provider-history repair remains owned by `SelfHealingModel` below this classification.
+Recovery requires both a failure observed at the primary model-request boundary and a recognized transient cause. Eligible causes are explicit timeout, connection, read/write, and remote-protocol failures, including transport causes retained through provider exceptions; HTTP `408`, `429`, `500`, `502`, `503`, `504`, and `529`; and the supported upstream empty-stream or missing-finish-marker errors. Public Pydantic AI connection/timeout, rate-limit, unavailable/overloaded, and server-error categories also establish a transient cause without a transport-specific exception. Categorized HTTP errors remain subject to the same status allowlist.
+
+A generic provider exception or interrupted message alone is not evidence of a transient failure. Native quota-exhaustion and context-window-exhaustion categories, certificate verification failures, and recognized structured permanent quota/billing codes are terminal even when wrapped in a connection error or returned with a retryable HTTP status. Classification checks retained causes before accepting a transient failure. Unknown failures, other HTTP statuses, content filtering, and malformed model output are not automatically retried. Exact provider-history repair remains owned by `SelfHealingModel` below this classification.
 
 It does not restart after:
 

@@ -41,6 +41,10 @@ export interface ExecutionStep {
   /** Model request facts. */
   messageCount?: number;
   errorCode?: string;
+  /** The provider's HTTP status for a failed request. */
+  errorStatus?: number;
+  /** The provider's error message, or the exception type its code does not name. */
+  errorDetail?: string;
   contextTokens?: number;
   usage?: StepUsage;
   providerUsage?: StepUsage;
@@ -79,7 +83,8 @@ export interface ExecutionUsage {
  * `complete` requires a display that kept every item and stream output
  * without a gap; retained Items alone never establish it.
  */
-export type ExecutionCoverage = "complete" | "partial" | "unavailable";
+export type ExecutionCoverage =
+  "complete" | "window" | "partial" | "unavailable";
 
 export interface Execution {
   steps: ExecutionStep[];

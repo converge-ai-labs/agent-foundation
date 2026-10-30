@@ -7,8 +7,9 @@ import math
 import secrets
 import sys
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from pydantic import JsonValue
@@ -37,6 +38,7 @@ from a13n_harness.environment.mounts import (
     EnvironmentSnapshot,
 )
 from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.environment.variables import validate_variables, with_defaults
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.identity import AgentInstanceContext
 
@@ -735,7 +737,88 @@ class CompositeBoundEnvironment(BoundEnvironment):
             requested = limits.wall_time_seconds
             effective = ceiling_value if requested is None else min(requested, ceiling_value)
             limits = limits.model_copy(update={"wall_time_seconds": effective})
+        request = with_defaults(
+            request,
+            self._runtime._command_environment,
+            windows=not entered.public.descriptor.environment_case_sensitive,
+        )
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
+
+    @asynccontextmanager
+    async def retained_process_lease(
+        self,
+        handle: BoundProcessHandle,
+        *,
+        owner: BoundEnvironment,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AsyncGenerator[BoundProcessOperations]:
+        async with self.authorize_retained_process(
+            handle.identity,
+            backing_identity=backing_identity,
+            actions=actions,
+            alias=alias,
+            timeout_seconds=timeout_seconds,
+        ):
+            async with owner.retained_process_dispatch(handle, actions=actions) as processes:
+                yield processes
+
+    @asynccontextmanager
+    async def retained_process_dispatch(
+        self, handle: BoundProcessHandle, *, actions: frozenset[EnvironmentAction]
+    ) -> AsyncGenerator[BoundProcessOperations]:
+        original = self._entered_for_handle(handle)
+        async with self._mount_slot(original, allow_retired=True):
+            yield _ProcessFacade(self, retained_handle=handle, authorized_actions=actions)
+
+    @asynccontextmanager
+    async def authorize_retained_process(
+        self,
+        identity: ProcessIdentity,
+        *,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AsyncGenerator[None]:
+        self._assert_open()
+        matches = [
+            item
+            for item in self._entered.values()
+            if item.public.provider_type == identity.provider_type
+            and item.environment_id == identity.environment_id
+            and (alias is None or item.public.name == alias)
+        ]
+        if len(matches) != 1:
+            raise EnvironmentError(
+                "The retained process target is not uniquely attached.", code="environment_selection_invalid"
+            )
+        entered = matches[0]
+        if not actions:
+            raise EnvironmentError("Process control requires an action.", code="environment_request_invalid")
+        for action in actions:
+            self.require_action(entered.mount_id, action)
+        async with AsyncExitStack() as stack:
+            current = await stack.enter_async_context(
+                self._operation_scope(entered, "processes", timeout_seconds=timeout_seconds)
+            )
+            descriptor = current.public.descriptor
+            same_scope = descriptor.generation == identity.generation
+            same_backing = backing_identity is not None and descriptor.backing_identity == backing_identity
+            if not (same_scope or same_backing):
+                raise EnvironmentError("The retained process target has changed.", code="environment_stale_mount")
+            for action in actions:
+                self.require_action(current.mount_id, action)
+            try:
+                for action in sorted(actions, key=lambda action: action.value):
+                    await stack.enter_async_context(current.provider.admit(action))
+            except EnvironmentError as exc:
+                # Already-entered Host guards must know no native control ran.
+                exc.details["dispatch_stage"] = "pre_dispatch"
+                raise
+            yield
 
     def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):
@@ -1123,6 +1206,30 @@ class CompositeBoundEnvironment(BoundEnvironment):
         timeout_code: str = "environment_timeout",
         allow_retired: bool = False,
     ) -> AsyncGenerator[_EnteredMount]:
+        if action not in entered.public.permission_ceiling.operations:
+            raise _action_denied(entered, action)
+        async with self._operation_scope(
+            entered,
+            family,
+            timeout_seconds=timeout_seconds,
+            timeout_code=timeout_code,
+            allow_retired=allow_retired,
+        ) as current:
+            self.require_action(current.mount_id, action)
+            async with current.provider.admit(action):
+                yield current
+
+    @asynccontextmanager
+    async def _operation_scope(
+        self,
+        entered: _EnteredMount,
+        family: EnvironmentOperationFamily,
+        *,
+        timeout_seconds: float | None = None,
+        timeout_code: str = "environment_timeout",
+        allow_retired: bool = False,
+    ) -> AsyncGenerator[_EnteredMount]:
+        """Pin and prepare a mount before action guards admit native dispatch."""
         timeout = (
             DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS
             if timeout_seconds is None
@@ -1131,8 +1238,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 timeout_seconds + DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
             )
         )
-        if action not in entered.public.permission_ceiling.operations:
-            raise _action_denied(entered, action)
         async with self._mount_slot(entered, allow_retired=allow_retired):
             try:
                 async with asyncio.timeout(timeout):
@@ -1141,7 +1246,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     entered = self._current_publication(entered)
                     if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
                         raise EnvironmentError("Environment changed before dispatch", code="environment_stale_mount")
-                    self.require_action(entered.mount_id, action)
                     self._validate_live_observation(
                         entered,
                         entered.provider.availability,
@@ -1340,6 +1444,7 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     _initial_mounts: tuple[_MountRequest, ...]
     _default_mount: str | None
     _extensions: tuple[tuple[str, EnvironmentRunExtension], ...] = ()
+    _command_environment: Mapping[str, str] = field(default_factory=dict)
     _noop: bool = False
     _used: bool = field(default=False, init=False, repr=False)
     _bound: CompositeBoundEnvironment | None = field(default=None, init=False, repr=False)
@@ -1612,7 +1717,7 @@ async def _mount_scope(
     requested: _MountRequest,
     scope: EnvironmentScope,
 ) -> AsyncGenerator[_MountExecution]:
-    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer)
+    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer, requested.mount.operation_guard)
     try:
         yield provider
     finally:
@@ -1815,6 +1920,7 @@ def create_environment_runtime(
     mounts: Mapping[str, EnvironmentEntry],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
+    command_environment: Mapping[str, str] | None = None,
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
@@ -1832,12 +1938,14 @@ def create_environment_runtime(
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
+    defaults = MappingProxyType(validate_variables(dict(command_environment or {})))
     captured_extensions = _normalize_environment_run_extensions(extensions)
     _validate_initial_mounts(captured, default_mount)
     return ManagedEnvironmentRuntime(
         _initial_mounts=captured,
         _default_mount=default_mount,
         _extensions=captured_extensions,
+        _command_environment=defaults,
     )
 
 

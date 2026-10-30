@@ -1,7 +1,7 @@
-//! X11-only desktop access. No XWayland fallback, clipboard or keyboard-map mutation.
+//! X11-only desktop access. No XWayland fallback or keyboard-map mutation.
 use super::*;
-use image::{DynamicImage, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
-use std::sync::OnceLock;
+use image::{DynamicImage, RgbImage};
+use std::sync::{Arc, OnceLock};
 use x11rb::{
     connection::Connection,
     protocol::{
@@ -17,14 +17,15 @@ use x11rb::{
 pub(super) struct Backend {
     // Never reconnect within a Session: old geometry must not authorize a new X server.
     desktop: OnceLock<Result<Desktop, EIPError>>,
+    clipboard: Mutex<Option<super::x11_clipboard::Clipboard>>,
 }
 
 struct Desktop {
-    connection: RustConnection,
+    connection: Arc<RustConnection>,
     screen: usize,
 }
 
-fn unavailable() -> EIPError {
+pub(super) fn unavailable() -> EIPError {
     error(
         ErrorType::ProviderUnavailable,
         "X11 desktop unavailable; check DISPLAY, XAUTHORITY and the X server",
@@ -32,6 +33,52 @@ fn unavailable() -> EIPError {
 }
 fn unsupported(message: &str) -> EIPError {
     error(ErrorType::Unsupported, message)
+}
+
+impl Backend {
+    fn with_clipboard<T>(
+        &self,
+        f: impl FnOnce(&super::x11_clipboard::Clipboard) -> Result<T, EIPError>,
+    ) -> Result<T, EIPError> {
+        let desktop = self
+            .desktop
+            .get_or_init(Desktop::connect)
+            .as_ref()
+            .map_err(Clone::clone)?;
+        let mut clipboard = self
+            .clipboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if clipboard.is_none() {
+            *clipboard = Some(super::x11_clipboard::Clipboard::start(
+                desktop.connection.clone(),
+                desktop.root(),
+            )?);
+        }
+        f(clipboard.as_ref().unwrap())
+    }
+    pub(super) fn read_clipboard(
+        &self,
+        max: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        self.with_clipboard(|clipboard| clipboard.read(max, interrupted))
+    }
+    pub(super) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        self.with_clipboard(|clipboard| clipboard.write(text, interrupted))
+    }
+    pub(super) fn close_clipboard(&self) {
+        drop(
+            self.clipboard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take(),
+        );
+    }
 }
 
 impl Desktop {
@@ -78,7 +125,10 @@ impl Desktop {
         {
             return Err(unsupported("X11 computer use requires XKB"));
         }
-        Ok(Self { connection, screen })
+        Ok(Self {
+            connection: Arc::new(connection),
+            screen,
+        })
     }
     fn root(&self) -> u32 {
         self.connection.setup().roots[self.screen].root
@@ -208,6 +258,7 @@ impl Backend {
         &self,
         target: Option<&str>,
         max_dimension: u32,
+        zoom: Option<(&Basis, &ComputerRegion)>,
     ) -> Result<Capture, EIPError> {
         let desktop = self.desktop()?;
         let geometry = desktop.select(target)?;
@@ -267,19 +318,7 @@ impl Backend {
                 "display layout changed during capture",
             ));
         }
-        let image = DynamicImage::ImageRgb8(rgb)
-            .resize(max_dimension, max_dimension, FilterType::Triangle)
-            .to_rgb8();
-        let mut bytes = Vec::new();
-        JpegEncoder::new_with_quality(&mut bytes, 80)
-            .encode_image(&image)
-            .map_err(|_| unavailable())?;
-        Ok(Capture {
-            geometry,
-            width: image.width(),
-            height: image.height(),
-            bytes,
-        })
+        encode_capture(DynamicImage::ImageRgb8(rgb), geometry, max_dimension, zoom)
     }
     pub(super) fn execute(
         &self,

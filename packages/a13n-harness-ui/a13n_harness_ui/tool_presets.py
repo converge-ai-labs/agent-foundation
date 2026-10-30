@@ -122,7 +122,14 @@ def tool_choices(
             # Gemini image-only models cannot use the starter's function tools.
             kinds.discard("image_generation")
     return tuple(
-        replace(choice, recommended=choice.recommended and known) for choice in _NATIVE_CHOICES if choice.key in kinds
+        replace(
+            choice,
+            recommended=choice.recommended
+            and known
+            and not (authentication == "codex_subscription" and choice.key == "image_generation"),
+        )
+        for choice in _NATIVE_CHOICES
+        if choice.key in kinds
     )
 
 

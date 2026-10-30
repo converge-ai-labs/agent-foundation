@@ -45,7 +45,9 @@ from a13n_service.infra.telemetry import meter
 
 logger = get_logger(__name__)
 
-type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge", "checkpoint_cleanup"]
+type OutboxKind = Literal[
+    "webhook", "child_result", "tool_result", "browser_handback", "email", "memory_purge", "checkpoint_cleanup"
+]
 type Outcome = Literal["delivered", "retry", "deferred", "dead"]
 
 
@@ -74,7 +76,8 @@ class OutboxRow(Base):
     __table_args__ = (
         UniqueConstraint("kind", "dedupe_key"),
         CheckConstraint(
-            "kind IN ('webhook', 'child_result', 'email', 'memory_purge', 'checkpoint_cleanup')", name="kind"
+            "kind IN ('webhook', 'child_result', 'tool_result', 'browser_handback', 'email', 'memory_purge', 'checkpoint_cleanup')",
+            name="kind",
         ),
         # Account mail (password reset, email change) belongs to no organization; every other delivery does.
         CheckConstraint("organization_id IS NOT NULL OR kind = 'email'", name="tenant"),
@@ -83,6 +86,12 @@ class OutboxRow(Base):
         CheckConstraint("(status = 'delivered') = (delivered_at IS NOT NULL)", name="delivered"),
         CheckConstraint("(status <> 'pending') = (settled_at IS NOT NULL)", name="settled"),
         Index("ix_outbox_due", "kind", "available_at", postgresql_where=text("status = 'pending'")),
+        Index(
+            "ix_outbox_pending_child_thread",
+            "workspace_id",
+            text("(target ->> 'thread_id')"),
+            postgresql_where=text("kind = 'child_result' AND status = 'pending'"),
+        ),
         Index("ix_outbox_settled", "kind", "status", "settled_at", "id", postgresql_where=text("status <> 'pending'")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

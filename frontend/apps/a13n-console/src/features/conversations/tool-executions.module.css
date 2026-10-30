@@ -1,0 +1,82 @@
+.executions,
+.inspector,
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stream {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.stream pre {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.execution {
+  min-width: 0;
+}
+
+.toolbar,
+.secondary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.toolbar {
+  justify-content: space-between;
+}
+
+.toolbar p,
+.inspector p {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+
+.inspector {
+  padding: 12px 16px 20px;
+}
+
+.inspector .failure {
+  color: var(--destructive);
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px 24px;
+}
+
+.facts > div {
+  min-width: 0;
+}
+
+.facts dt {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .header > :nth-child(2) {
+    flex-basis: calc(100% - 44px);
+  }
+}

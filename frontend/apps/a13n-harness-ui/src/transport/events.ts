@@ -42,9 +42,13 @@ export function summaryFrame(value: unknown): SummaryFrame {
           typeof notice.receipt_id !== "string" ||
           !notice.receipt_id ||
           !("status" in notice) ||
-          !["completed", "failed", "suspended"].includes(
-            String(notice.status),
-          ) ||
+          ![
+            "completed",
+            "failed",
+            "suspended",
+            "goal_verified",
+            "goal_incomplete",
+          ].includes(String(notice.status)) ||
           !("brief" in notice) ||
           typeof notice.brief !== "string" ||
           !notice.brief ||

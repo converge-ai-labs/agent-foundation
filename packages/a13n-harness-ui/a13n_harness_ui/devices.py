@@ -9,9 +9,10 @@ import os
 from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from functools import partial
 from typing import Literal
 
-from a13n_envd_client import EIPClientError
+from a13n_envd_client import EIPClientError, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -36,6 +37,7 @@ from a13n_harness_ui.configuration.models import (
     WebSocketDeviceTransport,
     canonical_digest,
 )
+from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 
@@ -91,16 +93,17 @@ class DeviceConnections:
         self._stack = AsyncExitStack()
         self._closed = False
         self._revoked: set[str] = set()
+        self._monitoring_sources: tuple[MonitoringSource, ...] = ()
         self._close_task: asyncio.Task[None] | None = None
 
-    async def _credential(self, resource: DeviceResource) -> str:
+    async def _credential(self, resource: DeviceResource, *, observation: bool = False) -> str:
         authentication = resource.authentication
         if isinstance(authentication, PairedDeviceAuthentication):
             raise TypeError("Paired Device credentials cannot be recovered")
         if authentication.env is not None:
             token = os.environ.get(authentication.env)
         elif self._api_keys is not None and authentication.credential_ref is not None:
-            token = await self._api_keys.load(authentication.credential_ref)
+            token = await self._api_keys.load(authentication.credential_ref, observation=observation)
         else:
             token = None
         if not token:
@@ -124,10 +127,10 @@ class DeviceConnections:
         # execution owners still using the previous connection. Neither is persisted.
         return (canonical_digest(recipe), fingerprint), token
 
-    async def _http_runtime(self, resource: DeviceResource) -> HttpEnvdProviderRuntime:
+    async def _http_runtime(self, resource: DeviceResource, token: str | None = None) -> HttpEnvdProviderRuntime:
         if not isinstance(resource.transport, HttpDeviceTransport):
             raise TypeError("HTTP Device resource required")
-        key, token = await self._runtime_key(resource)
+        key, token = await self._runtime_key(resource, token)
         if key not in self._http:
             runtime = HttpEnvdProviderRuntime(
                 resource.transport.configuration, HttpEnvdCredential(token=SecretStr(token))
@@ -176,6 +179,39 @@ class DeviceConnections:
         for key, connections in tuple(self._websocket.items()):
             if key[1] == digest:
                 await connections.close()
+
+    def monitoring_sources(self) -> tuple[MonitoringSource, ...]:
+        return self._monitoring_sources
+
+    def update_monitoring_sources(self, resources: Iterable[DeviceResource]) -> None:
+        """Publish an accepted in-memory inventory; polling never reads configuration storage."""
+        self._monitoring_sources = tuple(
+            MonitoringSource(
+                id=resource.id,
+                name=resource.name,
+                transport=resource.transport.kind,
+                revision=canonical_digest(resource.model_dump(mode="json", exclude={"name"})),
+                revoked=isinstance(resource.authentication, PairedDeviceAuthentication)
+                and resource.authentication.revoked,
+                acquire=partial(self.acquire_device, resource.model_copy(deep=True), observation=True),
+            )
+            for resource in resources
+        )
+
+    async def acquire_device(self, resource: DeviceResource, *, observation: bool = False) -> EIPDeviceConnection:
+        """Borrow the App's authenticated carrier without opening an execution Session."""
+        token = (
+            None
+            if isinstance(resource.authentication, PairedDeviceAuthentication)
+            else await self._credential(resource, observation=observation)
+        )
+        if isinstance(resource.transport, HttpDeviceTransport):
+            return await (await self._http_runtime(resource, token)).acquire_device(
+                expected_device_id=resource.device_id
+            )
+        return await (await self._websocket_connections(resource, token)).acquire_device(
+            expected_device_id=resource.device_id, timeout=resource.transport.configuration.connection_timeout
+        )
 
     async def info(self, resource: DeviceResource) -> DeviceInfo:
         summary = DeviceSummary.from_resource(resource)

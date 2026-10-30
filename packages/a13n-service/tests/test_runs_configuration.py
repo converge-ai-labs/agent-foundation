@@ -2,13 +2,82 @@
 
 import asyncio
 import re
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
+from a13n_harness import RunError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_service.runs.execute import _deterministic, _own
 from a13n_service.runs.inbox import Request
 from a13n_service.runs.schemas import Message
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_wrapped_endpoint_refusals_keep_the_safe_reason(grouped):
+    refusal = EndpointPolicyError("endpoint must use HTTPS")
+    wrapped = RunError("Agent execution failed.", code="agent_run_failed")
+    wrapped.__cause__ = refusal
+    error = ExceptionGroup("monitors", [ExceptionGroup("stream", [wrapped])]) if grouped else wrapped
+    outcome = _deterministic(_own(error))
+    assert outcome is not None and outcome.failure is not None
+    assert outcome.failure.model_dump() == {
+        "code": "provider_endpoint_denied",
+        "message": "endpoint must use HTTPS",
+    }
+
+
+@pytest.mark.parametrize(
+    ("base_url", "reason"),
+    [
+        ("http://model.example/v1", "endpoint must use HTTPS"),
+        ("https://model bad.example/v1", "allowed hosts must be exact DNS hostnames or IP literals"),
+        ("https://user:private-secret@model.example/v1", "endpoint must not contain user information"),
+        ("https://model.example/v1?api_key=private-secret", "endpoint query contains a sensitive parameter"),
+    ],
+)
+async def test_model_endpoint_refusal_is_visible_without_retrying(serve, settings, runs_kit, base_url, reason):
+    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    async with serve(settings=settings.model_copy(update={"providers": providers})) as service:
+        agent = await runs_kit.create_agent(service, SimpleNamespace(url=base_url))
+        run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+        await (await runs_kit.attempt(service))
+        run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "failed" and run["attempts"] == 1, run
+    assert run["failure"] == {"code": "provider_endpoint_denied", "message": reason}
+    assert "private-secret" not in str(run["failure"])
+
+
+@pytest.mark.parametrize("status_code", [400, 401, 403, 422])
+async def test_model_http_failure_preserves_status_without_exposing_the_response(
+    service, runs_kit, listen, status_code
+):
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    app = FastAPI()
+    requests = []
+
+    @app.post("/v1/chat/completions")
+    async def rejected():
+        requests.append(True)
+        return JSONResponse(
+            {"error": {"message": "private-secret upstream authentication details", "type": "authentication_error"}},
+            status_code=status_code,
+        )
+
+    async with listen(app) as url:
+        agent = await runs_kit.create_agent(service, SimpleNamespace(url=f"{url}/v1"))
+        run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+        await (await runs_kit.attempt(service))
+        run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "failed" and run["attempts"] == 1, run
+    assert run["failure"]["code"] == "agent_run_failed"
+    assert f"HTTP {status_code}" in run["failure"]["message"]
+    assert "private-secret" not in str(run["failure"])
+    assert requests == [True]
 
 
 def test_configuration_has_canonical_idempotency_digest():
@@ -23,14 +92,19 @@ def test_configuration_has_canonical_idempotency_digest():
 
 
 @pytest.mark.parametrize("use_regex", [False, True])
-async def test_steering_retains_or_matches_the_accepted_configuration(service, scripted_model, runs_kit, use_regex):
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+async def test_steering_retains_or_matches_the_accepted_configuration(
+    skill_service, scripted_model, runs_kit, use_regex
+):
+    service = skill_service
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     host = urlsplit(scripted_model.url).hostname
     rule = f"regex:{re.escape(host)}" if use_regex else host
     configuration = {"allowed_hosts": [rule], "extensions": {"example.filter": {"images": ["keep"]}}}
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
-    scripted_model.say("Done")
+    # Every native request stays open while configuration is checked; immediate steering may
+    # cancel either of the first two requests before the equal-config entry is incorporated.
+    for _ in range(3):
+        scripted_model.say("Done", gate=gate)
     started = await runs_kit.start_thread(service, agent, "start", options={"configuration": configuration})
     thread_id = started["thread"]["id"]
     run_id = started["run"]["id"]
@@ -60,6 +134,8 @@ async def test_steering_retains_or_matches_the_accepted_configuration(service, s
         service, thread_id, runs_kit.message(agent, "same config", options={"configuration": configuration})
     )
     assert equal.status_code == 201, equal.text
+    while "same config" not in str(runs_kit.user_texts(await scripted_model.request())):
+        pass
     gate.set()
     await running
     entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}

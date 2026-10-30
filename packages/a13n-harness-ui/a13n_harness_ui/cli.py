@@ -60,6 +60,7 @@ class CliRequest:
     web_api_key: str | None = field(default=None, repr=False)
     dangerously_bypass_permission: bool = False
     share_computer: bool = True
+    browser_no_sandbox: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +188,12 @@ def cli(
         "independent of Agent permissions."
     ),
 )
+@click.option(
+    "--browser-no-sandbox/--browser-sandbox",
+    default=False,
+    envvar="A13N_HARNESS_UI_BROWSER_NO_SANDBOX",
+    help="Disable Chromium's sandbox explicitly; only for a separately isolated browser Host.",
+)
 @click.pass_context
 def webui_command(
     ctx: click.Context,
@@ -195,6 +202,7 @@ def webui_command(
     api_keys: tuple[str, ...],
     dangerously_bypass_permission: bool,
     share_computer: bool,
+    browser_no_sandbox: bool,
 ) -> None:
     """Run one foreground WebUI server with bundled browser assets."""
     if len(set(api_keys)) > 1:
@@ -209,8 +217,53 @@ def webui_command(
             web_api_key=api_key,
             dangerously_bypass_permission=dangerously_bypass_permission,
             share_computer=share_computer,
+            browser_no_sandbox=browser_no_sandbox,
         )
     )
+
+
+@cli.group("envd")
+def envd_group() -> None:
+    """Manage the native Envd installation without starting Harness UI."""
+
+
+@envd_group.command("update")
+@click.option("--executable", type=_PATH, help="Update this standalone executable instead of the configured runtime.")
+@click.option("--version", help="Exact native version; managed installations remain pinned to the client version.")
+@click.option("--check", is_flag=True, help="Inspect the selected update without installing.")
+@click.option("--force", is_flag=True, help="Reinstall the selected version.")
+@click.pass_context
+def envd_update_command(
+    ctx: click.Context, executable: Path | None, version: str | None, check: bool, force: bool
+) -> None:
+    """Update Envd without starting the App. Stop daemons using the installation first."""
+    from a13n_harness_ui.envd_update import update
+    from a13n_harness_ui.errors import HarnessUiError
+
+    if check and force:
+        raise click.UsageError("--check and --force cannot be combined.")
+    context = ctx.find_object(_CliContext)
+    assert context is not None
+    try:
+        asyncio.run(
+            update(
+                config_path=context.config_path,
+                data_root=context.data_root,
+                executable=executable,
+                version=version,
+                check=check,
+                force=force,
+            )
+        )
+    except KeyboardInterrupt:
+        click.echo("Envd update interrupted. Inspect the installation before retrying.", err=True)
+        raise click.exceptions.Exit(130) from None
+    except HarnessUiError as exc:
+        code = exc.details.get("returncode")
+        click.echo(f"Error: {exc}", err=True)
+        raise click.exceptions.Exit(code if isinstance(code, int) and code > 0 else 1) from exc
+    except OSError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @cli.command("update")
@@ -449,6 +502,58 @@ def environment_list_command(ctx: click.Context, output_format: str) -> None:
     """List Environment modes and profiles."""
 
     _execute(_request(ctx, command="environment", action="list", output_format=OutputFormat(output_format)))
+
+
+@environment_group.command("status")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_status_command(ctx: click.Context, output_format: str) -> None:
+    """Inspect envd installation without downloads or desktop permission requests."""
+    _execute(_request(ctx, command="environment", action="status", output_format=OutputFormat(output_format)))
+
+
+@environment_group.command("check")
+@click.option(
+    "--profile",
+    "environment_profile_id",
+    type=click.Choice(("environment-native", "environment-envd", "environment-desktop", "environment-sandbox")),
+    default="environment-envd",
+)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_check_command(ctx: click.Context, environment_profile_id: str, output_format: str) -> None:
+    """Download if needed and check readiness; desktop profile requests Host permissions."""
+    _execute(
+        _request(
+            ctx,
+            command="environment",
+            action="check",
+            environment_profile_id=environment_profile_id,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@environment_group.command("configure")
+@click.option(
+    "--profile",
+    "environment_profile_id",
+    required=True,
+    type=click.Choice(("environment-native", "environment-envd", "environment-desktop", "environment-sandbox")),
+)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_configure_command(ctx: click.Context, environment_profile_id: str, output_format: str) -> None:
+    """Check and save the new-conversation default. Existing Threads stay unchanged."""
+    _execute(
+        _request(
+            ctx,
+            command="environment",
+            action="configure",
+            environment_profile_id=environment_profile_id,
+            output_format=OutputFormat(output_format),
+        )
+    )
 
 
 @cli.command("doctor")

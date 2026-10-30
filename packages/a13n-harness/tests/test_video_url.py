@@ -112,20 +112,20 @@ async def test_default_tool_visibility_and_guidance_follow_effective_run_support
     native_youtube = "youtube" in capabilities and allowed_hosts is None
     inline_video = "video_understanding" in capabilities
     expected = native_youtube or inline_video
-    assert ("read_video_url" in definitions) is expected
+    assert ("read_media_url" in definitions) is expected
     guidance = repr(seen[0][0]) + str(seen[0][1].instructions)
-    assert ('<tool-instruction name="read_video_url">' in guidance) is (expected and instructions_enabled)
+    assert ('<tool-instruction name="read_media_url">' in guidance) is (expected and instructions_enabled)
     assert ("YouTube links are attached as native" in guidance) is (native_youtube and instructions_enabled)
-    assert ("Direct HTTP(S) video resources are downloaded" in guidance) is (inline_video and instructions_enabled)
-    assert "read_video_url_youtube" not in guidance and "read_video_url_inline" not in guidance
+    assert ("Direct HTTP(S) media resources are downloaded" in guidance) is (inline_video and instructions_enabled)
+    assert "read_media_url_youtube" not in guidance and "read_media_url_inline" not in guidance
     if expected:
-        description = definitions["read_video_url"].description
+        description = definitions["read_media_url"].description
         assert ("native YouTube links" in description) is native_youtube
         assert ("bounded direct HTTP(S) video downloads" in description) is inline_video
 
 
 @pytest.mark.parametrize(("url", "media_type", "error"), [(YOUTUBE, None, None)])
-async def test_read_video_url_attaches_native_content_without_a_reader(url, media_type, error) -> None:
+async def test_read_media_url_attaches_native_content_without_a_reader(url, media_type, error) -> None:
     seen = []
 
     async def stream(messages, info) -> AsyncIterator[str | DeltaToolCalls]:
@@ -140,7 +140,7 @@ async def test_read_video_url_attaches_native_content_without_a_reader(url, medi
         else:
             yield {
                 0: DeltaToolCall(
-                    name="read_video_url",
+                    name="read_media_url",
                     json_args=json.dumps(
                         {"url": url, "media_type": media_type, "instructions": "Summarize speech with timestamps."}
                     ),
@@ -231,7 +231,7 @@ async def test_default_tool_still_obeys_permission_denial() -> None:
             yield "done"
         else:
             yield {
-                0: DeltaToolCall(name="read_video_url", json_args=json.dumps({"url": YOUTUBE}), tool_call_id="denied-1")
+                0: DeltaToolCall(name="read_media_url", json_args=json.dumps({"url": YOUTUBE}), tool_call_id="denied-1")
             }
 
     agent = HarnessBuilder().build(
@@ -251,7 +251,7 @@ async def test_google_adapter_projects_actual_tool_content_as_a_file_reference(m
 
     from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY, _apply_result_policy, _render_tool_return
     from a13n_harness.tools.metadata import ToolOutputPolicy
-    from a13n_harness.toolsets.video_url import VideoUrlToolset
+    from a13n_harness.toolsets.media_url import MediaUrlToolset
     from google.genai.types import Part
     from pydantic_ai import ToolReturn
     from pydantic_ai.models.google import GoogleModel
@@ -262,7 +262,7 @@ async def test_google_adapter_projects_actual_tool_content_as_a_file_reference(m
 
     monkeypatch.setattr("pydantic_ai.models.google.download_item", no_download)
     model = GoogleModel("gemini-2.5-pro", provider=GoogleProvider(api_key="test-only-not-a-real-key"))
-    result = await VideoUrlToolset().read_video_url(
+    result = await MediaUrlToolset().read_media_url(
         SimpleNamespace(
             deps=SimpleNamespace(model_characteristics=_characteristics("youtube"), configuration=RunConfiguration())
         ),
@@ -317,7 +317,10 @@ async def test_non_streaming_request_filters_urls_without_rewriting_history() ->
     result = await agent.run(
         ["Inspect", VideoUrl(YOUTUBE)],
         deps=SimpleNamespace(
-            model_characteristics=_characteristics(), configuration=RunConfiguration(), toolset_instructions=True
+            model_characteristics=_characteristics(),
+            configuration=RunConfiguration(),
+            toolset_instructions=True,
+            file_media_understanding=None,
         ),
     )
     assert result.output == "done"

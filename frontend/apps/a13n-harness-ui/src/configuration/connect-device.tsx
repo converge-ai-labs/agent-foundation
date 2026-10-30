@@ -1,17 +1,27 @@
+import {
+  SettingsChoice as ChoiceField,
+  SettingsSection,
+  SettingsToggle,
+} from "../shell/settings";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { HelpTip } from "../shell/help-tip";
 import { NewResourceButton } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 
 import { connectCommand } from "./device-command";
+import { copyText } from "../platform";
+import layout from "../shell/workbench.module.css";
+import settingsLayout from "./settings.module.css";
+import styles from "./connect-device.module.css";
 
 export function ConnectDevice({
   onConnected,
-  label = "Connect Device",
+  label = "Connect device",
 }: {
   onConnected?: (device: Schema<"DeviceSummary">) => void;
   label?: string;
@@ -21,12 +31,16 @@ export function ConnectDevice({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title="Connect a Device"
-      description="Run envd on the computer whose directories you want to use, then approve its verification code here."
-      closeLabel="Close"
+      title="Connect device"
+      closeLabel="Close dialog"
       trigger={
         <Button type="button" variant={onConnected ? "outline" : "default"}>
           {label}
+        </Button>
+      }
+      footer={
+        <Button variant="outline" onClick={() => setOpen(false)}>
+          Close
         </Button>
       }
     >
@@ -71,84 +85,79 @@ function ConnectDeviceSteps({
     desktop,
   );
   const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(command),
+    mutationFn: () => copyText(command),
     onSuccess: () => setCopied(command),
   });
   return (
-    <div className="flex flex-col gap-5">
+    <div className={styles.steps}>
       {!approved ? (
         <>
-          <section className="flex flex-col gap-3">
-            <h3 className="font-medium">1. Run on the Device</h3>
-            <p className="text-sm text-muted-foreground">
-              Install a13n-envd first and make sure it is on your PATH. This
-              command runs in the foreground; keep the terminal open. It does
-              not install a background service.
+          <section className={styles.step}>
+            <h3>
+              1. Run on the device{" "}
+              <HelpTip label="Installation help">
+                Install a13n-envd and add it to PATH on the other computer.
+              </HelpTip>
+            </h3>
+            <p>
+              Run this command on the other computer and keep its terminal open.
             </p>
-            <ChoiceField
-              label="Device terminal"
-              value={shell}
-              onValueChange={(value) => setShell(value as typeof shell)}
-              options={[
-                { value: "posix", label: "macOS / Linux · POSIX shell" },
-                { value: "powershell", label: "Windows · PowerShell" },
-              ]}
-            />
-            <label className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                checked={execution}
-                onChange={(event) => setExecution(event.target.checked)}
+            <SettingsSection>
+              <ChoiceField
+                label="Device terminal"
+                value={shell}
+                onValueChange={(value) => setShell(value as typeof shell)}
+                options={[
+                  { value: "posix", label: "macOS / Linux · POSIX shell" },
+                  { value: "powershell", label: "Windows · PowerShell" },
+                ]}
               />
-              Enable shell execution as the Device user (Full Control, not a
-              sandbox)
-            </label>
-            <p className="text-sm text-muted-foreground">
-              Pairing alone does not enable shell execution. The Harness
-              server’s local mode does not change Device permissions.
-            </p>
-            <details>
-              <summary>Desktop access</summary>
-              <label className="flex items-start gap-2 mt-2">
-                <input
-                  type="checkbox"
-                  checked={desktop}
-                  onChange={(event) => setDesktop(event.target.checked)}
-                />
-                Enable desktop observation and control
-              </label>
-              <p className="text-sm text-muted-foreground">
-                Independent of shell access. Requires platform desktop
-                permissions. Screenshots can be sent to the model and retained
-                in history.
-              </p>
-            </details>
-            <pre className="overflow-x-auto rounded-lg bg-muted p-3">
-              <code>{command}</code>
-            </pre>
-            <div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => copy.mutate()}
-                loading={copy.isPending}
-              >
-                {copied === command ? "Copied" : "Copy command"}
-              </Button>
+              <SettingsToggle
+                label="Enable shell execution"
+                description="Run commands as the device user, without a sandbox. Server permissions don't apply."
+                checked={execution}
+                onCheckedChange={setExecution}
+              />
+              <details className={settingsLayout.groupDisclosure}>
+                <summary>Desktop access</summary>
+                <div>
+                  <SettingsToggle
+                    label="Enable desktop observation and control"
+                    description="Requires desktop permission on the device, separately from shell access. Screenshots may be sent to the model and saved in chat history."
+                    checked={desktop}
+                    onCheckedChange={setDesktop}
+                  />
+                </div>
+              </details>
+            </SettingsSection>
+            <div className={styles.commandBlock}>
+              <div className={styles.commandHeader}>
+                <span>Run command</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copy.mutate()}
+                  loading={copy.isPending}
+                >
+                  {copied === command ? "Copied" : "Copy command"}
+                </Button>
+              </div>
+              <pre className={styles.command}>
+                <code>{command}</code>
+              </pre>
             </div>
             <ErrorNotice error={copy.error} />
-            <p className="text-sm text-muted-foreground">
-              This command uses the address open in your browser. It must be
-              reachable from the Device. Remote connections require HTTPS;
-              localhost refers to the Device itself.
-            </p>
-            <details>
-              <summary>Reconnect and multiple Hosts</summary>
+            <details className={layout.details}>
+              <summary>Connection help</summary>
               <p>
-                Rerun this same command and environment after restarting. Saved
-                identity and credentials are reused, but the saved Host
-                connection does not retain every launch flag or shell/desktop
-                setting. Revoked credentials are not automatically replaced.
+                Use an address the device can reach and HTTPS for remote
+                connections. Localhost means the device itself.
+              </p>
+              <p>
+                After a restart, run the same command with the same environment
+                variables and access options. Saved credentials are reused
+                unless revoked.
               </p>
               <p>
                 For another Host, run a separate envd process with a different{" "}
@@ -157,19 +166,21 @@ function ConnectDeviceSteps({
               </p>
             </details>
           </section>
-          <section className="flex flex-col gap-3">
-            <h3 className="font-medium">2. Verify and approve</h3>
-            <p className="text-sm text-muted-foreground">
-              Approve only the code shown in your Device terminal. Closing this
-              dialog does not reject a pending request.
+          <section className={styles.step}>
+            <h3>2. Verify and approve</h3>
+            <p>
+              Match the code in the device's terminal before approving. Closing
+              this dialog leaves the request pending.
             </p>
             <ErrorNotice error={pairings.error} />
             {!pairings.data?.length && (
-              <p role="status">
-                Waiting for a verification request. If a request disappears, it
-                may have expired or been handled elsewhere; that is not proof of
-                approval.
-              </p>
+              <div className={styles.waiting}>
+                <p role="status">Waiting for a connection request…</p>
+                <HelpTip label="About connection requests">
+                  Requests disappear if they expire or are handled elsewhere.
+                  Check the device's status to confirm approval.
+                </HelpTip>
+              </div>
             )}
             {pairings.data?.map((pairing) => (
               <PendingDevice
@@ -179,18 +190,18 @@ function ConnectDeviceSteps({
               />
             ))}
           </section>
-          <details>
-            <summary>Manual HTTP or WebSocket connection</summary>
+          <details className={layout.details}>
+            <summary>Connect manually</summary>
             <p>
-              For an existing daemon or credentials you manage yourself. Return
-              to the Device picker after saving.
+              Use an existing envd connection or your own credentials. Return to
+              the device picker after saving.
             </p>
             <NewResourceButton kind="device" label="Configure manually" />
           </details>
         </>
       ) : (
-        <section className="flex flex-col gap-3">
-          <h3 className="font-medium">3. {approved.name}</h3>
+        <section className={styles.step}>
+          <h3>3. {approved.name}</h3>
           <p role="status">
             {info.data?.available
               ? "Device online"
@@ -198,14 +209,13 @@ function ConnectDeviceSteps({
           </p>
           <ErrorNotice error={info.error} />
           {info.data && !info.data.available && (
-            <p className="text-sm text-muted-foreground">
-              Keep envd running and check its terminal. Approval registers the
-              Device; it does not prove the connection is ready.
+            <p>
+              Keep envd running and check its terminal. Approval saves the
+              device; it still needs to connect.
             </p>
           )}
-          <p className="text-sm text-muted-foreground">
-            This Device is now registered globally. Closing this dialog keeps
-            the registration
+          <p>
+            This device is saved for this server. Closing this dialog keeps it
             {inline ? " but does not save an environment binding" : ""}.
           </p>
           <Button

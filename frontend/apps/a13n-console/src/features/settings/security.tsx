@@ -68,6 +68,7 @@ export function Security() {
   return (
     <div className={settings.sections}>
       <SettingsSection
+        variant="outlined"
         title={t("Email address")}
         description={t(
           "Verify a new address before it becomes your sign-in email.",
@@ -126,7 +127,7 @@ export function Security() {
                 controlId={`${id}-email`}
               >
                 <FormField
-                  className="min-w-0 w-60 max-w-full"
+                  className={settings.control}
                   label={t("New email address")}
                   hideLabel={true}
                 >
@@ -145,7 +146,7 @@ export function Security() {
                 controlId={`${id}-email-password`}
               >
                 <FormField
-                  className="min-w-0 w-60 max-w-full"
+                  className={settings.control}
                   label={t("Current password")}
                   hideLabel={true}
                 >
@@ -194,7 +195,7 @@ export function Security() {
           </p>
         )}
       </SettingsSection>
-      <SettingsSection title={t("Password")}>
+      <SettingsSection variant="outlined" title={t("Password")}>
         <SettingsRow label={t("Use a strong, unique password.")}>
           <ModalFrame
             onOpenChange={togglePassword}

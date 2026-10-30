@@ -80,12 +80,15 @@ class EnvironmentAction(StrEnum):
     STATE_RESTORE = "environment.state.restore"
     COMPUTER_DESCRIBE = "environment.computer.describe"
     COMPUTER_OBSERVE = "environment.computer.observe"
+    COMPUTER_ZOOM = "environment.computer.zoom"
     COMPUTER_CLICK = "environment.computer.click"
     COMPUTER_MOVE = "environment.computer.move"
     COMPUTER_DRAG = "environment.computer.drag"
     COMPUTER_SCROLL = "environment.computer.scroll"
     COMPUTER_TYPE_TEXT = "environment.computer.type_text"
     COMPUTER_PRESS_KEYS = "environment.computer.press_keys"
+    COMPUTER_READ_CLIPBOARD = "environment.computer.read_clipboard"
+    COMPUTER_WRITE_CLIPBOARD = "environment.computer.write_clipboard"
 
 
 COMPUTER_ACTIONS: frozenset[EnvironmentAction] = frozenset(
@@ -157,12 +160,17 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.STATE_RESTORE: EnvironmentActionDispatch("state", "state", "restore_state"),
         EnvironmentAction.COMPUTER_DESCRIBE: EnvironmentActionDispatch("computer", "computer", "describe"),
         EnvironmentAction.COMPUTER_OBSERVE: EnvironmentActionDispatch("computer", "computer", "observe"),
+        EnvironmentAction.COMPUTER_ZOOM: EnvironmentActionDispatch("computer", "computer", "zoom"),
         EnvironmentAction.COMPUTER_CLICK: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_MOVE: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_DRAG: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_SCROLL: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_TYPE_TEXT: EnvironmentActionDispatch("computer", "computer", "execute"),
         EnvironmentAction.COMPUTER_PRESS_KEYS: EnvironmentActionDispatch("computer", "computer", "execute"),
+        EnvironmentAction.COMPUTER_READ_CLIPBOARD: EnvironmentActionDispatch("computer", "computer", "read_clipboard"),
+        EnvironmentAction.COMPUTER_WRITE_CLIPBOARD: EnvironmentActionDispatch(
+            "computer", "computer", "write_clipboard"
+        ),
     }
 )
 
@@ -194,6 +202,10 @@ class EnvironmentPermissionSet(BaseModel):
 
     operations: frozenset[EnvironmentAction] = frozenset()
 
+    @field_serializer("operations", when_used="json")
+    def serialize_operations(self, operations: frozenset[EnvironmentAction]) -> list[EnvironmentAction]:
+        return sorted(operations)
+
 
 class EnvironmentMountDescriptor(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -219,6 +231,7 @@ class EnvironmentDescriptor(BaseModel):
 
     generation: str
     backing_identity: str | None = Field(default=None, min_length=1, max_length=256)
+    environment_case_sensitive: bool = Field(default=True, exclude_if=lambda value: value)
     execution_boundary: Mapping[str, JsonValue] = Field(default_factory=dict)
     working_directory: str = Field(default="/", pattern=r"^/[^\x00]*$")
     operation_families: frozenset[EnvironmentOperationFamily]

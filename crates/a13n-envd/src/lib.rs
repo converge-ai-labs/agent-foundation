@@ -20,6 +20,7 @@ pub mod eip;
 mod execution;
 mod filesystem;
 mod http;
+mod monitoring;
 mod operation;
 mod process;
 mod resource;
@@ -30,7 +31,11 @@ mod supervisor;
 mod transfer;
 mod websocket;
 #[cfg(windows)]
+mod windows_directory;
+#[cfg(windows)]
 mod windows_job;
+#[cfg(windows)]
+mod windows_path;
 
 /// Runs the private gated command supervisor used by this binary.
 #[doc(hidden)]
@@ -69,11 +74,11 @@ pub fn run_internal_restricted_worker() -> std::io::Result<()> {
 /// Runs an ordinary Session under its trusted startup identity.
 #[doc(hidden)]
 pub fn run_internal_session_worker() -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         execution::worker::run_session()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Err(std::io::Error::other(
             "Session workers are unavailable on this platform",
@@ -84,16 +89,23 @@ pub fn run_internal_session_worker() -> std::io::Result<()> {
 /// Runs a one-shot directory observation under the execution identity.
 #[doc(hidden)]
 pub fn run_internal_directory_worker() -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         execution::discovery::run()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Err(std::io::Error::other(
             "Session workers are unavailable on this platform",
         ))
     }
+}
+
+/// Runs the strict native Windows MXC launcher before ordinary daemon startup.
+#[doc(hidden)]
+#[cfg(windows)]
+pub fn run_internal_mxc_launcher() -> std::io::Result<i32> {
+    execution::windows::run_launcher()
 }
 
 /// Runs one a13n-envd instance from trusted process configuration.
@@ -107,6 +119,7 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             ]
     {
         println!("{}", connect::HELP);
+        println!("\nUpdate the native installation: a13n-envd update --help");
         return Ok(());
     }
     let config = if arguments
@@ -149,14 +162,19 @@ async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync
         computer::startup::prepare(config.computer_use_permission_timeout).await?;
     }
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
-    match &config.transport {
-        config::TransportConfig::Stdio => stdio::serve(daemon, &config).await?,
+    let monitoring = daemon.start_monitoring()?;
+    let result = match &config.transport {
+        config::TransportConfig::Stdio => stdio::serve(daemon, &config).await,
         config::TransportConfig::Http(http_config) => {
-            http::serve(daemon, &config, http_config).await?;
+            http::serve(daemon, &config, http_config).await
         }
         config::TransportConfig::ReverseWebSocket(websocket_config) => {
-            websocket::serve(daemon, &config, websocket_config).await?;
+            websocket::serve(daemon, &config, websocket_config).await
         }
+    };
+    if let Some(monitoring) = monitoring {
+        monitoring.shutdown().await;
     }
+    result?;
     Ok(())
 }

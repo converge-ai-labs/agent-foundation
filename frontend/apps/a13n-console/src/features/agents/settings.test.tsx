@@ -1,3 +1,4 @@
+import { preparedImage } from "../../../tests/image-crop";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -79,14 +80,15 @@ it("preserves metadata drafts across avatar uploads and uses each returned ETag"
     container.querySelector<HTMLInputElement>('input[type="file"]')!,
     file,
   );
+  await user.click(await screen.findByRole("button", { name: "Use image" }));
   await waitFor(() => expect(onImageSaved).toHaveBeenCalledOnce());
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Draft name",
   );
   expect(http.PUT).toHaveBeenCalledWith("/api/v1/agents/{agent_id}/avatar", {
     params: { path: { agent_id: "ap_test" } },
-    headers: { "If-Match": '"initial"', "Content-Type": "image/png" },
-    body: file,
+    headers: { "If-Match": '"initial"', "Content-Type": "image/webp" },
+    body: preparedImage,
   });
   await user.click(screen.getByRole("button", { name: "Remove image" }));
   await waitFor(() => expect(onImageSaved).toHaveBeenCalledTimes(2));

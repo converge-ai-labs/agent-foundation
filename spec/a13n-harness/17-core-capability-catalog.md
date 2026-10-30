@@ -37,9 +37,13 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 
 ## Optional Capability Roles
 
+`DetectLoops` is the upstream opt-in repeated-action detector, supported through both native code-first composition and declarative configuration. [Native loop detection](04-capability-model.md#opt-in-native-loop-detection) owns its attempt scope and failure behavior.
+
+`BrowserUseCapability` contributes Chromium browser tools over a Host-authorized `RunBindings.browser_backend` or trusted embedded backend. The core owns global/owned tab access, cleanup ownership, and fresh references; Hosts own browser processes, profiles, and viewer access. [Browser Use](23-browser-use.md) owns binding, lifecycle, concurrency, and recovery.
+
 `ToolPermissionsCapability` selects stable-ID rules before custom validation for all locally executable tools. The same Capability owns optional model-backed or code-first risk review at that gate, with shell-specific input rendering but no separate review Capability. It does not grant Host authority. [Tool permissions and review](07-tool-execution.md#tool-permissions-and-review) owns modes, identity, ordering, and approval provenance.
 
-`ToolProxyCapability(groups=...)` optionally presents grouped local tools through one dynamic search/call pair. Each passive `ToolProxyGroup` supplies a Toolset or Capability source and a description; native composition preserves source Agent/run binding. This presentation composes with CodeAct but owns no independent executor; [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its contract.
+`ToolSearchCapability(groups=...)` optionally presents grouped local tools through one dynamic search/call pair. Each passive `ToolSearchGroup` supplies a Toolset or Capability source and a description; native composition preserves source Agent/run binding. This presentation composes with CodeAct but owns no independent executor; [Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns its contract.
 
 | Role                             | Preferred Pydantic primitive                                                                                                 | Owning document                                                                     |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -50,7 +54,7 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 | Runtime context                  | Bounded request epilogue with run timing, configured context window, and usage facts                                         | [Context and Working State](09-context-and-memory.md)                               |
 | Workspace outline                | Bounded version-pinned Environment file-metadata projection on input requests                                                | [Context and Working State](09-context-and-memory.md)                               |
 | File context                     | Run-frozen conventional and explicit Environment file contents on input requests                                             | [Context and Working State](09-context-and-memory.md)                               |
-| Compaction and handoff           | Same-Agent plain-text history compaction, plus an independent explicit handoff tool and reminder                             | [Context and Working State](09-context-and-memory.md)                               |
+| Compaction and handoff           | Synchronous or Host-owned background compaction, immutable State application with next-Run restoration, and explicit handoff | [Context and Working State](09-context-and-memory.md)                               |
 | Skills and discovery             | Run-frozen selected catalog and bounded resource Toolset                                                                     | [Context and Working State](09-context-and-memory.md)                               |
 | Working state                    | Capability using one `AgentContextState` namespace and the model-context subtype                                             | [Context and Working State](09-context-and-memory.md)                               |
 | File memory                      | Model-context Capability with run-frozen mount instructions, a file Toolset, and first-input context over Host-opened stores | [File Memory](21-file-memory.md)                                                    |

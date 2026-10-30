@@ -191,9 +191,10 @@ async def test_project_preview_apply_exactness_conflicts_and_restart(tmp_path):
     root = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state")
     async with open_harness_ui_app(settings, configuration_path=root) as app:
-        before = await app.status()
+        # Status counts are background samples; compare actual objects for preview purity.
+        before = set(await app._store.objects.references())
         preview = await app.preview_thread_configuration()
-        assert (await app.status()).object_count == before.object_count
+        assert set(await app._store.objects.references()) == before
         thread = await app.create_thread()
         assert thread.configuration.model_dump() == preview.model_dump()
         content = _project(tmp_path / "workspace", {"environment_profile": "environment-sandbox", "mcp_servers": []})

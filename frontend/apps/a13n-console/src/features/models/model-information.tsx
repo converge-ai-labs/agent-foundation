@@ -4,18 +4,28 @@ import {
   FilmStripIcon,
   FilePdfIcon,
   ArrowsOutSimpleIcon,
+  YoutubeLogoIcon,
 } from "@phosphor-icons/react";
-import { Input, SettingsRow, SettingsSection, Switch } from "a13n-ui";
+import { Input, SettingsSection, Switch } from "a13n-ui";
 import styles from "./models.module.css";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 
 type Characteristics = Schema["HarnessModelCharacteristics-Input"];
-const inputCapabilities = [
-  ["image_understanding", "Images"],
-  ["audio_understanding", "Audio"],
-  ["video_understanding", "Video files"],
-  ["document_understanding", "PDF documents"],
+/** The inputs a Model can declare it reads, each with its mark. */
+export const inputCapabilities = [
+  { capability: "image_understanding", label: "Images", Icon: ImageIcon },
+  { capability: "audio_understanding", label: "Audio", Icon: WaveformIcon },
+  {
+    capability: "video_understanding",
+    label: "Video files",
+    Icon: FilmStripIcon,
+  },
+  {
+    capability: "document_understanding",
+    label: "PDF documents",
+    Icon: FilePdfIcon,
+  },
 ] as const;
 
 /** Characteristics as read back, in the shape a model accepts: capabilities it knows only. */
@@ -33,7 +43,7 @@ export function characteristicsInput(
         }
       : undefined,
     capabilities: value?.capabilities?.flatMap((item) =>
-      inputCapabilities.flatMap(([capability]) =>
+      inputCapabilities.flatMap(({ capability }) =>
         capability === item ? [capability] : [],
       ),
     ),
@@ -53,16 +63,13 @@ export function characteristicsDefaults(
   };
 }
 
-const capabilityIcons = [ImageIcon, WaveformIcon, FilmStripIcon, FilePdfIcon];
-
 /** Show declared facts, without making the reader re-enter catalog metadata. */
 export function ModelCapabilitySummary({ value }: { value: Characteristics }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className={styles.capabilitySummary} aria-label={t("Capabilities")}>
-      {inputCapabilities.map(([capability, label], index) => {
+      {inputCapabilities.map(({ capability, label, Icon }) => {
         if (!value.capabilities?.includes(capability)) return null;
-        const Icon = capabilityIcons[index];
         return (
           <span key={capability}>
             <Icon size={15} aria-hidden="true" />
@@ -73,8 +80,11 @@ export function ModelCapabilitySummary({ value }: { value: Characteristics }) {
       {value.context_window_tokens != null && (
         <span>
           <ArrowsOutSimpleIcon size={15} aria-hidden="true" />
-          {t("{{count}} context tokens", {
-            count: value.context_window_tokens,
+          {t("{{tokens}} token context", {
+            tokens: new Intl.NumberFormat(i18n.resolvedLanguage, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }).format(value.context_window_tokens),
           })}
         </span>
       )}
@@ -92,10 +102,20 @@ export function ModelInformation({
 }) {
   const { t } = useTranslation();
   return (
-    <SettingsSection title={t("Capabilities")} variant="plain">
+    <SettingsSection
+      title={t("Capabilities")}
+      description={t(
+        "Declare the inputs this model supports and its context limit.",
+      )}
+      variant="plain"
+    >
       <div className={styles.capabilityGrid}>
-        {inputCapabilities.map(([capability, label]) => (
-          <SettingsRow key={capability} label={t(label)} stackOnNarrow={false}>
+        {inputCapabilities.map(({ capability, label, Icon }) => (
+          <div key={capability} className={styles.capabilityItem}>
+            <span>
+              <Icon size={16} aria-hidden="true" />
+              {t(label)}
+            </span>
             <Switch
               aria-label={t(label)}
               checked={value.capabilities?.includes(capability) ?? false}
@@ -108,9 +128,13 @@ export function ModelInformation({
                 })
               }
             />
-          </SettingsRow>
+          </div>
         ))}
-        <SettingsRow label={t("YouTube URLs")} stackOnNarrow={false}>
+        <div className={styles.capabilityItem}>
+          <span>
+            <YoutubeLogoIcon size={16} aria-hidden="true" />
+            {t("YouTube URLs")}
+          </span>
           <Switch
             aria-label={t("YouTube URLs")}
             checked={value.url_input?.video?.includes("youtube") ?? false}
@@ -124,26 +148,30 @@ export function ModelInformation({
               })
             }
           />
-        </SettingsRow>
+        </div>
+        <div className={styles.capabilityItem}>
+          <div className={styles.contextLabel}>
+            <span>{t("Context window")}</span>
+            <small>{t("Tokens")}</small>
+          </div>
+          <Input
+            className={styles.contextInput}
+            type="number"
+            min={1}
+            step={1}
+            aria-label={t("Context window")}
+            placeholder={t("Unknown")}
+            value={value.context_window_tokens ?? ""}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                context_window_tokens:
+                  event.target.value === "" ? null : Number(event.target.value),
+              })
+            }
+          />
+        </div>
       </div>
-      <SettingsRow label={t("Context window")} description={t("Tokens")}>
-        <Input
-          className="w-40"
-          type="number"
-          min={1}
-          step={1}
-          aria-label={t("Context window")}
-          placeholder={t("Unknown")}
-          value={value.context_window_tokens ?? ""}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              context_window_tokens:
-                event.target.value === "" ? null : Number(event.target.value),
-            })
-          }
-        />
-      </SettingsRow>
     </SettingsSection>
   );
 }

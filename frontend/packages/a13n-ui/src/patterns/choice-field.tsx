@@ -4,6 +4,7 @@ import { FormField } from "./form-field";
 import {
   Select,
   SelectGroup,
+  SelectGroupLabel,
   SelectItem,
   SelectPopup,
   SelectTrigger,
@@ -15,6 +16,8 @@ export interface ChoiceOption {
   label: string;
   icon?: ReactNode;
   disabled?: boolean;
+  group?: string;
+  hint?: string;
 }
 export function ChoiceField({
   label,
@@ -31,7 +34,9 @@ export function ChoiceField({
   error,
   id,
   className,
+  popupClassName,
   "aria-describedby": describedBy,
+  "data-field-layout": layout,
 }: {
   label: string;
   placeholder?: string;
@@ -47,12 +52,18 @@ export function ChoiceField({
   error?: ReactNode;
   id?: string;
   className?: string;
+  popupClassName?: string;
   "aria-describedby"?: string;
+  "data-field-layout"?: React.ComponentProps<
+    typeof FormField
+  >["data-field-layout"];
 }) {
   if (readOnly) {
     const selected = options.find((option) => option.value === value);
     return (
       <ReadOnlyField
+        data-field-kind="choice"
+        data-field-layout={layout}
         label={label}
         hideLabel={hideLabel}
         description={description}
@@ -61,12 +72,16 @@ export function ChoiceField({
         <span className="flex items-center gap-2">
           {selected?.icon}
           {selected?.label ?? value ?? "—"}
+          {selected?.hint && (
+            <span className="text-muted-foreground">{selected.hint}</span>
+          )}
         </span>
       </ReadOnlyField>
     );
   }
   return (
     <FormField
+      data-field-layout={layout}
       label={label}
       hideLabel={hideLabel || variant === "filter"}
       description={description}
@@ -81,6 +96,7 @@ export function ChoiceField({
         aria-describedby={describedBy}
         disabled={disabled}
         options={options}
+        popupClassName={popupClassName}
         value={value}
         onValueChange={onValueChange}
         required={required}
@@ -100,6 +116,7 @@ function ChoiceControl({
   required,
   placeholder,
   inlineLabel,
+  popupClassName,
   ...props
 }: Pick<
   React.ComponentProps<typeof ChoiceField>,
@@ -110,8 +127,11 @@ function ChoiceControl({
   | "disabled"
   | "required"
   | "placeholder"
+  | "popupClassName"
   | "aria-describedby"
 > & { "aria-invalid"?: boolean; inlineLabel?: string }) {
+  const selected = options.find((option) => option.value === value);
+  const groups = [...new Set(options.map((option) => option.group))];
   return (
     <Select
       items={options}
@@ -130,22 +150,45 @@ function ChoiceControl({
         )}
         {options.find((option) => option.value === value)?.icon}
         <SelectValue placeholder={placeholder} />
+        {selected?.hint && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {selected.hint}
+          </span>
+        )}
       </SelectTrigger>
-      <SelectPopup>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem
-              key={option.value}
-              value={option.value}
-              disabled={option.disabled}
-            >
-              <span className="flex items-center gap-2">
-                {option.icon}
-                {option.label}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectGroup>
+      <SelectPopup className={popupClassName}>
+        {groups.map((group) => (
+          <SelectGroup key={group ?? "ungrouped"}>
+            {group && <SelectGroupLabel>{group}</SelectGroupLabel>}
+            {options
+              .filter((option) => option.group === group)
+              .map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                  aria-label={
+                    option.hint ? `${option.label} ${option.hint}` : undefined
+                  }
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    {option.icon}
+                    <span
+                      data-slot="choice-option-label"
+                      className="min-w-0 flex-1 truncate"
+                    >
+                      {option.label}
+                    </span>
+                    {option.hint && (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {option.hint}
+                      </span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+          </SelectGroup>
+        ))}
       </SelectPopup>
     </Select>
   );

@@ -18,20 +18,36 @@ from a13n_harness_ui.mcp_apps.operations import AppOperations, AppToolRequest
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import AgentResourceSource, ObjectKind, ThreadConfiguration, open_local_store
 from a13n_harness_ui.surfaces import RootRunReceipt
 from mcp.types import TextContent
 
+from .mcp_apps_server import create_server
 from .test_composition import _catalog, _selection, _write_source
 from .test_mcp_apps_connections import _SERVER
 from .test_thread_repository import _initial
+from .test_tool_search_integration import _http_mcp
 
 pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def apps(tmp_path: Path, request: pytest.FixtureRequest):
+async def app_transport(tmp_path: Path, request: pytest.FixtureRequest):
+    # Business-rule tests use real MCP over loopback HTTP without a Python startup per case.
+    # Process binding and reconnect tests keep their own stdio subprocess.
+    if getattr(request, "param", "http") == "stdio":
+        script = tmp_path / "apps_server.py"
+        script.write_text(_SERVER)
+        yield {"command": sys.executable, "arguments": [str(script)]}
+    else:
+        async with _http_mcp(create_server()) as url:
+            yield {"url": url}
+
+
+@pytest.fixture
+async def apps(tmp_path: Path, request: pytest.FixtureRequest, app_transport):
     config = _write_source(tmp_path)
     root = yaml.safe_load(config.read_text())
     root["webui"] = {"mcp_apps": {"enabled": True, "servers": ["mcp-docs"]}}
@@ -39,31 +55,9 @@ async def apps(tmp_path: Path, request: pytest.FixtureRequest):
     if with_inputs:
         root["mcp"] = {"protocol_overrides": {"mcp-docs": "2026-07-28"}}
     config.write_text(yaml.safe_dump(root))
-    script = tmp_path / "apps_server.py"
-    script_source = _SERVER
-    if with_inputs:
-        script_source = (
-            script_source.replace(
-                "from mcp.types import TextContent",
-                "from mcp.types import TextContent, InputRequiredResult, ElicitRequest, ElicitRequestFormParams",
-            )
-            .replace(
-                "async def counter(ctx: Context, delay: float = 0) -> ToolResult:",
-                "async def counter(ctx: Context, delay: float = 0, confirm: bool = False) -> ToolResult | InputRequiredResult:",
-            )
-            .replace(
-                "    await asyncio.sleep(delay)",
-                """    if confirm and ctx.input_responses is None:
-        return InputRequiredResult(request_state="counter-confirm", input_requests={"confirm": ElicitRequest(
-            params=ElicitRequestFormParams(message="Confirm count", requested_schema={"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]})
-        )})
-    await asyncio.sleep(delay)""",
-            )
-        )
-    script.write_text(script_source)
     mcp = tmp_path / "mcp/docs.yaml"
     server = yaml.safe_load(mcp.read_text())
-    server["transport"] = {"command": sys.executable, "arguments": [str(script)]}
+    server["transport"] = app_transport
     mcp.write_text(yaml.safe_dump(server))
     source = await load_harness_ui_configuration(config)
     resolver = AgentCompositionResolver(_catalog(), host_mode="webui")
@@ -107,7 +101,7 @@ async def apps(tmp_path: Path, request: pytest.FixtureRequest):
             tool = next(tool for tool in await connection.client.list_tools() if tool.name == "counter")
             result = await connection.client.call_tool_mcp("counter", {})
             reference = await snapshots.capture(
-                CapturedCall(connection, tool, {}, result),
+                CapturedCall(connection, tool, {}, result.model_dump(mode="json", by_alias=True, exclude_none=True)),
                 thread_id="thread-1",
                 run_id="run-original",
                 call_id="call-original",
@@ -383,6 +377,7 @@ async def test_app_review_policy_never_resolves_or_calls_a_model(apps, monkeypat
     review.assert_not_called()
 
 
+@pytest.mark.parametrize("app_transport", ["stdio"], indirect=True)
 async def test_explicit_reactivation_does_not_recover_private_state_or_reauthorize_old_views(apps) -> None:
     operations, reference = apps
     first = await operations.activate(reference)
@@ -441,6 +436,7 @@ async def test_retained_operation_data_is_bounded_and_closed_views_release_capac
     assert operations._retained_bytes < retained
 
 
+@pytest.mark.parametrize("app_transport", ["stdio"], indirect=True)
 async def test_effective_credential_change_rejects_existing_view_without_auto_reconnect(
     apps, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -505,13 +501,13 @@ async def test_queued_app_rechecks_policy_but_ignores_model_review_settings(apps
     view = await operations.activate(reference)
     connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
     queued = asyncio.Event()
-    call_app_tool = connection.client.call_app_tool
+    call_app_tool = HostToolset.call_app_tool
 
     async def notify_queued(*args, **kwargs):
         queued.set()
         return await call_app_tool(*args, **kwargs)
 
-    monkeypatch.setattr(connection.client, "call_app_tool", notify_queued)
+    monkeypatch.setattr(HostToolset, "call_app_tool", notify_queued)
     async with connection.dispatch:
         await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="queued", name="counter"))
         async with asyncio.timeout(10):
@@ -573,7 +569,10 @@ async def test_child_message_is_attributed_to_root_and_rechecks_route_before_sub
     tool = next(item for item in await connection.client.list_tools() if item.name == "counter")
     result = await connection.client.call_tool_mcp("counter", {})
     reference = await operations.snapshots.capture(
-        CapturedCall(connection, tool, {}, result), thread_id="child", run_id="run-child", call_id="child-call"
+        CapturedCall(connection, tool, {}, result.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        thread_id="child",
+        run_id="run-child",
+        call_id="child-call",
     )
     view = await operations.activate(reference)
     submitted = []
@@ -653,3 +652,15 @@ async def test_app_input_wait_retains_view_and_publishes_only_terminal_result(ap
         assert "inputRequired" not in str(terminal.result)
     assert connection.connected
     assert (await operations.snapshots.read(reference)).snapshot.result["structuredContent"]["count"] == 1
+
+
+async def test_app_calls_obey_server_tool_selection(apps) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    path = operations.configuration_root / "mcp/docs.yaml"
+    resource = yaml.safe_load(path.read_text())
+    resource.update(schema_version="2", tools=["counter"])
+    path.write_text(yaml.safe_dump(resource))
+    await _accept(operations)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="server-denied", name="reset"))
+    assert (await _settle(operations, view.view_id, "server-denied")).status == "failed"

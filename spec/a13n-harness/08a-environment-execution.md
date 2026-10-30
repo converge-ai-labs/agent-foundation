@@ -4,7 +4,7 @@
 
 Harness owns the provider-neutral contracts and implementations for executing operations against one Host-selected Environment. This includes `EnvironmentState`, descriptors, availability, operation inputs and results, execution errors, fixed-target connectors, execution scopes, native file/process helpers, and EIP adaptation. [Environment Integration](08-environment-integration.md) owns `EnvironmentSource`, mounts, Run-local routing, permissions, and model-facing tools. [Service Environment Management](../a13n-service/06a-environment-management.md) owns built-in target management interfaces and vendor lifecycle implementations.
 
-An embedded application can connect to an existing local, native cloud, or Envd target using Harness without installing Service. Built-in cloud allocation, start, stop, destroy, and target renewal belong to Service. An alternative Host that needs those effects supplies its own management implementation and readiness source. Harness UI retains native, Local Envd, and remote Device execution without a Service dependency.
+An embedded application can connect to an existing Direct Local, native Docker, native E2B, or Envd-backed target using Harness without installing Service. The [execution backend boundary](08b-environment-providers.md#execution-backend-boundary) owns Native Files & Shell and the general Envd path for OS sandbox, Egress, Computer use, and metrics. Built-in cloud allocation, start, stop, destroy, and target renewal belong to Service. An alternative Host that needs those effects supplies its own management implementation and readiness source. Harness UI retains native, Local Envd, and remote Device execution without a Service dependency.
 
 `EnvironmentConnector` is the environment connection interface for one Host-selected target, such as a particular Docker container or E2B sandbox. Fixed-target means that opening or reconnecting cannot select a different native target. It is distinct from a third-party application Connector Provider, which supplies application accounts and tools.
 
@@ -100,11 +100,17 @@ The Harness coordinates reopening with admitted operations and cleanup. Referenc
 
 `EnvironmentDescriptor` describes target identity evidence, execution generation, execution boundary, default working directory, operation families, permission support, and limits. `EnvironmentAvailability` reports status, ready families, and a bounded reason. `EnvironmentOperations` exposes typed file, shell, process, output, port, and computer facets independently; unsupported guarantees fail before dispatch rather than degrading silently.
 
+`EnvironmentDescriptor.environment_case_sensitive` defaults to true; native Windows reports false, and Envd adapters use the connected Device's path style to preserve the target's semantics. This describes command variable matching, not filesystem routing.
+
 Configured descriptor projection is inert. The live descriptor can narrow configured capabilities but cannot expand admitted authority. The package supplies structured capability and observation data. The Host sets authorization policy; the Harness owns presentation and routing and applies that policy without expanding provider capabilities.
 
 Operation paths, receipts, handles, and output references carry only provider, target, and Environment execution identity. Native target incarnation, execution resource generation, and Host-supplied lifecycle operation identity remain distinct. Application task, routing, and persistence identifiers are not part of these values; the Host and Harness maintain their own correlation separately.
 
 File operations preserve bounded reads, streaming writes, staged publication, copy/move semantics, and typed mutation evidence. Shell foreground results remain bounded. Process completion, output completeness, and process-tree cleanup are separate observations. Capability declarations distinguish execution from process discovery, input, signals, retention, ports, and computer use; an unsupported family does not invalidate unrelated capabilities.
+
+`FileOperator.batch` executes up to 128 typed stat, mkdir, whole-text write (create, replace, or upsert), and remove operations in order, with a 64 KiB JSON request limit. All paths and actions are authorized before dispatch in one pinned file scope. It stops at the first error without rollback or replay; failed or cancelled calls may have completed a prefix. Stat and remove can explicitly tolerate a missing path. Results preserve operation order and the same receipt validation as individual operations.
+
+`FileOperator.write_archive` takes ZIP bytes, a selected archive root, and an exact manifest of relative file paths and expanded sizes. It creates an absent destination directory and extracts only the selected regular files, rejecting unsafe paths, duplicate paths, links, encrypted entries, and mismatched sizes. File limits apply to expanded members. The operation requires file-directory creation and binary-write authority in one pinned file scope; it grants no shell authority and cannot cross mounts. A failure can leave a private candidate; the caller publishes a complete directory through a separate move and never treats a partial extraction as complete.
 
 ## Process and Output Observations
 
@@ -122,7 +128,7 @@ Ordinary `shell.exec` has a bounded inline result contract. A Provider that inte
 
 The Harness closes each acquired Environment execution when its execution scope ends. Closing rejects new work, coordinates admitted operations, and releases the clients, Sessions, observations, and buffers owned by that execution. It is idempotent and never calls target stop or destroy. Failure to clean up is reported separately without concealing the original operation failure or inventing target destruction.
 
-Process survival is provider-specific: native Docker and E2B close observations without blanket termination; Direct Local closes owned process trees; Envd closes Session-owned execution resources. These distinctions are part of the [provider contract](08b-environment-providers.md), not inferred from connection ownership.
+Process survival follows the execution backend: native Docker and E2B close observations without blanket termination; Direct Local closes owned process trees; Envd-backed providers, including Docker's explicit EIP route, close Session-owned execution resources. These distinctions are part of the [provider contract](08b-environment-providers.md), not inferred from connection ownership.
 
 A process crash can bypass close. Whole-target expiry and Host durable lifecycle recovery are independent of Environment execution cleanup. Envd provides Session expiry; native backends and local temporary files do not thereby gain a universal crash-reclamation guarantee. An in-memory registry cannot establish cross-process cleanup ownership.
 
@@ -138,7 +144,7 @@ EIP adaptation preserves known input diagnostics beyond pattern errors, typed di
 
 ## Compatibility
 
-Package consolidation preserves Provider type values, `EnvironmentState` envelopes and provider payload formats, native IDs, recipe fingerprints, operation error projections, and process-survival semantics. Public execution and common types belong to `a13n_harness.environment`; execution definitions and built-ins belong to the Harness Provider domain. Management interfaces belong to `a13n_service`. There is no independent `a13n-environment` distribution or compatibility package.
+Moving execution and management types into their owning packages preserves Provider type values, `EnvironmentState` envelopes and provider payload formats, native IDs, recipe fingerprints, operation error projections, and process-survival semantics. Changing a non-exempt provider from native execution to EIP is a separate behavioral transition under the [execution backend boundary](08b-environment-providers.md#execution-backend-boundary), including its configuration and Session resource-lifetime rules. Public execution and common types belong to `a13n_harness.environment`; execution definitions and built-ins belong to the Harness Provider domain. Management interfaces belong to `a13n_service`. There is no independent `a13n-environment` distribution or compatibility package.
 
 Consumers update Python imports and package requirements to the owning distribution. Persisted records and EIP do not change merely because classes move. Embedded callers requiring built-in cloud management depend on Service or provide their own Host management; installing Harness alone supplies execution against existing targets. The split of a combined definition into execution and management definitions is a breaking plugin API change under the [manifest compatibility contract](22-provider-subsystem.md#compatibility), never silent acceptance of old combined factories.
 
@@ -151,3 +157,7 @@ Consumers update Python imports and package requirements to the owning distribut
 5. State is portable target data, not authority; execution does not publish management changes.
 6. Unknown effects never authorize automatic replay, target recreation, or assumed completion.
 7. Closing an execution and retiring its target are independent operations.
+
+## Host Operation Admission
+
+An `EnvironmentMount` may provide an `operation_guard(action)` asynchronous context manager. The coordinator enters it after normal mount, permission and readiness checks and keeps it open across native dispatch, failure and cancellation. Hosts can use this hook for durable mutual exclusion with external operators. The hook never broadens the mount permission ceiling and does not run provider I/O while holding Host storage locks. Provider clients opened outside Harness remain outside this boundary. A missing hook preserves standalone Harness behavior.

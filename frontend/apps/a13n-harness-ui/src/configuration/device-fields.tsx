@@ -1,5 +1,7 @@
-import { ChoiceField, SettingsSection } from "a13n-ui";
-import { TextField } from "../shell/ui";
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+
 import { readDocument, updateDocument } from "./documents";
 
 export function DeviceFields({
@@ -18,28 +20,41 @@ export function DeviceFields({
   if (text(["authentication", "kind"]) === "paired") {
     return (
       <SettingsSection
+        variant="grouped"
         title="Paired Device"
-        description="This connection was approved on this Host. The credential stays on the Device and does not need to be entered here."
+        description="This device is approved. Its credential is saved on the device; you don't need to enter it here."
       >
-        <p>Native Device ID: {text(["device_id"])}</p>
-        <p>
-          {document.getIn(["authentication", "revoked"])
-            ? "Revoked. This credential can no longer connect."
-            : "Registered. Use Environments settings to check or revoke the connection."}
-        </p>
+        <SettingsRow label="Device ID">
+          <span>{text(["device_id"])}</span>
+        </SettingsRow>
+        <SettingsRow
+          label="Connection"
+          description={
+            document.getIn(["authentication", "revoked"])
+              ? "This credential can no longer connect."
+              : "Check or revoke this connection in Environments."
+          }
+        >
+          <span>
+            {document.getIn(["authentication", "revoked"])
+              ? "Revoked"
+              : "Registered"}
+          </span>
+        </SettingsRow>
       </SettingsSection>
     );
   }
   return (
     <SettingsSection
+      variant="grouped"
       title="Device connection"
-      description="Save the connection once; select working directories separately for Projects and conversations."
+      description="Save the connection here. Choose folders in each project or chat."
     >
       <TextField
-        label="Native Device ID"
+        label="Device ID"
         value={text(["device_id"])}
         onChange={(value) => set(["device_id"], value)}
-        description="The device_id configured in envd, not the Host resource ID above."
+        description="The device_id set in envd, separate from the configuration ID above."
       />
       <ChoiceField
         label="Transport"
@@ -68,10 +83,12 @@ export function DeviceFields({
           description="The envd HTTP origin, for example https://device.example.com."
         />
       ) : (
-        <p>
-          Configure envd to connect to this server at /api/devices/
-          {text(["id"])}/connect using the referenced credential.
-        </p>
+        <SettingsRow
+          label="Server connection"
+          description="Configure envd with this path and the referenced credential."
+        >
+          <span>/api/devices/{text(["id"])}/connect</span>
+        </SettingsRow>
       )}
       <ChoiceField
         label="Credential source"
@@ -100,7 +117,7 @@ export function DeviceFields({
             [storedKey ? "credential_ref" : "env"]: value,
           })
         }
-        description="Enter a reference, never the credential itself. Saved keys are managed in Accounts & API keys."
+        description="Enter a key reference, not the key itself. Manage saved keys in Accounts & API keys."
       />
     </SettingsSection>
   );

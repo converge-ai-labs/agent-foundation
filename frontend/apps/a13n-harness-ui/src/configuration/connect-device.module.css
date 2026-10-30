@@ -1,0 +1,56 @@
+.steps {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.step {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.step h3 {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.steps p {
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.step > button {
+  justify-self: start;
+}
+.command {
+  margin: 0;
+  padding: 8px 12px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commandBlock {
+  min-width: 0;
+  border-radius: var(--harness-radius-control);
+  background: var(--a13n-surface);
+}
+.commandHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 0 12px;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}

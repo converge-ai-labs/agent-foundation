@@ -8,7 +8,7 @@ made them: the attempt's own, or an inline subagent's whose events the attempt's
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
@@ -23,7 +23,7 @@ from a13n_harness.usage import (
 )
 from a13n_logging import get_logger
 from pydantic import Field, JsonValue, TypeAdapter
-from sqlalchemy import BigInteger, ColumnElement, func, select
+from sqlalchemy import BigInteger, ColumnElement, Numeric, Select, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -218,10 +218,19 @@ async def ingest_delta(
 class DeltaReporter:
     """Attempt-owned delivery of unacknowledged batches, inherited by inline children."""
 
-    def __init__(self, storage: Storage, run_id: str, attempt_id: str, buffer: UsageBuffer) -> None:
+    def __init__(
+        self,
+        storage: Storage,
+        run_id: str,
+        attempt_id: str,
+        buffer: UsageBuffer,
+        *,
+        check: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         from anyio import Lock
 
         self.storage, self.run_id, self.attempt_id, self.buffer = storage, run_id, attempt_id, buffer
+        self.check = check
         self._pending: dict[tuple[str, int], UsageDelta] = {}
         self._lock = Lock()
 
@@ -232,6 +241,10 @@ class DeltaReporter:
             raise ServiceError("conflict", "Usage sequence has conflicting pending facts")
         self._pending[key] = delta.model_copy(deep=True)
         await self.flush()
+        # A newly identified generation can exceed admission's reserved occupancy.
+        # Persist its charge before propagating the execution refusal.
+        if self.check is not None and any(isinstance(record, ModelUsageRecord) for record in delta.records):
+            await self.check()
 
     async def flush(self) -> None:
         async with self._lock:
@@ -296,6 +309,51 @@ def _token_sum(name: str) -> ColumnElement[int]:
 
 
 _MODEL_RECORDS = UsageRecordRow.record["kind"].astext == "model"
+
+
+def model_cost() -> ColumnElement:
+    """The recorded price contribution, shared by navigation and workspace usage queries."""
+    return UsageRecordRow.record["request_usage"]["cost"].astext.cast(Numeric)
+
+
+def session_costs(workspace_id: str) -> Select:
+    """Recorded model cost per Session, scoped before aggregation."""
+    cost = model_cost()
+    return (
+        select(
+            RunRow.session_id,
+            func.sum(cost).label("cost"),
+            func.count().filter(cost.is_(None)).label("unpriced_requests"),
+        )
+        .select_from(UsageRecordRow)
+        .join(RunRow, RunRow.id == UsageRecordRow.run_id)
+        .where(
+            UsageRecordRow.workspace_id == workspace_id,
+            RunRow.workspace_id == workspace_id,
+            _MODEL_RECORDS,
+        )
+        .group_by(RunRow.session_id)
+    )
+
+
+def run_metrics(workspace_id: str) -> Select:
+    """Only the recorded figures needed by the Thread navigator, scoped before aggregation."""
+    cost = model_cost()
+    return (
+        select(
+            RunRow.id.label("run_id"),
+            func.sum(cost).label("cost"),
+            func.count().label("model_calls"),
+            func.count().filter(cost.is_(None)).label("unpriced_requests"),
+        )
+        .join(UsageRecordRow, UsageRecordRow.run_id == RunRow.id)
+        .where(
+            RunRow.workspace_id == workspace_id,
+            UsageRecordRow.workspace_id == workspace_id,
+            _MODEL_RECORDS,
+        )
+        .group_by(RunRow.id)
+    )
 
 
 async def totals(session: AsyncSession, run_id: str) -> dict[str, int]:

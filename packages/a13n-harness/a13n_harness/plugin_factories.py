@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import cast
+from typing import ClassVar, cast
 
 from pydantic import BaseModel, JsonValue
 
@@ -75,14 +75,24 @@ class HarnessPluginFactoryContext:
 class HarnessPluginFactory(ABC):
     """Trusted package boundary that validates configuration and creates plugins."""
 
+    configuration_model: ClassVar[type[BaseModel] | None] = None
+    display_name: ClassVar[str] = ""
+    description: ClassVar[str] = ""
+
     @classmethod
     @abstractmethod
     def plugin_key(cls) -> str:
         """Return the stable configuration-facing factory key."""
 
-    @abstractmethod
     def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
-        """Validate and normalize credential-free plugin configuration without I/O."""
+        """Validate using the declared model; legacy factories may override this method.
+
+        The same model supplies editor schemas through ``model_json_schema()``.
+        Keep validation and schema generation free of I/O and credentials.
+        """
+        if self.configuration_model is None:
+            raise NotImplementedError("Declare configuration_model or implement validate_configuration")
+        return self.configuration_model.model_validate(dict(configuration))
 
     @abstractmethod
     def create_plugin(

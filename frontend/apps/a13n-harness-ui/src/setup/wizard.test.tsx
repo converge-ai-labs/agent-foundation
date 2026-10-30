@@ -60,11 +60,18 @@ async function fetcher(request: Request): Promise<Response> {
   const response = await override?.(request);
   if (response) return response;
   if (path === "/api/auth/logins") return json(null);
-  if (path.startsWith("/api/auth/accounts/"))
+  if (
+    path.startsWith("/api/auth/accounts/") ||
+    path.startsWith("/api/subscriptions/accounts/")
+  )
     return json({
       usable: true,
       availability: "available",
       required_action: "none",
+      account_id: "account-test",
+      source: "file",
+      expiry: "valid",
+      shared_with_cli: false,
     });
   if (path === "/api/auth/keys") {
     if (request.method === "PUT") {
@@ -134,6 +141,8 @@ async function fetcher(request: Request): Promise<Response> {
       settings: { thinking: "high" },
       model_characteristics: { context_window_tokens: 350000 },
     });
+  if (path === "/api/envd")
+    return json({ installed: false, phase: "idle", source: "managed" });
   if (path === "/api/setup/preview")
     return json({
       files,
@@ -199,10 +208,7 @@ function mount(selected = status) {
         <BrowserRouter>
           <Routes>
             <Route path="/setup" element={<SetupWizard status={selected} />} />
-            <Route
-              path="/threads/:threadId"
-              element={<p>First conversation</p>}
-            />
+            <Route path="/threads/:threadId" element={<p>First chat</p>} />
             <Route path="/" element={<p>Workbench</p>} />
           </Routes>
         </BrowserRouter>
@@ -242,27 +248,44 @@ async function continueStep() {
 async function reviewConfiguration() {
   await chooseModel();
   await continueStep();
-  fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
   await screen.findByText("Generated files (2)");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
 }
 
-it("uses server model choices, saves, reconciles and creates exactly one conversation without sending input", async () => {
+it("keeps a connected account ready when reselecting the current connection", async () => {
+  mount();
+  await screen.findByText(/Account: account-test/);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Model connection" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Codex subscription" }),
+  );
+  await chooseModel();
+  await continueStep();
+  expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
+});
+
+it("uses server model choices, saves, reconciles and creates exactly one chat without sending input", async () => {
   mount();
   await reviewConfiguration();
   expect(
-    screen.getByText(
-      /Organization automatically uses the global default Agent's model/,
-    ),
-  ).toBeTruthy();
-  expect(
-    screen.getByText(/no separate model selection is needed/),
+    screen.getByText(/Automatic memory updates use model quota/),
   ).toBeTruthy();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
   expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
-  await screen.findByText("First conversation");
+  expect(
+    screen.queryByRole("button", { name: "Review configuration" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
   expect(creationId).toBe(identity);
   expect(
     calls.filter((c) => c.path === "/api/threads" && c.method === "POST"),
@@ -288,10 +311,8 @@ it.each(["_", "-"])(
     expect(readWizardDraft(status.draft_scope!)?.threadId).toBe(identity);
     mount();
     await reviewConfiguration();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save and start chatting" }),
-    );
-    await screen.findByText("First conversation");
+    fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+    await screen.findByText("First chat");
     expect(creationId).toBe(identity);
   },
 );
@@ -312,10 +333,8 @@ it("recovers lost publication and creation acknowledgements through exact reads,
   };
   mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
-  await screen.findByText("First conversation");
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
   expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
   expect(calls.filter((c) => c.path === "/api/threads")).toHaveLength(1);
 });
@@ -331,9 +350,7 @@ it("keeps partial publication pending across reload and never automatically retr
   };
   const view = mount();
   await reviewConfiguration();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and start chatting" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("Not saved");
   expect(readWizardDraft(status.draft_scope!)?.pending?.files).toEqual(files);
   view.unmount();
@@ -343,7 +360,7 @@ it("keeps partial publication pending across reload and never automatically retr
   expect(calls.some((c) => c.path === "/api/threads")).toBe(false);
 });
 
-it("requires a successful explicit Sandbox preflight and never downgrades it", async () => {
+it("automatically checks Sandbox after selection, reports failure and never downgrades it", async () => {
   override = async (request) => {
     if (new URL(request.url).pathname === "/api/environments/preflight")
       return json({
@@ -356,18 +373,14 @@ it("requires a successful explicit Sandbox preflight and never downgrades it", a
   await chooseModel();
   await continueStep();
   fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
-  fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
   await screen.findByText("Generated files (2)");
   expect(
     (
       screen.getByRole("button", {
-        name: "Save and start chatting",
+        name: "Save and start",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check Sandbox readiness" }),
-  );
   await screen.findByText("Isolation unavailable");
   expect(
     readWizardDraft(status.draft_scope!)?.selection.environment_profile,
@@ -406,6 +419,7 @@ it("resumes the server's active device login without starting another authorizat
     )
       return json({
         session_id: "login-restored",
+        account_id: "acct-codex-default",
         provider: "codex",
         method: "device",
         state: "waiting",
@@ -424,7 +438,7 @@ it("resumes the server's active device login without starting another authorizat
   expect(JSON.stringify(localStorage)).not.toContain("ABCD-1234");
 });
 
-it("does not complete recovery into an existing conversation with different execution authority", async () => {
+it("does not complete recovery into an existing chat with different execution authority", async () => {
   const first = mount();
   await waitFor(() =>
     expect(readWizardDraft(status.draft_scope!)).toBeTruthy(),
@@ -449,12 +463,10 @@ it("does not complete recovery into an existing conversation with different exec
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Check saved setup and open conversation",
+      name: "Resume setup",
     }),
   );
-  await screen.findByText(
-    /first conversation already exists with different choices/,
-  );
+  await screen.findByText(/first chat already uses different settings/);
   expect(window.location.pathname).toBe("/setup");
   expect(readWizardDraft(status.draft_scope!)?.pending).toBeTruthy();
   expect(
@@ -494,22 +506,30 @@ it("offers affinity presets and captures a custom replacement alongside the endp
     expect(
       (
         screen.getByRole("button", {
-          name: "Use this model",
+          name: "Continue",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
+  await user.click(await screen.findByRole("tab", { name: "Model defaults" }));
+  const affinity = screen.getByRole("combobox", {
+    name: "Gateway session affinity",
+  });
+  await user.click(affinity);
+  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
+  expect(
+    readWizardDraft(status.draft_scope!)?.selection.model?.model_configuration
+      ?.session_affinity_header,
+  ).toBe("x-litellm-session-id");
+
+  await user.click(affinity);
+  await user.click(
+    await screen.findByRole("option", { name: "Custom header" }),
+  );
   const input = (await screen.findByLabelText(
     "Session affinity header",
   )) as HTMLInputElement;
-  expect(input.value).toBe("");
-  await user.click(
-    screen.getByRole("combobox", { name: "Gateway session affinity" }),
-  );
-  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
   expect(input.value).toBe("x-litellm-session-id");
-
   fireEvent.change(input, { target: { value: "x-company-session" } });
   await continueStep();
   const model = readWizardDraft(status.draft_scope!)?.selection.model;
@@ -576,9 +596,6 @@ it.each([null, "custom/reviewer"])(
         name: reviewer ? "Continue" : "Skip shell review",
       }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Review configuration" }),
-    );
     await waitFor(() =>
       expect(calls.some((call) => call.path === "/api/setup/preview")).toBe(
         true,
@@ -605,10 +622,190 @@ async function chooseModel() {
     expect(
       (
         screen.getByRole("button", {
-          name: "Use this model",
+          name: "Continue",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
+  expect(await screen.findByText(/Account: account-test/)).toBeTruthy();
 }
+
+it("shows download, verification and isolation progress; cancels and retries before saving Sandbox", async () => {
+  let complete: ((value: Response) => void) | undefined;
+  let phase = "downloading";
+  let aborted = false;
+  override = async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/envd")
+      return json({
+        phase,
+        installed: phase === "idle",
+        downloaded_bytes: 1048576,
+        total_bytes: 2097152,
+      });
+    if (path === "/api/environments/preflight")
+      return new Promise((resolve, reject) => {
+        complete = resolve;
+        request.signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    if (created && path.startsWith("/api/threads/"))
+      return json({
+        thread: {
+          thread_id: creationId,
+          configuration: {
+            agent_source: { kind: "agent", id: "agent-primary" },
+            environment_profile_id: "environment-sandbox",
+            project_id: null,
+          },
+        },
+      });
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+  await screen.findByRole("progressbar", { name: "envd download" });
+  expect(
+    screen.getAllByText("Downloading envd… 1 MB / 2 MB").length,
+  ).toBeGreaterThan(0);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save and start",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel preparation" }));
+  await waitFor(() => expect(aborted).toBe(true));
+  expect(screen.getAllByText(/Preparation cancelled/).length).toBeGreaterThan(
+    0,
+  );
+  phase = "verifying";
+  fireEvent.click(screen.getByRole("button", { name: "Retry sandbox" }));
+  await waitFor(
+    () =>
+      expect(
+        screen.getAllByText("Verifying envd download…").length,
+      ).toBeGreaterThan(0),
+    { timeout: 3000 },
+  );
+  phase = "idle";
+  await waitFor(
+    () =>
+      expect(
+        screen.getAllByText("Checking Sandbox isolation…").length,
+      ).toBeGreaterThan(0),
+    { timeout: 3000 },
+  );
+  complete!(
+    json({ ready: true, message: "Isolation ready", instructions: [] }),
+  );
+  await screen.findAllByText("Ready to save");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
+  expect(calls.filter((call) => call.path === "/api/setup/apply")).toHaveLength(
+    1,
+  );
+}, 10000);
+
+it("cancels obsolete Sandbox checks when changing roots or returning to Direct", async () => {
+  const aborted: string[] = [];
+  override = async (request) => {
+    if (new URL(request.url).pathname === "/api/setup/preview") {
+      const selection = await request.json();
+      return json({
+        files,
+        project_paths: [selection.project_path || "/tmp/staging"],
+      });
+    }
+    if (new URL(request.url).pathname === "/api/environments/preflight") {
+      const { project_path } = await request.clone().json();
+      return new Promise((_, reject) =>
+        request.signal.addEventListener("abort", () => {
+          aborted.push(project_path);
+          reject(new DOMException("Aborted", "AbortError"));
+        }),
+      );
+    }
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+  await screen.findByRole("button", { name: "Cancel preparation" });
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "/other" },
+  });
+  await waitFor(() => expect(aborted).toContain("/tmp/staging"));
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.path === "/api/environments/preflight"),
+    ).toHaveLength(2),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Full Control" }));
+  await waitFor(() => expect(aborted).toContain("/other"));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  expect(calls.some((call) => call.path === "/api/setup/apply")).toBe(false);
+});
+
+it("shows configuration validation failures and recovers after correcting the Project directory", async () => {
+  override = async (request) => {
+    if (
+      new URL(request.url).pathname === "/api/setup/preview" &&
+      (await request.json()).project_path === "/missing"
+    )
+      return json(
+        {
+          error: {
+            code: "project_missing",
+            message: "Project directory does not exist",
+          },
+        },
+        400,
+      );
+  };
+  mount();
+  await reviewConfiguration();
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "/missing" },
+  });
+  await screen.findByText("Project directory does not exist");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save and start",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByLabelText("Project directory (optional)"), {
+    target: { value: "" },
+  });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  expect(screen.queryByText("Project directory does not exist")).toBeNull();
+});

@@ -103,6 +103,9 @@ where
                                     (ticket, super::ENVIRONMENT.scope(environment, daemon.handle_payload_for_carrier(&carrier, &payload)).await)
                                 });
                             }
+                            Command::Resources {ticket} => {
+                                send_reply(&controls, ticket, serde_json::to_value(daemon.local_resources()).map_err(io::Error::other)?, false).await?;
+                            }
                             Command::Close {ticket} => {
                                 let closed = daemon.close_isolated_session(&session_id).await;
                                 reply(&controls, ticket, serde_json::json!({"closed":closed})).await?;
@@ -159,9 +162,23 @@ async fn reply(
     ticket: u64,
     payload: serde_json::Value,
 ) -> io::Result<()> {
+    send_reply(channel, ticket, payload, true).await
+}
+
+async fn send_reply(
+    channel: &mpsc::Sender<ControlResponse>,
+    ticket: u64,
+    payload: serde_json::Value,
+    requires_finish: bool,
+) -> io::Result<()> {
     channel
         .send(ControlResponse {
-            payload: serde_json::to_vec(&Reply { ticket, payload }).map_err(io::Error::other)?,
+            payload: serde_json::to_vec(&Reply {
+                ticket,
+                payload,
+                requires_finish,
+            })
+            .map_err(io::Error::other)?,
             handoff: None,
         })
         .await
@@ -211,12 +228,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn private_resource_snapshot_uses_the_worker_engine() {
+        let config = Config::for_test("device-resources");
+        let limits = config.limits.clone();
+        let (client, server) = tokio::io::duplex(65536);
+        let (reader, writer) = tokio::io::split(server);
+        let task = tokio::spawn(serve(
+            reader,
+            writer,
+            config,
+            1,
+            "session-resources-1".into(),
+        ));
+        let (reader, writer) = tokio::io::split(client);
+        let client = super::super::client::Client::connect(reader, writer, &limits)
+            .await
+            .unwrap();
+        let resources = serde_json::to_value(client.resources().await.unwrap()).unwrap();
+        assert_eq!(
+            resources,
+            json!({"processes":0,"transfers":0,"retained_output_bytes":0})
+        );
+        assert!(client.close_worker().await.unwrap());
+        client.shutdown();
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn idle_worker_reclaims_expired_writer() {
         let workspace = std::env::temp_dir()
             .join(crate::operation::random_selector("worker-expiry-test").unwrap());
         std::fs::create_dir(&workspace).unwrap();
         let mut config = Config::for_test("device-framing");
-        config.default_working_directory = workspace.to_str().unwrap().to_owned();
+        config.default_working_directory = crate::device_path::from_native(&workspace).unwrap();
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
         let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
@@ -233,7 +282,7 @@ mod tests {
                 "file.open_writer",
                 json!({
                     "context":{"operation_id":"op-writer"},
-                    "path":{"path":workspace.join("target")},
+                    "path":{"path":crate::device_path::from_native(&workspace.join("target")).unwrap()},
                     "mode":"create", "transfer_timeout_ms":100,
                 }),
             ),

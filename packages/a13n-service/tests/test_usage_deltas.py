@@ -155,7 +155,9 @@ async def test_database_work_depends_on_changes_not_scope_size(service, scripted
     [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
     storage = service.runtime.storage
     measurements = []
-    for size in (100, 1000, 9000):
+    # Cross the 128-row ingest chunks. Fetching an entire scope still violates the <=8-row bound;
+    # thousands of additional setup records exercise the same path without strengthening that assertion.
+    for size in (1, 129, 257):
         initial = delta(f"scale-{size}", 4, size)
         records = tuple(initial.records[0].model_copy(update={"record_id": f"record-{size}-{i}"}) for i in range(size))
         initial = initial.model_copy(update={"after_sequence": 0, "records": records})

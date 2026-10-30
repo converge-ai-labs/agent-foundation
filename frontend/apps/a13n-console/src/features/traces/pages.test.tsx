@@ -15,6 +15,8 @@ import type { Schema } from "../../shared/api";
 import { TraceDetail } from "./detail";
 import { TracesPage } from "./page";
 import { UNKNOWN } from "../../shared/unknown";
+import { mockIntersections } from "../../../tests/intersection-observer";
+const intersect = mockIntersections();
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({
@@ -29,10 +31,10 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string; provider?: string }) =>
+    t: (key: string, options?: Record<string, string>) =>
       (options?.defaultValue ?? key).replace(
-        "{{provider}}",
-        options?.provider ?? "",
+        /{{(\w+)}}/g,
+        (_, name) => options?.[name] ?? "",
       ),
     i18n: { resolvedLanguage: "en" },
   }),
@@ -51,9 +53,9 @@ function typingUser() {
   return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 }
 const pause = () => act(() => vi.advanceTimersByTimeAsync(350));
-function mount(element: React.ReactNode, entry = "/") {
+function mount(element: React.ReactNode, entry = "/", staleTime = 0) {
   const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime } },
   });
   caches.push(cache);
   render(
@@ -112,6 +114,199 @@ const descriptor: Schema["TraceBackend"] = {
 };
 const isBackend = (path: string) => path.endsWith("/trace-backend");
 const isSpans = (path: string) => path.endsWith("/spans");
+const isSpan = (path: string) => path.endsWith("/spans/{span_id}");
+
+function overview(value: Schema["Span"]): Schema["SpanOverview"] {
+  const {
+    trace_id,
+    id,
+    parent_id,
+    name,
+    kind,
+    status,
+    level,
+    started_at,
+    ended_at,
+    model,
+    cost_usd,
+  } = value;
+  return {
+    view: "overview",
+    trace_id,
+    id,
+    parent_id,
+    name,
+    kind,
+    status,
+    level,
+    started_at,
+    ended_at,
+    model,
+    cost_usd,
+  };
+}
+
+function overviewResponse(
+  items: Schema["Span"][],
+  next_cursor: string | null = null,
+) {
+  return response({ items: items.map(overview), next_cursor });
+}
+
+it("loads the overview alongside the root and fetches full content only for the selected child", async () => {
+  const user = userEvent.setup();
+  let releaseRoot = () => {};
+  let releaseChild = () => {};
+  const rootReady = new Promise<void>((resolve) => (releaseRoot = resolve));
+  const childReady = new Promise<void>((resolve) => (releaseChild = resolve));
+  const child = {
+    ...observation("child", "root"),
+    name: "Full observation name ".repeat(20),
+    input: "Private child input",
+    output: "Private child output",
+  };
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) {
+      expect(options.params.query).toMatchObject({
+        view: "overview",
+        limit: 50,
+      });
+      return overviewResponse([child]);
+    }
+    if (isSpan(path)) {
+      await childReady;
+      return response(child);
+    }
+    await rootReady;
+    return response(trace());
+  });
+  mount(<TraceDetail traceId="trace-1" />);
+  await waitFor(() =>
+    expect(http.GET.mock.calls.some(([path]) => isSpans(path))).toBe(true),
+  );
+  expect(screen.queryByRole("treeitem")).toBeNull();
+  expect(http.GET.mock.calls.some(([path]) => isSpan(path))).toBe(false);
+  releaseRoot();
+  await user.click(
+    await screen.findByRole("treeitem", { name: /Full observation name/ }),
+  );
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      "/api/v1/traces/{trace_id}/spans/{span_id}",
+      expect.objectContaining({
+        params: { path: { trace_id: "trace-1", span_id: "child" } },
+      }),
+    ),
+  );
+  const panel = within(await screen.findByRole("complementary"));
+  expect(panel.getByText(child.name.trim())).toBeTruthy();
+  expect(panel.queryByText("Private child input")).toBeNull();
+  releaseChild();
+  expect(await panel.findByText("Private child input")).toBeTruthy();
+  expect(panel.getByText("Private child output")).toBeTruthy();
+  await user.click(screen.getByRole("treeitem", { name: /^root/ }));
+  await waitFor(() =>
+    expect(screen.queryByText("Private child input")).toBeNull(),
+  );
+  expect(http.GET.mock.calls.filter(([path]) => isSpan(path))).toHaveLength(1);
+});
+
+it("resets visible content and raw mode when switching cached observations", async () => {
+  const user = userEvent.setup();
+  const input = Array.from({ length: 12 }, (_, index) => ({
+    role: "user",
+    content: `Retained message ${index}`,
+  }));
+  const children = ["first-child", "second-child"].map((id) => ({
+    ...observation(id, "root"),
+    input,
+  }));
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse(children);
+    if (isSpan(path))
+      return response(
+        children.find((child) => child.id === options.params.path.span_id),
+      );
+    return response(trace());
+  });
+  const cache = mount(<TraceDetail traceId="trace-1" />);
+  cache.setQueryDefaults(["trace-observation"], { staleTime: Infinity });
+  await user.click(
+    await screen.findByRole("treeitem", { name: /^first-child/ }),
+  );
+  await screen.findByText("Retained message 0");
+  intersect(document.querySelector('[data-content-chunk="11"]')!, true);
+  intersect(document.querySelector('[data-content-chunk="0"]')!, false);
+  expect(screen.getByText("Retained message 11")).toBeTruthy();
+  const scroll = screen
+    .getByText("Retained message 11")
+    .closest("aside")!
+    .querySelector<HTMLElement>(".a13n-scrollbar")!;
+  scroll.style.overflowY = "auto";
+  scroll.scrollTop = 2000;
+  await user.click(screen.getByRole("treeitem", { name: /^second-child/ }));
+  await screen.findByText("Retained message 0");
+  expect(screen.queryByText("Retained message 11")).toBeNull();
+  expect(scroll.scrollTop).toBe(0);
+  await user.click(screen.getByRole("button", { name: "Raw JSON" }));
+  expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+  await user.click(screen.getByRole("treeitem", { name: /^first-child/ }));
+  await screen.findByText("Retained message 0");
+  expect(screen.getByRole("button", { name: "Raw JSON" })).toBeTruthy();
+  expect(http.GET.mock.calls.filter(([path]) => isSpan(path))).toHaveLength(2);
+});
+
+it("retries a selected observation failure without losing the loaded call tree", async () => {
+  const user = userEvent.setup();
+  let fail = true;
+  const child = { ...observation("child", "root"), input: "Recovered input" };
+  http.GET.mockImplementation(async (path) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse([child]);
+    if (isSpan(path)) {
+      if (fail) throw new Error("Observation temporarily unavailable");
+      return response(child);
+    }
+    return response(trace());
+  });
+  mount(<TraceDetail traceId="trace-1" />);
+  await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
+  await screen.findByText("Observation temporarily unavailable");
+  expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+  fail = false;
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByText("Recovered input");
+});
+
+it("hides cached observation content and the trace when detail access is revoked", async () => {
+  const user = userEvent.setup();
+  let revoked = false;
+  const child = {
+    ...observation("child", "root"),
+    input: "Private cached input",
+  };
+  http.GET.mockImplementation(async (path) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse([child]);
+    if (isSpan(path)) {
+      if (revoked)
+        throw new ApiError(403, "forbidden", "Access revoked", {}, null);
+      return response(child);
+    }
+    return response(trace());
+  });
+  const cache = mount(<TraceDetail traceId="trace-1" />);
+  await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
+  await screen.findByText("Private cached input");
+  revoked = true;
+  await act(() => cache.invalidateQueries({ queryKey: ["trace-observation"] }));
+  await screen.findByText("Access revoked");
+  expect(screen.queryByText("Private cached input")).toBeNull();
+  expect(screen.queryByRole("treeitem")).toBeNull();
+  expect(screen.queryByRole("link", { name: "View run" })).toBeNull();
+});
 
 it("searches identifiers automatically and preserves empty-page continuation", async () => {
   const user = typingUser();
@@ -183,33 +378,35 @@ it("searches identifiers automatically and preserves empty-page continuation", a
   );
 });
 
-it("applies metadata key=value filters from the popover", async () => {
+it("filters by attributes picked from the listed traces", async () => {
   const user = typingUser();
+  const root = {
+    ...trace(),
+    attributes: { ...trace().attributes, scenario: "review", synthetic: true },
+  };
   http.GET.mockImplementation(async (path) =>
     isSpans(path)
       ? response({ items: [], next_cursor: null })
       : response(
-          isBackend(path)
-            ? descriptor
-            : { items: [trace()], next_cursor: null },
+          isBackend(path) ? descriptor : { items: [root], next_cursor: null },
         ),
   );
   mount(<TracesPage />);
   await screen.findByRole("link", { name: /root/ }, { timeout: 3000 });
   await user.click(screen.getByRole("button", { name: "Metadata" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Metadata key 1" }),
-    "scenario",
-  );
+  await user.click(screen.getByRole("combobox", { name: "Metadata key 1" }));
+  // Service correlation is searched by ID, so only the other attributes are offered.
+  expect(
+    (await screen.findAllByRole("option")).map((item) => item.textContent),
+  ).toEqual(["scenario", "synthetic"]);
+  await user.click(screen.getByRole("option", { name: "scenario" }));
   await user.type(
     screen.getByRole("textbox", { name: "Metadata value 1" }),
     "review",
   );
   await user.click(screen.getByRole("button", { name: "Add filter" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Metadata key 2" }),
-    "synthetic",
-  );
+  await user.click(screen.getByRole("combobox", { name: "Metadata key 2" }));
+  await user.click(await screen.findByRole("option", { name: "synthetic" }));
   await user.type(
     screen.getByRole("textbox", { name: "Metadata value 2" }),
     "true",
@@ -290,6 +487,81 @@ it.each([
   );
 });
 
+it("preserves a short linked Run window when opening and applying its time filter", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path) =>
+    response(isBackend(path) ? descriptor : { items: [], next_cursor: null }),
+  );
+  const params = new URLSearchParams({
+    run_id: "run_short",
+    from: "2026-10-21T20:40:51.802025+08:00",
+    to: "2026-10-21T12:40:54.600Z",
+  });
+  mount(<TracesPage />, `/?${params}`);
+  await screen.findByText("No traces in this range");
+  const expected = expect.objectContaining({
+    params: expect.objectContaining({
+      query: expect.objectContaining({
+        run_id: "run_short",
+        started_after: "2026-10-21T12:40:51.802Z",
+        started_before: "2026-10-21T12:40:54.600Z",
+      }),
+    }),
+  });
+  expect(http.GET).toHaveBeenCalledWith("/api/v1/traces", expected);
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  // Even opening a nested field and accepting it without edits must preserve milliseconds.
+  await user.click(screen.getByRole("button", { name: "Start time" }));
+  const field = within(screen.getByRole("dialog", { name: "Start time" }));
+  expect(field.getByRole("combobox", { name: "Second" })).toBeTruthy();
+  await user.click(field.getByRole("button", { name: "Apply" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Start time" })).toBeNull(),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/traces").length,
+    ).toBeGreaterThan(1),
+  );
+  for (const [path, options] of http.GET.mock.calls)
+    if (path === "/api/v1/traces") expect(options).toEqual(expected);
+});
+
+it.each([
+  ["equal", "2026-10-21T12:40:51Z"],
+  ["reversed", "2026-10-21T12:40:50Z"],
+  ["over 31 days", "2026-11-22T12:40:51Z"],
+])(
+  "falls back to the default window for an invalid %s linked range",
+  async (_, to) => {
+    http.GET.mockImplementation(async (path) =>
+      response(isBackend(path) ? descriptor : { items: [], next_cursor: null }),
+    );
+    const params = new URLSearchParams({
+      run_id: "run_linked",
+      from: "2026-10-21T12:40:51Z",
+      to,
+    });
+    mount(<TracesPage />, `/?${params}`);
+    await screen.findByText("No traces in this range");
+    expect(
+      screen.getByRole("button", { name: "Time range: Last 24 hours" }),
+    ).toBeTruthy();
+    for (const [path, options] of http.GET.mock.calls) {
+      if (path !== "/api/v1/traces") continue;
+      const query = options.params.query;
+      expect(query.run_id).toBe("run_linked");
+      expect(
+        Date.parse(query.started_before) - Date.parse(query.started_after),
+      ).toBe(86_400_000);
+    }
+  },
+);
+
 it("names the backend and how far back it finds traces", async () => {
   http.GET.mockImplementation(async (path) =>
     response(
@@ -308,23 +580,22 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   let fail = true;
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
+    if (isSpan(path)) return response(observation("child", "parent"));
     if (!isSpans(path)) return response(trace());
+    expect(options.params.query.view).toBe("overview");
     const cursor = options.params.query.cursor;
     if (!cursor)
-      return response({
-        items: [observation("child", "parent"), observation("root")],
-        next_cursor: "empty",
-      });
+      return overviewResponse(
+        [observation("child", "parent"), observation("root")],
+        "empty",
+      );
     if (cursor === "empty")
       return response({ items: [], next_cursor: "parent" });
     if (fail) {
       fail = false;
       throw new Error("Temporary page failure");
     }
-    return response({
-      items: [observation("parent", "root")],
-      next_cursor: null,
-    });
+    return overviewResponse([observation("parent", "root")]);
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /child/ });
@@ -363,11 +634,10 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   );
   await user.click(screen.getByRole("treeitem", { name: /^child/ }));
   const panel = within(await screen.findByRole("complementary"));
-  expect(panel.getByText("Diagnostic reason")).toBeTruthy();
+  expect(await panel.findByText("Diagnostic reason")).toBeTruthy();
   expect(panel.getByText("Model")).toBeTruthy();
   expect(panel.getAllByText(/model-version/).length).toBeGreaterThan(0);
-  expect(panel.getByText("Error")).toBeTruthy();
-  expect(panel.getByText("error")).toBeTruthy();
+  expect(panel.getAllByText("Error")).toHaveLength(2);
   expect(panel.getByText("Telemetry status")).toBeTruthy();
   expect(panel.getAllByText(UNKNOWN).length).toBeGreaterThan(0);
   for (const name of ["Resource attributes", "Scope", "Events", "Links"])
@@ -484,10 +754,7 @@ it("hides cached detail after observation authorization is revoked", async () =>
     if (!isSpans(path)) return response(trace());
     if (options.params.query.cursor)
       throw new ApiError(404, "trace_not_found", "Trace not found", {}, null);
-    return response({
-      items: [observation("private-child")],
-      next_cursor: "next",
-    });
+    return overviewResponse([observation("private-child")], "next");
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /private-child/ });
@@ -507,21 +774,18 @@ it("shows a loaded cost subtotal until pagination succeeds, without counting the
     if (isBackend(path)) return response(descriptor);
     if (!isSpans(path)) return response(root);
     if (!options.params.query.cursor)
-      return response({
-        items: [root, { ...observation("chat", "root"), cost_usd: "0.2" }],
-        next_cursor: "next",
-      });
+      return overviewResponse(
+        [root, { ...observation("chat", "root"), cost_usd: "0.2" }],
+        "next",
+      );
     if (fail) {
       fail = false;
       throw new Error("Cost page failed");
     }
-    return response({
-      items: [
-        { ...observation("chat", "root"), cost_usd: "0.2" },
-        { ...observation("later", "root"), cost_usd: "0.05" },
-      ],
-      next_cursor: null,
-    });
+    return overviewResponse([
+      { ...observation("chat", "root"), cost_usd: "0.2" },
+      { ...observation("later", "root"), cost_usd: "0.05" },
+    ]);
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByText("$0.30");
@@ -550,25 +814,25 @@ it("shows seconds, normalized levels and paginated aggregate cost in the list", 
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
     if (!isSpans(path)) return response({ items: [root], next_cursor: null });
-    expect(options.params.query).toMatchObject({ limit: 100 });
+    expect(options.params.query).toMatchObject({
+      view: "overview",
+      limit: 100,
+    });
     if (!options.params.query.cursor)
-      return response({
-        items: [root, { ...observation("chat"), cost_usd: "0.2" }],
-        next_cursor: "empty",
-      });
+      return overviewResponse(
+        [root, { ...observation("chat"), cost_usd: "0.2" }],
+        "empty",
+      );
     if (options.params.query.cursor === "empty")
       return response({ items: [], next_cursor: "last" });
-    return response({
-      items: [
-        { ...observation("chat"), cost_usd: "0.2" },
-        { ...observation("tool"), cost_usd: "0.05" },
-      ],
-      next_cursor: null,
-    });
+    return overviewResponse([
+      { ...observation("chat"), cost_usd: "0.2" },
+      { ...observation("tool"), cost_usd: "0.05" },
+    ]);
   });
   mount(<TracesPage />);
   await screen.findByText("$0.35");
-  expect(screen.getByText("2.5 s")).toBeTruthy();
+  expect(screen.getByText("2.50 s")).toBeTruthy();
   expect(screen.getByText("Info")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((cell) => cell.textContent?.trim()),
@@ -602,9 +866,9 @@ it("does not expose root-only or partial list costs when a later page fails or r
         next_cursor: null,
       });
     if (options.params.path.trace_id === "repeated")
-      return response({ items: [root], next_cursor: "same" });
+      return overviewResponse([root], "same");
     if (options.params.query.cursor) throw new Error("Cost read failed");
-    return response({ items: [root], next_cursor: "next" });
+    return overviewResponse([root], "next");
   });
   const cache = mount(<TracesPage />);
   await screen.findByRole("columnheader", { name: "Trace" });
@@ -665,10 +929,10 @@ it("caps advancing cost pagination without exposing a partial total", async () =
     if (!isSpans(path))
       return response({ items: [trace()], next_cursor: null });
     reads++;
-    return response({
-      items: [{ ...observation(`part-${reads}`), cost_usd: "1" }],
-      next_cursor: `cursor-${reads}`,
-    });
+    return overviewResponse(
+      [{ ...observation(`part-${reads}`), cost_usd: "1" }],
+      `cursor-${reads}`,
+    );
   });
   const cache = mount(<TracesPage />);
   await screen.findByRole("columnheader", { name: "Cost" });
@@ -679,7 +943,7 @@ it("caps advancing cost pagination without exposing a partial total", async () =
   ).toBe(UNKNOWN);
 });
 
-it("uses seconds in the detail overview, timeline and observation dialog", async () => {
+it("uses one duration format in the detail overview, timeline and observation panel", async () => {
   const user = userEvent.setup();
   const root = { ...trace(), ended_at: "2026-09-11T00:00:02.5Z" };
   http.GET.mockImplementation(async (path) =>
@@ -687,20 +951,23 @@ it("uses seconds in the detail overview, timeline and observation dialog", async
       isBackend(path)
         ? descriptor
         : isSpans(path)
-          ? { items: [root], next_cursor: null }
+          ? { items: [overview(root)], next_cursor: null }
           : root,
     ),
   );
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /^root/ });
-  expect(screen.getByText("0 s").parentElement?.textContent).toBe("0 s2.5 s");
+  const scale = screen
+    .getAllByText("2.50 s")
+    .find((node) => node.closest("[aria-hidden]"));
+  expect(scale?.parentElement?.textContent).toBe("02.50 s");
   expect(
-    within(screen.getByRole("treeitem", { name: /^root/ })).getByText("2.5 s"),
+    within(screen.getByRole("treeitem", { name: /^root/ })).getByText("2.50 s"),
   ).toBeTruthy();
   expect(screen.queryByText("Root status")).toBeNull();
   await user.click(screen.getByRole("treeitem", { name: /^root/ }));
   const panel = within(await screen.findByRole("complementary"));
-  expect(panel.getByText("2.5 s")).toBeTruthy();
+  expect(panel.getByText("2.50 s")).toBeTruthy();
   expect(panel.queryByText(/\d ms\b/)).toBeNull();
 });
 
@@ -734,77 +1001,276 @@ it("immediately hides revoked content without waiting for unrelated cost reads o
   expect(http.GET.mock.calls.filter(([path]) => isSpans(path))).toHaveLength(4);
 });
 
-it("sorts aggregate costs rather than root costs and keeps the order after pagination", async () => {
+it("requests whole-range sorting and resets pagination when the sort changes", async () => {
   const user = userEvent.setup();
-  const makeTrace = (id: string, cost: string | null) => ({
+  const root = (name: string) => ({
     ...trace(),
-    id: `${id}-span`,
-    trace_id: id,
-    name: id,
-    cost_usd: cost,
+    id: name,
+    trace_id: name,
+    name,
   });
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
-    if (isSpans(path))
+    if (isSpans(path)) return response({ items: [], next_cursor: null });
+    const { cursor, order_by, direction } = options.params.query;
+    if (path === "/api/v1/traces/search")
       return response({
         items: [
           {
-            ...observation("child"),
-            cost_usd: options.params.path.trace_id === "low-root" ? "10" : null,
+            root: root(cursor ? "second" : `${order_by}-${direction}`),
+            cost_usd: "0.25",
+            duration_seconds: "10",
           },
         ],
-        next_cursor: null,
+        total: 2,
+        collected_at: "2026-09-11T00:00:00Z",
+        next_cursor: cursor ? null : "ranked-next",
       });
-    const next = options.params.query.cursor;
-    return response({
-      items: next
-        ? [makeTrace("next-low", "1"), makeTrace("next-high", "2")]
-        : [
-            makeTrace("high-root", "5"),
-            makeTrace("low-root", "1"),
-            makeTrace("unknown", null),
-          ],
-      next_cursor: next ? null : "next",
-    });
+    return response({ items: [root("latest")], next_cursor: "next" });
   });
-  mount(<TracesPage />);
-  await screen.findByText("$11.00");
-  const names = () =>
-    screen
-      .getAllByRole("row")
-      .slice(1)
-      .map((row) => within(row).getAllByRole("link")[0].textContent);
-  await user.click(screen.getByRole("button", { name: "Cost" }));
-  expect(names()).toEqual(["low-root", "high-root", "unknown"]);
-  await user.click(screen.getByRole("button", { name: "Cost" }));
-  expect(names()).toEqual(["high-root", "low-root", "unknown"]);
+  mount(<TracesPage />, "/", 15_000);
+  await screen.findByRole("link", { name: "latest" });
   await user.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByText("$2.00");
-  expect(names()).toEqual(["next-low", "next-high"]);
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.some(
+        ([, opts]) => opts.params?.query?.cursor === "next",
+      ),
+    ).toBe(true),
+  );
+  await user.click(screen.getByRole("button", { name: /^Sort by Duration/ }));
+  await screen.findByRole("link", { name: "duration-desc" });
+  expect(http.GET).toHaveBeenCalledWith(
+    "/api/v1/traces/search",
+    expect.objectContaining({
+      params: {
+        query: expect.objectContaining({
+          order_by: "duration",
+          direction: "desc",
+          cursor: undefined,
+        }),
+      },
+      signal: expect.any(AbortSignal),
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("link", { name: "second" });
+  const rankedCalls = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/traces/search",
+  ).length;
+  await user.click(screen.getByRole("button", { name: "Previous" }));
+  await screen.findByRole("link", { name: "duration-desc" });
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/traces/search"),
+    ).toHaveLength(rankedCalls + 1),
+  );
+  await user.click(screen.getByRole("button", { name: /^Sort by Cost/ }));
+  await screen.findByRole("link", { name: "cost-desc" });
+  await user.click(screen.getByRole("button", { name: /^Sort by Cost/ }));
+  await screen.findByRole("link", { name: "cost-asc" });
+  const searches = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/traces/search",
+  );
+  expect(searches[0][1].params.query.snapshot).toBeUndefined();
+  expect(
+    searches
+      .slice(1)
+      .every(([, options]) => options.params.query.snapshot === undefined),
+  ).toBe(true);
   expect(
     screen
       .getByRole("columnheader", { name: "Cost" })
       .getAttribute("aria-sort"),
   ).toBe("ascending");
+  expect(screen.getByText("$0.25")).toBeTruthy();
+});
+
+it("applies duration and exact USD bounds together and validates the draft", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path) =>
+    response(
+      isBackend(path) ? descriptor : { items: [], next_cursor: null, total: 0 },
+    ),
+  );
+  mount(<TracesPage />);
+  await screen.findByText("No traces in this range");
+  await user.click(
+    screen.getByRole("button", { name: "Filter by duration or cost" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Minimum" }),
+    "60",
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+    "30",
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Minimum must not exceed maximum.",
+  );
+  await user.clear(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+    "120",
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Cost Minimum" }),
+    "0.0012",
+  );
+  expect(
+    http.GET.mock.calls.some(([path]) => path === "/api/v1/traces/search"),
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      "/api/v1/traces/search",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            min_duration_seconds: "60",
+            max_duration_seconds: "120",
+            min_cost_usd: "0.0012",
+            cursor: undefined,
+          }),
+        },
+        signal: expect.any(AbortSignal),
+      }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /^Remove filter Duration:/ }),
+  );
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenLastCalledWith(
+      "/api/v1/traces/search",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            min_duration_seconds: undefined,
+            max_duration_seconds: undefined,
+            min_cost_usd: "0.0012",
+          }),
+        },
+      }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Filter by duration or cost" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Minimum" }),
+    "90",
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(
+    screen.queryByRole("button", { name: /^Remove filter Duration:/ }),
+  ).toBeNull();
+});
+
+it("restarts the whole-range query when its cursor is rejected", async () => {
+  const user = userEvent.setup();
+  let searches = 0;
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return response({ items: [], next_cursor: null });
+    if (path === "/api/v1/traces/search") {
+      if (options.params.query.cursor)
+        throw new ApiError(
+          400,
+          "invalid_cursor",
+          "Invalid trace search cursor",
+          {},
+          null,
+        );
+      expect(options.params.query.snapshot).toBeUndefined();
+      searches++;
+      return response({
+        items: [
+          {
+            root: { ...trace(), name: `search-${searches}` },
+            cost_usd: "0",
+            duration_seconds: "10",
+          },
+        ],
+        total: 2,
+        next_cursor: "invalid",
+      });
+    }
+    return response({ items: [trace()], next_cursor: null });
+  });
+  mount(<TracesPage />);
+  await screen.findByRole("button", { name: /^Sort by Duration/ });
+  await user.click(screen.getByRole("button", { name: /^Sort by Duration/ }));
+  await screen.findByRole("link", { name: "search-1" });
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Invalid trace search cursor");
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByRole("link", { name: "search-2" });
+});
+
+it("shows a placeholder while costs load, then one decimal count for the page", async () => {
+  let release = () => {};
+  const loaded = new Promise<void>((resolve) => (release = resolve));
+  const makeTrace = (id: string) => ({
+    ...trace(),
+    id: `${id}-span`,
+    trace_id: id,
+    name: id,
+  });
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) {
+      await loaded;
+      const id = options.params.path.trace_id;
+      return overviewResponse([
+        { ...makeTrace(id), cost_usd: id === "small" ? "0.0035" : "0.03" },
+      ]);
+    }
+    return response({
+      items: [makeTrace("small"), makeTrace("large")],
+      next_cursor: null,
+    });
+  });
+  mount(<TracesPage />);
+  await screen.findByRole("link", { name: "small" });
+  const costs = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[4]);
+  expect(
+    costs().every((cell) => cell.querySelector('[aria-busy="true"]')),
+  ).toBe(true);
+  release();
+  await screen.findByText("$0.0035");
+  expect(costs().map((cell) => cell.textContent)).toEqual([
+    "$0.0035",
+    "$0.0300",
+  ]);
 });
 
 it("opens the root content tab without substituting child output", async () => {
   const user = userEvent.setup();
+  const child = {
+    ...observation("child", "root"),
+    output: "Child only output",
+  };
   http.GET.mockImplementation(async (path) =>
     response(
       isBackend(path)
         ? descriptor
-        : isSpans(path)
-          ? {
-              items: [
-                {
-                  ...observation("child", "root"),
-                  output: "Child only output",
-                },
-              ],
-              next_cursor: null,
-            }
-          : { ...trace(), input: "Root input" },
+        : isSpan(path)
+          ? child
+          : isSpans(path)
+            ? {
+                items: [overview(child)],
+                next_cursor: null,
+              }
+            : { ...trace(), input: "Root input" },
     ),
   );
   mount(<TraceDetail traceId="trace-1" />, "/?tab=content");
@@ -818,6 +1284,6 @@ it("opens the root content tab without substituting child output", async () => {
   await user.click(screen.getByRole("tab", { name: "Observations" }));
   await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
   const childPanel = within(await screen.findByRole("complementary"));
+  expect(await childPanel.findByText("Child only output")).toBeTruthy();
   expect(childPanel.getByRole("heading", { name: "Output" })).toBeTruthy();
-  expect(childPanel.getByText("Child only output")).toBeTruthy();
 });

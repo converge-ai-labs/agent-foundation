@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -72,27 +72,10 @@ class HostClient(Client[ClientTransport]):
         async with self.connection.operation():
             return await super().get_prompt_mcp(name, arguments, meta)
 
-    async def call_app_tool(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        *,
-        authorize: Callable[[], Awaitable[None]],
-        operation: Operation | None = None,
-    ) -> CallToolResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().call_tool_mcp(name, arguments)
-
-    async def read_app_resource(
-        self, uri: str, *, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> ReadResourceResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().read_resource_mcp(uri)
-
     @asynccontextmanager
     async def app_dispatch(
         self, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         async with self.connection.operation(authorize=authorize, operation=operation):
             self.connection.require_admission()
             self.connection._borrows += 1
@@ -168,7 +151,7 @@ class Connection:
     @asynccontextmanager
     async def operation(
         self, *, authorize: Callable[[], Awaitable[None]] | None = None, operation: Operation | None = None
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if task is self._active_task:
             # An App authorization scope can call a normal SDK tool method without

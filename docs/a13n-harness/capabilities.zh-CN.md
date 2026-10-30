@@ -1,59 +1,26 @@
 ---
 title: 能力（Capabilities）
-description: 用于上下文、工具、权限、Web、工作状态和生命周期 hook 的第一方 Harness Capabilities。
+description: 添加可复用的 Agent 行为，用离线 Model 验证，并绑定各功能需要的服务。
 ---
 
-添加 Capability 可为 Agent 提供工具、上下文、记忆或生命周期行为。本页列出第一方选项及其配置位置。
+Capability 为 Agent 添加一项功能：工具、指令、上下文、记忆或生命周期 hook。构建 executable 时选择功能，启动 Run 时提供当前客户端和策略。
 
-## 组合来源
+## 添加并验证 Capability
 
-Capabilities 可来自四种可信来源：
+使用[快速开始](getting-started.md)中准备的 Python 3.13 环境。将以下完整程序保存为 `capability_demo.py`。它不需要凭据或外部服务。
 
-1. 原生 `AgentSpec.capabilities`；
-2. `AgentDefinition.capabilities` 或 `HarnessBuilder.build(..., capabilities=...)`；
-3. Harness 插件绑定 Agent 的贡献；
-4. 每次 Run 新提供的 `RunBindings.capabilities`。
-
-稳定行为放在定义中。当前调用策略和 MCP 放在 `RunBindings.capabilities`；provider 客户端通过对应的带类型绑定字段提供。
-
-```mermaid
-flowchart LR
-    Spec[AgentSpec] --> PAI[Pydantic Capability 组合]
-    Definition[定义 Capabilities] --> PAI
-    Plugin[插件贡献] --> PAI
-    Run[当前 Run 的 Capabilities] --> PAI
-    PAI --> Loop[Pydantic AI Agent 执行循环]
-
-    class Spec,Definition,Plugin,Run a13n
-    class PAI,Loop ext
-```
-
-存在 Capability 本身不授权外部工作。跨越托管边界的工具仍检查当前执行策略和 provider 强制限制。
-
-## 通过 AgentSpec 选择 Capabilities
-
-`AgentSpec.capabilities` 是声明式功能选择接口。它可以选择原生 Pydantic AI Capability 类型、支持声明式重建的有限 Harness 类型，以及当前 Host 授权的精确自定义类型。它不选择 Harness 中间件插件、环境执行扩展、provider、凭据、策略或活跃客户端。
-
-例如，`ToolPermissionsCapability` 是 Harness 管理的声明式类型，可按 [shell 命令审查](#shell-command-review)直接选择。多数第一方 Harness 功能组合为具体定义或执行实例，因为它们接受带类型协作对象或代码配置，不属于可移植数据。
-
-### 授权自定义声明式类型
-
-可信 Host 可为 builder 提供一个直接声明的 dataclass Capability 类型：
-
-```python
+```python title="capability_demo.py"
+import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from a13n_harness import (
-    AgentContext,
-    AgentSpec,
-    HarnessBuilder,
-)
-from a13n_harness.capability_types import CapabilityTypeCatalog
-from pydantic_ai.agent.spec import CapabilitySpec
+from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PolicyInstructionsCapability(AbstractCapability[AgentContext]):
     instructions: str
     id: str | None = "policy-instructions"
@@ -66,42 +33,124 @@ class PolicyInstructionsCapability(AbstractCapability[AgentContext]):
         return self.instructions
 
 
-catalog = CapabilityTypeCatalog.from_types(
-    (PolicyInstructionsCapability,),
+instruction = "Explain material assumptions before the answer."
+
+
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str]:
+    assert instruction in (info.instructions or "")
+    yield "Capability instructions received."
+
+
+model = FunctionModel(stream_function=respond)
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=model,
+    capabilities=(PolicyInstructionsCapability(instructions=instruction),),
 )
-agent_spec = AgentSpec(
-    capabilities=[
-        CapabilitySpec(
-            name="policy_instructions",
-            arguments={
-                "instructions": "Explain material assumptions before the answer.",
-            },
-        )
-    ]
-)
-executable = HarnessBuilder(
-    capability_type_catalog=catalog,
-).build(
-    agent_spec,
+
+
+async def main() -> None:
+    result = await executable.run("Check the setup.", bindings=RunBindings.embedded())
+    print(result.output_or_raise())
+
+
+asyncio.run(main())
+```
+
+运行 `python capability_demo.py`。预期输出：
+
+```text
+Capability instructions received.
+```
+
+断言检查实际发送给 Model 的指令，而不只检查最终回答。`get_instructions()` 提供文本，`capabilities=(...)` 安装具体实例。脚本化 Model 让验证可重复。
+
+## 组合来源
+
+根据配置内容选择来源：
+
+- \*\*Python 应用：\*\*像上例一样，将具体实例传给 `HarnessBuilder.build(..., capabilities=...)` 或 `AgentDefinition.capabilities`。
+- \*\*可移植 Agent 配置：\*\*在 `AgentSpec.capabilities` 中选择受支持的序列化类型。
+- \*\*已启用的 Harness 插件：\*\*通过插件的 `get_capabilities()` 方法提供实例。
+- \*\*当前调用策略或原生 MCP：\*\*通过新的 `RunBindings.capabilities` 附加受支持类型。
+
+功能客户端使用 `RunBindings.web`、`document_converter` 等带类型绑定字段。`RunBindings.capabilities` 不是任意依赖注入入口。
+
+```mermaid
+flowchart TD
+    Spec[AgentSpec] --> PAI[Capability 组合]
+    Definition[Python 定义] --> PAI
+    Plugin[已启用插件] --> PAI
+    Run[当前策略和 MCP] --> PAI
+    PAI --> Loop[Agent 执行循环]
+
+    class Spec,Definition,Plugin,Run a13n
+    class PAI,Loop ext
+```
+
+存在 Capability 本身不授权外部工作。跨越托管边界的工具仍检查当前执行策略和 provider 强制限制。
+
+## 通过 AgentSpec 选择 Capabilities
+
+需要将功能选择保存为数据时，使用 `AgentSpec.capabilities`。它接受原生 Pydantic AI 类型、`ToolPermissionsCapability` 等受支持 Harness 类型，以及 Host 授权的精确自定义类型。活跃客户端、凭据、Environment 配置和插件选择由各自的 Host 配置管理。
+
+多数 Harness 功能先用具体 Python 实例组合即可。内置声明式示例见 [Shell 命令审查](#shell-command-review)。
+
+### 检测重复动作循环
+
+显式选择上游 `pydantic_ai_harness.DetectLoops` Capability。Harness 直接支持原生序列化名称 `DetectLoops`，无需自定义类型目录：
+
+```python
+from a13n_harness import AgentSpec
+
+spec = AgentSpec(capabilities=[{"DetectLoops": {"action": "nudge"}}])
+```
+
+将此 spec 传给 `HarnessBuilder.build()`。代码优先组合也可以从 `pydantic_ai_harness` 导入 `DetectLoops`，将实例放入 `capabilities`。未选择时保持关闭。
+
+原生默认值使用最近 10 次工具调用的窗口：相同调用重复 5 次、相同结果重复 3 次、交替调用形成 3 个 A-B 周期，或纯文本回复重复 3 次时触发。`action="nudge"` 提醒 Model 改变方法；`action="error"` 以失败结果结束执行，不把循环当作传输失败重试。代码优先调用者也可以提供原生回调。
+
+正常轮询也可能重复。此类任务应提高对应阈值和窗口，或将 `repeated_call_threshold` 与 `repeated_result_threshold` 设为 `None`；JSON/YAML 使用 `null`。提醒不是硬执行预算，仍应使用 `UsageLimits` 设置硬上限。
+
+检测只累计当前原生 Model attempt 的响应。继续会话和恢复重试都会重新计数，计数不持久化到 `HarnessState`。同一 attempt 内的压缩不会重置计数。使用 CodeAct 时，检测器看到的是 Model 对 runner 的调用，不是 Python 程序内部的每一次 host 工具调用。
+
+### 授权自定义声明式类型
+
+要从数据中选择示例的类，将 `executable = ...` 部分替换为以下代码。保留完整程序中的类、`instruction`、`model` 和 `main()`。
+
+```python
+from a13n_harness.capability_types import CapabilityTypeCatalog
+from pydantic_ai.agent.spec import CapabilitySpec
+
+catalog = CapabilityTypeCatalog.from_types((PolicyInstructionsCapability,))
+executable = HarnessBuilder(capability_type_catalog=catalog).build(
+    AgentSpec(
+        capabilities=[
+            CapabilitySpec(
+                name="policy_instructions",
+                arguments={"instructions": instruction},
+            )
+        ]
+    ),
     output_type=str,
     model=model,
 )
 ```
 
-两个步骤的权限不同：
+再次运行程序。同一断言和输出验证声明式路径。
 
-1. `CapabilityTypeCatalog` 将精确序列化名称和 Python 类型提供给该 builder。它不发现软件包，也不自行启用功能。
-2. `AgentSpec.capabilities` 为该 Agent 选择并配置实例。名称不存在于原生、第一方或 Host 目录时，构建失败。
+Host 目录将精确类提供给该 builder，spec 则选择实例。仅注册不会启用功能；未知名称在构建时失败。注册的自定义类必须直接声明 `@dataclass` 和唯一序列化名称。软件包安装与信任由 Host 管理。
 
-定义已是可信 Python 代码时，改用 `HarnessBuilder.build(..., capabilities=(PolicyInstructionsCapability(...),))`。当前策略或 MCP Capability 使用 `RunBindings.capabilities`；provider 协作对象放在带类型绑定字段中。插件显式启用后，也可从可信 `get_capabilities()` 实现提供 Capability。
-
-不要混淆选择 Agent 循环行为的 `AgentSpec.capabilities`，与记录活跃模型显式图像、视频和音频理解特性的 `AgentSpec.model_characteristics.capabilities`。
+`AgentSpec.model_characteristics.capabilities` 单独配置 Model 的图像、视频和音频理解特性。Agent 执行循环行为使用 `AgentSpec.capabilities`。
 
 [集成包示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#custom-capability)使用离线模型运行 Host 授权 `AgentSpec` 路径和直接代码组合。
 
 ## 常用定义 Capabilities
 
-视频输入支持是内置行为，不是可选的定义 Capability。模型输入能力 `video_understanding` 声明二进制视频输入，从而支持内联视频和有界直接 URL 下载；`model_characteristics.url_input.video: [youtube]` 声明原生 YouTube 支持。工具权限仍控制 `media.read_video_url`。本地文件使用 `view`，同样受内联视频预算约束。
+将选定 Capability 添加到构建参数的 `capabilities` 元组。运行前检查依赖列：选择功能和提供服务是两个步骤。具体操作见[环境工具](environments.md)、[Skills](skills.md)、[记忆](context.md)和[委派](delegation-and-codeact.md)。
 
 | Capability                     | 添加内容                                                             | 需要的协作对象                                       |
 | ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -118,20 +167,25 @@ executable = HarnessBuilder(
 | `DocumentsCapability`          | 文档转换 Toolset                                                     | `RunBindings.document_converter`                     |
 | `WebCapability`                | 搜索、获取和抓取 Toolset                                             | 具有当前客户端和策略的 `WebBinding`                  |
 | `HandoffCapability`            | 显式 `summarize` 工具和续接提醒                                      | 否                                                   |
-| `CompactionCapability`         | provider 用量触发的同 Agent 纯文本压缩，重放保留用户输入             | 否                                                   |
-| `SubagentCapability`           | 明确声明的子 Agent 的内联或异步执行                                  | 定义选择的 `SubagentOperator`                        |
+| `CompactionCapability`         | 用量触发的同步或后台压缩，重放保留的输入                             | 后台：`CompactionOperator`；同步：无需               |
+| `SubagentCapability`           | 明确声明的子 Agent 的内联或异步执行                                  | 异步：定义选择的 `SubagentOperator`；内联：无需      |
 | `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
 | `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |
 
-大型本地工具集合可使用 [ToolProxyCapability](tool-proxy.md)，它接受由被动 `ToolProxyGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口支持分组发现、动态 schema 和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-proxy.md#host-integration)。
+大型本地工具集合可使用 [ToolSearchCapability](tool-search.md)，它接受由被动 `ToolSearchGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口通过固定代理 schema 支持分组发现、完整列表和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-search.md#host-integration)。
 
-每个功能只公开一个 Capability。其内部绑定执行的实例保持私有，在同一逻辑执行的模型尝试之间复用，不跨执行复用。Host 协作对象通过 `RunBindings.web`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets` 提供。`WebBinding` 和 `TaskStateBinding` 是被动冻结值，不是 Capability。这些字段不会启用缺失功能，也绝不进入 `HarnessState`。Host 负责 provider 生命周期，在 provider 契约允许时可以共享传输。
+provider 对象放在当前 `RunBindings` 中。`WebBinding` 和 `TaskStateBinding` 用于组合依赖，不启用功能，也不进入 `HarnessState`。Host 负责打开和关闭 provider。Harness 功能的私有执行绑定实例在同一逻辑 Run 的模型尝试间复用，下一次 Run 会重新创建。
 
 内联子 Agent 的 `SubagentDefinition.run_bindings_factory` 接收子 Agent 基础 `RunBindings`，返回携带其协作对象的替代绑定。必须保留子实例、借用环境和继承的调用策略。父功能绑定不会自动继承；显式共享任务状态策略提供借用状态单元，并拒绝与工厂绑定冲突。
 
 ## 原生图像生成与保存
 
-`NativeImageGenerationCapability` 将 provider 原生 `ImageGenerationTool` 与必需异步 saver 组合。与直接选择上游工具不同，完成生成会产生已保存引用，不只将图像留在模型响应中。该功能不另设输出替换 Capability、图像 API 客户端或回退模型。
+生成图像需要保存为文件或 URL 时，使用 `NativeImageGenerationCapability`。它将 provider 原生工具与你的异步 saver 组合。
+
+1. 为支持原生图像生成的 Model 配置凭据。
+2. 选择 Host 管理的输出目录，替换下方 `/path/to/generated-images`。
+3. 使用 saver 和原生工具的输出格式构建 executable。
+4. 发送图像生成提示并检查返回引用。此示例使用真实 provider，可能产生费用。
 
 ```python
 from uuid import uuid4
@@ -217,19 +271,24 @@ Harness 默认在 `extra_high` 风险时触发 `deny`；配置 `on_flagged: appr
 
 ## 结构化用户交互
 
-当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 Agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带原生请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 Agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
+当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 Agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带 Harness 延后请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 Agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
 
 请求与答案载荷、应用自定义类型和关联恢复示例见[人机协作工具](human-in-the-loop.md)。[状态与恢复](state-and-resume.md)介绍通用的继续执行生命周期。
 
 ## 媒体、文档与 Web
 
-这些功能将稳定模型工具 schema 与当前 provider 实现分离：
+这些功能将稳定模型工具 schema 与当前 provider 实现分离。启用文档转换：
+
+1. 在应用中选择 PDF/Office 转换器；Harness 没有默认转换器。
+2. 实现异步方法 `DocumentConverter.convert(request)`。从 `a13n_harness.toolsets.documents` 导入该协议、`DocumentConversionRequest` 和 `DocumentConversionResult`。
+3. 转换请求中的独立 `source_bytes`，遵守页范围、截止时间和输出限制。返回 `DocumentConversionResult`，包含 Markdown，以及可选的 `DocumentAsset` 相对路径和字节。PDF 结果还必须提供一致的 `total_pages`、`converted_pages`、`page_start` 和 `page_end`，对应请求范围且不超过文档末页。Office 结果省略页元数据。临时文件与转换器依赖由适配器管理。
+4. 按下例将适配器绑定为 `document_converter`。Harness 读取获授权的源文件，并通过 Environment 验证和发布返回文件。
+
+在应用初始化代码中使用以下绑定片段。提供自己的 `agent_spec`、兼容的 `model` 和上述步骤实现的 `document_converter` 适配器。Run 还需要一个获准访问源文件和目标文件的 Environment。
 
 ```python
-from a13n_harness import RunBindings
-from a13n_harness.capabilities import (
-    DocumentsCapability,
-)
+from a13n_harness import HarnessBuilder, RunBindings
+from a13n_harness.capabilities import DocumentsCapability
 
 executable = HarnessBuilder().build(
     agent_spec,
@@ -243,7 +302,9 @@ bindings = RunBindings.embedded(
 )
 ```
 
-视频 URL 无需 provider 绑定。默认 `VideoUrlCapability` 为支持二进制视频或原生视频 URL 的模型提供 `read_video_url`。直接 HTTP(S) 视频下载为原始字节并附加为 `BinaryContent`；SDK 负责编码 Base64，默认编码后单个和整次请求视频总预算均为 10 MiB。YouTube 仅走明确声明的原生 URL 路径，不支持时拒绝，不下载或转换。预算和兼容性过滤只改变 provider 请求，不改变保存的历史；没有 reader、压缩、切分或辅助模型。环境文件[多媒体理解](multimedia-understanding.md)是独立第一方路径。原生支持来自活跃的 `AgentSpec.model_characteristics.capabilities` 值。进程环境变量可配置专用图像、视频或音频 Agent，无需 Host 协作对象。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
+在 `RunBindings.embedded(...)` 中用 `environment=...` 添加 Environment，再将 `bindings` 传给 `executable.run(...)`。向用户交付前，检查转换后的 Markdown 和资源文件确实已保存到指定目标。
+
+默认 `VideoUrlCapability` 为图像、视频和音频 URL 提供 `read_media_url`。它与文件 `view` 共享原生优先和按类型配置的回退路径。直接资源先下载为有界字节，再附加原生输入或交给辅助模型分析。原生视频使用当前 Model 的编码预算；回退不继承不支持该媒体的主模型预算。YouTube 需要显式原生 URL 支持，不回退到下载或辅助模型。配置、限制和迁移参阅[多媒体理解](multimedia-understanding.md)。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
 
 ### 限制 Web 域名
 
@@ -280,9 +341,10 @@ Host 传输必须在每次重定向的 DNS/网络操作之前保留 `WebDomainPo
 
 `WebCapability()` 默认搜索 `mode="auto"`：生效模型 profile 支持时使用 provider 原生 Web 搜索，否则使用首个可用 Host 搜索后端。原生搜索使用模型 provider 账号和计费，不使用 Host 搜索凭据或 `WebPolicy`。
 
-按默认回退顺序绑定多个 Host 后端，搜索和抓取顺序分别设置：
+打开 provider 适配器后使用以下绑定片段。`web_client` 处理基础 HTTP 操作，`web_policy` 授权 Host 请求。`google_search`、`brave_search`、`tavily_search` 是搜索适配器，`local_scraper` 和 `firecrawl_scraper` 是抓取适配器。换成自己的名称和实现。先按默认回退顺序绑定，再设置各操作的偏好：
 
 ```python
+from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
     WebCapability,
     WebConfiguration,
@@ -323,6 +385,8 @@ bindings = RunBindings.embedded(
 )
 ```
 
+将 `web` 添加到 executable 的 `capabilities` 元组，并在每次 Run 传入 `bindings`。用一个已知查询测试，检查返回 URL。仅绑定客户端不会添加搜索工具。
+
 未配置偏好时，元组顺序是默认优先级。`backend_priority` 将可用命名后端提前，再保持其余绑定顺序。设置 `backend="tavily"` 只允许精确一个 Host 后端，不回退。所选后端未绑定时，在模型分派前失败。`search.mode="host"` 禁止原生搜索，`search.mode="native"` 禁止 Host 搜索，`WebCapability` 仅用于获取、抓取或下载时使用 `search.mode="off"`。抓取支持 `mode="host"` 和 `mode="off"`，有自己的精确选择或优先级。
 
 一次搜索或抓取在有序后端之间共享一个操作期限。provider 错误、无效响应或 provider 异常会转向下一个后端。超时、取消、Harness `RunError`、策略失败或结果后的授权失败会终止操作，不回退。有效空搜索结果属于成功，也停止回退。
@@ -341,11 +405,11 @@ bindings = RunBindings.embedded(
 
 精确 `*_BACKEND` 忽略对应 `*_BACKEND_PRIORITY`，禁用回退。环境变量只选择模式和后端 ID；provider 对象和凭据仍来自 `RunBindings.web` 中的新 `WebBinding`。显式传入 `WebCapability(WebConfiguration(...))` 是权威配置，不合并环境默认值，使加载预设保持确定性。
 
-## 执行内 shell 观测
+## Shell 执行与观测
 
 `DynamicEnvironmentCapability` 根据当前挂载操作派生 shell 执行、通过 `shell_info` 进行原生发现/检查、显式偏移量 `shell_wait`，以及支持的输入/控制工具。工具接口不要求 Host 进程 operator，也不要求全有或全无的交互权限。
 
-执行清理释放本地观测，不统一终止所有命令。引用和缓冲只在本次执行有效；后续执行可通过新引用发现 provider 实际保留的命令。完成提示报告原生退出，不代表输出完整捕获。不引入进程数据库或执行后的唤醒服务。
+使用 Host 持有的工具 runtime 时，顶层 Shell 执行跨 Run 保留原进程和捕获，直到原生终结且输出观测关闭。独立的 `process-*` 引用和缓冲仍只属于一个 Run，提供尽力而为的原生退出提示。资源范围丢失后的恢复由 Provider 发现负责；保留执行的结果和完成观测由 Harness 工具 runtime 负责。
 
 签名、输出来源、观测限制和 provider 专属恢复见[环境工具](environments.md)。
 
@@ -359,7 +423,7 @@ bindings = RunBindings.embedded(
 
 ## 原生 Capabilities 与工具
 
-普通 Pydantic AI Capability 仍可使用。将原生工具或 Toolset 放入 Capability，不绕过原生组合：
+小型函数工具可直接使用原生 `Capability`。用会调用 `double` 的 Model 构建 Agent 时，传入下方 `capabilities`。[工具与依赖](tools-and-dependencies.md)提供完整的离线工具调用测试：
 
 ```python
 from pydantic_ai.capabilities import Capability
@@ -379,4 +443,4 @@ capabilities = (Capability(id="math", tools=[double]),)
 
 Capability ID、工具 ID、绑定 ID 和其他紧凑选择器用于关联和组合，不授予权限，也不恢复 provider 权限。
 
-压缩成功时，`a13n_harness.capabilities` 通过原生 Capability 事件通道发出 `CompactionSummaryEvent`。其 `operation_id` 与压缩生命周期事件一致，`summary` 包含生成的替代文本。它是带内容的输出，不是 Agent 的回答，也不证明检查点已保存。生命周期扩展本身仍只含元数据。
+压缩成功时，`a13n_harness.capabilities` 通过原生 Capability 事件通道发出 `CompactionSummaryEvent`。其 `operation_id` 与压缩生命周期事件一致，`summary` 包含生成的替代文本。它是带内容的输出，不是 Agent 的回答，也不证明检查点已保存。生命周期扩展本身仍只含元数据。Host 将就绪的 `compaction_result` 与 `previous_state` 一起传给 `run` 或 `stream` 后，Harness 在恢复历史之前判断并应用结果，在投影最新上下文前发出恢复与总结事件。该恢复过程无需配置 Compaction Capability 或 operator，详见[后台压缩](context.md#background-compaction)。

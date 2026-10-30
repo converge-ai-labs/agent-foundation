@@ -4,7 +4,7 @@
 
 ## Device and Session runtime
 
-The daemon implements EIP 0.1 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
+The daemon implements EIP 0.3 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
 
 - `initialize` negotiates the Device connection without creating a Session.
 - `device.describe` and bounded `directory.list` work without a Session.
@@ -49,6 +49,8 @@ A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime \
 The default directory must exist; when omitted, it is captured from the daemon startup directory. `A13N_ENVD_DEVICE_ID` can supply the Device identity when the JSON does not. Executable roots and shell profiles are trusted launch policy, not Session configuration. Set both to empty for a file-only Device.
 
 `A13N_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires a bind address, credential file, and either native TLS or explicit loopback/private-link plaintext scope. Reverse WebSocket requires a Host URL and credential file. The daemon exposes no inbound WebSocket, browser, generic HTTP, or health endpoint. Readiness is an EIP operation. Stdio stdout is reserved for protocol frames; diagnostics go to stderr.
+
+Envd provides [read-only Device metrics](../../docs/a13n-envd/configuration.md#system-information-and-resource-monitoring) on Linux, macOS, and Windows over the existing EIP connection and authentication. The outer daemon collects cached CPU/memory, filesystem inventory, network/disk counters, socket counts and daemon usage, with optional cgroup v2 samples on Linux. Configure Prometheus or OTLP export when you need an external monitoring backend. `device.metrics` reads observations without opening a Session. The `connect` launcher enables default sampling; other launches enable it through `monitoring` configuration. The daemon retains the latest sample rather than a history.
 
 The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootstrap fields and limits. The [Python client guide](../../docs/a13n-envd/python-client.md) shows shared Device ownership and independent Session scopes.
 

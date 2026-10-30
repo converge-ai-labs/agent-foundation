@@ -27,7 +27,11 @@ async def settled(api: httpx.AsyncClient, receipt: str) -> dict:
             assert response.status_code == 200, response.text
             value = response.json()
             if value["status"] not in {"preparing", "running"}:
-                return value
+                # Terminal status precedes persistence and release of the Thread's admission slot.
+                thread = await api.get(f"/api/threads/{value['receipt']['thread_id']}")
+                assert thread.status_code == 200, thread.text
+                if thread.json()["thread"]["root_activity"]["state"] == "inactive":
+                    return value
             await sleep(0.01)
 
 
@@ -51,7 +55,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
     )
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent.update(mcp_servers=[], tool_proxy={"groups": {"docs": {"description": "Docs", "mcp_servers": ["mcp-docs"]}}})
+    agent.update(mcp_servers=[], tool_search={"groups": {"docs": {"description": "Docs", "mcp_servers": ["mcp-docs"]}}})
     agent_path.write_text(yaml.safe_dump(agent))
     started, release, publishing, publish_release = Event(), Event(), Event(), Event()
     calls = 0
@@ -100,7 +104,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert set(before["next_run"]["provenance"].values()) == {"thread", "agent"}
             assert before["next_run"]["provenance"]["environment_bindings"] == "thread"
             assert before["next_run"]["provenance"]["default_environment"] == "thread"
-            static = await api.get("/api/agents/agent-assistant/tool-proxy")
+            static = await api.get("/api/agents/agent-assistant/tool-search")
             assert static.status_code == 200, static.text
             assert static.json()["sources"][0]["presentation"] == "dormant"
             assert (await api.get("/api/catalog")).json()
@@ -109,7 +113,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
                 await started.wait()
             captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert captured["agent"]["model_id"] == "model-primary"
-            assert captured["mcp_server_ids"] == [] and captured["tool_proxy"]["groups"] == {}
+            assert captured["mcp_server_ids"] == [] and captured["tool_search"]["groups"] == {}
             assert "private-" not in json.dumps(captured) and "authentication" in captured["omitted_fields"]
             agent["model"] = "model-second"
             saved = await api.put(
@@ -161,6 +165,80 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             restored = (await api.get(prefix + "/configuration")).json()
             assert restored["captured"] == final["captured"]
             assert restored["capture_source"] == "selected_continuation" and restored["receipt_id"] is None
+
+
+@pytest.mark.parametrize("legacy_retry_flag", [False, True])
+async def test_saved_retried_tool_keeps_inspection_routes_available_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy_retry_flag: bool
+) -> None:
+    from a13n_harness_ui.display_history import DisplayHistory
+    from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
+    from a13n_harness_ui.storage.display import DisplayArchive
+    from a13n_harness_ui.storage.read_models import project_continuation
+    from a13n_stream_protocol.display import DisplayFold
+
+    root = _write_configuration(tmp_path)
+
+    async def model(messages, info):
+        yield "seed"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
+            prefix = f"/api/threads/{thread_id}"
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["seed"]})).json()["receipt_id"]
+            assert (await settled(api, receipt))["status"] == "completed"
+        thread = await app._store.threads.get(thread_id)
+        assert thread is not None and thread.continuation is not None
+        saved = await read_continuation(app._store.objects, thread.continuation, include_display=True)
+        fold = DisplayFold("run-synthetic", full_content=True)
+        fold.fold(
+            [
+                {
+                    "type": "CUSTOM",
+                    "name": "a13n.pydantic_ai.function_tool_result",
+                    "value": {
+                        "event": {
+                            "part": {
+                                "part_kind": "tool-return",
+                                "tool_call_id": "call-synthetic",
+                                "tool_name": "lookup",
+                                "outcome": "retried",
+                                "content": "Invalid synthetic input",
+                            }
+                        }
+                    },
+                }
+            ]
+        )
+        (item,) = fold.items.values()
+        if legacy_retry_flag:
+            # Records written before this fix have the native outcome but no retry classification.
+            item = item.model_copy(update={"state": "completed", "content": {**item.content, "retry": False}})
+        value = saved.model_copy(update={"display": DisplayArchive(tail=DisplayHistory(items=(item,)))})
+        replacement = await publish_continuation(app._store.objects, value)
+        await app._store.threads.select_continuation(
+            thread_id=thread_id,
+            expected=thread.continuation,
+            replacement=replacement,
+            read_model=project_continuation(value),
+        )
+        assert await app._store.publish_work(thread_id, replacement, value.harness_state)
+
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            for route in ("configuration", "context-usage", "transcript"):
+                response = await api.get(prefix + "/" + route)
+                assert response.status_code == 200, response.text
+                if route == "transcript":
+                    parts = [part for entry in response.json()["entries"] for part in entry["parts"]]
+                    retry = next(part for part in parts if part["kind"] == "retry")
+                    assert retry["outcome"] == "retried"
+                    assert retry["text"] == "Invalid synthetic input"
 
 
 async def test_inspection_accounts_and_notes_use_existing_owners(

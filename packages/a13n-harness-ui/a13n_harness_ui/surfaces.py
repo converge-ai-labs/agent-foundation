@@ -17,6 +17,7 @@ from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
@@ -59,7 +60,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory"]
+    kind: Literal["agent", "markdown", "memory", "live"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -220,7 +221,7 @@ class ThreadMetadataMutation(SurfaceModel):
 class DeferredRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["approval", "external"]
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None
@@ -251,6 +252,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
@@ -266,9 +268,9 @@ class TranscriptPart(SurfaceModel):
         "other",
     ]
     text: str | None = None
-    tool_name: str | None = Field(default=None, max_length=128)
+    tool_name: str | None = None
     tool_call_id: str | None = Field(default=None, max_length=256)
-    outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
+    outcome: Literal["success", "failed", "denied", "interrupted", "retried"] | None = None
     provider: str | None = None
     applied_edit: AppliedEditView | None = None
     tool_images: tuple[ToolImageView, ...] = ()
@@ -316,6 +318,7 @@ class TranscriptTurn(SurfaceModel):
     """One ordinary input and its execution, including steering and resumes."""
 
     turn_id: str
+    content_revision: str | None = None
     input_position: int = Field(ge=0)
     end_position: int = Field(ge=0)
     final_position: int | None = Field(default=None, ge=0)
@@ -324,6 +327,9 @@ class TranscriptTurn(SurfaceModel):
     app_positions: tuple[int, ...] = ()
     preview: str = Field(max_length=512)
     timestamp: datetime | None = None
+    duration_ms: int | None = Field(
+        default=None, ge=0, description="Recorded root Run time, excluding pauses between Runs."
+    )
     tool_count: int = Field(default=0, ge=0)
     steering_count: int = Field(default=0, ge=0)
 
@@ -441,6 +447,7 @@ class RootOperationView(SurfaceModel):
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
     goal: GoalView | None = None
+    main_account: MainAccountSelection | None = None
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
 
     @field_validator("started_at", "completed_at")
@@ -646,12 +653,30 @@ class ThreadWork(SurfaceModel):
     children: ChildStatusCounts
 
 
+class ToolExecutionView(SurfaceModel):
+    """Detached status only; native results stay behind Harness result tools."""
+
+    execution_id: str
+    thread_id: str
+    run_id: str
+    tool_call_id: str
+    tool_name: str
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"]
+    created_at: datetime
+    completed_at: datetime | None = None
+    result_available: bool = False
+    foreground_released: bool = False
+    delivery_acknowledged: bool = False
+    available_actions: tuple[Literal["cancel"], ...] = ()
+
+
 class ThreadFocusSnapshot(SurfaceModel):
     epoch: str = Field(min_length=1, max_length=80)
     cutover_sequence: int = Field(ge=0)
     thread: ThreadDetail
     root_operation: RootOperationView | None = None
     mcp_inputs: tuple[McpInputRequestView, ...] = ()
+    tool_executions: tuple[ToolExecutionView, ...] = ()
     recent_events: tuple[LiveEvent, ...] = ()
     root_stream: RootStreamSummary | None = None
 
@@ -749,6 +774,7 @@ class AgentSummary(SurfaceModel):
     name: str = Field(min_length=1, max_length=256)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_path: str = Field(min_length=1, max_length=4096)
+    tool_search_mcp_servers: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 
 class SelectableResourceSummary(SurfaceModel):
@@ -757,6 +783,7 @@ class SelectableResourceSummary(SurfaceModel):
     kind: Literal["harness_plugin", "environment_run_extension", "mcp_server"]
     implementation_key: str | None = Field(default=None, min_length=1, max_length=200)
     source_path: str = Field(min_length=1, max_length=4096)
+    selected_tool_count: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
 
 
 class ModelSummary(SurfaceModel):
@@ -883,7 +910,7 @@ class QuestionView(SurfaceModel):
 class StructuredQuestionRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["question"] = "question"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     questions: tuple[QuestionView, ...] = Field(min_length=1, max_length=4)
     metadata: dict[str, JsonValue] | None = None
     metadata_omitted: bool = False
@@ -892,7 +919,7 @@ class StructuredQuestionRequestView(SurfaceModel):
 class ApprovalRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["approval"] = "approval"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None
@@ -903,7 +930,7 @@ class ApprovalRequestView(SurfaceModel):
 class ExternalRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["external"] = "external"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None

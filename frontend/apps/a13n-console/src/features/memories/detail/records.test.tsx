@@ -401,9 +401,11 @@ it("shows creation and latest write attribution with a run link and stale-conten
       await within(dialog).findByRole("link", { name: "View run" })
     ).getAttribute("href"),
   ).toContain("thr_1");
-  expect(
-    within(dialog).getAllByText("call_1", { selector: "dd" }),
-  ).toHaveLength(2);
+  for (const details of within(dialog).getAllByRole("button", {
+    name: "Technical details",
+  }))
+    await user.click(details);
+  expect(within(dialog).getAllByText("call_1")).toHaveLength(2);
 });
 it("handles inaccessible runs and unknown creation without inventing a source", async () => {
   const { user } = setup({

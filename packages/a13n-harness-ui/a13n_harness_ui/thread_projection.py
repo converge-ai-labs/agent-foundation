@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
@@ -23,6 +24,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -31,7 +33,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
@@ -40,9 +41,9 @@ from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
 from a13n_harness_ui.storage import (
+    Continuation,
     LocalStore,
     ObjectRef,
-    StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
@@ -644,7 +645,14 @@ class ThreadProjectionService:
                 if thread.continuation is None:
                     stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
                 else:
-                    stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
+                    stored = await self._store.read_continuation(
+                        thread.thread_id, thread.continuation, include_display=True
+                    )
+                    if stored.display is not None:
+                        from a13n_harness_ui.storage.display import DisplayArchive, read_display
+
+                        display = await read_display(self._store.objects, stored.display)
+                        stored = stored.model_copy(update={"display": DisplayArchive(tail=display)})
                 data = await to_thread.run_sync(build_thread_inspection, thread, stored)
                 if not await self._store.inspections.publish(thread.thread_id, source_id, data):
                     raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
@@ -708,12 +716,12 @@ def project_working_state(working: WorkingState, continuation_id: str | None = N
     )
 
 
-def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredThreadInitialState) -> InspectionData:
+def build_thread_inspection(thread: Thread, stored: Continuation | StoredThreadInitialState) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
-    display = stored.display_history if isinstance(stored, StoredContinuation) else None
+    display = stored.display_history if isinstance(stored, Continuation) else None
     model_history = state.message_history
     from a13n_harness_ui.display_history import import_display_history
     from a13n_harness_ui.display_projection import display_entries, display_turns
@@ -728,7 +736,7 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
         context_empty=not model_history,
-        run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
+        run_composition=stored.run_composition if isinstance(stored, Continuation) else None,
         latest_request_tokens=next(
             (
                 message.usage.total_tokens
@@ -740,10 +748,32 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    turns = display_turns(display)
+    entry_offset = stored.display.entry_offset if isinstance(stored, Continuation) and stored.display is not None else 0
+    turn_offset = stored.display.turn_offset if isinstance(stored, Continuation) and stored.display is not None else 0
+    entries = tuple(
+        entry.model_copy(update={"position": entry.position + entry_offset}).model_dump_json()
+        for entry in display_entries(display, thread)
+    )
+    turns = tuple(
+        turn.model_copy(
+            update={
+                "content_revision": hashlib.sha256(
+                    ("[" + ",".join(entries[turn.input_position : turn.end_position]) + "]").encode()
+                ).hexdigest(),
+                "input_position": turn.input_position + entry_offset,
+                "end_position": turn.end_position + entry_offset,
+                "final_position": None if turn.final_position is None else turn.final_position + entry_offset,
+                "output_position": None if turn.output_position is None else turn.output_position + entry_offset,
+                "app_positions": tuple(position + entry_offset for position in turn.app_positions),
+            }
+        )
+        for turn in display_turns(display)
+    )
     return InspectionData(
+        entry_offset=entry_offset,
+        turn_offset=turn_offset,
         metadata_json=metadata.model_dump_json(),
-        entries=tuple(entry.model_dump_json() for entry in display_entries(display, thread)),
+        entries=entries,
         turns=tuple(
             InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
             for turn in turns
@@ -1005,9 +1035,16 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
         content = tool_result_content(execution_value)
         parts = [item.model_dump(mode="json", by_alias=True) for item in content] if isinstance(content, list) else []
         value, omitted = _bounded_json(parts if isinstance(content, list) else execution_value)
+        retry_text = (
+            (part.content if isinstance(part.content, str) else "Tool input validation failed.")
+            if part.outcome == "retried"
+            else None
+        )
         return (
             TranscriptPart(
-                kind="tool_result",
+                kind="retry" if retry_text is not None else "tool_result",
+                text=_bounded_text(retry_text) if retry_text is not None else None,
+                text_truncated=retry_text is not None and len(retry_text) > _MAX_TEXT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
@@ -1020,6 +1057,9 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
                 value_omitted=omitted,
             ),
         )
+    if isinstance(part, RetryFeedbackPart):
+        text = part.content if isinstance(part.content, str) else "Model output validation failed."
+        return (TranscriptPart(kind="retry", text=_bounded_text(text), text_truncated=len(text) > _MAX_TEXT),)
     if isinstance(part, RetryPromptPart):
         text = part.content if isinstance(part.content, str) else "Tool input validation failed."
         return (
@@ -1088,9 +1128,9 @@ def _deferred_requests(value: object | None) -> tuple[DeferredRequestView, ...]:
     if not isinstance(value, DeferredToolRequests):
         raise ThreadError("Stored deferred requests are invalid.", code="thread_continuation_incompatible")
     projected: list[DeferredRequestView] = []
-    for request in value.calls:
+    for request in (entry.target_call for entry in value.calls):
         projected.append(_deferred_request(value, request, kind="external"))
-    for request in value.approvals:
+    for request in (entry.target_call for entry in value.approvals):
         projected.append(_deferred_request(value, request, kind="approval"))
     return tuple(projected)
 

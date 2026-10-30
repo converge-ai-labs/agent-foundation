@@ -15,7 +15,7 @@ import { AppSession } from "./app-session";
 import { useAppLink } from "./app-link";
 import { useAppContextSelection } from "./context-selection";
 import { result, type Schema } from "../transport/client";
-import { useTransport } from "../transport/context";
+import { useGuestAccess, useTransport } from "../transport/context";
 import styles from "./app-card.module.css";
 
 const capabilities = {
@@ -26,7 +26,19 @@ const capabilities = {
   message: { text: {} },
 };
 
-export function AppCard({
+export function AppCard(props: {
+  reference: Schema<"AppReference">;
+  live?: boolean;
+}) {
+  const guest = useGuestAccess();
+  return guest ? (
+    <p>Interactive app · available to the instance owner</p>
+  ) : (
+    <OwnerAppCard {...props} />
+  );
+}
+
+function OwnerAppCard({
   reference,
   live = false,
 }: {
@@ -80,12 +92,10 @@ export function AppCard({
       },
       onmessage: async ({ content }) => {
         if (!session)
-          throw new Error(
-            "Activate server interactions in the Host App card first.",
-          );
+          throw new Error("Turn on server interactions in the app card first.");
         const text = content.map((part) => {
           if (part.type !== "text")
-            throw new Error("This Host accepts text App messages only.");
+            throw new Error("This host accepts text App messages only.");
           return { type: "text" as const, text: part.text };
         });
         const selected = session.captureContext()
@@ -97,12 +107,10 @@ export function AppCard({
       },
       onupdatemodelcontext: async (value) => {
         if (!session)
-          throw new Error(
-            "Activate server interactions in the Host App card first.",
-          );
+          throw new Error("Turn on server interactions in the app card first.");
         if (value.content?.some((part) => part.type !== "text"))
           throw new Error(
-            "This Host accepts text and structured App context only.",
+            "This host accepts text and structured App context only.",
           );
         await session.updateContext(value);
         return {};
@@ -110,18 +118,14 @@ export function AppCard({
       onreadresource: ({ uri }) => {
         if (!session)
           return Promise.reject(
-            new Error(
-              "Activate server interactions in the Host App card first.",
-            ),
+            new Error("Turn on server interactions in the app card first."),
           );
         return session.readResource(uri);
       },
       oncalltool: ({ name, arguments: args }) => {
         if (!session)
           return Promise.reject(
-            new Error(
-              "Activate server interactions in the Host App card first.",
-            ),
+            new Error("Turn on server interactions in the app card first."),
           );
         return session.call(name, args);
       },
@@ -165,7 +169,7 @@ export function AppCard({
       ?.close()
       .catch(() =>
         setError(
-          "The View closed locally, but server confirmation was lost. Already sent operations may still complete.",
+          "This view closed, but the server didn't confirm. Actions already sent may still finish.",
         ),
       );
   }
@@ -205,14 +209,21 @@ export function AppCard({
       {reference.unavailable && <p role="status">{reference.unavailable}</p>}
       {error && <p role="alert">{error}</p>}
       {!opened && !reference.unavailable && (
-        <p>
-          Open the original App presentation. This does not repeat the tool
-          call.
-        </p>
+        <p>Reopen the app. The tool won't run again.</p>
       )}
       {opened && presentation.isPending && <p role="status">Loading App…</p>}
       {opened && presentation.error && (
-        <p role="alert">{presentation.error.message}</p>
+        <div className={styles.status}>
+          <p role="alert">{presentation.error.message}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={presentation.isFetching}
+            onClick={() => void presentation.refetch()}
+          >
+            {presentation.isFetching ? "Retrying…" : "Try again"}
+          </Button>
+        </div>
       )}
       {opened && data && (!data.resource || !parsed || !data.sandbox_url) && (
         <p role="alert">The original App presentation cannot be displayed.</p>
@@ -232,7 +243,7 @@ export function AppCard({
                 disabled={activating}
                 onClick={() => void activate()}
               >
-                {activating ? "Activating…" : "Activate interactions"}
+                {activating ? "Activating…" : "Enable controls"}
               </Button>
             )}
           </div>
@@ -268,21 +279,21 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
     <section className={styles.request} aria-label="App message confirmation">
       <strong>
         {session.view.route?.length
-          ? "Send child App handoff to the owning conversation?"
-          : "Send this App message to the conversation?"}
+          ? "Send child App handoff to the owning chat?"
+          : "Send this App message to the chat?"}
       </strong>
       <p>
         {session.view.reference.server_id} / {session.view.reference.tool_name}{" "}
         → {session.view.root_thread_id}
       </p>
       <p>
-        This starts an ordinary turn. It does not edit your draft, steer active
-        work or queue behind a busy conversation.
+        Starts a new message without changing your draft. It can't interrupt
+        active work or wait in a busy chat's queue.
       </p>
       <pre>{state.request.content.map((part) => part.text).join("\n")}</pre>
       {state.context && (
         <details>
-          <summary>Included App context</summary>
+          <summary>App context</summary>
           <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
         </details>
       )}
@@ -290,7 +301,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
       {state.receipt?.reason && <p role="alert">{state.receipt.reason}</p>}
       {state.receipt?.receipt && (
         <p role="status">
-          Accepted by the conversation · {state.receipt.receipt.receipt_id}
+          Accepted by the chat · {state.receipt.receipt.receipt_id}
         </p>
       )}
       {!state.sent ? (
@@ -308,7 +319,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
           variant="outline"
           onClick={() => void message.reconcile()}
         >
-          Check message receipt
+          Check delivery
         </Button>
       ) : state.receipt?.status !== "accepted" &&
         state.receipt?.status !== "failed" ? (
@@ -338,13 +349,13 @@ function AppModelContext({
         <span>{state.pending ? "Updating…" : "Latest value"}</span>
       </div>
       <p>
-        This external data is not sent automatically. Only this browser's
-        selection accompanies your next ordinary message.
+        This selection will go with your next message. Nothing is sent
+        automatically, and other browsers' selections aren't included.
       </p>
       {state.context && (
         <>
           <details>
-            <summary>Inspect App context</summary>
+            <summary>Show app context</summary>
             <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
           </details>
           <label>

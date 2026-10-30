@@ -23,7 +23,12 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
+    ConnectionMetrics,
     ContentDigest,
+    CpuTimeSeconds,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
+    DiskMetrics,
     EIPCallContext,
     EIPError,
     EIPLimits,
@@ -38,18 +43,40 @@ from a13n_envd_client.eip.v1.models import (
     FileSearchResult,
     FileStatParams,
     FileStatResult,
+    FilesystemInventory,
     InitializeParams,
+    NetworkMetrics,
     OutputInfo,
     OutputReadParams,
     ProcessWriteStdinParams,
     ReceiptGetParams,
     ShellExecParams,
+    SystemInfo,
+    SystemMetrics,
 )
 from pydantic import BaseModel, ValidationError
 
 REPOSITORY_ROOT = Path(__file__).parents[4]
 GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/golden.json"
 DATA_FRAME_GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/data-frame-golden.json"
+
+
+def test_clipboard_wire_requires_text_and_preserves_empty():
+    from a13n_envd_client.eip.v1.models import ComputerReadClipboardParams, ComputerWriteClipboardParams
+
+    context = {"operation_id": "clipboard-wire", "timeout_ms": 1000}
+    assert ComputerWriteClipboardParams.model_validate({"context": context, "text": ""}).text == ""
+    for text in [None, 42]:
+        with pytest.raises(ValidationError):
+            ComputerWriteClipboardParams.model_validate({"context": context, "text": text})
+    with pytest.raises(ValidationError):
+        ComputerWriteClipboardParams.model_validate({"context": context})
+    assert ComputerReadClipboardParams.model_validate({"context": context}).max_bytes == 16384
+    for maximum in [0, 16385]:
+        with pytest.raises(ValidationError):
+            ComputerReadClipboardParams.model_validate({"context": context, "max_bytes": maximum})
+    assert METHODS["computer.read_clipboard"].replay_class == "active_only"
+    assert METHODS["computer.write_clipboard"].replay_class == "terminal_evidence"
 
 
 def valid_eip_limits() -> dict[str, int]:
@@ -69,6 +96,9 @@ def valid_eip_limits() -> dict[str, int]:
 
 
 MODEL_TYPES: dict[str, type[BaseModel]] = {
+    "SystemInfo": SystemInfo,
+    "DeviceMetricsParams": DeviceMetricsParams,
+    "DeviceMetricsResult": DeviceMetricsResult,
     "InitializeParams": InitializeParams,
     "EnvironmentReadinessParams": EnvironmentReadinessParams,
     "EnvironmentReadinessResult": EnvironmentReadinessResult,
@@ -86,20 +116,76 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 }
 
 
+@pytest.mark.parametrize("value", [-0.01, 100.01, float("nan"), float("inf"), float("-inf")])
+def test_monitoring_percentages_reject_invalid_floats(value: float) -> None:
+    with pytest.raises(ValidationError):
+        SystemMetrics(cpu_busy_percent=value)
+    with pytest.raises(ValueError):
+        encode_model(SystemMetrics.model_construct(cpu_busy_percent=value))
+
+
+@pytest.mark.parametrize("value", [-0.01, float("nan"), float("inf")])
+def test_monitoring_cpu_seconds_reject_invalid_floats(value: float) -> None:
+    with pytest.raises(ValidationError):
+        CpuTimeSeconds(user=value)
+
+
+@pytest.mark.parametrize("value", [0.0, 0.25, 99.99, 100.0])
+def test_monitoring_percentages_preserve_fractional_values(value: float) -> None:
+    model = SystemMetrics(cpu_busy_percent=value)
+    assert decode_model(encode_model(model), SystemMetrics).cpu_busy_percent == value
+
+
+@pytest.mark.parametrize(
+    "model,field,maximum,entry,other",
+    [
+        (NetworkMetrics, "interfaces", 64, {"identity": "if-1"}, {"truncated": False}),
+        (DiskMetrics, "devices", 64, {"identity": "disk-1"}, {"truncated": False}),
+        (FilesystemInventory, "filesystems", 16, {}, {"truncated": False}),
+        (ConnectionMetrics, "tcp_states", 16, 0, {}),
+    ],
+)
+def test_monitoring_inventory_bounds_apply_to_models_and_wire(model, field, maximum, entry, other):
+    for size in (0, maximum):
+        value = {**other, field: {str(i): entry for i in range(size)}}
+        parsed = decode_model(json.dumps(value), model)
+        assert decode_model(encode_model(parsed), model) == parsed
+    value[field]["overflow"] = entry
+    with pytest.raises(ValidationError):
+        decode_model(json.dumps(value), model)
+    with pytest.raises(ValidationError):
+        model.model_validate(value)
+    # Mutation bypasses Pydantic assignment validation, but the codec must revalidate.
+    parsed.__dict__[field]["overflow"] = next(iter(parsed.__dict__[field].values()))
+    with pytest.raises(ValidationError):
+        encode_model(parsed)
+
+
 def test_generated_surface_covers_eip_v1() -> None:
-    assert EIP_PROTOCOL_VERSION == "0.1"
+    assert EIP_PROTOCOL_VERSION == "0.3"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 50
+    assert len(METHODS) == 54
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
-    assert all(method.introduced == "0.1" for method in METHODS.values())
+    assert all(
+        method.introduced
+        == (
+            "0.3"
+            if method.name in {"computer.read_clipboard", "computer.write_clipboard"}
+            else "0.2"
+            if method.name in {"device.metrics", "computer.zoom"}
+            else "0.1"
+        )
+        for method in METHODS.values()
+    )
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 21
-    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 21
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 23
+    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 22
     assert {method.name for method in METHODS.values() if method.replay_class == "ledger_external"} == {
         "initialize",
         "device.describe",
+        "device.metrics",
         "directory.list",
         "session.open",
         "session.attach",
@@ -108,14 +194,14 @@ def test_generated_surface_covers_eip_v1() -> None:
         "egress.update",
     }
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
-    assert len(transfer_methods) == 7
+    assert len(transfer_methods) == 8
     assert all(method.transfer_direction is not None for method in transfer_methods)
 
 
 def test_shared_golden_values_round_trip_canonically() -> None:
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     initialize = next(case for case in fixture["cases"] if case["type"] == "InitializeParams")
-    assert initialize["value"]["supported_protocol_versions"] == ["0.1"]
+    assert initialize["value"]["supported_protocol_versions"] == ["0.3"]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
         encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)

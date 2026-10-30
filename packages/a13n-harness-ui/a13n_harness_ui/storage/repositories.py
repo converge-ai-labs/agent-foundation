@@ -7,12 +7,13 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, func, or_, select, true, update
+from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 
+from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -33,14 +34,17 @@ from .database import DatabaseSessions, short_session, transaction
 from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
+    CompactionRecord,
     ConfigurationSourceRecord,
     CoordinatorRecord,
     CoordinatorWorkerRecord,
     CurrentConfigurationRecord,
+    DeletedThreadRecord,
     EnvironmentBindingRecord,
     PlannedRestartRecord,
     ProjectModelPreferenceRecord,
     ResourceIndexRecord,
+    ShareGrantRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
 )
@@ -222,6 +226,8 @@ class ThreadRepository:
                     raise StoreIntegrityError(
                         "A worker must be a root in its Coordinator's Project.", code="coordinator_worker_invalid"
                     )
+            if await session.get(DeletedThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError("Deleted Thread identities cannot be reused.", code="thread_deleted")
             if await session.get(ThreadRecord, thread_id) is not None:
                 raise StoreIntegrityError(
                     "Thread identity already exists; read it before retrying.", code="thread_exists"
@@ -255,6 +261,75 @@ class ThreadRepository:
                 )
             await session.flush()
             return _thread_value(record, configuration)
+
+    async def fork(
+        self,
+        *,
+        source: Thread,
+        thread_id: str,
+        initial_state: ObjectRef,
+        continuation: ObjectRef | None,
+        read_model: ThreadReadModel | None,
+    ) -> Thread:
+        """Publish a complete copy only while the captured source remains eligible."""
+        _require_kind(initial_state, ObjectKind.thread_initial_state)
+        if continuation is not None:
+            _require_kind(continuation, ObjectKind.continuation)
+        now = datetime.now(UTC)
+        async with transaction(self._sessions) as session:
+            if await session.get(DeletedThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError("Deleted Thread identities cannot be reused.", code="thread_deleted")
+            current = await session.get(ThreadRecord, source.thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, source.thread_id)
+            if current is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            if (
+                current.parent_thread_id is not None
+                or current.memory_scope is not None
+                or source.configuration.agent_source.kind != "agent"
+                or await session.get(CoordinatorRecord, source.thread_id) is not None
+                or await session.get(CoordinatorWorkerRecord, source.thread_id) is not None
+            ):
+                raise StoreConflictError(
+                    "Only independent ordinary Threads can be forked.", code="thread_fork_unsupported"
+                )
+            if (
+                current.metadata_version != source.metadata_version
+                or _configuration_value(configuration) != source.configuration
+                or _continuation_ref(current) != source.continuation
+            ):
+                raise StoreConflictError(
+                    "The source Thread changed while copying. Fork it again.", code="thread_fork_conflict"
+                )
+            record = ThreadRecord(
+                thread_id=thread_id,
+                metadata_version=1,
+                title=source.title,
+                archived=source.archived,
+                starred=source.starred,
+                first_input=source.excerpt.first_input,
+                latest_input=source.excerpt.latest_input,
+                latest_reply=source.excerpt.latest_reply,
+                reply_kind=source.excerpt.reply_kind,
+                created_at=now,
+                updated_at=now,
+                touched_at=now,
+                activity_at=source.activity_at,
+                initial_state_schema_version=initial_state.object_schema_version,
+                initial_state_digest=initial_state.logical_digest,
+                continuation_schema_version=continuation.object_schema_version if continuation else None,
+                continuation_digest=continuation.logical_digest if continuation else None,
+                read_model_schema_version=continuation.object_schema_version if continuation else None,
+                read_model_digest=continuation.logical_digest if continuation else None,
+                read_model_json=read_model.model_dump_json() if read_model else None,
+            )
+            record.search_text = _search_text(record)
+            session.add(record)
+            await session.flush()
+            copied_configuration = source.configuration.model_copy(update={"version": 1})
+            session.add(_configuration_record(thread_id, copied_configuration))
+            await session.flush()
+            return _thread_value(record, copied_configuration)
 
     async def promote_coordinator(self, thread_id: str) -> None:
         """Atomically establish a one-way role; worker ownership is never inferred."""
@@ -345,6 +420,73 @@ class ThreadRepository:
             if configuration is None:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
+
+    async def delete(
+        self,
+        thread_id: str,
+        *,
+        expected_version: int,
+        active_execution_ids: frozenset[str],
+        busy_thread_ids: frozenset[str],
+    ) -> tuple[str, ...]:
+        """Remove one root family atomically, preserving independent worker roots."""
+        async with transaction(self._sessions) as session:
+            root = await session.get(ThreadRecord, thread_id)
+            if root is None:
+                raise StoreConflictError("Thread does not exist.", code="thread_not_found")
+            if root.metadata_version != expected_version:
+                raise StoreConflictError(
+                    "The chat changed. Review it before deleting.", code="thread_metadata_conflict"
+                )
+            if await session.scalar(
+                select(CoordinatorWorkerRecord.worker_thread_id)
+                .where(CoordinatorWorkerRecord.coordinator_thread_id == thread_id)
+                .limit(1)
+            ):
+                raise StoreConflictError(
+                    "Delete this Coordinator's worker chats first.", code="thread_workers_conflict"
+                )
+            roots = (
+                select(ThreadRecord.thread_id)
+                .where(ThreadRecord.thread_id == thread_id)
+                .cte("deleted_family", recursive=True)
+            )
+            family = roots.union_all(
+                select(ThreadRecord.thread_id).join(roots, ThreadRecord.parent_thread_id == roots.c.thread_id)
+            )
+            thread_ids = tuple(await session.scalars(select(family.c.thread_id)))
+            executions = tuple(
+                await session.scalars(
+                    select(ChildExecutionRecord)
+                    .where(ChildExecutionRecord.child_thread_id.in_(thread_ids))
+                    .order_by(ChildExecutionRecord.segment_index.desc())
+                )
+            )
+            if busy_thread_ids.intersection(thread_ids) or any(
+                execution.execution_id in active_execution_ids for execution in executions
+            ):
+                raise StoreConflictError(
+                    "Wait for this chat's subagents and tools to finish before deleting it.",
+                    code="thread_run_active",
+                )
+            # Resumed segments RESTRICT deletion of their predecessors. Delete
+            # the newest segment first, before Thread FK cascades run.
+            for execution in executions:
+                await session.execute(
+                    delete(ChildExecutionRecord).where(ChildExecutionRecord.execution_id == execution.execution_id)
+                )
+            await session.execute(delete(CompactionRecord).where(CompactionRecord.thread_id.in_(thread_ids)))
+            await session.execute(
+                delete(ShareGrantRecord).where(
+                    ShareGrantRecord.scope == "thread", ShareGrantRecord.target_id.in_(thread_ids)
+                )
+            )
+            await session.execute(delete(CoordinatorRecord).where(CoordinatorRecord.thread_id == thread_id))
+            # Commit deletion evidence with the removal, never infer it from a
+            # missing row: a fork publishes its checkpoint before creating one.
+            session.add_all(DeletedThreadRecord(thread_id=identity) for identity in thread_ids)
+            await session.execute(delete(ThreadRecord).where(ThreadRecord.thread_id == thread_id))
+            return thread_ids
 
     async def memory_thread(self, scope: str) -> Thread | None:
         async with short_session(self._sessions) as session:
@@ -625,6 +767,8 @@ class ThreadRepository:
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
+        clear_compaction: bool = False,
+        compaction_settlement: CompactionSettlement | None = None,
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
         serialized = read_model.model_dump_json()
@@ -641,6 +785,7 @@ class ThreadRepository:
                     None if expected is None else expected.logical_digest,
                     None if actual is None else actual.logical_digest,
                 )
+            await settle_compaction(session, thread_id, settlement=compaction_settlement, clear=clear_compaction)
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest
@@ -1065,11 +1210,13 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import MemoryAgentSource
+    from .contracts import LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
         if record.agent_source_kind == "memory"
+        else LiveAgentSource()
+        if record.agent_source_kind == "live"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)

@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSON, JSONB
+from sqlalchemy.dialects.postgresql import JSON, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
@@ -62,6 +62,7 @@ class SessionRow(Stamped, Base):
     __tablename__ = "sessions"
     __table_args__ = (
         Index("ix_sessions_workspace_updated", "workspace_id", "updated_at", "id"),
+        CheckConstraint("purpose IN ('conversation', 'memory_organization')", name="purpose"),
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
@@ -76,9 +77,13 @@ class SessionRow(Stamped, Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
+    title: Mapped[str | None] = mapped_column(String(256))
+    origin: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     labels: Mapped[dict] = mapped_column(JSONB)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
-    # The most recently accepted run of any of its threads: the list preview.
+    memory: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    purpose: Mapped[str] = mapped_column(String, default="conversation", server_default=text("'conversation'"))
+    # The most recently accepted business run: maintenance never replaces this preview.
     last_run_id: Mapped[str | None] = mapped_column(String(72))
 
 
@@ -88,6 +93,15 @@ class ThreadRow(Stamped, Base):
         Index("ix_threads_session_created", "workspace_id", "session_id", "created_at", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
+        UniqueConstraint("workspace_id", "session_id", "schedule_occurrence_id", "id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "session_id", "schedule_occurrence_id"],
+            ["schedule_occurrences.workspace_id", "schedule_occurrences.session_id", "schedule_occurrences.id"],
+            name="fk_threads_schedule_occurrence",
+            use_alter=True,
+        ),
+        Index("ix_threads_schedule_occurrence", "workspace_id", "schedule_occurrence_id", "created_at", "id"),
+        CheckConstraint("origin <> 'fork' OR schedule_occurrence_id IS NULL", name="fork_schedule"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "session_id"], ["sessions.workspace_id", "sessions.id"]),
         ForeignKeyConstraint(
@@ -112,6 +126,8 @@ class ThreadRow(Stamped, Base):
             )
             for pointer in ("current_run_id", "last_run_id")
         ),
+        CheckConstraint("purpose IN ('conversation', 'memory_organization')", name="purpose"),
+        CheckConstraint("purpose = 'conversation' OR origin = 'new'", name="purpose_origin"),
         CheckConstraint("origin IN ('new', 'fork', 'child')", name="origin"),
         CheckConstraint(
             "(origin = 'new' AND origin_thread_id IS NULL AND origin_run_id IS NULL AND origin_tool_call_id IS NULL)"
@@ -151,6 +167,8 @@ class ThreadRow(Stamped, Base):
             BEGIN
                 IF NEW.message_history::text IS DISTINCT FROM OLD.message_history::text
                 THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
+                IF NEW.schedule_occurrence_id IS DISTINCT FROM OLD.schedule_occurrence_id
+                THEN RAISE EXCEPTION 'thread schedule occurrence is immutable'; END IF;
                 RETURN NEW;
             END $$
             """,
@@ -161,6 +179,8 @@ class ThreadRow(Stamped, Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     session_id: Mapped[str]
+    schedule_occurrence_id: Mapped[str | None] = mapped_column(String(72))
+    purpose: Mapped[str] = mapped_column(default="conversation", server_default="conversation")
     origin: Mapped[str]
     origin_thread_id: Mapped[str | None]
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
@@ -174,13 +194,126 @@ class ThreadRow(Stamped, Base):
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     last_run_id: Mapped[str | None] = mapped_column(String(72))
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
+    execution: Mapped[dict | None] = mapped_column(JSONB)
     labels: Mapped[dict] = mapped_column(JSONB)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CompactionRow(Base):
+    """One detached generation and its independent checkpoint settlement."""
+
+    __tablename__ = "compactions"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        ForeignKeyConstraint(["thread_id", "run_id"], ["runs.thread_id", "runs.id"]),
+        ForeignKeyConstraint(["run_id", "attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint("(status = 'running') = (completed_at IS NULL)", name="completed"),
+        CheckConstraint("(status = 'ready') = (result_ref IS NOT NULL)", name="result"),
+        CheckConstraint("(settled_at IS NULL) = (disposition IS NULL)", name="settlement"),
+        CheckConstraint("disposition IN ('applied', 'skipped', 'archived', 'expired')", name="disposition"),
+        Index("uq_compactions_unsettled", "thread_id", unique=True, postgresql_where=text("settled_at IS NULL")),
+        Index("ix_compactions_owner", "lease_expires_at", postgresql_where=text("status = 'running'")),
+        Index("ix_compactions_retention", "completed_at", postgresql_where=text("settled_at IS NULL")),
+        rules(
+            """
+            CREATE FUNCTION guard_compaction() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF ROW(NEW.thread_id, NEW.run_id, NEW.attempt_id, NEW.owner_token_hash, NEW.input_digest)
+                    IS DISTINCT FROM
+                    ROW(OLD.thread_id, OLD.run_id, OLD.attempt_id, OLD.owner_token_hash, OLD.input_digest)
+                THEN RAISE EXCEPTION 'compaction identity is immutable'; END IF;
+                IF OLD.status <> 'running' AND
+                    ROW(NEW.status, NEW.result_ref, NEW.completed_at, NEW.error_code)
+                    IS DISTINCT FROM ROW(OLD.status, OLD.result_ref, OLD.completed_at, OLD.error_code)
+                THEN RAISE EXCEPTION 'compaction generation is terminal'; END IF;
+                IF OLD.settled_at IS NOT NULL AND
+                    ROW(NEW.settled_at, NEW.disposition) IS DISTINCT FROM ROW(OLD.settled_at, OLD.disposition)
+                THEN RAISE EXCEPTION 'compaction settlement is terminal'; END IF;
+                RETURN NEW;
+            END $$
+            """,
+            trigger("compactions", "guard_compaction"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    thread_id: Mapped[str]
+    run_id: Mapped[str]
+    attempt_id: Mapped[str]
+    owner_token_hash: Mapped[str]
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    input_digest: Mapped[str]
+    input_ref: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    result_ref: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    status: Mapped[str]
+    error_code: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposition: Mapped[str | None]
+
+
+class ToolExecutionRow(Base):
+    """One original invocation; its worker lease and result outlive the originating Run."""
+
+    __tablename__ = "tool_executions"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        ForeignKeyConstraint(["thread_id", "run_id"], ["runs.thread_id", "runs.id"]),
+        ForeignKeyConstraint(["run_id", "attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'lost')", name="status"),
+        CheckConstraint("(status IN ('queued', 'running')) = (completed_at IS NULL)", name="completed"),
+        CheckConstraint("(completed_at IS NULL) = (expires_at IS NULL)", name="expiry"),
+        Index("ix_tool_executions_thread_created", "thread_id", "created_at", "id"),
+        Index(
+            "ix_tool_executions_owner", "worker_id", "lease_expires_at", postgresql_where=text("completed_at IS NULL")
+        ),
+        Index("ix_tool_executions_expiry", "expires_at", postgresql_where=text("expires_at IS NOT NULL")),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str]
+    workspace_id: Mapped[str]
+    thread_id: Mapped[str]
+    run_id: Mapped[str]
+    attempt_id: Mapped[str]
+    worker_id: Mapped[str]
+    lease_token_hash: Mapped[str]
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str]
+    sequential: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Harness identity and observations; the Service origin IDs above remain separate.
+    record: Mapped[dict] = mapped_column(JSONB)
+    result_ref: Mapped[dict | None] = mapped_column(JSONB)
+    payload_pruned: Mapped[bool] = mapped_column(default=False)
+    environment_mounts: Mapped[list] = mapped_column(JSONB)
+
+
+class ThreadCodeActRow(Base):
+    """Explicit stored values have one shared owner, independent of Run checkpoints."""
+
+    __tablename__ = "thread_codeact"
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"), primary_key=True)
+    values: Mapped[dict] = mapped_column(JSONB)
 
 
 class InboxEntryRow(Base):
     __tablename__ = "inbox_entries"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "schedule_occurrence_id"],
+            ["schedule_occurrences.workspace_id", "schedule_occurrences.id"],
+            name="fk_inbox_entries_schedule_occurrence",
+            use_alter=True,
+        ),
         # Reordering sets several positions in one transaction; uniqueness is checked once they are all set.
         UniqueConstraint("thread_id", "position", deferrable=True, initially="IMMEDIATE"),
         UniqueConstraint("thread_id", "id"),
@@ -221,14 +354,15 @@ class InboxEntryRow(Base):
         ),
         Index("ix_inbox_entries_pending", "thread_id", "position", postgresql_where=text("status = 'pending'")),
         Index("ix_inbox_entries_assigned", "assigned_run_id", postgresql_where=text("status = 'assigned'")),
-        CheckConstraint("kind IN ('message', 'child_result')", name="kind"),
+        CheckConstraint("kind IN ('message', 'child_result', 'tool_result', 'browser_handback')", name="kind"),
         CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
         CheckConstraint("status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')", name="status"),
         CheckConstraint("position > 0", name="position"),
         CheckConstraint("size >= 0", name="size"),
         CheckConstraint("(kind = 'message') = (agent_id IS NOT NULL)", name="message_agent"),
         CheckConstraint(
-            "(kind = 'child_result') = (child_run_id IS NOT NULL AND origin_run_id IS NOT NULL)", name="child_result"
+            "(kind = 'child_result') = (child_run_id IS NOT NULL) AND (kind <> 'message') = (origin_run_id IS NOT NULL)",
+            name="child_result",
         ),
         CheckConstraint("status NOT IN ('assigned', 'consumed') OR assigned_run_id IS NOT NULL", name="assignment"),
         CheckConstraint("status <> 'pending' OR assigned_run_id IS NULL", name="pending"),
@@ -281,6 +415,7 @@ class InboxEntryRow(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
     thread_id: Mapped[str]
+    schedule_occurrence_id: Mapped[str | None] = mapped_column(String(72))
     kind: Mapped[str]
     delivery: Mapped[str]
     position: Mapped[int] = mapped_column(BigInteger)
@@ -317,8 +452,21 @@ _RUN_PROGRESS = (
 class RunRow(Stamped, Base):
     __tablename__ = "runs"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["thread_id", "occurrence_trigger_entry_id"],
+            ["inbox_entries.thread_id", "inbox_entries.id"],
+            name="fk_runs_occurrence_trigger_entry",
+            use_alter=True,
+        ),
+        Index("ix_runs_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_runs_thread_created", "thread_id", "created_at", "id"),
         Index("ix_runs_session_created", "workspace_id", "session_id", "created_at", "id"),
+        Index(
+            "ix_runs_workspace_started",
+            "workspace_id",
+            "started_at",
+            postgresql_where=text("started_at IS NOT NULL"),
+        ),
         UniqueConstraint("thread_id", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
@@ -370,12 +518,15 @@ class RunRow(Stamped, Base):
             postgresql_where=text("status IN ('accepted', 'running')"),
         ),
         CheckConstraint("revision_selection IN ('pinned', 'default', 'inherited')", name="revision_selection"),
-        CheckConstraint("trigger IN ('input', 'queued', 'resume', 'child_result', 'spawned')", name="trigger"),
+        CheckConstraint(
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')",
+            name="trigger",
+        ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),
         CheckConstraint(
             "status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')", name="status"
         ),
-        CheckConstraint("wait_reason IN ('approval', 'call', 'multiple')", name="wait_reason"),
+        CheckConstraint("wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')", name="wait_reason"),
         # A run starts from exactly one source: a queued entry or the answers resuming its parent.
         CheckConstraint("(source_entry_id IS NULL) <> (resume IS NULL)", name="source"),
         CheckConstraint("(resume IS NULL) = (resumed_by_id IS NULL)", name="resumed_by"),
@@ -397,15 +548,20 @@ class RunRow(Stamped, Base):
         rules(
             f"""
             CREATE FUNCTION guard_run() RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE new_facts runs := NEW; old_facts runs := OLD;
             BEGIN
+                -- Avoid serializing the large search vector on every lease/checkpoint update.
+                new_facts.search_vector := NULL;
+                old_facts.search_vector := NULL;
                 IF OLD.status IN ('waiting', 'completed', 'failed', 'cancelled') THEN
                     -- Labels are the one editable property of a sealed run.
-                    IF (to_jsonb(NEW) - ARRAY['labels', 'version', 'updated_at'])
-                        IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['labels', 'version', 'updated_at'])
+                    IF NEW.search_vector IS DISTINCT FROM OLD.search_vector
+                        OR (to_jsonb(new_facts) - ARRAY['labels', 'version', 'updated_at'])
+                        IS DISTINCT FROM (to_jsonb(old_facts) - ARRAY['labels', 'version', 'updated_at'])
                     THEN RAISE EXCEPTION 'sealed run facts are immutable'; END IF;
                     RETURN NEW;
                 END IF;
-                IF (to_jsonb(NEW) - ARRAY[{_RUN_PROGRESS}]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[{_RUN_PROGRESS}])
+                IF (to_jsonb(new_facts) - ARRAY[{_RUN_PROGRESS}]) IS DISTINCT FROM (to_jsonb(old_facts) - ARRAY[{_RUN_PROGRESS}])
                 THEN RAISE EXCEPTION 'accepted run selection is immutable'; END IF;
                 IF NEW.status <> OLD.status AND NOT (
                     (OLD.status = 'accepted' AND NEW.status IN ('running', 'failed', 'cancelled'))
@@ -417,6 +573,9 @@ class RunRow(Stamped, Base):
             """,
             trigger("runs", "guard_run"),
             _thread_pointer_check("runs"),
+            # A checkpoint commit keeps the run's version, so session streams send its state only on real changes.
+            unversioned=("checkpoint", "tail", "memory_cursors", "search_vector"),
+            compare_columns=True,
         ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -437,9 +596,11 @@ class RunRow(Stamped, Base):
     # The thread's caller headers, frozen at acceptance; no view shows them.
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
     environment_mounts: Mapped[list] = mapped_column(JSONB)
+    browser_binding: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # The thread's memory mounts, frozen at acceptance.
     memory_mounts: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     source_entry_id: Mapped[str | None] = mapped_column(String(72))
+    occurrence_trigger_entry_id: Mapped[str | None] = mapped_column(String(72))
     resume: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     resumed_by_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     request_key: Mapped[str | None]
@@ -455,6 +616,9 @@ class RunRow(Stamped, Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     attempts: Mapped[int] = mapped_column(server_default=text("0"))
     max_attempts: Mapped[int]
+    # Internal derived data: list/get queries must not fetch the vector. Keep the default client-side so
+    # Stamped.eager_defaults does not fetch this deferred column after unrelated updates.
+    search_vector: Mapped[str] = mapped_column(TSVECTOR, default="", deferred=True, deferred_raiseload=True)
     # Typed pointers to the latest committed state and display tail objects; only fenced commits move them.
     checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     tail: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
@@ -620,6 +784,21 @@ BEGIN
     RETURN NEW;
 END $$
 """
+
+
+class ModelDispatchRow(Base):
+    """Durable request occupancy; a missing usage report never refunds a dispatch."""
+
+    __tablename__ = "model_dispatches"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "run_attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        Index("ix_model_dispatches_run", "run_id"),
+        rules(immutable("model_dispatches")),
+    )
+    call_id: Mapped[str] = mapped_column(primary_key=True)
+    run_id: Mapped[str]
+    run_attempt_id: Mapped[str]
+    admitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UsageRecordRow(Base):

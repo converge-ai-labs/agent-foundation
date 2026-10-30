@@ -22,7 +22,11 @@ from a13n_harness.environment.errors import EnvironmentProviderError, provider_e
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.errors import EnvironmentProviderRecoveryHint as Recovery
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdLaunchConfiguration,
+    local_envd_native_path,
+    local_envd_path,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdRuntimeAllocator
@@ -96,8 +100,13 @@ class LocalDaemon:
             self.device = await EIPDeviceConnection.initialize(
                 StdioTransport.from_process(process),
                 expected_device_id=device_id,
-                initialization_timeout=10,
-                request_timeout=30,
+                initialization_timeout=10
+                + (configuration.computer_use_permission_timeout_ms / 1000 if configuration.computer_use else 0),
+                # The request coordinator also bounds initialize; allow the OS authorization gate.
+                request_timeout=max(
+                    30,
+                    10 + (configuration.computer_use_permission_timeout_ms / 1000 if configuration.computer_use else 0),
+                ),
             )
             self._stack.push_async_callback(self.device.close)
             execution = configuration.execution
@@ -142,7 +151,7 @@ def _canonical_configuration(configuration: LocalEnvdLaunchConfiguration) -> Loc
         directory = Path.cwd()
     directory = _canonical_directory(directory, "Local Envd default working directory")
     roots = tuple(
-        sorted({_canonical_directory(path, "executable root") for path in configuration.trusted_executable_roots})
+        dict.fromkeys(_canonical_directory(path, "executable root") for path in configuration.trusted_executable_roots)
     )
     profiles = tuple(
         profile.model_copy(
@@ -155,7 +164,11 @@ def _canonical_configuration(configuration: LocalEnvdLaunchConfiguration) -> Loc
     sandbox = configuration.sandbox
     if isinstance(sandbox, RestrictedSandbox):
         grants = tuple(
-            grant.model_copy(update={"path": _canonical_directory(Path(grant.path), "Sandbox grant").as_posix()})
+            grant.model_copy(
+                update={
+                    "path": local_envd_path(_canonical_directory(local_envd_native_path(grant.path), "Sandbox grant"))
+                }
+            )
             for grant in sandbox.grants
         )
         sandbox = sandbox.model_copy(update={"grants": tuple(sorted(set(grants), key=lambda grant: grant.path))})
@@ -217,12 +230,24 @@ def _write_private_bootstrap(root: Path, configuration: LocalEnvdLaunchConfigura
         }
         for profile in configuration.shell_profiles
     ]
+    sandbox = configuration.sandbox.model_dump(mode="json")
+    if isinstance(configuration.sandbox, RestrictedSandbox):
+        sandbox["grants"] = [
+            {"path": str(local_envd_native_path(grant.path)), "access": grant.access.value}
+            for grant in configuration.sandbox.grants
+        ]
     payload = {
         "execution": configuration.execution.model_dump(mode="json", exclude_none=True),
-        "sandbox": configuration.sandbox.model_dump(mode="json"),
+        "sandbox": sandbox,
         "egress": configuration.egress.model_dump(mode="json"),
         "default_working_directory": str(configuration.default_working_directory),
         "directory_discovery": configuration.directory_discovery,
+        "full_control": configuration.full_control,
+        "computer_use": configuration.computer_use,
+        "computer_use_permission_timeout_ms": configuration.computer_use_permission_timeout_ms,
+        "monitoring": None
+        if configuration.monitoring is None
+        else configuration.monitoring.model_dump(mode="json", exclude_none=True),
         "limits": {
             name: getattr_limit
             for name, getattr_limit in configuration.model_dump(mode="json").items()
@@ -243,7 +268,21 @@ def _daemon_environment(
     # A controlled/restricted worker must not inherit Host credential sources,
     # even when the source variable differs from the injected payload variable.
     if configuration.sandbox.mode == "restricted" or configuration.egress.mode == "controlled":
-        environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8"}
+        if sys.platform == "win32":
+            environment = {
+                name: value
+                for name, value in os.environ.items()
+                if name.upper() in {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"}
+            }
+            environment.update(
+                {
+                    "PATH": os.pathsep.join(str(path) for path in configuration.trusted_executable_roots),
+                    "TEMP": str(runtime_dir),
+                    "TMP": str(runtime_dir),
+                }
+            )
+        else:
+            environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8"}
     else:
         environment = {name: value for name, value in os.environ.items() if not name.startswith("A13N_ENVD_")}
     environment.update(

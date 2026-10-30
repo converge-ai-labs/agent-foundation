@@ -31,12 +31,15 @@ from a13n_harness.providers.environment.eip.processes import (
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "computer.describe": (EnvironmentAction.COMPUTER_DESCRIBE,),
     "computer.observe": (EnvironmentAction.COMPUTER_OBSERVE,),
+    "computer.zoom": (EnvironmentAction.COMPUTER_ZOOM,),
     "computer.click": (EnvironmentAction.COMPUTER_CLICK,),
     "computer.move": (EnvironmentAction.COMPUTER_MOVE,),
     "computer.drag": (EnvironmentAction.COMPUTER_DRAG,),
     "computer.scroll": (EnvironmentAction.COMPUTER_SCROLL,),
     "computer.type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT,),
     "computer.press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS,),
+    "computer.read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD,),
+    "computer.write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD,),
     "file.stat": (EnvironmentAction.FILE_STAT,),
     "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
     "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
@@ -74,6 +77,7 @@ async def open_eip_environment(
     session_source: EIPSessionSource,
     execution_id: str,
     device_id: str,
+    path_style: eip.PathStyle,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
     egress: eip.EgressPolicy | None = None,
@@ -95,6 +99,7 @@ async def open_eip_environment(
             )
         environment = EIPEnvironmentSession(
             session=session,
+            path_style=path_style,
             provider_key=provider_key,
             environment_id=environment_id,
             execution_id=execution_id,
@@ -112,14 +117,18 @@ class EIPEnvironmentSession:
         self,
         *,
         session: EIPSession,
+        path_style: eip.PathStyle,
         provider_key: str,
         environment_id: str,
         execution_id: str,
+        environment: dict[str, str] | None = None,
     ) -> None:
         self._session = session
         self._provider_key = provider_key
         self._environment_id = environment_id
-        self._descriptor = _convert_descriptor(session.descriptor)
+        self._descriptor = _convert_descriptor(session.descriptor).model_copy(
+            update={"environment_case_sensitive": path_style != eip.PathStyle.WINDOWS}
+        )
         self._generation = self._descriptor.generation
         methods = set(session.descriptor.available_methods)
         files = EIPFileOperator(
@@ -136,6 +145,8 @@ class EIPEnvironmentSession:
         )
         self._outputs = outputs
         conversions = _ProcessConversions(
+            environment=environment,
+            windows=not self._descriptor.environment_case_sensitive,
             session=session,
             files=files,
             outputs=outputs,
@@ -217,6 +228,7 @@ def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescrip
         actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
     if "computer.close_observation" not in methods:
         actions.discard(EnvironmentAction.COMPUTER_OBSERVE)
+        actions.discard(EnvironmentAction.COMPUTER_ZOOM)
     families: set[EnvironmentOperationFamily] = set()
     if any(method.startswith("computer.") for method in methods):
         families.add("computer")

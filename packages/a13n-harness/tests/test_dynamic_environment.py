@@ -600,7 +600,204 @@ async def test_fresh_process_binding_adds_run_owned_process_tools(tmp_path: Path
     assert {"shell_status", "shell_kill"}.isdisjoint(names)
     shell_tool = next(tool for tool in calls[0].function_tools if tool.name == "shell_exec")
     assert "background" not in shell_tool.parameters_json_schema["properties"]
-    assert "yield_time_seconds" in shell_tool.parameters_json_schema["properties"]
+    assert "yield_time_seconds" not in shell_tool.parameters_json_schema["properties"]
+
+
+@requires_posix_process_groups
+async def test_native_shell_default_wait_works_without_tool_execution_binding(tmp_path: Path):
+    import asyncio
+
+    started = 0.0
+    elapsed = 0.0
+
+    async def model(messages, info):
+        nonlocal started, elapsed
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returns:
+            started = asyncio.get_running_loop().time()
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": "while [ ! -f release ]; do sleep 0.01; done; printf done"}),
+                    tool_call_id="shell-one",
+                )
+            }
+        elif len(returns) == 1 or returns[-1].content["status"]["phase"] == "running":
+            result = returns[0].content
+            if len(returns) == 1:
+                elapsed = asyncio.get_running_loop().time() - started
+                assert result["status"]["phase"] == "running"
+                assert "execution_id" not in result
+                (tmp_path / "release").touch()
+            yield {
+                0: DeltaToolCall(
+                    name="shell_wait",
+                    json_args=json.dumps({"process_id": result["process_id"], "timeout_seconds": 2}),
+                    tool_call_id=f"shell-wait-{len(returns)}",
+                )
+            }
+        else:
+            assert returns[-1].content["status"]["phase"] == "exited"
+            assert returns[-1].content["stdout"]["text"] == "done"
+            yield "completed"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    bindings = RunBindings.embedded(environment=_local_binding(tmp_path, process_output=True))
+    assert bindings.tool_execution is None
+    result = await asyncio.wait_for(executable.run("start", bindings=bindings), 15)
+    assert result.output_or_raise() == "completed"
+    assert elapsed >= 5.0
+
+
+@requires_posix_process_groups
+async def test_immediate_shell_steer_keeps_runtime_owned_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import asyncio
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+    from a13n_harness.toolsets.process_manager import _ProcessController
+
+    admitted = asyncio.Event()
+    references = []
+    original = _ProcessController._admit
+
+    async def observe(self, *args, **kwargs):
+        entry = await original(self, *args, **kwargs)
+        references.append(entry.process_id)
+        admitted.set()
+        return entry
+
+    monkeypatch.setattr(_ProcessController, "_admit", observe)
+    returns = []
+
+    async def model(messages, info):
+        current = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not current:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec", json_args=json.dumps({"command": "sleep 30"}), tool_call_id="shell-one"
+                )
+            }
+        else:
+            returns.extend(current)
+            yield "continued"
+
+    runtime = ToolExecutionRuntime()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            DynamicEnvironmentCapability(_configuration()),
+            ToolExecutionCapability(ToolExecutionConfig(foreground_wait_seconds=30)),
+        ),
+    )
+    async with executable.stream(
+        "start",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, process_output=True), tool_execution=runtime
+        ),
+    ) as stream:
+
+        async def consume():
+            return [event async for event in stream]
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.wait_for(admitted.wait(), 10)
+        await stream.steer("continue now", immediate=True)
+        await asyncio.wait_for(consumer, 10)
+        assert stream.result.output_or_raise() == "continued"
+        records = await runtime.summarize(stream.thread_id)
+        assert len(records) == 1
+    assert len(references) == 1
+    assert returns[0].content["execution_id"] == records[0].execution_id
+    assert returns[0].content["type"] == "tool_execution_receipt"
+    await runtime.close()
+
+
+@requires_posix_process_groups
+async def test_process_shell_waits_for_detached_sequential_execution(tmp_path: Path, monkeypatch):
+    import asyncio
+
+    from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+    from a13n_harness.toolsets.process_manager import _ProcessController
+    from pydantic_ai import Tool
+    from pydantic_ai.capabilities import Capability
+
+    entered, finish, shell_requested = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    starts = []
+    original = _ProcessController._admit
+
+    async def observe(self, *args, **kwargs):
+        starts.append("shell")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(_ProcessController, "_admit", observe)
+
+    async def serial() -> int:
+        entered.set()
+        await finish.wait()
+        starts.append("serial-finished")
+        return 42
+
+    async def model(messages, info):
+        returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returned:
+            yield {0: DeltaToolCall(name="serial", json_args="{}", tool_call_id="serial")}
+        elif len(returned) == 1:
+            shell_requested.set()
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec", json_args=json.dumps({"command": "printf done"}), tool_call_id="shell"
+                )
+            }
+        else:
+            yield "done"
+
+    runtime = ToolExecutionRuntime()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            DynamicEnvironmentCapability(_configuration()),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            Capability(tools=[Tool(serial, sequential=True, metadata={TOOL_EXECUTION_METADATA_KEY: "owned"})]),
+        ),
+    )
+    async with executable.stream(
+        "start",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, process_output=True), tool_execution=runtime
+        ),
+    ) as stream:
+
+        async def consume():
+            return [event async for event in stream]
+
+        consumer = asyncio.create_task(consume())
+        await entered.wait()
+        await shell_requested.wait()
+        # Let native dispatch reach the actual execution barrier before releasing it.
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert starts == []
+        finish.set()
+        await consumer
+        assert stream.result.output_or_raise() == "done"
+        records = await runtime.summarize(stream.thread_id)
+        assert {record.tool_name for record in records} == {"serial", "shell_exec"}
+        shell_record = next(record for record in records if record.tool_name == "shell_exec")
+        await runtime.wait(stream.thread_id, shell_record.execution_id)
+    assert starts == ["serial-finished", "shell"]
+    await runtime.close()
 
 
 async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_path: Path) -> None:
@@ -1465,10 +1662,10 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
             assert scope_open
             return FileMetadata(path=path, kind="file", size=4, writable=False)
 
-        async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
-            del path, offset, length
+        async def read_bytes_stream(self, path: str, *, chunk_size: int = 65_536) -> AsyncIterator[bytes]:
+            del path, chunk_size
             assert scope_open
-            return b"\x89PNG"
+            yield b"\x89PNG"
 
     files = BindingVersionFiles()
 
@@ -1854,7 +2051,7 @@ async def test_managed_tools_accept_directory_paths_and_explain_invalid_paths(
             if isinstance(part, ToolReturnPart)
         ]
         if not returns:
-            arguments = {"path": path} if tool == "ls" else {"command": "pwd", "cwd": path, "yield_time_seconds": 10}
+            arguments = {"path": path} if tool == "ls" else {"command": "pwd", "cwd": path}
             yield {0: DeltaToolCall(name=tool, json_args=json.dumps(arguments), tool_call_id="tool-1")}
         else:
             observed.append(returns[-1].content)
@@ -2040,6 +2237,85 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(
         assert not (tmp_path / ".a13n").exists()
     assert observed_path is not None
     assert not Path(observed_path).exists()
+
+
+@requires_posix_process_groups
+async def test_shell_text_spill_is_readable_through_native_view_and_cleaned(tmp_path: Path) -> None:
+    text = "".join(f"section {i}: a readable line of command output\n" for i in range(900))
+    (tmp_path / "source.txt").write_text(text)
+    paths: list[Path] = []
+    recovered = ""
+    text_path = ""
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal recovered, text_path
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps(
+                        {
+                            "command": "cat source.txt",
+                        }
+                    ),
+                    tool_call_id="shell-1",
+                )
+            }
+            return
+        content = returns[-1].content
+        assert isinstance(content, dict) and content["ok"] is True
+        if returns[-1].tool_name == "shell_exec":
+            disclosure = content["disclosure"]
+            assert disclosure["content_complete"] is True
+            text_path = disclosure["text_file_paths"]["/stdout/text"]
+            paths.extend((Path(disclosure["output_file_path"]), Path(text_path)))
+            assert json.loads(paths[0].read_text())["stdout"]["text"] == text
+            offset = 0
+        else:
+            assert not content["truncated_lines"]
+            recovered += content["content"]
+            if not content["has_more"]:
+                assert recovered == text
+                yield "done"
+                return
+            offset = content["next_line_offset"]
+        yield {
+            0: DeltaToolCall(
+                name="view",
+                json_args=json.dumps(
+                    {
+                        "file_path": text_path,
+                        "line_offset": offset,
+                    }
+                ),
+                tool_call_id=f"view-{len(returns)}",
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "Read the command output",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, mount_path=tmp_path.as_posix(), process_output=True),
+            capabilities=(_policy(),),
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(paths) == 2 and all(not path.exists() for path in paths)
+    assert (tmp_path / "source.txt").read_text() == text
 
 
 async def test_unmanaged_large_json_result_uses_default_truncation(tmp_path: Path) -> None:
@@ -2415,7 +2691,7 @@ async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
     assert items[-1].result.output_or_raise() == "done"
 
 
-async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replace(tmp_path: Path) -> None:
+async def test_direct_local_move_preserves_nonempty_directory_without_replace(tmp_path: Path) -> None:
     source = tmp_path / "source"
     destination = tmp_path / "destination"
     source.mkdir()
@@ -2429,9 +2705,10 @@ async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replac
         generation="generation-1",
     )
 
-    with pytest.raises(EnvironmentError):
-        await files.move("/source", "/destination", replace=True)
+    with pytest.raises(EnvironmentError) as failed:
+        await files.move("/source", "/destination", replace=False)
 
+    assert failed.value.code == "environment_conflict"
     assert (source / "new.txt").read_text() == "new"
     assert (destination / "old.txt").read_text() == "old"
     assert not (destination / "new.txt").exists()
@@ -2568,7 +2845,7 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
         assert set(tools) == {"shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"}
         properties = tools["shell_exec"].function_schema.json_schema["properties"]
         assert "background" not in properties
-        assert "yield_time_seconds" in properties
+        assert "yield_time_seconds" not in properties
         assert "not a command or process label" in properties["alias"]["description"]
         info_schema = tools["shell_info"].function_schema.json_schema
         assert "process_id" in info_schema["required"]
@@ -2874,17 +3151,26 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         toolset = ShellToolset(environment)
         ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(), emit=AsyncMock()))
 
+        from a13n_harness._tool_execution import RunToolExecutions
+        from a13n_harness.tool_execution import ToolExecutionConfig
+
+        ctx.deps._tool_executions = RunToolExecutions()
+        ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
+        ctx.tool_call_id = None
+        from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+
+        execution_mode = toolset.get_toolset().tools["shell_exec"].metadata[TOOL_EXECUTION_METADATA_KEY]
+        assert execution_mode({"command": "printf foreground", "cwd": "/workspace"}) == "owned"
+        assert execution_mode({"command": "printf process", "cwd": "/environment/shared"}) == "owned_auto"
         foreground = await toolset.shell_exec(
             ctx,
             "printf foreground",
             cwd="/workspace",
-            yield_time_seconds=0,
         )
         live = await toolset.shell_exec(
             ctx,
             "printf process; sleep 30",
             cwd="/environment/shared",
-            yield_time_seconds=0,
         )
 
         assert foreground["ok"] is True

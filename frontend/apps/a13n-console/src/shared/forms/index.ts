@@ -1,6 +1,12 @@
 export { CodeBlock } from "./code-block";
 export { DateTimeField } from "./date-time-field";
-export { FileUpload } from "./file-upload";
+export {
+  ExecutionFields,
+  executionOverride,
+  executionPatch,
+  type ExecutionOverride,
+} from "./execution-fields";
+export { FileDrop } from "./file-drop";
 export { FormActions, JsonView, TextAreaField } from "./form";
 export { FormSection, formSectionStyles } from "./form-section";
 export {
@@ -8,9 +14,10 @@ export {
   serializeHeaders,
   type HeaderDraft,
 } from "./header-fields";
-export { ImagePicker, MAX_IMAGE_BYTES } from "./image-picker";
+export { ImagePicker } from "./image-picker";
 export { fieldLabel } from "./labels";
-export { ProviderEnabled } from "./provider-enabled";
+export { SwitchField } from "./switch-field";
+export { EnabledField } from "./enabled-field";
 export { ProviderKeyLink } from "./provider-key-link";
 export { SchemaFields, withSchemaValues } from "./schema-fields";
 export { SecretReveal } from "./secret-reveal";
@@ -19,6 +26,7 @@ export {
   jsonObject,
   jsonValue,
   runOverride,
+  scheduleInvocation,
   schemaErrors,
   stringValues,
   validateAgentConfig,

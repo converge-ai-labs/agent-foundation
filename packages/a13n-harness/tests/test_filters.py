@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from a13n_harness import AgentSpec as HarnessAgentSpec
@@ -18,6 +19,8 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextPart,
     ToolCallPart,
@@ -32,8 +35,13 @@ from pydantic_ai.usage import RunUsage
 pytestmark = pytest.mark.anyio
 
 
-def _run_context(messages):
-    return RunContext(deps=None, model=TestModel(), usage=RunUsage(), messages=list(messages))
+def _run_context(messages, *, compacting=False):
+    return RunContext(
+        deps=SimpleNamespace(_compacting=compacting),
+        model=TestModel(),
+        usage=RunUsage(),
+        messages=list(messages),
+    )
 
 
 def _request_context(messages):
@@ -47,6 +55,23 @@ def _request_context(messages):
         model_settings=None,
         model_request_parameters=ModelRequestParameters(),
     )
+
+
+@pytest.mark.parametrize("capability_type", [MessageIntegrityFilterCapability, ColdStartFilterCapability])
+async def test_filters_preserve_full_history_during_explicit_compaction(capability_type) -> None:
+    messages = [
+        ModelRequest(parts=[ToolReturnPart("lookup", "x" * 5000, tool_call_id="orphan")]),
+        ModelResponse(parts=[TextPart("Consumed")], timestamp=datetime.now(UTC) - timedelta(days=2)),
+    ]
+    ctx = _run_context(messages, compacting=True)
+    request = _request_context(messages)
+
+    prepared = await capability_type().before_model_request(ctx, request)
+
+    assert prepared is request
+    assert prepared.messages is messages
+    assert ctx.messages == messages
+    assert prepared.messages[0].parts[0].content == "x" * 5000
 
 
 async def test_message_integrity_filter_keeps_only_one_result_for_the_current_call() -> None:
@@ -114,8 +139,14 @@ async def test_message_integrity_filter_persists_the_processed_history() -> None
     assert tool_results(result.state.message_history) == [current]
 
 
-async def test_message_integrity_filter_preserves_model_level_retry_and_final_request() -> None:
-    retry = RetryPromptPart(content="try again")
+@pytest.mark.parametrize(
+    "retry",
+    [
+        RetryPromptPart(content="try again"),
+        RetryFeedbackPart(content="try again", retry=RetryInfo(cause="model_retry")),
+    ],
+)
+async def test_message_integrity_filter_preserves_model_level_retry_and_final_request(retry) -> None:
     orphan = ToolReturnPart(tool_name="lookup", tool_call_id="call-1", content="orphan")
     messages = [
         ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="call-1")]),
@@ -367,3 +398,33 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
         annotation.model_extra["nested"]["values"].append(2)
         assert prompt_content(messages[1], 1)[0].metadata.model_extra["nested"] == {"values": [1]}
         assert image.vendor_metadata == {"detail": "high"}
+
+
+@pytest.mark.parametrize("container", [list, tuple, dict])
+def test_cold_start_inspection_reuses_unchanged_containers(container) -> None:
+    from a13n_harness.filters.cold_start import _trim_value
+
+    values = [{"values": [1, 2], "hint": "short"}, {"nested": ("unchanged",)}]
+    original = dict(enumerate(values)) if container is dict else container(values)
+    trimmed, changed = _trim_value(original, ColdStartFilterConfiguration())
+    assert not changed
+    assert trimmed is original
+
+
+@pytest.mark.parametrize("container", [list, tuple, dict])
+@pytest.mark.parametrize("changed_index", [0, 1, 2])
+def test_cold_start_inspection_copies_only_the_changed_path(container, changed_index) -> None:
+    from a13n_harness.filters.cold_start import _trim_value
+
+    values = [{"text": "short"} for _ in range(3)]
+    values[changed_index] = {"text": "x" * 4000}
+    original = dict(enumerate(values)) if container is dict else container(values)
+    trimmed, changed = _trim_value(original, ColdStartFilterConfiguration())
+    assert changed
+    assert type(trimmed) is container
+    assert trimmed is not original
+    assert "chars removed after cold start" in trimmed[changed_index]["text"]
+    assert original[changed_index]["text"] == "x" * 4000
+    for index in range(3):
+        if index != changed_index:
+            assert trimmed[index] is original[index]

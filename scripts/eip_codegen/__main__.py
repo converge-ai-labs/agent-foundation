@@ -42,8 +42,8 @@ def _safe_generated_path(value: str) -> Path:
 
 
 def _write_manifest(root: Path, generated: list[Path], descriptor_sha256: str) -> None:
-    relative = sorted(str(path.relative_to(root)) for path in generated)
-    relative.append(str(MANIFEST_PATH))
+    relative = sorted(path.relative_to(root).as_posix() for path in generated)
+    relative.append(MANIFEST_PATH.as_posix())
     manifest = {
         "generated": True,
         "descriptor_sha256": descriptor_sha256,

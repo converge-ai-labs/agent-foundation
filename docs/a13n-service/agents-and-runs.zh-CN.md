@@ -1,183 +1,168 @@
 ---
 title: Agent、线程与运行
-description: 配置 agent，开始对话，并跟踪、引导或恢复运行。
+description: 配置 agent、继续对话，并处理结果、审批与恢复。
 ---
 
-**Agent** 是有名称的资源，其配置（模型、指令、工具和策略）保存为不可变、带编号的**修订版本** 。用户和应用在**会话**中与 agent 对话。会话包含一个或多个 **线程** ，每个线程是一段独立推进的历史；发送的消息进入线程**收件箱** ，线程每一次被接收的推进都是一次**运行** 。运行在 worker 上通过一次或多次**执行尝试** 完成，最终状态为 `completed`、`waiting`、`failed` 或 `cancelled`。
+先用一个 agent 完成一段对话：保存配置、发送消息，再跟踪运行，直到它完成或请求输入。后续消息发送到同一线程，继续已有历史。
 
-```mermaid
-stateDiagram-v2
-    [*] --> accepted: 消息或恢复
-    accepted --> running: 某个 worker 开始执行
-    running --> accepted: worker 丢失或移交
-    running --> waiting: 需要审批或结果
-    running --> completed
-    running --> failed
-    running --> cancelled: 中断
-    accepted --> failed
-    accepted --> cancelled: 中断
+主线是[创建 agent](#agents) → [开始对话](#start-a-conversation) → [读取结果](#results) → [回应等待](#resume-a-waiting-run)或[发送下一条消息](#submit-a-message)。需要包含凭据和响应 ID 的完整 Shell 流程时，参阅[连接应用](connect-application.md#direct-http-integration)。
 
-    class completed success
-    class waiting warning
-    class failed danger
-```
+**Agent 修订版本**保存配置。**线程**保存一段持续推进的对话历史；**会话**组织相关线程，包括分叉和异步子线程。每次被接受的推进是一次**运行**。Worker 通过一次或多次**执行尝试**完成运行，因此故障恢复不必创建新运行。
 
-下文路径均位于 `/api/v1` 下，作用于请求的[工作空间](http.md#workspace)。读取需要 `read`；启动、引导、恢复和停止运行需要 `run`；修改 agent 需要 `write`。参阅[身份与访问](identity.md#roles)。
+下文 API 路径均以 `/api/v1` 开头。使用目标[工作空间](http.md#authentication)的密钥。读取需要 `read`，执行和停止需要 `run`，修改 agent 需要 `write`；参阅[角色](identity.md#roles)。
 
 ## Agent
 
-在 Console 中打开 **Agents → 手动创建**。配置变更创建不可变的修订版本；**版本** 列出这些修订版本，**设为默认版本** 选择之后未固定修订版本的运行所使用的修订版本，新对话和已有对话都适用。**导入 YAML**（位于 **手动创建** 菜单中）和 **导出 Agent** 用于在工作空间之间复制 agent，将每个引用资源匹配到目标工作空间中的资源。
+1. 在 Console 打开 **Agents → 手动创建**。
+2. 选择已验证可用的工作空间模型，编写任务指令。
+3. 保存 agent，再用**试用 Agent**发送一条简短测试消息。
+4. 检查完成的回答，再添加工具、环境或委派能力。
 
-通过 API 使用时，将 `your-model-key` 替换为 `GET /api/v1/models` 返回的模型 key：
-
-```sh
-curl -X POST "$A13N_URL/api/v1/agents" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name": "Support", "description": "Answers product questions",
-       "config": {"model": "your-model-key", "instructions": "Be precise and cite sources.", "user_questions": true}}'
-```
-
-响应的 `id`（`ap_…`）用于路径和引用；agent 没有 key。
-
-- `POST …/agents/{agent_id}/revisions` 传入 `{config, note?, make_default?}` 和 agent 的 `If-Match`，添加修订版本；除非 `make_default` 为 `false`，否则设为默认。`config` 与当前默认修订版本相同时，不做修改：无论 `make_default` 如何设置，都再次返回该修订版本（`201`），不创建新的修订版本。`POST …/revisions/{revision_id}/set-default` 修改默认修订版本。
-- `POST …/agents/validate` 传入 `{config}`，按保存时相同的规则检查配置，返回 `204`。
-- `PATCH …/agents/{agent_id}` 修改 `name`、`description` 和 `labels`；`PUT …/avatar` 设置图片。`POST …/duplicate` 从默认或选定修订版本复制 agent。
-- `POST …/archive` 阻止 agent 的新运行（`422 disabled`）；已接收的运行会完成。`POST …/unarchive` 取消归档。
-- 列表可按 `label`、`q`（名称或描述）、`archived`、`source`（`custom` 或 `builtin`）以及 `skill_id`、`skill_revision_id` 筛选，后两者保留包含引用该 skill 的修订版本的 agent。
-
-内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。它们的完整配置均只读，包括模型和模型设置。准备操作自动选择可用模型，并在当前模型仍可用时保留它。名称等元信息、头像、归档和默认版本切换受到保护。
-
-### Agent 配置
-
-在手动配置页面展开 **工具** 下的工具集，可选择具体工具，并为每个操作设置 **允许**、**询问** 或 **拒绝**。三个权限按钮分别用勾号、手掌和禁止符号表示。
-
-修订版本的 `config` 包含：
-
-| 字段                              | 含义                                                                                                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                           | 模型 key。参阅[模型](models.md)。                                                                                                                                             |
-| `model_settings`                  | 模型 API 专属设置，例如推理强度。                                                                                                                                             |
-| `model_characteristics`           | 上下文窗口和上下文管理阈值。                                                                                                                                                  |
-| `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
-| `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
-| `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
-| `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
-| `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
-| `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |
-| `subagents`, `subagent_mode`      | 可委派的其他 agent；参阅[子 agent](#subagents)。                                                                                                                              |
-| `reviewer`                        | 按 key 指定 reviewer 模型，决定权限为 `review` 的调用。                                                                                                                       |
-| `media_understanding`             | 按 key 指定为 agent 读取图片、视频或音频的模型；参阅[媒体理解](models.md#media-understanding)。                                                                               |
-| `plugins`                         | 部署已安装的 Harness 插件实例（`plugins.keys`）。                                                                                                                             |
-| `output_spec`                     | 结构化输出：一个 JSON Schema，或 2–32 个命名 `variants`。未设置时结果为文本。                                                                                                 |
-| `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
-| `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
-| `lazy_environment`                | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
-| `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
-
-保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。
-
-### 工具权限
-
-每个内置工具、连接工具和客户端工具都有权限：
-
-| 权限      | 作用                                                                                                                                   |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow`   | 模型调用时执行工具。                                                                                                                   |
-| `ask`     | 运行[等待](#waits-approvals-and-questions)用户批准或拒绝调用。                                                                         |
-| `review`  | `reviewer` 模型批准或拒绝；默认 `on_error: approval_required` 下，review 失败会转交用户。使用 `review` 的修订版本必须设置 `reviewer`。 |
-| `deny`    | 拒绝调用。                                                                                                                             |
-| `inherit` | 默认值：使用工具自身的默认权限。该权限为 `allow`，除非工具另行声明，例如配置工具集的写入工具为 `ask`。                                 |
-
-```mermaid
-flowchart TB
-    Call["模型调用工具"] --> Permission(["生效权限"])
-    Permission -->|"allow"| Run["执行工具"]
-    Permission -->|"review"| Reviewer["reviewer 模型决定"]
-    Permission -->|"ask"| Person["运行等待用户处理"]
-    Permission -->|"deny"| Refuse["拒绝调用"]
-    Reviewer -->|"review 失败"| Person
-    Reviewer --> Decision(["是否批准？"])
-    Person --> Decision
-    Decision -->|"是"| Run
-    Decision -->|"否"| Refuse
-
-    class Run success
-    class Refuse danger
-    class Person warning
-    class Reviewer ext
-```
-
-内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。配置工具集中的写入工具默认 `ask`。
-
-### 客户端工具与问题
-
-客户端工具在修订版本中声明，由你的应用执行：
+对应 API 是携带名称和配置的 `POST /agents`。将 `your-model-key` 替换为 `GET /models` 返回的模型 key：
 
 ```json
 {
-  "client_tools": [
-    {
-      "name": "open_ticket",
-      "description": "Open a support ticket in the customer's CRM.",
-      "parameters_json_schema": {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
-    }
-  ]
+  "name": "Support",
+  "config": {"model": "your-model-key", "instructions": "Answer product questions precisely."}
 }
 ```
 
-模型调用时，运行以 `waiting` 结束，调用出现在 `pending.calls` 中。应用执行调用后，使用结果[恢复](#resume-a-waiting-run)运行。
+保留响应的 `id`（`ap_…`）用于提交消息。Agent 使用 ID 引用，模型使用 key。
 
-设置 `user_questions: true` 后，模型可通过 `ask_user_question` 提问。运行等待，`pending.calls` 中包含该调用；通过[恢复](#resume-a-waiting-run)回复指定调用。普通消息留在收件箱中，直到等待被显式解决。
+配置变更创建不可变的编号修订版本。**版本 → 设为默认版本**选择后续未固定版本的运行所使用的配置，包括已有对话中的新运行。已接受的运行保留原有配置。**手动创建**菜单中的**导入 YAML**和**导出 Agent**用于迁移配置；需要在目标工作空间匹配引用资源。
+
+通过 API 修改时，`POST /agents/{agent_id}/revisions` 接收 `{config, note?, make_default?}` 和 agent 的 `If-Match`。除非 `make_default` 为 false，新版本会成为默认版本。提交与当前默认版本相同的 config 会返回该版本，不另建版本。用 `POST /agents/validate` 检查草稿，或用 `POST /agents/{agent_id}/revisions/{revision_id}/set-default` 选择版本。元数据编辑、复制和归档端点见 [API 参考](api-reference/index.md)。
+
+归档 agent 会阻止新运行，已接受的运行继续完成。内置 Agent Composer 和 Finding Agent 允许修改模型设置及补充指令，其余配置受保护。官方指令由当前 worker 在每次尝试时提供。需要自由配置时，将内置 agent 复制为自定义 agent。
+
+### Agent 配置
+
+先跑通纯模型对话，再按具体任务添加能力。手动编辑器直接提供配置项；[Agent Composer](agent-composer.md)可通过对话帮助构建配置。
+
+#### 设置审批与自动审查
+
+1. 展开**工具**下的工具集，为工具选择**允许**、**询问**、**自动审查**或**拒绝**。连接提供相同选项。
+2. 使用自动审查时，打开**配置审查**，选择审查模型，设置风险阈值及处理方式：拒绝或询问用户。低于阈值的调用继续执行。
+3. 用**单独设置审查规则**配置特定工具。高级设置控制 Shell 审查标准、失败处理、超时和模型参数。
+4. 选择**应用到草稿**，再选择**保存更改**。取消面板会丢弃其中的草稿修改。
+
+审查必须指定模型。默认拒绝极高风险，审查失败时询问用户；审查超时则拒绝执行。
+
+#### 配置字段
+
+按所需能力选择配置：
+
+| 任务               | 配置                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| 选择行为与模型     | `model`、`instructions`、`model_settings`、`model_characteristics`；参阅[模型](models.md)            |
+| 提供工具           | `toolsets`、`connection_tools`、`tool_search`；参阅[工具与连接](tools.md)                            |
+| 加载可复用指令     | `skills: [{skill_id, revision_id}]`；参阅 [Skill](skills.md)                                         |
+| 向应用或用户提问   | `client_tools`、`user_questions`；参阅[客户端工具](#client-tools-and-questions)                      |
+| 委派工作           | `subagents`、`subagent_mode`；参阅[子 agent](#subagents)                                             |
+| 审查调用或理解媒体 | `reviewer`、`media_understanding`；参阅[媒体理解](models.md#media-understanding)                     |
+| 要求结构化输出     | `output_spec`：一个 JSON Schema 或 2–32 个命名 `variants`；省略时返回文本                            |
+| 限制重试           | `retries.tools` 和 `retries.output`，各为 0–100                                                      |
+| 提供工作环境       | `default_environment_template_id`、`lazy_environment`；参阅[环境](environments.md)                   |
+| 保留知识           | `memory`、`memory_mounts`；参阅[记忆](memory.md)                                                     |
+| 调整长时间工作     | `background_compaction`、`execution`；参阅[压缩](#context-compaction)和[执行策略](#execution-policy) |
+| 扩展运行时         | `plugins`；参阅 [Console 插件](#configure-plugins-in-console)                                        |
+
+保存时按工作空间校验引用。省略的 skill 和子 agent 修订版本 ID 会固定到当前默认版本。模型、连接、provider 和模板仍是实时资源，使用时重新解析。`lazy_environment` 默认为 true，首次使用时准备实例。设为 false 会在 Harness 开始前准备实例；执行连接仍在首次使用时打开。
+
+### 上下文压缩
+
+对话增长时，Service 将较早的上下文压缩为摘要，默认同步执行。要在后台生成摘要，打开**高级设置 → 上下文压缩**，启用**启用后台压缩**，再保存修订版本：
+
+```json
+{"background_compaction": {"enabled": true, "blocking_threshold": 0.95}}
+```
+
+普通线程可以在生成摘要期间继续执行，按最近一次模型响应的用量选择执行模式。达到阻塞阈值时，运行等待已有摘要工作，或在达到压缩触发线后同步压缩。触发线等于或高于阻塞阈值时没有异步区间。后台运行不要求原生 token 计数或显式输出预留。就绪摘要可以在当前运行或同一线程的后续运行中应用；关闭新后台工作后，保留的摘要仍可应用。内联和异步子 agent 使用同步压缩。
+
+摘要请求计入原始运行的请求预算，用量可能在该运行结束后到达。中断运行会保留其后台摘要工作。归档线程会终止该摘要的后续使用；分叉不继承待处理摘要。
+
+上下文恢复默认启用，独立于 agent 修订版本的压缩配置。发生原生上下文窗口溢出后，Harness 先尝试正常压缩。摘要成功后，运行使用压缩后的历史继续执行。
+
+只有普通执行和适用的压缩请求都溢出时，Service 才允许有界、有损的历史重建，每次运行最多一次，worker 接管也沿用这一额度。恢复请求发出前会提交重建历史和已消耗额度。历史文件尽力保存在主环境的 `/workspace/.a13n/history/<thread-id>/`，保留时间取决于该环境生命周期；存储或读取工具不可用不会阻止重建。
+
+> [!WARNING]
+> 每次有损重建都需要立即调查根因，即使续跑成功。先检查压缩配置和工具输出未受限的问题。Console 将警告和恢复结果与最终回答分开保留。
+
+### 工具权限
+
+用权限决定模型调用工具时如何处理：
+
+| 权限      | 结果                                     |
+| --------- | ---------------------------------------- |
+| `allow`   | 执行调用。                               |
+| `ask`     | 运行结束并等待批准。                     |
+| `review`  | 按已配置的审查策略允许、拒绝或询问用户。 |
+| `deny`    | 拒绝调用。                               |
+| `inherit` | 使用工具默认值；内置工具默认为 `allow`。 |
+
+内置和平台工具在 `toolsets.<toolset>.tools.<tool>.permission` 设置。连接使用 `connection_tools[].permission`，并可通过 `permissions` 单独覆盖工具。客户端工具在 `client_tools[].permission` 接受 `inherit`、`allow` 或 `deny`；允许的客户端调用仍需要应用返回结果。
+
+### 客户端工具与问题
+
+由应用负责执行的操作可声明为客户端工具。例如，在 agent config 中加入：
+
+```json
+{
+  "client_tools": [{
+    "name": "open_ticket",
+    "description": "Open a support ticket in the customer's CRM.",
+    "parameters_json_schema": {
+      "type": "object",
+      "properties": {"title": {"type": "string"}},
+      "required": ["title"]
+    }
+  }]
+}
+```
+
+调用发生后，运行以 `waiting` 结束，并在 `pending.calls` 中提供该调用。在应用中执行操作，再[携带结果恢复](#resume-a-waiting-run)。
+
+设置 `user_questions: true` 后，模型可以调用 `ask_user_question`。问题也出现在 `pending.calls` 中。通过 resume 回应指定调用；普通聊天消息会留在收件箱中，直到等待解决。
 
 ### 子 agent
 
-`subagents` 指定该 agent 可以委派的同工作空间 agent。每条调用边设置 `agent_id`，可选固定 `revision_id` 和模型可见 `description`，以及 `context`（是否传递任务、历史摘要或选定历史，以及共享或隔离任务状态）、`usage_limits`；异步子 agent 还可设置 `environment`。
+在 `subagents` 中配置工作空间 agent ID。每条命名调用边可指定描述、固定版本、上下文共享方式和用量限制。将下列片段中的 `ap_...` 替换为真实 agent ID：
 
 ```json
 {
   "subagent_mode": "async",
   "subagents": {
-    "researcher": {"agent_id": "ap_...", "description": "Finds and summarizes sources.",
-                   "usage_limits": {"request_limit": 20}, "environment": {"mode": "shared"}}
+    "researcher": {
+      "agent_id": "ap_...",
+      "description": "Finds and summarizes sources.",
+      "usage_limits": {"request_limit": 20},
+      "environment": {"mode": "shared"}
+    }
   }
 }
 ```
 
-- **内联**（`subagent_mode: "inline"`，默认值）：委派 agent 在父运行及其尝试内部执行，属于同一运行。内联子 agent 不能回到委派它的 agent，图的深度和大小有上限。`usage_limits` 限制每次委派的请求、token 和工具调用。
-- **异步**（`subagent_mode: "async"`）：每次委派在同一会话中启动子线程，使用父运行主体。父 agent 可通过 Harness [委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消和继续子 agent。子结果以 `child_result` 收件箱条目到达，引导活跃父运行或启动下一次运行；收件箱已满时投递重试。对于等待用户的子运行，父运行的委派工具报告其状态为 `running`。异步调用边只使用 `usage_limits.request_limit`。
+默认**内联**：子 agent 在父运行及其尝试内部执行。调用图不能回到发起委派的 agent。每次委派可限制请求数、token 和工具调用。
 
-异步子 agent 的环境遵循调用边配置：`shared`（默认）挂载父运行环境，`dedicated` 根据 `template_id` 预留新环境，`none` 不挂载。子 agent 自身的 `default_environment_template_id` 不生效。一次运行最多启动 `worker.child_count` 个子 agent，嵌套最多 `worker.child_depth` 层。
+**异步**在同一会话中创建子线程，使用父运行的主体。父 agent 通过[委派工具](../a13n-harness/delegation-and-codeact.md#asynchronous-children)检查、等待、引导、取消或继续子 agent。子结果进入父收件箱，可以引导活跃运行或启动后续运行。等待用户的子运行在这些工具中显示为 `running`。异步调用边只应用 `usage_limits.request_limit`。
+
+异步环境由调用边决定：`shared` 挂载父环境，`dedicated` 从 `template_id` 预留环境，`none` 不挂载。子 agent 自身的默认环境模板不生效。部署设置 `worker.child_count` 和 `worker.child_depth` 限制子 agent 数量及嵌套深度。
 
 ## 开始对话
 
-`POST …/threads` 携首条消息创建线程；未提供 `session_id` 时同时创建新会话。需要 `Idempotency-Key`：
+在 Console 选择**会话 → 新建会话**，或在 agent 页选择**试用 Agent**。API 的 `POST /threads` 创建线程和第一条收件箱消息。省略 `session_id` 会同时创建会话；提供它则向已有会话添加线程。
 
-```sh
-curl -X POST "$A13N_URL/api/v1/threads" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: 9f0c7c1e-2b1f-4a3e-8f53-5d7c0c1c9a10" \
-  -d '{"agent_id": "ap_...",
-       "payload": {"content": [{"type": "text", "text": "Summarize the attached report."},
-                               {"type": "asset", "asset_id": "ast_..."}]},
-       "options": {"labels": {"customer": "acme"}}}'
-```
+为这次逻辑提交发送唯一的 `Idempotency-Key`。响应丢失后重试时，保留相同 key 和请求体。[HTTP 流程](connect-application.md#direct-http-integration)演示了保存回执和提取 ID。
 
-响应（首次 `201`，重放 `200`）为 `{thread, entry, run}`：新线程、保存消息的收件箱条目，以及启动的运行；暂时无法启动时 run 为 `null`。新线程还接受：
+响应为 `{thread, entry, run}`：首次提交返回 `201`，重放返回 `200`。即使 `run` 为 null，也要保存线程 ID、其会话 ID 和条目 ID。条目出现 `assigned_run_id` 后，跟踪该运行。分配可能早于实际纳入；只有条目已由该运行 `consumed`，该运行的完成结果才是这条消息的回答。
 
-- `message_history`：可选的[导入对话上下文](#import-conversation-context)，仅用于初始化此线程；
-- `mcp_headers`：MCP 连接的[调用方请求头](#caller-headers)；
-- `environments`：初始[环境挂载](environments.md#mount-environments-on-a-thread)，`[{name, environment_id, working_directory?}]`；
-- `memories`：初始[记忆挂载](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。
+新线程请求还可设置[环境挂载](environments.md#mount-environments-on-a-thread)、[记忆挂载](memory.md#mount-a-memory-on-a-thread)、[调用方请求头](#caller-headers)和[导入历史](#import-conversation-context)。按对话需要添加。
 
-`POST …/sessions` 创建空会话，供后续作为 `session_id` 使用。`GET …/sessions` 列出会话，包含最新运行的 `preview`，可按 `q`（会话或线程 ID）、`agent_id`、`status`、`trigger`、`updated_after`、`updated_before` 和 `label` 筛选。`GET …/threads?session_id=…` 列出会话线程，`PATCH` 修改会话和线程的 `labels`。
-
-会话按最近更新时间排列：新运行或标签编辑会将会话移到顶部。接收运行不改变会话 `ETag`，因此后续运行开始前读取的标签编辑 `If-Match` 仍适用。
-
-Console 中，**会话 → 新建会话** 启动会话；agent 页的 **试用 Agent** 从该 agent 启动会话。
+查找已有工作时，列出会话或线程。`/sessions`、`/threads` 和 `/runs` 的 `text_query` 要求全部词在同一运行保留的用户及助手文本中命中，支持中文词和代码标识符。搜索不含工具、推理、附件和导入历史。索引保存有界摘录，而非全部原消息；参阅[设置参考](configuration-reference.md)的 `run_search`。会话 `q` 用于查询会话或线程 ID。会话列表按最近活动排序。
 
 ### 导入对话上下文
 
-要继续 Service 外部产生的对话，在新线程请求中与当前 `payload` 一起添加 `message_history`：
+要继续外部对话，在 `POST /threads` 中将已完成历史放在当前消息旁，并替换 agent 占位符：
 
 ```json
 {
@@ -190,115 +175,94 @@ Console 中，**会话 → 新建会话** 启动会话；agent 页的 **试用 A
 }
 ```
 
-这些是 Pydantic AI 对话消息，而不是粘贴到当前提示词的文本。请求部分接受 `user-prompt` 文本（也接受字符串列表或原生 `TextContent` 对象）和 `tool-return`；响应部分接受 `text` 和 `tool-call`。历史工具调用使用 `tool_name`、`tool_call_id` 和 `args`（JSON 对象、编码对象的 JSON 字符串，或 null）；对应返回使用相同名称和 ID，以及 JSON `content` 和可选 `outcome`（默认 `success`，也可为 `failed`、`denied`、`interrupted`）。下一条响应、新用户提示或导入结束前，每次调用都必须有匹配返回。历史工具无需安装，也不会执行。
+`message_history` 使用 Pydantic AI 消息 JSON，最多 256 条消息、256 KiB 规范化 JSON。它接受用户文本、模型文本和已闭合的工具调用/结果交换。每个历史调用都必须在下一条响应、用户消息或导入结束前，有名称和 ID 匹配的返回。历史工具作为上下文，不会执行。
 
-导入最多 256 条消息、256 KiB 规范化 JSON。不接受系统指令、媒体或暂停中的执行。指令请用 agent 配置，附件请放入当前 payload。原生时间戳、provider 字段和 usage 可以导入，但不计入 Service 用量。应用元数据以及消息中的 `run_id` 和 `conversation_id` 保留供回读，初始化执行前会清除；它们不能声称 Service 已消费输入，也不能赋予权限。
+指令放在 agent config 中，媒体放在当前 payload 中。导入接受已完成对话内容，不接受系统指令或暂停中的执行。外部应用元数据以及运行/对话 ID 保留在提交 JSON 中供读取，但执行前会清除；导入用量不计入 Service 账目。
 
-OpenAPI 和生成客户端将此字段表示为 JSON 对象，不重复 Pydantic AI 类型层级。已经使用 Pydantic AI 的 Python 用户可以直接序列化已完成的文本与工具历史；Service SDK 无需依赖 Pydantic AI：
-
-```python
-import json
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-
-def history_json(messages: list[ModelMessage]) -> list[dict]:
-    return json.loads(ModelMessagesTypeAdapter.dump_json(messages))
-```
-
-将所得数组作为 `message_history` 传入。它必须满足以上导入限制，并非所有 Pydantic AI 历史都可导入。线程回读保留提交的 JSON 值，不插入省略的时间戳或其他原生默认值。同一幂等 key 重复提交相同请求会重放原结果。
-
-线程保留不可变导入内容供回读，但不会据此生成历史运行、显示项、工具执行或用量。后续消息从已提交检查点继续，不再次导入；分叉继承该检查点。已有线程的历史不能替换。
+导入只初始化这个新线程。后续消息和分叉从已提交检查点继续。导入不会生成历史 Service 运行或显示项，已有线程历史不能替换。已经使用 Pydantic AI 的 Python 应用可通过 `ModelMessagesTypeAdapter.dump_json` 序列化，其他客户端可直接提供 JSON。
 
 ## 提交消息
 
-`POST …/threads/{thread_id}/inbox` 向线程添加消息。与新线程请求使用相同 `agent_id`、`payload` 和 `options`，需要 `Idempotency-Key`，返回 `{thread, entry, run}`。
+通过 `POST /threads/{thread_id}/inbox` 继续对话。携新幂等 key 发送 `agent_id`、`payload` 和所需运行选项。响应与创建线程使用相同回执结构。
 
-消息的 `payload.content` 包含 1–32 个部分：
+按目的选择投递方式：
 
-| 部分                                 | 内容                                                                                                   |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `{"type": "text", "text": ...}`      | 最多 65,536 个字符。                                                                                   |
-| `{"type": "asset", "asset_id": ...}` | 工作空间[资产](files-and-webhooks.md#assets)，按提交者权限读取。                                       |
-| `{"type": "url", "url": ...}`        | HTTP(S) URL。由 Service 按[出站策略](configuration.md#outbound-requests)获取，模型 provider 不会获取。 |
-| `{"type": "json", "value": ...}`     | 结构化输入，最多嵌套 32 层。                                                                           |
+- `steer` 为默认值。兼容消息在模型边界加入活跃运行：同一 agent、未固定版本或版本相同，提供的选项也须匹配。省略选项时保留活跃运行的设置。
+- `next_run` 等待独立运行。消息需要自己的配置，或应在当前任务之后执行时，使用此方式。
 
-被拒绝的 URL 会让对应收件箱条目失败。无法访问的 URL 或临时响应可在运行尝试额度内，由其他尝试重试。
+线程空闲且可接受运行时，两种方式都可启动运行。排队消息按收件箱顺序推进。`waiting` 运行必须先显式恢复。运行失败或取消后，排队消息暂停，直到新提交的消息启动下一运行；该运行之后恢复正常队列处理。
 
-`agent_revision_id` 固定修订版本；否则运行使用启动时 agent 的默认修订版本。`delivery` 决定有活跃运行时如何处理消息：
-
-- `steer`（默认）在同一 agent 且未固定修订版本、或固定的修订版本与该运行相同时，于下一次模型请求加入当前运行。没有 `options` 的引导消息沿用运行启动选项；提供 `options` 时仅在选项相同的情况下加入。否则等待后续运行。
-- `next_run` 始终等待下次运行。
-
-线程空闲时，两种 delivery 都立即启动运行（trigger 为 `input`）。此前等待的消息在线程空闲后按收件箱顺序启动运行（trigger 为 `queued`）。
-
-以下情况线程不接收新运行：
-
-- 已有活跃运行；
-- 最后一个运行因任一 pending 项处于 `waiting`，包括问题；必须先恢复该精确运行；
-- 最近运行 `failed` 或 `cancelled`：排队消息等待，只有此刻新提交的消息会启动运行。该运行结束后，收件箱按顺序继续。
-
-无法执行的消息，例如 agent 已归档或覆盖设置不再有效，会原地以 `failure` 失败，不阻塞后面的消息。
-
-归档工作空间会停止执行：排队或新提交条目原地以 `disabled` 失败；已经执行的运行在 worker 下次刷新权限时以 `authority_revoked` 失败，最多等待 `worker.authority_seconds`。
+需要指定修订版本时，固定 `agent_revision_id`。否则新运行在被接受时选择 agent 默认版本。配置已无法执行的条目会原地失败，不阻塞后续条目。归档工作空间会拒绝排队工作，并在 worker 下一次权限检查时撤销执行中的权限。
 
 ### 附件
 
-资产或 URL 内容以三种方式之一提供给模型：
+Payload 包含 1–32 个部分，可使用文本、已上传的工作空间资产、HTTP(S) URL 或 JSON：
 
-- 如果运行模型在[能力](models.md)中声明对应理解能力（`image_understanding`、`audio_understanding`、`video_understanding` 或 `document_understanding`），JPEG、PNG、GIF、WebP 图片、常见音视频或 PDF 会以原生格式发送。SVG、TIFF、Word、Excel 等其他格式不原生发送，因为各 provider 支持情况不同。
-- 最多 64 KiB 的文本文件直接作为文本提供：包括 `text/*`（纯文本、Markdown、CSV 等），以及 JSON、XML、YAML、JavaScript。URL 文本按声明字符集解码。运行没有环境时，URL 中较长文本截取前 64 KiB，并告知模型已截断。
-- 其他文件，例如归档、模型无法读取的 PDF 或较大文本，会写入运行主环境（`workspace` 挂载）的 `/workspace/.a13n/attachments/`；文件名缩短到 200 字节，移除控制字符和 `/`。模型获得路径、名称、媒体类型和大小，使用文件与 shell 工具处理。同一文件在后续消息或重试中再次附加时，只写一次，除非运行修改了副本大小。文件只存在于该环境，因此线程替换主环境或分叉使用新环境后，不再拥有它。
+```json
+{"content": [{"type": "text", "text": "Summarize this report."}, {"type": "asset", "asset_id": "ast_..."}]}
+```
 
-无法通过任一方式处理文件时，消息返回 `400 invalid_argument`，原因为 `environment_required`，并给出该部分的 `field`（例如 `content.1.asset_id`）和文件 `media_type`。请给 agent 配置[环境模板](environments.md)、在线程挂载环境，或选择理解该媒体的模型。编辑排队消息时和运行启动时都会检查。URL 类型仅在获取后确定，无法读取的非文本 URL 会在此时让条目失败。环境拒绝写入文件时，条目以 `invalid_argument` 失败；其他引导消息继续处理。
+先上传文件，再将 `ast_...` 替换为[资产 ID](files-and-webhooks.md#assets)。Service 按[出站策略](configuration.md#outbound-requests)获取 URL 部分。
+
+Service 为每个文件选择传递方式：
+
+1. 模型声明对应理解能力时，原生发送支持的图片、音频、视频或 PDF。
+2. 将支持的、最多 64 KiB 的文本文件直接作为文本提供。没有环境时，更长的 URL 文本截取此前缀，并说明已截断。
+3. 将其他文件写入主 `workspace` 环境的 `/workspace/.a13n/attachments/`，把路径告知模型，再由工具读取或处理。
+
+三种方式都不可用时，提供环境或选择理解该媒体的模型，以解决 `environment_required`。URL 的适用性在获取后检查；不可用 URL 会使其条目失败。落地文件属于该环境，替换环境或使用新环境分叉不会复制这些文件。
 
 ### 管理排队消息
 
-`GET …/threads/{thread_id}/inbox` 列出条目，`GET …/inbox/{entry_id}` 读取单条，包含 `status`：`pending`（排队）、`assigned`（已分配运行）、`consumed`、`failed` 或 `withdrawn`。修改 pending 条目需要**线程** 的 `If-Match`：
+读取 `GET /threads/{thread_id}/inbox` 或 `GET /threads/{thread_id}/inbox/{entry_id}`。条目状态为 `pending`、`assigned`、`consumed`、`failed` 和 `withdrawn`。`consumed` 记录输入已纳入提交的执行状态；成功或失败要另读运行。
 
-- `PATCH …/inbox/{entry_id}` 编辑自己 pending 消息的 `delivery`、`payload`、`agent_revision_id`（`null` 取消固定）或 `options`。
-- `DELETE …/inbox/{entry_id}` 撤回 pending 条目。删除标记保留幂等 key。
-- `PUT …/inbox/order` 传入 `{"entry_ids": [...]}` 重排 pending 条目；列表必须恰好包含全部 pending 条目。
+修改 pending 条目时，使用线程的 `If-Match`：
 
-任何有 `run` 权限的人都可撤回和重排。线程最多有 `control.inbox_count` 个 pending 和 assigned 条目，总大小受 `control.inbox_bytes` 限制；超过后提交返回 `429 rate_limited`。Console 在 **排队消息** 显示这些条目，并将运行进行中输入的消息作为引导消息（`steer`）发送。
+- `PATCH /threads/{thread_id}/inbox/{entry_id}` 编辑自己消息的投递方式、payload、版本固定或选项。
+- `DELETE /threads/{thread_id}/inbox/{entry_id}` 撤回条目，同时保留幂等身份。
+- `PUT /threads/{thread_id}/inbox/order` 携带 `{"entry_ids": [...]}`，按目标顺序列出全部 pending 条目。
+
+有 `run` 权限的调用方可以撤回和重排。达到收件箱数量或字节上限时返回 `429 rate_limited`。Console 提供**排队消息**，并将执行期间输入的消息作为 steer 发送。
 
 ### 单次运行选项
 
-`options` 应用于该消息启动的运行：
-
-- `labels` 成为运行标签，之后可用 `PATCH …/runs/{run_id}` 修改。
-- `max_usage.requests`（1–10,000）限制运行模型请求数；需要更多时以 `usage_limit_exceeded` 失败。
-- `overrides` 只覆盖本次运行的修订配置。`toolsets` 替换整个工具集；`retries` 和每条 `subagents` 调用边只修改指定字段，`null` 调用边会移除；`model`、`model_settings`、`model_characteristics`、`instructions`、`lazy_environment`、`skills`、`connection_tools`、`client_tools`、`plugins`、`reviewer`、`media_understanding` 和 `output_spec` 替换修订版本值。提交时和运行启动时按保存配置的规则验证结果，再固定到运行中。
+用 `options` 修改一次运行。例如，下列片段设置请求预算并替换指令：
 
 ```json
-{"options": {"max_usage": {"requests": 40},
-             "overrides": {"model": "claude-opus-4-6", "instructions": "Answer in German."}}}
+{"options": {"max_usage": {"requests": 40}, "overrides": {"instructions": "Answer in German."}}}
 ```
 
-恢复或子结果沿用前一运行的选项。在 Console 中，**运行选项** 为下次运行设置模型、指令覆盖、媒体理解、固定修订版本及其他配置。
+`max_usage.requests` 接受 1–10,000；超出后运行以 `usage_limit_exceeded` 失败。`labels` 标记运行。`overrides` 在提交和接受时校验，然后固定。大多数字段替换修订版本中的值；`toolsets` 替换所提供的各个工具集，`retries` 和每条 `subagents` 调用边合并指定字段。null 子 agent 调用边会将其移除。
+
+Resume 和自动子结果续接保留前一运行的选项。Console 的**运行选项**为下次运行设置参数。工具交还和引导时机见[执行策略](#execution-policy)。
+
+## 请求上下文头
+
+通过消息正文传入模型与 MCP 请求共用的业务元数据：
+
+```json
+{"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
+```
+
+默认开启转发。只放入允许发送给这些 provider 和 MCP 服务器的值。值作为可读运行选项保存；密钥应放在 provider 或连接凭据中。入站 HTTP 头不会自动复制。映射最多 32 个不区分大小写且唯一的名称，值为最多 4096 字符的可打印 ASCII，合计 8 KiB；认证和传输名称属于保留字段。
+
+故障恢复、resume 和子 agent 保留已接受的上下文。新消息和分叉使用自己的上下文，省略时为空。Steer 可以省略或重复上下文，不同值会排队等待后续运行。HTTP 读取提供这些值，MCP 查询投影则移除它们。提示词、历史和命令环境不会自动获得副本。
+
+模型请求头和各连接的 `mcp_headers` 优先于共享同名字段；凭据和受保护协议头始终优先。转发需要同时启用部署类别开关及目标的 `config.forward_context_headers`。省略目标设置时使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`（默认 true）；MCP 保存时写入解析后的值。通过 `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` 或 `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` 关闭相应类别。Fetch、浏览器和 Shell 操作不会自动转发这些头。
 
 ## 调用方请求头
 
-线程可通过 HTTP 请求头向 MCP 连接传递非凭据上下文，例如租户或对话 ID。创建线程时设置 `mcp_headers`，或使用 `PATCH …/threads/{thread_id}` 和线程的 `If-Match` 修改：
+只有某个 MCP 连接需要非敏感上下文时，使用线程级 `mcp_headers`。在线程创建时设置，或携 `If-Match` PATCH 线程：
 
 ```json
 {"mcp_headers": {"conn_...": {"x-tenant-id": "acme"}}}
 ```
 
-每个 key 必须是工作空间中已启用的 MCP 连接。最多 32 个连接，名称和值合计 16 KiB；不允许 `authorization`、传输和协议请求头，以及连接自身认证使用的名称。每次运行在被接收时固定线程请求头，分叉和异步子 agent 继承它们。运行视图不显示这些值。
+将占位符替换为工作空间中已启用的 MCP 连接 ID。最多 32 个连接、合计 16 KiB。认证和协议名称，以及连接凭据自身使用的名称，都会被拒绝。每次运行在接受时固定这些头；分叉和异步子线程继承它们。运行视图不显示这些值。
 
 ## 等待、审批与问题
 
-需要外部信息的运行以 `waiting` 结束。`pending.approvals` 列出执行审批，`pending.calls` 列出外部结果，包括用户问题和自定义人工操作工具。`wait_reason` 将这些组概括为 `approval`、`call` 或 `multiple`：
-
-```json
-{
-  "status": "waiting",
-  "wait_reason": "approval",
-  "pending": {
-    "approvals": [{"tool_call_id": "call_delete", "tool_name": "delete_file", "arguments": {"path": "report.txt"}, "presentation": null}],
-    "calls": []
-  }
-}
-```
+需要外部决定或结果时，运行以 `waiting` 结束。读取 `pending.approvals` 和 `pending.calls` 两组；`wait_reason` 为 `approval`、`call` 或 `multiple`。问题属于 call，工具权限请求属于 approval。
 
 ```mermaid
 sequenceDiagram
@@ -307,13 +271,12 @@ sequenceDiagram
     participant Worker
     App->>Service: 提交消息
     Service->>Worker: 运行 1
-    Note over Service,Worker: 某个工具调用需要审批
-    Worker-->>Service: 运行 1 以 waiting 结束
-    Service-->>App: 待处理的审批和调用
+    Worker-->>Service: 等待，附待处理调用
+    Service-->>App: 完整待处理批次
     App->>Service: 恢复运行 1，提交全部结果
-    Service->>Worker: 运行 2 带着结果继续
-    Worker-->>Service: 运行 2 以 completed 结束
-    Service-->>App: 回答
+    Service->>Worker: 后继运行 2
+    Worker-->>Service: 完成回答
+    Service-->>App: 运行 2 的输出
 
     %% class App app
     %% class Service,Worker a13n
@@ -321,155 +284,177 @@ sequenceDiagram
 
 ### 恢复等待中的运行
 
-应用负责收集和保存答案、允许修改、协调审批人，以及决定何时恢复执行。Service 只接受完整批次，不保存部分答案，也不决定应用的审批流程何时结束。
+1. 读取确切的等待运行及完整待处理批次。
+2. 在应用中收集决定和结果。应用负责部分答案、编辑和审批人协作。
+3. 向 `/runs/{run_id}/resume` POST 两个结果映射，为这批回复使用新幂等 key。
+4. 跟踪响应返回的后继运行。原运行保持 `waiting`，作为当时暂停的历史记录。
 
-提交一个完整批次，指定精确的等待运行和全部 pending call ID：
-
-```bash
-curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
-  -H "Authorization: Bearer $A13N_API_KEY" \
-  -H "Idempotency-Key: resume-1" \
-  -H "Content-Type: application/json" \
-  -d '{"approvals": {"call_delete": {"action": "deny", "reason": "Keep the file"}}, "calls": {}}'
-```
-
-审批值为 `{ "action": "approve" }` 或 `{ "action": "deny", "reason": "..." }`。调用结果为 `{ "status": "returned", "value": ... }` 或 `{ "status": "failed", "message": "..." }`。返回值可以是任意 JSON；显式失败成为 agent 可处理的工具失败，不一定导致运行失败。
-
-用户问题的返回值包含结构化回答或自由文本：
+若批次中只有审批 `call_delete`，完整回复可以是：
 
 ```json
-{
-  "approvals": {},
-  "calls": {
-    "call_question": {
-      "status": "returned",
-      "value": {"response": "Up to 200 dollars per night."}
-    }
-  }
-}
+{"approvals": {"call_delete": {"action": "deny", "reason": "Keep the file"}}, "calls": {}}
 ```
 
-结构化值可以是 `{"answers": {"Which color?": "blue"}}`；多选回答使用数组。Service 使用 Harness 验证器按该调用的精确问题校验。要主动跳过问题，对该调用发送 `{"status": "failed", "message": "User chose not to answer"}`。
+使用实际返回的 pending ID。审批值为 `{"action":"approve"}` 或 `{"action":"deny","reason":"..."}`。调用结果为 `{"status":"returned","value":...}` 或 `{"status":"failed","message":"..."}`。失败调用结果会成为 agent 可处理的工具失败，不一定导致后继运行失败。
 
-两个结果映射都是必填项，且必须完整覆盖对应的待答集合。缺少结果、未知 ID 或类别错误都会拒绝整个请求，等待状态不变。没有默认回答，也不接受部分提交。在 Console 中检查所有待处理项，然后提交完整结果；**跳过反馈继续** 在确认后显式提交拒绝和失败结果。
-
-响应为后继运行（首次 `201`，幂等重放 `200`）。结果保存在其已有 `resume` 字段，不创建额外收件箱消息。只能恢复线程的最后一个运行，且它处于等待、没有其他运行活跃；过期请求返回 `409 conflict`，原因为 `not_idle_waiting_head`。后继运行失败后，它与其他运行一样成为线程历史，等待随之结束：下一条消息从它继续，它未得到结果的调用显示为已中断。
-
-要随结果补充说明或附件，在同一恢复请求中包含可选 `input`：
+名为 `call_question` 的问题可用自由文本回应：
 
 ```json
-{
-  "approvals": {},
-  "calls": {"call_lookup": {"status": "returned", "value": {"available": true}}},
-  "input": {"content": [{"type": "text", "text": "Use the updated delivery address."}]}
-}
+{"approvals": {}, "calls": {"call_question": {"status": "returned", "value": {"response": "Up to 200 dollars per night."}}}}
 ```
 
-`input` 接受与 `payload` 相同的内容部分。整个恢复请求一并接受或拒绝，保存在后继运行中，不创建额外收件箱条目。模型先收到工具结果，再收到附带用户内容。恢复过程保留内容且不重复。资产必须在工作空间中可用，且可由继承配置读取。无法落地的 URL 或文件会使后继运行失败，不会悄悄丢弃补充说明。完整恢复请求体最多 256 KiB。
+结构化回答使用 `{"answers":{"Which color?":"blue"}}`，多选用数组，且必须匹配该调用的问题。显式跳过问题时，返回失败调用结果。Console 的**跳过反馈继续**会在确认后提交拒绝和失败结果。
 
-附带输入不能替代任何必需结果。普通收件箱消息仍然独立，不能结束等待。排队消息保留顺序；恢复后，兼容的 steer 可以加入后继运行，`next_run` 消息等待后续运行。
+两个映射必须精确覆盖各自的 pending 类别，即使某一组为空也要提供。缺少结果、未知 ID 或类别错误都会拒绝整批请求，等待不变。只能恢复空闲线程的最新等待运行；过期请求返回 `409 conflict`，原因为 `not_idle_waiting_head`。响应丢失时，重放相同请求体和 key 会取得同一后继运行，状态码由 `201` 变为 `200`。
+
+要补充说明或附件，添加与消息 payload 使用相同内容结构的 `input`。它补充而非替代必需结果。模型先收到工具结果，再收到用户输入。完整恢复体最多 256 KiB，原子接受，不创建额外收件箱条目。不可用输入可能使后继运行失败，需要检查该运行结果。
+
+普通收件箱消息不能结束等待。Resume 后，兼容 steer 可加入后继运行，`next_run` 条目继续排队。后继运行失败时，下一条消息从该失败运行继续；先前等待已经解决。
 
 ## 中断、分叉与归档
 
-- **中断：** `POST …/runs/{run_id}/interrupt` 取消运行。尚未启动的运行立即变为 `cancelled`；执行中的运行在下一个安全点停止，此前显示 `cancel_requested_at`。中断已取消运行会返回该运行；已完成、等待或失败运行返回 `409`（`run_completed` 等）。Console 的 **停止** 中断当前运行。
-- **分叉：** `POST …/runs/{run_id}/fork` 在同一会话中创建新线程，其首次运行携新消息（与提交请求体相同）从任一已结束运行继续，需要 `Idempotency-Key`。等待运行的分叉会在新分支处理新消息前，自动拒绝审批并将其他调用标为无响应。原始等待不变。分叉共享源线程环境挂载，除非 `fresh_environments` 为 `true`，`environments` 可添加更多挂载。它复制源线程记忆挂载，`memories` 可添加更多。分叉失败或取消的运行时，从其最后一个检查点继续，未完成的工具调用标为已中断。
-- **归档：** `POST …/threads/{thread_id}/archive` 使用线程 `If-Match` 永久结束线程：撤回 pending 消息，移除挂载，中断活跃运行。历史仍可读取。
+按要保留的历史选择操作：
 
-每个已结束运行都是其线程继续的历史，与结果无关。失败或取消运行之后，下一个运行从它的最后一个检查点继续；若它在首个检查点前失败，则从它开始时的状态继续。它未完成的工具调用显示为已中断，不会再次执行。如果失败由历史本身导致，例如模型服务拒绝该历史，请改为分叉更早的运行。
+| 目标                     | 操作                                                   |
+| ------------------------ | ------------------------------------------------------ |
+| 停止当前工作             | `POST /runs/{run_id}/interrupt`，或 Console **停止**   |
+| 从已结束运行探索另一方向 | `POST /runs/{run_id}/fork`，携新消息和幂等 key         |
+| 永久关闭线程             | `POST /threads/{thread_id}/archive`，携线程 `If-Match` |
+
+尚未开始的运行立即取消。执行中的运行在安全点停止，此前显示 `cancel_requested_at`。已完成、等待或失败的运行不能中断；中断已取消运行会返回该运行。
+
+分叉在同一会话中创建线程。从等待运行分叉时，新分支拒绝审批并提供无响应结果，原等待不变。除非 `fresh_environments` 为 true，分叉共享源环境挂载。它复制记忆挂载，`environments` 和 `memories` 可添加挂载。分支需要独立文件系统状态时，使用新环境。
+
+失败或取消后，从最后一个检查点继续；若没有保存检查点，则从运行开始时的状态继续。未完成调用显示为已中断，不重新执行。历史本身导致失败时，分叉更早的运行。归档撤回 pending 消息、移除挂载并中断活跃工作，历史仍可读取。
+
+## 执行策略
+
+分别设置工具交还与引导：
+
+- `tools.mode: inline` 等待工具完成；`auto` 可在前台等待结束后返回保留执行回执。
+- `steering: boundary` 在模型边界应用引导；`immediate` 可抢占前台等待。
+
+Service 默认使用 `auto`、五秒前台等待和 `immediate`。以下 agent config 片段显式设置这些值：
+
+```json
+{"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 5}, "steering": "immediate"}}
+```
+
+每个字段按**运行覆盖 → 线程覆盖 → 所选 agent 修订版本 → 部署默认值**解析。Agent 使用 `config.execution`，线程创建或 PATCH 使用 `execution`，消息使用 `options.execution`。线程 PATCH 需要 `If-Match`：省略字段保持原值，null 字段恢复继承，`{"execution":null}` 清除全部覆盖。
+
+运行在被接受时固定最终策略，排队消息也是如此。故障恢复、交接、resume 和自动续接保留它。Steer 可以省略或重复匹配字段；修改会返回 `execution_policy_immutable`。需要不同策略时，使用 `delivery: next_run` 提交。即使新运行使用 inline 模式，之前的保留调用仍可访问。
+
+Console 在 agent 配置及线程的**会话操作**中提供**执行策略**。新会话的**选项**和空闲输入框策略控件只影响一次运行；**详情 → 执行策略**显示固定值。前台等待接受 0–300 秒，控制观测等待而非执行截止时间。
+
+### 命令环境变量
+
+在相同三层的 `execution.environment` 中设置非敏感命令默认值：
+
+```json
+{"execution": {"environment": {"APP_MODE": "staging", "EMPTY": ""}}}
+```
+
+每个变量按**命令 → 运行 → 线程 → agent → 已冻结环境 recipe**解析。线程 PATCH 替换传入的映射；null 或 `{}` 清除该层。空字符串设置空值，删除键则露出下层默认值，并非 unset。显式命令 unset 遵循 provider 支持。Windows 上保持名称拼写一致。
+
+运行固定其 agent/线程/运行三层结果。Shell 命令、后台进程及其普通子进程接收这些值，不修改全局 sandbox 变量。内联子 agent 共享它；分叉和独立子线程使用自己的 agent 与选择。凭据保存在相应密钥存储中。
+
+## 保留的工具执行
+
+自动交还后，支持的调用可在模型收到 `exec-*` 回执后继续留在原 worker 上执行。读取该引用的结果，不要重新发起调用。保留的 CodeAct 执行包含其嵌套调用。后续运行可使用其他 worker；所有者丢失时，未完成工作标为 `lost`，副作用不确定，不自动重放。
+
+从 Console 会话菜单或运行详情打开**工具执行**。用**检查**查看元数据，用**读取结果**获取有界结果片段。API 位于 `/threads/{thread_id}` 下：
+
+| 端点                                          | 操作                                       |
+| --------------------------------------------- | ------------------------------------------ |
+| `GET /tool-executions`                        | 列出调用，可按 `run_id` 或 `active` 筛选。 |
+| `GET /tool-executions/{execution_id}`         | 查看状态。                                 |
+| `GET /tool-executions/{execution_id}/result`  | 使用 `offset`、`limit` 和 `version` 读取。 |
+| `POST /tool-executions/{execution_id}/cancel` | 请求取消。                                 |
+
+引用属于确切的一个线程。Agent 获取结果或首次邮箱投递会开始已交付结果的保留窗口，默认一小时，且不超过完成后 24 小时。Console 和 HTTP 检查（包括读取结果）不改变交付状态或保留期。重复读取不延长保留期，过期记录返回 404。
+
+接受取消与完成清理是两件事。停止原始运行会请求取消其保留调用，并禁止迟到结果唤醒对话。停止后续运行影响的是该运行的调用，而非较早调用。保留工作与清理完成前，挂载仍处于使用中。
 
 ## 结果
 
-读取 `GET …/runs/{run_id}` 并根据 `status` 处理。完成运行包含 `output`（文本或符合 `output_spec` 的 JSON）；等待运行包含 `pending`；失败运行包含 `failure {code, message}`。运行配置、血缘、挂载和时间戳请参阅 [API 参考](api-reference/index.md)。
+读取 `GET /runs/{run_id}`，根据 `status` 选择后续操作：
 
-- `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
-- `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `position`、可选 `resume_after` 和 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
-- 超过 32 KiB 的展示字段单独保存，每个字段最多保留压缩前 16 MiB 的 UTF-8 内容。超限时只保留文本前缀并标记 `truncated=true`，超限 JSON 也会转为文本前缀。Item 的 `content_refs` 按字段名提供正文引用，包含 `id`、已保存字节数 `size_bytes`、`media_type`、`truncated` 和短预览 `preview`。通过 `GET …/runs/{run_id}/contents/{content_id}` 读取已保存内容，需要相同的工作区读取权限。Console 提供“展开全文”入口；超限时改为“展开已保存内容”，并提示内容已截断。被丢弃的后续内容和旧版已截断记录无法据此恢复。此上限不改变 Agent 执行状态，实时 delta 仍保留原有大小限制。
-- `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
-- `GET …/runs/{run_id}/attempts` 列出执行尝试及其 `start_reason`（`initial`、worker 丢失后的 `recovery`、worker 关闭时的 `handoff`）和结果。非 handoff 尝试达到 `max_attempts` 后运行失败。
+| 状态                  | 操作                                                  |
+| --------------------- | ----------------------------------------------------- |
+| `accepted`、`running` | 继续观测该运行。                                      |
+| `completed`           | 读取 `output`，它是文本或符合 `output_spec` 的 JSON。 |
+| `waiting`             | 读取 `pending`，提交完整 resume 回复。                |
+| `failed`              | 检查 `failure.code` 和 `failure.message`。            |
+| `cancelled`           | 查看已保存历史，再决定继续或分叉。                    |
 
-失败运行的 `failure.code` 指出原因，例如 `usage_limit_exceeded`、`environment_unavailable`、校验错误码或 `attempt_failed`。
+对于提交的消息，先确认哪个运行消费了收件箱条目。已分配但未纳入的条目可能返回 pending。线程最新运行不一定是某条消息的回答。
 
-## 跟踪线程事件流
+用 `/runs/{run_id}/items` 读取有序显示历史。响应包含最近显示项和 `complete`；以首项 ordinal 作为 `before` 向前翻页，或用 `after` 向后读取。超过 32 KiB 的字段使用 `content_refs`，通过 `/runs/{run_id}/contents/{content_id}` 读取已保存内容。每个字段最多保留 16 MiB，`truncated` 标记保存的是前缀。Console 的全文/已保存内容操作读取这些引用。
 
-`GET …/threads/{thread_id}/stream` 是线程实时输出的 server-sent event 流：
+诊断时，`/runs/{run_id}/agent` 返回实际配置，`/lineage` 返回祖先，`/attempts` 说明首次执行、恢复或 worker 交接。`/threads/{thread_id}/runs` 按从新到旧列出运行。`current_run_id` 指向活跃工作；`last_run_id` 指向后续执行所接续的已结束历史。
 
-```sh
-curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13N_API_KEY"
-```
+## 跟踪会话事件流
 
-| 事件       | 数据                                       | 含义                                                                                                   |
-| ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `delta`    | `{run_id, attempt, sequence, event, item}` | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `boundary` | `{run_id, attempt, sequence}`              | 运行提交了检查点；显示项现在覆盖截至此处的全部内容。                                                   |
-| `changed`  | `{version}`                                | 线程变化（运行开始、结束或收件箱变化）；请重新读取线程。                                               |
-| `reset`    | `{run_id}`                                 | 运行进入新尝试；丢弃实时输出并重新读取显示项。                                                         |
-| `gap`      | `{run_id}`                                 | 跳过了实时输出；请重新读取运行显示项。                                                                 |
+用 `GET /sessions/{session_id}/stream` 显示整个会话的实时内容。它是 SSE 流，每次连接从当前状态开始，没有重连游标。
 
-事件流是临时观测，运行显示项才是持久记录。渲染线程时：
+| 事件        | 客户端操作                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `thread`    | 替换线程及其中指向的当前/最后运行。                                                         |
+| `items`     | 替换该运行从 ordinal `first` 起的显示项，保留更早的最终项；从 `continuation` 继续实时显示。 |
+| `delta`     | 将临时输出应用到该运行显示。                                                                |
+| `gap`       | 标记输出缺失，等待下一个 `items` 帧修复。                                                   |
+| `app_ready` | 启用指定的 [MCP Apps](tools.md#mcp-apps-for-embedding-applications)。                       |
 
-1. 对活跃运行读取 `GET …/runs/{run_id}/items`。
-2. `position` 非 null 时，用 `?run=<run_id>&position=<position>` 打开事件流，并将非 null 的 `resume_after` 作为 `Last-Event-ID` 请求头。
-3. 没有已保存位置时，不带游标打开事件流，进行保留事件回放。
-4. 应用 `attempt` 和 `sequence` 晚于显示项 `position`（`"{attempt}-{sequence}"`）的 `delta` 帧。
-5. 收到 `reset` 时，丢弃被替代的临时输出并重读显示项。收到 `gap` 时，重读显示项，将位置与 gap 的可选 `position` 比较：只有缺失范围被覆盖后才清除 gap，否则等待新检查点或终态。收到 `changed` 时重读线程。
-6. 连接时及运行仍活跃期间定期检查运行：订阅前已经结束的运行可能不会再发送通知。封存后读取最终显示项。
+`complete: true` 的 `items` 帧是运行最终显示；运行结果要看 status。重连时丢弃未完成显示，从新快照重建活跃运行。断开期间结束的运行通过 `/runs/{run_id}/items` 读取。忽略未知事件名。
 
-重连时保留显示数据，发送最后连续应用的位置及匹配的恢复提示，并对重叠投递去重。提示缺失或过期时会回退到保留事件回放；这本身不表示输出丢失。页面刷新后先加载显示项。不能跨过 gap 推进位置。实时输出的保留量有限；合并和保留限制参阅 [worker 设置](configuration-reference.md#worker)。
-
-`delta` 和 `boundary` 帧携带 SSE `id`。未提供运行和 position 的读取方可将最后 ID 放入 `Last-Event-ID` 重连，游标缺失时报告 `gap`。提供运行和 position 的读取方只在必需序列缺失或传输失败时收到 gap。请重新加载显示项，在后续 boundary 或运行封存时重新评估覆盖。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。帧 JSON Schema 位于 `proto/a13n-service/thread-stream.schema.json`。
+使用上限为 30 秒的随机退避重连，429 或 503 按 `Retry-After` 等待。其他 4xx 拒绝及无效帧需要修正原因，而非自动重试。事件流是临时观测，已保存显示项才是持久记录。帧 Schema 导出到 `proto/a13n-service/session-stream.schema.json`。
 
 ## 用量
 
-每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总：
+用 `GET /usage?session_id=...` 获取完整模型总量，用 `GET /usage/runs?session_id=...&limit=50` 获取运行分页明细。总量覆盖全部匹配记录，不受 UI 已加载运行数量影响。两个端点也支持按运行、线程和入库时间筛选。
 
-```sh
-curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
-```
+`/usage` 返回 `{models:[...]}`。`/usage/runs` 返回 `{items:[{run_id,thread_id,run_number,models}],next_cursor}`。保持筛选条件不变，读取游标直到 null。运行按从早到晚排列，同一运行的模型组放在一起。`run_number` 计入该线程全部运行，包括没有用量的运行。
 
-```json
-{"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
-             "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931"}]}
-```
+每个模型总量按保存价格记录请求数、token 和费用。缓存输入计入输入 token。无法归属的模型 key，以及完全没有计价记录的费用，为 null。`average_time_to_first_chunk_seconds` 对符合条件的已完成流式请求求平均。`output_tokens_per_second` 将完整输出 token 除以已完成且时长为正的请求总时长，包含非流式请求和首个分片之前的等待。缺少相应观测时，各指标为 null。
 
-每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+运行的 `usage_at_seal` 是结束时的用量。延迟报告仍进入 `/usage`，时间筛选按它们的入库时间选择。
 
 ## Trace
 
-配置 trace 后端后（`telemetry.trace_backend`，参阅[日志、指标与 trace](configuration.md#logs-metrics-and-traces)），每次尝试导出 Harness span，工作空间可以查询。Console 在 **Traces** 中显示。
+配置 [trace 后端](configuration.md#logs-metrics-and-traces)，再在 Console 打开 **Traces**，调查缓慢、昂贵或失败的执行。每次尝试导出 Harness span，包括内联子 agent。没有后端时，查询返回 `503 unavailable`。
 
-- `GET …/runs/{run_id}/attempts/{attempt_id}/trace` 列出尝试的 span，包括内联子 agent。
-- `GET …/traces` 列出根 span，每次尝试一个，可按 `session_id`、`thread_id`、`run_id`、最多 8 个 `attribute=key:value`，以及 `started_after`/`started_before` 筛选（默认最近一天，最多 31 天）。游标绑定所提供的全部筛选条件，包括时间窗口：下一页修改 `started_after` 或 `started_before` 会返回 `invalid_cursor`；后续页保留第一页解析出的窗口。
-- `GET …/traces/{trace_id}` 返回根 span，`…/spans` 返回其 span，每项包含名称、类别、时间、状态、模型、用量、成本、输入、输出和属性。
-- `GET …/trace-backend` 返回后端 `type`（没有时为 `null`）和 `queryable_since`。
+1. 选择时间范围。
+2. 按运行/线程/会话或根属性筛选。
+3. 设置以秒为单位的耗时限制或以 USD 为单位的费用限制，再按**耗时**、**费用**或**开始时间**排序。
+4. 打开 trace，检查相关 span 和证据。
 
-查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。
+例如，耗时最小值 `60`、费用最小值 `0.01`，按费用降序排列，可找到上报耗时至少一分钟、费用至少 $0.01 的 trace。范围包含边界。Trace 费用累加上报的 span 费用；缺失费用表示未知，trace 总量与 Service 运行账目独立。
+
+调用 `/traces/search` 时，提供明确的 `started_after`、`started_before`、`order_by` 和 `direction`。使用 keyset 游标时保持筛选条件不变。查询有收集上限和 30 秒截止时间，超限时缩小范围或增加 ID 条件。结果受后端采样、入库和保留期影响，分页不会冻结变化的数据。Trace、span 和尝试端点见 [API 参考](api-reference/index.md)。
 
 ## 发现并改进执行问题
 
-打开 **改进 → 发现（Improve → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。已保存的结论和理由默认以阅读模式展示。点击**编辑审阅**，选择已确认、预期行为、证据不足或误判，可以填写**审阅理由**，然后点击**保存审阅**，同时保存结论和理由。切换结论会清空旧理由；取消会恢复已保存的内容并返回阅读模式。关闭或重新打开发现项会保留审阅结论和理由，原始诊断和证据仍然可见。
+通过**洞察 → 发现**，把 trace 证据转化为经过审阅的改进：
 
-可以按类型、严重程度、审阅结论或开关状态筛选发现项。每个发现项按核心问题选择一种主要类型：
+1. 选择**分析 traces**，设置规则及时间范围/数量，可补充**本次检查要求**。针对一条已结束 trace，使用**分析此 trace**。
+2. 从**分析历史**打开分析运行，阅读摘要、证据及选择上限。
+3. 打开发现项，选择**编辑审阅**，指定已确认、预期行为、证据不足或误判，填写**审阅理由**并**保存审阅**。
+4. 对值得修改的发现项，选择**交给 Composer 审阅**，发送预填消息，检查建议，再按需要批准配置写入。
 
-| 类型                 | 含义                                                         |
-| -------------------- | ------------------------------------------------------------ |
-| `unclear_request`    | 用户意图或约束缺失、含糊，并实质影响任务。                   |
-| `instruction_issue`  | Agent 指令错误、冲突或不完整，需要引用相应指令。             |
-| `tool_design`        | 工具契约、schema、描述或对合法输入的行为存在缺陷。           |
-| `tool_usage`         | 工具契约足够清楚，但选择、参数或使用方式错误。               |
-| `tool_execution`     | 工具调用中有证据支持的运行时或依赖故障。                     |
-| `answer_quality`     | 最终回答缺乏依据、误导、明显不完整或偏离任务。               |
-| `context_gap`        | 任务意图明确，但所需信息缺失、丢失、过时或检索错误。         |
-| `workflow_issue`     | 多步流程遗漏必要步骤、违背依赖顺序、丢失交接结果或过早结束。 |
-| `boundary_violation` | 有证据支持的明确审批、权限或任务约束违规。                   |
+分析需要 trace 查询后端，使用内置 Finding Agent 当前选定的默认版本和模型。选择过程最多扫描 100 个根节点，选择最多 20 条 trace。执行/恢复规则在扫描内优先选择失败运行及 error/fatal 根节点。数量说明选择与引用范围，并非每条所选 trace 都已完整分析的证明。即使是严重发现，也要对照证据审阅。
 
-类型描述问题本身，与分析规则、严重程度和人工审阅结论独立。即使以工具失败为证据，无依据的成功声明仍属于回答质量问题。Trace 采集不完整属于局限；正常拒绝权限或上游拒绝请求不属于边界违规。已恢复的错误不一定需要报告。类型不代表根因已证实，不确定的原因写在说明或局限中；尚未验证修复方法时，建议可以是具体调查步骤。
+类别区分请求不清、指令问题、工具设计、工具使用、工具执行、回答质量、上下文缺失、流程问题和边界违规。类别描述问题，不证明原因。正常权限拒绝不是边界违规；无依据的成功声明属于回答质量问题。
 
-后续分析同一 agent 版本时，会收到近期已有的发现项，包括未审阅和已关闭的发现项。未审阅的发现项用于描述已有诊断，已审阅的发现项还会提供你的结论和理由；其他版本的发现项不会加入。Agent 会比较问题和证据，对相同诊断在摘要中引用已有发现项，报告新发现时说明证据的实质变化。这会减少重复诊断，但不保证完整去重，也不会合并已保存的发现项。反馈有数量和长度上限，可能被截短；每次分析保留接受时收到的反馈值，修改审阅只影响新分析，不改变重试的输入。可以在理由中解释误判原因或为什么错误属于预期行为。Agent 将反馈作为上下文参考，也可以根据新证据提出不同结论。
+保存的结论和理由会提供给同一 agent 修订版本的后续分析。修改结论会清空旧理由；关闭或重开发现项保留已保存反馈。每次接受的分析保留原始输入，因此编辑只影响新分析。反馈有范围上限，用于比较诊断，不会合并已保存发现项。
 
-选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。准备操作自动选择可用模型，并在当前模型仍可用时保留它；模型和其他配置均只读。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
+Finding Agent 只读取选定 trace 证据并提交发现项，不修复或发布配置。外部提交方可调用 `POST /findings`，使用在工作空间/主体范围内唯一且稳定的 `source_key`。提交方负责 trace/span 引用；Service 校验所引运行和 agent 修订版本。
 
-选择过程最多扫描 100 个根节点，最多选取 20 条匹配 trace。执行与恢复规则在扫描范围内优先选取失败的 run，以及标记为错误或致命级别的根节点，同等优先级保留后端顺序。仅出现在子 span 中的错误不影响选择优先级。只选择回答质量规则时保留后端顺序。优先级信号提示值得调查，不代表已证实有问题。**分析历史**标签页用表格列出分析范围、运行状态和创建时间。点击记录，在详情弹窗中查看选中 trace 数、发现数、证据引用的不同 trace 数、选择上限和 trace 链接。这些数量不代表完整分析的 trace 数。打开分析运行，在最终回复中查看结果摘要和局限。没有发现项不代表所有 trace 都已审阅，也不代表 Agent 没有问题。
+## 在 Console 中配置插件
 
-对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读工具读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
+1. 打开 agent 的**能力 → 插件**，选择**添加插件**。
+2. 选择部署已启用的插件，设置唯一实例名，在表单或 JSON 编辑器中修改设置。
+3. 保存 agent，验证草稿并发布修订版本。保存校验配置，但不执行插件。
 
-自定义 Agent 可以在 **高级 / 平台功能**下启用配置、trace 查询和发现项提交工具。配置写入默认需要询问用户；Finding Agent 的内置配置仅提供配置读取工具，不提供 Agent 写入工具。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。
+多个实例可使用同一插件。重命名或移除实例会更新工具发现引用。预设只读。插件不可用时，其保存 JSON 仍然可见；保存前恢复插件或移除实例。
+
+管理员应在 Control 和 worker 上安装一致的包并配置 `plugins.keys`。Control 的 `GET /plugins` 列出启用插件，worker 安装须与之匹配。

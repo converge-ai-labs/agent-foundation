@@ -146,6 +146,7 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   // Global discovery is independent of sidebar pagination, filters and collapse.
   const activity = useThreads("", undefined, false, {
     includeActive: true,
+    enabled: !transport.shareId,
     limit: 1,
   });
   const active = (activity.data?.pages[0]?.active_rows ?? []).map(
@@ -198,7 +199,7 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
 
 export function useLiveThread(id: string) {
   const store = useContext(LiveContext);
-  if (!store) throw new Error("Live Thread observation is missing.");
+  if (!store) throw new Error("Live updates for this chat are unavailable.");
   const entry = store.get(id);
   return useSyncExternalStore(entry.subscribe, entry.getSnapshot);
 }

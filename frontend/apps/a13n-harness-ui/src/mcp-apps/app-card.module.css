@@ -1,6 +1,6 @@
 .card {
   min-width: 0;
-  margin-block: 12px 20px;
+  margin-block: 12px 24px;
   overflow: hidden;
   border-radius: 12px;
   background: var(--a13n-surface);
@@ -15,21 +15,25 @@
 .header > div {
   min-width: 0;
 }
+.header > button {
+  flex-shrink: 0;
+}
 .header strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .header small {
   display: block;
-  margin-top: 3px;
-  font-size: 11px;
+  margin-top: 4px;
+  font-size: 14px;
   color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
 }
 .card p {
   margin: 0;
   padding: 0 16px 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-text-supporting);
 }
 .status {
@@ -49,7 +53,7 @@
 .requests summary {
   cursor: pointer;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 14px;
   padding-block: 0 12px;
 }
 .request {
@@ -63,7 +67,7 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .requestHeading strong {
   font-weight: 500;
@@ -75,7 +79,7 @@
 .request pre {
   max-height: 180px;
   overflow: auto;
-  font-size: 12px;
+  font-size: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -84,5 +88,6 @@
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }

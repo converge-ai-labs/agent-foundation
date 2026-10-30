@@ -7,9 +7,13 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from a13n_harness import state as state_module
+from a13n_service.api_tools import tool_name
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.runs import checkpoints
 from a13n_service.runs.admission import CallContext
+from a13n_service.runs.execute import _Attempt
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.tenancy.tables import GrantRow
@@ -19,7 +23,42 @@ from sqlalchemy import delete, select, update
 pytestmark = pytest.mark.anyio
 
 
-async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.fixture
+def checkpoint_history_decodes(monkeypatch):
+    counts = []
+    decoded = []
+    commits = []
+    original_decode = state_module.decode_messages
+    original_commit = _Attempt._commit
+
+    def decode(value):
+        decoded.append(value)
+        return original_decode(value)
+
+    async def commit(self, state, **kwargs):
+        finished = asyncio.Event()
+        commits.append(finished)
+        start = len(decoded)
+        try:
+            result = await original_commit(self, state, **kwargs)
+            counts.append(sum(value is state.message_history_json for value in decoded[start:]))
+            return result
+        finally:
+            finished.set()
+
+    async def completed_counts():
+        # A sealed database row is visible before _commit finishes advancing the thread.
+        async with asyncio.timeout(10):
+            for finished in commits:
+                await finished.wait()
+        return counts
+
+    monkeypatch.setattr(state_module, "decode_messages", decode)
+    monkeypatch.setattr(_Attempt, "_commit", commit)
+    return completed_counts
+
+
+async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit, checkpoint_history_decodes) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model)
     scripted_model.say("Hello there")
     submitted = await runs_kit.start_thread(executing, agent, "hi")
@@ -37,9 +76,12 @@ async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit)
         assert datetime.fromisoformat(item["started_at"]) <= datetime.fromisoformat(item["ended_at"]), item
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
+    assert await checkpoint_history_decodes() == [1, 0]  # Final state has no outstanding input to inspect.
 
 
-async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_client_tool_waits_and_resume_answers_it(
+    executing, scripted_model, runs_kit, checkpoint_history_decodes
+) -> None:
     lookup = {
         "name": "lookup",
         "description": "Look a value up",
@@ -70,20 +112,70 @@ async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_mod
     second = await scripted_model.request()
     tool_results = [message for message in second["messages"] if message["role"] == "tool"]
     assert tool_results and "42" in tool_results[0]["content"]
+    # Only the initial model boundary has an inbox input; deferred answers are tracked separately.
+    assert await checkpoint_history_decodes() == [1, 0, 0, 0]
+
+
+async def test_failed_checkpoint_keeps_input_for_recovery(service, scripted_model, runs_kit, monkeypatch):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "Keep this input")
+    run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]
+    original_commit = checkpoints.commit
+
+    async def fail_after_consumption(*args, **kwargs):
+        await original_commit(*args, **kwargs)
+        raise RuntimeError("Rollback the checkpoint after input consumption")
+
+    # Failure can precede HTTP dispatch; either queued reply must be safe for the recovery request.
+    scripted_model.say("Recovered")
+    with monkeypatch.context() as patch:
+        patch.setattr(checkpoints, "commit", fail_after_consumption)
+        await (await runs_kit.attempt(service))
+    (entry,) = await runs_kit.inbox(service, thread_id)
+    assert entry["status"] == "assigned" and entry["incorporated_checkpoint_seq"] is None
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        assert run.status == "accepted" and run.checkpoint is None
+        await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+
+    scripted_model.say("Recovered")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "completed" and run["output"] == "Recovered" and run["attempts"] == 2
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    assert requests and str(runs_kit.user_texts(requests[-1])).count("Keep this input") == 1
+    (entry,) = await runs_kit.inbox(service, thread_id)
+    assert entry["status"] == "consumed" and entry["incorporated_checkpoint_seq"] == 1
 
 
 async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     lookup = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(executing, scripted_model, instructions="Role: default", client_tools=[lookup])
     scripted_model.call("lookup", {}, call_id="call_lookup")
-    overridden = runs_kit.message(agent, "look", options={"overrides": {"instructions": "Role: stand-in"}})
+    overridden = runs_kit.message(
+        agent,
+        "look",
+        options={
+            "overrides": {"instructions": "Role: stand-in"},
+            "context": {"headers": {"x-trace": "resume-context"}},
+        },
+    )
     response = await executing.client.post(f"{executing.api}/threads", json=overridden, headers=runs_kit.fresh_key())
     assert response.status_code == 201, response.text
     waiting = await runs_kit.sealed(executing, response.json()["run"]["id"])
     assert waiting["status"] == "waiting"
     # The run shows the options it froze, never the caller headers frozen with them.
     assert waiting["options"]["overrides"]["instructions"] == "Role: stand-in"
+    assert waiting["options"]["context"] == {"headers": {"x-trace": "resume-context"}}
     assert "mcp_headers" not in waiting["options"]
+    # The run's agent is its revision's configuration with the override applied.
+    executed = await executing.client.get(f"{executing.api}/runs/{waiting['id']}/agent")
+    assert executed.status_code == 200, executed.text
+    revision, config = executed.json()["revision"], executed.json()["config"]
+    assert revision["id"] == waiting["agent_revision_id"]
+    assert (revision["config"]["instructions"], config["instructions"]) == ("Role: default", "Role: stand-in")
+    assert config["client_tools"] == revision["config"]["client_tools"]
 
     scripted_model.say("Done")
     answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}
@@ -95,6 +187,7 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
     for request in (await scripted_model.request(), await scripted_model.request()):
         assert "Role: stand-in" in json.dumps(request) and "Role: default" not in json.dumps(request)
+        assert "resume-context" not in json.dumps(request)
 
 
 @pytest.mark.parametrize("result", [{"response": "blue please"}, {"answers": {"Which color?": "blue"}}])
@@ -139,12 +232,13 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
     assert run["status"] == "cancelled" and run["failure"]["code"] == "cancelled"
     listing = await runs_kit.items(executing, run["id"])
     assert listing["complete"] and runs_kit.texts(listing) == [("user", "write a long poem")]
-    assert listing["resume_after"] is not None
+    display = await runs_kit.tail(executing, run["id"])
+    assert display.resume_after is not None
     saved = await executing.runtime.redis.xrange(
-        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+        f"a13n:thread:{run['thread_id']}", min=display.resume_after, max=display.resume_after
     )
     assert saved and {"event", "item"} <= saved[0][1].keys()
-    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
+    assert int(saved[0][1]["sequence"]) <= display.position.sequence
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     # The request carried the input and its checkpoint committed before the call: it was consumed.
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
@@ -152,7 +246,16 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
 
 async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
-    submitted = await runs_kit.start_thread(service, agent, "survive a crash")
+    wires = []
+
+    @scripted_model.app.middleware("http")
+    async def capture_context(request, call_next):
+        wires.append(request.headers.get("x-trace"))
+        return await call_next(request)
+
+    submitted = await runs_kit.start_thread(
+        service, agent, "survive a crash", options={"context": {"headers": {"x-trace": "recovery-context"}}}
+    )
     run_id = submitted["run"]["id"]
     # The lost call never answers, so its orphaned request cannot take the recovery's turn.
     scripted_model.say("lost", gate=asyncio.Event())
@@ -175,6 +278,10 @@ async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_
     await (await runs_kit.attempt(service))
     run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "completed" and run["output"] == "Recovered" and run["attempts"] == 2
+    assert wires == ["recovery-context", "recovery-context"]
+    matched = await service.client.get(f"{service.api}/runs", params={"text_query": "survive Recovered"})
+    assert [item["id"] for item in matched.json()["items"]] == [run_id]
+
     attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [(item["status"], item["start_reason"]) for item in attempts] == [
         ("failed", "initial"),
@@ -216,7 +323,7 @@ async def test_a_draining_worker_hands_the_run_off(serve, settings, scripted_mod
         ]
 
 
-async def test_the_thread_stream_carries_live_output_and_resumes(executing, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_the_session_stream_carries_live_output(executing, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(executing, scripted_model)
     gate = asyncio.Event()
     scripted_model.say("Streaming reply", gate=gate)
@@ -227,40 +334,25 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
             json=runs_kit.message(agent, "stream this"),
             headers=runs_kit.fresh_key(),
         )
-        thread_id = created.json()["thread"]["id"]
-        url = f"{base}{executing.api}/threads/{thread_id}/stream"
+        run_id = created.json()["run"]["id"]
+        url = f"{base}{executing.api}/sessions/{created.json()['thread']['session_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
-            before = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
-            # The input the run was offered streams before the checkpoint that consumed it.
-            display = DisplayFold(created.json()["run"]["id"], attempt=1)
-            for event, _, data in before:
-                if event == "delta":
-                    display.fold([data["event"]])
-            inputs = [
-                item.content.get("text")
-                for item in display.items.values()
-                if item.kind == "text_message" and item.content.get("role") == "user"
-            ]
-            assert "stream this" in inputs
-            first_delta = next(entry_id for event, entry_id, _ in before if event == "delta")
+            before = await runs_kit.until(stream, lambda frame: frame[0] == "items")
+            # The deltas after the run's items stream its reply before the run seals.
+            display = DisplayFold(run_id, attempt=1)
             gate.set()
             after = await runs_kit.until(
-                stream, lambda frame: frame[0] == "delta" and "Streaming reply" in str(frame[2])
+                stream, lambda frame: frame[0] == "items" and frame[2]["complete"] and frame[2]["run_id"] == run_id
             )
-        assert all(
-            data["item"] is None or data["item"]["id"].startswith("itm_")
-            for event, _, data in after
-            if event == "delta"
-        )
-
-        # Resuming after the first delta continues its sequence without a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": first_delta}) as resumed:
-            event, _, data = await anext(resumed)
-            assert event == "delta" and data["sequence"] == 2
-        # A position that is not one is refused, instead of a gap the client would reconnect after forever.
-        stream_path = f"{executing.api}/threads/{thread_id}/stream"
-        malformed = await executing.client.get(stream_path, headers={**headers, "last-event-id": "latest"})
-        assert malformed.status_code == 400, malformed.text
+        assert before[0][0] == "thread" and before[0][2]["thread"]["id"] == created.json()["thread"]["id"]
+        for event, _, data in after:
+            if event == "delta":
+                display.fold([data["event"]])
+                assert data["item"] is None or data["item"]["id"].startswith("itm_")
+        assert "Streaming reply" in [
+            item.content.get("text") for item in display.items.values() if item.kind == "text_message"
+        ]
+        assert runs_kit.texts(after[-1][2]) == [("user", "stream this"), ("assistant", "Streaming reply")]
 
 
 async def test_a_run_stops_when_its_principal_loses_authority(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -375,13 +467,14 @@ async def test_an_admission_refusal_prevents_the_call_and_fails_the_run(service,
     assert scripted_model.requests.empty()
     assert [(call.run_id, call.source) for call in policy.calls] == [(run_id, "agent")]
     assert policy.calls[0].call_id and policy.calls[0].model_id is not None
-    listing = await runs_kit.items(service, run_id)
-    assert listing["complete"] and listing["resume_after"] is not None
+    assert (await runs_kit.items(service, run_id))["complete"]
+    display = await runs_kit.tail(service, run_id)
+    assert display.resume_after is not None
     saved = await service.runtime.redis.xrange(
-        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+        f"a13n:thread:{run['thread_id']}", min=display.resume_after, max=display.resume_after
     )
     assert saved and {"event", "item"} <= saved[0][1].keys()
-    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
+    assert int(saved[0][1]["sequence"]) <= display.position.sequence
 
 
 async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -409,12 +502,20 @@ async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripte
 
 
 async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.delegating(executing, scripted_model, "async")
+    agent = await runs_kit.delegating(
+        executing,
+        scripted_model,
+        "async",
+        execution={"environment": {"MODE": "parent"}},
+        worker={"execution": {"environment": {"MODE": "child"}}},
+    )
     scripted_model.call(
         "delegate", {"subagent_name": "helper", "prompt": "compute"}, call_id="call_d", to="coordinator"
     )
     scripted_model.say("Delegated", to="coordinator")
-    submitted = await runs_kit.start_thread(executing, agent, "ask the helper")
+    submitted = await runs_kit.start_thread(
+        executing, agent, "ask the helper", options={"execution": {"environment": {"MODE": "run"}}}
+    )
     parent = await runs_kit.sealed(executing, submitted["run"]["id"])
     assert parent["status"] == "completed" and parent["output"] == "Delegated", parent
 
@@ -428,6 +529,8 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     child = await runs_kit.sealed(executing, child_thread.current_run_id)  # type: ignore[arg-type]
     assert child["status"] == "completed" and child["output"] == "42"
 
+    assert child["options"]["execution"]["environment"] == {"MODE": "child"}
+
     # The child's result arrives in the parent thread as its own entry and starts the next parent run.
     scripted_model.say("The helper said 42", to="coordinator")
     async with asyncio.timeout(20):
@@ -438,6 +541,7 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     delivered = await runs_kit.sealed(executing, thread.json()["last_run_id"])
     assert delivered["status"] == "completed" and delivered["output"] == "The helper said 42", delivered
     assert delivered["trigger"] == "child_result"
+    assert delivered["options"]["execution"]["environment"] == {"MODE": "run"}
     # The result names the edge that delegated the child, as the request a Console shows for the run.
     assert (delivered["input"]["subagent"], delivered["input"]["child_run_id"]) == ("helper", child["id"])
     received = []
@@ -446,106 +550,194 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     assert "42" in str(runs_kit.user_texts(received[-1]))
 
 
-async def test_the_agent_composer_creates_an_agent_once_approved(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    model = await runs_kit.create_model(executing, scripted_model)
-    agents = f"{executing.api}/agents"
-    prepared = await executing.client.post(f"{executing.api}/agent-composer")
-    assert prepared.status_code == 200, prepared.text
-    composer = prepared.json()
-    assert composer["source"] == "builtin"
-    builtin = (await executing.client.get(agents, params={"source": "builtin"})).json()["items"]
-    assert [agent["id"] for agent in builtin] == [composer["id"]]
-    again = (await executing.client.post(f"{executing.api}/agent-composer")).json()
-    assert again["default_revision_id"] == composer["default_revision_id"]
-    edited = await executing.client.post(
-        f"{agents}/{composer['id']}/revisions",
-        json={"config": {"model": model}},
-        headers={"if-match": f'"{composer["id"]}:{composer["version"]}"'},
-    )
-    assert edited.status_code == 409 and edited.json()["error"]["details"]["reason"] == "builtin"
+async def test_the_agent_composer_creates_an_agent_once_approved(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        model = await runs_kit.create_model(service, scripted_model)
+        agents = f"{service.api}/agents"
+        prepared = await service.client.post(f"{service.api}/agent-composer")
+        assert prepared.status_code == 200, prepared.text
+        composer = prepared.json()
+        assert composer["source"] == "builtin"
+        builtin = (await service.client.get(agents, params={"source": "builtin"})).json()["items"]
+        assert [agent["id"] for agent in builtin] == [composer["id"]]
+        again = (await service.client.post(f"{service.api}/agent-composer")).json()
+        assert again["default_revision_id"] == composer["default_revision_id"]
+        edited = await service.client.post(
+            f"{agents}/{composer['id']}/revisions",
+            json={"config": {"model": model}},
+            headers={"if-match": f'"{composer["id"]}:{composer["version"]}"'},
+        )
+        assert edited.status_code == 400, edited.text
+        assert edited.json()["error"]["code"] == "invalid_argument"
+        assert edited.json()["error"]["details"]["field"] == "builtin_skills"
 
-    async def custom() -> list[dict[str, Any]]:
-        return (await executing.client.get(agents, params={"source": "custom"})).json()["items"]
+        async def custom() -> list[dict[str, Any]]:
+            return (await service.client.get(agents, params={"source": "custom"})).json()["items"]
 
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find")
-    config = {"model": model, "instructions": "Greet people."}
-    scripted_model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create")
-    waiting = await runs_kit.sealed(
-        executing, (await runs_kit.start_thread(executing, composer, "make a greeter"))["run"]["id"]
-    )
-    assert waiting["status"] == "waiting" and waiting["wait_reason"] == "approval", waiting
-    assert await custom() == []
+        scripted_model.call(tool_name(paths["/api/v1/models"]["get"]["operationId"]), {}, call_id="call_find")
+        config = {"model": model, "instructions": "Greet people."}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
+            {"request_body": {"name": "Greeter", "config": config}},
+            call_id="call_create",
+        )
+        started = await runs_kit.start_thread(service, composer, "make a greeter")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        assert waiting["status"] == "waiting" and waiting["wait_reason"] == "approval", waiting
+        assert await custom() == []
 
-    scripted_model.say("Created the greeter")
-    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
-    resumed = await executing.client.post(
-        f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
-    )
-    assert resumed.status_code == 201, resumed.text
-    assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
-    [greeter] = await custom()
-    assert greeter["name"] == "Greeter"
-    revision = f"{agents}/{greeter['id']}/revisions/{greeter['default_revision_id']}"
-    # Created with the authority of the user whose message started the run.
-    assert (await executing.client.get(revision)).json()["created_by_id"] == executing.tenant.principal_id
-    requests = [await scripted_model.request() for _ in range(3)]
-    found = [message for message in requests[1]["messages"] if message["role"] == "tool"]
-    assert model in found[0]["content"]
-    created = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
-    assert json.loads(created["content"]) == {
-        "agent_id": greeter["id"],
-        "default_revision_id": greeter["default_revision_id"],
-    }
-
-
-async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    await runs_kit.create_model(executing, scripted_model)
-    composer = (await executing.client.post(f"{executing.api}/agent-composer")).json()
-    config = {"model": "Bad Model", "instructions": "Greet people."}
-    scripted_model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create")
-    waiting = await runs_kit.sealed(
-        executing, (await runs_kit.start_thread(executing, composer, "make a greeter"))["run"]["id"]
-    )
-    scripted_model.say("That model does not fit")
-    approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
-    resumed = await executing.client.post(
-        f"{executing.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
-    )
-    assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
-    requests = [await scripted_model.request() for _ in range(2)]
-    [failure] = [
-        json.loads(message["content"])["error"] for message in requests[1]["messages"] if message["role"] == "tool"
-    ]
-    # The location and the schema's own message, never the submitted value.
-    assert failure.startswith("config.model: String should match pattern") and "Bad Model" not in failure, failure
+        scripted_model.say("Created the greeter")
+        approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
+        )
+        assert resumed.status_code == 201, resumed.text
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        [greeter] = await custom()
+        assert greeter["name"] == "Greeter"
+        revision = f"{agents}/{greeter['id']}/revisions/{greeter['default_revision_id']}"
+        # Created with the authority of the user whose message started the run.
+        assert (await service.client.get(revision)).json()["created_by_id"] == service.tenant.principal_id
+        requests = [await scripted_model.request() for _ in range(3)]
+        found = [message for message in requests[1]["messages"] if message["role"] == "tool"]
+        assert model in found[0]["content"]
+        created = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
+        result = json.loads(created["content"])
+        assert result["status"] == 201
+        assert result["body"]["id"] == greeter["id"]
+        assert result["body"]["default_revision_id"] == greeter["default_revision_id"]
 
 
-async def test_the_agent_composer_reads_the_revision_it_starts_from(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_composer_provider_card_keeps_credentials_out_of_the_run(service, scripted_model, runs_kit, listen):
+    await runs_kit.pause_sweeps(service)
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await runs_kit.create_model(service, scripted_model)
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
+        proposal = {"action": "create", "kind": "model", "type": "openai", "name": "Private provider", "config": {}}
+        scripted_model.call("configure_provider", proposal, call_id="call_provider")
+        started = await runs_kit.start_thread(service, composer, "Configure my provider")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "call"), waiting
+        assert waiting["pending"]["approvals"] == []
+        assert waiting["pending"]["calls"][0]["arguments"] == proposal
+        # The browser uses the ordinary provider API independently of the paused Run.
+        secret = "fixture-card-private-key"
+        created = await service.client.post(
+            f"{service.api}/model-providers",
+            json={"type": "openai", "name": proposal["name"], "config": {}, "credential": {"api_key": secret}},
+        )
+        assert created.status_code == 201, created.text
+        result = {"status": "saved", "provider_id": created.json()["id"]}
+        scripted_model.say("Provider configured")
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume",
+            json={"approvals": {}, "calls": {"call_provider": {"status": "returned", "value": result}}},
+            headers={"idempotency-key": "provider-card-resume"},
+        )
+        assert resumed.status_code == 201, resumed.text
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        requests = [await scripted_model.request(), await scripted_model.request()]
+        assert secret not in json.dumps(requests)
+        returned = [message for message in requests[-1]["messages"] if message["role"] == "tool"][-1]
+        assert json.loads(returned["content"]) == result
+        for run_id in (waiting["id"], resumed.json()["id"]):
+            assert secret not in json.dumps(await runs_kit.items(service, run_id))
+
+
+async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
+    service, scripted_model, runs_kit, listen
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        await runs_kit.create_model(service, scripted_model)
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
+        config = {"model": "Bad Model", "instructions": "Greet people."}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
+            {"request_body": {"name": "Greeter", "config": config}},
+            call_id="call_create",
+        )
+        started = await runs_kit.start_thread(service, composer, "make a greeter")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        waiting = await runs_kit.sealed(service, started["run"]["id"])
+        scripted_model.say("That model does not fit")
+        approve = {"approvals": {"call_create": {"action": "approve"}}, "calls": {}}
+        resumed = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume", json=approve, headers={"idempotency-key": "approve-1"}
+        )
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, resumed.json()["id"]))["status"] == "completed"
+        requests = [await scripted_model.request() for _ in range(2)]
+        [failure] = [
+            json.loads(message["content"])["error"] for message in requests[1]["messages"] if message["role"] == "tool"
+        ]
+        # The original HTTP field path and classified reason, never the submitted value.
+        result = json.loads(failure)
+        assert result["status"] == 400
+        assert result["body"]["error"]["details"]["fields"] == [
+            {"field": "body.config.model", "reason": "string_pattern_mismatch"}
+        ]
+        assert "Bad Model" not in failure
+
+
+async def test_the_agent_composer_reads_the_revision_it_starts_from(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
     """Configuring from an older version names a revision other than the default, which the composer reads."""
-    model = await runs_kit.create_model(executing, scripted_model)
-    target = await runs_kit.add_agent(executing, "research", model, instructions="Version one.")
-    newer = await executing.client.post(
-        f"{executing.api}/agents/{target['id']}/revisions",
-        json={"config": {"model": model, "instructions": "Version two."}},
-        headers=runs_kit.if_match(target),
-    )
-    assert newer.status_code == 201, newer.text
-    composer = (await executing.client.post(f"{executing.api}/agent-composer")).json()
+    await runs_kit.pause_sweeps(service)
+    paths = service.app.openapi()["paths"]
+    async with listen(service.app) as url:
+        settings = service.runtime.settings
+        runtime = replace(
+            service.runtime,
+            settings=settings.model_copy(update={"server": settings.server.model_copy(update={"control_url": url})}),
+        )
+        model = await runs_kit.create_model(service, scripted_model)
+        target = await runs_kit.add_agent(service, "research", model, instructions="Version one.")
+        newer = await service.client.post(
+            f"{service.api}/agents/{target['id']}/revisions",
+            json={"config": {"model": model, "instructions": "Version two."}},
+            headers=runs_kit.if_match(target),
+        )
+        assert newer.status_code == 201, newer.text
+        composer = (await service.client.post(f"{service.api}/agent-composer")).json()
 
-    older = {"kind": "agent", "reference": target["id"], "revision_id": target["default_revision_id"]}
-    scripted_model.call("read_resource", older, call_id="call_read")
-    scripted_model.call("read_resource", {**older, "kind": "model", "reference": model}, call_id="call_model")
-    scripted_model.say("Read it")
-    started = await runs_kit.start_thread(executing, composer, "change research from version 1")
-    assert (await runs_kit.sealed(executing, started["run"]["id"]))["status"] == "completed"
-    requests = [await scripted_model.request() for _ in range(3)]
-    [read] = [message for message in requests[1]["messages"] if message["role"] == "tool"]
-    assert "Version one." in read["content"] and "Version two." not in read["content"]
-    refused = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
-    assert "only an agent is read at a revision" in refused["content"]
+        older = {"agent_id": target["id"], "revision_id": target["default_revision_id"]}
+        scripted_model.call(
+            tool_name(paths["/api/v1/agents/{agent_id}/revisions/{revision_id}"]["get"]["operationId"]),
+            older,
+            call_id="call_read",
+        )
+        scripted_model.say("Read it")
+        started = await runs_kit.start_thread(service, composer, "change research from version 1")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        assert (await runs_kit.sealed(service, started["run"]["id"]))["status"] == "completed"
+        requests = [await scripted_model.request() for _ in range(2)]
+        [read] = [message for message in requests[1]["messages"] if message["role"] == "tool"]
+        assert "Version one." in read["content"] and "Version two." not in read["content"]
 
 
-async def test_the_agent_composer_follows_the_usable_models(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_the_agent_composer_keeps_its_selected_model(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     prepare = f"{service.api}/agent-composer"
     refused = await service.client.post(prepare)
     assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == "model_required"
@@ -554,7 +746,7 @@ async def test_the_agent_composer_follows_the_usable_models(service, scripted_mo
     revision = f"{service.api}/agents/{composer['id']}/revisions/{composer['default_revision_id']}"
     assert (await service.client.get(revision)).json()["config"]["model"] == first
 
-    # Disabling the model it runs on moves it to another usable model with a new revision.
+    # An available backup never replaces the selected model, even after it is disabled.
     second = await service.client.post(
         f"{service.api}/models",
         json={
@@ -573,7 +765,8 @@ async def test_the_agent_composer_follows_the_usable_models(service, scripted_mo
         headers={"if-match": f'"{model["key"]}:{model["version"]}"'},
     )
     assert disabled.status_code == 200, disabled.text
-    moved = (await service.client.post(prepare)).json()
-    assert moved["default_revision_id"] != composer["default_revision_id"]
-    revision = f"{service.api}/agents/{moved['id']}/revisions/{moved['default_revision_id']}"
-    assert (await service.client.get(revision)).json()["config"]["model"] == second.json()["key"] == "backup"
+    kept = await service.client.post(prepare)
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["default_revision_id"] == composer["default_revision_id"]
+    assert kept.json()["version"] == composer["version"]
+    assert (await service.client.get(revision)).json()["config"]["model"] == first

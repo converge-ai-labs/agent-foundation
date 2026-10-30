@@ -31,6 +31,42 @@
   padding: 24px;
 }
 
+.sessionNotice {
+  padding: 8px 24px;
+}
+@media (max-width: 640px) {
+  .sessionNotice {
+    padding-inline: 16px;
+  }
+}
+
+.sessionLoading {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+.sessionLoading > div {
+  display: grid;
+  gap: 24px;
+}
+.loadingTitle {
+  width: 180px;
+  height: 18px;
+}
+.loadingMessage {
+  width: 58%;
+  height: 48px;
+}
+.loadingReply {
+  width: 100%;
+  height: 144px;
+}
+.loadingLine {
+  width: 72%;
+  height: 16px;
+}
+
 /* Session header --------------------------------------------------------- */
 .sessionHeader {
   display: flex;
@@ -77,8 +113,8 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  flex: none;
-  max-width: 220px;
+  flex: 0 1 auto;
+  max-width: min(220px, 100%);
   min-width: 0;
   padding: 2px 4px 2px 2px;
   margin-left: -2px;
@@ -87,6 +123,23 @@
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The title takes the room the controls leave, and gives it up last. */
+.sessionTitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agentName {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -106,6 +159,7 @@ a.agentLink:focus-visible {
   font-size: var(--a13n-text-2xs);
 }
 .subNote {
+  flex: 0 999 auto;
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
@@ -118,10 +172,14 @@ a.agentLink:focus-visible {
   margin-right: 8px;
 }
 .sessionControls {
+  composes: form from "../../shared/controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
+}
+.headerState {
+  display: contents;
 }
 .breadcrumb {
   display: inline-flex;
@@ -164,7 +222,7 @@ a.agentLink:focus-visible {
 .startHeader h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 1.2;
 }
@@ -193,6 +251,9 @@ a.agentLink:focus-visible {
 .agentFilter {
   width: 168px;
 }
+.agentFilterPopup {
+  min-width: 240px;
+}
 .filterLabel {
   color: var(--a13n-secondary);
 }
@@ -208,53 +269,59 @@ a.agentLink:focus-visible {
   border-radius: 50%;
   background: currentColor;
 }
+/* Facets chosen from rows; each stays removable until cleared. */
+.activeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.activeFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 3px 0 10px;
+  border-radius: var(--a13n-radius-chip);
+  background: color-mix(in srgb, var(--a13n-text) 5.5%, transparent);
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-xs);
+}
+.activeFilterName {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.activeFilterValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activeFilter button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+}
+.activeFilter button:hover {
+  background: color-mix(in srgb, var(--a13n-text) 8%, transparent);
+  color: var(--a13n-text);
+}
 .updatedPopup {
-  width: 22rem;
-  max-width: calc(100vw - 2rem);
-}
-.updatedBody {
-  display: grid;
-  gap: 16px;
-}
-.presets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
-}
-.presets button {
-  font-weight: 400;
-}
-.updatedFields {
-  display: grid;
-  gap: 14px;
-}
-.updatedFields [data-slot="popover-trigger"] {
-  width: 100%;
+  width: min(22rem, calc(100vw - 32px));
 }
 .updatedError {
   margin: 0;
   color: var(--a13n-danger);
   font-size: var(--a13n-text-xs);
 }
-.updatedFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-}
-.updatedActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 @media (max-width: 1024px) {
   .sessionHeader {
     padding-inline: 12px;
@@ -264,19 +331,28 @@ a.agentLink:focus-visible {
   }
 }
 @media (max-width: 760px) {
+  /* The name and the actions menu keep the first line; the view controls
+     take the second, the level switch at its end. */
   .sessionHeader {
     flex-wrap: wrap;
     height: auto;
     min-height: 52px;
     padding-block: 8px;
+    row-gap: 6px;
   }
   .sessionControls {
-    flex-wrap: wrap;
+    composes: form from "../../shared/controls.module.css";
+    order: 1;
     flex-basis: 100%;
-    justify-content: flex-end;
-    margin-left: auto;
     gap: 4px;
-    max-width: 100%;
+    min-width: 0;
+  }
+  .levelSwitch {
+    margin-left: auto;
+  }
+  /* The Run itself says what it is doing; the line keeps room for the views. */
+  .headerState {
+    display: none;
   }
   .agentLink {
     max-width: 100%;
@@ -285,9 +361,38 @@ a.agentLink:focus-visible {
     display: none;
   }
   .agentFilter {
-    width: 100%;
+    flex: 1 1 128px;
+    width: 128px;
+    min-width: 0;
+  }
+  /* Clear joins the Agent row instead of wrapping alone under the menus. */
+  .agentFilter ~ * {
+    order: 1;
+  }
+  .agentFilter ~ .clearFilters {
+    order: 0;
   }
   .startPage {
     padding: 24px 16px 64px;
+  }
+}
+
+/* Conversation mounts dialog: two titled groups, separated by space. */
+.threadMounts {
+  display: grid;
+  gap: 26px;
+  padding-bottom: 8px;
+}
+.threadMounts h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+
+@media (max-width: 420px) {
+  .agentFilter,
+  .agentFilter ~ :not(.clearFilters) {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
   }
 }

@@ -11,16 +11,20 @@ from typing import NoReturn
 
 from a13n_harness.model_calls import ModelCall
 from a13n_harness.request_budget import RequestBudget
+from a13n_harness.tool_execution import current_execution
 from pydantic_ai.exceptions import UsageLimitExceeded
 
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.tools import ToolDispatch
 from a13n_service.resources.models.service import ResolvedModel
+from a13n_service.runs import request_budget
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Outcome
+from a13n_service.runs.tool_executions.authority import prove
+from a13n_service.runs.tool_executions.store import ORIGIN
 from a13n_service.runs.usage import price_snapshot
 
 
@@ -55,7 +59,7 @@ class CallCheck:
         return self.budget.used
 
     async def check(self, call: ModelCall) -> RequestBudget:
-        self._continuing()
+        await self._continuing()
         try:
             self.budget.reserve(call.call_id, continuation=call.continuation_of is not None)
         except UsageLimitExceeded:
@@ -75,12 +79,22 @@ class CallCheck:
                     provider_id=model.provider.id,
                     model_id=model.id,
                     price_snapshot=price_snapshot(model),
-                )
+                ),
+                model_call=call,
             )
         except BaseException:
             self.budget.cancel(call.call_id)
             raise
         return self.budget
+
+    async def reconcile(self) -> None:
+        if self.limit is None:
+            return
+        try:
+            async with transaction(self.runtime.storage) as session:
+                await request_budget.reconcile(session, run_id=self.context.run_id, limit=self.limit)
+        except UsageLimitExceeded:
+            self.refuse(Outcome.failed("usage_limit_exceeded", f"The run used its {self.limit} model requests"))
 
     async def tool_call(
         self,
@@ -92,7 +106,7 @@ class CallCheck:
         connection_id: str | None = None,
     ) -> None:
         """A paid tool call (a connection or web provider tool); its provider prices it, not a model request."""
-        self._continuing()
+        await self._continuing()
         await self._admit(
             replace(
                 self.context,
@@ -119,19 +133,34 @@ class CallCheck:
         self.refusal = outcome
         raise Refused(outcome.failure.message if outcome.failure else outcome.status)
 
-    def _continuing(self) -> None:
+    async def _continuing(self) -> None:
+        if current_execution() is not None:
+            await prove(self.runtime, ORIGIN.get())
+            return
         if self.control.stopped.is_set():
             self.refuse(self.control.outcome)
         if self.control.renewal_missed():
             self.lease_missed = True
             raise Refused("The attempt's lease missed its renewal")
 
-    async def _admit(self, context: CallContext) -> None:
-        if self.runtime.admission is None:
+    async def _admit(self, context: CallContext, *, model_call: ModelCall | None = None) -> None:
+        if self.runtime.admission is None and model_call is None:
             return
         try:
             async with transaction(self.runtime.storage) as session:
-                await self.runtime.admission.proceed(session, context)
+                if model_call is not None:
+                    await request_budget.reserve(
+                        session,
+                        run_id=context.run_id,
+                        attempt_id=context.run_attempt_id,
+                        call_id=context.call_id,
+                        limit=self.limit,
+                        continuation=model_call.continuation_of is not None,
+                    )
+                if self.runtime.admission is not None:
+                    await self.runtime.admission.proceed(session, context)
+        except UsageLimitExceeded:
+            self.refuse(Outcome.failed("usage_limit_exceeded", f"The run used its {self.limit} model requests"))
         except ServiceError as error:
             if error.code == "unavailable":
                 raise

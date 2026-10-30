@@ -118,6 +118,8 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     # Both conversations view the file before either edits it; each edit then waits at its own gate.
     await model.call("memory_file_view", view, call_id="call_a_view", to="[mem-a]")
     await model.call("memory_file_edit", edit("tea", "coffee"), call_id="call_a_edit", to="[mem-a]", hold="a")
+    await model.call("memory_file_view", view, call_id="call_a_reread", to="[mem-a]", hold="reread")
+    await model.call("memory_file_edit", edit("tea", "coffee"), call_id="call_a_recomputed", to="[mem-a]")
     await model.call("memory_file_edit", edit("English", "French"), call_id="call_a_stale", to="[mem-a]")
     await model.say("Coffee noted.", to="[mem-a]")
     await model.call("memory_file_view", view, call_id="call_b_view", to="[mem-b]")
@@ -133,18 +135,31 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     await model.open("b")
     assert (await api.sealed(b_run))["status"] == "completed"
     await model.open("a")
+    requests = await model.arrived("[mem-a]", count=3)
+    conflict = result_of(requests[-1], "call_a_edit")
+    assert "read_conflict" in conflict and "prefs.md" in conflict
+    # Even a disjoint edit is refused when its observed file changed; refusal creates no revision.
+    current = expect(await api.client.get(f"/api/v1/memories/{memory['id']}/files/prefs.md"), 200)
+    assert current["content"] == "- likes tea\n- reply in Chinese\n"
+    assert await history(api, memory, "prefs.md") == [
+        ("update", b_run, "call_b_edit"),
+        ("create", None, None),
+    ]
+    await model.open("reread")
     assert (await api.sealed(a_run))["status"] == "completed"
     [a_worker] = workers_of(stack, a_run)
     [b_worker] = workers_of(stack, b_run)
     assert a_worker != b_worker
 
-    # The disjoint edits both apply; the edit based on the stale view fails and shows the current content.
+    # A rereads and recomputes before its edit applies; an obsolete edit anchor still fails.
     current = expect(await api.client.get(f"/api/v1/memories/{memory['id']}/files/prefs.md"), 200)
     assert current["content"] == "- likes coffee\n- reply in Chinese\n"
-    stale = result_of((await model.requests("[mem-a]"))[-1], "call_a_stale")
+    final_request = (await model.requests("[mem-a]"))[-1]
+    assert "reply in Chinese" in result_of(final_request, "call_a_reread")
+    stale = result_of(final_request, "call_a_stale")
     assert "no_match" in stale and "reply in Chinese" in stale
     assert await history(api, memory, "prefs.md") == [
-        ("update", a_run, "call_a_edit"),
+        ("update", a_run, "call_a_recomputed"),
         ("update", b_run, "call_b_edit"),
         ("create", None, None),
     ]
@@ -265,14 +280,99 @@ async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(
     path = f"/api/v1/memories/{memory['id']}"
     expect(await api.client.delete(path, headers={"if-match": (await api.client.get(path)).headers["etag"]}), 204)
 
-    async def purged() -> bool:
-        return not await namespace(mem0, memory)
+    async def delivered() -> bool:
+        rows = read_rows(
+            stack.database,
+            "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge' AND workspace_id = :workspace_id",
+            workspace_id=api.tenant["workspace_id"],
+        )
+        return rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
 
-    await eventually(purged)
+    # The outbox records delivery only after the purge returns.
+    await eventually(delivered)
+    assert not await namespace(mem0, memory)
     assert await namespace(mem0, kept) == ["never purged"]
-    rows = read_rows(
-        stack.database,
-        "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge' AND workspace_id = :workspace_id",
-        workspace_id=api.tenant["workspace_id"],
+
+
+async def test_memory_space_organization_runs_through_control_and_workers(stack) -> None:  # type: ignore[no-untyped-def]
+    api, model = stack.api, stack.model
+    model_key = await api.create_model(model.base_url)
+    agent = await api.create_agent("Business", model_key)
+    space = expect(
+        await api.client.post(
+            "/api/v1/memory-spaces",
+            json={"name": "Preferences", "organization": {"enabled": True, "model": model_key}},
+        ),
+        201,
     )
-    assert rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
+    binding = {"name": "preferences", "space_id": space["id"], "access": "write"}
+    owner = expect(
+        await api.client.post("/api/v1/sessions", json={"memory": {"enabled": True, "spaces": [binding]}}),
+        201,
+    )
+    session_url = f"/api/v1/sessions/{owner['id']}"
+    space_url = f"/api/v1/memory-spaces/{space['id']}"
+    memory_id = space["memory_id"]
+    marker = "Organize the saved files in this Memory Space."
+    await model.call(
+        "memory_file_create",
+        {"memory": "preferences", "path": f"sessions/{owner['id']}/notes.md", "content": "Prefer concise answers."},
+        call_id="business_save",
+        to="[business-session]",
+    )
+    await model.say("Saved your preference.", to="[business-session]")
+    await model.call(
+        "memory_file_create",
+        {
+            "memory": "space",
+            "path": "global/MEMORY.md",
+            "content": "Preference: concise answers. Source: session notes.",
+        },
+        call_id="organizer_index",
+        to=marker,
+    )
+    await model.say("Indexed saved preferences.", to=marker)
+    started = await api.start(agent, "[business-session] Save my preference", session_id=owner["id"])
+    assert (await api.sealed(started["run"]["id"]))["status"] == "completed"
+
+    async def organized() -> dict | None:
+        state = expect(await api.client.get(space_url + "/organization"), 200)
+        return state if state["processed_seq"] == 2 and state["active_run_id"] is None else None
+
+    # The ordinary bounded sweep admits and later settles the worker's run.
+    state = await eventually(organized, timeout=60)
+    current = expect(await api.client.get(session_url), 200)
+    assert current["preview"]["run_id"] == started["run"]["id"]
+    assert current["run_count"] == 1
+    assert state["session_id"] != owner["id"]
+    listing = expect(await api.client.get(space_url + "/organizations"), 200)
+    [organization] = listing["items"]
+    assert organization["status"] == "completed" and organization["parent_run_id"] is None
+    assert organization["session_id"] == state["session_id"]
+    organization = await api.run(organization["id"])
+    assert organization["memory_mounts"][0]["memory_id"] == memory_id
+    assert organization["memory_mounts"][0]["roots"] == ["global/", "sessions/"]
+    assert organization["environment_mounts"] == []
+    assert (await api.thread(organization["thread_id"]))["purpose"] == "memory_organization"
+    assert len(await api.attempts(organization["id"])) == 1
+    request = (await model.requests(marker))[0]["body"]
+    assert "[business-session]" not in str(request["messages"])
+    assert all(tool["function"]["name"].startswith("memory_file_") for tool in request["tools"])
+    assert await history(api, {"id": memory_id}, "global/MEMORY.md") == [
+        ("create", organization["id"], "organizer_index")
+    ]
+    threads = expect(await api.client.get("/api/v1/threads", params={"session_id": owner["id"]}), 200)
+    assert [thread["id"] for thread in threads["items"]] == [started["thread"]["id"]]
+    before = await api.client.get(session_url)
+    disabled = expect(
+        await api.client.patch(
+            session_url, json={"memory": {"enabled": False}}, headers={"if-match": before.headers["etag"]}
+        ),
+        200,
+    )
+    assert disabled["memory"] == {"enabled": False, "spaces": [binding]}
+    await model.say("Without session memory.", to="[disabled-session]")
+    second = await api.start(agent, "[disabled-session] Hello", session_id=owner["id"])
+    assert second["run"]["memory_mounts"] == []
+    assert (await api.sealed(second["run"]["id"]))["status"] == "completed"
+    assert len(expect(await api.client.get(space_url + "/organizations"), 200)["items"]) == 1

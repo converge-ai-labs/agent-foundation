@@ -34,22 +34,29 @@ from a13n_service.resources.connections.operations import recover_operations
 from a13n_service.resources.connections.routes import router as connections_router
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.connector_providers.routes import router as connector_providers_router
+from a13n_service.resources.dashboards.routes import router as dashboards_router
+from a13n_service.resources.dashboards.tables import DashboardRow
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.memories.purge import MemoryPurger
 from a13n_service.resources.memories.routes import router as memories_router
 from a13n_service.resources.memories.service import PURGE as MEMORY_PURGE
+from a13n_service.resources.memories.space_routes import router as memory_spaces_router
 from a13n_service.resources.memories.tables import (
     MemoryFileRevisionRow,
     MemoryFileRow,
     MemoryFileStoreRow,
     MemoryRecordSourceRow,
     MemoryRow,
+    MemorySpaceRow,
 )
+from a13n_service.resources.metrics_data_sources.routes import router as metrics_data_sources_router
+from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.resources.models.routes import router as models_router
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.routes import router as providers_router
 from a13n_service.resources.providers.tables import (
+    BrowserProviderRow,
     ConnectorProviderRow,
     EnvironmentProviderRow,
     MemoryProviderRow,
@@ -67,28 +74,71 @@ from a13n_service.resources.uploads.tables import UploadRow
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
+from a13n_service.runs.browsers.delivery import handbacks
+from a13n_service.runs.browsers.maintenance import control_sweep as browser_control_sweep
+from a13n_service.runs.browsers.maintenance import sweep as browser_sweep
+from a13n_service.runs.browsers.routes import router as browsers_router
+from a13n_service.runs.browsers.tables import (
+    BrowserBlockedRow,
+    BrowserOperationRow,
+    BrowserRow,
+    BrowserSelectionRow,
+    BrowserTabRow,
+    ThreadBrowserRow,
+)
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
+from a13n_service.runs.compactions import sweep as compaction_sweep
+from a13n_service.runs.desktop_assistance.maintenance import sweep as desktop_assistance_sweep
+from a13n_service.runs.desktop_assistance.routes import router as desktop_assistance_router
+from a13n_service.runs.desktop_assistance.tables import (
+    DesktopAssistanceRow,
+    DesktopExecutionRow,
+    DesktopTargetRow,
+    DesktopViewerRow,
+)
+from a13n_service.runs.devices.routes import router as devices_router
+from a13n_service.runs.devices.tables import DeviceRow
+from a13n_service.runs.environments.daytona_snapshots import DaytonaDesktopSnapshotRow
+from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
+from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
+from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.environments.vercel_snapshots import VercelDesktopSnapshotRow
 from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
+from a13n_service.runs.memories.organization import organization_sweep
+from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
+from a13n_service.runs.memories.space_routes import router as space_execution_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
+from a13n_service.runs.provider_routes import router as provider_deletion_router
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.routes import router as schedules_router
+from a13n_service.runs.schedules.sweep import schedule_sweep
+from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
+    CompactionRow,
     InboxEntryRow,
+    ModelDispatchRow,
     PendingAnswerRow,
     RunItemPageRow,
     RunRow,
     SessionRow,
+    ThreadCodeActRow,
     ThreadRow,
+    ToolExecutionRow,
     UsageRecordRow,
 )
+from a13n_service.runs.tool_executions.cleanup import prune as prune_tool_results
+from a13n_service.runs.tool_executions.cleanup import reconcile as reconcile_tool_executions
+from a13n_service.runs.tool_executions.delivery import tool_results
+from a13n_service.runs.tool_executions.routes import router as tool_executions_router
 from a13n_service.runs.trace_routes import router as traces_router
 from a13n_service.settings import Section
 from a13n_service.tenancy.access import Access, Authenticator, GrantSource
@@ -201,6 +251,24 @@ def _expire_leases(runtime: Runtime) -> Sweep:
     )
 
 
+def _reconcile_tool_executions(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="reconcile_tool_executions",
+        every=runtime.settings.worker.authority_seconds,
+        run=partial(reconcile_tool_executions, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=max(30, runtime.settings.worker.lease_seconds),
+    )
+
+
+def _prune_tool_results(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="prune_tool_results",
+        every=runtime.settings.control.scan_seconds,
+        run=partial(prune_tool_results, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=60,
+    )
+
+
 def _expire_credentials(runtime: Runtime) -> Sweep:
     return Sweep(
         name="expire_credentials",
@@ -219,6 +287,15 @@ def _recover_connection_operations(runtime: Runtime) -> Sweep:
     )
 
 
+def _reconcile_compactions(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="reconcile_compactions",
+        every=runtime.settings.control.scan_seconds,
+        run=partial(compaction_sweep, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=60,
+    )
+
+
 def _deliver_outbox(runtime: Runtime) -> Sweep:
     settings = runtime.settings
     control = settings.control
@@ -232,6 +309,8 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
             {
                 "webhook": webhooks,
                 "child_result": child_results(runtime),
+                "tool_result": tool_results(runtime),
+                "browser_handback": handbacks(runtime),
                 "email": mail,
                 MEMORY_PURGE: MemoryPurger(runtime),
                 CLEANUP: partial(clean, runtime),
@@ -288,9 +367,21 @@ OSS = Distribution(
         WebProviderRow,
         ConnectorProviderRow,
         EnvironmentProviderRow,
+        BrowserProviderRow,
+        BrowserRow,
+        ThreadBrowserRow,
+        BrowserTabRow,
+        BrowserSelectionRow,
+        BrowserOperationRow,
+        BrowserBlockedRow,
         EnvironmentTemplateRow,
         ConnectionRow,
         SubscriptionRow,
+        DataSourceRow,
+        DashboardRow,
+        DeviceRow,
+        ScheduleRow,
+        OccurrenceRow,
         UploadRow,
         AssetRow,
         SkillRow,
@@ -301,13 +392,25 @@ OSS = Distribution(
         AgentRevisionRow,
         MemoryProviderRow,
         MemoryRow,
+        MemorySpaceRow,
         MemoryFileStoreRow,
         MemoryFileRow,
         MemoryFileRevisionRow,
         MemoryRecordSourceRow,
         SessionRow,
+        SpaceOrganizationRow,
         ThreadRow,
+        ThreadCodeActRow,
+        ToolExecutionRow,
         EnvironmentRow,
+        E2BDesktopTemplateRow,
+        ModalDesktopImageRow,
+        DaytonaDesktopSnapshotRow,
+        VercelDesktopSnapshotRow,
+        DesktopExecutionRow,
+        DesktopTargetRow,
+        DesktopAssistanceRow,
+        DesktopViewerRow,
         ThreadEnvironmentRow,
         ThreadMemoryRow,
         InboxEntryRow,
@@ -315,6 +418,8 @@ OSS = Distribution(
         PendingAnswerRow,
         RunItemPageRow,
         AttemptRow,
+        CompactionRow,
+        ModelDispatchRow,
         UsageRecordRow,
     ),
     routers=(
@@ -322,27 +427,46 @@ OSS = Distribution(
         organization_router,
         member_router,
         providers_router,
+        environment_provider_lifecycle_router,
+        provider_deletion_router,
         models_router,
         agents_router,
         uploads_router,
         assets_router,
         skills_router,
         subscriptions_router,
+        metrics_data_sources_router,
+        dashboards_router,
+        devices_router,
+        schedules_router,
         runs_router,
+        tool_executions_router,
         usage_router,
         traces_router,
         findings_router,
         environment_templates_router,
         environments_router,
+        browsers_router,
+        desktop_assistance_router,
         memories_router,
+        memory_spaces_router,
         thread_memories_router,
+        space_execution_router,
         connections_router,
         connector_providers_router,
     ),
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
+        schedule_sweep,
         _advance_threads,
+        organization_sweep,
         _expire_leases,
+        _reconcile_compactions,
+        _reconcile_tool_executions,
+        _prune_tool_results,
+        desktop_assistance_sweep,
+        browser_sweep,
+        browser_control_sweep,
         _expire_credentials,
         maintenance_sweep,
         renewal_sweep,

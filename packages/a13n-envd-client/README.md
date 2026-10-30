@@ -2,11 +2,11 @@
 
 `a13n-envd-client` is the low-level Python client for Envd's Environment Interaction Protocol (EIP). The import package is `a13n_envd_client`. Python 3.13 or later is required.
 
-Use this package when implementing an Environment Provider or a trusted EIP integration. Most applications should start with [`a13n-harness`](../a13n-harness/README.md), whose Environment Providers own Provider adaptation and target lifecycle.
+Use this package when implementing an Environment Provider or a trusted EIP integration. Most applications should start with [`a13n-harness`](../a13n-harness/README.md), which owns fixed-target execution adaptation. Service or the embedding Host manages target resources through vendor-specific Environment Providers; Envd supplies the shared execution path.
 
 ## Public surface
 
-- Generated EIP 0.1 models, codecs, method metadata, and typed `EIPClient` operations for every protocol method in `a13n_envd_client.eip.v1`.
+- Generated EIP 0.3 models, codecs, method metadata, and typed `EIPClient` operations for every protocol method in `a13n_envd_client.eip.v1`.
 - `EIPDeviceConnection`: Device initialization, descriptor and directory discovery, independent Session acquisition, and physical transport ownership.
 - `EIPSession`: fixed-cwd execution scope, readiness, keepalive, monotonic descriptor refresh, clean close, abort, and transfer helpers.
 - `StdioTransport`, `HttpTransport`, and `AcceptedWebSocketTransport` over trusted Host-provided pipes, an authenticated HTTP(S) endpoint, or an already-authenticated reverse-WebSocket connection.
@@ -37,6 +37,10 @@ async def main() -> None:
         expected_device_id=os.environ["ENVD_DEVICE_ID"],
     )
     async with device:
+        print(device.descriptor.system_info)
+        if "device.metrics" in device.descriptor.available_methods:
+            report = await device.metrics()
+            print(report.sample)  # None until the first configured sample completes.
         async with await device.open_session() as session:
             descriptor = await session.describe()
             print(descriptor.device_id, descriptor.generation, descriptor.session_id)

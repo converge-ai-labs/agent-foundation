@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import PurePosixPath
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
+from a13n_harness.environment.variables import EnvironmentVariables
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 PROVIDER_KEY = "e2b"
 
 
 class E2BConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
 
     domain: str = Field(
         default="e2b.dev",
@@ -58,7 +63,7 @@ class E2BEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["template", "allow_internet_access"]},
+        json_schema_extra={"x-primary-fields": ["execution", "desktop", "template", "allow_internet_access"]},
     )
 
     template: str = Field(
@@ -68,12 +73,32 @@ class E2BEnvironmentConfiguration(BaseModel):
         title="E2B template name or ID",
         description="Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.",
     )
+    execution: Literal["native", "envd_http"] = Field(
+        default="native",
+        title="Execution connection",
+        description="Native E2B Files & Shell, or a template with a13n-envd over authenticated HTTP EIP.",
+    )
+    desktop: bool = Field(
+        default=False,
+        title="Desktop environment",
+        description="Require Computer operations from a13n-envd. Requires envd_http and a compatible template.",
+    )
+
+    @model_validator(mode="after")
+    def _execution(self) -> Self:
+        if self.desktop and self.execution != "envd_http":
+            raise ValueError("Desktop requires execution=envd_http and an a13n-envd template")
+        if self.execution == "envd_http" and self.template in {"base", "desktop"}:
+            raise ValueError("Envd execution requires an operator-built a13n-envd template")
+        return self
+
+    environment: EnvironmentVariables = Field(default_factory=dict)
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
     allow_internet_access: bool = Field(default=True, title="Allow internet access")
-    max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
+    max_file_bytes: int = Field(default=100 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     max_observation_bytes: int = Field(default=1024 * 1024, gt=0, le=16 * 1024 * 1024)
     max_active_observations: int = Field(default=128, gt=0, le=1024)
     max_retained_output_bytes: int = Field(default=128 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
@@ -89,7 +114,13 @@ class E2BEnvironmentConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        target = self.model_dump_json(include={"template", "root", "user", "allow_internet_access"})
+        fields = {"template", "root", "user", "allow_internet_access"}
+        if self.environment:
+            fields.add("environment")
+        # Preserve the historical digest byte-for-byte for non-desktop instances.
+        if self.execution != "native":
+            fields.update({"execution", "desktop"})
+        target = self.model_dump_json(include=fields)
         return hashlib.sha256(target.encode()).hexdigest()
 
 

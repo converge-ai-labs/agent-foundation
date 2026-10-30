@@ -58,7 +58,14 @@ def test_service_version_selects_a_reviewed_sandbox_independent_of_its_version(
     model = definition.environment_model
     expected = f"{IMAGE}:dev" if tag == "dev" else DEFAULT_SANDBOX_IMAGE
     assert model.model_validate({}).image == expected
-    assert model.model_json_schema()["properties"]["image"]["default"] == expected
+    schema = model.model_json_schema()
+    assert schema["properties"]["image"]["default"] == expected
+    presets = schema["x-environment-presets"]
+    assert presets["standard"] == {"image": expected, "execution": "native", "desktop": False}
+    assert presets["desktop"] == {"image": f"{expected}-desktop", "execution": "envd_http", "desktop": True}
+    for recipe in presets.values():
+        model.model_validate(recipe)
+    assert "cpus" in schema["x-primary-fields"]
     assert model.model_validate({"image": "custom@sha256:" + "a" * 64}).image == "custom@sha256:" + "a" * 64
     # Service policy does not change the independently released Harness provider.
     assert DockerRecipe().image == f"{IMAGE}:dev"
@@ -149,7 +156,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     assert first.state == state
 
     # A restarted/new Worker reconstructs the same target under the next Service release without a fingerprint conflict.
-    monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.2.0")
+    monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.4.0")
     await select_release(service, monkeypatch, "0.1.1")
     await backdate(service, instance["id"], lease_expires_at=timedelta(seconds=1))
     resumed = await claim(service.runtime, instance["id"], owner="new-worker")
@@ -161,7 +168,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     next_instance = await reserve(service, configured["id"])
     next_operation = await claim(service.runtime, next_instance["id"], owner="test")
     assert next_operation is not None
-    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.2.0")
+    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.4.0")
 
 
 @pytest.mark.anyio

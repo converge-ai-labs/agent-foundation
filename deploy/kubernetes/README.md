@@ -22,9 +22,9 @@ For release `a13n`, the Deployments are `a13n-a13n-control` and `a13n-a13n-worke
 
 ### Shutdown time
 
-`terminationGracePeriodSeconds` sets the Pod termination grace period for both roles and defaults to `60`. Service first stops accepting HTTP connections and waits up to `server.shutdown_timeout` for existing requests. It then gives background tasks another `server.shutdown_timeout` budget, including the worker's `worker.drain_seconds` handoff, before closing clients and flushing telemetry. Size the Pod grace period for the entire sequence, not just the worker handoff. The [runtime contract](../../spec/a13n-service/09-runtime.md#startup-readiness-and-shutdown) owns these stages.
+`terminationGracePeriodSeconds` sets the Pod termination grace period for both roles and defaults to `60`. Budget for HTTP request drain, background-task shutdown, client cleanup and telemetry flush. The background-task budget is `server.shutdown_timeout`; executing roles add `worker.drain_seconds`, `tool_executions.shutdown_grace_seconds` and `tool_executions.finalization_seconds`. Retained tools use those last two windows to finish naturally, then publish terminal status and release resources after cancellation. See [retained-tool shutdown](../../docs/a13n-service/configuration.md#execution) and the [runtime contract](../../spec/a13n-service/09-runtime.md#startup-readiness-and-shutdown).
 
-The default Service settings use a 15-second shutdown budget and a 10-second worker handoff. If an environment raises them, raise the Helm value as well; for example, use a 300-second Pod grace period as a starting point for a 120-second shutdown budget and a 90-second handoff, then verify the actual shutdown under load. Helm cannot inspect settings supplied by `existingSecret` and does not validate their timing against the Pod grace period. A process that finishes early exits immediately; increasing the limit only extends how long Kubernetes waits before forcing termination. Changing the Helm value rolls the Deployments.
+The chart's 60-second default is shorter than the worker's default 300-second retained-tool grace alone. Raise it when retained calls must be allowed to finish. With default Service settings, the HTTP and background budgets total 350 seconds for a worker, before client cleanup and up to 10 seconds of trace flush; reserve additional margin and verify shutdown under load. Helm cannot inspect settings in `existingSecret` or validate their timing. Increasing the limit changes only how long Kubernetes waits before forced termination; a process that finishes early exits immediately. Changing the Helm value rolls the Deployments.
 
 ### Runtime ServiceAccount
 
@@ -47,6 +47,47 @@ With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-obj
 ### Metrics
 
 Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The [monitoring bundle](../monitoring/README.md) holds alert rules and dashboards for these metrics.
+
+### Environment monitoring collectors
+
+The PodMonitor above observes ordinary Service processes. Environment monitoring has an optional **vmagent** deployment, disabled by default. It collects and forwards samples to your existing backend; storage, retention and PromQL remain backend responsibilities.
+
+For a Prometheus server started with `--web.enable-remote-write-receiver`, add:
+
+```yaml
+monitoring:
+  vmagent:
+    enabled: true
+    prometheusUrl: https://prometheus.example.com
+  deploymentPreset:
+    enabled: true
+    workspaceIds: [ws_example]
+```
+
+`prometheusUrl` derives the write URL by appending `/api/v1/write` and supplies the preset's query base. For other backends or separate write/query gateways, set `monitoring.vmagent.remoteWriteUrl` to the complete ingestion URL and `monitoring.deploymentPreset.queryEndpoint` to the base before `/api/v1/query`. An explicit write URL takes precedence. The chart never derives ingestion from `queryEndpoint`.
+
+Keep secrets in existing Kubernetes Secrets, not values files:
+
+```yaml
+monitoring:
+  vmagent:
+    remoteWriteBearerTokenSecret: {name: metrics-write, key: token}
+    remoteWriteCASecret: {name: metrics-write-ca, key: ca.crt}
+  deploymentPreset:
+    queryBearerTokenSecret: {name: metrics-read, key: token}
+```
+
+The write token and optional CA are mounted only into vmagent. The read token is an environment variable only on ordinary control Pods. Use backend-scoped read credentials: workspace allowlisting controls who can confirm the preset, while query labels do not restrict arbitrary PromQL. Secret value changes do not change Pod templates. Restart control Pods after rotating the preset token; saved sources retain their encrypted credential snapshots and need explicit replacement. vmagent rereads its token file; roll the monitoring Pod after CA changes and verify delivery.
+
+In Console, an administrator in an allowed workspace opens **Add data source**, reviews the prefilled collection/query settings, and saves explicitly. Inheriting the deployment read credential requires a separate opt-in, initially **No**. Editing the query destination clears that consent. No data source or environment binding is created by deployment; obtain workspace IDs after bootstrapping and update the allowlist if needed. See [deployment presets](../../docs/a13n-service/environment-monitoring.md#confirm-a-deployment-preset).
+
+Managed mode creates one `<release>-a13n-monitoring` Deployment using `Recreate`: a full Service control process writes mode-0600 fragments and vmagent reads them under UID 10001. Both HTTP listeners bind to Pod loopback; the Pod has no public Service, ingress or autoscaler. Ordinary control/worker Pods use `writer=false`. The dedicated process still needs the deployment's database, Redis, object storage and provider settings. Configure its budget with `monitoring.vmagent.writerResources`; vmagent has separate `resources` and image tag/digest values.
+
+A retained ReadWriteOnce PVC holds fragments and the remote-write queue. Set `monitoring.vmagent.persistence.existingClaim` to reuse a claim, or configure its storage class and size. The default is 10 GiB with an 8 GiB per-destination queue cap. Leave room for queue chunks and filesystem overhead; monitor pending data and disk use. A full queue can drop old data. Replacement Pods clear stale scrape jobs before discovery but preserve queued samples and the lock inode. The storage must support POSIX locks and atomic rename. Recreate and RWO are not node fencing: fence a lost node before forcing replacement to avoid duplicate writers/scrapers.
+
+To retire collection, disable or unbind the source while the writer runs, verify its targets disappear, and let pending remote-write data drain before disabling `monitoring.vmagent.enabled`. Disabling or uninstalling stops both containers and retains the PVC, including pending data. Re-enabling with the same claim and write destination resumes that queue. A changed destination has its own queue; drain the old destination before changing it. Delete the retained claim only after deciding queued data is no longer needed.
+
+With managed mode disabled, external **vmagent** and **Grafana Alloy** integrations remain available through [operator bootstrap](../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector). Supply shared directory mounts through deployment-owned manifests, exactly one writer and non-writing API replicas. Managed mode owns the entire `A13N_MONITORING__COLLECTORS` map and enables monitoring; it does not merge an external Alloy map from `extraConfig` or `existingSecret`. Use external mode for custom combined pipelines. Native OTLP export and Local Cache remain available independently.
 
 ## Configuration and secrets
 
@@ -183,4 +224,4 @@ helm template a13n deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm
 
 Rendering checks template output, not image availability, credentials, storage or rollout behavior.
 
-Uninstalling does not delete the retained objects claim, the PostgreSQL and Redis StatefulSet claims, or external resources. Record retained claim names before uninstalling; `persistence.existingClaim` reuses an objects claim in a later installation. Do not delete PVCs to resolve startup failures.
+Uninstalling does not delete the retained objects or monitoring claims, the PostgreSQL and Redis StatefulSet claims, or external resources. Record retained claim names before uninstalling; `persistence.existingClaim` reuses an objects claim in a later installation. Do not delete PVCs to resolve startup failures.

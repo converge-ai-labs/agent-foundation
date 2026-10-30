@@ -33,7 +33,7 @@ async function until(predicate: () => boolean) {
 it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focused realtime", async () => {
   const created = await result(
     transport.client.POST("/api/threads", {
-      body: { title: "Protocol conversation" },
+      body: { title: "Protocol chat" },
     }),
   );
   const thread = created.thread_id;
@@ -198,7 +198,7 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
   }
 }, 20000);
 
-it("an uncertain admission retains input and cannot silently retry", async () => {
+it("keeps lost acknowledgement uncertain after server consumption and cannot silently retry", async () => {
   const created = await result(
     transport.client.POST("/api/threads", { body: {} }),
   );
@@ -218,8 +218,14 @@ it("an uncertain admission retains input and cannot silently retry", async () =>
     try {
       await submitDraft(draft, transport, created.thread_id, "send");
       expect(draft.submission.kind).toBe("unknown");
-      expect(values(draft.doc).prompt).toBe("do not retry");
+      await until(() => values(draft.doc).prompt === "");
+      // Receiving the server's clear is not a submission acknowledgement.
+      expect(draft.submission.kind).toBe("unknown");
+      draft.doc.getText("text").insert(0, "next prompt");
+      await until(() => draft.synchronized);
       await submitDraft(draft, transport, created.thread_id, "send");
+      expect(values(draft.doc).prompt).toBe("next prompt");
+      expect(draft.submission.kind).toBe("unknown");
       expect(send).toHaveBeenCalledTimes(1);
     } finally {
       send.mockRestore();
@@ -320,6 +326,14 @@ it("selects a model for one HTTP admission without changing sticky configuration
         }),
       );
       expect(operation.status).toBe("completed");
+      // Terminal status can be visible while execution persistence still holds
+      // the admission slot. Wait for release before testing the next submit.
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
     },
     { timeout: 10000 },
   );
@@ -532,17 +546,24 @@ it("the App resumes an unanswered question after all viewers disconnect, with on
     { timeout: 10000 },
   );
   const viewer = createTransport("test-only-key", () => {});
-  const one = await result(
-    viewer.client.GET("/api/threads/{thread_id}/decisions", {
-      params: { path: { thread_id: thread } },
-    }),
+  // Suspension is visible before the App saves it and arms the deadline.
+  const one = await vi.waitFor(
+    async () => {
+      const batch = await result(
+        viewer.client.GET("/api/threads/{thread_id}/decisions", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(batch?.expires_at).toBeTruthy();
+      return batch;
+    },
+    { timeout: 10000 },
   );
   const two = await result(
     transport.client.GET("/api/threads/{thread_id}/decisions", {
       params: { path: { thread_id: thread } },
     }),
   );
-  expect(one?.expires_at).toBeTruthy();
   expect(one?.expires_at).toBe(two?.expires_at);
   expect(one?.requests[0].kind).toBe("question");
   viewer.close();
@@ -720,7 +741,7 @@ it("captures an HTTP environment override without changing defaults and never fa
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
-        parts: ["Use Full Control for this Run"],
+        parts: ["Use Full Control for this run"],
         environment: { environment_profile_id: "environment-native" },
       },
     }),
@@ -733,6 +754,12 @@ it("captures an HTTP environment override without changing defaults and never fa
         }),
       );
       expect(operation.status).toBe("completed");
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
     },
     { timeout: 10000 },
   );
@@ -776,4 +803,93 @@ it("captures an HTTP environment override without changing defaults and never fa
   );
   expect(retained.captured).toEqual(inspection.captured);
   expect(retained.next_run.configuration).toEqual(before.thread.configuration);
+});
+
+it("forks a saved chat and its attachments through the real HTTP boundary", async () => {
+  const source = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Fork this title" },
+    }),
+  );
+  const path = { thread_id: source.thread_id };
+  const uploaded = await transport.fetch(
+    `/api/threads/${source.thread_id}/attachments?name=fork.txt`,
+    { method: "POST", body: "fork attachment bytes" },
+  );
+  expect(uploaded.ok).toBe(true);
+  const attachment = await uploaded.json();
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        parts: [
+          "Remember the source",
+          { attachment_id: attachment.attachment_id },
+        ],
+      },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const before = await result(
+    transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+  );
+  const copied = await result(
+    transport.client.POST("/api/threads/{thread_id}/fork", {
+      params: { path },
+    }),
+  );
+  expect(copied.thread_id).not.toBe(source.thread_id);
+  expect(copied.title).toBe("Fork this title");
+  expect(copied.configuration).toEqual(before.thread.configuration);
+  expect(copied.root_activity.state).toBe("inactive");
+  const copyPath = { thread_id: copied.thread_id };
+  const history = await result(
+    transport.client.GET("/api/threads/{thread_id}/transcript", {
+      params: { path: copyPath },
+    }),
+  );
+  expect(JSON.stringify(history.entries)).toContain("Remember the source");
+  expect(JSON.stringify(history.entries)).toContain("response");
+  const bytes = await transport.fetch(
+    `/api/threads/${copied.thread_id}/attachments/${attachment.attachment_id}`,
+  );
+  expect(bytes.ok).toBe(true);
+  expect(await bytes.text()).toBe("fork attachment bytes");
+  const successor = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: copyPath },
+      body: { parts: ["Only in the fork"] },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: successor.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const unchanged = await result(
+    transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+  );
+  expect(unchanged.continuation_id).toBe(before.continuation_id);
+  const updated = await result(
+    transport.client.GET("/api/threads/{thread_id}/transcript", {
+      params: { path: copyPath },
+    }),
+  );
+  expect(JSON.stringify(updated.entries)).toContain("Only in the fork");
 });

@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities import AskUserQuestionRequest
+from a13n_harness.tools.client import client_tool_name
+from a13n_logging import get_logger
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
@@ -64,6 +66,7 @@ from a13n_harness_ui.surfaces import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 
+_LOGGER = get_logger(__name__)
 _MAX_PATH_SCAN = 10_000
 _MAX_SKILLS = 512
 _MAX_SKILL_ENTRIES_PER_ROOT = 256
@@ -416,11 +419,12 @@ class TerminalProjectionService:
         if requests is None or (not requests.calls and not requests.approvals):
             return None
         projected = []
-        for request in requests.calls:
+        for request in (entry.target_call for entry in requests.calls):
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
             metadata_omitted = raw_metadata is not None and metadata is None
-            if request.tool_name == "ask_user_question":
+            name = client_tool_name(request, raw_metadata or {})
+            if name == "ask_user_question":
                 try:
                     questions = AskUserQuestionRequest.model_validate(request.args_as_dict())
                 except ValidationError as exc:
@@ -431,7 +435,7 @@ class TerminalProjectionService:
                 projected.append(
                     StructuredQuestionRequestView(
                         request_id=request.tool_call_id,
-                        tool_name=request.tool_name,
+                        tool_name=name,
                         questions=tuple(
                             QuestionView(
                                 question=item.question,
@@ -453,14 +457,14 @@ class TerminalProjectionService:
                 projected.append(
                     ExternalRequestView(
                         request_id=request.tool_call_id,
-                        tool_name=request.tool_name,
+                        tool_name=name,
                         arguments=value,
                         arguments_omitted=omitted,
                         metadata=metadata,
                         metadata_omitted=metadata_omitted,
                     )
                 )
-        for request in requests.approvals:
+        for request in (entry.target_call for entry in requests.approvals):
             value, omitted = _bounded_json(request.args)
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
@@ -495,6 +499,11 @@ class TerminalProjectionService:
             media_understanding_environment=environment_media_kinds(),
             agents=tuple(
                 AgentSummary(
+                    tool_search_mcp_servers=tuple(
+                        server for group in item.tool_search.groups.values() for server in group.mcp_servers
+                    )
+                    if item.tool_search is not None and item.tool_search.enabled
+                    else (),
                     agent_id=item.id,
                     name=item.name,
                     model_id=item.model,
@@ -541,6 +550,7 @@ class TerminalProjectionService:
                     resource_id=item.id,
                     name=item.name,
                     kind="mcp_server",
+                    selected_tool_count=len(item.tools) if item.tools is not None else None,
                     source_path=paths.get(item.id, "a13n-harness-ui.yaml"),
                 )
                 for item in sorted(source.mcp_servers.values(), key=lambda item: (item.name.casefold(), item.id))
@@ -615,6 +625,14 @@ class TerminalProjectionService:
             local_roots = thread.configuration.local_roots
         if project_id is not None and project_id not in source.projects:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
+        if thread is not None and thread.configuration.agent_source.kind == "live":
+            return SkillCatalogView(
+                catalog_id=source.source_digest,
+                context_kind=context_kind,
+                thread_id=thread_id,
+                receipt_id=receipt_id,
+                items=(),
+            )
         if agent_id is None or agent_id not in source.agents:
             raise ThreadError("A Skill catalog requires an available Agent.", code="thread_agent_missing")
         catalog = await to_thread.run_sync(
@@ -864,8 +882,12 @@ def _pending_summary(value: DeferredToolRequests | None) -> PendingDecisionSumma
     if value is None:
         return None
     kinds: set[Literal["question", "approval", "external"]] = set()
-    for request in value.calls:
-        kinds.add("question" if request.tool_name == "ask_user_question" else "external")
+    for request in (entry.target_call for entry in value.calls):
+        kinds.add(
+            "question"
+            if client_tool_name(request, value.metadata.get(request.tool_call_id, {})) == "ask_user_question"
+            else "external"
+        )
     if value.approvals:
         kinds.add("approval")
     count = len(value.calls) + len(value.approvals)
@@ -1004,7 +1026,14 @@ def _scan_skill_catalog(
         )
         for directory in candidates:
             document = directory / "SKILL.md"
-            name, description = _read_skill_frontmatter(document)
+            try:
+                name, description = _read_skill_frontmatter(document)
+            except ThreadError as exc:
+                _LOGGER.warning(
+                    "skill_catalog_entry_skipped",
+                    extra={"source_id": source_id, "path": os.fspath(document), "code": exc.code},
+                )
+                continue
             stat = document.stat()
             identity = _digest(source_id, os.fspath(directory), name, str(stat.st_mtime_ns), str(stat.st_size))
             fingerprints.append(identity)

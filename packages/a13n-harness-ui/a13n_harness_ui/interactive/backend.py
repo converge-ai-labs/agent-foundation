@@ -87,6 +87,7 @@ class SessionBackend:
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
         )
         self.receipt_id: str | None = None
+        self.observed_receipts: dict[str, None] = {}
         self.cancel_requested = False
         self.import_preview: ExternalSubagentImportPreview | None = None
         self.resumed_transcript: TranscriptPage | None = None
@@ -149,11 +150,19 @@ class SessionBackend:
         thread_id = self.thread_id
         if thread_id is None:
             self.status.goal = None
+            self.status.main_account = None
             return
         operation = await self.app.active_root_operation(thread_id)
-        goal = operation.goal if operation is not None else (await self.app.get_thread(thread_id)).thread.goal
+        thread = None if operation is not None else (await self.app.get_thread(thread_id)).thread
         if thread_id == self.thread_id:
-            self.status.goal = goal
+            self.status.goal = operation.goal if operation else thread.goal if thread else None
+            self.status.main_account = (
+                operation.main_account
+                if operation
+                else thread.last_execution.main_account
+                if thread and thread.last_execution
+                else None
+            )
 
     async def _draft_configuration(self) -> ThreadConfiguration:
         projects = await self.app.cwd_project_ids(self.directory)
@@ -178,6 +187,7 @@ class SessionBackend:
             thread.last_execution.status if thread is not None and thread.last_execution is not None else None
         )
         self.status.goal = None if thread is None else thread.goal
+        self.status.main_account = thread.last_execution.main_account if thread and thread.last_execution else None
         agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
             agent_id = thread.configuration.agent_source.id
@@ -446,7 +456,16 @@ class SessionBackend:
 
     async def set_environment(self, selected: str | None) -> str:
         if selected is not None:
-            profile = environment_profile_id_for_mode(selected)
+            profile = {"envd": "environment-envd", "desktop": "environment-desktop"}.get(selected)
+            if profile is None:
+                profile = environment_profile_id_for_mode(selected)
+            if selected in {"envd", "desktop"}:
+                readiness = await self.app.preflight_environment(
+                    "environment-desktop" if selected == "desktop" else "environment-envd",
+                    project_path=str(self.directory),
+                )
+                if not readiness.ready:
+                    return readiness.message + " " + " ".join(readiness.instructions)
             require_supported_local_profile(profile)
             if self.thread_id is not None:
                 detail = await self.app.get_thread(self.thread_id)
@@ -514,20 +533,33 @@ class SessionBackend:
         totals = await self.app.thread_usage(thread_id=selected)
         usage = await self.app.context_usage(selected)
         thread = detail.thread
-        if thread.configuration.project_id not in matches:
+        project_id = thread.configuration.project_id
+        patch = ThreadConfigurationPatch()
+        if project_id not in matches:
             project_id = await self.app.ensure_cwd_project(self.directory)
             source = await self.app.current_configuration()
             assert source is not None
-            local_roots = tuple(root.path for root in source.projects[project_id].roots)
+            patch = ThreadConfigurationPatch(
+                project_id=project_id,
+                local_roots=tuple(root.path for root in source.projects[project_id].roots),
+                default_environment="workspace",
+            )
+        # Keep same-directory recovery available when the saved Agent was removed;
+        # the user must be able to select a replacement with /agent first.
+        if self.request.command is None and thread.configuration.agent_source.id in configuration.agents:
+            # TUI resume follows current MCP defaults, not the creation-time list.
+            # Use the same Project > Agent > global resolver as new sessions.
+            defaults = await self.app.preview_thread_configuration(
+                defaults=NewThreadDefaults(project_id=project_id, agent_id=thread.configuration.agent_source.id)
+            )
+            if defaults.mcp_server_ids != thread.configuration.mcp_server_ids:
+                patch = patch.model_copy(update={"mcp_server_ids": defaults.mcp_server_ids})
+        if patch.model_fields_set:
             thread = await self.app.update_thread_configuration(
                 thread_id=selected,
                 mutation=ThreadConfigurationMutation(
                     expected_version=thread.configuration.version,
-                    patch=ThreadConfigurationPatch(
-                        project_id=project_id,
-                        local_roots=local_roots,
-                        default_environment="workspace",
-                    ),
+                    patch=patch,
                 ),
             )
         if thread.configuration.default_model_id is None:
@@ -602,6 +634,28 @@ class SessionBackend:
             lines.append(json.dumps(review.value, ensure_ascii=False, indent=2))
         if review.truncated or review.omitted:
             lines.append("Review preview is incomplete; omitted content is not approval evidence.")
+        return "\n".join(lines)
+
+    async def tool_executions(self, arguments: tuple[str, ...] = ()) -> str:
+        thread_id = self.thread_id
+        if thread_id is None:
+            return "No active conversation."
+        if len(arguments) == 2 and arguments[0] == "cancel":
+            item = await self.app.cancel_tool_execution(thread_id, arguments[1])
+            return f"Cancellation requested for {item.execution_id}; current status: {item.status}."
+        if len(arguments) > 1 or (arguments and not arguments[0].isdigit()):
+            raise ValueError("Usage: /executions [offset|cancel execution-id]")
+        offset = int(arguments[0]) if arguments else 0
+        records = await self.app.tool_executions(thread_id, offset=offset, limit=20)
+        lines = ["Tool executions · status only · results remain available to the agent"]
+        for item in records:
+            delivery = "received" if item.delivery_acknowledged else "available" if item.result_available else "pending"
+            lines.append(f"{item.tool_name} · {item.status} · result {delivery} · {item.execution_id}")
+        if not records:
+            lines.append("No executions on this page.")
+        if len(records) == 20:
+            lines.append(f"Next page: /executions {offset + 20}")
+        lines.append("Cancel selected work: /executions cancel <execution-id>. Stop only ends the conversation Run.")
         return "\n".join(lines)
 
     async def subagents(self, execution_id: str | None = None) -> str:
@@ -757,7 +811,13 @@ class SessionBackend:
             return self.thinking_choices()
         if kind == "environment":
             return (
-                Choice("full-control", "Full Control", "Native host shell and files; no sandbox"),
+                Choice("full-control", "Full Control · Direct", "Ready immediately; no download or sandbox"),
+                Choice("envd", "Full Control · envd", "Download if needed and check; Computer Use off"),
+                Choice(
+                    "desktop",
+                    "Full Control · envd + Computer Use",
+                    "Download/check and request Host screen and input permissions",
+                ),
                 *(
                     (Choice("sandbox", "Sandbox", "Isolation; unavailable configurations fail without fallback"),)
                     if local_sandbox_supported()
@@ -790,6 +850,22 @@ class SessionBackend:
             mode=mode,
         )
 
+    def observe_operation(
+        self, renderer: StreamRenderer, receipt_id: str, *, flush: Callable[[], Awaitable[None]] | None = None
+    ) -> Coroutine[object, object, str]:
+        """Attach to App-owned work without submitting another input or clearing the draft."""
+        self.cancel_requested = False
+        return self._execute(
+            renderer,
+            prompt=None,
+            response=None,
+            flush=flush,
+            admitted=None,
+            skill_references=(),
+            mode="normal",
+            receipt_id=receipt_id,
+        )
+
     async def _execute(
         self,
         renderer: StreamRenderer,
@@ -800,11 +876,16 @@ class SessionBackend:
         admitted: Callable[[], None] | None,
         skill_references: tuple[SkillReference, ...],
         mode: GoalMode,
+        receipt_id: str | None = None,
     ) -> str:
-        if self.cancel_requested:
+        if self.cancel_requested and receipt_id is None:
             return "Cancelled before admission. No operation was submitted."
         await self.refresh()
         thread_id = await self.ensure_session()
+        attached = await self.app.get_root_operation(receipt_id) if receipt_id is not None else None
+        if attached is not None and attached.receipt.thread_id != thread_id:
+            return "The operation belongs to another conversation."
+        observed_run_id = attached.run_id if attached is not None else None
         last_ordinal = -1
         custom_events = CustomEventAssembler()
         # Snapshot before admission; live notifications refresh this committed
@@ -813,8 +894,33 @@ class SessionBackend:
         self.status.restore_usage(totals.combined)
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
+            async def restore_display(*, refresh: bool = False) -> bool:
+                replay = (
+                    subscription.capture_root_stream(observed_run_id)
+                    if refresh and observed_run_id is not None
+                    else subscription.take_root_stream()
+                )
+                if replay is None or replay.summary.run_id != observed_run_id:
+                    return False
+                renderer.begin_display_snapshot()
+                snapshot_events = CustomEventAssembler()
+                for batch in replay.batches():
+                    for event in batch:
+                        if event.payload is not None:
+                            payload = snapshot_events.accept(event.payload)
+                            if payload is not None:
+                                renderer.ingest(event.event_type, payload, run_id=replay.summary.run_id)
+                if flush is not None:
+                    await flush()
+                return not renderer.display_gap
+
             async def ingest(event: LiveEvent) -> bool:
-                nonlocal last_ordinal
+                nonlocal last_ordinal, observed_run_id
+                if event.run_kind == "root":
+                    if observed_run_id is None:
+                        observed_run_id = event.run_id
+                    elif event.run_id != observed_run_id:
+                        return False
                 renderer.ingest(
                     event.event_type,
                     event.payload,
@@ -826,7 +932,8 @@ class SessionBackend:
                 )
                 if event.event_type == "CUSTOM" and event.payload is not None:
                     payload = custom_events.accept(event.payload)
-                    renderer.gap |= custom_events.gap
+                    if custom_events.gap:
+                        renderer.gap = True
                     if payload is None:
                         return False
                     event = event.model_copy(update={"payload": payload})
@@ -844,14 +951,12 @@ class SessionBackend:
 
             async def consume() -> None:
                 try:
-                    if subscription.root_stream is not None:
-                        for batch in subscription.root_stream.batches():
-                            for event in batch:
-                                renderer.ingest(
-                                    event.event_type, event.payload, run_id=subscription.root_stream.summary.run_id
-                                )
+                    if attached is not None:
+                        await restore_display()
                     async for event in subscription:
                         usage_changed = await ingest(event)
+                        if renderer.display_gap:
+                            await restore_display(refresh=True)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
@@ -859,32 +964,42 @@ class SessionBackend:
 
             pump = asyncio.create_task(consume())
             try:
-                if self.cancel_requested:
+                if self.cancel_requested and attached is None:
                     return "Cancelled before admission. No operation was submitted."
                 receipt = (
-                    await self.app.submit_thread(
-                        thread_id=thread_id,
-                        prompt=prompt or "",
-                        model_overrides=self.overrides,
-                        skill_references=skill_references,
-                        input_surface="tui",
-                        mode=mode,
-                    )
-                    if response is None
-                    else await self.app.respond_thread(
-                        thread_id=thread_id, response=response, model_overrides=self.overrides
+                    attached.receipt
+                    if attached is not None
+                    else (
+                        await self.app.submit_thread(
+                            thread_id=thread_id,
+                            prompt=prompt or "",
+                            model_overrides=self.overrides,
+                            skill_references=skill_references,
+                            input_surface="tui",
+                            mode=mode,
+                        )
+                        if response is None
+                        else await self.app.respond_thread(
+                            thread_id=thread_id, response=response, model_overrides=self.overrides
+                        )
                     )
                 )
                 self.receipt_id = receipt.receipt_id
-                self.status.execution_status = "preparing"
+                self.observed_receipts[receipt.receipt_id] = None
+                while len(self.observed_receipts) > 128:
+                    self.observed_receipts.pop(next(iter(self.observed_receipts)))
+                self.status.execution_status = attached.status.value if attached is not None else "preparing"
                 if admitted is not None:
                     admitted()
-                self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal
+                current_operation = await self.app.get_root_operation(receipt.receipt_id)
+                self.status.goal = current_operation.goal
+                self.status.main_account = current_operation.main_account
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)
                 self.status.execution_status = operation.status.value
                 self.status.goal = operation.goal
+                self.status.main_account = operation.main_account
             finally:
                 pump.cancel()
                 with suppress(asyncio.CancelledError):
@@ -895,6 +1010,8 @@ class SessionBackend:
                         usage_changed = await ingest(event)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
+                    if renderer.display_gap:
+                        await restore_display(refresh=True)
                 except HarnessUiError:
                     renderer.gap = True
                 finally:

@@ -41,6 +41,7 @@ beforeEach(() => {
   login = {
     session_id: "login-test",
     provider: "codex",
+    account_id: "acct-codex-default",
     method: "device",
     state: "waiting",
     verification_url: verificationUrl,
@@ -52,7 +53,10 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (
+        path.startsWith("/api/auth/accounts/") ||
+        path.startsWith("/api/subscriptions/accounts/")
+      )
         return json({ usable: false, required_action: "login" });
       if (path === "/api/auth/logins" || path === "/api/auth/logins/login-test")
         return json(login);
@@ -92,7 +96,7 @@ it.each(["rejected", "unavailable"])(
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Copy code" }));
     await screen.findByText(
-      "Could not copy automatically. Select and copy the code above.",
+      "Couldn't copy. Select the code above and copy it manually.",
     );
     expect(screen.getByText("ABCD-1234")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
@@ -182,10 +186,10 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
   expect(selected).not.toHaveBeenCalled();
   expect(screen.queryByRole("combobox", { name: "Login method" })).toBeNull();
   fireEvent.click(logout);
-  await screen.findByText(/also affects the official CLI and other Hosts/);
+  await screen.findByText(/including the official CLI and other servers/);
   expect(removed).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  fireEvent.click(screen.getByText("Choose account source"));
+  fireEvent.click(screen.getByText("Account source"));
   fireEvent.click(
     await screen.findByRole("button", { name: "other-user · Host login" }),
   );
@@ -195,7 +199,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
       account_id: "other-user",
     }),
   );
-  await screen.findByText("other-user · Host account");
+  await screen.findByText("Account: other-user · Host account");
 });
 
 it("defaults ChatGPT to automatic callback and posts a private full-URL fallback without persistence", async () => {
@@ -205,7 +209,10 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (
+        path.startsWith("/api/auth/accounts/") ||
+        path.startsWith("/api/subscriptions/accounts/")
+      )
         return json({ usable: false, required_action: "login" });
       if (path.endsWith("/callback")) {
         completed(await request.json());
@@ -223,10 +230,8 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
   });
   expect(
     (await screen.findByRole("combobox", { name: "Login method" })).textContent,
-  ).toContain("Automatic browser callback");
-  fireEvent.click(
-    await screen.findByText("Callback cannot reach this server?"),
-  );
+  ).toContain("Browser callback");
+  fireEvent.click(await screen.findByText("Callback can't reach this server?"));
   const input = screen.getByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");
   fireEvent.change(input, {

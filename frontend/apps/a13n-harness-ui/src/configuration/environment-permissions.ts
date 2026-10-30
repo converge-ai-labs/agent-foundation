@@ -39,12 +39,15 @@ export const fullControl: Schema<"EnvironmentAction">[] = [
   "environment.state.restore",
   "environment.computer.describe",
   "environment.computer.observe",
+  "environment.computer.zoom",
   "environment.computer.click",
   "environment.computer.move",
   "environment.computer.drag",
   "environment.computer.scroll",
   "environment.computer.type_text",
   "environment.computer.press_keys",
+  "environment.computer.read_clipboard",
+  "environment.computer.write_clipboard",
 ];
 
 export function permissionPreset(

@@ -25,12 +25,17 @@ from a13n_harness.environment.computer import (
     COMPUTER_INPUT_ACTIONS,
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerDrag,
     ComputerInput,
     ComputerMove,
+    ComputerObservation,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
+    ComputerZoom,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import (
@@ -53,6 +58,55 @@ if TYPE_CHECKING:
 class _ComputerFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
+
+    async def read_clipboard(self, *, max_bytes: int = 16384, alias: str | None = None) -> ComputerClipboard:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_READ_CLIPBOARD, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            if not 1 <= max_bytes <= 16384:
+                raise EnvironmentError("max_bytes must be between 1 and 16384.", code="environment_request_invalid")
+            return await computer.read_clipboard(max_bytes=max_bytes)
+
+    async def write_clipboard(self, text: str, *, alias: str | None = None) -> ComputerClipboardWriteResult:
+        entered = self._environment._select_entered(alias)
+        async with self._environment._operation_lease(
+            entered, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, "computer"
+        ) as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            try:
+                size = len(text.encode("utf-8"))
+            except UnicodeEncodeError:
+                size = 16385
+            if size > 16384 or "\0" in text:
+                raise EnvironmentError(
+                    "Clipboard text must contain at most 16384 UTF-8 bytes and no NUL.",
+                    code="environment_request_invalid",
+                    details={"dispatch_stage": "pre_dispatch"},
+                )
+            result = await computer.write_clipboard(text)
+            _validate_provider_artifacts(entered, result.receipt)
+            if result.receipt.outcome != "succeeded" or result.effect != "executed" or not result.cleanup_complete:
+                raise EnvironmentError(
+                    "Clipboard publication did not complete successfully.",
+                    code="environment_operation_failed",
+                    retry_hint="reconcile_first",
+                    details={
+                        "dispatch_stage": "pre_dispatch"
+                        if result.effect == "not_executed" and result.cleanup_complete
+                        else "dispatched",
+                        "effect": result.effect,
+                        "cleanup_complete": result.cleanup_complete,
+                        "receipt": result.receipt.model_dump(mode="json"),
+                        "hint": "Inspect the clipboard before another write; do not automatically replay it.",
+                    },
+                )
+            return result
 
     async def describe(self, *, alias: str | None = None) -> ComputerDescription:
         entered = self._environment._select_entered(alias)
@@ -78,20 +132,46 @@ class _ComputerFacade:
             _validate_provider_artifacts(entered, result.observation)
             return result
 
+    async def zoom(
+        self,
+        observation: ComputerObservation,
+        region: ComputerRegion,
+        *,
+        max_dimension: int = 1280,
+        alias: str | None = None,
+    ) -> ComputerZoom:
+        entered = self._for_observation(observation, EnvironmentAction.COMPUTER_ZOOM, alias)
+        async with self._environment._operation_lease(entered, EnvironmentAction.COMPUTER_ZOOM, "computer") as entered:
+            computer = entered.operations.computer
+            if computer is None:
+                raise EnvironmentError("Computer operations unavailable.", code="environment_unsupported")
+            region.validate_bounds(observation.width, observation.height)
+            if not 256 <= max_dimension <= 2048:
+                raise EnvironmentError("Invalid image dimension.", code="environment_request_invalid")
+            return await computer.zoom(observation, region, max_dimension=max_dimension)
+
+    def _for_observation(
+        self,
+        observation: ComputerObservation,
+        action: EnvironmentAction,
+        alias: str | None,
+    ) -> _EnteredMount:
+        entered = self._environment.require_action(
+            self._environment._entered_for_execution(observation.execution_id).mount_id, action
+        )
+        if (
+            alias is not None
+            and self._environment._select_entered(alias).provider.execution_id != observation.execution_id
+        ):
+            raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
+        if observation.observed_generation != entered.public.descriptor.generation:
+            raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
+        return entered
+
     async def execute(self, request: ComputerInput, *, alias: str | None = None) -> ComputerActionResult:
         action = COMPUTER_INPUT_ACTIONS[request.kind]
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
-            observation = request.observation
-            entered = self._environment.require_action(
-                self._environment._entered_for_execution(observation.execution_id).mount_id, action
-            )
-            if (
-                alias is not None
-                and self._environment._select_entered(alias).provider.execution_id != observation.execution_id
-            ):
-                raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
-            if observation.observed_generation != entered.public.descriptor.generation:
-                raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
+            entered = self._for_observation(request.observation, action, alias)
         else:
             entered = self._environment._select_entered(alias)
         async with self._environment._operation_lease(entered, action, "computer") as entered:
@@ -199,8 +279,16 @@ class _ShellFacade:
 
 
 class _ProcessFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
+    def __init__(
+        self,
+        environment: CompositeBoundEnvironment,
+        *,
+        retained_handle: BoundProcessHandle | None = None,
+        authorized_actions: frozenset[EnvironmentAction] = frozenset(),
+    ) -> None:
         self._environment = environment
+        self._retained_handle = retained_handle
+        self._authorized_actions = authorized_actions
 
     async def list(self, *, alias: str | None = None, limit: int = 50) -> ProcessDiscovery:
         entered = self._environment._select_entered(alias)
@@ -295,9 +383,12 @@ class _ProcessFacade:
 
     async def write_stdin(self, handle: BoundProcessHandle, data: bytes, **kwargs: Any) -> ProcessWriteStdinResult:
         if kwargs.get("close_after_write") is True:
-            self._environment.require_action(
-                self._environment._entered_for_handle(handle).mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN
-            )
+            if self._retained_handle is not None:
+                self._require_retained_action(handle, EnvironmentAction.PROCESS_CLOSE_STDIN)
+            else:
+                self._environment.require_action(
+                    self._environment._entered_for_handle(handle).mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN
+                )
         return await self._call(handle, EnvironmentAction.PROCESS_WRITE_STDIN, "write_stdin", data, **kwargs)
 
     async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
@@ -335,6 +426,9 @@ class _ProcessFacade:
         **kwargs: Any,
     ) -> Any:
         entered = self._environment._entered_for_handle(handle)
+        if self._retained_handle is not None:
+            self._require_retained_action(handle, action)
+            return await self._dispatch(entered, handle, method, args, semantic_kwargs or kwargs)
         async with self._environment._operation_lease(
             entered,
             action,
@@ -342,19 +436,33 @@ class _ProcessFacade:
             timeout_seconds=timeout_seconds,
             allow_retired=True,
         ) as entered:
-            processes = entered.operations.processes
-            if processes is None:
-                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
-            call = getattr(processes, method)
-            try:
-                result = await call(handle, *args, **dict(semantic_kwargs or kwargs))
-            except EnvironmentError as exc:
-                if exc.code == "environment_not_found":
-                    self._environment._track_process_handle(handle, added=False)
-                raise
-            _validate_provider_artifacts(entered, result)
-            _validate_process_result_identity(handle, result)
-            return result
+            return await self._dispatch(entered, handle, method, args, semantic_kwargs or kwargs)
+
+    def _require_retained_action(self, handle: BoundProcessHandle, action: EnvironmentAction) -> None:
+        if handle != self._retained_handle or action not in self._authorized_actions:
+            raise EnvironmentError("Process control is outside its active lease.", code="environment_denied")
+
+    async def _dispatch(
+        self,
+        entered: _EnteredMount,
+        handle: BoundProcessHandle,
+        method: str,
+        args: tuple[Any, ...],
+        kwargs: Mapping[str, Any],
+    ) -> Any:
+        processes = entered.operations.processes
+        if processes is None:
+            raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
+        call = getattr(processes, method)
+        try:
+            result = await call(handle, *args, **dict(kwargs))
+        except EnvironmentError as exc:
+            if exc.code == "environment_not_found":
+                self._environment._track_process_handle(handle, added=False)
+            raise
+        _validate_provider_artifacts(entered, result)
+        _validate_process_result_identity(handle, result)
+        return result
 
 
 class _PortFacade:

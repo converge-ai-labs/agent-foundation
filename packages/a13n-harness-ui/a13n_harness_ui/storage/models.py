@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .metadata import Base
@@ -64,6 +64,39 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class DeletedThreadRecord(Base):
+    """Permanent deletion evidence, independent of the removed Thread row."""
+
+    __tablename__ = "deleted_thread"
+
+    thread_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+
+
+class CompactionRecord(Base):
+    """Generation outcomes and independent Host settlement, awaiting pruning."""
+
+    __tablename__ = "compaction"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "(settled_at IS NULL AND disposition IS NULL) OR "
+            "(settled_at IS NOT NULL AND disposition IS NOT NULL "
+            "AND disposition IN ('applied', 'skipped', 'cleared', 'expired'))",
+            name="settlement",
+        ),
+        Index("uq_compaction_unsettled_thread", "thread_id", unique=True, sqlite_where=text("settled_at IS NULL")),
+        Index("ix_compaction_retention", "settled_at", "created_at", "operation_id"),
+    )
+
+    operation_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
 class PlannedRestartRecord(Base):
     """The only prepared/claimed update handoff for this local data root."""
 
@@ -92,6 +125,25 @@ class WebPushSubscriptionRecord(Base):
     origin: Mapped[str] = mapped_column(Text, nullable=False)
     last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class ShareGrantRecord(Base):
+    """Revocable guest access; the secret itself is never retained."""
+
+    __tablename__ = "share_grant"
+    __table_args__ = (
+        CheckConstraint("scope IN ('project', 'thread')", name="scope"),
+        CheckConstraint("permission IN ('view', 'prompt')", name="permission"),
+    )
+
+    share_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(_ID), nullable=False, index=True)
+    permission: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
 class ProjectModelPreferenceRecord(Base):
@@ -158,6 +210,18 @@ class ThreadRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class LiveTranscriptHeadRecord(Base):
+    """Voice transcript authority, independent of ordinary execution checkpoints."""
+
+    __tablename__ = "live_transcript_head"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    object_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    logical_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+
+
 class ThreadWorkRecord(Base):
     """Small, replaceable work projection independent of transcript indexes."""
 
@@ -216,7 +280,7 @@ class ThreadConfigurationRecord(Base):
     __tablename__ = "thread_configuration"
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
-        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory')", name="agent_source_kind"),
+        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory', 'live')", name="agent_source_kind"),
     )
 
     thread_id: Mapped[str] = mapped_column(

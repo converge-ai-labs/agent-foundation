@@ -116,6 +116,7 @@ class HarnessUiMCP(MCP[AgentContext]):
             id=self._recipe.server_id,
             native=False,
             local=toolset,
+            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
         )
         ctx.deps._record_run_capability(cache_id, replacement)
         return replacement
@@ -236,7 +237,8 @@ def _required_environment(name: str, *, purpose: str) -> str:
     value = os.environ.get(name)
     if not value:
         raise RunError(
-            f"A required {purpose} source is unavailable.",
+            f"A required {purpose} source is unavailable: environment variable {name!r} is missing or empty. "
+            "Set it in the Harness UI process environment or update the MCP configuration.",
             code="runtime_credential_missing",
             details={"environment_variable": name},
         )

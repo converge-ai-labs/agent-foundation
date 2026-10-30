@@ -27,7 +27,9 @@ export function useNavigationObservations({
       ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
       ...(list.data?.pages[0]?.active_rows ?? []),
       ...(list.data?.pages[0]?.starred_rows ?? []),
-    ].map((row) => [row.thread.thread_id, row]),
+    ]
+      .filter((row) => belongs(row.thread))
+      .map((row) => [row.thread.thread_id, row]),
   );
   for (const { thread, observedAt } of results.threads.values()) {
     const page = list.data?.pages.find((page, index) =>

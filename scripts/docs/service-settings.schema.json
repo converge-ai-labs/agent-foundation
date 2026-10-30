@@ -72,6 +72,60 @@
       "title": "Composer",
       "type": "object"
     },
+    "Configuration": {
+      "additionalProperties": false,
+      "properties": {
+        "directory": {
+          "format": "path",
+          "title": "Directory",
+          "type": "string"
+        },
+        "endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "writer": {
+          "default": false,
+          "title": "Writer",
+          "type": "boolean"
+        },
+        "allow_http_reload": {
+          "default": false,
+          "title": "Allow Http Reload",
+          "type": "boolean"
+        },
+        "receiver": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiver"
+        }
+      },
+      "required": [
+        "directory",
+        "endpoint"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
     "Control": {
       "additionalProperties": false,
       "properties": {
@@ -101,6 +155,31 @@
           "maximum": 16777216,
           "minimum": 1024,
           "title": "Inbox Bytes",
+          "type": "integer"
+        },
+        "browser_control_min_seconds": {
+          "default": 60,
+          "minimum": 1,
+          "title": "Browser Control Min Seconds",
+          "type": "integer"
+        },
+        "browser_control_max_seconds": {
+          "default": 3600,
+          "minimum": 1,
+          "title": "Browser Control Max Seconds",
+          "type": "integer"
+        },
+        "browser_control_seconds": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Browser Control Seconds",
+          "type": "integer"
+        },
+        "browser_notice_seconds": {
+          "default": 86400,
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Browser Notice Seconds",
           "type": "integer"
         },
         "subscriptions": {
@@ -151,8 +230,8 @@
           "type": "boolean"
         },
         "pool_size": {
-          "default": 5,
-          "maximum": 100,
+          "default": 32,
+          "maximum": 1024,
           "minimum": 1,
           "title": "Pool Size",
           "type": "integer"
@@ -386,6 +465,13 @@
       },
       "title": "Environments",
       "type": "object"
+    },
+    "Kind": {
+      "enum": [
+        "vmagent",
+        "alloy"
+      ],
+      "type": "string"
     },
     "LocalProvisioning": {
       "additionalProperties": false,
@@ -720,6 +806,151 @@
       "title": "MemorySettings",
       "type": "object"
     },
+    "Monitoring": {
+      "additionalProperties": false,
+      "description": "Small-deployment Device monitoring; external export and history query are independent.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "allow_loopback_ws": {
+          "default": false,
+          "title": "Allow Loopback Ws",
+          "type": "boolean"
+        },
+        "max_devices": {
+          "default": 64,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Max Devices",
+          "type": "integer"
+        },
+        "poll_seconds": {
+          "default": 10,
+          "maximum": 60,
+          "minimum": 5,
+          "title": "Poll Seconds",
+          "type": "number"
+        },
+        "request_seconds": {
+          "default": 5,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Request Seconds",
+          "type": "number"
+        },
+        "query_concurrency": {
+          "default": 8,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Query Concurrency",
+          "type": "integer"
+        },
+        "query_seconds": {
+          "default": 5,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Query Seconds",
+          "type": "number"
+        },
+        "query_bytes": {
+          "default": 4194304,
+          "maximum": 16777216,
+          "minimum": 65536,
+          "title": "Query Bytes",
+          "type": "integer"
+        },
+        "deployment_preset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonitoringPreset"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_query_bearer_token": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deployment Query Bearer Token"
+        },
+        "collectors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Configuration"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": "Collectors",
+          "type": "object"
+        },
+        "collector_seconds": {
+          "default": 30,
+          "maximum": 300,
+          "minimum": 10,
+          "title": "Collector Seconds",
+          "type": "number"
+        },
+        "collector_targets": {
+          "default": 512,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Collector Targets",
+          "type": "integer"
+        }
+      },
+      "title": "Monitoring",
+      "type": "object"
+    },
+    "MonitoringPreset": {
+      "additionalProperties": false,
+      "description": "Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin.",
+      "properties": {
+        "name": {
+          "default": "Deployment metrics",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "collector": {
+          "$ref": "#/$defs/Kind",
+          "default": "vmagent"
+        },
+        "query_endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Query Endpoint",
+          "type": "string"
+        },
+        "workspace_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1024,
+          "title": "Workspace Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "query_endpoint"
+      ],
+      "title": "MonitoringPreset",
+      "type": "object"
+    },
     "Objects": {
       "additionalProperties": false,
       "properties": {
@@ -913,6 +1144,8 @@
       "enum": [
         "webhook",
         "child_result",
+        "tool_result",
+        "browser_handback",
         "email",
         "memory_purge",
         "checkpoint_cleanup"
@@ -1009,6 +1242,16 @@
       "additionalProperties": false,
       "description": "Outbound network policy, call bounds and browser authorization flows for every provider and connection.",
       "properties": {
+        "forward_model_context_headers": {
+          "default": true,
+          "title": "Forward Model Context Headers",
+          "type": "boolean"
+        },
+        "forward_mcp_context_headers": {
+          "default": true,
+          "title": "Forward Mcp Context Headers",
+          "type": "boolean"
+        },
         "http_origins": {
           "default": [],
           "items": {
@@ -1141,6 +1384,98 @@
       "title": "RedisSettings",
       "type": "object"
     },
+    "RunSearch": {
+      "additionalProperties": false,
+      "description": "UTF-8 excerpt budgets and stripped PostgreSQL vector retention limits.",
+      "properties": {
+        "user_head_bytes": {
+          "default": 6144,
+          "maximum": 6144,
+          "minimum": 256,
+          "title": "User Head Bytes",
+          "type": "integer"
+        },
+        "user_tail_bytes": {
+          "default": 2048,
+          "maximum": 2048,
+          "minimum": 256,
+          "title": "User Tail Bytes",
+          "type": "integer"
+        },
+        "assistant_head_bytes": {
+          "default": 4096,
+          "maximum": 4096,
+          "minimum": 256,
+          "title": "Assistant Head Bytes",
+          "type": "integer"
+        },
+        "assistant_tail_bytes": {
+          "default": 12288,
+          "maximum": 12288,
+          "minimum": 256,
+          "title": "Assistant Tail Bytes",
+          "type": "integer"
+        },
+        "vector_bytes": {
+          "default": 524288,
+          "maximum": 786432,
+          "minimum": 393216,
+          "title": "Vector Bytes",
+          "type": "integer"
+        },
+        "target_bytes": {
+          "default": 393216,
+          "maximum": 655360,
+          "minimum": 327680,
+          "title": "Target Bytes",
+          "type": "integer"
+        },
+        "messages": {
+          "default": 512,
+          "maximum": 4096,
+          "minimum": 8,
+          "title": "Messages",
+          "type": "integer"
+        }
+      },
+      "title": "RunSearch",
+      "type": "object"
+    },
+    "Schedules": {
+      "additionalProperties": false,
+      "properties": {
+        "scan_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Scan Seconds",
+          "type": "number"
+        },
+        "batch": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Batch",
+          "type": "integer"
+        },
+        "max_per_workspace": {
+          "default": 1000,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Per Workspace",
+          "type": "integer"
+        },
+        "dispatch_max_attempts": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Dispatch Max Attempts",
+          "type": "integer"
+        }
+      },
+      "title": "Schedules",
+      "type": "object"
+    },
     "Server": {
       "additionalProperties": false,
       "properties": {
@@ -1161,6 +1496,19 @@
           "maxLength": 2048,
           "title": "Public Url",
           "type": "string"
+        },
+        "control_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Url"
         },
         "trusted_proxies": {
           "default": [],
@@ -1393,6 +1741,55 @@
       "title": "Telemetry",
       "type": "object"
     },
+    "ToolExecutions": {
+      "additionalProperties": false,
+      "properties": {
+        "max_active": {
+          "default": 64,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Max Active",
+          "type": "integer"
+        },
+        "foreground_wait_seconds": {
+          "default": 5,
+          "maximum": 300,
+          "minimum": 0,
+          "title": "Foreground Wait Seconds",
+          "type": "number"
+        },
+        "delivered_retention_seconds": {
+          "default": 3600,
+          "maximum": 31536000,
+          "minimum": 1,
+          "title": "Delivered Retention Seconds",
+          "type": "integer"
+        },
+        "max_retention_seconds": {
+          "default": 86400,
+          "maximum": 31536000,
+          "minimum": 1,
+          "title": "Max Retention Seconds",
+          "type": "integer"
+        },
+        "shutdown_grace_seconds": {
+          "default": 300,
+          "maximum": 3600,
+          "minimum": 0,
+          "title": "Shutdown Grace Seconds",
+          "type": "number"
+        },
+        "finalization_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Finalization Seconds",
+          "type": "number"
+        }
+      },
+      "title": "ToolExecutions",
+      "type": "object"
+    },
     "Worker": {
       "additionalProperties": false,
       "properties": {
@@ -1557,11 +1954,20 @@
     "control": {
       "$ref": "#/$defs/Control"
     },
+    "schedules": {
+      "$ref": "#/$defs/Schedules"
+    },
     "outbox": {
       "$ref": "#/$defs/Outbox"
     },
     "worker": {
       "$ref": "#/$defs/Worker"
+    },
+    "tool_executions": {
+      "$ref": "#/$defs/ToolExecutions"
+    },
+    "run_search": {
+      "$ref": "#/$defs/RunSearch"
     },
     "environments": {
       "$ref": "#/$defs/Environments"
@@ -1583,6 +1989,9 @@
     },
     "telemetry": {
       "$ref": "#/$defs/Telemetry"
+    },
+    "monitoring": {
+      "$ref": "#/$defs/Monitoring"
     },
     "extensions": {
       "additionalProperties": true,

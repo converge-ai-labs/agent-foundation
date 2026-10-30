@@ -7,41 +7,63 @@ builder with each agent's capabilities and gives each agent's run bindings what 
 are keyed by revision, which fixes their configuration.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 
-from a13n_harness import AgentContext, RunBindings, RunConfiguration
+from a13n_harness import AgentContext, EnvironmentMount, RequestContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
+from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
+from a13n_harness.tools import ToolIdentity
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import ExecutionPolicy
+from a13n_service.infra.errors import ServiceError, invalid
+from a13n_service.resources.agents import instructions
+from a13n_service.resources.agents.schemas import SharedSkillSync
+from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
     enabled_tools,
     memory_file_tools,
     memory_record_tools,
+    platform_tools,
     web_tools,
 )
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
-from a13n_service.runs.attempts import Lease, prove
+from a13n_service.runs.attempts import Lease
+from a13n_service.runs.browsers.admission import GUIDANCE as BROWSER_GUIDANCE
+from a13n_service.runs.browsers.execution import Backend as BrowserBackend
+from a13n_service.runs.browsers.execution import open_backend
+from a13n_service.runs.browsers.schemas import BrowserBinding
+from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.configuration import ConfigurationCapability
-from a13n_service.runs.findings.tools import FindingCapability
+from a13n_service.runs.environments.mounts import PRIMARY, has_primary
+from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
     file_memory,
     record_memory_capability,
     resolve_memories,
 )
+from a13n_service.runs.model_context import ModelContext
+from a13n_service.runs.platform_files import SOURCE
+from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
+from a13n_service.runs.schemas import RunOptions
+from a13n_service.runs.skill_cache import Cache
+from a13n_service.runs.skills import SkillPackage, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -50,16 +72,22 @@ from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Worksp
 class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
-    skills: tuple[PinnedSkill, ...]
+    skills: tuple[SkillPackage, ...]
+    platform: Mapping[str, ToolIdentity]
+    host_skills: bool
+    builtin_instructions: str | None
+    browser_tools: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
 class HostPlan:
     parts: Mapping[str, _Parts]
+    execution: ExecutionPolicy
     memories: tuple[PlannedMemory, ...]
     # The root agent's enabled memory tools of each kind.
     file_tools: frozenset[FileToolKey]
     record_tools: frozenset[RecordToolKey]
+    browser: BrowserBinding | None
 
 
 async def resolve_host(
@@ -72,10 +100,33 @@ async def resolve_host(
     authority: ExecutionAuthority,
 ) -> HostPlan:
     parts: dict[str, _Parts] = {}
+    # Resolve server-owned preset identities for the whole inline graph. Custom copies receive no guidance.
+    builtin = dict(
+        (
+            await session.execute(
+                select(AgentRevisionRow.id, AgentRow.preset_kind)
+                .join(AgentRow, AgentRow.id == AgentRevisionRow.agent_id)
+                .where(
+                    AgentRevisionRow.workspace_id == scope.workspace_id,
+                    AgentRevisionRow.id.in_({node.revision_id for node in agent.agents()}),
+                    AgentRow.source == "builtin",
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
     for node in agent.agents():
         if node.revision_id in parts:
             continue
         config = node.config
+        host_skills = bool(config.builtin_skills) and node.revision_id in builtin
+        if config.builtin_skills and not host_skills and not has_primary(run.environment_mounts):
+            raise invalid("builtin_skills", "builtin skills of custom agents need the run's primary environment")
+        skills = await resolve_skills(session, run, config.skills, sync=config.skill_sync)
+        # Reject before any shared directory is written, including configurations saved before this check existed.
+        if any(skill.name in config.builtin_skills for skill in skills):
+            raise invalid("builtin_skills", "a selected workspace skill has the same name as a builtin skill")
         parts[node.revision_id] = _Parts(
             connections=await resolve_connections(
                 session,
@@ -86,13 +137,19 @@ async def resolve_host(
                 authority=authority,
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
-            skills=await resolve_skills(session, run, config.skills),
+            skills=skills,
+            platform=platform_tools(config.toolsets),
+            host_skills=host_skills,
+            builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
+            browser_tools=enabled_tools(config.toolsets, "browser"),
         )
     return HostPlan(
         parts,
+        execution=ExecutionPolicy().overlay(RunOptions.model_validate(run.options).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
+        browser=BrowserBinding.model_validate(run.browser_binding) if run.browser_binding is not None else None,
     )
 
 
@@ -104,42 +161,64 @@ class Host:
     authority: ExecutionAuthority
     plan: HostPlan
     models: Mapping[str, Model]
-    tools: Mapping[str, tuple[AbstractCapability[AgentContext], ...]]
+    skill_cache: Cache
+    tools: Mapping[str, Mapping[str, AbstractCapability[AgentContext]]]
     webs: Mapping[str, WebBinding]
+    browsers: Mapping[str, BrowserBackend]
     # The root agent's file and record memory capabilities, for the kinds the run mounts.
     memory: tuple[AbstractCapability[AgentContext], ...]
+    environment: EnvironmentRuntime
 
-    def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
-        """The agent's own host tools: its connections, its pinned skills, asset publishing and configuration."""
-        features = list(self.tools[agent.revision_id])
-        if skills := self.plan.parts[agent.revision_id].skills:
+    def capabilities(
+        self, agent: ResolvedAgent, *, retain_tools: bool = False
+    ) -> list[AbstractCapability[AgentContext]]:
+        """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
+        features = list(self.sources(agent).values())
+        if retain_tools:
+            # Only conversation roots retain calls; inline children and memory organizers stay inline.
+            features.append(ToolExecutionCapability(self.plan.execution.tools))
+        parts = self.plan.parts[agent.revision_id]
+        if agent.revision_id in self.browsers:
+            features.append(
+                BrowserUseCapability(enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE)
+            )
+        if parts.builtin_instructions is not None:
+            features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
+        skills = parts.skills
+        if not parts.host_skills:
+            skills += tuple(
+                SkillPackage(package.archive, package.digest, package.definition.name, package.definition.description)
+                for name in sorted(agent.config.builtin_skills)
+                for package in (self.runtime.builtin_skills[name],)
+            )
+        sync = agent.config.skill_sync
+        if parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
+                    cache=self.skill_cache,
+                    builtin=SOURCE if parts.host_skills else None,
+                    sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
-                    prove_lease=partial(prove, self.runtime.storage, self.lease),
+                    prove_lease=partial(prove, self.runtime, self.lease),
                 )
             )
         if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
             features.append(AssetsCapability(self.runtime, self.lease, self.principal, self.authority))
-        if configuration := enabled_tools(agent.config.toolsets, "configuration"):
-            features.append(
-                ConfigurationCapability(self.runtime, self.lease, self.principal, self.authority, configuration)
-            )
-        trace_tools = enabled_tools(agent.config.toolsets, "traces")
-        finding_tools = enabled_tools(agent.config.toolsets, "findings")
-        if trace_tools or finding_tools:
-            features.append(
-                FindingCapability(self.runtime, self.lease, self.principal, self.authority, trace_tools, finding_tools)
-            )
         return features
+
+    def sources(self, agent: ResolvedAgent) -> Mapping[str, AbstractCapability[AgentContext]]:
+        """Already-opened connection and platform sources available for explicit grouping."""
+        return self.tools[agent.revision_id]
 
     def bindings(self, agent: ResolvedAgent, given: RunBindings) -> RunBindings:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
             given,
+            model_context=ModelContext(self.lease.run_id),
             web=self.webs.get(agent.revision_id),
+            browser_backend=self.browsers.get(agent.revision_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )
 
@@ -156,14 +235,20 @@ async def open_host(
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
     configuration: RunConfiguration,
-) -> AsyncIterator[Host]:
+    skill_cache: Cache,
+    environments: Mapping[str, EnvironmentMount],
+    app_captures: Captures | None = None,
+    request_context: RequestContext | None = None,
+) -> AsyncGenerator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
-        tools: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
+        platform_mounts = runtime.platform_mounts if any(parts.host_skills for parts in plan.parts.values()) else {}
+        tools: dict[str, dict[str, AbstractCapability[AgentContext]]] = {}
         webs: dict[str, WebBinding] = {}
+        browsers: dict[str, BrowserBackend] = {}
         for revision_id, parts in plan.parts.items():
-            tools[revision_id] = await stack.enter_async_context(
+            connections = await stack.enter_async_context(
                 open_connections(
                     parts.connections,
                     check.connection_call,
@@ -173,15 +258,24 @@ async def open_host(
                     registry=runtime.registry,
                     policy=runtime.endpoint_policy.for_run(configuration),
                     settings=runtime.settings.providers,
+                    capture=partial(app_captures.add, revision_id) if app_captures is not None else None,
+                    request_context=request_context,
                 )
             )
+            tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))
+            if parts.platform:
+                platform = await stack.enter_async_context(platform_capability(runtime, lease, parts.platform))
+                tools[revision_id]["platform"] = platform
+            if plan.browser is not None and parts.browser_tools:
+                browsers[revision_id] = await stack.enter_async_context(
+                    open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
+                )
             if parts.web is not None:
                 webs[revision_id] = await stack.enter_async_context(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
                 )
         files = file_memory(
-            runtime.storage,
-            runtime.settings.memory,
+            runtime,
             plan.memories,
             lease=lease,
             principal=principal,
@@ -201,4 +295,32 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, principal, authority, plan, models, tools, webs, memory)
+        yield Host(
+            runtime,
+            lease,
+            principal,
+            authority,
+            plan,
+            models,
+            skill_cache,
+            tools,
+            webs,
+            browsers,
+            memory,
+            _environment(environments, platform_mounts, command_environment=plan.execution.environment),
+        )
+
+
+def _environment(
+    user: Mapping[str, EnvironmentMount],
+    builtin: Mapping[str, EnvironmentMount],
+    *,
+    command_environment: Mapping[str, str] | None = None,
+) -> EnvironmentRuntime:
+    """Preserve the user's default while adding non-default Host document mounts."""
+    if user.keys() & builtin.keys():
+        raise ServiceError("invalid_argument", "Environment names conflict with builtin Skill mounts")
+    default = PRIMARY if PRIMARY in user else next(iter(user)) if len(user) == 1 else None
+    return create_environment_runtime(
+        mounts={**user, **builtin}, default_mount=default, command_environment=command_environment
+    )

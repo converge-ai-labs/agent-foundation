@@ -2,11 +2,11 @@
 
 ## Design Position
 
-File memory lets an Agent keep a small tree of text files across conversations. A Host mounts memories under names with `read` or `write` access. The model addresses a memory only by its mount name and reads and writes it only through the `memory_file_*` tools. Every write checks its own condition against the current file at the moment of the call; a failed condition fails that call at once and returns the current content. Nothing is merged silently.
+File memory lets an Agent keep a small tree of text files across conversations. A Host mounts memories under names with `read` or `write` access. The model addresses a memory only by its mount name and reads and writes it only through the `memory_file_*` tools. Every write checks its own condition and the conversation's observed file versions in that same memory before changing storage. A stale source or target fails that call with `read_conflict`, so the model must reread and reconsider its derived write.
 
 A memory's guide is authored guidance and belongs to the run's instructions. Memory content is data written by conversations and enters history as untrusted context, only at a run's first input and only when it changed.
 
-The Harness owns the store contract, the file format, `FileMemoryCapability`, and a local `DirectoryFileStore`. It keeps nothing across runs: the Host opens one store per mount and supplies and persists the context cursors. [Record Memory](21a-record-memory.md) owns the other memory kind, short records recalled by similarity.
+The Harness owns the store contract, the file format, `FileMemoryCapability`, and a local `DirectoryFileStore`. The Host opens one store per mount, persists context cursors, and checkpoints the Harness state carrying the conversation's observed file versions. [Record Memory](21a-record-memory.md) owns the other memory kind, short records recalled by similarity.
 
 ## Ownership
 
@@ -25,21 +25,23 @@ The Harness owns the store contract, the file format, `FileMemoryCapability`, an
 
 `FileStore` is bound to one memory's namespace. Versions are opaque strings. Every mutation is atomic and compare-and-swap:
 
-| Operation                                        | Contract                                                                                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `list()`                                         | Every file as `FileEntry(path, version, size, description)`                                                                    |
-| `read(path)`                                     | `FileText(path, text, version)`, or `not_found`                                                                                |
-| `write(path, text, *, expected, origin)`         | Writes when the current version equals `expected`; `expected=None` creates a file that must not exist. Returns the new version |
-| `move(source, destination, *, expected, origin)` | Renames atomically when the source is at `expected` and the destination does not exist. There is no copy-then-delete fallback  |
-| `delete(path, *, expected, origin)`              | Deletes when the current version equals `expected`                                                                             |
-| `changes(since)`                                 | `Changes(cursor, paths)` listing the paths changed after `since`, or `FullResync(cursor)` when the store cannot list them      |
-| `purge()`                                        | Removes every file of the memory                                                                                               |
+| Operation                                                           | Contract                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `list()`                                                            | Every file as `FileEntry(path, version, size, description)`                                                                    |
+| `read(path)`                                                        | `FileText(path, text, version)`, or `not_found`                                                                                |
+| `write(path, text, *, expected, origin, dependencies=None)`         | Writes when the current version equals `expected`; `expected=None` creates a file that must not exist. Returns the new version |
+| `move(source, destination, *, expected, origin, dependencies=None)` | Renames atomically when the source is at `expected` and the destination does not exist. There is no copy-then-delete fallback  |
+| `delete(path, *, expected, origin, dependencies=None)`              | Deletes when the current version equals `expected`                                                                             |
+| `changes(since)`                                                    | `Changes(cursor, paths)` listing the paths changed after `since`, or `FullResync(cursor)` when the store cannot list them      |
+| `purge()`                                                           | Removes every file of the memory                                                                                               |
 
-A failed version check raises `MemoryStoreError("version_mismatch", current=...)` carrying the file as it is now, or `None` when it no longer exists. A `move` onto an existing destination raises `already_exists` with the destination's current file. `changes()` returns a cursor taken before any content the caller reads next, so a change made meanwhile is listed again rather than skipped.
+`dependencies` maps paths in this memory to observed versions, with `None` meaning observed absence. The store checks every dependency and applies the mutation under one namespace lock or transaction. A mismatch raises `read_conflict` with the changed path and its current file before any file, history or counter effect, including for an otherwise no-op write. Omitted dependencies preserve direct callers' target-only preconditions. Custom stores must accept and enforce this parameter; a separate check followed by an unlocked mutation does not satisfy the contract.
 
-`SearchableFileStore` adds `search(pattern, *, regex, case_sensitive, path, limit)`, which returns matching lines under a directory and whether more matched. The tools scan the files of any other store.
+A failed target version check raises `MemoryStoreError("version_mismatch", current=...)` carrying the file as it is now, or `None` when it no longer exists. A `move` onto an existing destination raises `already_exists` with the destination's current file. `changes()` returns a cursor taken before any content the caller reads next, so a change made meanwhile is listed again rather than skipped.
 
-`Origin(run_id, principal_id, tool_call_id)` attributes a change. Stores without history ignore it. A file store's `MemoryStoreError.code` is one of `not_found`, `already_exists`, `version_mismatch`, `invalid_path`, `invalid_file`, `invalid_pattern`, `too_large`, `memory_full`, `memory_deleted`, `forbidden`, or `unavailable`.
+`SearchableFileStore` adds `search(pattern, *, regex, case_sensitive, path, limit)`, which returns matching lines under a directory and whether more matched. Each `GrepMatch` includes the version from the same content read or query snapshot as its text. The tools scan the files of any other store.
+
+`Origin(run_id, principal_id, tool_call_id)` attributes a change. Stores without history ignore it. A file store's `MemoryStoreError.code` is one of `not_found`, `already_exists`, `version_mismatch`, `read_conflict`, `read_set_full`, `invalid_path`, `invalid_file`, `invalid_pattern`, `too_large`, `memory_full`, `memory_deleted`, `forbidden`, or `unavailable`.
 
 History, restore, history purge, quotas, and change-feed retention belong to the store implementation and its Host. They are not part of `FileStore`, and the Harness never calls them.
 
@@ -84,11 +86,21 @@ The Capability's ID is `FILE_MEMORY_CAPABILITY_ID` (`a13n.memory.file`). Its ins
 - `grep` matches lines, not meaning. `regex` and `case_sensitive` default to false, so a pattern with parentheses or dots matches literally. It uses the store's search when the store is a `SearchableFileStore` and otherwise scans the files. An invalid regular expression fails with `invalid_pattern`. When nothing matches, the result suggests shorter or different keywords or the index.
 - `append` starts the text on a new line when the file does not end with one.
 
-Every write reads the current file, checks its condition, validates the resulting content, and writes expecting the version it read. When another write moved the version first, it reads and checks again, up to `write_retries` times, and then fails with `conflict_retries_exhausted`. `move` retries the same way through the store's atomic `move`. A lost `delete` is not retried, because its condition is the model's own version.
+Write tools pass the conversation's observed versions for the destination memory alongside their target precondition. `read_conflict` is returned to the model without retry, even when an edit's old substring still occurs exactly once. For a target not previously observed, the tool reads the current file, checks its condition and writes expecting that version; a racing target-only `version_mismatch` can reread and recheck up to `write_retries`, then fails with `conflict_retries_exhausted`. `move` follows the same rule. A lost `delete` is not retried, because its explicit condition is the model's own version.
 
 A failure is a native tool failure whose message is JSON: `{"error": code, "message": ..., "current": ...}`. `current` is present for failed conditions and store version or existence refusals; it holds the file as it is now (`path`, `version`, `size`, `content`) or `null` when the file does not exist. Codes are the store codes plus `unknown_memory`, `no_match`, `ambiguous_match`, and `conflict_retries_exhausted`.
 
 Each tool carries Harness tool metadata: its tool ID, the effects above, `read_only` idempotency for `view` and `grep` and `none` for writes, and an output policy that truncates. `view` and `grep` are recovery-retryable. The write tools declare no recovery.
+
+## Observed File Versions
+
+The Capability tracks file observations per conversation and memory identity (`cursor_key`, falling back to the mount name). Hosts keep that identity stable for the same memory and visible scope. Observations include viewed files and explicit absence, individual files returned by a listing or grep, and files individually represented in automatic context. Always-loaded text uses the version of the actual content read. Collapsed directory counts, omitted entries and unmatched search results introduce no file dependencies.
+
+Read results become dependencies after a successful primary model response, before its tools execute. A reread in the same tool batch cannot refresh the versions guarding a write already chosen by that model response. Internal write-time reads and conflict diagnostics do not refresh observations. The model rereads changed paths and makes a new decision before a recomputed write can succeed. Confirmed own mutations advance already tracked paths so consecutive own edits do not conflict with themselves. Moving an observed source carries its version guard to the destination and retains the old path's absence condition; insufficient tracking capacity refuses the move before storage changes.
+
+Observed and pending versions are checkpointed in `HarnessState` namespaced state. Restoring that state restores the guards along with history. Replacing history through a primary `ContextRestoredEvent` clears them and the context cursors; the next Run starts from fresh context. Legacy state has no invented observations. Tracking holds at most 2048 paths per memory without eviction: additional tool reads fail with `read_set_full`, while automatic context that cannot be tracked is omitted and retains its cursor. Existing observations remain guarded.
+
+The condition covers files observed in the destination memory, not cross-memory transactions or query phantoms. Unobserved unrelated files may change without rejecting a write. Each successful call becomes visible independently; a later conflict does not roll back earlier calls. Organizer progress confirmation is a separate Host concern.
 
 ## Context Projection and Cursors
 
@@ -144,7 +156,7 @@ A process can stop after a write commits but before the Host records the tool re
 - `.a13n-memory/` is never listed and cannot be written. Symbolic links are not followed. A file whose path breaks the format or whose content is not UTF-8 is left out of the listing, and an invalid frontmatter lists without a description.
 - The cursor is a digest of the listing. `changes()` answers `Changes(cursor, ())` while the listing is unchanged and `FullResync` after any change.
 - `Origin` is ignored; the store keeps no history. It does not implement `SearchableFileStore`.
-- `purge()` removes the root directory.
+- `purge()` removes content under the same lock and retains bookkeeping and the lock inode so waiting writers remain serialized. Direct filesystem editors that bypass this lock are outside its atomicity guarantee.
 
 ## Invariants
 
@@ -152,4 +164,4 @@ A process can stop after a write commits but before the Host records the tool re
 - Every write is compare-and-swap against the version its condition was checked on.
 - Memory context enters history only at a run's first input, only when it changed, and as escaped untrusted data.
 - The delivered cursor never covers content the run did not read.
-- The Harness stores no memory state across runs.
+- The Host persists observed-file state with conversation checkpoints; guards are never silently evicted.

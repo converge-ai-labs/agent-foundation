@@ -9,7 +9,7 @@ from a13n_service.runs.stream import stream_key
 from .api import expect, message, transcript
 from .scripted import user_texts
 from .stack import run_cli
-from .streams import Frame, assistant_text, finished, read_until, thread_stream
+from .streams import Frame, assistant_text, read_until, sealed, session_stream
 
 pytestmark = pytest.mark.anyio
 
@@ -77,47 +77,45 @@ async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore
     assert any(entry.get("content") == "Hello from the scripted model." for entry in request["body"]["messages"])
 
 
-async def test_the_thread_stream_survives_redis_loss(stack) -> None:  # type: ignore[no-untyped-def]
+async def test_the_session_stream_survives_redis_loss(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     first_reply = "Streamed output arrives in order, exactly once."
     await model.say(first_reply, to="[live]", chunks=6, delay=0.2)
     receipt = await api.start(agent, "[live] Stream a reply")
-    thread_id, first_run = receipt["thread"]["id"], receipt["run"]["id"]
-    async with thread_stream(api, thread_id) as frames:
-        seen = await read_until(frames, finished(first_run))
+    session_id, thread_id = receipt["thread"]["session_id"], receipt["thread"]["id"]
+    first_run = receipt["run"]["id"]
+    async with session_stream(api, session_id) as frames:
+        seen = await read_until(frames, sealed(first_run))
     assert assistant_text(seen, first_run) == first_reply
     sequences = [frame.data["sequence"] for frame in seen if frame.event == "delta"]
-    assert sequences == list(range(1, len(sequences) + 1))
-    assert any(frame.event == "boundary" for frame in seen)
+    assert sequences == sorted(set(sequences)) and not any(frame.event == "gap" for frame in seen)
+    assert transcript(seen[-1].data) == [("user", "[live] Stream a reply"), ("assistant", first_reply)]
     assert (await api.sealed(first_run))["output"] == first_reply
 
-    # Mid-reply, Redis loses the thread's stream. The client resumes from its last event, is told about the gap,
-    # and converges on the durable view without resubmitting anything.
+    # Mid-reply, Redis loses the thread's output. A reconnect starts from a snapshot, is told about the gap, and
+    # converges on the durable view without resubmitting anything.
     second_reply = "After the loss, the durable view still holds every word once."
     await model.say(second_reply, to="[loss]", chunks=12, delay=0.25)
     second_run = (await api.send(thread_id, agent, "[loss] Stream again"))["run"]["id"]
-    resumed_from = next(frame.id for frame in reversed(seen) if frame.id is not None)
     before: list[Frame] = []
 
     def replying(frame: Frame) -> bool:
         before.append(frame)
         return len(assistant_text(before, second_run)) >= len(second_reply) // 3
 
-    async with thread_stream(api, thread_id, last_event_id=resumed_from) as frames:
+    async with session_stream(api, session_id) as frames:
         await read_until(frames, replying)
     await stack.redis.delete(stream_key(thread_id))
-    last = next(frame.id for frame in reversed(before) if frame.id is not None)
-    async with thread_stream(api, thread_id, last_event_id=last) as frames:
-        after = await read_until(frames, finished(second_run))
-    assert after[0].event == "gap" and after[0].data["run_id"] == second_run
-    delivered = [
-        (frame.data["run_id"], frame.data["attempt"], frame.data["sequence"])
-        for frame in (*seen, *before, *after)
-        if frame.event == "delta"
-    ]
-    assert len(delivered) == len(set(delivered)), "a delta was delivered twice"
+    async with session_stream(api, session_id) as frames:
+        after = await read_until(frames, sealed(second_run))
+    run_frames = [frame for frame in after if frame.of(second_run)]
+    assert run_frames[0].event == "items" and not run_frames[0].data["complete"]
+    gap = next(index for index, frame in enumerate(run_frames) if frame.event == "gap")
+    # Nothing of the run arrives between the gap and the items that repair it.
+    assert run_frames[gap + 1].event == "items"
     run = await api.sealed(second_run)
     items = await api.items(second_run)
     assert run["output"] == second_reply and items["complete"]
     assert transcript(items) == [("user", "[loss] Stream again"), ("assistant", second_reply)]
+    assert transcript(run_frames[-1].data) == transcript(items)

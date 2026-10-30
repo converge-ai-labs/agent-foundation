@@ -1,33 +1,42 @@
+import { ModelIcon } from "../shell/model-identity";
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import { Link, useLocation } from "react-router";
+import management from "./management.module.css";
+import { useState } from "react";
+import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
-import {
-  Button,
-  ChoiceField,
-  FormField,
-  SettingsRow,
-  SettingsSection,
-  Textarea,
-} from "a13n-ui";
+import { Button, FormField, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
+import { useRootConfiguration } from "./root-configuration";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
+import { BrowserFields } from "./browser-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
 
 export function ResourceFields({
   source,
   onChange,
+  connectionsOnly = false,
+  onReady,
 }: {
+  onReady?: (ready: boolean) => void;
+  connectionsOnly?: boolean;
   source: string;
   onChange: (value: string) => void;
 }) {
+  const location = useLocation();
+  const [browserOpen, setBrowserOpen] = useState(location.hash === "#browser");
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -35,14 +44,11 @@ export function ResourceFields({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
+  const root = useRootConfiguration(
+    readDocument(source)?.get("kind") === "agent",
+  );
   const document = readDocument(source);
-  if (!document)
-    return (
-      <p>
-        Structured fields are unavailable for this document. Use the source
-        editor below.
-      </p>
-    );
+  if (!document) return <p>Edit this document in the source editor below.</p>;
   const get = (path: string[]) => document.getIn(path);
   const text = (path: string[]) =>
     typeof get(path) === "string" ? String(get(path)) : "";
@@ -89,7 +95,15 @@ export function ResourceFields({
     selectors.data?.models?.map((model) => ({
       value: model.model_id,
       label: model.name,
+      icon: <ModelIcon model={model} />,
     })) ?? [];
+  const codexModels = (selectors.data?.models ?? [])
+    .filter((model) => model.route.startsWith("openai-codex:"))
+    .map((model) => ({
+      value: model.model_id,
+      label: model.name,
+      icon: <ModelIcon model={model} />,
+    }));
   const agentOptions =
     selectors.data?.agents.map((agent) => ({
       value: agent.agent_id,
@@ -134,6 +148,13 @@ export function ResourceFields({
       <SelectionField
         key={path.join(".")}
         label={label}
+        inherited={
+          kind === "agent"
+            ? root.configuration
+              ? `${(root.configuration.defaults?.[path[0]] ?? []).map((id: string) => options.find((option) => option.value === id)?.label ?? id).join(", ") || "None"} · Instance defaults for new chats`
+              : "Loading instance defaults…"
+            : undefined
+        }
         value={values}
         options={options}
         onChange={(value) => set(path, value)}
@@ -144,7 +165,7 @@ export function ResourceFields({
   const referenceLists = (prefix: string[]) => (
     <>
       {list(
-        "Harness plugins",
+        "Plugins",
         [...prefix, "harness_plugins"],
         selectors.data?.harness_plugins.map((item) => ({
           value: item.resource_id,
@@ -170,44 +191,65 @@ export function ResourceFields({
         )}
     </>
   );
+  if (connectionsOnly)
+    return (
+      <SettingsSection variant="grouped" description="Used for new chats.">
+        <ErrorNotice error={selectors.error || sources.error} />
+        {referenceLists(["defaults"])}
+      </SettingsSection>
+    );
   return (
-    <div className={styles.stack}>
-      <ErrorNotice error={selectors.error || sources.error || catalog.error} />
-      {kind && <div>{field("Name", ["name"])}</div>}
-      {kind === "model" && (
-        <SettingsSection title="Model connection">
-          <div className={styles.fieldGroup}>
-            <ModelFields source={source} onChange={onChange} />
-          </div>
+    <div className={styles.configurationFields}>
+      <ErrorNotice
+        error={selectors.error || sources.error || catalog.error || root.error}
+      />
+      {kind && kind !== "agent" && kind !== "model" && (
+        <SettingsSection title="General">
+          {field("Name", ["name"])}
         </SettingsSection>
+      )}
+      {kind === "model" && (
+        <ModelFields
+          source={source}
+          onChange={onChange}
+          onReady={onReady}
+          nameField={field("Name", ["name"])}
+        />
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection title="Agent behavior">
-            <div className={`${styles.fieldGroup} ${styles.stack}`}>
-              <ResourceChoice
-                label="Model"
-                value={text(["model"])}
-                loading={selectors.isPending || sources.isPending}
-                onValueChange={(value) => set(["model"], value || undefined)}
-                options={[{ value: "", label: "Not connected" }, ...models]}
-              />
-              <AddModelButton onSaved={(id) => set(["model"], id)} />
-              <FormField label="Instructions">
-                <Textarea
-                  value={text(["instructions"])}
-                  onChange={(event) =>
-                    set(["instructions"], event.target.value)
-                  }
-                  rows={7}
-                />
-              </FormField>
-            </div>
+          <SettingsSection variant="grouped" title="General">
+            {field("Name", ["name"])}
+            <ResourceChoice
+              label="Model"
+              value={text(["model"])}
+              loading={selectors.isPending || sources.isPending}
+              onValueChange={(value) => set(["model"], value || undefined)}
+              options={[{ value: "", label: "Not connected" }, ...models]}
+              actions={
+                <AddModelButton compact onSaved={(id) => set(["model"], id)} />
+              }
+            />
           </SettingsSection>
-          <SettingsSection title="Connections">
-            {referenceLists([])}
+          <SettingsSection
+            variant="plain"
+            title="Instructions"
+            description="Extra instructions for this agent."
+          >
+            <Textarea
+              aria-label="Additional instructions"
+              variant="soft"
+              value={text(["instructions"])}
+              onChange={(event) => set(["instructions"], event.target.value)}
+              rows={5}
+              className={management.instructions}
+            />
           </SettingsSection>
-          <AgentFields source={source} onChange={onChange} />
+          <AgentFields
+            source={source}
+            onChange={onChange}
+            connections={referenceLists([])}
+          />
         </>
       )}
       {kind === "device" && (
@@ -216,23 +258,25 @@ export function ResourceFields({
       {kind === "project" && (
         <>
           <SettingsSection
-            title="Conversation defaults"
-            description="Applies to new conversations. Existing conversations can explicitly apply Project defaults."
+            variant="grouped"
+            title="Chat defaults"
+            description="Used by new chats. Existing chats keep their settings."
           >
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
+            variant="grouped"
             title="Environments"
-            description="Project defaults are copied into new conversations. Applying them to an existing Thread changes only specified selections."
+            description="Used by new chats, or when you apply Project defaults."
           >
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "Device environments are unspecified: new conversations add none; applying Project defaults keeps the Thread's selection."
+                  ? "New chats add no remote environments. Existing chats keep theirs."
                   : bindings.length
-                    ? "This selection replaces the Thread's added environments when Project defaults are applied."
-                    : "Explicitly empty: applying Project defaults removes the Thread's added environments."}
+                    ? "Applying these defaults replaces the chat's remote environments."
+                    : "Applying these defaults removes the chat's remote environments."}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -284,10 +328,7 @@ export function ResourceFields({
                   }}
                 />
               ) : (
-                <p>
-                  Repair the host root list in advanced YAML before using the
-                  directory field.
-                </p>
+                <p>Fix the folder list in Advanced configuration first.</p>
               )}
               <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
                 {rawBindings == null && (
@@ -301,7 +342,7 @@ export function ResourceFields({
                       )
                     }
                   >
-                    Explicitly select no added environments
+                    Local only
                   </Button>
                 )}
                 {(rawBindings != null ||
@@ -312,7 +353,7 @@ export function ResourceFields({
                     disabled={!roots?.length}
                     onClick={() => setEnvironments(undefined, null)}
                   >
-                    Leave Thread environments and default unchanged
+                    Keep current
                   </Button>
                 )}
               </div>
@@ -324,139 +365,252 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
-            <SettingsSection
-              title="Memory"
-              description="Shared file memory lives beside this configuration: global preferences across conversations, plus separate memory for each Project."
-            >
+            <SettingsSection variant="grouped" title="Chats">
+              {scalar("Default agent", ["defaults", "agent"], agentOptions)}
+              <SettingsRow
+                label="Sidekick"
+                controlId="sidekick-enabled"
+                stackOnNarrow={false}
+                description="Let your agent delegate work to separate chats."
+              >
+                <Switch
+                  id="sidekick-enabled"
+                  checked={get(["webui", "sidekick"]) !== null}
+                  onCheckedChange={(enabled) =>
+                    set(["webui", "sidekick"], enabled ? {} : null)
+                  }
+                />
+              </SettingsRow>
+              {get(["webui", "sidekick"]) !== null && (
+                <details className={layout.groupDisclosure}>
+                  <summary>Subagent defaults</summary>
+                  <div>
+                    {scalar(
+                      "Sidekick agent",
+                      ["webui", "sidekick", "agent"],
+                      agentOptions,
+                      "Use current agent",
+                    )}
+                    {scalar(
+                      "Sidekick model",
+                      ["webui", "sidekick", "model"],
+                      models,
+                      "Use agent model",
+                    )}
+                  </div>
+                </details>
+              )}
+            </SettingsSection>
+            <SettingsSection variant="grouped" title="Memory">
               <SettingsRow
                 label="File memory"
-                description="Enabled by default in CLI and WebUI. Disabling keeps existing files and takes effect on future runs."
+                controlId="memory-enabled"
+                stackOnNarrow={false}
+                description="Remember preferences and keep knowledge for each project."
               >
-                <ChoiceField
-                  label="File memory"
-                  hideLabel
-                  className={styles.settingControl}
-                  value={
-                    get(["memory", "enabled"]) !== false
-                      ? "enabled"
-                      : "disabled"
+                <Switch
+                  id="memory-enabled"
+                  checked={get(["memory", "enabled"]) !== false}
+                  onCheckedChange={(enabled) =>
+                    set(["memory", "enabled"], enabled)
                   }
-                  onValueChange={(value) =>
-                    set(["memory", "enabled"], value === "enabled")
-                  }
-                  options={[
-                    { value: "enabled", label: "Enabled" },
-                    { value: "disabled", label: "Disabled" },
-                  ]}
                 />
               </SettingsRow>
               {get(["memory", "enabled"]) !== false && (
                 <>
                   <SettingsRow
                     label="Automatic organization"
-                    description="WebUI only. New inputs may start parallel, bounded maintenance of changed memory files. Uses additional model requests; does not read conversation history."
+                    controlId="memory-organization-enabled"
+                    stackOnNarrow={false}
+                    description="Use extra model requests to keep memory files organized."
                   >
-                    <ChoiceField
-                      label="Automatic organization"
-                      hideLabel
-                      className={styles.settingControl}
-                      value={
+                    <Switch
+                      id="memory-organization-enabled"
+                      checked={
                         get(["memory", "auto_organize", "enabled"]) !== false
-                          ? "enabled"
-                          : "disabled"
                       }
-                      onValueChange={(value) =>
-                        set(
-                          ["memory", "auto_organize", "enabled"],
-                          value === "enabled",
-                        )
+                      onCheckedChange={(enabled) =>
+                        set(["memory", "auto_organize", "enabled"], enabled)
                       }
-                      options={[
-                        { value: "enabled", label: "Enabled" },
-                        { value: "disabled", label: "Disabled" },
-                      ]}
                     />
                   </SettingsRow>
-                  {scalar(
-                    "Organization model",
-                    ["memory", "auto_organize", "model"],
-                    models,
-                    "Use global default Agent's model",
-                  )}
-                  <div className={styles.fieldGroup}>
-                    <FormField
-                      label="Organization instructions"
-                      description="Optional guidance for consolidation. The organizer only has memory tools, not your Agent's tools or instructions."
+                  <details className={layout.groupDisclosure}>
+                    <summary>Memory updates</summary>
+                    <div>
+                      {scalar(
+                        "Update model",
+                        ["memory", "auto_organize", "model"],
+                        models,
+                        "Use default agent model",
+                      )}
+                      <div className={styles.fieldGroup}>
+                        <FormField
+                          label="Update instructions"
+                          description="How to update and organize memory files."
+                        >
+                          <Textarea
+                            variant="soft"
+                            value={text([
+                              "memory",
+                              "auto_organize",
+                              "instructions",
+                            ])}
+                            rows={4}
+                            onChange={(event) =>
+                              set(
+                                ["memory", "auto_organize", "instructions"],
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </FormField>
+                      </div>
+                    </div>
+                  </details>
+                </>
+              )}
+            </SettingsSection>
+            <details
+              id="browser"
+              className={layout.disclosure}
+              open={location.hash === "#browser" || undefined}
+              onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
+            >
+              <summary>Browser</summary>
+              <BrowserFields
+                source={source}
+                onChange={onChange}
+                active={browserOpen}
+              />
+            </details>
+            <section id="live">
+              <SettingsSection variant="grouped" title="Live voice">
+                <SettingsRow
+                  label="Live"
+                  controlId="live-enabled"
+                  stackOnNarrow={false}
+                  description="Talk to your agent using your Codex subscription."
+                >
+                  <Switch
+                    id="live-enabled"
+                    checked={get(["live", "enabled"]) === true}
+                    onCheckedChange={(enabled) =>
+                      set(["live", "enabled"], enabled)
+                    }
+                  />
+                </SettingsRow>
+                <details
+                  className={layout.groupDisclosure}
+                  open={location.hash === "#live" || undefined}
+                >
+                  <summary>Voice settings</summary>
+                  <div>
+                    <ResourceChoice
+                      label="Codex model"
+                      value={text(["live", "model"])}
+                      loading={selectors.isPending || sources.isPending}
+                      onValueChange={(value) =>
+                        set(["live", "model"], value || undefined)
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label: codexModels.length
+                            ? "Choose a Codex model"
+                            : "Not configured",
+                        },
+                        ...codexModels,
+                      ]}
+                      description={
+                        !selectors.isPending && !codexModels.length ? (
+                          <>
+                            Add a Codex subscription model in{" "}
+                            <Link
+                              className="underline underline-offset-2"
+                              to="/settings/models"
+                            >
+                              Models
+                            </Link>{" "}
+                            to use live voice.
+                          </>
+                        ) : undefined
+                      }
+                    />
+                    <SettingsRow label="Voice">
+                      <ChoiceField
+                        label="Voice"
+                        hideLabel
+                        value={text(["live", "voice"]) || "cove"}
+                        options={[
+                          "cove",
+                          "juniper",
+                          "maple",
+                          "spruce",
+                          "ember",
+                          "vale",
+                          "breeze",
+                          "arbor",
+                          "sol",
+                          "aube",
+                          "bubbie",
+                          "haetsal",
+                          "hanul",
+                          "himari",
+                          "leher",
+                          "miko",
+                          "neer",
+                          "porto",
+                          "rindo",
+                          "rio",
+                          "rivage",
+                          "selva",
+                          "sonna",
+                          "tinta",
+                          "viola",
+                        ].map((value) => ({
+                          value,
+                          label: value[0]!.toUpperCase() + value.slice(1),
+                        }))}
+                        onValueChange={(value) => set(["live", "voice"], value)}
+                      />
+                    </SettingsRow>
+                    <SettingsRow
+                      label="Workspace files"
+                      description="Let Live read and edit files in its workspace."
                     >
-                      <Textarea
-                        value={text([
-                          "memory",
-                          "auto_organize",
-                          "instructions",
-                        ])}
-                        rows={4}
-                        onChange={(event) =>
-                          set(
-                            ["memory", "auto_organize", "instructions"],
-                            event.target.value,
-                          )
+                      <ChoiceField
+                        label="Live file access"
+                        hideLabel
+                        value={
+                          get(["live", "files_enabled"]) === false
+                            ? "disabled"
+                            : "enabled"
+                        }
+                        options={[
+                          { value: "enabled", label: "Enabled" },
+                          { value: "disabled", label: "Disabled" },
+                        ]}
+                        onValueChange={(value) =>
+                          set(["live", "files_enabled"], value === "enabled")
                         }
                       />
-                    </FormField>
+                    </SettingsRow>
+                    <div className={styles.fieldGroup}>
+                      <FormField label="Live instructions">
+                        <Textarea
+                          variant="soft"
+                          value={text(["live", "instructions"])}
+                          onChange={(event) =>
+                            set(["live", "instructions"], event.target.value)
+                          }
+                          rows={3}
+                        />
+                      </FormField>
+                    </div>
                   </div>
-                </>
-              )}
-            </SettingsSection>
-            <SettingsSection title="Sidekick">
-              <SettingsRow
-                label="Sidekick"
-                description="Enabled by default. Add instructions for coordination in other conversations. Does not start work automatically. Thread and resource tools remain available when disabled."
-              >
-                <ChoiceField
-                  label="Sidekick"
-                  hideLabel
-                  className={styles.settingControl}
-                  value={
-                    get(["webui", "sidekick"]) !== null ? "enabled" : "disabled"
-                  }
-                  onValueChange={(value) =>
-                    set(["webui", "sidekick"], value === "disabled" ? null : {})
-                  }
-                  options={[
-                    { value: "disabled", label: "Disabled" },
-                    { value: "enabled", label: "Enabled" },
-                  ]}
-                />
-              </SettingsRow>
-              {get(["webui", "sidekick"]) !== null && (
-                <>
-                  {scalar(
-                    "Sidekick agent",
-                    ["webui", "sidekick", "agent"],
-                    agentOptions,
-                    "Inherit current agent",
-                  )}
-                  {scalar(
-                    "Sidekick model",
-                    ["webui", "sidekick", "model"],
-                    models,
-                    "Use agent model",
-                  )}
-                </>
-              )}
-            </SettingsSection>
-            <SettingsSection
-              title="Conversation defaults"
-              description="Defaults are used for new conversations. Use default keeps the inherited selection; None selects no resources."
-            >
-              {scalar("Default agent", ["defaults", "agent"], agentOptions)}
-              {scalar(
-                "Local environment profile",
-                ["defaults", "environment_profile"],
-                environmentOptions,
-              )}
-              {referenceLists(["defaults"])}
-            </SettingsSection>
+                </details>
+              </SettingsSection>
+            </section>
           </>
         )}
       {[
@@ -465,85 +619,79 @@ export function ResourceFields({
         "environment_profile",
       ].includes(kind) && (
         <SettingsSection
+          variant="grouped"
           title={
             kind === "environment_profile"
               ? "Environment connection"
               : "Plugin configuration"
           }
         >
-          <div className={`${styles.stack} ${styles.fieldGroup}`}>
-            <ResourceChoice
-              loading={catalog.isPending}
-              label={
-                kind === "environment_profile"
-                  ? "Environment provider"
-                  : "Plugin"
-              }
-              value={text([
-                kind === "harness_plugin"
-                  ? "plugin_key"
-                  : kind === "environment_profile"
-                    ? "provider_key"
-                    : "extension_key",
-              ])}
-              options={(catalog.data ?? [])
-                .filter(
-                  (item) =>
-                    item.kind ===
-                      (kind === "environment_profile"
-                        ? "environment_provider"
-                        : kind) && item.configurable,
-                )
-                .map((item) => ({ value: item.key, label: item.key }))}
-              onValueChange={(value) =>
-                set(
-                  [
-                    kind === "harness_plugin"
-                      ? "plugin_key"
-                      : kind === "environment_profile"
-                        ? "provider_key"
-                        : "extension_key",
-                  ],
-                  value,
-                )
-              }
-            />
-            {kind === "environment_profile" &&
-              field("Adapter key", ["adapter_key"])}
-            <p>
-              Configure plugin-specific options in the configuration file below.
-              Provider and adapter settings vary by plugin.
-            </p>
-          </div>
+          <ResourceChoice
+            loading={catalog.isPending}
+            label={
+              kind === "environment_profile" ? "Environment provider" : "Plugin"
+            }
+            value={text([
+              kind === "harness_plugin"
+                ? "plugin_key"
+                : kind === "environment_profile"
+                  ? "provider_key"
+                  : "extension_key",
+            ])}
+            options={(catalog.data ?? [])
+              .filter(
+                (item) =>
+                  item.kind ===
+                    (kind === "environment_profile"
+                      ? "environment_provider"
+                      : kind) && item.configurable,
+              )
+              .map((item) => ({ value: item.key, label: item.key }))}
+            onValueChange={(value) =>
+              set(
+                [
+                  kind === "harness_plugin"
+                    ? "plugin_key"
+                    : kind === "environment_profile"
+                      ? "provider_key"
+                      : "extension_key",
+                ],
+                value,
+              )
+            }
+          />
+          {kind === "environment_profile" &&
+            field("Adapter key", ["adapter_key"])}
+          <p className={styles.sectionNote}>
+            Set this plugin's options in Advanced configuration below.
+          </p>
         </SettingsSection>
       )}
       {kind === "mcp_server" && (
-        <SettingsSection title="Server connection">
-          <div className={`${styles.stack} ${styles.fieldGroup}`}>
-            <ChoiceField
-              label="Transport"
-              value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}
-              options={[
-                { value: "stdio", label: "Local command" },
-                { value: "http", label: "Remote HTTP" },
-              ]}
-              onValueChange={(value) =>
-                set(
-                  ["transport"],
-                  value === "http"
-                    ? { url: "https://" }
-                    : { command: "", arguments: [] },
-                )
-              }
-            />
-            {document.hasIn(["transport", "url"])
-              ? field("Server URL", ["transport", "url"])
-              : field("Command", ["transport", "command"])}
-            <p>
-              Arguments and environment/header references belong in advanced
-              YAML. Saved MCP source cannot be read back through this API.
-            </p>
-          </div>
+        <SettingsSection variant="grouped" title="Server connection">
+          <ChoiceField
+            label="Transport"
+            value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}
+            options={[
+              { value: "stdio", label: "Local command" },
+              { value: "http", label: "Remote HTTP" },
+            ]}
+            onValueChange={(value) =>
+              set(
+                ["transport"],
+                value === "http"
+                  ? { url: "https://" }
+                  : { command: "", arguments: [] },
+              )
+            }
+          />
+          {document.hasIn(["transport", "url"])
+            ? field("Server URL", ["transport", "url"])
+            : field("Command", ["transport", "command"])}
+          <p className={styles.sectionNote}>
+            Add arguments, environment variables or headers in Advanced
+            configuration. Keep a copy; saved connection details are hidden.
+          </p>
         </SettingsSection>
       )}
     </div>

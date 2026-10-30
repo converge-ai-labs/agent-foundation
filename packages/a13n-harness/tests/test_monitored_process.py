@@ -4,7 +4,7 @@ import asyncio
 import re
 import sys
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +12,8 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import RunBindings
+from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness._tool_execution import RunToolExecutions
 from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentError,
@@ -28,13 +29,19 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
+from a13n_harness.tool_execution import ToolExecutionConfig
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
-    _project_stream,
     _validate_stream,
 )
 from a13n_harness.toolsets.shell import ShellToolset
+from a13n_harness.toolsets.shell_observation import _project_stream
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.toolsets import FunctionToolset
 
 from .environment_helpers import DirectLocalSource
 
@@ -62,30 +69,37 @@ class _Steering:
         self.notified.set()
         return f"notification-{len(self.notifications)}"
 
+    async def discard_notifications(self, *, source: str, references: tuple[str, ...]) -> None:
+        self.notifications[:] = [notice for notice in self.notifications if notice[1:] != (source, references)]
+
 
 class _ToolDeps:
     def __init__(self) -> None:
         self._steering = _Steering()
+        self._tool_executions = RunToolExecutions()
+        self._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> None:
         del data, suffix
         return None
 
 
-def _ctx() -> Any:
+def _ctx(wait_seconds: float = 0) -> Any:
     events = []
 
     async def emit(event) -> None:
         events.append(event)
 
-    return SimpleNamespace(deps=_ToolDeps(), emit=emit, events=events)
+    deps = _ToolDeps()
+    deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)
+    return SimpleNamespace(deps=deps, emit=emit, events=events, tool_call_id=None)
 
 
 @asynccontextmanager
 async def _bound_process_environment(
     root: Path,
     operations: frozenset[EnvironmentAction] | None = None,
-) -> AsyncIterator[BoundEnvironment]:
+) -> AsyncGenerator[BoundEnvironment]:
     runtime = create_environment_runtime(
         mounts={
             "local": EnvironmentMount(
@@ -129,8 +143,8 @@ async def test_shell_exec_returns_no_id_for_quick_completion_and_run_id_for_live
         toolset = ShellToolset(environment)
         ctx = _ctx()
 
-        quick = await toolset.shell_exec(ctx, "printf quick", yield_time_seconds=2)
-        live = await toolset.shell_exec(ctx, "printf ready; sleep 30", yield_time_seconds=0)
+        quick = await toolset.shell_exec(_ctx(2), "printf quick")
+        live = await toolset.shell_exec(ctx, "printf ready; sleep 30")
 
         assert quick["ok"] is True
         assert "process_id" not in quick
@@ -168,7 +182,6 @@ async def test_shell_wait_repeats_output_for_repeated_explicit_offsets(tmp_path:
         started = await toolset.shell_exec(
             ctx,
             "printf first; sleep 0.1; printf second",
-            yield_time_seconds=0,
         )
         process_id = cast(str, started["process_id"])
 
@@ -212,7 +225,6 @@ async def test_shell_input_and_signal_mutate_without_returning_output(tmp_path: 
         started = await toolset.shell_exec(
             ctx,
             'IFS= read -r value; printf "got:%s" "$value"',
-            yield_time_seconds=0,
         )
         process_id = cast(str, started["process_id"])
 
@@ -239,8 +251,8 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         ctx = _ctx()
 
         async def run_commands() -> tuple[dict[str, Any], dict[str, Any]]:
-            quick = await toolset.shell_exec(ctx, "printf quick", yield_time_seconds=2)
-            live = await toolset.shell_exec(ctx, "sleep 0.05; printf done", yield_time_seconds=0)
+            quick = await toolset.shell_exec(_ctx(2), "printf quick")
+            live = await toolset.shell_exec(ctx, "sleep 0.05; printf done")
             await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=2)
             return cast(dict[str, Any], quick), cast(dict[str, Any], live)
 
@@ -264,6 +276,231 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         await toolset.close()
 
 
+@pytest.mark.parametrize("notice_first", [False, True])
+async def test_final_wait_withdraws_completion_notice_in_either_order(tmp_path: Path, notice_first: bool) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        callback_started = asyncio.Event()
+        release_callback = asyncio.Event()
+
+        async def emit(event: Any) -> None:
+            ctx.events.append(event)
+            if event.callback:
+                callback_started.set()
+                await release_callback.wait()
+
+        ctx.emit = emit
+        async with controller.active_run(ctx):
+            request = ShellToolset._command_request(
+                "read value; printf done",
+                cwd=None,
+                environment=None,
+                execution_timeout_seconds=None,
+                keep_stdin_open=True,
+            )
+            started = await controller.start(request, alias=None, yield_time_seconds=0)
+            process_id = started["process_id"]
+            await controller.write_input(process_id, data="go\n", close_stdin=True)
+            await asyncio.wait_for(callback_started.wait(), timeout=3)
+            if notice_first:
+                release_callback.set()
+                await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=2)
+                assert len(ctx.deps._steering.notifications) == 1
+            result = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=2)
+            assert result["stdout"]["text"] == "done"
+            release_callback.set()
+            await controller._entries[process_id].watcher
+            assert ctx.deps._steering.notifications == []
+            repeated = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert repeated == result
+            assert len([event for event in ctx.events if event.callback]) == 1
+        await controller.close()
+
+
+async def test_partial_wait_keeps_notice_until_last_available_page(tmp_path: Path) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        async with controller.active_run(ctx):
+            request = ShellToolset._command_request(
+                "read value; head -c 20000 /dev/zero | tr '\\0' x",
+                cwd=None,
+                environment=None,
+                execution_timeout_seconds=None,
+                keep_stdin_open=True,
+            )
+            started = await controller.start(request, alias=None, yield_time_seconds=0)
+            process_id = started["process_id"]
+            await controller.write_input(process_id, data="go\n", close_stdin=True)
+            await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=3)
+            page = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert page["stdout"]["next_offset"] < page["stdout"]["available_end"]
+            assert len(ctx.deps._steering.notifications) == 1
+            text = page["stdout"]["text"]
+            while page["stdout"]["next_offset"] < page["stdout"]["available_end"]:
+                page = await controller.wait(
+                    process_id,
+                    stdout_offset=page["stdout"]["next_offset"],
+                    stderr_offset=0,
+                    timeout_seconds=0,
+                )
+                text += page["stdout"]["text"]
+            assert text == "x" * 20000
+            assert ctx.deps._steering.notifications == []
+        await controller.close()
+
+
+@pytest.mark.parametrize("open_stream", ["stdout", "stderr"])
+async def test_terminal_wait_keeps_notice_while_output_observation_is_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_stream: str,
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        ctx = _ctx()
+        async with controller.active_run(ctx):
+            started = await controller.start(
+                ShellToolset._command_request(
+                    "read value; printf done",
+                    cwd=None,
+                    environment=None,
+                    execution_timeout_seconds=None,
+                    keep_stdin_open=True,
+                ),
+                alias=None,
+                yield_time_seconds=0,
+            )
+            process_id = started["process_id"]
+            await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert not controller._entries[process_id].completion_observed
+            await controller.write_input(process_id, "go\n", close_stdin=True)
+            await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=3)
+            observed, output = await controller._observe(
+                controller._entries[process_id],
+                stdout_offset=0,
+                stderr_offset=0,
+                wait_seconds=0,
+            )
+            stream = output.stdout if open_stream == "stdout" else output.stderr
+            stream = stream.model_copy(
+                update={
+                    "capture": stream.capture.model_copy(
+                        update={
+                            "observation_closed": False,
+                            "producer_complete": False,
+                            "content_complete": False,
+                        }
+                    )
+                }
+            )
+            monkeypatch.setattr(
+                controller,
+                "_observe",
+                AsyncMock(
+                    return_value=(
+                        observed,
+                        output.model_copy(update={open_stream: stream}),
+                    )
+                ),
+            )
+            await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+            assert len(ctx.deps._steering.notifications) == 1
+            assert not controller._entries[process_id].completion_observed
+        await controller.close()
+
+
+async def test_final_wait_prevents_native_final_drain_followup(tmp_path: Path) -> None:
+    calls = 0
+    native_context: RunContext[AgentContext] | None = None
+    process_id = ""
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+
+        async def start(ctx: RunContext[AgentContext]) -> str:
+            nonlocal native_context, process_id
+            native_context = ctx
+            async with controller.active_run(ctx):
+                result = await controller.start(
+                    ShellToolset._command_request(
+                        "read value; printf done",
+                        cwd=None,
+                        environment=None,
+                        execution_timeout_seconds=None,
+                        keep_stdin_open=True,
+                    ),
+                    alias=None,
+                    yield_time_seconds=0,
+                )
+            process_id = result["process_id"]
+            return process_id
+
+        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+            nonlocal calls
+            del messages, info
+            calls += 1
+            if calls == 1:
+                yield {0: DeltaToolCall(name="start", json_args="{}")}
+                return
+            assert native_context is not None
+            if calls == 2:
+                async with controller.active_run(native_context):
+                    await controller.write_input(process_id, "go\n", close_stdin=True)
+                    await asyncio.wait_for(controller._entries[process_id].watcher, timeout=3)
+                    assert native_context.pending_messages
+                    result = await controller.wait(process_id, stdout_offset=0, stderr_offset=0, timeout_seconds=0)
+                    assert result["stdout"]["text"] == "done"
+            yield "done"
+
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(Capability(toolsets=[FunctionToolset([start])]),),
+        )
+        result = await executable.run("run the command", bindings=RunBindings.embedded())
+        assert result.output_or_raise() == "done"
+        assert calls == 2
+        assert "Background process" not in str(result.all_messages())
+        await controller.close()
+
+
+@pytest.mark.parametrize("discard_between_attempts", [False, True])
+async def test_withdrawal_preserves_other_inputs_across_attempt_rebind(discard_between_attempts: bool) -> None:
+    from a13n_harness.capabilities.steering import SteeringBridge
+    from a13n_harness.state import AgentContextState
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    bridge = SteeringBridge(AgentContextState(), run_id="run-test", retain_inputs=False, events=AsyncMock())
+    first = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
+    await bridge.bind(first)
+    await bridge.notify("observed", source="background_process", references=("process-one",))
+    await bridge.notify("other process", source="background_process", references=("process-two",))
+    await bridge.notify("other source", source="async_subagent", references=("process-one",))
+    await bridge.steer("user input", input_id="user-one")
+    bridge.unbind(first, owned=True)
+    if discard_between_attempts:
+        await bridge.discard_notifications(source="background_process", references=("process-one",))
+    second = RunContext(deps=None, model=TestModel(), usage=RunUsage(), pending_messages=[])
+    await bridge.bind(second)
+    await bridge.discard_notifications(source="background_process", references=("process-one",))
+    assert second.pending_messages is not None
+    assert len(second.pending_messages) == 3
+    assert "observed" not in str(second.pending_messages)
+    assert "other process" in str(second.pending_messages)
+    assert "other source" in str(second.pending_messages)
+    assert "user input" in str(second.pending_messages)
+    # Delivery is immutable: withdrawal only changes pending lifecycle notices.
+    delivered = [message for pending in second.pending_messages for message in pending.messages]
+    second.pending_messages.clear()
+    await bridge.resolve_delivered(delivered)
+    await bridge.discard_notifications(source="background_process", references=("process-two",))
+    assert "other process" in str(delivered)
+    assert not bridge._pending_requests
+
+
 async def test_cancellation_after_publication_releases_observation_without_killing_process(
     tmp_path: Path,
 ) -> None:
@@ -281,8 +518,9 @@ async def test_cancellation_after_publication_releases_observation_without_killi
             await asyncio.sleep(0)
 
         start_task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await start_task
+        result = await start_task
+        assert result["process_id"] in controller._entries
+        assert controller._entries[result["process_id"]].model_visible.is_set()
 
         assert len(controller._entries) == 1
         process_id = next(iter(controller._entries))
@@ -292,6 +530,87 @@ async def test_cancellation_after_publication_releases_observation_without_killi
         await controller.close()
         assert not controller._entries
         assert (await environment.processes.inspect(handle)).status.phase == "running"
+
+
+async def test_cancellation_during_admission_settles_original_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        started, publish = asyncio.Event(), asyncio.Event()
+        original_start = environment.processes.start
+        calls = 0
+
+        async def blocked_start(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            result = await original_start(*args, **kwargs)
+            started.set()
+            await publish.wait()
+            return result
+
+        monkeypatch.setattr(environment.processes, "start", blocked_start)
+        request = ShellToolset._command_request(
+            "sleep 30", cwd=None, environment=None, execution_timeout_seconds=None, keep_stdin_open=True
+        )
+        task = asyncio.create_task(controller.start(request, alias=None, yield_time_seconds=30))
+        await started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        task.cancel()
+        publish.set()
+        result = await task
+        assert calls == 1
+        entry = controller._entries[result["process_id"]]
+        assert entry.model_visible.is_set()
+        await controller.close()
+        assert (await environment.processes.inspect(entry.handle)).status.phase == "running"
+
+
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+@pytest.mark.parametrize("wait_seconds", [None, 0, 0.125])
+async def test_shell_uses_common_foreground_wait_policy(tmp_path: Path, monkeypatch, mode, wait_seconds):
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        config = (
+            ToolExecutionConfig(mode=mode)
+            if wait_seconds is None
+            else ToolExecutionConfig(mode=mode, foreground_wait_seconds=wait_seconds)
+        )
+        ctx.deps._tool_executions.config = config
+        start = AsyncMock(wraps=toolset._process_controller.start)
+        monkeypatch.setattr(toolset._process_controller, "start", start)
+        await toolset.shell_exec(ctx, "echo value")
+        assert start.await_args.kwargs["yield_time_seconds"] == (5.0 if wait_seconds is None else wait_seconds)
+        await toolset.close()
+
+
+async def test_shell_without_execution_runtime_returns_live_reference_after_default_wait(tmp_path, monkeypatch):
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        ctx.deps.tool_execution = None
+        ctx.deps._tool_executions.config = ToolExecutionConfig()
+        original_wait = environment.processes.wait
+        wait = AsyncMock(side_effect=EnvironmentError("Wait expired", code="environment_timeout"))
+        monkeypatch.setattr(environment.processes, "wait", wait)
+        result = await toolset.shell_exec(ctx, "while [ ! -f release ]; do sleep 0.01; done; printf done")
+        assert result["ok"] is True, result
+        assert wait.await_count == 1
+        assert wait.await_args.kwargs["timeout_seconds"] == 5.0
+        assert result["status"]["phase"] == "running"
+        process_id = result["process_id"]
+        assert process_id is not None
+        (tmp_path / "release").touch()
+        await original_wait(
+            toolset._process_controller._entries[process_id].handle, condition="initial_terminal", timeout_seconds=2
+        )
+        completed = await toolset.shell_wait(ctx, process_id, timeout_seconds=2)
+        assert completed["status"]["phase"] == "exited"
+        assert completed["stdout"]["text"] == "done"
+        await toolset.close()
 
 
 async def test_process_references_are_run_local_and_cleanup_is_idempotent(tmp_path: Path) -> None:
@@ -467,23 +786,24 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
 
         class SpillDeps(_ToolDeps):
             async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
-                assert suffix == ".json"
                 spilled.append(data)
-                return "/workspace/.a13n/tool-results/quick.json"
+                return f"/workspace/.a13n/tool-results/quick{suffix}"
 
         toolset = ShellToolset(environment)
-        ctx = SimpleNamespace(deps=SpillDeps())
+        ctx = SimpleNamespace(deps=SpillDeps(), tool_call_id=None)
+        ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=2)
         result = await toolset.shell_exec(
             ctx,
             "head -c 30000 /dev/zero | tr '\\0' x",
-            yield_time_seconds=2,
         )
 
         assert result["ok"] is True
         assert "process_id" not in result
         assert result["disclosure"]["output_file_path"] == "/workspace/.a13n/tool-results/quick.json"
-        assert len(spilled) == 1
+        assert result["disclosure"]["text_file_paths"] == {"/stdout/text": "/workspace/.a13n/tool-results/quick.txt"}
+        assert len(spilled) == 2
         assert spilled[0].count(b"x") >= 30_000
+        assert spilled[1] == b"x" * 30_000
         await toolset.close()
 
 
@@ -525,7 +845,7 @@ async def test_observation_does_not_require_stdin_signals_or_standalone_outputs(
     async with _bound_process_environment(tmp_path, operations) as environment:
         toolset = ShellToolset(environment)
         assert set(toolset.get_toolset().tools) == {"shell_exec", "shell_info", "shell_wait"}
-        result = await toolset.shell_exec(_ctx(), "sleep 0.05; printf observed", yield_time_seconds=0)
+        result = await toolset.shell_exec(_ctx(), "sleep 0.05; printf observed")
         assert result["ok"]
         ref = result["process_id"]
         final = await toolset.shell_wait(_ctx(), ref, timeout_seconds=2)
@@ -547,9 +867,9 @@ async def test_invented_alias_does_not_start_process_and_valid_interactive_flow_
         toolset = ShellToolset(environment)
         ctx = _ctx()
         try:
-            first = await toolset.shell_exec(ctx, "printf ordinary")
+            first = await toolset.shell_exec(_ctx(1), "printf ordinary")
             assert first["ok"] and first["stdout"]["text"] == "ordinary"
-            invalid = await toolset.shell_exec(ctx, "cat", alias="shell-smoke-input", yield_time_seconds=0)
+            invalid = await toolset.shell_exec(ctx, "cat", alias="shell-smoke-input")
             assert not invalid["ok"]
             assert invalid["error"]["code"] == "environment_selection_invalid"
             assert invalid["error"]["details"]["field"] == "alias"
@@ -557,7 +877,7 @@ async def test_invented_alias_does_not_start_process_and_valid_interactive_flow_
             assert "process_id" not in invalid
             assert not toolset._process_controller._entries
 
-            started = await toolset.shell_exec(ctx, "cat; printf 'stdin: EOF' >&2", yield_time_seconds=0)
+            started = await toolset.shell_exec(ctx, "cat; printf 'stdin: EOF' >&2")
             assert started["ok"]
             ref = started["process_id"]
             inspected = await toolset.shell_inspect(ctx, ref)
@@ -654,7 +974,7 @@ async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, 
 async def test_input_acceptance_survives_later_status_lookup_failure(tmp_path: Path, monkeypatch) -> None:
     async with _bound_process_environment(tmp_path) as environment:
         toolset = ShellToolset(environment)
-        started = await toolset.shell_exec(_ctx(), "cat", yield_time_seconds=0)
+        started = await toolset.shell_exec(_ctx(), "cat")
 
         async def unavailable(handle):
             raise EnvironmentError("Temporarily unavailable.", code="environment_unavailable")
@@ -707,7 +1027,7 @@ async def test_shell_toolset_owns_binding_and_process_resources(tmp_path: Path) 
         assert bindings[0].kind == "mount"
         info_resolver = tools["shell_info"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         assert await info_resolver({}, context=ctx.deps) == bindings
-        started = await toolset.shell_exec(ctx, "cat", yield_time_seconds=0)
+        started = await toolset.shell_exec(ctx, "cat")
         try:
             process_id = started["process_id"]
             for name in ("shell_info", "shell_wait", "shell_input", "shell_signal"):

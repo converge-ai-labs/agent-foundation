@@ -11,7 +11,12 @@ import type {
   ExecutionObservation,
   ExecutionStep,
 } from "./execution";
-import { attemptEvent, retryEvent, type LifecycleNotice } from "./lifecycle";
+import {
+  attemptEvent,
+  contextRecoveryEvent,
+  retryEvent,
+  type LifecycleNotice,
+} from "./lifecycle";
 import { reportsTokens, type StepUsage } from "./usage";
 
 /**
@@ -51,6 +56,8 @@ export interface ModelEntry extends EntryBase {
   reportedUsage: boolean;
   messageCount: number | null;
   errorCode: string | null;
+  errorStatus: number | null;
+  errorDetail: string | null;
   contextTokens: number | null;
   stopReason: StopReason;
   children: TimelineEntry[];
@@ -79,7 +86,8 @@ export interface ActionEntry extends EntryBase {
 }
 
 export interface ContentEntry extends EntryBase {
-  kind: "reasoning" | "reply" | "guidance";
+  /** `hidden` is input the model read that its producer hid from Chat. */
+  kind: "reasoning" | "reply" | "guidance" | "hidden";
   text: string;
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
@@ -108,6 +116,8 @@ interface RunTotals {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+  /** The part of the input the provider served from its cache. */
+  cacheReadTokens: number;
   /** A model usage record was observed; without one, tokens are unknown. */
   reportedUsage: boolean;
   costUsd: string | null;
@@ -207,7 +217,7 @@ export function runTimeline({
   for (const item of [...items].sort((a, b) =>
     comparePositions(a.firstPosition, b.firstPosition),
   )) {
-    if (item.display === false || ownerOfItem.has(item.id)) continue;
+    if (ownerOfItem.has(item.id)) continue;
     const content = contentEntry(item, () => {
       const first = firstUserText;
       firstUserText = false;
@@ -216,7 +226,10 @@ export function runTimeline({
     // A Run read from retained Items alone reports no execution steps; the
     // call the Item itself recorded is still what happened.
     const entry =
-      content ?? (item.kind === "tool_call" ? retainedAction(item) : null);
+      content ??
+      (item.kind === "tool_call" && item.display !== false
+        ? retainedAction(item)
+        : null);
     if (entry)
       place(
         requestOfItem.get(item.id)?.id ??
@@ -236,21 +249,54 @@ export function runTimeline({
   for (const retry of execution.retries)
     place(null, { position: retry.position, entry: retryEvent(retry) });
 
+  // A request records the input it read just after it starts, so guidance
+  // found before the request's first output was read by that request.
+  function readBy(guidance: Positioned, siblings: readonly Positioned[]) {
+    const request = siblings.findLast(
+      (candidate) =>
+        candidate.entry.kind === "model" &&
+        comparePositions(candidate.position, guidance.position) < 0,
+    );
+    const output = request
+      ? children
+          .get(request.entry.id)
+          ?.map((child) => child.position)
+          .sort(comparePositions)[0]
+      : undefined;
+    return output && comparePositions(guidance.position, output) < 0
+      ? request
+      : undefined;
+  }
   function assemble(positioned: Positioned[]): TimelineEntry[] {
-    return [...positioned]
-      .sort((a, b) => comparePositions(a.position, b.position))
-      .map(({ entry }) => {
-        const nested = children.get(entry.id);
-        if (entry.kind === "model") {
-          const model = { ...entry, children: assemble(nested ?? []) };
-          return { ...model, stopReason: stopReason(model) };
-        }
-        return nested && isAction(entry)
-          ? { ...entry, children: assemble(nested) }
-          : entry;
-      });
+    const sorted = [...positioned].sort((a, b) =>
+      comparePositions(a.position, b.position),
+    );
+    // Input reads before the request that read it, in arrival order.
+    const ordered = [...sorted];
+    for (const item of sorted) {
+      const input =
+        item.entry.kind === "guidance" || item.entry.kind === "hidden";
+      const request = input && readBy(item, sorted);
+      if (!request) continue;
+      ordered.splice(ordered.indexOf(item), 1);
+      ordered.splice(ordered.indexOf(request), 0, item);
+    }
+    return ordered.map(({ entry }) => {
+      const nested = children.get(entry.id);
+      if (entry.kind === "model") {
+        const model = { ...entry, children: assemble(nested ?? []) };
+        return { ...model, stopReason: stopReason(model) };
+      }
+      return nested && isAction(entry)
+        ? { ...entry, children: assemble(nested) }
+        : entry;
+    });
   }
   const entries = assemble(roots);
+  for (const observation of execution.observations) {
+    const warning = contextRecoveryEvent(observation);
+    if (warning) entries.push(warning);
+  }
   if (execution.observations.length)
     entries.push(otherEntry(execution.observations));
   return { entries, totals: runTotals(run, execution, coverage), coverage };
@@ -286,6 +332,8 @@ function modelEntry(
     reportedUsage: reportsTokens(step.usage),
     messageCount: step.messageCount ?? null,
     errorCode: step.errorCode ?? null,
+    errorStatus: step.errorStatus ?? null,
+    errorDetail: step.errorDetail ?? null,
     contextTokens:
       step.contextTokens ?? execution.contextTokens[step.id] ?? null,
     stopReason: null,
@@ -377,10 +425,11 @@ function retainedAction(item: PresentedItem): ActionEntry {
 }
 
 /**
- * A content Item becomes an entry only when it is the Agent's own output or
- * guidance sent into a working Run. Run input and injected context are not
- * timeline actions. `first` reports, once, whether this is the Run's leading
- * user text, which is the request itself rather than steering.
+ * A content Item becomes an entry only when it is the Agent's own output,
+ * guidance sent into a working Run, or input hidden from Chat, such as where a
+ * file was placed or which mounts changed. The Run's own input and injected
+ * context are not timeline actions. `first` reports, once, whether this is the
+ * Run's leading user text, which is the request itself rather than steering.
  */
 function contentEntry(
   item: PresentedItem,
@@ -399,6 +448,10 @@ function contentEntry(
     durationMs: duration(item.startedAt, item.endedAt),
     state: item.state,
   };
+  if (item.display === false)
+    return item.kind === "text_message" && item.role === "user"
+      ? { kind: "hidden", ...base }
+      : null;
   if (item.kind === "reasoning_message") return { kind: "reasoning", ...base };
   if (item.kind !== "text_message") return null;
   if (item.role === "assistant") return { kind: "reply", ...base };
@@ -454,17 +507,18 @@ function runTotals(
 ): RunTotals {
   const records = [...execution.usage.model, ...execution.usage.provider];
   const { total, reported } = sumCosts(records.map((usage) => usage.costUsd));
+  const sum = (field: "inputTokens" | "outputTokens" | "cacheReadTokens") =>
+    execution.usage.model.reduce((value, usage) => value + usage[field], 0);
   return {
-    modelCalls: execution.steps.filter((step) => step.kind === "llm").length,
+    // Retained history without lifecycle steps still has one usage record
+    // per model request.
+    modelCalls:
+      execution.steps.filter((step) => step.kind === "llm").length ||
+      execution.usage.model.length,
     toolCalls: execution.steps.filter((step) => step.kind !== "llm").length,
-    inputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.inputTokens,
-      0,
-    ),
-    outputTokens: execution.usage.model.reduce(
-      (sum, usage) => sum + usage.outputTokens,
-      0,
-    ),
+    inputTokens: sum("inputTokens"),
+    outputTokens: sum("outputTokens"),
+    cacheReadTokens: sum("cacheReadTokens"),
     reportedUsage: execution.usage.model.some(reportsTokens),
     costUsd: total,
     costComplete:

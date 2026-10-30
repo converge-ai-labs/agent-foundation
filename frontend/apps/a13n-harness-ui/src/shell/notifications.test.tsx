@@ -31,7 +31,7 @@ let native: ReturnType<typeof vi.fn>;
 let queries: QueryClient;
 const notice = (
   receipt = "receipt-1",
-  status: "completed" | "failed" | "suspended" = "completed",
+  status: Schema<"RootOperationNotice">["status"] = "completed",
 ): Schema<"SummaryInvalidation"> => ({
   epoch: "epoch-1",
   sequence: 1,
@@ -196,12 +196,44 @@ it("keeps attention notices without permission or when desktop reminders are dis
   expect(
     await screen.findByText("Which project should I update?"),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Turn off reminders" }));
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
   permission = "granted";
   vi.mocked(document.hasFocus).mockReturnValue(false);
   event = notice("receipt-3", "failed");
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
+});
+it("dismisses setup without disabling notifications and remembers the dismissal", async () => {
+  const view = mount();
+  fireEvent.click(screen.getByLabelText("Dismiss notification"));
+  await waitFor(() =>
+    expect(screen.queryByText("Get task notifications")).toBeNull(),
+  );
+  expect(
+    screen
+      .getByRole("switch", { name: "Enable browser notifications" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  view.unmount();
+  mount();
+  expect(screen.queryByText("Get task notifications")).toBeNull();
+  const toggle = screen.getByRole("switch", {
+    name: "Enable browser notifications",
+  });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  expect(screen.getByText("Get task notifications")).toBeTruthy();
+});
+it("routes setup to Settings without requesting permission or repeating the toast there", async () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(await screen.findByText("/settings/notifications")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.queryByText("Get task notifications")).toBeNull(),
+  );
+  expect(request).not.toHaveBeenCalled();
 });
 it("reflects permission revocation and another tab disabling reminders", () => {
   permission = "granted";
@@ -235,9 +267,7 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
   expect(native).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("heading", { name: "Reconnect background notifications" }),
-  ).toBeTruthy();
+  expect(screen.getByText("Background alerts paused")).toBeTruthy();
   let finish!: () => void;
   enable.mockImplementation(
     () =>
@@ -265,7 +295,7 @@ it("marks a rejected background test as needing attention instead of claiming en
   vi.spyOn(push, "testPush").mockRejectedValue(
     new Error("Reconnect background notifications"),
   );
-  mount("/settings/notifications", transport);
+  mount("/settings#notifications", transport);
   await screen.findByText("Enabled on this device");
   fireEvent.click(
     screen.getByRole("button", { name: "Send test notification" }),
@@ -291,14 +321,12 @@ it.each([
   (device) => {
     vi.stubGlobal("navigator", device);
     vi.stubGlobal("Notification", undefined);
-    mount("/settings/notifications");
+    mount("/settings#notifications");
     expect(screen.getByText("Open from Home Screen")).toBeTruthy();
     expect(
-      screen.getAllByText(/Add Harness UI to your Home Screen/).length,
+      screen.getAllByText(/Add Harness to your Home Screen/).length,
     ).toBeGreaterThan(0);
-    expect(
-      screen.queryByRole("button", { name: "Allow notifications" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Enable alerts" })).toBeNull();
     expect(
       screen
         .getByRole("button", { name: "Send test notification" })
@@ -321,9 +349,9 @@ it("uses real capabilities in the installed iPad app without blocking permission
     permission = "granted";
     writePreference("notifications.push-subscription", "ipad-subscription");
   });
-  mount("/settings/notifications", transport);
+  mount("/settings#notifications", transport);
   expect(enable).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Allow notifications" }));
+  fireEvent.click(screen.getByRole("button", { name: "Enable alerts" }));
   await screen.findByText("Enabled on this device");
   expect(enable).toHaveBeenCalledWith(transport);
   transport.close();
@@ -348,16 +376,16 @@ it("keeps installation guidance inline without duplicating a persistent toast in
     maxTouchPoints: 5,
   });
   vi.stubGlobal("Notification", undefined);
-  mount("/settings/notifications");
-  expect(
-    screen.getAllByText(/Add Harness UI to your Home Screen/),
-  ).toHaveLength(1);
+  mount("/settings#notifications");
+  expect(screen.getAllByText(/Add Harness to your Home Screen/)).toHaveLength(
+    1,
+  );
   const help = screen.getByText("Delivery help").closest("details")!;
   expect(help.open).toBe(false);
   fireEvent.click(screen.getByText("Delivery help"));
   expect(help.open).toBe(true);
   expect(help.textContent).toContain("Share → Add to Home Screen");
-  expect(help.textContent).toContain("six-hour delivery window");
+  expect(help.textContent).toContain("six hours");
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(
     screen.queryByText(/Without background delivery, keep WebUI open/),
@@ -385,16 +413,14 @@ it.each(["completed", "failed", "suspended"] as const)(
     expect(screen.getAllByText(event.notice!.brief)).toHaveLength(
       currentCount + 1,
     );
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Open conversation" })[0],
-    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Open chat" })[0]);
     expect(await screen.findByText("/threads/never-visited")).toBeTruthy();
     expect(native).not.toHaveBeenCalled();
   },
 );
 
 it("does not synthesize history and deduplicates receipts only within an epoch", () => {
-  mount("/settings/notifications");
+  mount("/settings#notifications");
   expect(screen.queryByText(event.notice!.brief)).toBeNull();
   fireEvent.click(screen.getByText("Emit"));
   fireEvent.click(screen.getByText("Emit"));
@@ -414,9 +440,7 @@ it("has no permission-only setup or local test fallback without Push support", (
       .getByRole("button", { name: "Send test notification" })
       .hasAttribute("disabled"),
   ).toBe(true);
-  expect(
-    screen.queryByRole("button", { name: "Allow notifications" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Enable alerts" })).toBeNull();
   fireEvent.click(screen.getByText("Emit"));
   expect(screen.getByText(event.notice!.brief)).toBeTruthy();
   expect(native).not.toHaveBeenCalled();
@@ -429,7 +453,7 @@ it("pulses visible pages immediately and every minute, coalesces waits, and stop
   vi.spyOn(push, "enablePush").mockResolvedValue();
   const transport = createTransport("fixture-key", vi.fn());
   vi.useFakeTimers();
-  const view = mount("/settings/notifications", transport);
+  const view = mount("/settings#notifications", transport);
   await act(async () => {});
   expect(screen.getByText("Enabled on this device")).toBeTruthy();
   const activity = vi.mocked(push.reportPushActivity);
@@ -478,4 +502,33 @@ it("uses the current route without replaying suppressed completion after navigat
   event = notice("another-receipt");
   fireEvent.click(screen.getByText("Emit"));
   expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+});
+
+it.each([
+  ["goal_verified", "Goal verified by the Agent"],
+  ["goal_incomplete", "Goal not verified"],
+] as const)(
+  "presents %s from the receipt, not the currently cached Goal",
+  async (status, title) => {
+    queries.setQueryData(["thread", "thread-1", "detail"], {
+      thread: { title: "UI polish", goal: { status: "working" } },
+    });
+    mount("/threads/thread-other");
+    event = notice("goal-receipt", status);
+    fireEvent.click(screen.getByText("Emit"));
+    expect(await screen.findByText(`${title} · UI polish`)).toBeTruthy();
+    expect(screen.queryByText("Task completed · UI polish")).toBeNull();
+  },
+);
+
+it("suppresses a viewed Goal success but keeps incomplete Goal warnings", async () => {
+  mount();
+  event = notice("verified", "goal_verified");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(
+    screen.queryByText("Goal verified by the Agent · UI polish"),
+  ).toBeNull();
+  event = notice("incomplete", "goal_incomplete");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findByText("Goal not verified · UI polish")).toBeTruthy();
 });

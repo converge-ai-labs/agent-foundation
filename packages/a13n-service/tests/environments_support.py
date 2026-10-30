@@ -1,5 +1,6 @@
 """The fake environment providers and the helpers the environments tests share."""
 
+import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -266,9 +267,10 @@ EXPIRING = replace(
 async def with_fake_providers(service: SimpleNamespace) -> SimpleNamespace:
     """`service` whose registry also offers the fake providers, with an agent whose default template is the fake one;
     tests drive maintenance and renewal themselves."""
-    for task in service.app.state.background:
-        if task.get_name() == "control-sweeps":
-            task.cancel()
+    sweeps = [task for task in service.app.state.background if task.get_name() == "control-sweeps"]
+    for task in sweeps:
+        task.cancel()
+    await asyncio.gather(*sweeps, return_exceptions=True)
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, FAKE, EXPIRING)))
     service.app.state.runtime = service.runtime
     BACKEND.instances.clear()

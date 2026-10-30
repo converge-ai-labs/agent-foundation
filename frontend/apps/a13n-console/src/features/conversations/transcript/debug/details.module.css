@@ -1,96 +1,87 @@
-/* The run's own record: identifiers, attempts, lineage, and the navigator. */
+/* A Run's record, read in its Details dialog: sections separated by space,
+   facts as label-over-value cells. */
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .details {
+  container-type: inline-size;
   display: grid;
   gap: 16px;
   min-width: 0;
-  margin: 0 0 16px 30px;
-  padding: 14px 16px;
-  border-radius: var(--a13n-radius-group);
+  padding-bottom: 8px;
+}
+.section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.section:first-child {
+  padding: 16px;
+  border-radius: 12px;
   background: var(--a13n-surface);
 }
-.detailColumns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.detailBlock {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  align-content: start;
-}
-.detailLabel {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-2xs);
+.section h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
-.detailNote {
+.note {
   margin: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
-}
-.detailPath {
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-xs);
-  overflow-wrap: anywhere;
-}
-.detailDisclosure {
-  margin-top: 4px;
 }
 .facts {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
   margin: 0;
-  font-size: var(--a13n-text-xs);
+  font-size: var(--a13n-text-sm);
 }
 .facts > div {
-  display: grid;
-  grid-template-columns: minmax(0, 116px) minmax(0, 1fr);
-  gap: 10px;
-  align-items: baseline;
-  min-width: 0;
-}
-.facts dt {
-  color: var(--a13n-secondary);
-}
-.facts dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.attempts,
-.lineageList {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--a13n-text-xs);
-}
-.attempt {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
-.attemptHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.attemptHead strong {
-  font-weight: 500;
-}
-.attemptSpan {
+.facts dt {
   color: var(--a13n-secondary);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--a13n-text-xs);
 }
-.lineageList li {
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--a13n-text-sm);
+}
+.attempt {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.item strong {
+  font-weight: 500;
+}
+.meta {
+  margin-left: auto;
   color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Navigator -------------------------------------------------------------- */
@@ -124,17 +115,196 @@
   font-variant-numeric: tabular-nums;
 }
 .navigatorPopup {
-  width: min(520px, calc(100vw - 32px));
-  max-height: min(60vh, 420px);
+  width: min(340px, calc(100vw - 24px));
+  padding: 0;
 }
-/* The gutter has room for the whole tree; the pill is for when it has not. */
-@media (min-width: 1440px) {
+.navigatorPopup > [data-slot="popover-viewport"] {
+  padding: 6px;
+  overflow: hidden;
+}
+/* Beside the Runs the page has room for the whole index; the pill is for
+   when it has not. */
+@container (min-width: 1000px) {
+  .navigator {
+    display: block;
+    align-self: start;
+    padding: 12px 0 0;
+  }
   .navigatorPill {
     display: none;
   }
 }
-@media (max-width: 760px) {
-  .details {
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.execution {
+  padding: 0;
+}
+.execution [data-slot="execution-fields"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 24px;
+}
+.execution [role="group"] {
+  gap: 3px;
+}
+.execution [role="group"] > :first-child {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.execution [role="group"]:first-child {
+  order: 1;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 144px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .facts {
+    gap: 12px;
+  }
+  .facts > div {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+  }
+  .execution [data-slot="execution-fields"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .execution [role="group"],
+  .execution [role="group"]:first-child {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+  }
+  .meta {
+    margin-left: 0;
+    white-space: normal;
+  }
+}
+
+.details [data-slot="disclosure-surface"] > button {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+@container (max-width: 720px) {
+  .usage table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .usage thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .usage tbody,
+  .usage tfoot {
+    display: block;
+  }
+  .usage tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 20px;
+    padding: 12px 0;
+  }
+  .usage td,
+  .usage td[data-number],
+  .usage th {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .usage td:first-child,
+  .usage th:first-child {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .usage td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--a13n-secondary);
+    font-size: var(--a13n-text-xs);
+    margin-bottom: 3px;
+    font-weight: 400;
+  }
+  .usage tfoot td:empty {
+    display: none;
+  }
+}
+
+.usage th,
+.usage td {
+  border: 0;
+}
+.usage thead {
+  color: var(--a13n-secondary);
+}
+.usage tbody tr + tr {
+  border-top: 12px solid transparent;
+}
+
+@container (width > 720px) {
+  .usage thead th {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom: 0;
+    background: var(--a13n-surface);
+  }
+  .usage thead th:first-child {
+    border-radius: 8px 0 0 8px;
+  }
+  .usage thead th:last-child {
+    border-radius: 0 8px 8px 0;
+  }
+  .usage :is(th, td):first-child {
+    padding-left: 14px;
+  }
+  .usage :is(th, td):last-child {
+    padding-right: 14px;
+  }
+}
+
+/* Detail groups share the outlined body used by Run options. */
+.details
+  > .section
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  margin-top: 6px;
+  margin-bottom: 2px;
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.details > .section > .list {
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.list > li + li {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+@container (max-width: 480px) {
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .item .meta {
+    grid-column: 1 / -1;
     margin-left: 0;
   }
 }

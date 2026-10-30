@@ -2,15 +2,10 @@
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from a13n_harness.errors import RunError
 from a13n_harness.request_budget import RequestBudget
-
-if TYPE_CHECKING:
-    from pydantic_ai.models import ModelRequestContext
-
-    from a13n_harness.context import AgentContext
 
 
 class ModelCallCheckError(RunError):
@@ -44,36 +39,11 @@ class ModelCallCheck(Protocol):
         ...
 
 
-async def _check_model_call(
-    owner: "AgentContext",
-    request: "ModelRequestContext",
-    *,
-    call_id: str,
-    model_run_id: str | None,
-    source: str,
-    tool_id: str | None = None,
-    tool_call_id: str | None = None,
-    continuation_of: str | None = None,
-) -> RequestBudget | None:
-    """Allocate once at the native wrapper boundary, after request preparation."""
-    call = ModelCall(
-        call_id=call_id,
-        harness_run_id=owner.run_id,
-        model_run_id=model_run_id,
-        agent_instance_id=owner.instance.agent_instance_id,
-        parent_agent_instance_id=owner.instance.parent_agent_instance_id,
-        delegation_id=owner.instance.delegation_id,
-        model_id=request.model_id,
-        model_name=request.model.model_name,
-        provider_name=request.model.system,
-        source=source,
-        tool_id=tool_id,
-        tool_call_id=tool_call_id,
-        continuation_of=continuation_of,
-    )
-    if owner.model_call_check is not None:
+async def _check_model_call(check: ModelCallCheck | None, call: ModelCall) -> RequestBudget | None:
+    """Apply the Host veto consistently for agent and detached model calls."""
+    if check is not None:
         try:
-            return await owner.model_call_check.check(call)
+            return await check.check(call)
         except asyncio.CancelledError as error:
             task = asyncio.current_task()
             if task is not None and task.cancelling():

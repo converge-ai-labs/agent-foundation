@@ -18,18 +18,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) mod clipboard;
 pub(crate) mod startup;
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
+mod macos_clipboard;
+#[cfg(target_os = "macos")]
 use macos as native;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
+mod x11_clipboard;
+#[cfg(target_os = "linux")]
 use x11 as native;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "windows")]
+mod windows_clipboard;
 #[cfg(target_os = "windows")]
 use windows as native;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
@@ -38,10 +45,30 @@ mod native {
     #[derive(Default)]
     pub(super) struct Backend {}
     impl Backend {
+        pub(super) fn read_clipboard(
+            &self,
+            _: u32,
+            _: &dyn Fn() -> bool,
+        ) -> Result<ComputerReadClipboardResult, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn write_clipboard(
+            &self,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Effect, EIPError> {
+            Err(unsupported())
+        }
+        pub(super) fn close_clipboard(&self) {}
         pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
             Err(unsupported())
         }
-        pub(super) fn capture(&self, _: Option<&str>, _: u32) -> Result<Capture, EIPError> {
+        pub(super) fn capture(
+            &self,
+            _: Option<&str>,
+            _: u32,
+            _: Option<(&Basis, &ComputerRegion)>,
+        ) -> Result<Capture, EIPError> {
             Err(unsupported())
         }
         pub(super) fn execute(
@@ -89,6 +116,20 @@ struct Basis {
 }
 
 impl Basis {
+    fn validate_region(&self, region: &ComputerRegion) -> Result<(), EIPError> {
+        if region.left >= region.right
+            || region.top >= region.bottom
+            || region.right > self.observation.width
+            || region.bottom > self.observation.height
+        {
+            return Err(error(
+                ErrorType::InvalidParams,
+                "region is outside the observation or empty",
+            ));
+        }
+        Ok(())
+    }
+
     fn point(&self, point: &ComputerPoint) -> Result<(f64, f64), EIPError> {
         if point.x >= self.observation.width || point.y >= self.observation.height {
             return Err(error(
@@ -103,6 +144,67 @@ impl Basis {
                 + f64::from(point.y) * self.geometry.height / f64::from(self.observation.height),
         ))
     }
+}
+
+// Shared image processing keeps native-pixel crop semantics identical across backends.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn encode_capture(
+    mut image: image::DynamicImage,
+    geometry: Geometry,
+    mut max_dimension: u32,
+    zoom: Option<(&Basis, &ComputerRegion)>,
+) -> Result<Capture, EIPError> {
+    if let Some((basis, region)) = zoom {
+        basis.validate_region(region)?;
+        if geometry != basis.geometry {
+            return Err(error(
+                ErrorType::Conflict,
+                "display layout changed; capture a fresh image",
+            ));
+        }
+        // Raw dimensions can differ from logical display dimensions (for example Retina).
+        let lower = |edge: u32, raw: u32, source: u32| {
+            (u64::from(edge) * u64::from(raw) / u64::from(source)) as u32
+        };
+        let upper = |edge: u32, raw: u32, source: u32| {
+            (u64::from(edge) * u64::from(raw)).div_ceil(u64::from(source)) as u32
+        };
+        let left = lower(region.left, image.width(), basis.observation.width);
+        let top = lower(region.top, image.height(), basis.observation.height);
+        let right = upper(region.right, image.width(), basis.observation.width);
+        let bottom = upper(region.bottom, image.height(), basis.observation.height);
+        image = image.crop_imm(left, top, right - left, bottom - top);
+        // A detail image preserves native pixels; enlargement cannot restore detail.
+        max_dimension = max_dimension.min(image.width().max(image.height()));
+    }
+    let image = image
+        .resize(
+            max_dimension,
+            max_dimension,
+            image::imageops::FilterType::Triangle,
+        )
+        .to_rgb8();
+    let mut bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 80)
+        .encode_image(&image)
+        .map_err(|_| {
+            error(
+                ErrorType::ProviderUnavailable,
+                "screen image encoding failed",
+            )
+        })?;
+    if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+        return Err(error(
+            ErrorType::QuotaExceeded,
+            "screenshot exceeds the image byte limit",
+        ));
+    }
+    Ok(Capture {
+        geometry,
+        width: image.width(),
+        height: image.height(),
+        bytes,
+    })
 }
 
 pub(crate) enum Action {
@@ -183,6 +285,7 @@ pub(crate) struct Computer {
     ids: ShortIdAllocator,
     observations: Mutex<VecDeque<Basis>>,
     native: native::Backend,
+    clipboard_budget: Mutex<Option<crate::filesystem::StagingReservation>>,
 }
 
 impl Computer {
@@ -191,6 +294,7 @@ impl Computer {
             ids,
             observations: Mutex::new(VecDeque::new()),
             native: native::Backend::default(),
+            clipboard_budget: Mutex::new(None),
         }
     }
 
@@ -198,13 +302,73 @@ impl Computer {
         self.native.describe()
     }
 
+    pub(crate) fn read_clipboard(
+        &self,
+        max_bytes: u32,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<ComputerReadClipboardResult, EIPError> {
+        if !(1..=clipboard::MAX_TEXT_BYTES as u32).contains(&max_bytes) {
+            return Err(error(
+                ErrorType::InvalidParams,
+                "max_bytes must be between 1 and 16384",
+            ));
+        }
+        let _access = clipboard::gate(interrupted)?;
+        let result = self.native.read_clipboard(max_bytes, interrupted)?;
+        clipboard::check(interrupted)?;
+        Ok(result)
+    }
+
+    pub(crate) fn write_clipboard(
+        &self,
+        text: &str,
+        interrupted: &dyn Fn() -> bool,
+    ) -> Result<Effect, EIPError> {
+        let text = clipboard::write_text(text)?;
+        let _access = clipboard::gate(interrupted)?;
+        self.native.write_clipboard(&text, interrupted)
+    }
+
+    pub(crate) fn reserve_clipboard(
+        &self,
+        filesystem: &crate::filesystem::DeviceFilesystem,
+    ) -> Result<(), EIPError> {
+        let mut budget = self
+            .clipboard_budget
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if budget.is_none() {
+            // One retained payload plus bounded native conversion, transfer and
+            // result buffers. Active access is serialized by the desktop gate.
+            *budget = Some(
+                filesystem
+                    .reserve_staging((clipboard::MAX_NATIVE_BYTES * 4) as u64)
+                    .map_err(|_| {
+                        error(
+                            ErrorType::QuotaExceeded,
+                            "clipboard memory budget unavailable",
+                        )
+                    })?,
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn close(&self) {
+        self.native.close_clipboard();
+        self.clipboard_budget
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
     pub(crate) fn observe(
         &self,
         params: &ComputerObserveParams,
     ) -> Result<(ComputerObservation, Vec<u8>), EIPError> {
-        let capture = self
-            .native
-            .capture(params.target_id.as_deref(), params.max_dimension)?;
+        let capture =
+            self.native
+                .capture(params.target_id.as_deref(), params.max_dimension, None)?;
         if capture.bytes.is_empty() || capture.bytes.len() > MAX_IMAGE_BYTES {
             return Err(error(
                 ErrorType::QuotaExceeded,
@@ -240,33 +404,57 @@ impl Computer {
         Ok((observation, capture.bytes))
     }
 
+    fn basis(&self, id: &str) -> Result<Basis, EIPError> {
+        self.observations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .find(|b| b.observation.observation_id == id && b.created.elapsed() < OBSERVATION_TTL)
+            .cloned()
+            .ok_or_else(|| {
+                error(
+                    ErrorType::Conflict,
+                    "observation is unavailable; capture a fresh image",
+                )
+            })
+    }
+
+    pub(crate) fn zoom(
+        &self,
+        params: &ComputerZoomParams,
+    ) -> Result<(ComputerZoomImage, Vec<u8>), EIPError> {
+        let basis = self.basis(&params.observation_id)?;
+        basis.validate_region(&params.region)?;
+        let capture = self.native.capture(
+            Some(&basis.geometry.target_id),
+            params.max_dimension,
+            Some((&basis, &params.region)),
+        )?;
+        Ok((
+            ComputerZoomImage {
+                source_observation_id: basis.observation.observation_id,
+                target_id: basis.geometry.target_id,
+                source_width: basis.observation.width,
+                source_height: basis.observation.height,
+                region: params.region.clone(),
+                image_width: capture.width,
+                image_height: capture.height,
+                mime_type: "image/jpeg".to_owned(),
+                captured_at: chrono::Utc::now(),
+            },
+            capture.bytes,
+        ))
+    }
+
     pub(crate) fn execute(
         &self,
         action: &Action,
         interrupted: &dyn Fn() -> bool,
     ) -> Result<Effect, EIPError> {
-        let basis = if let Some(id) = action.observation_id() {
-            let observations = self
-                .observations
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Some(
-                observations
-                    .iter()
-                    .find(|b| {
-                        b.observation.observation_id == id && b.created.elapsed() < OBSERVATION_TTL
-                    })
-                    .cloned()
-                    .ok_or_else(|| {
-                        error(
-                            ErrorType::Conflict,
-                            "observation is unavailable; capture a fresh image",
-                        )
-                    })?,
-            )
-        } else {
-            None
-        };
+        let basis = action
+            .observation_id()
+            .map(|id| self.basis(id))
+            .transpose()?;
         action.validate(basis.as_ref())?;
         if interrupted() {
             return Ok(Effect {
@@ -388,6 +576,109 @@ mod tests {
             },
             created: Instant::now(),
         }
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    fn zoom_crops_native_pixels_before_resize_and_covers_fractional_edges() {
+        let basis = basis();
+        // Native pixels deliberately differ from display geometry, as with Retina.
+        let raw = image::RgbImage::from_fn(301, 151, |x, _| {
+            image::Rgb([if x < 153 { 0 } else { 255 }; 3])
+        });
+        let region = ComputerRegion {
+            left: 50,
+            top: 25,
+            right: 100,
+            bottom: 50,
+        };
+        let capture = encode_capture(
+            image::DynamicImage::ImageRgb8(raw),
+            basis.geometry.clone(),
+            1280,
+            Some((&basis, &region)),
+        )
+        .unwrap();
+        assert_eq!((capture.width, capture.height), (151, 76));
+        let decoded = image::load_from_memory(&capture.bytes).unwrap().to_rgb8();
+        assert!(decoded.get_pixel(1, 30)[0] < 30);
+        assert!(decoded.get_pixel(20, 30)[0] > 230);
+        assert_eq!(
+            basis.point(&ComputerPoint { x: 50, y: 25 }).unwrap(),
+            (-100.0, 80.0)
+        );
+        let tiny = ComputerRegion {
+            left: 99,
+            top: 49,
+            right: 100,
+            bottom: 50,
+        };
+        let capture = encode_capture(
+            image::DynamicImage::new_rgb8(301, 151),
+            basis.geometry.clone(),
+            256,
+            Some((&basis, &tiny)),
+        )
+        .unwrap();
+        assert_eq!((capture.width, capture.height), (4, 4));
+        let mut changed = basis.geometry.clone();
+        changed.x += 1.0;
+        assert!(
+            encode_capture(
+                image::DynamicImage::new_rgb8(301, 151),
+                changed,
+                1280,
+                Some((&basis, &region))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn zoom_rejects_expired_and_invalid_regions_without_native_capture() {
+        let computer = Computer::new(ShortIdAllocator::for_generation(1));
+        let mut stored = basis();
+        for region in [
+            ComputerRegion {
+                left: 1,
+                top: 0,
+                right: 1,
+                bottom: 1,
+            },
+            ComputerRegion {
+                left: 0,
+                top: 0,
+                right: 101,
+                bottom: 50,
+            },
+            ComputerRegion {
+                left: 0,
+                top: 0,
+                right: 100,
+                bottom: 51,
+            },
+        ] {
+            assert!(stored.validate_region(&region).is_err());
+        }
+        stored.created = Instant::now() - OBSERVATION_TTL;
+        computer.observations.lock().unwrap().push_back(stored);
+        let request = ComputerZoomParams {
+            context: EIPCallContext {
+                operation_id: "zoom-test".into(),
+                timeout_ms: None,
+            },
+            observation_id: "obs_1".into(),
+            region: ComputerRegion {
+                left: 0,
+                top: 0,
+                right: 100,
+                bottom: 50,
+            },
+            max_dimension: 1280,
+        };
+        assert!(
+            matches!(computer.zoom(&request), Err(e) if e.message.contains("observation is unavailable"))
+        );
     }
 
     #[test]

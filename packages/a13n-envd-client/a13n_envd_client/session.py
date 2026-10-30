@@ -9,8 +9,11 @@ from types import TracebackType
 from a13n_envd_client.eip.v1 import (
     EIP_PROTOCOL_VERSION,
     METHODS,
+    ComputerRegion,
     DeviceDescribeParams,
     DeviceDescriptor,
+    DeviceMetricsParams,
+    DeviceMetricsResult,
     DirectoryListParams,
     DirectoryListResult,
     EgressMode,
@@ -35,7 +38,12 @@ from a13n_envd_client.eip.v1 import (
     SessionOpenParams,
 )
 from a13n_envd_client.errors import EIPClientError, EIPMethodError, EIPProtocolError, EIPSessionStateError
-from a13n_envd_client.file_transfer import EIPComputerObservationReader, EIPFileReader, EIPFileWriter
+from a13n_envd_client.file_transfer import (
+    EIPComputerObservationReader,
+    EIPComputerZoomReader,
+    EIPFileReader,
+    EIPFileWriter,
+)
 from a13n_envd_client.output import EIPOutputReader
 from a13n_envd_client.requester import RequestCoordinator, SessionRequester
 from a13n_envd_client.transport import EIPTransport
@@ -117,6 +125,22 @@ class EIPDeviceConnection:
         _validate_methods(observed.available_methods)
         self._descriptor = observed
         return observed
+
+    async def metrics(self) -> DeviceMetricsResult:
+        """Read the latest Device sample without opening a Session or triggering collection."""
+        self._ensure_open()
+        if "device.metrics" not in self._descriptor.available_methods:
+            raise EIPSessionStateError("Device does not advertise device.metrics")
+        result = await self._client.device_metrics(
+            DeviceMetricsParams(
+                expected_device_id=self._descriptor.device_id,
+                expected_generation=self._descriptor.generation,
+            )
+        )
+        if (result.device_id, result.generation) != (self._descriptor.device_id, self._descriptor.generation):
+            await self.close()
+            raise EIPProtocolError("Device identity or generation changed on its connection")
+        return result
 
     async def list_directories(self, params: DirectoryListParams) -> DirectoryListResult:
         self._ensure_open()
@@ -255,6 +279,11 @@ class EIPSession:
         return self._descriptor
 
     @property
+    def device_descriptor(self) -> DeviceDescriptor:
+        """The connected target's metadata, without issuing another request."""
+        return self._device.descriptor
+
+    @property
     def protocol_version(self) -> str:
         return self._device.protocol_version
 
@@ -346,6 +375,15 @@ class EIPSession:
         self._require_method("computer.close_observation")
         return EIPComputerObservationReader(
             self._requester, self._client, target_id=target_id, max_dimension=max_dimension
+        )
+
+    def zoom_computer(
+        self, *, observation_id: str, region: ComputerRegion, max_dimension: int = 1280
+    ) -> EIPComputerZoomReader:
+        self._require_method("computer.zoom")
+        self._require_method("computer.close_observation")
+        return EIPComputerZoomReader(
+            self._requester, self._client, observation_id=observation_id, region=region, max_dimension=max_dimension
         )
 
     def open_writer(

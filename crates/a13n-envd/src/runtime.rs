@@ -6,7 +6,11 @@ use std::{
     sync::Arc,
 };
 
-use cap_std::{ambient_authority, fs::Dir};
+#[cfg(windows)]
+use crate::windows_directory::Dir;
+use cap_std::ambient_authority;
+#[cfg(not(windows))]
+use cap_std::fs::Dir;
 use fs2::FileExt as _;
 
 #[derive(Debug, Clone)]
@@ -33,7 +37,7 @@ impl RuntimeState {
             return Err("runtime parent must be a directory, not a symlink".to_owned());
         }
         protect_directory(parent)?;
-        let parent = fs::canonicalize(parent)
+        let parent = crate::device_path::canonicalize(parent)
             .map_err(|error| format!("cannot canonicalize runtime parent: {error}"))?;
         let lock_path = parent.join(".a13n-envd.lock");
         let lock = OpenOptions::new()

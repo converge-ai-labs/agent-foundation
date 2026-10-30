@@ -7,9 +7,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from a13n_harness._memory_reads import FileMemoryReads
 from a13n_harness.capabilities import FileMount
 from a13n_harness.context import AgentContext
 from a13n_harness.providers.memory import DirectoryFileStore, FileFormat, Origin
+from a13n_harness.state import AgentContextState
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
     RECOVERY_RETRY_SAFE_METADATA_KEY,
@@ -31,12 +33,24 @@ def _tools(
     retries: int = 3,
     tools: tuple[FileToolKey, ...] = FILE_TOOL_KEYS,
     format: FileFormat | None = None,
+    reads: FileMemoryReads | None = None,
+    advance: bool = True,
 ) -> MemoryFileToolset:
-    return MemoryFileToolset(mounts, format=format or FileFormat(), write_retries=retries, origin=ORIGIN, tools=tools)
+    observations = reads or FileMemoryReads(AgentContextState())
+
+    async def observed(ctx: RunContext[AgentContext]) -> FileMemoryReads:
+        # Direct tool tests normally represent one model decision per call.
+        if advance:
+            await observations.deliver()
+        return observations
+
+    return MemoryFileToolset(
+        mounts, format=format or FileFormat(), write_retries=retries, origin=ORIGIN, tools=tools, reads=observed
+    )
 
 
-def _ctx(call: str = "call-1") -> RunContext[AgentContext]:
-    return cast(RunContext[AgentContext], SimpleNamespace(tool_call_id=call))
+def _ctx(call: str = "call-1", deps: AgentContext | None = None) -> RunContext[AgentContext]:
+    return cast(RunContext[AgentContext], SimpleNamespace(tool_call_id=call, deps=deps))
 
 
 async def _fails(call: Awaitable[object]) -> dict[str, Any]:
@@ -169,12 +183,16 @@ async def test_create_refuses_invalid_files(content: str, code: str) -> None:
     assert store.files == {}
 
 
-async def test_edits_from_two_conversations_keep_each_others_changes() -> None:
+async def test_an_observed_target_conflicts_even_when_the_anchor_still_matches() -> None:
     store = FakeFileStore({"prefs.md": "reply in English\nlikes tea\n"})
     a, b = _user(store), _user(store)
     assert (await a.view(_ctx(), "user", "prefs.md"))["version"] == "v1"
 
     assert (await b.edit(_ctx(), "user", "prefs.md", "reply in English", "reply in Chinese"))["version"] == "v2"
+    conflict = await _fails(a.edit(_ctx(), "user", "prefs.md", "likes tea", "likes coffee"))
+    assert conflict["error"] == "read_conflict"
+    assert store.files["prefs.md"].version == "v2"
+    await a.view(_ctx(), "user", "prefs.md")
     assert (await a.edit(_ctx(), "user", "prefs.md", "likes tea", "likes coffee"))["version"] == "v3"
     assert store.files["prefs.md"].text == "reply in Chinese\nlikes coffee\n"
 
@@ -309,7 +327,7 @@ async def test_tools_are_offered_per_access_and_selection() -> None:
     assert _tools().get_toolset() is None
 
 
-async def test_capability_tool_reuse_keeps_bindings_preparation_and_origins_isolated() -> None:
+async def test_capability_tool_reuse_keeps_bindings_preparation_and_origins_isolated(reviewer_context) -> None:
     from copy import deepcopy
     from dataclasses import replace
 
@@ -354,9 +372,9 @@ async def test_capability_tool_reuse_keeps_bindings_preparation_and_origins_isol
         assert first_tools.tools[name].function_schema is not second_tools.tools[name].function_schema
     create = first_tools.tools["memory_file_create"].function_schema.call
     for call_id in ("call-a", "call-b"):
-        await create({"memory": "user", "path": f"{call_id}.md", "content": "first"}, _ctx(call_id))
+        await create({"memory": "user", "path": f"{call_id}.md", "content": "first"}, _ctx(call_id, reviewer_context))
     await second_tools.tools["memory_file_create"].function_schema.call(
-        {"memory": "other", "path": "other.md", "content": "second"}, _ctx("call-c")
+        {"memory": "other", "path": "other.md", "content": "second"}, _ctx("call-c", reviewer_context)
     )
     assert first_store.origins == [replace(ORIGIN, tool_call_id=call_id) for call_id in ("call-a", "call-b")]
     assert second_store.origins == [replace(other_origin, tool_call_id="call-c")]
@@ -369,14 +387,16 @@ async def test_capability_tool_reuse_keeps_bindings_preparation_and_origins_isol
 
 
 @pytest.mark.parametrize("changed", ["mounts", "limits", "origin", "tools"])
-async def test_changed_source_bindings_rebuild_tools_without_changing_a_captured_run(changed: str) -> None:
+async def test_changed_source_bindings_rebuild_tools_without_changing_a_captured_run(
+    changed: str, reviewer_context
+) -> None:
     from a13n_harness.capabilities import FileMemoryCapability, FileMemoryLimits
     from a13n_harness.capabilities.memory import _FileMemoryRun
     from pydantic_ai.toolsets import FunctionToolset
 
     store = FakeFileStore({"a.md": "abcdef"})
     source = FileMemoryCapability([FileMount("user", store, "write")], origin=ORIGIN)
-    captured = _FileMemoryRun(source, cast(AgentContext, None))
+    captured = _FileMemoryRun(source, reviewer_context)
     original = captured.get_toolset()
     assert isinstance(original, FunctionToolset)
     assert source.get_toolset() is original
@@ -392,27 +412,27 @@ async def test_changed_source_bindings_rebuild_tools_without_changing_a_captured
     assert isinstance(current, FunctionToolset)
     assert current is not original
     assert source.get_toolset() is current
-    assert _FileMemoryRun(source, cast(AgentContext, None)).get_toolset() is current
+    assert _FileMemoryRun(source, reviewer_context).get_toolset() is current
     assert captured.get_toolset() is original
     await original.tools["memory_file_create"].function_schema.call(
-        {"memory": "user", "path": "old.md", "content": "original"}, _ctx()
+        {"memory": "user", "path": "old.md", "content": "original"}, _ctx(deps=reviewer_context)
     )
     assert store.origins == [Origin(run_id="run-1", principal_id="user-1", tool_call_id="call-1")]
     if changed in {"mounts", "tools"}:
         assert "memory_file_create" not in current.tools
     elif changed == "limits":
         viewed = await current.tools["memory_file_view"].function_schema.call(
-            {"memory": "user", "path": "a.md"}, _ctx()
+            {"memory": "user", "path": "a.md"}, _ctx(deps=reviewer_context)
         )
         assert viewed["content"] == "abc" and viewed["truncated"] is True
     else:
         await current.tools["memory_file_create"].function_schema.call(
-            {"memory": "user", "path": "new.md", "content": "new"}, _ctx()
+            {"memory": "user", "path": "new.md", "content": "new"}, _ctx(deps=reviewer_context)
         )
         assert store.origins[-1] == Origin(run_id="new-run", tool_call_id="call-1")
 
 
-async def test_empty_memory_tool_surface_is_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_empty_memory_tool_surface_is_reused(monkeypatch: pytest.MonkeyPatch, reviewer_context) -> None:
     from a13n_harness.capabilities import FileMemoryCapability
     from a13n_harness.capabilities.memory import _FileMemoryRun
 
@@ -427,7 +447,7 @@ async def test_empty_memory_tool_surface_is_reused(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(MemoryFileToolset, "get_toolset", build)
     source = FileMemoryCapability([])
     assert source.get_toolset() is None
-    assert _FileMemoryRun(source, cast(AgentContext, None)).get_toolset() is None
+    assert _FileMemoryRun(source, reviewer_context).get_toolset() is None
     assert source.get_toolset() is None
     assert builds == 1
 
@@ -454,3 +474,137 @@ async def test_tool_metadata_declares_effects_and_recovery() -> None:
         assert metadata.output_policy.overflow == "truncate"
         assert isinstance(metadata.output_policy, ToolOutputPolicy)
         assert (tool.metadata or {}).get(RECOVERY_RETRY_SAFE_METADATA_KEY, False) is reads
+
+
+@pytest.mark.parametrize("change", ["update", "delete", "move"])
+@pytest.mark.parametrize("operation", ["create", "edit", "append", "move", "delete"])
+async def test_source_conflicts_refuse_every_derived_mutation(change: str, operation: str) -> None:
+    store = FakeFileStore({"source.md": "source v1", "target.md": "target"})
+    tools = _user(store)
+    await tools.view(_ctx(), "user", "source.md")
+    if change == "update":
+        store.put("source.md", "source v2")
+    elif change == "delete":
+        store.remove("source.md")
+    else:
+        await store.move("source.md", "moved.md", expected="v1", origin=ORIGIN)
+    before = dict(store.files)
+    calls = {
+        "create": lambda: tools.create(_ctx(), "user", "derived.md", "derived from v1"),
+        "edit": lambda: tools.edit(_ctx(), "user", "target.md", "target", "derived from v1"),
+        "append": lambda: tools.append(_ctx(), "user", "target.md", "derived from v1"),
+        "move": lambda: tools.move(_ctx(), "user", "target.md", "derived.md"),
+        "delete": lambda: tools.delete(_ctx(), "user", "target.md", "v2"),
+    }
+    refused = await _fails(calls[operation]())
+    assert refused["error"] == "read_conflict"
+    assert "source.md" in refused["message"]
+    assert store.files == before
+
+
+async def test_re_read_must_reach_a_model_request_before_it_can_refresh_a_write() -> None:
+    store = FakeFileStore({"source.md": "v1"})
+    reads = FileMemoryReads(AgentContextState())
+    tools = _tools(FileMount("user", store, "write"), reads=reads, advance=False)
+    await tools.view(_ctx(), "user", "source.md")
+    await reads.deliver()
+    store.put("source.md", "v2")
+    await tools.view(_ctx(), "user", "source.md")
+    failure = await _fails(tools.create(_ctx(), "user", "derived.md", "from v1"))
+    assert failure["error"] == "read_conflict"
+    assert "derived.md" not in store.files
+    await reads.deliver()
+    await tools.create(_ctx(), "user", "derived.md", "reconsidered from v2")
+    assert store.files["derived.md"].text == "reconsidered from v2"
+
+
+@pytest.mark.parametrize("read", ["view", "grep", "list", "missing"])
+async def test_model_visible_file_observations_are_dependencies(read: str) -> None:
+    store = FakeFileStore({"source.md": "source", "nested/unseen.md": "unseen"})
+    tools = _user(store)
+    if read == "view":
+        await tools.view(_ctx(), "user", "source.md")
+    elif read == "grep":
+        await tools.grep(_ctx(), "user", "source")
+    elif read == "list":
+        await tools.view(_ctx(), "user")
+    else:
+        await _fails(tools.view(_ctx(), "user", "missing.md"))
+    store.put("nested/unseen.md", "an unrelated change")
+    await tools.create(_ctx(), "user", "allowed.md", "allowed")
+    store.put("missing.md" if read == "missing" else "source.md", "changed")
+    refused = await _fails(tools.create(_ctx(), "user", "refused.md", "stale"))
+    assert refused["error"] == "read_conflict"
+    assert "refused.md" not in store.files
+
+
+async def test_own_writes_advance_dependencies_without_hiding_external_changes() -> None:
+    store = FakeFileStore({"source.md": "source"})
+    tools = _user(store)
+    await tools.view(_ctx(), "user", "source.md")
+    await tools.append(_ctx(), "user", "source.md", "own addition")
+    await tools.create(_ctx(), "user", "derived.md", "from own version")
+    await tools.move(_ctx(), "user", "source.md", "moved.md")
+    await tools.create(_ctx(), "user", "after-move.md", "from own move")
+    store.put("source.md", "external recreation")
+    refused = await _fails(tools.create(_ctx(), "user", "refused.md", "stale"))
+    assert refused["error"] == "read_conflict"
+
+
+@pytest.mark.parametrize("change", ["update", "delete"])
+async def test_own_move_keeps_the_observed_source_guard_at_its_destination(change: str) -> None:
+    store = FakeFileStore({"source.md": "old fact"})
+    tools = _user(store)
+    await tools.view(_ctx(), "user", "source.md")
+    await tools.move(_ctx(), "user", "source.md", "moved.md")
+    if change == "update":
+        store.put("moved.md", "corrected fact")
+    else:
+        await store.delete("moved.md", expected=store.files["moved.md"].version, origin=Origin())
+    refused = await _fails(tools.create(_ctx(), "user", "derived.md", "old fact"))
+    assert refused["error"] == "read_conflict"
+    assert "derived.md" not in store.files
+
+
+async def test_move_refuses_before_storage_when_tracking_has_no_capacity(monkeypatch) -> None:
+    from a13n_harness import _memory_reads
+
+    monkeypatch.setattr(_memory_reads, "_MAX_FILES", 1)
+    store = FakeFileStore({"source.md": "source"})
+    tools = _user(store)
+    await tools.view(_ctx(), "user", "source.md")
+    refused = await _fails(tools.move(_ctx(), "user", "source.md", "moved.md"))
+    assert refused["error"] == "read_set_full"
+    assert set(store.files) == {"source.md"}
+
+
+async def test_checkpoint_restoration_keeps_observed_and_pending_versions() -> None:
+    store = FakeFileStore({"source.md": "v1"})
+    state = AgentContextState()
+    reads = FileMemoryReads(state)
+    tools = _tools(FileMount("user", store, "write"), reads=reads, advance=False)
+    await tools.view(_ctx(), "user", "source.md")
+    await reads.deliver()
+    store.put("source.md", "v2")
+    await tools.view(_ctx(), "user", "source.md")
+    restored = FileMemoryReads(AgentContextState(await state.snapshot()))
+    tools = _tools(FileMount("user", store, "write"), reads=restored, advance=False)
+    refused = await _fails(tools.create(_ctx(), "user", "derived.md", "from v1"))
+    assert refused["error"] == "read_conflict"
+    await restored.deliver()
+    await tools.create(_ctx(), "user", "derived.md", "from v2")
+
+
+async def test_read_tracking_is_bounded_without_evicting_write_guards() -> None:
+    reads = FileMemoryReads(AgentContextState())
+    await reads.observe("user", {f"{number}.md": "v1" for number in range(2048)})
+    await reads.deliver()
+    from a13n_harness.providers.memory import MemoryStoreError
+
+    with pytest.raises(MemoryStoreError, match="tracking is full"):
+        await reads.observe("user", {"one-more.md": "v1"})
+    assert len(await reads.dependencies("user")) == 2048
+    await reads.clear()
+    await reads.observe("user", {"one-more.md": "v1"})
+    await reads.deliver()
+    assert await reads.dependencies("user") == {"one-more.md": "v1"}

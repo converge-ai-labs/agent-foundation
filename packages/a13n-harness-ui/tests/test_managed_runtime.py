@@ -44,6 +44,30 @@ def _executable(version: str) -> bytes:
     return f"#!/bin/sh\nprintf 'a13n-envd {version}\\n'\n".encode()
 
 
+async def test_cancelled_download_removes_staging_and_returns_to_idle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = anyio.Event()
+    runtime = _runtime(tmp_path)
+
+    async def download(*, destination: Path, **kwargs) -> None:
+        destination.write_bytes(b"partial archive")
+        started.set()
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(runtime.resolve)
+        await started.wait()
+        assert (await runtime.status()).phase == "downloading"
+        tasks.cancel_scope.cancel()
+    assert list((tmp_path / "staging").iterdir()) == []
+    status = await runtime.status()
+    assert status.phase == "idle"
+    assert not status.installed
+    assert status.verified_version is None
+
+
 async def test_unselected_release_fails_before_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(managed_runtime.metadata, "version", lambda name: "0.0.0")
     runtime = _runtime(tmp_path, None)
@@ -55,7 +79,7 @@ async def test_unselected_release_fails_before_download(tmp_path: Path, monkeypa
 
 
 @pytest.mark.parametrize(
-    "version,expected", [("0.0.0", "0.0.0"), ("0.0.5", "0.0.5"), ("12.34.56rc78", "12.34.56-rc.78")]
+    "version,expected", [("0.0.0", "0.0.0"), ("0.0.5", "0.0.5"), ("0.3.0", "0.3.0"), ("12.34.56rc78", "12.34.56-rc.78")]
 )
 def test_installed_client_selects_native_version(monkeypatch: pytest.MonkeyPatch, version: str, expected: str) -> None:
     def installed_version(name: str) -> str:
@@ -278,6 +302,60 @@ async def test_wrong_version_preserves_cache_and_allows_retry(tmp_path: Path, mo
     assert downloads == 2
 
 
+@pytest.mark.skipif(os.name == "nt", reason="fixture executable is a POSIX script")
+async def test_ui_upgrade_acquires_new_client_release_and_preserves_previous_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(managed_runtime.metadata, "version", lambda _: "9.8.6")
+    content = _archive(tmp_path / "archive", _executable("9.8.6"))
+    urls = []
+
+    async def download(*, url, destination, **kwargs):
+        urls.append(url)
+        destination.write_bytes(content)
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    previous = await _runtime(tmp_path, None).resolve()
+    monkeypatch.setattr(managed_runtime.metadata, "version", lambda _: "9.8.7")
+    runtime = _runtime(tmp_path, None)
+    status = await runtime.status()
+    assert status.required_version == "9.8.7"
+    assert status.cached_versions == ("9.8.6",)
+    assert not status.installed
+    assert status.verified_version is None
+    assert len(urls) == 1  # Status neither downloads nor reuses the previous release.
+    with pytest.raises(RuntimeResolutionError, match="selected version"):
+        await runtime.resolve()  # A stale release response cannot satisfy the new client.
+    assert previous.read_bytes() == _executable("9.8.6")
+    assert not (await runtime.status()).installed
+    content = _archive(tmp_path / "archive-new", _executable("9.8.7"))
+    selected = await runtime.resolve()
+    assert selected != previous
+    assert selected.read_bytes() == _executable("9.8.7")
+    assert previous.read_bytes() == _executable("9.8.6")
+    status = await runtime.status()
+    assert status.cached_versions == ("9.8.6", "9.8.7")
+    assert status.installed and status.verified_version == "9.8.7"
+    assert "a13n-envd-v9.8.7/" in urls[-1]
+    assert await _runtime(tmp_path, None).resolve() == selected
+    assert len(urls) == 3
+
+
+async def test_cached_release_status_is_target_specific_and_inert(tmp_path, monkeypatch):
+    monkeypatch.setattr(managed_runtime, "current_envd_target", lambda: "aarch64-apple-darwin")
+    for version, target, name in [
+        ("9.8.6", "aarch64-apple-darwin", "a13n-envd"),
+        ("9.8.5", "x86_64-unknown-linux-gnu", "a13n-envd"),
+        ("9.8.4", "aarch64-apple-darwin", "partial.download"),
+        ("invalid", "aarch64-apple-darwin", "a13n-envd"),
+    ]:
+        path = tmp_path / "cache" / version / target / name
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"not an executable")
+    status = await _runtime(tmp_path).status()
+    assert status.cached_versions == ("9.8.6",)
+    assert not status.installed
+    assert status.verified_version is None
+
+
 async def test_failed_download_is_cleaned_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def download(*, destination: Path, **kwargs) -> None:
         destination.write_bytes(b"partial")
@@ -339,3 +417,176 @@ async def test_download_limit_with_and_without_content_length(
             url="https://example.test/asset", destination=tmp_path / "download", timeout_seconds=1, max_bytes=6
         )
     assert captured.value.code == "local_eip_runtime_limit"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fixture executable is a POSIX script")
+async def test_explicit_reinstall_preserves_verified_cache_on_failure_and_replaces_on_success(tmp_path, monkeypatch):
+    runtime = _runtime(tmp_path)
+    original = _executable("9.8.7")
+    archive = _archive(tmp_path / "archive", original)
+    downloads = []
+
+    async def download(*, destination, **kwargs):
+        downloads.append(destination)
+        destination.write_bytes(archive)
+
+    monkeypatch.setattr(managed_runtime, "_download_archive", download)
+    path = await runtime.resolve()
+    archive = _archive(tmp_path / "wrong", _executable("9.8.6"))
+    with pytest.raises(RuntimeResolutionError, match="selected version"):
+        await runtime.resolve(reinstall=True)
+    assert path.read_bytes() == original
+    assert (await runtime.status()).phase == "idle"
+    assert not list((tmp_path / "staging").iterdir())
+    replacement = original + b"# replacement\n"
+    archive = _archive(tmp_path / "replacement", replacement)
+    assert await runtime.resolve(reinstall=True) == path
+    assert path.read_bytes() == replacement
+    assert len(downloads) == 3
+    assert await runtime.resolve() == path
+    assert len(downloads) == 3
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix executable fixtures")
+@pytest.mark.parametrize("reinstall", [False, True])
+async def test_native_updater_installs_exact_version_without_changing_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reinstall: bool
+) -> None:
+    runtime = _runtime(tmp_path)
+    target = current_envd_target()
+    source = tmp_path / "cache" / "9.8.6" / target / "a13n-envd"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(_executable("9.8.6"))
+    source.chmod(0o700)
+    destination = tmp_path / "cache" / "9.8.7" / target / "a13n-envd"
+    calls = []
+
+    async def supports(path):
+        assert path == source
+        return True
+
+    async def native(path, **kwargs):
+        calls.append((path, kwargs))
+        assert (destination.parent / ".a13n-envd-version").read_text() == "9.8.7\n"
+        destination.write_bytes(_executable("9.8.7"))
+        destination.chmod(0o700)
+        return "Installed.\n"
+
+    async def unexpected(**kwargs):
+        pytest.fail("Native updates must not use the bootstrap downloader")
+
+    monkeypatch.setattr(managed_runtime, "supports_native_update", supports)
+    monkeypatch.setattr(managed_runtime, "run_native_update", native)
+    monkeypatch.setattr(managed_runtime, "_download_archive", unexpected)
+    assert await runtime.resolve(reinstall=reinstall) == destination
+    assert calls == [(source, {"version": "9.8.7", "directory": destination.parent, "force": reinstall})]
+    assert source.read_bytes() == _executable("9.8.6")
+    assert (await runtime.status()).verified_version == "9.8.7"
+
+
+@pytest.mark.parametrize("failure", ["exit", "wrong-version", "cancel"])
+async def test_native_failure_never_falls_back_and_clears_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    runtime = _runtime(tmp_path)
+    source = tmp_path / "updater"
+    calls = []
+
+    async def find(target):
+        return source
+
+    async def native(path, **kwargs):
+        calls.append(path)
+        if failure == "exit":
+            raise RuntimeResolutionError("checksum mismatch", code="envd_update_failed")
+        if failure == "cancel":
+            raise anyio.get_cancelled_exc_class()()
+        return "Installed.\n"
+
+    async def unexpected(**kwargs):
+        pytest.fail("Failed native updates must never fall back")
+
+    monkeypatch.setattr(runtime, "_find_updater", find)
+    monkeypatch.setattr(managed_runtime, "run_native_update", native)
+    monkeypatch.setattr(managed_runtime, "_download_archive", unexpected)
+    expected = anyio.get_cancelled_exc_class() if failure == "cancel" else RuntimeResolutionError
+    with pytest.raises(expected):
+        await runtime.resolve()
+    assert calls == [source]
+    status = await runtime.status()
+    assert status.phase == "idle"
+    assert status.verified_version is None
+
+
+@pytest.mark.parametrize("returncode", [0, 7, -15])
+async def test_native_command_arguments_and_error_propagation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, returncode: int
+) -> None:
+    import subprocess
+
+    executable = tmp_path / "a13n-envd"
+    calls = []
+
+    async def run(arguments, **kwargs):
+        calls.append((arguments, kwargs))
+        return subprocess.CompletedProcess(arguments, returncode, b"native output\n", b"native diagnostic\n")
+
+    monkeypatch.setattr(managed_runtime, "run_process", run)
+    if returncode:
+        with pytest.raises(RuntimeResolutionError, match="native diagnostic") as captured:
+            await managed_runtime.run_native_update(executable, version="1.2.3", directory=tmp_path, force=True)
+        assert captured.value.details["returncode"] == returncode
+    else:
+        assert "native output" in await managed_runtime.run_native_update(
+            executable, version="1.2.3", directory=tmp_path, force=True
+        )
+    assert len(calls) == 1
+    arguments, kwargs = calls[0]
+    assert arguments[:-2] == [
+        str(executable),
+        "update",
+        "--version",
+        "1.2.3",
+        "--install-dir",
+        str(tmp_path),
+        "--force",
+    ]
+    assert arguments[-2] == "--staging-dir"
+    assert not Path(arguments[-1]).exists()
+    assert kwargs == {"check": False}
+
+
+def test_cache_pin_rejects_mismatched_version(tmp_path: Path) -> None:
+    executable = tmp_path / "a13n-envd"
+    managed_runtime._pin_installation(executable, "1.2.3")
+    managed_runtime._pin_installation(executable, "1.2.3")
+    with pytest.raises(RuntimeResolutionError, match="pin does not match"):
+        managed_runtime._pin_installation(executable, "1.2.4")
+    assert (tmp_path / ".a13n-envd-version").read_text() == "1.2.3\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix executable fixture")
+async def test_cancelled_native_process_is_joined_before_owned_scratch_cleanup(tmp_path: Path) -> None:
+    import sys
+
+    marker = tmp_path / "started"
+    executable = tmp_path / "a13n-envd"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys, time\n"
+        "scratch = pathlib.Path(sys.argv[sys.argv.index('--staging-dir') + 1])\n"
+        "(scratch / 'partial').write_bytes(b'partial archive')\n"
+        f"pathlib.Path({str(marker)!r}).write_text(str(scratch))\n"
+        "time.sleep(60)\n"
+    )
+    executable.chmod(0o700)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(managed_runtime.run_native_update, executable)
+        with anyio.fail_after(5):
+            while not marker.exists():
+                await anyio.sleep(0.01)
+        scratch = Path(marker.read_text())
+        assert (scratch / "partial").exists()
+        tasks.cancel_scope.cancel()
+    assert not scratch.exists()
+    assert executable.exists()

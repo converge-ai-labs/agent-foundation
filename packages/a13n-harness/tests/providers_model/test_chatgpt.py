@@ -1,303 +1,170 @@
-"""Synthetic SIWC issuer and Responses transport; never read real credentials."""
+"""Host adapters and the official ChatGPT integration, with synthetic HTTP only."""
 
-import base64
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
+from uuid import uuid4
 
-import anyio
 import httpx2
 import jwt
 import pytest
-from a13n_harness.models.chatgpt import OpenAIChatGPTResponsesModel
-from a13n_harness.providers.model.chatgpt import OpenAIChatGPTProvider
-from a13n_harness.providers.model.oauth.chatgpt import (
-    ISSUER,
-    RESOURCE,
-    SCOPES,
-    ChatGPTAuthorization,
-    OpenAIChatGPTCredentials,
-    OpenAIChatGPTOAuthFlow,
-    refresh_chatgpt_credentials,
-    revoke_chatgpt_credentials,
-)
-from a13n_harness.providers.model.oauth.models import CredentialRefreshError, ModelAuthenticationError
-from a13n_harness.providers.model.oauth.source import ProcessChatGPTCredentialSource
-from cryptography.hazmat.primitives.asymmetric import rsa
-from pydantic import TypeAdapter
-from pydantic_ai.exceptions import ModelAPIError, UserError
+from a13n_harness.providers.model.oauth.chatgpt import ChatGPTAuthorization, StoredChatGPTCredentials
+from a13n_harness.providers.model.openai_chatgpt import Config
+from pydantic import TypeAdapter, ValidationError
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers.openai_chatgpt import (
+    CredentialsPersistenceError,
+    CredentialsRefreshError,
+    OpenAIChatGPTCredentials,
+    OpenAIChatGPTOAuthFlow,
+    OpenAIChatGPTProvider,
+)
 from pydantic_ai.tools import ToolDefinition
 
 pytestmark = pytest.mark.anyio
+RESOURCE = "https://api.openai.com/v1"
 
 
-def grant(marker="old", expires=3600):
+def grant(*, expired=False):
     return OpenAIChatGPTCredentials(
-        subject="subject-1",
-        client_id="oaiapp_test",
-        ext_agent_host_id="urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520",
-        expires_at=datetime.now(UTC) + timedelta(seconds=expires),
-        scopes=SCOPES,
-        access_token=f"synthetic-access-{marker}",
-        refresh_token=f"synthetic-refresh-{marker}",
-        id_token="synthetic-id",
+        client_id="issued-client",
+        access_token=jwt.encode(
+            {"exp": (datetime.now(UTC) + timedelta(hours=-1 if expired else 1)).timestamp()}, "", algorithm="none"
+        ),
+        refresh_token="synthetic-refresh",
+        scope="resource.invoke chatgpt.tokens.use.direct",
     )
 
 
 class MemoryStore:
-    def __init__(self, value=None):
-        self.value = value or grant()
+    def __init__(self, *, expired=False):
+        self.current = grant(expired=expired)
         self.saved = []
 
     async def load(self):
-        return self.value
+        return self.current
 
-    async def save(self, value):
-        self.saved.append(value)
-        self.value = value
-
-
-def callback(flow, **changes):
-    values = {"state": flow.authorization.state, "code": "synthetic-code", "client_id": "oaiapp_test", **changes}
-    return flow.authorization.redirect_uri + "?" + urlencode(values)
+    async def save(self, credentials):
+        self.saved.append(credentials)
+        self.current = credentials
 
 
-def flow(client=None, credentials=None, **kwargs):
-    return OpenAIChatGPTOAuthFlow.start(
-        ext_agent_host_id="urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520",
-        agent_name="Test Agent",
-        http_client=client,
-        credentials=credentials,
-        **{"redirect_uri": "http://127.0.0.1:18455/auth/callback", **kwargs},
+async def test_pending_roundtrip_and_official_code_exchange(monkeypatch):
+    pending = ChatGPTAuthorization.start(host_id=uuid4().urn, redirect_uri="http://127.0.0.1:1456/auth/callback")
+    restored = TypeAdapter(ChatGPTAuthorization).validate_json(TypeAdapter(ChatGPTAuthorization).dump_json(pending))
+    assert restored.authorization_url() == pending.authorization_url()
+    query = parse_qs(urlsplit(pending.authorization_url()).query)
+    assert query["client_id"] == ["dynamic_agent_client"]
+    callback = (
+        pending.redirect_uri
+        + "?"
+        + urlencode({"state": pending.state, "code": "synthetic-code", "client_id": "issued-client"})
     )
 
+    async def exchange(self, code, *, client_id=None):
+        assert code == "synthetic-code" and client_id == "issued-client"
+        assert (self.nonce, self.code_verifier, self.state) == (pending.nonce, pending.code_verifier, pending.state)
+        return grant()
 
-async def test_registration_roundtrip_preserves_pkce_state_and_host():
-    current = flow()
-    params = parse_qs(urlsplit(current.authorization_url()).query)
-    assert params["client_id"] == ["dynamic_agent_client"]
-    assert params["agent_name_hint"] == ["Test Agent"]
-    assert params["resource"] == [RESOURCE]
-    assert params["scope"] == [" ".join(SCOPES)]
-    assert params["ext_agent_host_id"] == ["urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520"]
-    restored = OpenAIChatGPTOAuthFlow(
-        TypeAdapter(ChatGPTAuthorization).validate_json(
-            TypeAdapter(ChatGPTAuthorization).dump_json(current.authorization)
-        )
-    )
-    assert restored.authorization_url() == current.authorization_url()
-    assert restored.validate_callback(callback(current)).client_id == "oaiapp_test"
-    assert current.authorization.code_verifier not in repr(current.authorization)
-    assert grant().access_token not in repr(grant())
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"state": "other"},
-        {"client_id": ""},
-        {"client_id": "dynamic_agent_client"},
-        {"code": ""},
-        {"error": "access_denied"},
-    ],
-)
-async def test_invalid_callback_is_rejected_without_network(change):
-    current = flow()
-    with pytest.raises(UserError):
-        await current.exchange_callback(callback(current, **change))
-
-
-@pytest.mark.parametrize(
-    "replace_part",
-    [
-        ("127.0.0.1", "localhost"),
-        (":18455", ":18456"),
-        ("/auth/callback", "/callback"),
-    ],
-)
-async def test_callback_exact_target_is_required(replace_part):
-    current = flow()
-    with pytest.raises(UserError):
-        current.validate_callback(callback(current).replace(*replace_part))
-    with pytest.raises(UserError):
-        current.validate_callback(callback(current) + "&state=another")
-    with pytest.raises(UserError):
-        current.validate_callback(callback(current) + "#fragment")
-
-
-async def test_reauthorization_uses_saved_client_hints_and_rejects_registration_change():
-    current = flow(credentials=replace(grant(), email="test@example.com"))
-    params = parse_qs(urlsplit(current.authorization_url()).query)
-    assert "agent_name_hint" not in params
-    assert params["client_id"] == ["oaiapp_test"] and params["id_token_hint"] == ["synthetic-id"]
-    assert current.validate_callback(callback(current, client_id="")).client_id == "oaiapp_test"
-    with pytest.raises(UserError, match="changed"):
-        current.validate_callback(callback(current, client_id="other"))
-    expired = OpenAIChatGPTOAuthFlow(
-        replace(current.authorization, expires_at=datetime.now(UTC) - timedelta(seconds=1))
-    )
+    monkeypatch.setattr(OpenAIChatGPTOAuthFlow, "exchange_code", exchange)
+    assert (await restored.exchange_callback(callback)).client_id == "issued-client"
+    for bad in (
+        callback.replace(pending.state, "wrong"),
+        callback + "&state=other",
+        callback.replace("127.0.0.1", "evil.test"),
+    ):
+        with pytest.raises(UserError):
+            restored.validate_callback(bad)
     with pytest.raises(UserError, match="expired"):
-        expired.validate_callback(callback(current))
+        replace(restored, expires_at=datetime.now(UTC) - timedelta(seconds=1)).validate_callback(callback)
 
 
-@pytest.mark.parametrize("preconfigured", [False, True, "confidential"])
-@pytest.mark.parametrize("invalid", [None, "signature", "nonce", "aud", "iss", "exp", "sub", "scope"])
-async def test_signed_identity_and_direct_scope_are_required(invalid, preconfigured):
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    jwk = {**json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key())), "kid": "key-1", "use": "sig"}
-    requests = []
-    current = flow()
+def test_legacy_credentials_and_removed_configurations():
+    assert Config.model_validate({"token_endpoint_auth_method": "none"}) == Config()
+    original = grant()
+    legacy = TypeAdapter(OpenAIChatGPTCredentials).dump_python(original)
+    legacy["scopes"] = legacy.pop("scope").split()
+    legacy.update(subject="display-only", expires_at="2026-01-01T00:00:00Z", token_endpoint_auth_method="none")
+    assert TypeAdapter(StoredChatGPTCredentials).validate_python(legacy) == original
+    legacy["token_endpoint_auth_method"] = "client_secret_basic"
+    with pytest.raises(ValidationError, match="Confidential"):
+        TypeAdapter(StoredChatGPTCredentials).validate_python(legacy)
+    for config in (
+        {"redirect_uri": "https://host.test/callback"},
+        {"token_endpoint_auth_method": "client_secret_basic"},
+    ):
+        with pytest.raises(ValidationError):
+            Config.model_validate(config)
+
+
+@pytest.mark.parametrize("expired", [False, True])
+async def test_official_refresh_persists_and_next_provider_reloads(expired):
+    store = MemoryStore(expired=expired)
+    original = store.current.access_token
+    calls = []
+    replacement = grant()
+    replacement.access_token += "new"
 
     def respond(request):
-        requests.append(request)
-        if request.url.path.endswith("openid-configuration"):
-            return httpx2.Response(
-                200,
-                json={
-                    "issuer": ISSUER,
-                    "jwks_uri": ISSUER + "/.well-known/jwks.json",
-                    "revocation_endpoint": ISSUER + "/revoke",
-                    "id_token_signing_alg_values_supported": ["RS256"],
-                },
-            )
-        if request.url.path.endswith("jwks.json"):
-            return httpx2.Response(200, json={"keys": [jwk]})
-        if preconfigured == "confidential":
-            encoded = base64.b64encode(f"oaiapp_test:{quote_plus('synthetic+secret:/')}".encode()).decode()
-            assert request.headers["authorization"] == "Basic " + encoded
-        else:
-            assert "authorization" not in request.headers
-        form = parse_qs(request.content.decode())
-        assert "client_secret" not in form
-        if request.url.path == "/revoke":
-            assert form["token_type_hint"] == ["refresh_token"]
-            return httpx2.Response(200)
-        assert request.url.path == "/api/accounts/oauth/token"
-        assert form["client_id"] == ["oaiapp_test"] and form["resource"] == [RESOURCE]
-        if form["grant_type"] == ["authorization_code"]:
-            assert form["code_verifier"] == [current.authorization.code_verifier]
-            assert form["redirect_uri"] == [current.authorization.redirect_uri]
-        else:
-            assert form["grant_type"] == ["refresh_token"]
-            assert "scope" not in form
-        claims = {
-            "sub": "subject-1",
-            "iss": ISSUER,
-            "aud": "oaiapp_test",
-            "nonce": current.authorization.nonce,
-            "iat": int(datetime.now(UTC).timestamp()),
-            "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
-        }
-        if invalid in ("nonce", "aud", "iss", "sub"):
-            claims[invalid] = "" if invalid == "sub" else "other"
-        if invalid == "exp":
-            claims["exp"] = 1
-        signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048) if invalid == "signature" else key
-        return httpx2.Response(
-            200,
-            json={
-                "access_token": "synthetic-access",
-                "refresh_token": "synthetic-refresh",
-                "token_type": "Bearer",
-                "scope": "openid" if invalid == "scope" else " ".join(SCOPES),
-                "expires_in": 3600,
-                "id_token": jwt.encode(claims, signing_key, algorithm="RS256", headers={"kid": "key-1"}),
-            },
+        calls.append(request)
+        if request.url.host == "auth.openai.com":
+            assert request.headers.get("authorization") is None
+            assert b"grant_type=refresh_token" in request.content
+            return httpx2.Response(200, json={"access_token": replacement.access_token, "refresh_token": "rotated"})
+        if request.headers["authorization"] == f"Bearer {original}":
+            return httpx2.Response(401)
+        assert store.saved and request.headers["authorization"] == f"Bearer {replacement.access_token}"
+        return httpx2.Response(200, json={"models": []})
+
+    for _ in range(2):
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+            provider = OpenAIChatGPTProvider(credential_source=store, http_client=client)
+            await provider.client.get("/models", cast_to=dict)
+    assert len(store.saved) == 1 and store.current.refresh_token == "rotated"
+    assert sum(call.url.host == "auth.openai.com" for call in calls) == 1
+    assert sum(call.url.host == "api.openai.com" for call in calls) == (2 if expired else 3)
+
+
+async def test_official_rejected_refresh_is_actionable_and_never_saved():
+    store = MemoryStore()
+
+    def respond(request):
+        return (
+            httpx2.Response(400, json={"error": "invalid_grant"})
+            if request.url.host == "auth.openai.com"
+            else httpx2.Response(401)
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        current = flow(
-            client,
-            **(
-                {"token_endpoint_auth_method": "client_secret_basic", "client_secret": "synthetic+secret:/"}
-                if preconfigured == "confidential"
-                else {}
-            ),
-            **(
-                {"client_id": "oaiapp_test", "redirect_uri": "https://service.test/custom/callback"}
-                if preconfigured
-                else {}
-            ),
+        provider = OpenAIChatGPTProvider(credential_source=store, http_client=client)
+        with pytest.raises(CredentialsRefreshError):
+            await provider.client.get("/models", cast_to=dict)
+    assert not store.saved
+
+
+async def test_official_persistence_failure_surfaces(monkeypatch):
+    store = MemoryStore()
+
+    async def failed(credentials):
+        raise OSError("write failed")
+
+    monkeypatch.setattr(store, "save", failed)
+
+    def respond(request):
+        return (
+            httpx2.Response(200, json={"access_token": "rotated", "refresh_token": "rotated"})
+            if request.url.host == "auth.openai.com"
+            else httpx2.Response(401)
         )
-        if invalid:
-            with pytest.raises(CredentialRefreshError):
-                await current.exchange_callback(callback(current))
-        else:
-            result = await current.exchange_callback(callback(current))
-            assert result.subject == "subject-1" and result.client_id == "oaiapp_test"
-            assert result.client_secret == ("synthetic+secret:/" if preconfigured == "confidential" else None)
-            assert "synthetic+secret:/" not in repr(result) and "synthetic+secret:/" not in current.authorization_url()
-            renewed = await refresh_chatgpt_credentials(result, http_client=client)
-            assert renewed.client_secret == result.client_secret
-            await revoke_chatgpt_credentials(renewed, http_client=client)
-            assert (
-                result.ext_agent_host_id == "urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520" and result.scopes == SCOPES
-            )
-    assert all(request.url.host == "auth.openai.com" for request in requests)
 
-
-@pytest.mark.parametrize("redirect", ["https://service.test/custom/callback", "http://127.0.0.1:18455/custom/callback"])
-async def test_preconfigured_client_survives_restore_and_keeps_exact_redirect(redirect):
-    current = flow(client_id="oaiapp_test", redirect_uri=redirect)
-    params = parse_qs(urlsplit(current.authorization_url()).query)
-    assert params["client_id"] == ["oaiapp_test"] and params["redirect_uri"] == [redirect]
-    assert "agent_name_hint" not in params
-    restored = OpenAIChatGPTOAuthFlow(
-        TypeAdapter(ChatGPTAuthorization).validate_json(
-            TypeAdapter(ChatGPTAuthorization).dump_json(current.authorization)
-        )
-    )
-    assert restored.authorization.preconfigured_client
-    assert restored.validate_callback(callback(current, client_id="")).client_id == "oaiapp_test"
-    for changed in (callback(current, client_id="other"), callback(current).replace("/custom/", "/different/")):
-        with pytest.raises(UserError):
-            restored.validate_callback(changed)
-
-
-@pytest.mark.parametrize("credentials", [None, "returning"])
-@pytest.mark.parametrize(
-    "redirect",
-    ["https://service.test/auth/callback", "http://localhost:1456/auth/callback", "http://127.0.0.1:1456/custom"],
-)
-async def test_oss_issued_client_does_not_unlock_website_callbacks(credentials, redirect):
-    with pytest.raises(UserError, match="OSS registration"):
-        flow(credentials=grant() if credentials else None, redirect_uri=redirect)
-
-
-@pytest.mark.parametrize(
-    "redirect",
-    [
-        "https://user:password@service.test/callback",
-        "https://service.test/callback?",
-        "https://service.test/callback#",
-        "https://service.test/callback?x=1",
-        "https://service.test/callback#fragment",
-        "http://service.test/callback",
-        "https://service.test:0/callback",
-        "https://service.test:65536/callback",
-        "https://service.test",
-        "https://service.test/\ncallback",
-    ],
-)
-async def test_preconfigured_callback_syntax_is_strict(redirect):
-    with pytest.raises(UserError):
-        flow(client_id="oaiapp_test", redirect_uri=redirect)
-
-
-async def test_preconfigured_client_cannot_rebind_existing_credentials():
-    with pytest.raises(UserError, match="another client"):
-        flow(client_id="another-client", credentials=grant())
-    with pytest.raises(UserError, match="another host"):
-        flow(client_id="oaiapp_test", credentials=replace(grant(), ext_agent_host_id="another-host"))
-    with pytest.raises(UserError):
-        flow(client_id="dynamic_agent_client")
-    pending = TypeAdapter(ChatGPTAuthorization).dump_python(flow(credentials=grant()).authorization, mode="json")
-    pending.pop("preconfigured_client")
-    restored = OpenAIChatGPTOAuthFlow(TypeAdapter(ChatGPTAuthorization).validate_python(pending))
-    assert not restored.authorization.preconfigured_client
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        provider = OpenAIChatGPTProvider(credential_source=store, http_client=client)
+        with pytest.raises(CredentialsPersistenceError):
+            await provider.client.get("/models", cast_to=dict)
 
 
 def stream_events(terminal="response.completed"):
@@ -337,13 +204,13 @@ async def test_native_streaming_collector_dialect_tools_and_usage(streaming):
 
     def respond(request):
         requests.append(json.loads(request.content))
-        assert request.headers["authorization"] == "Bearer synthetic-access-old"
+        assert request.headers["authorization"].startswith("Bearer ")
         assert str(request.url) == RESOURCE + "/responses"
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=stream_events())
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        provider = OpenAIChatGPTProvider(credential_source=ProcessChatGPTCredentialSource(store), http_client=client)
-        model = OpenAIChatGPTResponsesModel("gpt-6.1-sol", provider=provider)
+        provider = OpenAIChatGPTProvider(credential_source=store, http_client=client)
+        model = OpenAIResponsesModel("gpt-6.1-sol", provider=provider)
         messages = [ModelRequest(parts=[SystemPromptPart("Be helpful"), UserPromptPart("Hi")])]
         parameters = ModelRequestParameters(
             function_tools=[ToolDefinition(name="test", parameters_json_schema={"type": "object"})]
@@ -362,70 +229,10 @@ async def test_native_streaming_collector_dialect_tools_and_usage(streaming):
         assert not client.is_closed
     body = requests[0]
     assert body["stream"] is True and body["store"] is False
-    assert not {"temperature", "max_output_tokens", "top_p", "tools", "previous_response_id"} & body.keys()
-    assert body["input"][0]["type"] == "additional_tools"
-    assert body["input"][0]["tools"][0]["name"] == "test"
+    assert not {"temperature", "max_output_tokens", "top_p", "previous_response_id"} & body.keys()
+    assert body["tools"][0]["type"] == "function"
+    assert body["tools"][0]["name"] == "test"
     assert all(item.get("role") != "system" for item in body["input"])
-
-
-@pytest.mark.parametrize("terminal", [None, "response.failed", "response.incomplete"])
-async def test_partial_stream_is_not_successful_inference(terminal):
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda request: httpx2.Response(
-                200, headers={"content-type": "text/event-stream"}, content=stream_events(terminal)
-            )
-        )
-    ) as client:
-        model = OpenAIChatGPTResponsesModel(
-            "gpt-6.1-sol",
-            provider=OpenAIChatGPTProvider(
-                credential_source=ProcessChatGPTCredentialSource(MemoryStore()), http_client=client
-            ),
-        )
-        with pytest.raises(ModelAPIError, match="ChatGPT"):
-            await model.request([], None, ModelRequestParameters())
-
-
-async def test_concurrent_models_publish_one_refresh_and_never_switch_accounts():
-    store = MemoryStore(grant(expires=1))
-    source = ProcessChatGPTCredentialSource(store)
-    exchanges = []
-
-    async def refresh(current):
-        exchanges.append(current)
-        await anyio.sleep(0.01)
-        return grant("new")
-
-    def respond(request):
-        assert store.saved and request.headers["authorization"] == "Bearer synthetic-access-new"
-        return httpx2.Response(200)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        OpenAIChatGPTProvider(credential_source=source, refresh=refresh, http_client=client)
-        async with anyio.create_task_group() as group:
-            for _ in range(4):
-                group.start_soon(client.get, RESOURCE + "/models")
-        assert len(exchanges) == len(store.saved) == 1
-        store.value = replace(store.value, subject="different")
-        with pytest.raises(ModelAuthenticationError, match="account changed"):
-            await client.get(RESOURCE + "/models")
-
-
-async def test_uncertain_refresh_is_not_replayed():
-    store = MemoryStore(grant(expires=1))
-    source = ProcessChatGPTCredentialSource(store)
-    exchanges = []
-
-    async def refresh(current):
-        exchanges.append(current)
-        raise TimeoutError("lost token response")
-
-    with pytest.raises(TimeoutError):
-        await source.rotate(store.value, refresh)
-    with pytest.raises(ModelAuthenticationError, match="unknown"):
-        await source.rotate(store.value, refresh)
-    assert len(exchanges) == 1
 
 
 async def test_account_catalog_uses_public_models_wire_shape_and_preserves_visible_order():
@@ -436,7 +243,7 @@ async def test_account_catalog_uses_public_models_wire_shape_and_preserves_visib
     def respond(request):
         requests.append(request)
         assert str(request.url) == RESOURCE + "/models"
-        assert request.headers["authorization"] == "Bearer synthetic-access-old"
+        assert request.headers["authorization"].startswith("Bearer ")
         return httpx2.Response(
             200,
             json={
@@ -449,48 +256,12 @@ async def test_account_catalog_uses_public_models_wire_shape_and_preserves_visib
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        models = await discover_chatgpt_models(
-            credential_source=ProcessChatGPTCredentialSource(MemoryStore()), http_client=client
-        )
+        models = await discover_chatgpt_models(credential_source=MemoryStore(), http_client=client)
     assert [(model.slug, model.display_name) for model in models] == [
         ("gpt-visible-second", "Second"),
         ("gpt-visible-first", "First"),
     ]
     assert len(requests) == 1
-
-
-async def test_unauthorized_request_replays_once_after_persisted_rotation():
-    store = MemoryStore()
-    requests, exchanges = [], []
-
-    async def refresh(current):
-        exchanges.append(current)
-        return grant("new")
-
-    def respond(request):
-        requests.append(request.headers["authorization"])
-        return httpx2.Response(401, json={"error": {"message": "unauthorized"}})
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        OpenAIChatGPTProvider(
-            credential_source=ProcessChatGPTCredentialSource(store), refresh=refresh, http_client=client
-        )
-        result = await client.get(RESOURCE + "/models")
-    assert result.status_code == 401 and len(exchanges) == len(store.saved) == 1
-    assert requests == ["Bearer synthetic-access-old", "Bearer synthetic-access-new"]
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"client_id": "oaiapp_test", "token_endpoint_auth_method": "client_secret_basic"},
-        {"token_endpoint_auth_method": "client_secret_basic", "client_secret": "secret"},
-        {"client_id": "oaiapp_test", "client_secret": "secret"},
-    ],
-)
-async def test_client_authentication_never_falls_back_to_public_mode(kwargs):
-    with pytest.raises(UserError, match="registered token endpoint"):
-        flow(**kwargs)
 
 
 async def test_definition_discovery_declares_capability_and_uses_host_source_and_headers():
@@ -519,7 +290,7 @@ async def test_definition_discovery_declares_capability_and_uses_host_source_and
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         choices = await DEFINITION.discover_models(
             configuration={},
-            credential_source=ProcessChatGPTCredentialSource(MemoryStore()),
+            credential_source=MemoryStore(),
             http_client=client,
             extra_headers={"x-test": "discovery"},
         )
@@ -551,7 +322,26 @@ async def test_definition_discovery_normalizes_upstream_errors_without_secret_bo
         transport=httpx2.MockTransport(lambda _: httpx2.Response(403, json={"error": {"message": "synthetic-secret"}}))
     ) as client:
         with pytest.raises(ProviderOperationError) as failure:
-            await DEFINITION.discover_models(
-                configuration={}, credential_source=ProcessChatGPTCredentialSource(MemoryStore()), http_client=client
-            )
+            await DEFINITION.discover_models(configuration={}, credential_source=MemoryStore(), http_client=client)
     assert "synthetic-secret" not in str(failure.value)
+
+
+@pytest.mark.parametrize("terminal", [None, "response.incomplete"])
+async def test_official_collector_keeps_partial_text_without_completed_event(terminal):
+    """Characterize the upstream boundary; Harness adds no terminal-event guard."""
+    content = stream_events(terminal)
+    if terminal:
+        content = content.replace(
+            '"status": "completed"', '"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}'
+        )
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda _: httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=content)
+        )
+    ) as client:
+        model = OpenAIResponsesModel(
+            "gpt-test", provider=OpenAIChatGPTProvider(credential_source=MemoryStore(), http_client=client)
+        )
+        async with model:
+            response = await model.request([ModelRequest(parts=[UserPromptPart("Hi")])], None, ModelRequestParameters())
+        assert response.parts[0].content == "Hello"

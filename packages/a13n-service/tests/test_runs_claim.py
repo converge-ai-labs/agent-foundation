@@ -1,6 +1,7 @@
 """Batch claims retain ownership, atomic publication and bounded database work."""
 
 import asyncio
+import base64
 import importlib
 import logging
 from collections.abc import Iterator
@@ -51,13 +52,17 @@ def statements(runtime: Runtime, *, timings: list[float] | None = None) -> Itera
         event.remove(engine, "before_cursor_execute", capture)
 
 
-@pytest.mark.parametrize("count", [1, 4, 8, 128])
+# One row and a batch whose subscribed recovery crosses the 256-row outbox chunk boundary.
+@pytest.mark.parametrize("count", [1, 128])
 @pytest.mark.parametrize("subscribed", [False, True])
 async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_kit: SimpleNamespace, count, subscribed):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
-    for index in range(count):
-        await runs_kit.start_thread(service, agent, str(index))
+    # Setup uses independent threads; bound concurrent requests below the database pool size.
+    for start in range(0, count, 8):
+        await asyncio.gather(
+            *(runs_kit.start_thread(service, agent, str(index)) for index in range(start, min(start + 8, count)))
+        )
     if subscribed:
         response = await service.client.post(
             f"{service.api}/subscriptions",
@@ -65,7 +70,7 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
                 "name": "Claims",
                 "url": "http://127.0.0.1:9/hook",
                 "kinds": ["run.running", "run_attempt.leased"],
-                "signing_secret": "whsec_batch_claim_signing_secret",
+                "signing_secret": "whsec_" + base64.b64encode(b"batch claim signing secret 32by!").decode(),
             },
         )
         assert response.status_code == 201, response.text
@@ -99,8 +104,13 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
             f"{(finished - timings[1]) * 1000:.1f} ms candidate query through commit"
         )
         if not recovery:
-            for lease in leases:
-                await release_attempt(service.runtime, lease, status="yielded", yield_reason="drain")
+            for start in range(0, len(leases), 8):
+                await asyncio.gather(
+                    *(
+                        release_attempt(service.runtime, lease, status="yielded", yield_reason="drain")
+                        for lease in leases[start : start + 8]
+                    )
+                )
 
 
 async def test_empty_claim_only_reads_time_and_candidates(service, runs_kit):  # type: ignore[no-untyped-def]
@@ -117,12 +127,13 @@ async def test_mixed_initial_recovery_and_handoff_preserve_numbers_and_cleanup(s
     for name in ("recovery", "handoff"):
         await runs_kit.start_thread(service, agent, name)
     recovered, yielded = await claim(runtime, worker_id="before", worker_build="test", limit=2)
-    await release_attempt(runtime, recovered, status="failed")
+    # Keep recovery leased while preparing handoffs so its backoff cannot make it claimable.
     # More handoffs than charged attempts: the next number must come from history.
     for _ in range(2):
         await release_attempt(runtime, yielded, status="yielded", yield_reason="drain")
         [yielded] = await claim(runtime, worker_id="handoff", worker_build="test", limit=1)
     await release_attempt(runtime, yielded, status="yielded", yield_reason="drain")
+    await release_attempt(runtime, recovered, status="failed")
     await runs_kit.start_thread(service, agent, "initial")
     async with transaction(runtime.storage) as session:
         await session.execute(

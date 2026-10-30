@@ -1,0 +1,43 @@
+/* Reads like the filter selects beside it: muted label, regular-weight value. */
+.trigger {
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-start;
+  font-weight: 400;
+}
+.trigger > svg:last-child {
+  margin-left: auto;
+  color: var(--a13n-secondary);
+}
+.triggerLabel {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.triggerValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.popup {
+  width: min(352px, calc(100vw - 24px));
+}
+.error {
+  margin: 0;
+  color: var(--a13n-danger);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.spinning {
+  animation: spin 800ms linear infinite;
+}
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}

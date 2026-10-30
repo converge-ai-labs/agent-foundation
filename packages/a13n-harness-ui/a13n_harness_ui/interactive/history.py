@@ -31,8 +31,10 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
         part for entry in reversed(page.entries) for part in reversed((*composer_history(entry.parts), *entry.failures))
     )
     for part in parts:
-        if not isinstance(part, TranscriptFailure) and (not part.metadata.display or part.kind in {"system", "other"}):
-            continue
+        if not isinstance(part, TranscriptFailure):
+            recovery_warning = (part.metadata.model_extra or {}).get("a13n.recovery") == "context_recovery"
+            if not part.metadata.display or part.kind == "system" or (part.kind == "other" and not recovery_warning):
+                continue
         if len(selected) >= _HISTORY_PARTS or _HISTORY_BYTES - size < 128:
             omitted = True
             break
@@ -65,6 +67,8 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
     for part, text in reversed(selected):
         if isinstance(part, TranscriptFailure):
             renderer.append(f"Error: {text}\n", kind="notice")
+        elif part.kind == "other":
+            renderer.append(f"Warning: {text}\n", kind="notice")
         elif part.kind == "tool_call":
             name = part.tool_name or "tool"
             block = renderer.transcript.append(f"{name}\n{tool_arguments(name, text)}", kind="tool")

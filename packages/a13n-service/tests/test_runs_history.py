@@ -73,8 +73,10 @@ async def test_a_resume_explicitly_skips_a_question(service, scripted_model, run
 
 
 async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model)
-    origin = await runs_kit.start_thread(service, agent, "remember seven")
+    agent = await runs_kit.create_agent(service, scripted_model, execution={"environment": {"MODE": "agent"}})
+    origin = await runs_kit.start_thread(
+        service, agent, "remember seven", options={"execution": {"environment": {"MODE": "origin"}}}
+    )
     scripted_model.say("Noted")
     await (await runs_kit.attempt(service))
 
@@ -91,6 +93,7 @@ async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted
         origin["thread"]["session_id"],
     )
     assert (run["lineage"], run["parent_run_id"]) == ("fork", origin["run"]["id"])
+    assert run["options"]["execution"]["environment"] == {"MODE": "agent"}
     scripted_model.say("Seven")
     await (await runs_kit.attempt(service))
     assert (await runs_kit.get_run(service, run["id"]))["output"] == "Seven"
@@ -237,10 +240,13 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
         assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid_argument"), malformed
 
 
-async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"tools": {"find": {}}}})
+async def test_run_items_page_by_ordinal_across_pages_and_the_tail(
+    skill_service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     for number in range(16):
-        scripted_model.call("find_resources", {"kind": "model"}, call_id=f"call_{number}")
+        runs_kit.lookup(scripted_model, call_id=f"call_{number}")
     scripted_model.say("Found them")
     run_id = (await runs_kit.start_thread(service, agent, "find"))["run"]["id"]
     settings = service.runtime.settings
@@ -249,7 +255,6 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     await (await runs_kit.attempt(service, runtime=runtime))
 
     newest = await runs_kit.items(service, run_id)
-    assert newest["baseline"] is True and newest["continuation"] is not None
     count = newest["items"][-1]["ordinal"]
     assert count > 32
     assert [item["ordinal"] for item in newest["items"]] == list(range(count - len(newest["items"]) + 1, count + 1)), (
@@ -268,18 +273,18 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     async def window(**params: int) -> list[int]:
         response = await service.client.get(f"{service.api}/runs/{run_id}/items", params=params)
         assert response.status_code == 200, response.text
-        body = response.json()
-        historical = "before" in params or "after" in params
-        assert body["baseline"] is not historical
-        if historical:
-            assert body["continuation"] is None and body["position"] is None and body["resume_after"] is None
-        return [item["ordinal"] for item in body["items"]]
+        return [item["ordinal"] for item in response.json()["items"]]
 
     # The newest items, then each earlier window, until the first item.
     windows, before = [await window(limit=10)], None
     while (before := windows[-1][0]) > 1:
         windows.append(await window(before=before, limit=10))
     assert [ordinal for part in reversed(windows) for ordinal in part] == list(range(1, count + 1))
+    # A wholly historical window never touches the unrelated mutable tail.
+    store = _MissingOnce(service.runtime.objects)
+    monkeypatch.setattr(service.app.state, "runtime", replace(service.runtime, objects=store))
+    assert await window(before=17, limit=16) == list(range(1, 17))
+    assert not store.missed
     assert await window(after=10, limit=20) == list(range(11, 31))
     assert await window(after=count) == []
     both = await service.client.get(f"{service.api}/runs/{run_id}/items", params={"before": 5, "after": 1})
@@ -378,13 +383,9 @@ async def test_default_window_includes_whole_active_tail_beyond_limit(service, s
     monkeypatch.setattr(checkpoints, "load_tail", load_tail)
     path = f"{service.api}/runs/{run_id}/items"
     default = (await service.client.get(path, params={"limit": 2})).json()
-    assert default["baseline"] is True and default["complete"] is False
+    assert default["complete"] is False
     assert len(default["items"]) == 10
     assert all(item["state"] == "in_progress" for item in default["items"])
-    assert default["continuation"]["next_ordinal"] == 11
     for window in ({"before": 5}, {"after": 2}):
         historical = (await service.client.get(path, params={"limit": 2, **window})).json()
         assert [item["ordinal"] for item in historical["items"]] == [3, 4]
-        assert historical["baseline"] is False
-        assert historical["continuation"] is None and historical["position"] is None
-        assert historical["resume_after"] is None

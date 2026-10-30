@@ -6,15 +6,20 @@ from a13n_envd_client.eip import v1 as eip
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerClick,
+    ComputerClipboard,
+    ComputerClipboardWriteResult,
     ComputerDescription,
     ComputerDrag,
     ComputerInput,
     ComputerMove,
     ComputerObservation,
     ComputerPressKeys,
+    ComputerRegion,
     ComputerScreenshot,
     ComputerScroll,
     ComputerTypeText,
+    ComputerZoom,
+    ComputerZoomImage,
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.eip._common import convert_receipt, invoke, new_context, session_client
@@ -25,6 +30,42 @@ class EIPComputerOperations:
         self._session = session
         self._execution_id = execution_id
         self._generation = generation
+
+    async def read_clipboard(self, *, max_bytes: int = 16384) -> ComputerClipboard:
+        result = await invoke(
+            session_client(self._session).computer_read_clipboard(
+                eip.ComputerReadClipboardParams(context=new_context(), max_bytes=max_bytes)
+            )
+        )
+        return ComputerClipboard.model_validate(result.model_dump())
+
+    async def write_clipboard(self, text: str) -> ComputerClipboardWriteResult:
+        try:
+            result = await invoke(
+                session_client(self._session).computer_write_clipboard(
+                    eip.ComputerWriteClipboardParams(context=new_context(), text=text)
+                )
+            )
+        except EnvironmentError as error:
+            if error.retry_hint == "new_run" and "dispatch_stage" not in error.details:
+                raise EnvironmentError(
+                    "Clipboard publication outcome is unconfirmed",
+                    code=error.code,
+                    retry_hint="reconcile_first",
+                    details={
+                        **error.details,
+                        "dispatch_stage": "unknown",
+                        "hint": "Inspect the clipboard before another write; do not automatically replay it.",
+                    },
+                ) from error
+            raise
+        return ComputerClipboardWriteResult(
+            receipt=convert_receipt(
+                result.receipt, session=self._session, execution_id=self._execution_id, generation=self._generation
+            ),
+            effect=result.effect.value,
+            cleanup_complete=result.cleanup_complete,
+        )
 
     async def describe(self) -> ComputerDescription:
         result = await invoke(
@@ -50,6 +91,28 @@ class EIPComputerOperations:
             )
             data = b"".join([chunk async for chunk in reader])
             return ComputerScreenshot(observation, data)
+
+    async def zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int = 1280
+    ) -> ComputerZoom:
+        return await invoke(self._zoom(observation, region, max_dimension=max_dimension))
+
+    async def _zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int
+    ) -> ComputerZoom:
+        if (observation.execution_id, observation.observed_generation) != (self._execution_id, self._generation):
+            raise EnvironmentError("Computer observation is stale", code="environment_stale_mount")
+        region.validate_bounds(observation.width, observation.height)
+        async with self._session.zoom_computer(
+            observation_id=observation.observation_id,
+            region=eip.ComputerRegion(**region.model_dump()),
+            max_dimension=max_dimension,
+        ) as reader:
+            if reader.opened.size_bytes > 4 * 1024 * 1024:
+                raise EnvironmentError("Computer image exceeds its size limit", code="environment_too_large")
+            image = ComputerZoomImage.model_validate(reader.opened.image.model_dump())
+            data = b"".join([chunk async for chunk in reader])
+            return ComputerZoom(image, data)
 
     async def execute(self, request: ComputerInput) -> ComputerActionResult:
         try:

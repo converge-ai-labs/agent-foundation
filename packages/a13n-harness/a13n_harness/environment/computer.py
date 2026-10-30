@@ -8,7 +8,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentOperationReceipt
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
 
 
 class ComputerTarget(BaseModel):
@@ -44,6 +44,41 @@ class ComputerObservation(BaseModel):
 @dataclass(frozen=True, slots=True)
 class ComputerScreenshot:
     observation: ComputerObservation
+    data: bytes
+
+
+class ComputerRegion(BaseModel):
+    """Half-open rectangle edges in the source observation's coordinate frame."""
+
+    model_config = ConfigDict(frozen=True)
+    left: int = Field(ge=0)
+    top: int = Field(ge=0)
+    right: int = Field(ge=0)
+    bottom: int = Field(ge=0)
+
+    def validate_bounds(self, width: int, height: int) -> None:
+        if not (self.left < self.right <= width and self.top < self.bottom <= height):
+            raise EnvironmentError("Region is outside the observation or empty.", code="environment_request_invalid")
+
+
+class ComputerZoomImage(BaseModel):
+    """Image metadata only; this does not establish a pointer-coordinate reference."""
+
+    model_config = ConfigDict(frozen=True)
+    source_observation_id: str
+    target_id: str
+    source_width: int = Field(ge=1)
+    source_height: int = Field(ge=1)
+    region: ComputerRegion
+    image_width: int = Field(ge=1)
+    image_height: int = Field(ge=1)
+    mime_type: Literal["image/jpeg", "image/png"]
+    captured_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ComputerZoom:
+    image: ComputerZoomImage
     data: bytes
 
 
@@ -123,9 +158,30 @@ class ComputerActionResult:
     input_cleanup_complete: bool
 
 
+class ComputerClipboard(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    status: Literal["text", "no_content", "no_text"]
+    text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ComputerClipboardWriteResult:
+    receipt: EnvironmentOperationReceipt
+    effect: Literal["not_executed", "executed", "partial", "unknown"]
+    cleanup_complete: bool
+
+
 class ProviderComputerOperations(Protocol):
+    async def read_clipboard(self, *, max_bytes: int = 16384) -> ComputerClipboard: ...
+
+    async def write_clipboard(self, text: str) -> ComputerClipboardWriteResult: ...
+
     async def describe(self) -> ComputerDescription: ...
 
     async def observe(self, *, target_id: str | None = None, max_dimension: int = 1280) -> ComputerScreenshot: ...
+
+    async def zoom(
+        self, observation: ComputerObservation, region: ComputerRegion, *, max_dimension: int = 1280
+    ) -> ComputerZoom: ...
 
     async def execute(self, request: ComputerInput) -> ComputerActionResult: ...

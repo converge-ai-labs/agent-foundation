@@ -1,13 +1,17 @@
 """Daytona shared implementation."""
 
+import hashlib
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+import anyio
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState, TokenCredential
+from a13n_harness.environment.variables import EnvironmentVariables
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
@@ -15,19 +19,39 @@ from a13n_harness.providers.environment.native.http import NativeHTTP, decode_re
 
 class DaytonaConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    organization_id: str = Field(min_length=1, max_length=128, title="Organization ID")
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
+    organization_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        title="Organization ID",
+        description="Optional account constraint. When omitted, resolve the organization from the current API key.",
+    )
     target: str = Field(default="us", min_length=1, max_length=64, title="Target region")
 
 
-class DaytonaEnvironmentConfiguration(CommandConfiguration):
-    model_config = ConfigDict(frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["snapshot"]})
-    root: str = "/home/daytona"
-    # Daytona sizes a sandbox by its snapshot and refuses resources requested alongside one.
-    snapshot: str | None = Field(
-        default=None,
-        max_length=256,
-        description="Existing Daytona snapshot, which sets the sandbox's resources; empty uses the default Python sandbox.",
+class DaytonaEnvironmentConfiguration(BaseModel):
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["desktop", "snapshot"]}
     )
+    snapshot: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Operator-built snapshot containing a compatible a13n-envd; all Agent operations use EIP.",
+    )
+    desktop: bool = Field(
+        default=False,
+        title="Desktop environment",
+        description="Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.",
+    )
+    environment: EnvironmentVariables = Field(default_factory=dict)
+    request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
+
+    @property
+    def fingerprint(self) -> str:
+        return hashlib.sha256(
+            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+        ).hexdigest()
 
 
 class Sandbox(BaseModel):
@@ -43,6 +67,30 @@ class Sandbox(BaseModel):
 
 class Proxy(BaseModel):
     url: str
+
+
+class CurrentKey(BaseModel):
+    organizationId: str = Field(min_length=1)
+
+
+async def organization(http: NativeHTTP, expected: str | None) -> str:
+    """Read only the account identity; never retain or expose the API key response."""
+    current = decode_response(CurrentKey, await http.request("GET", "api-keys/current"), "daytona")
+    if expected is not None and current.organizationId != expected:
+        raise failure("daytona", "provider_account_conflict", Category.CONFLICT)
+    return current.organizationId
+
+
+async def resolved_runtime(configuration: DaytonaConnectionConfiguration, credential: TokenCredential) -> NativeRuntime:
+    if configuration.organization_id is not None:
+        return NativeRuntime(configuration, credential)
+    http = NativeHTTP("daytona", "https://app.daytona.io/api/", credential.api_key.get_secret_value(), 20)
+    try:
+        identity = await organization(http, None)
+        return NativeRuntime(configuration.model_copy(update={"organization_id": identity}), credential)
+    finally:
+        with anyio.CancelScope(shield=True), anyio.move_on_after(5):
+            await http.close()
 
 
 class Execution(BaseModel):
@@ -64,6 +112,7 @@ class DaytonaReference(NativeReference[DaytonaEnvironmentConfiguration, TargetSt
         self.backend = runtime.configuration
         self.token = runtime.credential.api_key
         self.http: NativeHTTP | None = None
+        self.toolbox: NativeHTTP | None = None
 
     def transport(self) -> NativeHTTP:
         if self.http is None:
@@ -107,6 +156,36 @@ class DaytonaReference(NativeReference[DaytonaEnvironmentConfiguration, TargetSt
             return "stopped"
         raise failure(self.provider_key, "provider_unavailable", Category.UNAVAILABLE)
 
+    async def open_toolbox(self, target: Sandbox) -> NativeHTTP:
+        proxy = target.toolboxProxyUrl
+        if proxy is None:
+            proxy = decode_response(
+                Proxy, await self.transport().request("GET", self.path + "/toolbox-proxy-url"), self.provider_key
+            ).url
+        parsed = urlsplit(proxy)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise failure(self.provider_key, "provider_response_invalid", Category.UNAVAILABLE)
+        if self.toolbox is not None:
+            await self.toolbox.close()
+        self.toolbox = NativeHTTP(
+            self.provider_key,
+            proxy.rstrip("/") + "/",
+            self.token.get_secret_value(),
+            self.config.request_timeout_seconds + 10,
+        )
+        return self.toolbox
+
     async def close_transport(self) -> None:
-        if self.http:
-            await self.http.close()
+        try:
+            if self.toolbox is not None:
+                await self.toolbox.close()
+        finally:
+            if self.http is not None:
+                await self.http.close()

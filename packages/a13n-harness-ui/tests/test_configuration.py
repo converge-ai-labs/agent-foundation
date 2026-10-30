@@ -172,6 +172,7 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
     }
     assert empty.sources[0].content == 'schema_version: "1"\n'
     assert empty.document.webui.sidekick is not None
@@ -558,7 +559,7 @@ plugin_key: vendor.memory
 kind: agent
 id: agent-main
 name: Main
-tool_proxy:
+tool_search:
   groups:
     knowledge:
       description: Knowledge tools
@@ -566,27 +567,34 @@ tool_proxy:
 """,
         },
     )
-    with pytest.raises(ConfigurationError, match=r"tool_proxy\.groups\.knowledge\.mcp_servers"):
+    with pytest.raises(ConfigurationError, match=r"tool_search\.groups\.knowledge\.mcp_servers"):
         await load_harness_ui_configuration(path)
 
 
-@pytest.mark.parametrize("config", [{"max_results": True}, {"search_name": "invalid name"}, {"unexpected": 1}])
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"mode": "proxy", "max_results": True},
+        {"mode": "proxy", "search_name": "invalid name"},
+        {"mode": "proxy", "unexpected": 1},
+    ],
+)
 def test_proxy_config_uses_native_validation(config: dict) -> None:
-    from a13n_harness_ui.configuration.models import AgentToolProxy
+    from a13n_harness_ui.configuration.models import AgentToolSearch
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        AgentToolProxy.model_validate({"config": config})
+        AgentToolSearch.model_validate({"config": config})
 
 
 def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
-    from a13n_harness_ui.configuration.models import AgentToolProxy
+    from a13n_harness_ui.configuration.models import AgentToolSearch
     from pydantic import ValidationError
 
     group = {"description": "Knowledge tools", "mcp_servers": ["mcp-docs"]}
     with pytest.raises(ValidationError, match="selected more than once"):
-        AgentToolProxy.model_validate({"groups": {"first": group, "second": group}})
-    proxy = AgentToolProxy.model_validate({"groups": {"knowledge": group}})
+        AgentToolSearch.model_validate({"groups": {"first": group, "second": group}})
+    proxy = AgentToolSearch.model_validate({"groups": {"knowledge": group}})
     group["mcp_servers"].clear()
     assert proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
 

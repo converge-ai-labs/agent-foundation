@@ -2,6 +2,7 @@ import {
   Button,
   Checkbox,
   ChoiceField,
+  DisclosureSection,
   FormField,
   Input,
   Label,
@@ -13,7 +14,7 @@ import {
 } from "a13n-ui";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -33,9 +34,13 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { CopyButton, CopyableId, Identifier } from "../../shared/identity";
 import { Page, Section, useTabParam } from "../../shared/page";
+import { RefreshButton } from "../../shared/time-range";
+import { FormSection, TextAreaField } from "../../shared/forms";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
+import { useMountedModal } from "../../shared/dialogs";
 
 export const categoryLabels = {
   unclear_request: "Unclear request",
@@ -72,20 +77,17 @@ const rules = [
   {
     key: "execution",
     label: "Execution failures",
-    description:
-      "Tool configuration, invalid arguments, unavailable resources, and unclear task intent.",
+    description: "Failed tools, invalid inputs, and missing resources.",
   },
   {
     key: "recovery",
     label: "Retries and recovery",
-    description:
-      "Recurring failures, retry loops, and costly recovery. Successful recovery is considered.",
+    description: "Repeated failures and unnecessary retries.",
   },
   {
     key: "answer",
     label: "Answer quality",
-    description:
-      "Misleading completion claims, intent mismatches, and repeated answers across distinct inputs.",
+    description: "False success claims, missed requests, and repeated answers.",
   },
 ] as const;
 export function useFindingAgents() {
@@ -189,7 +191,7 @@ export function FindingsPage() {
     <Page
       title={t("Findings")}
       description={t(
-        "Review execution issues and turn evidence into changes with Composer.",
+        "Find issues in agent runs and review suggested improvements.",
       )}
       actions={start}
     >
@@ -264,9 +266,10 @@ export function FindingsPage() {
                   </>
                 }
                 trailing={
-                  <Button variant="ghost" onClick={() => void query.refetch()}>
-                    {t("Refresh")}
-                  </Button>
+                  <RefreshButton
+                    pending={query.isFetching}
+                    onRefresh={() => void query.refetch()}
+                  />
                 }
               />
               <ErrorNotice
@@ -343,7 +346,7 @@ export function FindingsPage() {
                     icon={<MagnifyingGlassIcon aria-hidden="true" />}
                     title={t("No findings in this view")}
                     description={t(
-                      "No findings does not mean every trace was analyzed. Check the analysis run or start a bounded analysis.",
+                      "Try another filter or analyze traces to look for issues.",
                     )}
                     action={start}
                   />
@@ -380,6 +383,11 @@ function AnalysisHistory({
     { t } = useTranslation(),
     page = useCursor();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  function selectAnalysis(id: string) {
+    setSelectedId(id);
+    setDetailsOpen(true);
+  }
   const query = useQuery({
     queryKey: ["finding-analyses", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
@@ -414,9 +422,10 @@ function AnalysisHistory({
     <>
       <Toolbar
         trailing={
-          <Button variant="ghost" onClick={() => void query.refetch()}>
-            {t("Refresh")}
-          </Button>
+          <RefreshButton
+            pending={query.isFetching}
+            onRefresh={() => void query.refetch()}
+          />
         }
       />
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -428,7 +437,7 @@ function AnalysisHistory({
           <ResourceTable
             items={query.data.items}
             caption={t("Analysis history")}
-            onRowActivate={(item) => setSelectedId(item.id)}
+            onRowActivate={(item) => selectAnalysis(item.id)}
             columns={[
               {
                 label: t("Scope"),
@@ -437,7 +446,7 @@ function AnalysisHistory({
                   <button
                     type="button"
                     className={styles.rowTitle}
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => selectAnalysis(item.id)}
                   >
                     {agentName(item.agent_id)}
                   </button>
@@ -456,16 +465,18 @@ function AnalysisHistory({
               },
               {
                 label: t("Created"),
-                render: (item) => <Timestamp value={item.created_at} />,
+                render: (item) => (
+                  <Timestamp value={item.created_at} relative />
+                ),
               },
             ]}
           />
         ) : (
           <Empty
             icon={<MagnifyingGlassIcon aria-hidden="true" />}
-            title={t("No analysis has been started yet.")}
+            title={t("No analyses yet")}
             description={t(
-              "Start an analysis to review selected traces with Finding Agent.",
+              "Analyze traces to find potential issues in agent runs.",
             )}
           />
         ))
@@ -475,71 +486,111 @@ function AnalysisHistory({
       </CollectionFooter>
       {selected && (
         <ModalFrame
-          open
-          onOpenChange={(open) => {
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          onOpenChangeComplete={(open) => {
             if (!open) setSelectedId(null);
           }}
           title={t("Analysis details")}
-          description={agentName(selected.agent_id)}
           closeLabel={t("Close")}
-        >
-          <div className={styles.analysisDetail}>
-            <div className={styles.metadata}>
-              <StatePill
-                state={selected.run_status}
-                label={t(
-                  runStatusLabels[selected.run_status] ?? selected.run_status,
-                )}
-              />
-              <Timestamp value={selected.created_at} />
-              {selected.agent_id && (
-                <Link to={`${basePath}/agents/${selected.agent_id}`}>
-                  {t("Agent")}
-                </Link>
-              )}
-            </div>
-            <Section title={t("Analysis summary")}>
-              <p>
-                {t("Selected traces: {{count}}", {
-                  count: selected.selected_traces.length,
-                })}
-              </p>
-              <p>
-                {t("Findings: {{count}}", { count: selected.finding_count })}
-              </p>
-              <p>
-                {t("Evidence-cited traces: {{count}}", {
-                  count: selected.cited_trace_count,
-                })}
-              </p>
-              <p className={styles.hint}>
-                {t(
-                  "Evidence citations do not show how many traces were fully analyzed. See the analysis run's final reply for results and limitations.",
-                )}
-              </p>
-              {selected.selection_truncated && (
-                <p className={styles.hint}>
-                  {t("Selection capped; more traces may exist")}
-                </p>
-              )}
-            </Section>
-            <Section title={t("Traces")}>
-              <div className={styles.links}>
-                {selected.selected_traces.map(({ trace_id: trace }) => (
-                  <Link key={trace} to={`${basePath}/traces/${trace}`}>
-                    {trace}
-                  </Link>
-                ))}
-              </div>
-            </Section>
-            <div className={styles.actions}>
-              <Button variant="outline" onClick={() => setSelectedId(null)}>
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                 {t("Close")}
               </Button>
               <Button render={<Link to={runPath(selected)} />}>
                 {t("Open analysis run")}
               </Button>
-            </div>
+            </>
+          }
+        >
+          <div className={styles.analysisDetail}>
+            <Section title={t("Analysis summary")}>
+              <dl className={styles.facts}>
+                <div>
+                  <dt>{t("Status")}</dt>
+                  <dd>
+                    <StatePill
+                      state={selected.run_status}
+                      label={t(
+                        runStatusLabels[selected.run_status] ??
+                          selected.run_status,
+                      )}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Created")}</dt>
+                  <dd>
+                    <Timestamp value={selected.created_at} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Scope")}</dt>
+                  <dd>
+                    {selected.agent_id ? (
+                      <Link
+                        className={styles.link}
+                        to={`${basePath}/agents/${selected.agent_id}`}
+                      >
+                        {agentName(selected.agent_id)}
+                      </Link>
+                    ) : (
+                      agentName(null)
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Selected traces")}</dt>
+                  <dd>{selected.selected_traces.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("Findings")}</dt>
+                  <dd>{selected.finding_count}</dd>
+                </div>
+                <div>
+                  <dt>{t("Evidence-cited traces")}</dt>
+                  <dd>{selected.cited_trace_count}</dd>
+                </div>
+              </dl>
+              {selected.selection.instructions && (
+                <TextAreaField
+                  readOnly
+                  label={t("Requirements for this analysis")}
+                  value={selected.selection.instructions}
+                  onChange={() => {}}
+                />
+              )}
+              <p className={styles.hint}>
+                {t(
+                  "Counts do not indicate full coverage. Open the analysis run for the full report.",
+                )}
+              </p>
+              {selected.selection_truncated && (
+                <p className={styles.hint}>
+                  {t("Trace limit reached. More traces may be available.")}
+                </p>
+              )}
+            </Section>
+            <DisclosureSection
+              title={t("Selected traces")}
+              summary={selected.selected_traces.length}
+            >
+              <ul className={styles.traceList}>
+                {selected.selected_traces.map(({ trace_id: trace }) => (
+                  <li key={trace}>
+                    <Link to={`${basePath}/traces/${trace}`}>
+                      <Identifier value={trace} />
+                    </Link>
+                    <CopyButton
+                      value={trace}
+                      iconOnly
+                      copyLabel={t("Copy trace ID")}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </DisclosureSection>
           </div>
         </ModalFrame>
       )}
@@ -549,19 +600,26 @@ function AnalysisHistory({
 
 function AnalyzeDialog({
   traceId,
-  onClose,
+  onClose: onClosed,
   onCreated,
 }: {
   traceId?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const formId = useId();
+  const [created, setCreated] = useState(false);
+  const { close: onClose, modalProps } = useMountedModal(() => {
+    if (created) onCreated();
+    else onClosed();
+  });
   const { t } = useTranslation(),
     client = useClient(),
     cache = useQueryClient(),
     { workspace } = useWorkspace(),
     backend = useTraceBackend();
   const [days, setDays] = useState("1"),
+    [instructions, setInstructions] = useState(""),
     [limit, setLimit] = useState("10"),
     [presets, setPresets] = useState<Schema["AnalysisCreate"]["presets"]>([
       "execution",
@@ -589,6 +647,7 @@ function AnalyzeDialog({
             started_before: traceId ? undefined : windowEnd,
             max_traces: traceId ? 1 : Number(limit),
             presets,
+            instructions,
           },
           params: { header: commandHeaders(requestKey) },
         })
@@ -599,7 +658,8 @@ function AnalyzeDialog({
         queryKey: ["finding-analyses", workspace.id],
       });
       void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-      onCreated();
+      setCreated(true);
+      onClose();
     },
   });
   const disabled =
@@ -611,17 +671,30 @@ function AnalyzeDialog({
     !backend.data?.type;
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !mutation.isPending) onClose();
-      }}
+      {...modalProps}
       title={t("Analyze traces")}
       closeLabel={t("Close")}
       description={t(
-        "Finding Agent reviews bounded execution evidence and submits unconfirmed findings.",
+        "Find potential issues for your review. Your agents stay unchanged.",
       )}
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={onClose}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" form={formId} disabled={disabled}>
+            {mutation.isPending ? t("Starting…") : t("Start analysis")}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         onSubmit={(event) => {
           event.preventDefault();
           if (!disabled) mutation.mutate();
@@ -629,24 +702,16 @@ function AnalyzeDialog({
         className={styles.form}
       >
         <ErrorNotice error={backend.error ?? mutation.error} />
-        <p className={styles.hint}>
-          {t(
-            "Analysis uses the built-in Finding Agent and automatically selects an available model.",
-          )}
-        </p>
         {backend.isSuccess && !backend.data.type && (
-          <p role="alert">
-            {t(
-              "Configure a trace query provider before starting an analysis. Existing findings remain available.",
-            )}
-          </p>
+          <p role="alert">{t("Connect a trace provider to start analysis.")}</p>
         )}
         {traceId ? (
-          <p className={styles.hint}>
-            {t("Selected trace")}: {traceId}
-          </p>
+          <div className={styles.selectedTrace}>
+            {t("Selected trace")}
+            <CopyableId value={traceId} />
+          </div>
         ) : (
-          <div className={styles.scope}>
+          <FormSection title={t("Scope")}>
             <ChoiceField
               label={t("Time range")}
               value={days}
@@ -658,7 +723,7 @@ function AnalyzeDialog({
               onValueChange={setDays}
               disabled={mutation.isPending}
             />
-            <FormField label={t("Maximum traces")}>
+            <FormField label={t("Trace limit")} description={t("1–20 traces")}>
               <Input
                 type="number"
                 min={1}
@@ -668,59 +733,70 @@ function AnalyzeDialog({
                 onChange={(event) => setLimit(event.target.value)}
               />
             </FormField>
-          </div>
+          </FormSection>
         )}
-        {!traceId && (
-          <p className={styles.hint}>
-            {t(
-              "Execution and recovery rules prioritize failed Runs and error traces within the bounded scan. Other traces may still be selected; a signal does not prove a defect.",
-            )}
-          </p>
-        )}
-        <p className={styles.hint}>
-          {t(
-            "Existing findings from the exact selected Agent versions help avoid duplicate diagnoses. Reviewed findings also provide your feedback. This context may be truncated.",
-          )}
-        </p>
         <fieldset className={styles.rules} disabled={mutation.isPending}>
-          <legend>{t("Built-in rules")}</legend>
-          {rules.map((rule) => (
-            <Label key={rule.key} className={styles.rule}>
-              <Checkbox
-                checked={presets?.includes(rule.key) ?? false}
-                onCheckedChange={(checked) =>
-                  setPresets((previous) =>
-                    checked
-                      ? [...(previous ?? []), rule.key]
-                      : previous?.filter((key) => key !== rule.key),
-                  )
-                }
-              />
-              <span>
-                {t(rule.label)}
-                <span className={styles.hint}>{t(rule.description)}</span>
-              </span>
-            </Label>
-          ))}
+          <legend>{t("Checks")}</legend>
+          <div className={styles.ruleList}>
+            {rules.map((rule) => (
+              <Label key={rule.key} className={styles.rule}>
+                <Checkbox
+                  checked={presets?.includes(rule.key) ?? false}
+                  onCheckedChange={(checked) =>
+                    setPresets((previous) =>
+                      checked
+                        ? [...(previous ?? []), rule.key]
+                        : previous?.filter((key) => key !== rule.key),
+                    )
+                  }
+                />
+                <span>
+                  {t(rule.label)}
+                  <span className={styles.hint}>{t(rule.description)}</span>
+                </span>
+              </Label>
+            ))}
+          </div>
         </fieldset>
-        <p className={styles.hint}>
-          {t(
-            "Analysis runs on demand using ordinary Service execution. At most 100 trace roots are scanned; selected traces are capped at 20. No changes are applied to the target Agent.",
+        <TextAreaField
+          label={t("Requirements for this analysis")}
+          hint={t(
+            "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
           )}
-        </p>
-        <div className={styles.actions}>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={mutation.isPending}
-            onClick={onClose}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" disabled={disabled}>
-            {mutation.isPending ? t("Starting…") : t("Start analysis")}
-          </Button>
-        </div>
+          value={instructions}
+          onChange={setInstructions}
+          maxLength={8192}
+          disabled={mutation.isPending}
+          rows={4}
+        />
+        <DisclosureSection title={t("How analysis works")}>
+          <ul className={styles.analysisNotes}>
+            <li>
+              {t(
+                "Analysis uses the Finding Agent's selected default version and model.",
+              )}
+            </li>
+            {!traceId && (
+              <li>
+                {t(
+                  "Failure and recovery checks prioritize traces with errors. Findings still need your review.",
+                )}
+              </li>
+            )}
+            <li>
+              {t(
+                "Previous findings and reviews for the same agent version help avoid duplicates. Context may be shortened.",
+              )}
+            </li>
+            {!traceId && (
+              <li>
+                {t(
+                  "Each analysis scans up to 100 traces and selects up to 20.",
+                )}
+              </li>
+            )}
+          </ul>
+        </DisclosureSection>
       </form>
     </ModalFrame>
   );

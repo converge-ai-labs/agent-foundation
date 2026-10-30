@@ -14,7 +14,13 @@ from typing import Literal
 import httpx2
 from pydantic_ai.exceptions import (
     ModelAPIError,
+    ModelConnectionError,
+    ModelContextWindowExceededError,
     ModelHTTPError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
+    ModelServerError,
+    ModelUnavailableError,
     RunCancelled,
     ToolFailed,
     UnexpectedModelBehavior,
@@ -40,11 +46,11 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResult, DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai.tools import DeferredToolResult, DeferredToolResults, ToolApproved, ToolDenied
 
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.tools.deferred import DeferredToolResume
+from a13n_harness.tools.deferred import DeferredToolRequests, DeferredToolResume
 
 RecoveryPromptFactory = Callable[
     [BaseException, int, Sequence[ModelMessage]],
@@ -93,9 +99,11 @@ def prepare_tool_recovery(
     messages: Sequence[ModelMessage], mode: ToolRecoveryMode, accepted: DeferredToolResume | None = None
 ) -> ToolRecoveryPlan:
     """Retain recorded results and resume only unanswered calls through native dispatch."""
-    supplied = dict(accepted.results.calls) if accepted is not None else {}
+    model_results = accepted.model_results() if accepted is not None else None
+    supplied = dict(model_results.calls) if model_results is not None else {}
     if accepted is not None:
-        for call_id, decision in accepted.results.approvals.items():
+        assert model_results is not None
+        for call_id, decision in model_results.approvals.items():
             if decision is False or isinstance(decision, ToolDenied):
                 supplied[call_id] = ToolDenied() if decision is False else decision
     close_pending = mode == "never" and not supplied
@@ -138,7 +146,8 @@ def prepare_tool_recovery(
                 plan.results.calls[call_id] = ToolFailed(INTERRUPTED_TOOL_RESULT)
             plan.pending.clear()
         if accepted is not None:
-            plan.results.metadata = deepcopy(accepted.results.metadata)
+            assert model_results is not None
+            plan.results.metadata = deepcopy(model_results.metadata)
     return plan
 
 
@@ -149,6 +158,21 @@ class ModelRecoveryState:
     attempt_id: str | None = None
     consecutive_failures: int = 0
     request_error: BaseException | None = None
+    context_replacement: tuple[ModelMessage, ...] | None = None
+    context_recovery_pending: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ContextRecoveryPolicy:
+    """Native context-overflow recovery, independent of proactive compaction."""
+
+    enabled: bool = True
+    max_history_chars: int = 24_000
+    preserve_history: bool = True
+
+    def __post_init__(self) -> None:
+        if self.max_history_chars < 2048:
+            raise ValueError("max_history_chars must be at least 2048")
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,7 +385,7 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
         )
     if type(error) is ModelAPIError and error.message == "Streamed response ended without a `finish_reason`":
         return True
-    if not isinstance(error, ModelAPIError | httpx2.TransportError | ConnectionError | TimeoutError):
+    if not isinstance(error, ModelAPIError | httpx2.HTTPError | ConnectionError | TimeoutError):
         return False
 
     transient = False
@@ -369,15 +393,33 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
     cause: BaseException | None = error
     while cause is not None and id(cause) not in seen:
         seen.add(id(cause))
-        if isinstance(cause, ssl.SSLCertVerificationError):
+        if isinstance(cause, ssl.SSLCertVerificationError | ModelQuotaExceededError | ModelContextWindowExceededError):
             return False
+        if isinstance(cause, httpx2.HTTPStatusError):
+            try:
+                body = cause.response.json()
+            except (ValueError, httpx2.ResponseNotRead):
+                body = None
+            if cause.response.status_code not in {408, 429, 500, 502, 503, 504, 529} or _has_permanent_error_code(body):
+                return False
+            transient = True
         if isinstance(cause, ModelHTTPError):
-            return cause.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
-                cause.body
-            )
+            # Native HTTP errors also inherit a semantic category. Keep the
+            # Harness status allowlist even for categories such as server errors.
+            if cause.status_code not in {408, 429, 500, 502, 503, 504, 529} or _has_permanent_error_code(cause.body):
+                return False
+            transient = True
         if isinstance(
             cause,
-            httpx2.TimeoutException | httpx2.NetworkError | httpx2.RemoteProtocolError | ConnectionError | TimeoutError,
+            ModelConnectionError
+            | ModelRateLimitError
+            | ModelUnavailableError
+            | ModelServerError
+            | httpx2.TimeoutException
+            | httpx2.NetworkError
+            | httpx2.RemoteProtocolError
+            | ConnectionError
+            | TimeoutError,
         ):
             transient = True
         cause = cause.__cause__

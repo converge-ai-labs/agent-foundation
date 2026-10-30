@@ -1,15 +1,21 @@
 .preview {
   display: grid;
-  gap: 6px;
+  /* Let the excerpt shrink instead of sizing the track to the full tool input. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
   width: 100%;
-  margin-block: 8px 18px;
-  padding: 12px;
+  min-height: 44px;
+  margin-block: 8px 12px;
+  padding: 8px;
   border: 0;
   border-radius: 8px;
-  background: var(--a13n-surface);
-  color: var(--a13n-text-supporting);
+  background: transparent;
+  color: var(--harness-log-text);
   text-align: start;
   cursor: pointer;
+}
+.preview:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
 }
 .preview:focus-visible {
   outline: 2px solid var(--ring);
@@ -17,23 +23,29 @@
 }
 .previewHeading {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 12px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 14px;
+}
+.previewHeading > span:not(.excerpt) {
+  flex: none;
+  white-space: nowrap;
 }
 .previewHeading > svg {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
 }
 .excerpt {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 20px;
 }
 .fullscreen[data-slot="dialog-popup"] {
   position: fixed;
@@ -66,15 +78,16 @@
   flex-shrink: 0;
 }
 .title[data-slot="dialog-title"] {
-  font-size: 15px;
+  font-size: 16px;
 }
 .metrics {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .fullscreen > [data-execution-reader] {
   min-height: 0;
+  overflow-y: auto;
   max-height: none;
   margin: 0;
   border-radius: 0;
@@ -93,4 +106,13 @@
 .fullscreen :global([data-tool-details]),
 .fullscreen :global([data-tool-resources]) {
   overflow: visible;
+}
+
+.preview:is(:hover, :focus-visible) .previewHeading > svg {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .previewHeading > svg {
+    opacity: 1;
+  }
 }

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
+  fireEvent,
   render,
   renderHook,
   screen,
@@ -82,41 +83,43 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   const submit = vi.fn();
   mount(submit);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Conversation setup" }));
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
   // Without a choice the agent's own template is reserved; there is no "none".
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
     await screen.findByRole("option", {
-      name: "Create from template: Research",
+      name: /^Research.*Create from template$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
   expect(
     screen.getByRole("button", {
-      name: "Environment: Create from template: Research",
+      name: "Environment: Research",
     }),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit).toHaveBeenLastCalledWith(
     expect.objectContaining({ environment: { template_id: "envt_test" } }),
   );
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Conversation setup" }));
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
   expect(
     await screen.findByRole("option", {
-      name: "Reuse existing: Research (env_first)",
+      name: /^Research.*Reuse existing · env_first$/,
     }),
   ).toBeTruthy();
   // A deleted environment is never mounted again.
   expect(
     screen.queryByRole("option", {
-      name: "Reuse existing: Research (env_gone)",
+      name: /^Research.*Reuse existing · env_gone$/,
     }),
   ).toBeNull();
   await user.click(
     screen.getByRole("option", {
-      name: "Reuse existing: Research (env_second)",
+      name: /^Research.*Reuse existing · env_second$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -149,11 +152,14 @@ it.each([null, "envt_managed"])(
     const submit = vi.fn();
     mount(submit);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("button", { name: "Run options" }));
+    await user.click(
+      screen.getByRole("button", { name: "Conversation setup" }),
+    );
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
-        name: "Reuse existing: Device (env_device)",
+        name: /^Device.*Reuse existing · env_device$/,
       }),
     );
     await user.type(
@@ -170,7 +176,10 @@ it.each([null, "envt_managed"])(
         },
       }),
     );
-    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("button", { name: "Run options" }));
+    await user.click(
+      screen.getByRole("button", { name: "Conversation setup" }),
+    );
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(await screen.findByRole("option", { name: "Inherit" }));
     expect(
@@ -182,7 +191,7 @@ it.each([null, "envt_managed"])(
   },
 );
 
-it("overrides media understanding per kind and names the choice on its chip", async () => {
+it("overrides media understanding per kind inside advanced settings", async () => {
   http.GET.mockImplementation(async (path: string) => ({
     response: new Response(null),
     data: path.endsWith("/media-understanding-defaults")
@@ -205,7 +214,8 @@ it("overrides media understanding per kind and names the choice on its chip", as
   const submit = vi.fn();
   mount(submit);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
   await user.click(
     await screen.findByRole("button", { name: /Media understanding/ }),
   );
@@ -220,7 +230,7 @@ it("overrides media understanding per kind and names the choice on its chip", as
   ).toContain("Vision");
   await user.click(await screen.findByRole("option", { name: /^Vision/ }));
   await user.click(screen.getByRole("button", { name: "Apply" }));
-  expect(screen.getByRole("button", { name: "Image: Vision" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Settings modified" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit.mock.lastCall?.[0].options).toEqual({
     overrides: {
@@ -231,16 +241,16 @@ it("overrides media understanding per kind and names the choice on its chip", as
       },
     },
   });
-  // Opened without a media chip, the rows stay behind a summary of the selection.
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  // Reopening keeps infrequent choices collapsed, with the selection in the summary.
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
   await screen.findByRole("button", {
     name: /Media understanding Image · Vision, others inherited/,
   });
   expect(
     screen.queryByRole("combobox", { name: "Image understanding" }),
   ).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Apply" }));
-  await user.click(screen.getByRole("button", { name: "Image: Vision" }));
+  await user.click(screen.getByRole("button", { name: /Media understanding/ }));
   await user.click(
     await screen.findByRole("combobox", { name: "Image understanding" }),
   );
@@ -266,7 +276,7 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
   const submit = vi.fn();
   mount(submit);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(await screen.findByRole("combobox", { name: "Model" }));
   await user.click(await screen.findByRole("option", { name: /^Vision/ }));
   await user.click(
@@ -277,7 +287,7 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
     "Answer briefly.",
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
-  expect(screen.getByRole("button", { name: "Model: Vision" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Settings modified" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit.mock.lastCall?.[0]).toEqual({
     options: {
@@ -289,22 +299,21 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
   });
 });
 
-it("takes model settings from their own field and rejects them in advanced JSON", () => {
+it("accepts model settings in advanced JSON and rejects duplicate dedicated fields", () => {
   const { result } = renderHook(() => useRunOptions());
   act(() => {
-    result.current.setSettings('{"temperature": 0.2}');
-    result.current.setAdvanced('{"skills": []}');
+    result.current.setAdvanced(
+      '{"skills": [], "model_settings": {"temperature": 0.2}}',
+    );
   });
   expect(result.current.build()).toEqual({
     options: {
       overrides: { skills: [], model_settings: { temperature: 0.2 } },
     },
   });
-  act(() =>
-    result.current.setAdvanced('{"model_settings": {"temperature": 1}}'),
-  );
+  act(() => result.current.setAdvanced('{"model": "duplicate"}'));
   expect(() => result.current.build()).toThrow(
-    "The model_settings field cannot be edited in advanced run configuration.",
+    "The model field cannot be edited in advanced run configuration.",
   );
 });
 
@@ -324,7 +333,8 @@ it("mounts initial memories on the new thread and changes their access before se
   const submit = vi.fn();
   mount(submit);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Conversation setup" }));
   await user.click(await screen.findByRole("button", { name: /Memories/ }));
   await user.click(screen.getByRole("combobox", { name: "Memory" }));
   await user.click(
@@ -360,4 +370,130 @@ it("mounts initial memories on the new thread and changes their access before se
     }),
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("combines sparse execution choices with overrides without turning them into thread defaults", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => {
+    result.current.setModel("model-test");
+    result.current.setExecution({
+      tools: { mode: "inline", foreground_wait_seconds: 0 },
+      steering: "boundary",
+      environment: { APP_MODE: "run", EMPTY: "" },
+    });
+  });
+  expect(result.current.build()).toMatchObject({
+    options: {
+      overrides: { model: "model-test" },
+      execution: {
+        tools: { mode: "inline", foreground_wait_seconds: 0 },
+        steering: "boundary",
+        environment: { APP_MODE: "run", EMPTY: "" },
+      },
+    },
+  });
+  expect(result.current.build()).not.toHaveProperty("execution");
+  act(() =>
+    result.current.setExecution({
+      tools: { mode: null, foreground_wait_seconds: null },
+      steering: null,
+    }),
+  );
+  expect(result.current.build().options).toEqual({
+    overrides: { model: "model-test" },
+  });
+  act(() =>
+    result.current.setExecution({ tools: { foreground_wait_seconds: 301 } }),
+  );
+  expect(() => result.current.build()).toThrow(
+    "Foreground wait must be between 0 and 300 seconds.",
+  );
+});
+
+it("restores execution choices with the other options when edits are cancelled", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => result.current.setExecution({ steering: "boundary" }));
+  const saved = result.current.values;
+  act(() => {
+    result.current.setExecution({
+      tools: { mode: "auto", foreground_wait_seconds: 1 },
+    });
+    result.current.setModel("model-test");
+  });
+  act(() => result.current.restore(saved));
+  expect(result.current.build().options).toEqual({
+    execution: { steering: "boundary" },
+  });
+});
+
+it("keeps thinking and advanced JSON in sync, validates Apply, and cancels or resets the draft", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    response: new Response(null),
+    data: {
+      items: path.endsWith("/models")
+        ? [
+            {
+              ...vision,
+              config: { ...vision.config, model_api: "openai.responses" },
+            },
+          ]
+        : path.includes("provider-types")
+          ? [
+              {
+                settings_schemas: {
+                  "openai.responses": {
+                    properties: {
+                      thinking: {
+                        anyOf: [{ type: "boolean" }, { enum: ["low", "high"] }],
+                      },
+                    },
+                  },
+                },
+              },
+            ]
+          : [],
+      next_cursor: null,
+    },
+  }));
+  const submit = vi.fn();
+  mount(submit);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name: /^Vision/ }));
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
+  const json = screen.getByRole("textbox", { name: "Overrides (JSON)" });
+  // Changing thinking retains native parameters and unrelated overrides.
+  fireEvent.change(json, {
+    target: { value: '{"model_settings":{"temperature":0.2},"skills":[]}' },
+  });
+  await user.click(screen.getByRole("combobox", { name: "Thinking effort" }));
+  await user.click(await screen.findByRole("option", { name: "High" }));
+  expect(JSON.parse((json as HTMLTextAreaElement).value)).toEqual({
+    model_settings: { temperature: 0.2, thinking: "high" },
+    skills: [],
+  });
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Restore defaults" }));
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].options.overrides).toMatchObject({
+    model: vision.key,
+    model_settings: { thinking: "high", temperature: 0.2 },
+    skills: [],
+  });
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Overrides (JSON)" }), {
+    target: { value: '{"skills": "invalid"}' },
+  });
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.getByRole("alert")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Restore defaults" }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.queryByRole("img", { name: "Settings modified" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].options).toBeUndefined();
 });

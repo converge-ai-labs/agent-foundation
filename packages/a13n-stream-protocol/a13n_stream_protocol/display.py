@@ -298,6 +298,7 @@ class DisplayFold:
         self.items = {item.id: item.model_copy(deep=True) for item in items}
         self.next = first + len(items)
         self.changed: set[str] = set(self.items)
+        self._checkpoint_changed: set[str] = set(self.items)
         self.sequence = 0
         self.full_content = full_content
         # Keep the same item identities and observation policy, but let a durable Host store full values.
@@ -329,6 +330,22 @@ class DisplayFold:
             items=list(self.items.values()),
             continuation=self.export_continuation(),
         ).model_copy(deep=True)
+
+    def capture_delta(self) -> DisplaySnapshot:
+        """Detach changed items and parser state independently of live publication.
+
+        The Host retains earlier cuts. Clearing ``changed`` for a live subscriber
+        does not consume checkpoint changes; corrections retain their item IDs.
+        """
+        snapshot = DisplaySnapshot(
+            items=[
+                self.items[key].model_copy(deep=True)
+                for key in sorted(self._checkpoint_changed, key=lambda key: self.items[key].ordinal)
+            ],
+            continuation=self.export_continuation(),
+        )
+        self._checkpoint_changed.clear()
+        return snapshot
 
     def export_continuation(self) -> DisplayContinuation:
         """Detach parser state without copying the accumulated display prefix."""
@@ -524,7 +541,13 @@ class DisplayFold:
         name, part = event.get("name"), value.get("part")
         native = isinstance(part, dict) and part.get("part_kind") in {"builtin-tool-call", "builtin-tool-return"}
         result = name in {"a13n.pydantic_ai.function_tool_result", "a13n.pydantic_ai.output_tool_result"}
-        supplement = name in {"a13n.filesystem.edit_applied", "a13n.harness-ui.tool_images", "a13n.harness-ui.mcp_apps"}
+        supplement = name in {
+            "a13n.filesystem.edit_applied",
+            "a13n.tool_images",
+            "a13n.harness-ui.tool_images",
+            "a13n.harness-ui.mcp_apps",
+            "a13n.mcp_apps",
+        }
         source = part if native or result else value if supplement else None
         if not isinstance(source, dict) or not isinstance(call_id := source.get("tool_call_id"), str):
             return None
@@ -548,7 +571,7 @@ class DisplayFold:
         if supplement:
             if name == "a13n.filesystem.edit_applied":
                 content["applied_edit"] = {key: source.get(key) for key in ("file_path", "before", "after")}
-            elif name == "a13n.harness-ui.tool_images":
+            elif name in {"a13n.tool_images", "a13n.harness-ui.tool_images"}:
                 content["tool_images"] = source.get("images", [])
                 content["tool_image_unavailable"] = source.get("unavailable", False)
             else:
@@ -568,7 +591,7 @@ class DisplayFold:
             else:
                 content["truncated"] = True
             content["outcome"] = source.get("outcome")
-            content["retry"] = source.get("part_kind") == "retry-prompt"
+            content["retry"] = source.get("part_kind") == "retry-prompt" or content["outcome"] == "retried"
             state = (
                 "failed"
                 if content["retry"] or content["outcome"] in {"failed", "denied", "interrupted"}
@@ -637,6 +660,7 @@ class DisplayFold:
             content=content,
         )
         self.changed.add(key)
+        self._checkpoint_changed.add(key)
         group, failure = content.get("responseGroup"), content.get("failure")
         return ItemRef(
             id=key,

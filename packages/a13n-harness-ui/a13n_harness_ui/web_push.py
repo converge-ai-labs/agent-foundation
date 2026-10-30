@@ -65,6 +65,8 @@ class WebPush:
                         "completed": "Task completed",
                         "failed": "Task failed",
                         "suspended": "Your input is needed",
+                        "goal_verified": "Goal verified by the Agent",
+                        "goal_incomplete": "Goal not verified",
                     }[notice.status]
                     payload = {
                         "title": f"{title} · {(thread.title or 'Conversation')[:80]}",

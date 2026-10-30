@@ -48,6 +48,7 @@ a13n_service/
 
   runs/               how input becomes sealed runs
     tables.py         sessions, threads, inbox_entries, runs, run_attempts, usage_records
+    schedules/        recurring configuration, calendar, occurrence persistence and input submission
     sessions.py  threads.py  archive.py  inbox.py  entries.py  inputs.py  attachments.py  placement.py
     submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
@@ -56,6 +57,7 @@ a13n_service/
     requests.py  schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
+    desktop_assistance/  tables  schemas  service  routes  admission  execution  takeover  tools  maintenance
     findings/         tables  schemas  service  analysis  preset  tools  routes: diagnosis and coverage
     memories/         tables  schemas  routes  mounts  execution
 
@@ -86,7 +88,7 @@ Each business layer's `runtime.py` owns its runtime type: tenancy and resources 
 ## Import direction
 
 ```
-app.py, cli.py, distribution.py, mcp.py, api_tools.py, documentation.py, migrations/  ->  everything   (no infra, business or provider module imports them)
+app.py, cli.py, distribution.py, mcp.py, api_tools.py, api_access.py, documentation.py, migrations/  ->  everything   (no infra, business or provider module imports them)
 usage ->  runs  ->  resources  ->  tenancy  ->  infra
 provisioning  ->  resources, tenancy, providers.registry, settings, infra
 runs, resources  ->  providers.registry, providers.tools, providers.traces
@@ -98,16 +100,16 @@ providers  ->  infra                                          (and the Harness)
 
 `packages/a13n-service/.importlinter` states these contracts, and `make service-boundaries` checks them; `make typecheck`, `make verify` and the Service CI workflow run it.
 
-| Contract                | Rule                                                                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layers`                | `usage` above `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                                                    |
-| `providers`             | `providers` never imports `tenancy`, `resources`, `runs`, `usage` or `provisioning`: providers are adapters over infrastructure                                   |
-| `assembly`              | `infra`, `tenancy`, `resources`, `runs`, `usage`, `provisioning` and `providers` never import `app`, `distribution`, `cli`, `mcp`, `api_tools` or `documentation` |
-| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                                                               |
-| `environment-providers` | `tenancy`, `resources`, `runs` and `usage` never import `providers.environments`; they reach environment types through the registry                               |
-| `provisioning`          | `provisioning` never imports `runs` or `usage`                                                                                                                    |
-| `provisioning-entry`    | Infrastructure, tenancy, resources, execution, usage, providers and settings never import provisioning; assembly wires it                                         |
-| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                                                               |
+| Contract                | Rule                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layers`                | `usage` above `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                                                                  |
+| `providers`             | `providers` never imports `tenancy`, `resources`, `runs`, `usage` or `provisioning`: providers are adapters over infrastructure                                                 |
+| `assembly`              | `infra`, `tenancy`, `resources`, `runs`, `usage`, `provisioning` and `providers` never import `app`, `distribution`, `cli`, `mcp`, `api_tools`, `api_access` or `documentation` |
+| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                                                                             |
+| `environment-providers` | `tenancy`, `resources`, `runs` and `usage` never import `providers.environments`; they reach environment types through the registry                                             |
+| `provisioning`          | `provisioning` never imports `runs` or `usage`                                                                                                                                  |
+| `provisioning-entry`    | Infrastructure, tenancy, resources, execution, usage, providers and settings never import provisioning; assembly wires it                                                       |
+| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                                                                             |
 
 Generic mechanisms belong in `infra`: the outbox table and its claim, settle and retry rules are there, while delivery handlers and scan predicates stay with their business owners and are wired in `distribution.py`.
 
@@ -121,6 +123,8 @@ skills, assets  ->  uploads
 ```
 
 A package uses another's service functions, schemas and focused queries, and may import its row class where a query needs it. Cross-package references are IDs and detached values, never live ORM rows held across a session.
+
+`runs/schedules/` owns recurring input submission and its configuration API; it can reuse Session, Thread and ordinary message operations without reversing the resource-layer dependency. Schedule IDs use `sch_` and Occurrence IDs use `occ_`, both with the default 128-bit random suffix.
 
 ## Infrastructure
 

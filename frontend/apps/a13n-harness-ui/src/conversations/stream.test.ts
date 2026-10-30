@@ -95,7 +95,7 @@ function event(sequence: number, delta = "live", run_kind = "root") {
     },
   });
 }
-it("does not turn diagnostics into conversation output and only saves cursor after ready", () => {
+it("does not turn diagnostics into chat output and only saves cursor after ready", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(2));
   expect(display.cursor).toBeUndefined();
@@ -446,7 +446,10 @@ it("retains unsaved initial output and only cuts over after replacement history 
   expect(showFocusedOutput(display, "C2", null)).toBe(false);
 });
 
-it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
+it.each([
+  { part_kind: "retry-prompt" },
+  { part_kind: "tool-return", outcome: "retried" },
+])("folds native applied edits and failed results by exact ID: %j", (retry) => {
   const display = new FocusDisplay();
   const events = [
     ["TOOL_CALL_START", { toolCallId: "outer", toolCallName: "call" }],
@@ -494,7 +497,7 @@ it("folds native applied edits and failed results by exact ID without guessing p
         value: {
           event: {
             part: {
-              part_kind: "retry-prompt",
+              ...retry,
               tool_call_id: "retry",
               content: "Invalid input",
             },
@@ -751,7 +754,7 @@ it("keeps task activity in its transcript without mixing private child tasks int
 });
 
 it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
-  "keeps %s out of conversation blocks in live delivery and replay",
+  "keeps %s out of chat blocks in live delivery and replay",
   (name) => {
     const payload = {
       type: "CUSTOM",
@@ -1853,4 +1856,329 @@ it("continues active snapshot text and tool arguments without duplicate blocks a
     '{"command":"echo hello"}',
   ]);
   expect(display.gap).toBe(false);
+});
+
+it.each([
+  { nativeFirst: false, owned: false },
+  { nativeFirst: true, owned: false },
+  { nativeFirst: false, owned: true },
+  { nativeFirst: true, owned: true },
+])(
+  "preserves shell commands across dual results (native first: $nativeFirst, Host owned: $owned)",
+  ({ nativeFirst, owned }) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    const processId = owned ? "exec-one" : "process-one";
+    const result = owned
+      ? {
+          type: "tool_execution_receipt",
+          execution_id: processId,
+          tool_name: "shell_exec",
+          status: "running",
+        }
+      : {
+          ok: true,
+          process_id: processId,
+          status: { phase: "running" },
+        };
+    const native = {
+      type: "CUSTOM",
+      name: "a13n.pydantic_ai.function_tool_result",
+      value: {
+        event: {
+          part: {
+            tool_call_id: "call",
+            tool_name: "shell_exec",
+            part_kind: "tool-return",
+            outcome: "success",
+            content: result,
+          },
+        },
+      },
+    };
+    const protocol = {
+      type: "TOOL_CALL_RESULT",
+      toolCallId: "call",
+      content: JSON.stringify(result),
+    };
+    const events = [
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "call",
+        toolCallName: "shell_exec",
+      },
+      {
+        type: "TOOL_CALL_ARGS",
+        toolCallId: "call",
+        delta: '{"command":"server"}',
+      },
+      { type: "TOOL_CALL_END", toolCallId: "call" },
+      ...(nativeFirst ? [native, protocol] : [protocol, native]),
+    ];
+    events.forEach((payload, index) =>
+      display.accept(
+        rawFrame(
+          101 + index,
+          index + 1,
+          payload,
+          "tool-item",
+          "tool_call",
+          index >= 3 ? "completed" : "in_progress",
+        ),
+      ),
+    );
+    expect(display.blocks.size).toBe(1);
+    expect(display.blocks.get("tool-item")).toMatchObject({
+      name: "shell_exec",
+      text: '{"command":"server"}',
+    });
+    if (owned) {
+      expect(display.processes.background).toEqual([]);
+      display.accept(
+        compactFrame(106, [
+          compactItem(
+            "wait-item",
+            6,
+            {
+              toolCallId: "wait-call",
+              toolCallName: "shell_wait",
+              arguments: JSON.stringify({ process_id: processId }),
+              value: {
+                process_id: processId,
+                status: { phase: "running" },
+              },
+            },
+            "tool_call",
+          ),
+        ]),
+      );
+    }
+    expect(display.processes.background).toMatchObject([
+      { command: "server", processId, phase: "running" },
+    ]);
+    if (owned) {
+      expect(display.blocks.get("wait-item")?.shellCommand).toBe("server");
+      display.accept(
+        compactFrame(107, [
+          compactItem(
+            "retrieval",
+            7,
+            {
+              toolCallId: "retrieval-call",
+              toolCallName: "tool_execution_result",
+              arguments: JSON.stringify({ execution_id: processId }),
+              value: {
+                ok: true,
+                status: { phase: "exited", exit_code: 7 },
+                stderr: { text: "failed" },
+              },
+            },
+            "tool_call",
+          ),
+        ]),
+      );
+      expect(display.blocks.get("retrieval")?.shellCommand).toBe("server");
+      expect(display.processes.background[0]).toMatchObject({
+        phase: "exited",
+        exitCode: 7,
+      });
+    }
+  },
+);
+
+it("resolves Shell command context at argument completion rather than each delta", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 101;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  const lookup = vi.spyOn(display.processes, "command");
+  try {
+    emit("TOOL_CALL_START", {
+      toolCallId: "start",
+      toolCallName: "shell_exec",
+    });
+    const input = JSON.stringify({ command: "echo done" });
+    for (const delta of input)
+      emit("TOOL_CALL_ARGS", { toolCallId: "start", delta });
+    expect(lookup).not.toHaveBeenCalled();
+    emit("TOOL_CALL_END", { toolCallId: "start" });
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(
+      [...display.blocks.values()].find((block) => block.toolCallId === "start")
+        ?.shellCommand,
+    ).toBe("echo done");
+  } finally {
+    lookup.mockRestore();
+  }
+});
+
+it("signals successful live native browser use without replaying it after reconnect", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(
+    compactFrame(101, [
+      compactItem(
+        "browser",
+        1,
+        {
+          toolCallId: "call",
+          toolCallName: "browser_navigate",
+          arguments: "{}",
+          outcome: "success",
+        },
+        "tool_call",
+      ),
+    ]),
+  );
+  expect(display.browserActivityRunId).toBeUndefined();
+  display.accept(
+    rawFrame(
+      102,
+      2,
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "live",
+        toolCallName: "browser_navigate",
+      },
+      "live",
+      "tool_call",
+    ),
+  );
+  display.accept(
+    rawFrame(
+      103,
+      3,
+      {
+        type: "CUSTOM",
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              tool_call_id: "live",
+              tool_name: "browser_navigate",
+              part_kind: "tool-return",
+              outcome: "success",
+              content: "navigated",
+            },
+          },
+        },
+      },
+      "live",
+      "tool_call",
+      "completed",
+    ),
+  );
+  expect(display.browserActivityRunId).toBe("run-one");
+  display.accept(snapshot(0));
+  expect(display.browserActivityRunId).toBe("run-one");
+});
+
+it.each([
+  ["browser_navigate", {}, "error", false],
+  ["browser_tabs", { action: "list" }, "success", false],
+  ["browser_tabs", { action: "close" }, "success", false],
+  ["browser_tabs", { action: "new" }, "success", true],
+  ["browser_tabs", { action: "select", tab: "t1" }, "success", true],
+] as const)(
+  "browser activity for %s %j (%s)",
+  (name, args, outcome, active) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    display.accept(
+      rawFrame(
+        101,
+        1,
+        { type: "TOOL_CALL_START", toolCallId: "call", toolCallName: name },
+        "call",
+        "tool_call",
+      ),
+    );
+    display.accept(
+      rawFrame(
+        102,
+        2,
+        {
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call",
+          delta: JSON.stringify(args),
+        },
+        "call",
+        "tool_call",
+      ),
+    );
+    display.accept(
+      rawFrame(
+        103,
+        3,
+        {
+          type: "CUSTOM",
+          name: "a13n.pydantic_ai.function_tool_result",
+          value: {
+            event: {
+              part: {
+                tool_call_id: "call",
+                tool_name: name,
+                part_kind: "tool-return",
+                outcome,
+                content: "result",
+              },
+            },
+          },
+        },
+        "call",
+        "tool_call",
+        "completed",
+      ),
+    );
+    expect(display.browserActivityRunId).toBe(active ? "run-one" : undefined);
+  },
+);
+
+it("retains context recovery warnings after successful recovery without retry state", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 110;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  for (const outcome of ["prepared", "resumed"]) {
+    emit("CUSTOM", {
+      name: "a13n.harness.recovery",
+      value: {
+        event: {
+          payload: {
+            type: "context_recovery",
+            outcome,
+            warning: "Immediate root-cause investigation is required.",
+          },
+        },
+      },
+    });
+  }
+  emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Completed" });
+  emit("RUN_FINISHED", {});
+  expect(display.recovery).toBeUndefined();
+  const warning = [...display.blocks.values()].filter(
+    (block) => block.kind === "activity",
+  );
+  expect(warning).toHaveLength(1);
+  expect(warning[0].text).toContain(
+    "Immediate root-cause investigation is required.",
+  );
+  expect(warning[0].text).toContain("resumed");
 });

@@ -1,3 +1,4 @@
+import { conversationKeys } from "../api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -6,13 +7,16 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
-import { fixtureRun, fixtureThread } from "./fixture";
-import { RunDock } from "./run-dock";
+import { fixtureRun, fixtureSession, fixtureThread } from "./fixture";
+import type { ComponentProps } from "react";
+import { RunDock, ThreadDock } from "./run-dock";
+import { useRun } from "../queries";
 
 let client: Client;
 let denied: string[] = [];
@@ -67,22 +71,164 @@ const entry = (id: string, text: string, fields = {}) => ({
 function Location() {
   return <output data-testid="location">{useLocation().pathname}</output>;
 }
+
+it("replaces a racing user takeover panel with the Agent assistance card without stealing control", async () => {
+  const mount = {
+    name: "workspace",
+    environment_id: "env",
+    working_directory: null,
+    permission_ceiling: { operations: ["environment.computer.observe"] },
+  } satisfies Schema["RunView"]["environment_mounts"][number];
+  let current = fixtureRun({
+    ...run,
+    status: "running",
+    environment_mounts: [mount],
+  });
+  const assistance = {
+    id: "agent-help",
+    run_id: "run",
+    tool_call_id: "help",
+    cause: "agent",
+    environment_id: "env",
+    mount: "workspace",
+    reason: "Please select the document",
+    state: "awaiting_user",
+    epoch: 0,
+    controller_id: null,
+    deadline: "2099-01-01",
+    lease_expires_at: null,
+    failure: null,
+    outcome: null,
+  };
+  const posts: string[] = [];
+  let waitingRun: typeof current | null = null;
+  let refreshedBeforeSeal = false;
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session", csrfToken: "csrf" },
+    fetch: async (input, init) => {
+      const req = new Request(input, init),
+        path = new URL(req.url).pathname;
+      if (path.endsWith("/sessions/session"))
+        return Response.json(fixtureSession({ id: "session" }));
+      if (req.method === "POST") {
+        posts.push(path);
+        waitingRun = fixtureRun({
+          ...current,
+          status: "waiting",
+          wait_reason: "call",
+          pending: {
+            desktop_control_id: null,
+            approvals: [],
+            calls: [
+              {
+                tool_call_id: "help",
+                tool_name: "request_desktop_assistance",
+                arguments: { mount: "workspace", reason: assistance.reason },
+                presentation: null,
+              },
+            ],
+          },
+        });
+        return Response.json(
+          {
+            error: {
+              code: "conflict",
+              message: "Run changed",
+              details: { reason: "desktop_agent_assistance_pending" },
+              request_id: null,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (path.endsWith("/desktop-control"))
+        return Response.json({
+          ...assistance,
+          id: "user-control",
+          tool_call_id: null,
+          cause: "user",
+          state: "viewing",
+        });
+      if (path.endsWith("/desktop-assistance/help"))
+        return Response.json(assistance);
+      if (path.endsWith("/inbox"))
+        return Response.json({ items: [], next_cursor: null });
+      if (waitingRun && path.endsWith("/runs/run")) {
+        if (refreshedBeforeSeal) current = waitingRun;
+        refreshedBeforeSeal = true;
+      }
+      return Response.json(current);
+    },
+  });
+  function LiveDock() {
+    const live = useRun("run");
+    if (!live.data) return null;
+    return (
+      <TestDock
+        run={live.data}
+        thread={fixtureThread({
+          id: "thread",
+          session_id: "session",
+          current_run_id: live.data.status === "running" ? "run" : null,
+          last_run_id: "run",
+        })}
+      />
+    );
+  }
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  cache.setQueryData(
+    conversationKeys("workspace").session("session"),
+    fixtureSession({ id: "session" }),
+  );
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <LiveDock />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Get control" }));
+  await screen.findByText(
+    "The agent has requested desktop assistance. Switching to its assistance card…",
+  );
+  await screen.findByRole(
+    "button",
+    { name: "Take control" },
+    { timeout: 6000 },
+  );
+  expect(screen.queryByRole("button", { name: "Get control" })).toBeNull();
+  expect(screen.queryByText("Desktop control")).toBeNull();
+  expect(screen.queryByText("Run changed")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Take control" })).toHaveLength(
+    1,
+  );
+  expect(posts).toEqual([
+    "/api/v1/desktop-assistance/user-control/request-control",
+  ]);
+});
 function mount({
   status = "completed",
   historical = false,
   origin = "new",
   reject = false,
+  loseAcknowledgement = false,
   resubmit,
   question = false,
   search = "",
+  consoleStarted = true,
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
   origin?: Schema["ThreadView"]["origin"];
   reject?: boolean;
+  loseAcknowledgement?: boolean;
   resubmit?: Resubmission;
   question?: boolean;
   search?: string;
+  consoleStarted?: boolean;
 } = {}) {
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   const reads: string[] = [];
@@ -134,6 +280,13 @@ function mount({
     fetch: async (input, init) => {
       const req = new Request(input, init),
         path = new URL(req.url).pathname;
+      if (path.endsWith("/sessions/session"))
+        return Response.json(
+          fixtureSession({
+            id: "session",
+            labels: consoleStarted ? { "a13n.console": "debug" } : {},
+          }),
+        );
       if (req.method === "POST") {
         const text = await req.text();
         posts.push({
@@ -141,6 +294,7 @@ function mount({
           body: text ? JSON.parse(text) : null,
           key: req.headers.get("Idempotency-Key"),
         });
+        if (loseAcknowledgement) throw new TypeError("Lost acknowledgement");
         if (reject)
           return Response.json(
             {
@@ -175,6 +329,15 @@ function mount({
         return Response.json(current);
       }
       reads.push(path);
+      if (
+        [
+          "/agents",
+          "/models",
+          "/model-providers",
+          "/provider-types/model",
+        ].some((suffix) => path.endsWith(suffix))
+      )
+        return Response.json({ items: [], next_cursor: null });
       if (path.endsWith("/inbox"))
         return Response.json({
           items: [entry("inb_queued", "Queued test")],
@@ -194,10 +357,17 @@ function mount({
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  cache.setQueryData(
+    conversationKeys("workspace").session("session"),
+    fixtureSession({
+      id: "session",
+      labels: consoleStarted ? { "a13n.console": "debug" } : {},
+    }),
+  );
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <RunDock run={current} thread={thread} resubmit={resubmit} />
+        <TestDock run={current} thread={thread} resubmit={resubmit} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -278,8 +448,10 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
     if (status === "waiting")
       await screen.findByText("Waiting for the application");
     if (status === "running")
-      expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Queued messages/ }));
+      expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
     await screen.findByText("Queued test");
     for (const name of [
       "Queued message actions",
@@ -437,7 +609,135 @@ it.each(["chat", "debug"])(
         .getByRole("link", { name: "Return to latest messages" })
         .getAttribute("href"),
     ).toBe(
-      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}`,
+      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}&follow=latest`,
     );
+  },
+);
+
+it("keeps retry identity until the message or execution policy changes", async () => {
+  const posts = mount({ loseAcknowledgement: true });
+  const user = userEvent.setup();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "Retry this message" },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0].key).toBeTruthy();
+  expect(posts[1]).toEqual(posts[0]);
+
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
+    {
+      target: { value: "2" },
+    },
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(3));
+  expect(posts[2].key).not.toBe(posts[1].key);
+  expect(posts[2].body).toMatchObject({
+    options: { execution: { tools: { foreground_wait_seconds: 2 } } },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(4));
+  expect(posts[3]).toEqual(posts[2]);
+});
+
+it("sends execution overrides once with next_run and returns the next message to inheritance", async () => {
+  const posts = mount();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  expect(
+    screen.queryByRole("button", { name: "Conversation setup" }),
+  ).toBeNull();
+  await user.click(
+    screen.getByRole("switch", { name: "Override instructions" }),
+  );
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Instructions override" }),
+    { target: { value: "Answer briefly." } },
+  );
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Overrides (JSON)" }), {
+    target: { value: '{"model_settings":{"thinking":"high"},"skills":[]}' },
+  });
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  screen.getByRole("combobox", { name: "Tool execution" }).focus();
+  await user.keyboard("[ArrowDown]");
+  await user.click(
+    await screen.findByRole("option", { name: "Inline — wait for tools" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Steering" }));
+  await user.click(
+    await screen.findByRole("option", { name: "At the next boundary" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "One run" },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].body).toMatchObject({
+    delivery: "next_run",
+    options: {
+      execution: { tools: { mode: "inline" }, steering: "boundary" },
+      overrides: {
+        instructions: "Answer briefly.",
+        model_settings: { thinking: "high" },
+        skills: [],
+      },
+    },
+  });
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Override instructions" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(screen.queryByRole("img", { name: "Settings modified" })).toBeNull();
+  expect(
+    screen.getByRole("combobox", { name: "Tool execution" }).textContent,
+  ).toBe("Inherit");
+  expect(screen.getByRole("combobox", { name: "Steering" }).textContent).toBe(
+    "Inherit",
+  );
+});
+
+function TestDock(props: ComponentProps<typeof RunDock>) {
+  return (
+    <ThreadDock thread={props.thread}>
+      <RunDock {...props} />
+    </ThreadDock>
+  );
+}
+
+it.each(["completed", "failed", "waiting", "running"] as const)(
+  "keeps external %s sessions observable without execution controls",
+  async (status) => {
+    const posts = mount({ status, consoleStarted: false });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
+    await screen.findByText("Queued test");
+    if (status === "waiting")
+      await screen.findByText("Waiting for the application");
+    for (const name of [
+      "Stop",
+      "Resubmit",
+      "Continue without feedback",
+      "Get control",
+      "Take control",
+      "Run options",
+      "Queued message actions",
+      "Create branch",
+    ])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(posts).toHaveLength(0);
   },
 );

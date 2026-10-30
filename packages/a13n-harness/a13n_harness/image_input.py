@@ -19,7 +19,13 @@ class ImageInputPolicy(BaseModel):
         description="Maximum base64-encoded bytes per image; zero disables this byte limit.",
     )
     max_image_dimension: int = Field(default=8000, ge=0, description="Maximum image axis; zero disables this limit.")
-    max_images: int = Field(default=20, ge=0, description="Keep the newest images; zero removes all image input.")
+    max_images: int = Field(default=20, ge=0, description="Maximum retained images; zero removes all image input.")
+    image_retention_ratio: float = Field(
+        default=0.6,
+        gt=0,
+        le=1,
+        description="Fraction of max_images retained at the first overflow; one evicts only the excess images.",
+    )
     support_gif: bool = True
 
     @model_validator(mode="after")

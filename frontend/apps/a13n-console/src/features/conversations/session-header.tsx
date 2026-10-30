@@ -14,61 +14,108 @@ import {
   CaretRightIcon,
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
+  MonitorIcon,
+  PencilSimpleIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+import { useClient } from "../../auth/context";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
-import { isActiveRun, isConsoleSession } from "./api";
+import { conversationQueries, isActiveRun, isConsoleSession } from "./api";
 import { useRun, useSession } from "./queries";
-import { useAnchoredLevel } from "./transcript/debug/view";
+import { useViewLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
+import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
+import { ThreadExecutionDialog } from "./thread-execution";
+import { ThreadMountsDialog } from "./thread-mounts";
+import { SessionEditor } from "./session-editor";
+import { sessionTitle } from "./session-identity";
+import { isInteractive } from "./transcript/run-actions";
 import styles from "./conversations.module.css";
 
 /**
  * Who answered, which session this is, and the one switch that changes how
  * much of it you see. Everything else about a run lives in the run itself.
+ * The actions menu closes the first line, so a narrow screen keeps it beside
+ * the name and moves only the view controls to a second line.
  */
-export function SessionHeader({
-  threads,
-}: {
-  threads: readonly Schema["ThreadView"][];
-}) {
+export function SessionHeader() {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
-  const { basePath, can } = useWorkspace();
-  const thread = threads.find((entry) => entry.id === threadId);
-  const root = threads.find(
-    (entry) => entry.origin === "new" && entry.session_id === sessionId,
-  );
+  const { basePath, can, workspace } = useWorkspace();
+  const client = useClient(),
+    queries = conversationQueries(client, workspace.id);
+  const selected = useQuery({
+    ...queries.thread(threadId),
+    enabled: !!threadId,
+  });
+  const thread =
+    selected.data?.session_id === sessionId ? selected.data : undefined;
+  const roots = useQuery({
+    ...queries.threadPage(sessionId, { origin: ["new"], limit: 1 }),
+    enabled: thread?.origin === "child",
+  });
+  const root = roots.data?.items[0];
   const session = useSession(sessionId);
-  const { level, switchLevel } = useAnchoredLevel(thread, session.data);
+  const { level, setLevel: switchLevel } = useViewLevel(thread, session.data);
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
-  const { runs } = useThreadRuns(threadId);
+  const { total } = useThreadRuns(runId ? threadId : "", runId);
   const collapse = useRunCollapseAll();
+  const [mounts, setMounts] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const title = session.data && sessionTitle(session.data);
+  const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
-  // Delegated children retain their execution breadcrumb beside conversation switching.
+  // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
+  // How this session started reads the same at both levels.
+  const note = debugSession
+    ? [t("Debug session"), total ? t("{{count}} runs", { count: total }) : null]
+        .filter(Boolean)
+        .join(" · ")
+    : run.data?.schedule_origin
+      ? t("Scheduled execution")
+      : run.data
+        ? t("Started by {{trigger}}", {
+            trigger: t(`trigger.${run.data.trigger}`, {
+              defaultValue: run.data.trigger,
+            }),
+          })
+        : "";
   const active =
     valid &&
     !!run.data &&
     (isActiveRun(run.data.status) || run.data.status === "waiting");
   return (
     <header className={styles.sessionHeader}>
-      <Link className={styles.back} to={`${basePath}/sessions`}>
+      <Link
+        className={styles.back}
+        to={
+          session.data?.schedule_id
+            ? `${basePath}/schedules/${session.data.schedule_id}`
+            : `${basePath}/sessions`
+        }
+      >
         <CaretLeftIcon size={13} aria-hidden="true" />
-        {t("Sessions")}
+        {t(session.data?.schedule_id ? "Schedule" : "Sessions")}
       </Link>
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
-        {agent.data ? (
+        {title ? (
+          <span className={styles.sessionTitle} title={title}>
+            {title}
+          </span>
+        ) : agent.data ? (
           <Link
             className={styles.agentLink}
             to={`${basePath}/agents/${agent.data.id}`}
@@ -79,34 +126,23 @@ export function SessionHeader({
               url={agent.data.image_url}
               className={styles.headerAvatar}
             />
-            {agent.data.name}
+            <span className={styles.agentName}>{agent.data.name}</span>
           </Link>
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
-        <span className={styles.subNote}>
-          {level === "chat"
-            ? t("Conversation")
-            : debugSession
-              ? [
-                  t("Debug session"),
-                  runs.length
-                    ? t("{{count}} runs", { count: runs.length })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : run.data
-                ? t("Started by {{trigger}}", {
-                    trigger: t(`trigger.${run.data.trigger}`, {
-                      defaultValue: run.data.trigger,
-                    }),
-                  })
-                : ""}
-        </span>
+        {note && (
+          <span className={styles.subNote} title={note}>
+            {note}
+          </span>
+        )}
       </div>
       <div className={styles.sessionControls}>
-        {active && run.data && <StatePill state={run.data.status} />}
+        {active && run.data && (
+          <span className={styles.headerState}>
+            <StatePill state={run.data.status} />
+          </span>
+        )}
         {child && root && (
           <span className={styles.breadcrumb}>
             <Link
@@ -118,10 +154,12 @@ export function SessionHeader({
             <span>{agent.data?.name ?? t("Child thread")}</span>
           </span>
         )}
-        {thread && (
-          <ThreadBranches thread={thread} threads={threads} level={level} />
+        {level === "debug" && (
+          <SessionUsage sessionId={sessionId} thread={thread} runId={runId} />
         )}
+        {thread && <ThreadBranches thread={thread} level={level} />}
         <SegmentedControl
+          className={styles.levelSwitch}
           label={t("Disclosure level")}
           value={level}
           onValueChange={(next) =>
@@ -132,52 +170,93 @@ export function SessionHeader({
             { value: "debug", label: t("Debug") },
           ]}
         />
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label={t("Session actions")}
-                title={t("Session actions")}
-              />
-            }
-          >
-            <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            {level === "debug" && collapse && (
-              <MenuItem onClick={() => collapse.setAll(!collapse.allCollapsed)}>
-                {collapse.allCollapsed ? (
-                  <ArrowsOutLineVerticalIcon size={14} aria-hidden="true" />
-                ) : (
-                  <ArrowsInLineVerticalIcon size={14} aria-hidden="true" />
-                )}
-                {collapse.allCollapsed
-                  ? t("Expand all runs")
-                  : t("Collapse all runs")}
-              </MenuItem>
-            )}
-            {can("read") && (
-              <MenuItem
-                render={
-                  <Link to={`${basePath}/traces?session_id=${sessionId}`} />
-                }
-              >
-                <ArrowSquareOutIcon size={14} aria-hidden="true" />
-                {t("Open in traces")}
-              </MenuItem>
-            )}
-            <MenuItem
-              onClick={() => void navigator.clipboard?.writeText(sessionId)}
-            >
-              <CopyIcon size={14} aria-hidden="true" />
-              {t("Copy session ID")}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
       </div>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              aria-label={t("Session actions")}
+              title={t("Session actions")}
+            />
+          }
+        >
+          <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          {can("run") && isConsoleSession(session.data) && session.data && (
+            <MenuItem onClick={() => setEditing(true)}>
+              <PencilSimpleIcon size={14} aria-hidden="true" />
+              {t("Edit session details")}
+            </MenuItem>
+          )}
+          {level === "debug" && collapse && (
+            <MenuItem onClick={() => collapse.setAll(!collapse.allCollapsed)}>
+              {collapse.allCollapsed ? (
+                <ArrowsOutLineVerticalIcon size={14} aria-hidden="true" />
+              ) : (
+                <ArrowsInLineVerticalIcon size={14} aria-hidden="true" />
+              )}
+              {collapse.allCollapsed
+                ? t("Expand all runs")
+                : t("Collapse all runs")}
+            </MenuItem>
+          )}
+          {thread && (
+            <MenuItem onClick={() => setMounts(true)}>
+              <MonitorIcon size={14} aria-hidden="true" />
+              {t("Environments and memory")}
+            </MenuItem>
+          )}
+          {thread &&
+            isInteractive(thread, session.data) &&
+            can("run") &&
+            !thread.archived_at && (
+              <MenuItem onClick={() => setExecution(true)}>
+                <SlidersHorizontalIcon size={14} aria-hidden="true" />
+                {t("Execution policy")}
+              </MenuItem>
+            )}
+          {can("read") && (
+            <MenuItem
+              render={
+                <Link to={`${basePath}/traces?session_id=${sessionId}`} />
+              }
+            >
+              <ArrowSquareOutIcon size={14} aria-hidden="true" />
+              {t("Open in traces")}
+            </MenuItem>
+          )}
+          <MenuItem
+            onClick={() => void navigator.clipboard?.writeText(sessionId)}
+          >
+            <CopyIcon size={14} aria-hidden="true" />
+            {t("Copy session ID")}
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+      {thread && (
+        <ThreadMountsDialog
+          thread={thread}
+          open={mounts}
+          onOpenChange={setMounts}
+        />
+      )}
+      {execution && thread && isInteractive(thread, session.data) && (
+        <ThreadExecutionDialog
+          key={thread.id}
+          thread={thread}
+          onClose={() => setExecution(false)}
+        />
+      )}
+      {editing && session.data && isConsoleSession(session.data) && (
+        <SessionEditor
+          session={session.data}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </header>
   );
 }

@@ -7,6 +7,7 @@ import "a13n-envd/eip/v1/computer.proto";
 import "a13n-envd/eip/v1/environment.proto";
 import "a13n-envd/eip/v1/options.proto";
 import "a13n-envd/eip/v1/output.proto";
+import "a13n-envd/eip/v1/monitoring.proto";
 import "a13n-envd/eip/v1/process.proto";
 import "a13n-envd/eip/v1/resource.proto";
 
@@ -33,6 +34,9 @@ service EnvironmentInteractionProtocol {
   rpc ComputerObserve(ComputerObserveParams) returns (ComputerObserveResult) {
     option (eip_method) = { jsonrpc_method: "computer.observe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_OPEN transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
   }
+  rpc ComputerZoom(ComputerZoomParams) returns (ComputerZoomResult) {
+    option (eip_method) = { jsonrpc_method: "computer.zoom" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 2 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_OPEN transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
+  }
   rpc ComputerCloseObservation(FileReaderCloseParams) returns (FileReaderCloseResult) {
     option (eip_method) = { jsonrpc_method: "computer.close_observation" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_CLOSE transfer_direction: TRANSFER_DIRECTION_SERVER_TO_CLIENT };
   }
@@ -51,6 +55,12 @@ service EnvironmentInteractionProtocol {
   rpc ComputerTypeText(ComputerTypeTextParams) returns (ComputerActionResult) {
     option (eip_method) = { jsonrpc_method: "computer.type_text" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }
+  rpc ComputerReadClipboard(ComputerReadClipboardParams) returns (ComputerReadClipboardResult) {
+    option (eip_method) = { jsonrpc_method: "computer.read_clipboard" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 3 error_family: ERROR_FAMILY_RESOURCE };
+  }
+  rpc ComputerWriteClipboard(ComputerWriteClipboardParams) returns (ComputerWriteClipboardResult) {
+    option (eip_method) = { jsonrpc_method: "computer.write_clipboard" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 3 error_family: ERROR_FAMILY_RESOURCE };
+  }
   rpc ComputerPressKeys(ComputerPressKeysParams) returns (ComputerActionResult) {
     option (eip_method) = { jsonrpc_method: "computer.press_keys" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }
@@ -60,6 +70,9 @@ service EnvironmentInteractionProtocol {
   }
   rpc DeviceDescribe(DeviceDescribeParams) returns (DeviceDescribeResult) {
     option (eip_method) = { jsonrpc_method: "device.describe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_INITIALIZATION device_scoped: true };
+  }
+  rpc DeviceMetrics(DeviceMetricsParams) returns (DeviceMetricsResult) {
+    option (eip_method) = { jsonrpc_method: "device.metrics" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 2 error_family: ERROR_FAMILY_RESOURCE device_scoped: true };
   }
   rpc DirectoryList(DirectoryListParams) returns (DirectoryListResult) {
     option (eip_method) = { jsonrpc_method: "directory.list" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE device_scoped: true };

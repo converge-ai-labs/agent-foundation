@@ -26,6 +26,7 @@ it.each([0, 1, 1234567, 5242881, 8000000, Number.MAX_SAFE_INTEGER])(
       split_large_images: false,
       image_split_max_height: 777,
       image_split_overlap: 12,
+      image_retention_ratio: 0.75,
     };
     const draft = imageInputDraft(policy);
     expect(imageInputPolicy(draft)).toEqual(policy);

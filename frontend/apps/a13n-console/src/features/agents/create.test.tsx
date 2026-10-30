@@ -1,3 +1,4 @@
+import { preparedImage } from "../../../tests/image-crop";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,25 +20,26 @@ vi.mock("../../layout/workspace", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+// The page's header submits the editor's form by its ID.
 vi.mock("./editor", () => ({
   AgentEditor: ({
-    identity,
+    id,
+    profile,
     submit,
-    pending,
   }: {
-    identity: ReactNode;
+    id: string;
+    profile: ReactNode;
     submit: (config: object) => void;
-    pending: boolean;
   }) => (
-    <div>
-      {identity}
-      <button
-        disabled={pending}
-        onClick={() => submit({ model: "model-0123456789abcdef0123" })}
-      >
-        Create agent
-      </button>
-    </div>
+    <form
+      id={id}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit({ model: "model-0123456789abcdef0123" });
+      }}
+    >
+      {profile}
+    </form>
   ),
 }));
 afterEach(() => {
@@ -66,7 +68,7 @@ it("creates an agent and navigates to its ID", async () => {
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Agent name"), "New agent");
+  await user.type(screen.getByLabelText("Name"), "New agent");
   await user.click(screen.getByRole("button", { name: "Create agent" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Current path").textContent).toBe(
@@ -112,12 +114,13 @@ it("uploads a selected avatar after creation and retries without creating anothe
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Agent name"), "New agent");
+  await user.type(screen.getByLabelText("Name"), "New agent");
   const file = new File(["png"], "portrait.png", { type: "image/png" });
   await user.upload(
     container.querySelector<HTMLInputElement>('input[type="file"]')!,
     file,
   );
+  await user.click(await screen.findByRole("button", { name: "Use image" }));
   expect(http.PUT).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Create agent" }));
   await screen.findByText("Upload interrupted");
@@ -134,8 +137,8 @@ it("uploads a selected avatar after creation and retries without creating anothe
     "/api/v1/agents/{agent_id}/avatar",
     {
       params: { path: { agent_id: "ap_new" } },
-      headers: { "If-Match": '"ap_new:1"', "Content-Type": "image/png" },
-      body: file,
+      headers: { "If-Match": '"ap_new:1"', "Content-Type": "image/webp" },
+      body: preparedImage,
     },
   );
   unmount();

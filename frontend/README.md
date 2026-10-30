@@ -2,6 +2,8 @@
 
 Private pnpm workspace for a13n browser applications. Use Node.js 24 and the pnpm version pinned in `package.json`.
 
+The [design contract catalog](../spec/frontend/README.md) links shared and product-specific rules. Agent instructions live in the [root repository guide](../AGENTS.md).
+
 - `apps/a13n-console`: Service management and conversation application with English and Simplified Chinese resources.
 - `apps/a13n-harness-ui`: Harness UI browser application, compiled into its Python distribution.
 - `apps/a13n-docs`: the Fumadocs documentation site built from the repository `docs/` Markdown; see [Documentation Changes](../CONTRIBUTING.md#documentation-changes).
@@ -14,7 +16,7 @@ From the repository root:
 make dev
 ```
 
-This prepares dependencies and runs Service and Console together. Ctrl+C stops both application processes.
+This prepares dependencies and starts the scripted model, Service, and Console in the background. Use `make dev-status` for this checkout's URLs and `make dev-stop` to stop its applications. To stay attached to the terminal and stop with Ctrl+C, use `make dev-foreground`.
 
 For individual frontend checks and development servers:
 

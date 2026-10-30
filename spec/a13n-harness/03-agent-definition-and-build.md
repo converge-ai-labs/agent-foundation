@@ -13,7 +13,7 @@ flowchart LR
     Config[Explicit or opted-in plugin context] --> Builder[HarnessBuilder]
     Definition --> Builder
     Builder --> Plugins[Create configured plugins, bind all plugins, and collect Capabilities]
-    Plugins --> Presentation[Apply optional ToolProxyPlan to selected sources]
+    Plugins --> Presentation[Apply optional ToolSearchPlan to selected sources]
     Presentation --> FromSpec[Agent.from_spec]
     FromSpec --> Executable[ExecutableAgent]
 ```
@@ -31,9 +31,10 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
-    tool_proxy: ToolProxyPlan | None = None
+    tool_search: ToolSearchPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
+    context_recovery: ContextRecoveryPolicy = ContextRecoveryPolicy()
 
     def with_updates(
         self,
@@ -43,25 +44,26 @@ class AgentDefinition[OutputT]:
     ) -> Self: ...
 ```
 
-| Field            | Meaning                                                                                                                    |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `agent`          | Harness or native Pydantic AI declarative Agent configuration                                                              |
-| `output_type`    | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`             |
-| `definition_id`  | Non-blank logical correlation value; it grants no authority                                                                |
-| `model`          | Optional concrete native Model used instead of string selection in `AgentSpec`                                             |
-| `capabilities`   | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks |
-| `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                                       |
-| `tool_proxy`     | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources   |
-| `subagents`      | Named complete process-local child definitions and authored edge ceilings                                                  |
-| `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                   |
+| Field              | Meaning                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`            | Harness or native Pydantic AI declarative Agent configuration                                                                                     |
+| `output_type`      | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`                                    |
+| `definition_id`    | Non-blank logical correlation value; it grants no authority                                                                                       |
+| `model`            | Optional concrete native Model used instead of string selection in `AgentSpec`                                                                    |
+| `capabilities`     | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks                        |
+| `plugins`          | Trusted concrete Harness middleware instances supplied directly with this definition                                                              |
+| `tool_search`      | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources                          |
+| `subagents`        | Named complete process-local child definitions and authored edge ceilings                                                                         |
+| `model_recovery`   | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                                          |
+| `context_recovery` | Default-on native context-overflow policy, independent of proactive compaction; see [Context Recovery](09-context-and-memory.md#context-recovery) |
 
-[Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns plan selection, grouping, and native composition semantics. Plugin contributions are collected once before applying the plan; the plan does not introduce another feature or execution plane.
+[Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns plan selection, grouping, and native composition semantics. Plugin contributions are collected once before applying the plan; the plan does not introduce another feature or execution plane.
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. `AgentDefinition.with_updates()` returns a new fully validated definition after exact top-level replacement. It accepts one optional field-name mapping plus keyword overrides, rejects unknown fields and fields supplied through both inputs, and runs the ordinary constructor invariants over the complete result. Retained and replacement `AgentSpec` values follow the constructor's deep-copy rule, and collection fields are frozen as tuples; arbitrary Models, Capabilities, plugins, output objects, and other trusted native values retain their identities under the existing reentrancy contract rather than being blanket-deep-copied. The original definition is never mutated.
 
 String model selection belongs only to `AgentSpec.model`; a concrete process-local Model belongs only to `AgentDefinition.model`. Supplying both is rejected rather than assigning hidden precedence, and a concrete Model requires `AgentSpec.model=None`. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
 
-`AgentSpec` remains the owner of instructions, request settings, native tool and output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks, the default-on `toolset_instructions` and `cold_start_filter` policies, one definition-level native `UsageLimits`, and `model_characteristics` for one resolved `HarnessModelCharacteristics` describing Harness-managed lifecycle and feature characteristics. Most of those facts are independent from provider `ModelProfile`; `context_window_tokens` deliberately overlaps the native profile's `context_window` fact so upstream Capabilities can consume it. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove it when starting a later model request over retained history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt. The Toolset switch changes only Harness Toolset-owned guidance and does not suppress explicit Agent or Capability instructions.
+`AgentSpec` remains the owner of instructions, request settings, native tool and output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks, the default-on `toolset_instructions` and `cold_start_filter` policies, one definition-level native `UsageLimits`, and `model_characteristics` for one resolved `HarnessModelCharacteristics` describing Harness-managed lifecycle and feature characteristics. Most of those facts are independent from provider `ModelProfile`; `context_window_tokens` deliberately overlaps the native profile's `context_window` fact so upstream Capabilities can consume it. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove its opening static prompt prefix when starting a later model request over retained history. Reconciliation preserves subsequent historical system prompts and their native scope, metadata, and dynamic references. An identified, dynamic, or request-scoped prompt ends the opening definition prefix, as does any non-system part. Capability authors identify prompts placed in that prefix with native part metadata. Provider-suspended continuation retains its exact prompt history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt. The Toolset switch changes only Harness Toolset-owned guidance and does not suppress explicit Agent or Capability instructions.
 
 Exactly one build-time output source is selected: an explicit `AgentDefinition.output_type`, or native `AgentSpec.output_schema` when `output_type is None`. The latter produces `dict[str, JsonValue]`; `None` without a schema and an explicit output together with a schema are rejected. Native `OutputSpec`, Model profiles, Capability-owned tools and Toolsets, and explicit Capability instances retain their upstream Pydantic AI semantics. The Harness does not mirror those types in a second schema.
 
@@ -100,11 +102,11 @@ The Harness `AgentSpec.usage_limits` uses Pydantic AI's native `UsageLimits` val
 
 `AgentSpec.cold_start_filter` configures cold compression of already-consumed tool results. Omission enables `ColdStartFilterConfiguration()` with a one-hour idle interval; `None` disables automatic installation. Plain native Pydantic AI specs receive the same default. An explicitly supplied `ColdStartFilterCapability` retains its authored policy instead of receiving a second automatic instance. The idle interval is a deliberate retention policy, not a provider-cache guarantee or adaptive cache-duration detector. Each child definition selects its own policy. [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters) owns the exact filtering semantics.
 
-`video_understanding` declares binary video input. `url_input.video` is a set of native video URL subtypes, currently `youtube`, independently of binary modalities. `video_input.max_video_bytes` bounds both single and aggregate inline video Base64 bytes, default 10 MiB. Default URL and video policies are omitted from serialization to preserve legacy characteristic bytes and digests; explicit null is invalid. The builder-owned `VideoUrlCapability` exposes `read_video_url` for binary-video or native-URL support, and always projects video compatibility and budgets on detached requests. [Video inputs](16-input-model-and-output.md#video-inputs) owns admission, acquisition, and projection.
+`video_understanding` declares binary video input. `url_input.video` is a set of native video URL subtypes, currently `youtube`, independently of binary modalities. `video_input.max_video_bytes` bounds both single and aggregate inline video Base64 bytes, default 10 MiB. Default URL and video policies are omitted from serialization to preserve legacy characteristic bytes and digests; explicit null is invalid. The builder-owned `VideoUrlCapability` exposes `read_media_url` for supported native or configured auxiliary media kinds, and always projects video compatibility and budgets on detached requests. [Video inputs](16-input-model-and-output.md#video-inputs) owns admission, acquisition, and projection.
 
 `HarnessModelCharacteristics.image_input` owns request-only image preparation for the selected model. Omission enables the frozen `ImageInputPolicy()` defaults; a partial object validates with defaults for unspecified members, and explicit `None` disables automatic installation. Default-valued policies are omitted from serialization to preserve canonical bytes and content digests of legacy characteristics; explicit `None` is retained. An absent characteristics object and plain native Pydantic AI specs receive the same default-on behavior. An explicitly supplied `ImageFilterCapability` remains functional independently and suppresses the automatic duplicate. Each root, independently selected child, and image-understanding target uses its own selected model policy, not the parent's policy. This is neither native `ModelSettings` nor an Agent-wide/global configuration plane. The configuration and exact projection semantics belong to [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters).
 
-Native `AgentSpec.retries` passes unchanged to Pydantic AI. `None` retains Pydantic AI's default of one function-tool retry and one output-validation retry; an integer selects both budgets, while an `AgentRetries` mapping can select `tools` and `output` independently. These are retries inside one Pydantic Agent loop. They do not enable Harness `ModelRecoveryPolicy`, retry a `UsageLimitExceeded` failure, or configure provider transport retries.
+Harness construction defaults to five function-tool retries and three output-validation retries. Omitted or `None` `AgentSpec.retries` selects these defaults for both Harness and native Pydantic AI specs. An integer selects both budgets, including zero; an `AgentRetries` mapping overrides the supplied categories and retains Harness defaults for omitted categories. Explicit native Tool and Toolset retry limits retain their upstream precedence. The builder applies the effective budgets without mutating the authored spec or stored definition. These are retries inside one Pydantic Agent loop. They do not enable Harness `ModelRecoveryPolicy`, retry a `UsageLimitExceeded` failure, or configure provider transport retries.
 
 `AgentSpec.with_updates()` refines a loaded preset without mutating it. It accepts field names or serialization aliases through one optional mapping plus keyword overrides, rejects unknown fields and duplicate alias/name ownership, deep-copies retained and replacement values, and revalidates the complete resulting `AgentSpec`. Each supplied top-level field is an exact replacement; the method never recursively merges provider-specific settings, metadata, schemas, Capability arguments, `UsageLimits`, or other nested mappings. A caller that wants a nested merge constructs that field explicitly before supplying it. This is definition materialization before build, not the temporary run-scoped behavior of native `Agent.override()`.
 
@@ -183,6 +185,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
@@ -201,6 +204,7 @@ class HarnessBuilder:
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
+        context_recovery: ContextRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```

@@ -2,9 +2,9 @@
 
 import hashlib
 from abc import abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import BinaryIO, Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -23,6 +23,7 @@ from a13n_harness.environment.models import (
     decode_target_state,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment._backend import BackendReference, ExecutionBackend
 from a13n_harness.providers.environment._backend_factory import BackendFactory
 from a13n_harness.providers.environment._guest_files import GuestFiles
@@ -53,7 +54,17 @@ def descriptor(
     )
 
 
-class NativeReference[C: CommandConfiguration, S: TargetState](BackendReference):
+class TargetConfiguration(Protocol):
+    """Identity and lifecycle bounds shared by native resource references."""
+
+    @property
+    def fingerprint(self) -> str: ...
+
+    @property
+    def request_timeout_seconds(self) -> float: ...
+
+
+class NativeReference[C: TargetConfiguration, S: TargetState](BackendReference):
     """Shared target identity and read-only validation; no lifecycle or execution API."""
 
     def __init__(
@@ -135,12 +146,18 @@ class NativeExecution[C: CommandConfiguration, S: TargetState](NativeReference[C
         self._descriptor = descriptor(self.config, identity, incarnation=incarnation)
         if self.commands:
             self.commands.closed = True
-        self.commands = NativeCommands(execute, self.config, self.descriptor.generation, execution_id)
+        self.commands = NativeCommands(execute, self.config, self.descriptor.generation, execution_id, transfer=self)
         files = GuestFiles(self.commands)
         self._operations = EnvironmentOperations(files=files, shell=self.commands)
         self._availability = EnvironmentAvailability(
             status="available", ready_families=self.descriptor.operation_families
         )
+
+    @abstractmethod
+    def read_stream(self, path: str) -> AsyncIterator[bytes]: ...
+
+    @abstractmethod
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None: ...
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if operations - self.descriptor.operation_families:
@@ -174,6 +191,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
     environment_model: type[E],
     state_model: type[TargetState],
     execution_type: Callable[[E, str, EnvironmentState | None, NativeRuntime], ExecutionBackend],
+    describe_environment: Callable[[E], EnvironmentDescriptor] | None = None,
 ) -> EnvironmentProviderDefinition[C, K, E, NativeRuntime]:
     async def runtime(*, configuration: C, credential: K | None) -> NativeRuntime:
         if credential is None:
@@ -181,7 +199,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         return NativeRuntime(configuration, credential)
 
     def describe(configuration: E) -> EnvironmentDescriptor:
-        return descriptor(configuration)
+        return describe_environment(configuration) if describe_environment is not None else descriptor(configuration)
 
     def identity(*, configuration: E, state: EnvironmentState | None) -> str | None:
         value = decode_target_state(type, state, state_model, fingerprint=configuration.fingerprint)
@@ -197,6 +215,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         environment_id: str,
         state: EnvironmentState | None,
         runtime: NativeRuntime | None,
+        session_recovery: EnvdSessionRecovery | None = None,
     ) -> ExecutionBackend:
         if runtime is None:
             raise TypeError("Native execution construction requires a runtime")

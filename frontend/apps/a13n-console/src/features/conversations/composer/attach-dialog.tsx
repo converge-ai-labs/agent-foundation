@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
-import { FileUpload, TextAreaField } from "../../../shared/forms";
+import { FileDrop, TextAreaField } from "../../../shared/forms";
 import styles from "./composer.module.css";
 
 type Mode = "file" | "url" | "structured";
@@ -49,7 +49,6 @@ export function AttachDialog({
           variant="ghost"
           size="icon-sm"
           aria-label={t("Attach file or URL")}
-          title={t("Attach file or URL")}
         >
           <PaperclipIcon size={16} />
         </Button>
@@ -80,8 +79,9 @@ export function AttachDialog({
           ]}
         />
         {mode === "file" && canUpload && (
-          <FileUpload
+          <FileDrop
             label={t("Upload a file")}
+            hint={t("Drop a file here or choose one to upload.")}
             file={uploadedFile}
             disabled={disabled || uploading}
             onSelect={onUpload}

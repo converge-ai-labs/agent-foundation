@@ -4,15 +4,14 @@ import { Button } from "a13n-ui";
 import {
   ArrowClockwise,
   DownloadSimple,
-  Eye,
   FloppyDisk,
   TextAlignLeft,
-  TextT,
 } from "@phosphor-icons/react";
 import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SourceEditor } from "../configuration/editor";
 import { ErrorNotice } from "../shell/ui";
+import { DebugOnly } from "../shell/debug";
 import { ConfirmAction } from "../shell/confirm-action";
 import { MessageText } from "../conversations/message-text";
 import {
@@ -26,6 +25,8 @@ import { CaptureContext, downloadBlob } from "./capture";
 import { FileMedia } from "./file-media";
 import { downloadFile, fileTransfer } from "./file-transfer";
 import { mediaKind, MAX_MEDIA_BYTES } from "./media-kind";
+import { modifierLabel } from "../platform";
+import shell from "../shell/workbench.module.css";
 import styles from "./native.module.css";
 
 export function FileView({
@@ -64,19 +65,22 @@ export function FileView({
           signal,
         }),
       );
-      const next = mediaKind(info.media_type)
-        ? info
-        : {
-            ...(await result(
-              client.GET("/api/host/files/text", {
-                params: {
-                  query: { path, expected_revision: info.entry.revision },
-                },
-                signal,
-              }),
-            )),
-            media_type: info.media_type,
-          };
+      // .ts is both TypeScript and an MPEG transport stream suffix. The text
+      // endpoint checks the actual bytes; binary streams keep their media view.
+      const next =
+        mediaKind(info.media_type) && !/\.ts$/i.test(path)
+          ? info
+          : {
+              ...(await result(
+                client.GET("/api/host/files/text", {
+                  params: {
+                    query: { path, expected_revision: info.entry.revision },
+                  },
+                  signal,
+                }),
+              )),
+              media_type: info.media_type,
+            };
       const existing = buffers.get(path);
       if (existing) existing.observe(next);
       else buffers.set(path, new FileBuffer(next));
@@ -145,7 +149,7 @@ export function FileView({
       );
       if (buffer.uncertain)
         setMessage(
-          "Save acknowledgement lost. Do not repeat the write; refresh and inspect disk before choosing which text to keep.",
+          "Couldn't confirm the save. Refresh and check the file before saving again.",
         );
     } finally {
       buffer.saving = false;
@@ -181,17 +185,6 @@ export function FileView({
   };
   return (
     <section className={styles.file} aria-label="File content">
-      <header className={styles.fileHeader}>
-        <strong>
-          {basename(path)}
-          {buffer.dirty ? " · Unsaved" : ""}
-        </strong>
-        <span>
-          {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
-          {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
-        </span>
-      </header>
-      <div className={styles.path}>{path}</div>
       {symlink && (
         <div className={styles.notice}>
           Resolved target: {buffer.base.resolved_path}. This path is read-only;
@@ -201,13 +194,13 @@ export function FileView({
             size="sm"
             onClick={() => open(buffer.base.resolved_path)}
           >
-            Open resolved target
+            Open target
           </Button>
         </div>
       )}
       <div className={styles.fileToolbar}>
         <div className={styles.actions} aria-label="File actions">
-          {editable && (
+          {editable && (buffer.dirty || buffer.saving || buffer.uncertain) && (
             <Button
               size="sm"
               disabled={
@@ -226,22 +219,24 @@ export function FileView({
             </Button>
           )}
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh"
+            title="Refresh file"
             onClick={() => void refreshContent()}
             disabled={buffer.saving || read.isFetching}
           >
             <ArrowClockwise />
-            Refresh
           </Button>
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Download"
+            title="Download file"
             onClick={() => void download()}
             disabled={read.isFetching || !!read.error}
           >
             <DownloadSimple />
-            Download
           </Button>
           {editable && buffer.dirty && (
             <Button
@@ -266,21 +261,19 @@ export function FileView({
             {markdown && (
               <>
                 <Button
-                  variant={mode === "preview" ? "secondary" : "outline"}
+                  variant={mode === "preview" ? "secondary" : "ghost"}
                   size="sm"
                   aria-pressed={mode === "preview"}
                   onClick={() => setMode("preview")}
                 >
-                  <Eye />
                   Preview
                 </Button>
                 <Button
-                  variant={mode === "text" ? "secondary" : "outline"}
+                  variant={mode === "text" ? "secondary" : "ghost"}
                   size="sm"
                   aria-pressed={mode === "text"}
                   onClick={() => setMode("text")}
                 >
-                  <TextT />
                   Text
                 </Button>
               </>
@@ -288,7 +281,7 @@ export function FileView({
             {mode === "text" && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 aria-pressed={wrap}
                 onClick={() => setWrap(!wrap)}
               >
@@ -312,11 +305,11 @@ export function FileView({
               : "Disk revision changed"}
           </strong>
           <p>
-            Your local text has not been replaced. Refresh, then review the
-            current disk version below before resolving.
+            Your edits are kept. Refresh and review the saved file before
+            choosing which version to keep.
           </p>
           <details>
-            <summary>Inspect latest disk version</summary>
+            <summary>Show latest saved version</summary>
             <p>
               Revision: {buffer.observed.entry.revision} ·{" "}
               {buffer.observed.presentation}
@@ -344,7 +337,7 @@ export function FileView({
                 </Button>
               }
               title="Replace your local text?"
-              description="Replace your local text with this inspected disk version? Download local text first if you need a copy."
+              description="Replace your edits with this saved version? Download your edits first if you need a copy."
               confirmLabel="Use disk version"
               destructive
               onConfirm={() => {
@@ -373,7 +366,7 @@ export function FileView({
                 </Button>
               }
               title="Keep your local text?"
-              description="Keep your local text and use the inspected disk revision for the next explicit save? That save will replace this disk content."
+              description="Keep your edits? Your next save will replace the file version you just reviewed."
               confirmLabel="Keep local text"
               onConfirm={() => {
                 if (
@@ -396,12 +389,9 @@ export function FileView({
       )}
       {editable && mixedLineEndings(buffer.base.text ?? "") && (
         <p>
-          This file has mixed line endings. Editing normalizes them to its first
-          line-ending style; opening or capturing does not change its bytes.
+          This file mixes line endings. Editing uses the first style throughout.
+          Viewing or attaching leaves the file unchanged.
         </p>
-      )}
-      {editable && mode === "text" && (
-        <small>⌘/Ctrl+G: go to line · ⌘/Ctrl+S: save</small>
       )}
       {editable ? (
         mode === "preview" && markdown ? (
@@ -449,8 +439,8 @@ export function FileView({
           <div className={styles.empty}>
             <h3>Image exceeds the preview limit</h3>
             <p>
-              Image previews support up to 10 MiB. Download the original to
-              inspect it.
+              Image too large to preview. Download it to view. The preview limit
+              is 10 MiB.
             </p>
           </div>
         )
@@ -462,34 +452,50 @@ export function FileView({
               : "File exceeds the text editor limit"}
           </h3>
           <p>
-            Only complete, NUL-free UTF-8 up to 512 KiB is editable here.
-            Uploads and whole-file captures support up to 10 MiB. Download the
-            original to inspect larger files.
+            Edit UTF-8 text files up to 512 KiB, without NUL characters. Upload
+            or attach files up to 10 MiB. Download larger files to view them.
           </p>
         </div>
       )}
-      <CaptureContext
-        key={`${path}:${buffer.base.entry.revision}`}
-        source={{
-          file: { ...buffer.base, entry: { ...buffer.base.entry, path } },
-        }}
-        threadId={threadId}
-        selection={mode === "text" ? selection : undefined}
-        compact
-        disabled={
-          buffer.dirty ||
-          buffer.saving ||
-          buffer.uncertain ||
-          buffer.conflict ||
-          read.isFetching ||
-          !!read.error ||
-          buffer.base.entry.size > 10 * 1024 * 1024
-        }
-      />
+      <footer className={styles.fileFooter}>
+        <CaptureContext
+          key={`${path}:${buffer.base.entry.revision}`}
+          source={{
+            file: { ...buffer.base, entry: { ...buffer.base.entry, path } },
+          }}
+          threadId={threadId}
+          selection={mode === "text" ? selection : undefined}
+          compact
+          disabled={
+            buffer.dirty ||
+            buffer.saving ||
+            buffer.uncertain ||
+            buffer.conflict ||
+            read.isFetching ||
+            !!read.error ||
+            buffer.base.entry.size > 10 * 1024 * 1024
+          }
+        />
+        {editable && mode === "text" && (
+          <small className={styles.shortcuts}>
+            <kbd className={shell.kbd}>{modifierLabel()} G</kbd> Go to line
+            <kbd className={shell.kbd}>{modifierLabel()} S</kbd> Save
+          </small>
+        )}
+      </footer>
       <details className={styles.metadata}>
-        <summary>Reviewed file identity</summary>
-        <p>Server native filesystem · revision {buffer.base.entry.revision}</p>
-        <p>Resolved path: {buffer.base.resolved_path}</p>
+        <summary>File details</summary>
+        <p>
+          {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
+          {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
+        </p>
+        <p>{path}</p>
+        {buffer.base.resolved_path !== path && (
+          <p>Resolved path: {buffer.base.resolved_path}</p>
+        )}
+        <DebugOnly>
+          <p>Server file · version {buffer.base.entry.revision}</p>
+        </DebugOnly>
       </details>
     </section>
   );

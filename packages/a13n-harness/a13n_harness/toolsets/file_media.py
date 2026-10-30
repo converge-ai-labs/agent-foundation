@@ -1,4 +1,4 @@
-"""Agent-backed media understanding used by Environment file views."""
+"""Agent-backed understanding of detached file and URL media."""
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ type NativeInputMediaKind = Literal["image", "video", "audio"]
 _DEFAULT_IMAGE_INPUT = ImageInputPolicy()
 
 MAX_MEDIA_UNDERSTANDING_BYTES = 16 * 1024 * 1024
+MAX_IMAGE_UNDERSTANDING_BYTES = 100 * 1024 * 1024
 MAX_MEDIA_UNDERSTANDING_TEXT_CHARS = 4 * 1024 * 1024
 
 IMAGE_UNDERSTANDING_MODEL_ENV = "A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL"
@@ -61,6 +62,11 @@ _TIMEOUT_SECONDS_BY_KIND: dict[NativeInputMediaKind, float] = {
 }
 
 
+def media_source_byte_limit(kind: NativeInputMediaKind) -> int:
+    """Bound original file bytes independently of request-time image compression."""
+    return MAX_IMAGE_UNDERSTANDING_BYTES if kind == "image" else MAX_MEDIA_UNDERSTANDING_BYTES
+
+
 class MediaUnderstandingRequest(BaseModel):
     """Detached bounded input for a media-understanding model."""
 
@@ -69,12 +75,14 @@ class MediaUnderstandingRequest(BaseModel):
     kind: NativeInputMediaKind
     media_type: str = Field(min_length=1, max_length=256)
     source: EnvironmentPath | None = None
-    source_name: str = Field(min_length=1, max_length=2_048)
-    source_bytes: bytes = Field(max_length=MAX_MEDIA_UNDERSTANDING_BYTES)
+    source_name: str = Field(min_length=1, max_length=16 * 1024)
+    source_bytes: bytes = Field(max_length=MAX_IMAGE_UNDERSTANDING_BYTES)
     instructions: str | None = Field(default=None, max_length=64 * 1024)
 
     @model_validator(mode="after")
     def _validate_request(self) -> MediaUnderstandingRequest:
+        if len(self.source_bytes) > media_source_byte_limit(self.kind):
+            raise ValueError("media source exceeds the byte limit for its kind")
         if not self.media_type.startswith(f"{self.kind}/"):
             raise ValueError("media type does not match media kind")
         if "\x00" in self.source_name or "\x00" in (self.instructions or ""):
@@ -121,6 +129,18 @@ class MediaUnderstandingProvider(Protocol):
     async def understand(
         self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None
     ) -> MediaUnderstandingResult: ...
+
+
+@runtime_checkable
+class MediaUnderstandingAvailability(Protocol):
+    """Optional per-kind discovery without model or credential initialization."""
+
+    def supports(self, kind: NativeInputMediaKind) -> bool: ...
+
+
+def environment_media_kinds() -> tuple[NativeInputMediaKind, ...]:
+    """Return configured kinds without resolving models or parsing settings."""
+    return tuple(kind for kind, variable in _MODEL_ENV_BY_KIND.items() if os.environ.get(variable, "").strip())
 
 
 class AgentMediaUnderstandingProvider:
@@ -173,6 +193,9 @@ class AgentMediaUnderstandingProvider:
             agent.instrument = False
             agent.output_validator(_validate_agent_output)
             self._agents[kind] = agent
+
+    def supports(self, kind: NativeInputMediaKind) -> bool:
+        return kind in self._models
 
     @classmethod
     def from_environment(
@@ -328,6 +351,7 @@ __all__ = [
     "VIDEO_UNDERSTANDING_MODEL_ENV",
     "VIDEO_UNDERSTANDING_MODEL_SETTINGS_ENV",
     "AgentMediaUnderstandingProvider",
+    "MediaUnderstandingAvailability",
     "MediaUnderstandingError",
     "MediaUnderstandingProvider",
     "MediaUnderstandingRequest",

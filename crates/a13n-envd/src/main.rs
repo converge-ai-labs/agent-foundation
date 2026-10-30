@@ -1,7 +1,29 @@
 use std::{ffi::OsString, time::Duration};
 
+mod update;
+
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "update")
+    {
+        if let Err(error) = update::run(&arguments[1..]) {
+            eprintln!("a13n-envd update failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    #[cfg(windows)]
+    if arguments.as_slice() == [OsString::from("--internal-mxc-launcher")] {
+        match a13n_envd::run_internal_mxc_launcher() {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("a13n-envd failed: native MXC launcher unavailable: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if arguments.as_slice() == [OsString::from("--internal-egress-worker")]
         || arguments.as_slice() == [OsString::from("--internal-egress-ready")]
     {

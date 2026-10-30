@@ -6,7 +6,9 @@ use crate::{
     eip::{DirectoryListParams, DirectoryListResult, EIPError},
 };
 use serde::{Deserialize, Serialize};
-use std::{io, process::Stdio, time::Duration};
+#[cfg(unix)]
+use std::process::Stdio;
+use std::{io, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Deserialize, Serialize)]
@@ -34,7 +36,7 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
     } else {
         None
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let groups = None;
     let request = Request {
         identity: config.execution,
@@ -73,7 +75,7 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
     } else {
         tokio::process::Command::new(std::env::current_exe()?)
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let state = super::StateDirectory::new(None)?;
     #[cfg(target_os = "macos")]
     let mut command = tokio::process::Command::from(super::macos::command(
@@ -82,6 +84,18 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
         super::boundary::Egress::Deny {},
         &state.0,
     )?);
+    #[cfg(windows)]
+    let mut worker = super::windows::spawn(
+        &config.sandbox,
+        &config.grant_sources,
+        &config.bootstrap_files,
+        super::boundary::Egress::Deny {},
+        state,
+        super::windows::Target::Directory,
+        None,
+    )
+    .await?;
+    #[cfg(unix)]
     let mut child = command
         .arg("--internal-directory-worker")
         .env_clear()
@@ -90,6 +104,8 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()?;
+    #[cfg(windows)]
+    let child = &mut worker.child;
     let operation = async {
         let mut input = child
             .stdin
@@ -114,9 +130,12 @@ pub(crate) async fn list(config: &Config, params: DirectoryListParams) -> io::Re
         }
         serde_json::from_slice(&bytes).map_err(io::Error::other)
     };
-    tokio::time::timeout(Duration::from_secs(10), operation)
+    let result = tokio::time::timeout(Duration::from_secs(10), operation)
         .await
-        .map_err(io::Error::other)?
+        .map_err(io::Error::other);
+    #[cfg(windows)]
+    worker.shutdown().await?;
+    result?
 }
 
 pub(crate) fn run() -> io::Result<()> {

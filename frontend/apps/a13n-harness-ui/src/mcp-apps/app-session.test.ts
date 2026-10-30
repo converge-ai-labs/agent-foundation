@@ -105,7 +105,7 @@ it.each([true, false])(
     GET.mockResolvedValue({ data: operation(key, "approval_required") });
     await session.decide(key, approve);
     expect(session.getSnapshot()[0].uncertain).toContain(
-      "Decision not confirmed",
+      "Couldn't confirm your choice",
     );
     await session.decide(key, !approve);
     await session.reconcile(key);

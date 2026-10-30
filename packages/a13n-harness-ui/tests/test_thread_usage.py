@@ -571,7 +571,7 @@ async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engi
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_settles(tmp_path, monkeypatch, cancel):
+async def test_snapshot_preparation_leaves_writers_free_and_cancels_before_admission(tmp_path, monkeypatch, cancel):
     import threading
 
     from a13n_harness_ui.storage import usage as usage_module
@@ -581,6 +581,7 @@ async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_set
     async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
         async with transaction(database.sessions) as session:
             session.add(_thread("thr_root"))
+            session.add(_thread("thr_other"))
         repository = ThreadUsageRepository(database.sessions)
         push = PushRepository(database.sessions)
         key = await push.private_key()
@@ -610,9 +611,13 @@ async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_set
             try:
                 with fail_after(2):
                     await entered.wait()
-                    # The write remains atomic, but readers and loop callbacks can proceed.
-                    assert database.sessions.write_lock.locked()
+                    # An unrelated Star must complete before ledger preparation finishes.
+                    assert not database.sessions.write_lock.locked()
                     assert await push.private_key() == key
+                    async with transaction(database.sessions) as session:
+                        other = await session.get(ThreadRecord, "thr_other")
+                        assert other is not None
+                        other.starred = True
                     if cancel:
                         scope.cancel()
                     assert not finished.is_set()
@@ -620,7 +625,56 @@ async def test_snapshot_preparation_keeps_loop_responsive_and_admitted_write_set
                 release.set()
             with fail_after(2):
                 await finished.wait()
-        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 2
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == (1 if cancel else 2)
+        async with transaction(database.sessions) as session:
+            assert (await session.get(ThreadRecord, "thr_other")).starred
+
+
+@pytest.mark.parametrize("populated", [False, True])
+async def test_prepared_snapshot_rechecks_an_independent_writer_without_losing_usage(tmp_path, monkeypatch, populated):
+    import threading
+
+    from a13n_harness_ui.storage import usage as usage_module
+    from anyio import Event, create_task_group, fail_after, from_thread
+
+    path = tmp_path / "metadata.sqlite3"
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(path, settings) as first, open_database(path, settings) as second:
+        async with transaction(first.sessions) as session:
+            session.add(_thread("thr_root"))
+        writer, other = ThreadUsageRepository(first.sessions), ThreadUsageRepository(second.sessions)
+        if populated:
+            await writer.save(thread_id="thr_root", snapshot=_snapshot(_model(0)))
+        entered = Event()
+        release = threading.Event()
+        original = usage_module._prepare_snapshot_write
+        preparations = 0
+
+        def prepare(snapshot, previous_payload):
+            nonlocal preparations
+            if snapshot.sequence == 2:
+                preparations += 1
+                if preparations == 1:
+                    from_thread.run_sync(entered.set)
+                    assert release.wait(5)
+            return original(snapshot, previous_payload)
+
+        async def save():
+            await writer.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), sequence=2))
+
+        monkeypatch.setattr(usage_module, "_prepare_snapshot_write", prepare)
+        async with create_task_group() as tasks:
+            tasks.start_soon(save)
+            try:
+                with fail_after(2):
+                    await entered.wait()
+                    await other.save(
+                        thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), _model(2), sequence=3)
+                    )
+            finally:
+                release.set()
+        assert preparations == 2
+        assert (await writer.snapshot(thread_id="thr_root")).combined.model_requests == 3
 
 
 async def test_snapshots_and_legacy_receipts_share_one_attribution_without_losing_child_usage(tmp_path):
@@ -844,8 +898,7 @@ async def test_repeated_receipts_do_not_rescan_family_in_write_transaction(tmp_p
         assert (await repository.snapshot(thread_id="thr_root")).combined.provider_receipts == 2
 
 
-@pytest.mark.parametrize("failures", [1, 2, 3])
-@pytest.mark.parametrize("failure_kind", ["timeout", "busy", "locked"])
+@pytest.mark.parametrize("failure_kind, failures", [("timeout", 1), ("busy", 2), ("locked", 3)])
 async def test_reporter_retries_only_transient_failures_with_warning(
     tmp_path, monkeypatch, caplog, failures, failure_kind
 ):

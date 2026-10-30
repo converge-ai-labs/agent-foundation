@@ -1,23 +1,13 @@
 .filters {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+  composes: toolbar from "../../shared/collection/collection.module.css";
+  justify-content: space-between;
 }
-.timezone,
 .footnote {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
-.customRange {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: end;
-}
-.customRange p {
-  flex-basis: 100%;
-  color: var(--a13n-danger);
-  font-size: var(--a13n-text-sm);
+.overview {
+  container-type: inline-size;
 }
 .metrics {
   display: grid;
@@ -38,11 +28,13 @@
 .metrics dd {
   margin-top: 10px;
   font-size: 28px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.1;
   letter-spacing: var(--a13n-tracking-title);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tokens {
   display: grid;
@@ -68,6 +60,7 @@
   font-size: var(--a13n-text-lg);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .notice {
   margin-top: 12px;
@@ -91,7 +84,7 @@
 }
 .sectionHeading h2 {
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
 }
 .chartReadout {
@@ -107,10 +100,12 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
+/* The axis column is shared by the plot and the date row below it. */
 .chart {
-  display: flex;
-  height: 220px;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 220px auto;
+  gap: 10px 12px;
   margin-top: 8px;
 }
 .axis {
@@ -127,7 +122,6 @@
 }
 .plot {
   position: relative;
-  flex: 1;
   min-width: 0;
 }
 .grid {
@@ -192,17 +186,37 @@
   );
 }
 .dates {
+  grid-column: 2;
   display: flex;
-  justify-content: space-between;
-  margin: 10px 0 0 56px;
+  gap: 10px;
   color: var(--a13n-tertiary);
   font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
+}
+.dates span {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+.model {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 .identity {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+}
+.identity strong,
+.identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .identity strong {
   font-weight: 500;
@@ -211,33 +225,60 @@
   font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
 }
+/* Stacked rows lay cells out as flex items; let the identity shrink to truncate. */
+.breakdown td > div {
+  min-width: 0;
+}
+.cost {
+  position: relative;
+  white-space: nowrap;
+}
 .partial {
+  position: absolute;
+  left: 100%;
+  margin-left: 2px;
   color: var(--a13n-secondary);
 }
-.footnote {
-  line-height: 1.7;
-  margin-top: 8px;
+/* Narrower tables drop the derived columns first, then token detail. */
+@container (width < 1000px) {
+  .breakdown [data-column="cached"],
+  .breakdown [data-column="cacheRate"] {
+    display: none;
+  }
 }
-@media (width < 768px) {
-  .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@container (560px <= width < 760px) {
+  .breakdown[data-group="members"] [data-column="output"],
+  .breakdown [data-column="runTime"] {
+    display: none;
   }
-  .metrics > div {
-    padding: 14px 16px 16px;
-  }
-  .metrics dd {
-    font-size: var(--a13n-text-2xl);
-  }
+}
+/* Four figures need room; a narrower overview reads as two by two. */
+@container (width < 800px) {
+  .metrics,
   .tokens {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tokens {
     row-gap: 10px;
   }
   .tokens > div:nth-child(odd) {
     padding-left: 0;
     border-left: 0;
   }
+}
+.footnote {
+  line-height: 1.7;
+  margin-top: 8px;
+}
+@media (width < 768px) {
+  .metrics > div {
+    padding: 14px 16px 16px;
+  }
+  .metrics dd {
+    font-size: var(--a13n-text-2xl);
+  }
   .chart {
-    height: 160px;
+    grid-template-rows: 160px auto;
   }
   .chartReadout {
     height: auto;
@@ -248,4 +289,120 @@
   .sectionHeading {
     flex-wrap: wrap;
   }
+}
+
+.memberScope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: var(--a13n-radius-group);
+}
+.memberScope > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.memberScope strong {
+  overflow-wrap: anywhere;
+}
+.memberScope span,
+.memberHint {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.memberHint {
+  margin-bottom: 16px;
+}
+
+.filterControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.memberScope {
+  background: var(--a13n-surface);
+  flex-wrap: wrap;
+}
+.memberTrigger {
+  max-width: min(360px, 100%);
+}
+.memberTrigger > span {
+  color: var(--a13n-secondary);
+}
+.memberTrigger strong {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memberTrigger svg {
+  flex-shrink: 0;
+}
+/* A filter list owns one compact inset, including the popover viewport. */
+.memberPicker {
+  width: min(280px, calc(100vw - 24px));
+  padding: 0;
+}
+.memberPicker [data-slot="popover-viewport"] {
+  padding: 4px;
+}
+.memberOptions {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.memberOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--a13n-radius-row);
+  background: transparent;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  line-height: 18px;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+}
+.memberOption:hover {
+  background: var(--a13n-hover);
+}
+.memberOption[aria-pressed="true"] {
+  background: var(--a13n-selected);
+}
+.memberOption:focus-visible {
+  outline: 1px solid var(--a13n-signal);
+  outline-offset: -1px;
+}
+.memberOption > span {
+  min-width: 0;
+  gap: 0;
+}
+.memberOption svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.pickerHint {
+  padding: 8px;
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-secondary);
+}
+.pickerPagination {
+  margin-top: 4px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--a13n-border-soft);
 }

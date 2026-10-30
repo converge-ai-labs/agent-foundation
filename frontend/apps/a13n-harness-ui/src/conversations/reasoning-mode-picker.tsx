@@ -43,7 +43,6 @@ export function ReasoningModePicker({
           {
             value: "default",
             label: "Default",
-            description: reasoningModeLabel(control?.state),
           },
           {
             value: "standard",
@@ -55,7 +54,7 @@ export function ReasoningModePicker({
       />
       <p className={styles.hint}>
         {control?.reason ??
-          "Independent of thinking effort. Pro access, usage and latency depend on the provider."}
+          "Separate from reasoning effort. Pro access, usage and speed depend on the provider."}
       </p>
       {value != null && !control?.supported && (
         <p className={styles.hint}>Unavailable selection — use default.</p>

@@ -9,11 +9,11 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
-import { useClient } from "../../../auth/context";
+import { useAuth, useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../../shared/api";
 import {
@@ -72,7 +72,8 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    [search, setSearch] = useSearchParams();
+    [search, setSearch] = useSearchParams(),
+    me = useAuth().data?.user.value;
   const path = search.get("path") ?? undefined,
     run = search.get("run") ?? undefined;
   const queries = memoryQueries(client, workspace.id);
@@ -102,7 +103,7 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
   const current = (filePath: string) =>
     files.data?.find((file) => file.path === filePath);
   return (
-    <>
+    <div>
       <div className={styles.historyFilters}>
         <ChoiceField
           label={t("File")}
@@ -139,7 +140,7 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
               title={t("Delete file history")}
               subject={path}
               description={t(
-                "Every retained change of this path is deleted, and the file itself stays. Content that runs already read stays in their conversation histories and traces.",
+                "Every retained change of this path is deleted, and the file itself stays. Content that runs already read stays in their session histories and traces.",
               )}
               action={() =>
                 client
@@ -181,8 +182,9 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
               const open = expanded === revision.seq;
               const file = current(revision.path);
               return (
-                <Fragment key={revision.seq}>
+                <div className={styles.revisionGroup} key={revision.seq}>
                   <ListRow
+                    className={styles.revisionRow}
                     icon={<Icon size={15} />}
                     name={
                       <>
@@ -198,13 +200,22 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                         {" · "}
                         {revision.run_id ? (
                           <RunLink runId={revision.run_id} />
+                        ) : !revision.principal_id ? (
+                          t("Unknown")
+                        ) : revision.principal_id === me?.id ? (
+                          me.name
                         ) : (
-                          (revision.principal_id ?? t("Unknown"))
+                          // Only administrators may list members, so others keep a short reference.
+                          <span title={revision.principal_id}>
+                            {t("Member · {{reference}}", {
+                              reference: revision.principal_id.slice(-8),
+                            })}
+                          </span>
                         )}
                       </>
                     }
                     actions={
-                      <>
+                      <span className={styles.revisionActions}>
                         <Button
                           type="button"
                           variant="ghost"
@@ -219,8 +230,11 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                         </Button>
                         {can("run") && (
                           <Confirm
-                            triggerVariant="ghost"
-                            trigger={t("Restore")}
+                            triggerElement={
+                              <Button type="button" variant="ghost" size="sm">
+                                {t("Restore")}
+                              </Button>
+                            }
                             // A newer file at the path needs a fresh read first.
                             retry={() =>
                               void invalidateMemories(cache, workspace.id)
@@ -262,24 +276,20 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                             }
                           />
                         )}
-                      </>
+                      </span>
                     }
                   />
                   {open && <RevisionDiff memory={memory} seq={revision.seq} />}
-                </Fragment>
+                </div>
               );
             })}
           </ListRows>
-          <CollectionFooter
-            count={t("{{count}} changes on this page", {
-              count: revisions.data.items.length,
-            })}
-          >
+          <CollectionFooter>
             <Pagination page={page} next={revisions.data.next_cursor} />
           </CollectionFooter>
         </>
       )}
-    </>
+    </div>
   );
 }
 

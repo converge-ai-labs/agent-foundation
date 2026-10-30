@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from a13n_envd_client.eip.v1 import PathStyle
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import (
     EnvironmentAvailability,
@@ -30,6 +31,16 @@ from a13n_harness.providers.environment.local_envd.runtime import (
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
+
+
+def test_executable_roots_preserve_search_precedence(tmp_path):
+    first, second = tmp_path / "z-first", tmp_path / "a-second"
+    first.mkdir()
+    second.mkdir()
+    configuration = daemon_module._canonical_configuration(
+        LocalEnvdLaunchConfiguration(default_working_directory=tmp_path, trusted_executable_roots=(first, second))
+    )
+    assert configuration.trusted_executable_roots == (first.resolve(), second.resolve())
 
 
 class BoundEIP:
@@ -79,7 +90,11 @@ def owners(monkeypatch):
             await asyncio.sleep(0)
             self.configuration = configuration
             self.device = SimpleNamespace(
-                descriptor=SimpleNamespace(device_id=device_id, boundary=SimpleNamespace(policy_digest="test-boundary"))
+                descriptor=SimpleNamespace(
+                    device_id=device_id,
+                    path_style=PathStyle.POSIX,
+                    boundary=SimpleNamespace(policy_digest="test-boundary"),
+                )
             )
             return self.device
 
@@ -287,3 +302,24 @@ async def test_lazy_descriptor_preserves_recipe_working_directory(tmp_path, dire
     assert LOCAL_ENVD.describe_environment(recipe).working_directory == (directory or "/")
     assert connector.descriptor.working_directory == (directory or "/")
     await owner.close()
+
+
+def test_desktop_launch_policy_and_bootstrap_are_explicit(tmp_path):
+    import json
+
+    from a13n_envd_client.eip.v1 import RestrictedSandbox
+
+    assert not LocalEnvdLaunchConfiguration().computer_use
+    with pytest.raises(ValidationError, match="computer_use requires"):
+        LocalEnvdLaunchConfiguration(computer_use=True, sandbox=RestrictedSandbox(mode="restricted", grants=()))
+    with pytest.raises(ValidationError, match="full_control cannot"):
+        LocalEnvdLaunchConfiguration(full_control=True, trusted_executable_roots=(tmp_path,))
+    configuration = LocalEnvdLaunchConfiguration(
+        full_control=True, computer_use=True, default_working_directory=tmp_path
+    )
+    _, config, _ = daemon_module._write_private_bootstrap(tmp_path, configuration)
+    payload = json.loads(config.read_text())
+    assert payload["full_control"] is True
+    assert payload["computer_use"] is True
+    assert payload["computer_use_permission_timeout_ms"] == 120000
+    assert payload["shell_profiles"] == []

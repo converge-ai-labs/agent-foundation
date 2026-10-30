@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
+import { useIdempotency } from "../../../shared/idempotency";
 import { ErrorNotice, ErrorToast } from "../../../shared/feedback";
 import {
   conversationQueries,
@@ -19,23 +20,52 @@ import {
   type ViewLevel,
 } from "../api";
 import { ForkRun } from "../fork-run";
-import { Composer } from "../composer";
+import { Composer, RunOptions, useRunOptions } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
+import { DesktopAssistance } from "./desktop-assistance";
+import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
-import { ThreadInbox } from "./inbox";
 import {
-  isInteractive,
+  useInteractiveThread,
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
+import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
 export interface PendingMessage {
   payload: Schema["MessagePayload"];
   /** Keep the optimistic message until navigation displays this accepted Run. */
   runId?: string;
+}
+
+/** Thread-scoped queue and one sticky bottom region shared by Run inspections. */
+export function ThreadDock({
+  thread,
+  children,
+  hidden,
+}: {
+  thread: Schema["ThreadView"];
+  children?: ReactNode;
+  hidden?: boolean;
+}) {
+  const latest = useRun(thread.current_run_id ?? thread.last_run_id);
+  return (
+    <div className={styles.dock} data-thread-dock hidden={hidden}>
+      <div className={styles.queue}>
+        <ThreadInbox
+          thread={thread}
+          canRunNext={
+            !!latest.data &&
+            ["failed", "cancelled"].includes(latest.data.status)
+          }
+        />
+      </div>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -71,10 +101,15 @@ export function RunDock({
     { search } = useLocation(),
     { workspace, can, basePath } = useWorkspace();
   // The Thread's latest Run: the active one, else the one sealed last.
+  const idempotency = useIdempotency();
+  const options = useRunOptions();
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
+  const following = new URLSearchParams(search).get("follow") === "latest";
   const current =
-    latest === run.id || (!!pendingRunId && latest === pendingRunId);
+    following ||
+    latest === run.id ||
+    (!!pendingRunId && latest === pendingRunId);
   const active = isActiveRun(run.status);
   // Only the Thread's last Run can wait; show its exact questions.
   const last = latest === run.id ? run : latestRun.data;
@@ -82,11 +117,7 @@ export function RunDock({
     !thread.current_run_id && current && last?.status === "waiting"
       ? last
       : null;
-  const interactive = isInteractive(thread);
-  // After a failed or cancelled Run the inbox advances only when someone
-  // starts its next message.
-  const canRunNext =
-    !!latestRun.data && ["failed", "cancelled"].includes(latestRun.data.status);
+  const interactive = useInteractiveThread(thread);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{
@@ -104,7 +135,7 @@ export function RunDock({
   const entry = steerStatus.data ?? steer;
   const { accepted, refresh } = useRunAcceptance(run, thread);
   const interrupt = useInterruptRun(run, refresh);
-  const canStop = active && can("run");
+  const canStop = interactive && active && can("run");
   const stop = canStop && (
     <Button
       size="icon-sm"
@@ -118,30 +149,65 @@ export function RunDock({
       <SquareIcon size={13} weight="fill" />
     </Button>
   );
+  const feedback =
+    waiting &&
+    waiting.pending &&
+    (waiting.pending.calls.length > 0 ||
+      waiting.pending.approvals.length > 0) &&
+    (interactive && can("run") ? (
+      <RunFeedback
+        key={waiting.id}
+        run={waiting}
+        pending={waiting.pending}
+        accepted={accepted}
+        continuation={
+          <ContinueWithoutFeedback
+            run={waiting}
+            thread={thread}
+            accepted={accepted}
+          />
+        }
+      />
+    ) : (
+      <PendingRequests pending={waiting.pending} />
+    ));
   return (
     <>
       <ErrorToast error={interrupt.error} />
-      {waiting &&
-        waiting.pending &&
-        (interactive && can("run") ? (
-          <RunFeedback
-            key={waiting.id}
-            run={waiting}
-            pending={waiting.pending}
-            accepted={accepted}
-            continuation={
-              <ContinueWithoutFeedback
-                run={waiting}
-                thread={thread}
-                accepted={accepted}
-              />
-            }
+      {current &&
+        interactive &&
+        can("run") &&
+        !run.pending?.calls.some(
+          (call) => call.tool_name === "request_desktop_assistance",
+        ) &&
+        run.environment_mounts.some((mount) =>
+          mount.permission_ceiling?.operations?.includes(
+            "environment.computer.observe",
+          ),
+        ) && (
+          <DesktopAssistance
+            key={run.id}
+            runId={run.id}
+            mounts={run.environment_mounts
+              .filter((mount) =>
+                mount.permission_ceiling?.operations?.includes(
+                  "environment.computer.observe",
+                ),
+              )
+              .map((mount) => mount.name)}
+            canContinue={run.wait_reason === "desktop_control"}
+            onContinued={accepted}
+            onRefresh={refresh}
           />
-        ) : (
-          <PendingRequests pending={waiting.pending} />
-        ))}
-      <ThreadInbox thread={thread} canRunNext={canRunNext} />
-      <div className={styles.dock}>
+        )}
+
+      {/* Debug answers a wait in a card beside the runs. */}
+      {feedback && level === "debug" ? (
+        <div className={debug.feedback}>{feedback}</div>
+      ) : (
+        feedback
+      )}
+      <div className={styles.dockControls}>
         {above}
         {!current ? (
           <div className={styles.dockNotice}>
@@ -155,9 +221,13 @@ export function RunDock({
                   session_id: thread.session_id,
                   thread_id: thread.id,
                   run_id: latest,
-                })}${search}`}
+                })}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
               >
-                {t("Return to latest messages")}
+                {t(
+                  level === "debug"
+                    ? "Return to latest run"
+                    : "Return to latest messages",
+                )}
               </Link>
             )}
           </div>
@@ -168,20 +238,57 @@ export function RunDock({
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}
                 agentName={agentName}
-                label={t(active ? "Add guidance" : "Send message")}
+                label={t(
+                  active
+                    ? "Add guidance"
+                    : level === "debug"
+                      ? "Start run"
+                      : "Send message",
+                )}
                 placeholder={
                   active
                     ? t("Add guidance while it works")
-                    : agentName
-                      ? t("Message {{agent}}…", { agent: agentName })
-                      : t("Message your agent…")
+                    : level === "debug"
+                      ? t("Input for the next run…")
+                      : agentName
+                        ? t("Message {{agent}}…", { agent: agentName })
+                        : t("Message your agent…")
                 }
-                disabled={!can("run")}
+                disabled={!can("run") || (following && latest !== run.id)}
+                options={
+                  !active &&
+                  !resubmit && (
+                    <RunOptions
+                      options={options}
+                      showAgent={false}
+                      newThread={false}
+                      agentId={run.agent_id}
+                    />
+                  )
+                }
                 stop={canStop ? () => interrupt.mutate() : undefined}
                 stopping={interrupt.isPending}
-                submit={async (payload, key) => {
+                submit={async (payload) => {
                   if (!active) onSubmissionChange?.({ payload });
                   try {
+                    const nextOptions =
+                      !active && !resubmit ? options.build() : undefined;
+                    const body: Schema["Message"] = {
+                      kind: "message",
+                      delivery: active ? "steer" : "next_run",
+                      payload,
+                      agent_id: run.agent_id,
+                      ...(nextOptions?.options
+                        ? { options: nextOptions.options }
+                        : {}),
+                      ...(nextOptions?.agent_revision_id
+                        ? { agent_revision_id: nextOptions.agent_revision_id }
+                        : {}),
+                      ...(resubmit && {
+                        agent_revision_id: resubmit.agent_revision_id,
+                        options: resubmit.options,
+                      }),
+                    };
                     // Guidance joins the active run; a next step never joins
                     // a run another caller started meanwhile.
                     const receipt = data(
@@ -192,20 +299,18 @@ export function RunDock({
                             path: {
                               thread_id: thread.id,
                             },
-                            header: commandHeaders(key),
+                            header: commandHeaders(
+                              idempotency.forBody({
+                                threadId: thread.id,
+                                body,
+                              }),
+                            ),
                           },
-                          body: {
-                            kind: "message",
-                            delivery: active ? "steer" : "next_run",
-                            payload,
-                            agent_id: run.agent_id,
-                            ...(resubmit && {
-                              agent_revision_id: resubmit.agent_revision_id,
-                              options: resubmit.options,
-                            }),
-                          },
+                          body,
                         }),
                     );
+                    idempotency.reset();
+                    if (!active) options.reset();
                     if (resubmit) onResubmitted?.();
                     if (receipt.run) {
                       if (!active)
@@ -228,7 +333,7 @@ export function RunDock({
                 }}
               />
             )}
-            {!interactive && (
+            {!interactive && thread.origin === "child" && (
               <div className={styles.dockNotice}>
                 <LockSimpleIcon size={13} aria-hidden="true" />
                 <span>

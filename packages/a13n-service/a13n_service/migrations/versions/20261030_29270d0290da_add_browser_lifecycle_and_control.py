@@ -1,0 +1,354 @@
+"""add browser lifecycle and control
+
+Revision ID: 29270d0290da
+Revises: a9acb6772400
+
+The additive schema preserves existing rows. Widening three CHECK constraints
+scans their tables under migration limits; deploy Browser writers after migration
+and compatible workers. Downgrade refuses retained Browser or handback facts.
+"""
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+revision = "29270d0290da"
+down_revision = "a9acb6772400"
+branch_labels = None
+depends_on = None
+
+
+_RUN_STAMP = 'CREATE TRIGGER stamp_resource BEFORE UPDATE ON runs FOR EACH ROW WHEN (ROW(OLD."id", OLD."organization_id", OLD."workspace_id", OLD."session_id", OLD."thread_id", OLD."agent_id", OLD."agent_revision_id", OLD."revision_selection", OLD."principal_id", OLD."authority", OLD."options", OLD."options_digest", OLD."mcp_headers", OLD."environment_mounts", OLD."browser_binding", OLD."memory_mounts", OLD."source_entry_id", OLD."occurrence_trigger_entry_id", OLD."resume", OLD."resumed_by_id", OLD."request_key", OLD."request_digest", OLD."trigger", OLD."lineage", OLD."parent_run_id", OLD."status", OLD."wait_reason", OLD."pending", OLD."cancel_requested_at", OLD."current_attempt_id", OLD."available_at", OLD."attempts", OLD."max_attempts", OLD."output", OLD."failure", OLD."usage_at_seal", OLD."labels", OLD."started_at", OLD."sealed_at", OLD."version", OLD."created_at", OLD."updated_at") IS DISTINCT FROM ROW(NEW."id", NEW."organization_id", NEW."workspace_id", NEW."session_id", NEW."thread_id", NEW."agent_id", NEW."agent_revision_id", NEW."revision_selection", NEW."principal_id", NEW."authority", NEW."options", NEW."options_digest", NEW."mcp_headers", NEW."environment_mounts", NEW."browser_binding", NEW."memory_mounts", NEW."source_entry_id", NEW."occurrence_trigger_entry_id", NEW."resume", NEW."resumed_by_id", NEW."request_key", NEW."request_digest", NEW."trigger", NEW."lineage", NEW."parent_run_id", NEW."status", NEW."wait_reason", NEW."pending", NEW."cancel_requested_at", NEW."current_attempt_id", NEW."available_at", NEW."attempts", NEW."max_attempts", NEW."output", NEW."failure", NEW."usage_at_seal", NEW."labels", NEW."started_at", NEW."sealed_at", NEW."version", NEW."created_at", NEW."updated_at")) EXECUTE FUNCTION stamp_resource()'
+_PREVIOUS_RUN_STAMP = 'CREATE TRIGGER stamp_resource BEFORE UPDATE ON runs FOR EACH ROW WHEN (ROW(OLD."id", OLD."organization_id", OLD."workspace_id", OLD."session_id", OLD."thread_id", OLD."agent_id", OLD."agent_revision_id", OLD."revision_selection", OLD."principal_id", OLD."authority", OLD."options", OLD."options_digest", OLD."mcp_headers", OLD."environment_mounts", OLD."memory_mounts", OLD."source_entry_id", OLD."occurrence_trigger_entry_id", OLD."resume", OLD."resumed_by_id", OLD."request_key", OLD."request_digest", OLD."trigger", OLD."lineage", OLD."parent_run_id", OLD."status", OLD."wait_reason", OLD."pending", OLD."cancel_requested_at", OLD."current_attempt_id", OLD."available_at", OLD."attempts", OLD."max_attempts", OLD."output", OLD."failure", OLD."usage_at_seal", OLD."labels", OLD."started_at", OLD."sealed_at", OLD."version", OLD."created_at", OLD."updated_at") IS DISTINCT FROM ROW(NEW."id", NEW."organization_id", NEW."workspace_id", NEW."session_id", NEW."thread_id", NEW."agent_id", NEW."agent_revision_id", NEW."revision_selection", NEW."principal_id", NEW."authority", NEW."options", NEW."options_digest", NEW."mcp_headers", NEW."environment_mounts", NEW."memory_mounts", NEW."source_entry_id", NEW."occurrence_trigger_entry_id", NEW."resume", NEW."resumed_by_id", NEW."request_key", NEW."request_digest", NEW."trigger", NEW."lineage", NEW."parent_run_id", NEW."status", NEW."wait_reason", NEW."pending", NEW."cancel_requested_at", NEW."current_attempt_id", NEW."available_at", NEW."attempts", NEW."max_attempts", NEW."output", NEW."failure", NEW."usage_at_seal", NEW."labels", NEW."started_at", NEW."sealed_at", NEW."version", NEW."created_at", NEW."updated_at")) EXECUTE FUNCTION stamp_resource()'
+
+
+def upgrade() -> None:
+    # Alembic does not detect changes to existing CHECK expressions.
+    op.drop_constraint(op.f("ck_inbox_entries_kind"), "inbox_entries", type_="check")
+    op.create_check_constraint(
+        op.f("ck_inbox_entries_kind"),
+        "inbox_entries",
+        "kind IN ('message', 'child_result', 'tool_result', 'browser_handback')",
+    )
+    op.drop_constraint(op.f("ck_runs_trigger"), "runs", type_="check")
+    op.create_check_constraint(
+        op.f("ck_runs_trigger"),
+        "runs",
+        "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')",
+    )
+    op.drop_constraint(op.f("ck_outbox_kind"), "outbox", type_="check")
+    op.create_check_constraint(
+        op.f("ck_outbox_kind"),
+        "outbox",
+        "kind IN ('webhook', 'child_result', 'tool_result', 'browser_handback', 'email', 'memory_purge', 'checkpoint_cleanup')",
+    )
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.create_table(
+        "browser_providers",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("type", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("credential", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "extra_headers",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
+        sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["principals.id"], name=op.f("fk_browser_providers_created_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_browser_providers_organization_id_workspaces"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_browser_providers_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["updated_by_id"], ["principals.id"], name=op.f("fk_browser_providers_updated_by_id_principals")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_browser_providers")),
+        sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_browser_providers_workspace_id_id")),
+    )
+    op.create_table(
+        "browsers",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("source", sa.String(), server_default="managed", nullable=False),
+        sa.Column("provider_id", sa.String(), nullable=True),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("recipe", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("provider_identity", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("status", sa.String(), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.Column("create_dispatched", sa.Boolean(), nullable=False),
+        sa.Column("handle", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column("claim_id", sa.String(), nullable=True),
+        sa.Column("claim_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("failure", sa.String(), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_used_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("idle_seconds", sa.Integer(), nullable=True),
+        sa.Column("control", sa.String(), nullable=False),
+        sa.Column("episode", sa.Integer(), nullable=False),
+        sa.Column("control_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("control_due_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("controller_id", sa.String(length=72), nullable=True),
+        sa.Column("controller_thread_id", sa.String(length=72), nullable=True),
+        sa.Column("viewer_id", sa.String(), nullable=True),
+        sa.Column("viewer_revoked", sa.Boolean(), nullable=False),
+        sa.Column("viewer", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column("human_baseline", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column("observation_epoch", sa.Integer(), nullable=False),
+        sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.CheckConstraint(
+            "(source = 'managed' AND provider_id IS NOT NULL) OR (source = 'external_cdp' AND provider_id IS NULL)",
+            name=op.f("ck_browsers_source_provider"),
+        ),
+        sa.CheckConstraint(
+            "control IN ('automation','draining','human','returning')", name=op.f("ck_browsers_control")
+        ),
+        sa.CheckConstraint(
+            "source <> 'external_cdp' OR control = 'automation'", name=op.f("ck_browsers_source_control")
+        ),
+        sa.CheckConstraint("status <> 'ready' OR handle IS NOT NULL", name=op.f("ck_browsers_ready_handle")),
+        sa.CheckConstraint(
+            "status IN ('reserved','creating','ready','deleting','deleted','lost')", name=op.f("ck_browsers_status")
+        ),
+        sa.CheckConstraint("(claim_id IS NULL) = (claim_until IS NULL)", name=op.f("ck_browsers_claim")),
+        sa.CheckConstraint("generation > 0 AND episode >= 0", name=op.f("ck_browsers_generation")),
+        sa.ForeignKeyConstraint(
+            ["controller_id"], ["principals.id"], name=op.f("fk_browsers_controller_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["controller_thread_id"], ["threads.id"], name=op.f("fk_browsers_controller_thread_id_threads")
+        ),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["principals.id"], name=op.f("fk_browsers_created_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_browsers_organization_id_workspaces"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_browsers_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "provider_id"],
+            ["browser_providers.workspace_id", "browser_providers.id"],
+            name=op.f("fk_browsers_workspace_id_browser_providers"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_browsers")),
+        sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_browsers_workspace_id_id")),
+    )
+    op.create_index(
+        "ix_browsers_control_due",
+        "browsers",
+        ["control_due_at"],
+        unique=False,
+        postgresql_where=sa.text("control <> 'automation'"),
+    )
+    op.create_table(
+        "browser_selections",
+        sa.Column("browser_id", sa.String(length=72), nullable=False),
+        sa.Column("thread_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.Column("target_id", sa.String(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "browser_id"],
+            ["browsers.workspace_id", "browsers.id"],
+            name=op.f("fk_browser_selections_workspace_id_browsers"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "thread_id"],
+            ["threads.workspace_id", "threads.id"],
+            name=op.f("fk_browser_selections_workspace_id_threads"),
+        ),
+        sa.PrimaryKeyConstraint("browser_id", "thread_id", name=op.f("pk_browser_selections")),
+    )
+    op.create_table(
+        "browser_tabs",
+        sa.Column("browser_id", sa.String(length=72), nullable=False),
+        sa.Column("target_id", sa.String(length=256), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("thread_id", sa.String(), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "browser_id"],
+            ["browsers.workspace_id", "browsers.id"],
+            name=op.f("fk_browser_tabs_workspace_id_browsers"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "thread_id"],
+            ["threads.workspace_id", "threads.id"],
+            name=op.f("fk_browser_tabs_workspace_id_threads"),
+        ),
+        sa.PrimaryKeyConstraint("browser_id", "target_id", name=op.f("pk_browser_tabs")),
+    )
+    op.create_table(
+        "thread_browsers",
+        sa.Column("thread_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("browser_id", sa.String(), nullable=False),
+        sa.Column("tab_access", sa.String(), nullable=False),
+        sa.Column("preparation", sa.String(), nullable=False),
+        sa.CheckConstraint("preparation IN ('first_use','run_start')", name=op.f("ck_thread_browsers_preparation")),
+        sa.CheckConstraint("tab_access IN ('global','thread')", name=op.f("ck_thread_browsers_tab_access")),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "browser_id"],
+            ["browsers.workspace_id", "browsers.id"],
+            name=op.f("fk_thread_browsers_workspace_id_browsers"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "thread_id"],
+            ["threads.workspace_id", "threads.id"],
+            name=op.f("fk_thread_browsers_workspace_id_threads"),
+        ),
+        sa.PrimaryKeyConstraint("thread_id", name=op.f("pk_thread_browsers")),
+    )
+    op.create_table(
+        "browser_blocked_threads",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("browser_id", sa.String(length=72), nullable=False),
+        sa.Column("thread_id", sa.String(length=72), nullable=False),
+        sa.Column("run_id", sa.String(length=72), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.Column("episode", sa.Integer(), nullable=False),
+        sa.Column("suppressed", sa.Boolean(), nullable=False),
+        sa.Column("entry_id", sa.String(length=72), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["browser_id"], ["browsers.id"], name=op.f("fk_browser_blocked_threads_browser_id_browsers")
+        ),
+        sa.ForeignKeyConstraint(
+            ["entry_id"], ["inbox_entries.id"], name=op.f("fk_browser_blocked_threads_entry_id_inbox_entries")
+        ),
+        sa.ForeignKeyConstraint(["run_id"], ["runs.id"], name=op.f("fk_browser_blocked_threads_run_id_runs")),
+        sa.ForeignKeyConstraint(
+            ["thread_id"], ["threads.id"], name=op.f("fk_browser_blocked_threads_thread_id_threads")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_browser_blocked_threads")),
+        sa.UniqueConstraint(
+            "browser_id",
+            "generation",
+            "episode",
+            "thread_id",
+            name=op.f("uq_browser_blocked_threads_browser_id_generation_episode_thread_id"),
+        ),
+    )
+    op.create_table(
+        "browser_operations",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("browser_id", sa.String(length=72), nullable=False),
+        sa.Column("run_id", sa.String(length=72), nullable=False),
+        sa.Column("attempt_id", sa.String(length=72), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
+        sa.Column("target_id", sa.String(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["attempt_id"], ["run_attempts.id"], name=op.f("fk_browser_operations_attempt_id_run_attempts")
+        ),
+        sa.ForeignKeyConstraint(
+            ["browser_id"], ["browsers.id"], name=op.f("fk_browser_operations_browser_id_browsers")
+        ),
+        sa.ForeignKeyConstraint(["run_id"], ["runs.id"], name=op.f("fk_browser_operations_run_id_runs")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_browser_operations")),
+    )
+    op.create_index(
+        "ix_browser_operations_unsettled",
+        "browser_operations",
+        ["browser_id"],
+        unique=False,
+        postgresql_where=sa.text("settled_at IS NULL"),
+    )
+    op.add_column(
+        "runs", sa.Column("browser_binding", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True)
+    )
+    op.execute("DROP TRIGGER stamp_resource ON runs")
+    op.execute(_RUN_STAMP)
+    op.execute(
+        """
+    CREATE TRIGGER stamp_resource BEFORE UPDATE ON browser_providers FOR EACH ROW EXECUTE FUNCTION stamp_resource()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_identity BEFORE UPDATE ON browser_providers FOR EACH ROW EXECUTE FUNCTION guard_identity()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER stamp_resource BEFORE UPDATE ON browsers FOR EACH ROW WHEN ((to_jsonb(OLD) - '{control_due_at}'::text[]) IS DISTINCT FROM (to_jsonb(NEW) - '{control_due_at}'::text[])) EXECUTE FUNCTION stamp_resource()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_identity BEFORE UPDATE ON browsers FOR EACH ROW EXECUTE FUNCTION guard_identity()
+    """
+    )
+    # ### end Alembic commands ###
+
+
+def downgrade() -> None:
+    op.execute("LOCK TABLE browsers, browser_providers, runs, inbox_entries, outbox IN ACCESS EXCLUSIVE MODE")
+    op.execute("""
+    DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM browsers)
+           OR EXISTS (SELECT 1 FROM browser_providers)
+           OR EXISTS (SELECT 1 FROM runs WHERE browser_binding IS NOT NULL OR trigger = 'browser_handback')
+           OR EXISTS (SELECT 1 FROM inbox_entries WHERE kind = 'browser_handback')
+           OR EXISTS (SELECT 1 FROM outbox WHERE kind = 'browser_handback')
+        THEN RAISE EXCEPTION 'Browser state exists; downgrade would lose lifecycle or delivery facts'; END IF;
+    END $$
+    """)
+    op.drop_constraint(op.f("ck_inbox_entries_kind"), "inbox_entries", type_="check")
+    op.create_check_constraint(
+        op.f("ck_inbox_entries_kind"), "inbox_entries", "kind IN ('message', 'child_result', 'tool_result')"
+    )
+    op.drop_constraint(op.f("ck_runs_trigger"), "runs", type_="check")
+    op.create_check_constraint(
+        op.f("ck_runs_trigger"),
+        "runs",
+        "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'spawned')",
+    )
+    op.drop_constraint(op.f("ck_outbox_kind"), "outbox", type_="check")
+    op.create_check_constraint(
+        op.f("ck_outbox_kind"),
+        "outbox",
+        "kind IN ('webhook', 'child_result', 'tool_result', 'email', 'memory_purge', 'checkpoint_cleanup')",
+    )
+    op.execute("DROP TRIGGER stamp_resource ON runs")
+    op.drop_column("runs", "browser_binding")
+    op.execute(_PREVIOUS_RUN_STAMP)
+    op.drop_index(
+        "ix_browser_operations_unsettled",
+        table_name="browser_operations",
+        postgresql_where=sa.text("settled_at IS NULL"),
+    )
+    op.drop_table("browser_operations")
+    op.drop_table("browser_blocked_threads")
+    op.drop_table("thread_browsers")
+    op.drop_table("browser_tabs")
+    op.drop_table("browser_selections")
+    op.drop_index("ix_browsers_control_due", table_name="browsers", postgresql_where=sa.text("control <> 'automation'"))
+    op.drop_table("browsers")
+    op.drop_table("browser_providers")
+    # ### end Alembic commands ###

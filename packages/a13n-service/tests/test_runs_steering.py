@@ -13,15 +13,16 @@ pytestmark = pytest.mark.anyio
 
 async def _tool_turn(service, scripted_model, runs_kit) -> tuple[dict, str, asyncio.Event]:  # type: ignore[no-untyped-def]
     """A thread whose run first calls a tool, once `gate` opens, and then ends; steers join after the tool."""
-    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
+    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
     scripted_model.say("Done")
     thread_id = (await runs_kit.start_thread(service, agent, "look around"))["thread"]["id"]
     return agent, thread_id, gate
 
 
-async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     agent, thread_id, gate = await _tool_turn(service, scripted_model, runs_kit)
     # One delivery batch holds 1 KiB; the entry queued for a later run alone is larger.
     worker = service.runtime.settings.worker.model_copy(update={"delivery_bytes": 1024})
@@ -38,11 +39,15 @@ async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(service, script
     assert "also count the agents" in str(runs_kit.user_texts(following))
     statuses = {entry["id"]: entry["status"] for entry in await runs_kit.inbox(service, thread_id)}
     assert statuses[steer.json()["entry"]["id"]] == "consumed"
+    matched = await service.client.get(f"{service.api}/runs", params={"text_query": "also count"})
+    assert [run["thread_id"] for run in matched.json()["items"]] == [thread_id]
+
     # The larger entry started the thread's next run.
     assert statuses[later.json()["entry"]["id"]] == "assigned"
 
 
-async def test_a_steer_that_cannot_be_read_fails_alone(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_that_cannot_be_read_fails_alone(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     agent, thread_id, gate = await _tool_turn(service, scripted_model, runs_kit)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
@@ -85,13 +90,13 @@ async def test_a_steer_a_recovered_attempt_cannot_read_fails_alone(service, scri
     assert (entry["status"], entry["failure"]["code"]) == ("failed", "invalid_argument"), entry
 
 
-async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_joins_with_the_default_options_or_the_runs_own(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Acceptance freezes a run's options with their pins resolved; a steer names them as submitted, or none."""
-    toolsets = {"configuration": {"enabled": True}}
-    agent = await runs_kit.delegating(service, scripted_model, "inline", toolsets=toolsets)
+    service = skill_service
+    agent = await runs_kit.delegating(service, scripted_model, "inline", **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate, to="Role: coordinator")
-    scripted_model.say("Done", to="Role: coordinator")
+    for _ in range(3):
+        scripted_model.say("Done", gate=gate, to="Role: coordinator")
     options = {"labels": {"team": "a"}, "overrides": {"subagents": {"helper": {"description": "Overridden helper"}}}}
     submitted = await runs_kit.start_thread(service, agent, "look around", options=options)
     thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
@@ -99,11 +104,12 @@ async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, s
     await scripted_model.request()
     # A client such as the Console steers with no options; another names the run's options as submitted.
     plain = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "also count"))
+    assert "also count" in str(runs_kit.user_texts(await scripted_model.request()))
     same = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "and list", options=options))
+    assert "and list" in str(runs_kit.user_texts(await scripted_model.request()))
     other = await runs_kit.submit(
         service, thread_id, runs_kit.message(agent, "with a label", options={**options, "labels": {"team": "b"}})
     )
-    scripted_model.say("Counted", to="Role: coordinator")
     gate.set()
     await running
 

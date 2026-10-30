@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from statistics import median
 
 import pytest
 import yaml
@@ -25,7 +27,7 @@ WORKFLOWS = ROOT / ".github/workflows"
         ("crates/a13n-envd/src/transfer.rs", {"daemon", "protocol"}),
         ("Makefile", {"client", "daemon", "protocol"}),
         ("conftest.py", {"client", "daemon", "protocol"}),
-        ("scripts/tests/test_envd_ci_workflow.py", {"client", "daemon", "protocol"}),
+        ("scripts/tests/test_envd_ci_workflow.py", set()),
         ("docs/a13n-service/index.md", set()),
     ],
 )
@@ -57,6 +59,124 @@ def test_harness_selects_direct_dependency_inputs(path: str, selected: bool) -> 
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
     for event in ("pull_request", "push"):
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+
+
+@pytest.mark.parametrize(
+    "workflow_name,dependencies",
+    [
+        ("ci-a13n-service.yml", ("a13n-harness", "a13n-envd-client", "a13n-stream-protocol")),
+        ("ci-examples.yml", ("a13n-harness",)),
+        ("ci-a13n-stream-protocol.yml", ("a13n-harness", "a13n-envd-client", "a13n-logging")),
+        (
+            "ci-a13n-harness-ui.yml",
+            ("a13n-harness", "a13n-envd-client", "a13n-stream-protocol", "a13n-logging"),
+        ),
+        (
+            "ci-a13n-service-e2e.yml",
+            ("a13n-service", "a13n-harness", "a13n-envd-client", "a13n-stream-protocol", "a13n-logging"),
+        ),
+    ],
+)
+def test_consumers_retain_runtime_and_build_inputs_without_repeating_dependency_tests(
+    workflow_name: str, dependencies: tuple[str, ...]
+) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+    for package in dependencies:
+        for relative, selected in (
+            (f"{package.replace('-', '_')}/nested/module.py", True),
+            (f"{package.replace('-', '_')}/resources/schema.json", True),
+            ("pyproject.toml", True),
+            ("hatch_build.py", True),
+            ("conftest.py", True),
+            ("README.md", False),
+            ("LICENSE", False),
+            ("tests/test_unit.py", False),
+            ("tests/conftest.py", False),
+            ("tests/fixtures/input.json", False),
+        ):
+            path = Path("packages") / package / relative
+            if (
+                workflow_name == "ci-a13n-harness-ui.yml"
+                and package == "a13n-harness"
+                and relative == "tests/conftest.py"
+            ):
+                selected = True  # The explicit native lifecycle tests use the Harness fixtures.
+            for event in ("pull_request", "push"):
+                assert any(path.full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+            if workflow_name in {"ci-a13n-service.yml", "ci-a13n-harness-ui.yml"}:
+                classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+                filters = yaml.safe_load(classifier["with"]["filters"])
+                assert (
+                    any(path.full_match(pattern) for patterns in filters.values() for pattern in patterns) == selected
+                )
+    for event in ("pull_request", "push"):
+        for path in ("pyproject.toml", "uv.lock"):
+            assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+        if workflow_name != "ci-examples.yml":
+            path = "conftest.py"
+            assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+
+
+@pytest.mark.parametrize(
+    "workflow_name",
+    [
+        "ci-a13n-envd.yml",
+        "ci-a13n-harness.yml",
+        "ci-a13n-harness-ui.yml",
+        "ci-a13n-service.yml",
+        "ci-a13n-service-e2e.yml",
+        "ci-a13n-stream-protocol.yml",
+        "ci-containers.yml",
+        "ci-examples.yml",
+    ],
+)
+def test_routing_tests_do_not_select_product_ci_but_workflow_edits_do(workflow_name: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+    selections = [workflow[True][event]["paths"] for event in ("pull_request", "push") if event in workflow[True]]
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("dorny/paths-filter@"):
+                selections.extend(yaml.safe_load(step["with"]["filters"]).values())
+    for patterns in selections:
+        for test in (
+            "test_ci_inputs.py",
+            "test_envd_ci_workflow.py",
+            "test_harness_ui_ci_workflow.py",
+            "test_image_workflows.py",
+        ):
+            assert not any(Path(f"scripts/tests/{test}").full_match(pattern) for pattern in patterns)
+        assert any(Path(f".github/workflows/{workflow_name}").full_match(pattern) for pattern in patterns)
+
+
+def test_tooling_suites_keep_one_ci_owner_and_release_manifest_inputs() -> None:
+    owners = {
+        "test_ci_inputs.py": "ci.yml",
+        "test_envd_ci_workflow.py": "ci.yml",
+        "test_image_workflows.py": "ci.yml",
+        "test_harness_ui_ci_workflow.py": "ci.yml",
+        "test_prepare_release_version.py": "ci-automation.yml",
+    }
+    for test, owner in owners.items():
+        executions = []
+        for name in ("ci.yml", "ci-automation.yml", "ci-a13n-harness-ui.yml"):
+            workflow = yaml.safe_load((WORKFLOWS / name).read_text())
+            for job in workflow["jobs"].values():
+                for step in job["steps"]:
+                    if f"scripts/tests/{test}" in step.get("run", ""):
+                        executions.append(name)
+        assert executions == [owner]
+    automation = yaml.safe_load((WORKFLOWS / "ci-automation.yml").read_text())
+    for event in ("pull_request", "push"):
+        for path in (
+            *ROOT.glob("packages/*/pyproject.toml"),
+            ROOT / "pyproject.toml",
+            ROOT / "uv.lock",
+            ROOT / "Cargo.toml",
+            ROOT / "Cargo.lock",
+            ROOT / "crates/a13n-envd/Cargo.toml",
+            ROOT / "scripts/tests/test_prepare_release_version.py",
+        ):
+            assert any(path.relative_to(ROOT).full_match(pattern) for pattern in automation[True][event]["paths"])
 
 
 @pytest.mark.parametrize(
@@ -103,21 +223,180 @@ def test_bundled_service_docs_select_package_and_image_builds(path: str) -> None
             }
 
 
-def test_service_ci_runs_service_tests_and_checks() -> None:
+def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root: Path = ROOT) -> list[dict[str, str]]:
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
+    output = tmp_path / "output"
+    output.write_text("")
+    subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={**os.environ, "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        cwd=root,
+        check=True,
+    )
+    assert output.read_text().startswith("matrix=")
+    return json.loads(output.read_text().removeprefix("matrix="))
+
+
+def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
-    assert {entry["name"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} == {"checks", "tests"}
-    assert {entry["runner"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} <= {
-        "ubuntu-latest",
-        "ubuntu-24.04",
+    matrix = _service_matrix(workflow, "true", tmp_path)
+    assert [entry["name"] for entry in matrix] == ["checks", "tests-1", "tests-2"]
+    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
+    assert all(shards)
+    assert not set(shards[0]) & set(shards[1])
+    root = ROOT / "packages/a13n-service/tests"
+    expected = {
+        str(path.relative_to(ROOT))
+        for path in root.rglob("*.py")
+        if (path.name.startswith("test_") or path.name.endswith("_test.py"))
+        and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
+        and root / "environment_providers" not in path.parents
     }
+    assert set(shards[0]) | set(shards[1]) == expected
+    durations = json.loads((ROOT / ".github/service-test-durations.json").read_text())
+    fallback = median(durations[path] for path in expected if path in durations)
+    totals = [sum(durations.get(path, fallback) for path in shard) for shard in shards]
+    assert abs(totals[0] - totals[1]) < sum(totals) * 0.01
+    assert matrix == _service_matrix(workflow, "true", tmp_path)
+    for event in ("pull_request", "push"):
+        assert ".github/service-test-durations.json" in workflow[True][event]["paths"]
+    assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
+    assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
     assert "-n 3 --dist loadgroup" in test["run"]
-    assert "packages/a13n-service/tests" in test["run"]
+    assert test["if"] == "startsWith(matrix.name, 'tests-')"
+    assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
+    require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
+    assert require_execution["if"] == test["if"]
+    providers = next(step for step in steps if step["name"] == "Test native Environment management drivers")
+    assert providers["if"] == "matrix.name == 'tests-1'"
+    assert "packages/a13n-service/tests/environment_providers" in providers["run"]
+    reports = next(step for step in steps if step["name"] == "Retain Service test reports")
+    assert reports["if"] == "always()"
+    assert reports["with"]["name"] == "service-${{ matrix.name }}-${{ github.run_attempt }}"
+    assert jobs["validation"]["strategy"]["fail-fast"] is False
     assert any(step.get("run") == "make service-boundaries" for step in steps)
     assert any(step.get("run") == "make dev-state-check" for step in steps)
-    assert jobs["python"]["needs"] == "validation"
+    assert jobs["python"]["needs"] == ["changes", "validation"]
+
+
+def test_service_shards_include_new_nested_files_and_pass_paths_literally(tmp_path: Path) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    root = tmp_path / "packages/a13n-service/tests"
+    included = ["test_first.py", "nested/test_second.py", "nested/third_test.py", "test_space $(false).py"]
+    excluded = [
+        "conftest.py",
+        "helper.py",
+        "test_environments_envd.py",
+        "test_monitoring_collectors_live.py",
+        "environment_providers/test_native.py",
+    ]
+    for name in included + excluded:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github/service-test-durations.json").write_text("{}")
+    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
+    expected = sorted(str((root / name).relative_to(tmp_path)) for name in included)
+    assert shards == [expected[::2], expected[1::2]]
+
+    # Execute the actual workflow command with a fake uv to check shell argument boundaries.
+    executable = tmp_path / "uv"
+    executable.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+    executable.chmod(0o755)
+    step = next(step for step in workflow["jobs"]["validation"]["steps"] if step["name"] == "Test a13n Service")
+    for entry, targets in zip(matrix[1:], shards, strict=True):
+        result = subprocess.run(
+            ["bash", "-e", "-c", step["run"]],
+            env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": entry["targets"]},
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert json.loads(result.stdout)[-len(targets) :] == targets
+
+
+def test_service_shards_balance_heavy_files_and_include_unmeasured_files(tmp_path: Path) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    root = tmp_path / "packages/a13n-service/tests"
+    root.mkdir(parents=True)
+    # Alternating alphabetically would put both heavy files on the same runner.
+    weights = {"test_a.py": 100, "test_b.py": 10, "test_c.py": 90, "test_d.py": 10}
+    for name in [*weights, "test_new.py"]:
+        (root / name).touch()
+    durations = {f"packages/a13n-service/tests/{name}": value for name, value in weights.items()}
+    durations["packages/a13n-service/tests/test_removed.py"] = 10000
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github/service-test-durations.json").write_text(json.dumps(durations))
+    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+    shards = [[Path(path).name for path in entry["targets"].splitlines()] for entry in matrix[1:]]
+    assert sorted(name for shard in shards for name in shard) == sorted([*weights, "test_new.py"])
+    assert not any({"test_a.py", "test_c.py"} <= set(shard) for shard in shards)
+    # The unknown file receives the current files' median (50), ignoring the stale entry.
+    totals = [sum(weights.get(name, 50) for name in shard) for shard in shards]
+    assert max(totals) == 140
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_service_shards_reject_empty_shards(tmp_path: Path, count: int) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    root = tmp_path / "packages/a13n-service/tests"
+    root.mkdir(parents=True)
+    for index in range(count):
+        (root / f"test_{index}.py").touch()
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github/service-test-durations.json").write_text("{}")
+    with pytest.raises(subprocess.CalledProcessError):
+        _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "docs/a13n-service/mcp.md",
+        "packages/a13n-service/README.md",
+        "packages/a13n-service/LICENSE",
+        "packages/a13n-logging/README.md",
+        "packages/a13n-logging/LICENSE",
+    ],
+)
+def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(tmp_path: Path, path: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    tests = yaml.safe_load(classifier["with"]["filters"])["tests"]
+    for event in ("pull_request", "push"):
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+    assert not any(Path(path).full_match(pattern) for pattern in tests)
+    assert [entry["name"] for entry in _service_matrix(workflow, "false", tmp_path)] == ["checks"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/a13n-service/pyproject.toml",
+        "packages/a13n-service/hatch_build.py",
+        "packages/a13n-service/build_docs.py",
+        "packages/a13n-service/.importlinter",
+        "packages/a13n-service/a13n_service/runs/worker.py",
+        "packages/a13n-service/tests/test_runs.py",
+        "packages/a13n-logging/pyproject.toml",
+        "packages/a13n-logging/a13n_logging/__init__.py",
+        "packages/a13n-logging/tests/test_logging.py",
+        "uv.lock",
+    ],
+)
+def test_service_retains_runtime_tests_for_code_and_build_inputs(path: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    tests = yaml.safe_load(classifier["with"]["filters"])["tests"]
+    assert any(Path(path).full_match(pattern) for pattern in tests)
+    for event in ("pull_request", "push"):
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
 
 
 @pytest.mark.parametrize(
@@ -138,14 +417,20 @@ def test_service_tests_reject_empty_or_skipped_execution(tmp_path: Path, cases: 
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
-def test_service_gate_requires_every_matrix_member(result: str) -> None:
+@pytest.mark.parametrize("changes", ["success", "failure", "cancelled", "skipped"])
+def test_service_gate_requires_detection_and_every_matrix_member(changes: str, result: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     gate = workflow["jobs"]["python"]
     assert "always()" in gate["if"]
     step = gate["steps"][0]
+    assert step["env"]["CHANGES_RESULT"] == "${{ needs.changes.result }}"
     assert step["env"]["VALIDATION_RESULT"] == "${{ needs.validation.result }}"
-    completed = subprocess.run(["bash", "-e", "-c", step["run"]], env={"VALIDATION_RESULT": result}, check=False)
-    assert (completed.returncode == 0) == (result == "success")
+    completed = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"CHANGES_RESULT": changes, "VALIDATION_RESULT": result},
+        check=False,
+    )
+    assert (completed.returncode == 0) == (changes == result == "success")
 
 
 @pytest.mark.parametrize(
@@ -156,6 +441,13 @@ def test_service_gate_requires_every_matrix_member(result: str) -> None:
         ("dev/fixtures/scripted_model.py", True),
         ("scripts/tests/test_service_e2e_tooling.py", True),
         ("packages/a13n-service/a13n_service/runs/worker.py", True),
+        ("packages/a13n-service/tests/test_runs.py", False),
+        ("deploy/docker/images/sandbox/Dockerfile", True),
+        ("crates/a13n-envd/src/main.rs", True),
+        ("Cargo.toml", True),
+        ("Cargo.lock", True),
+        (".dockerignore", True),
+        ("LICENSE", True),
         ("Makefile", True),
         ("dev/service/console_review.py", False),
         ("docs/index.mdx", False),
@@ -165,6 +457,24 @@ def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
     for event in ("pull_request", "push"):
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+
+
+def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_test_image() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    steps = workflow["jobs"]["scenarios"]["steps"]
+    build = next(step for step in steps if step.get("uses", "").startswith("docker/build-push-action@"))
+    options = build["with"]
+    assert options["context"] == "." and options["file"] == "deploy/docker/images/sandbox/Dockerfile"
+    assert options["load"] is True and not options.get("push")
+    assert options["tags"] == "a13n-sandbox:local"
+    assert options["pull"] is True
+    assert options["cache-from"] == "type=gha,scope=service-e2e-sandbox"
+    assert options["cache-to"] == "type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true"
+    # A restored cache never skips the build or test gate, and never substitutes a released daemon.
+    assert "if" not in build and "continue-on-error" not in build and "build-args" not in options
+    run = next(step for step in steps if step.get("run", "").startswith("make service-e2e "))
+    assert steps.index(build) < steps.index(run)
+    assert "--require-all" in run["run"] and "if" not in run
 
 
 @pytest.mark.parametrize("support", ["success", "failure", "cancelled", "skipped"])

@@ -1,6 +1,7 @@
+import { FormSection } from "../../shared/forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input } from "a13n-ui";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -23,9 +24,8 @@ export function ProviderAuthorization({
     { can } = useWorkspace(),
     api = modelApi(client, provider.workspace_id),
     [attempt, setAttempt] = useState<Schema["AuthorizationStart"]>(),
-    [attemptStartedAt, setAttemptStartedAt] = useState(0),
     [callback, setCallback] = useState(""),
-    [revocationUnconfirmed, setRevocationUnconfirmed] = useState(false);
+    [tokensCleared, setTokensCleared] = useState(false);
   const queryKey = [
     "model-provider-authorization",
     provider.workspace_id,
@@ -34,34 +34,7 @@ export function ProviderAuthorization({
   const status = useQuery({
     queryKey,
     queryFn: ({ signal }) => api.authorization(provider.id, signal),
-    refetchInterval:
-      attempt?.method === "browser_callback" &&
-      Date.parse(attempt.expires_at) > Date.now()
-        ? 1500
-        : false,
   });
-  useEffect(() => {
-    if (
-      attempt?.method === "browser_callback" &&
-      status.dataUpdatedAt > attemptStartedAt &&
-      !status.data?.pending &&
-      status.data?.state === "connected"
-    ) {
-      setAttempt(undefined);
-      setCallback("");
-      void cache.invalidateQueries({
-        queryKey: discoveryKey(provider.workspace_id, provider.id),
-      });
-    }
-  }, [
-    attempt,
-    attemptStartedAt,
-    status.data,
-    status.dataUpdatedAt,
-    cache,
-    provider.workspace_id,
-    provider.id,
-  ]);
   const refresh = () => cache.invalidateQueries({ queryKey });
   const clearModels = async () => {
     const key = discoveryKey(provider.workspace_id, provider.id);
@@ -83,14 +56,13 @@ export function ProviderAuthorization({
     onMutate: async () => {
       setCallback("");
       setAttempt(undefined);
-      setRevocationUnconfirmed(false);
+      setTokensCleared(false);
       await pauseDiscovery();
     },
     onError: () => {
       void refresh();
     },
     onSuccess: (value) => {
-      setAttemptStartedAt(Date.now());
       setAttempt(value);
       void refresh();
     },
@@ -140,33 +112,26 @@ export function ProviderAuthorization({
           ? { ...current, state: "disconnected", pending: false }
           : current,
       );
-      setRevocationUnconfirmed(value.revocation_confirmed === false);
+      setTokensCleared(value.local_tokens_cleared === true);
       void refresh();
     },
   });
   const writable = can("write") && !configurationDirty,
     busy = start.isPending || complete.isPending || disconnect.isPending,
-    connected =
-      status.data?.state === "connected" || status.data?.state === "refreshing";
+    connected = status.data?.state === "connected";
   return (
-    <section
-      className="grid min-w-0 gap-4"
-      aria-label={t("ChatGPT authorization")}
+    <FormSection
+      title={t("ChatGPT authorization")}
+      description={t("Shared by this workspace, not a personal connection.")}
     >
-      <div>
-        <strong>{t("ChatGPT authorization")}</strong>
-        <p className="text-sm text-muted-foreground">
-          {t("Shared by this workspace, not a personal connection.")}
-        </p>
-      </div>
       {configurationDirty && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {t(
             "Save configuration changes before starting or completing sign-in.",
           )}
         </p>
       )}
-      <p role="status">
+      <p role="status" className="text-sm">
         {attempt
           ? t("Waiting for sign-in")
           : status.isPending
@@ -174,26 +139,21 @@ export function ProviderAuthorization({
             : (status.data?.email ??
               t(connected ? "Connected" : "Not connected"))}
       </p>
-      {status.data?.message && <p className="text-sm">{status.data.message}</p>}
+      {status.data?.message && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {status.data.message}
+        </p>
+      )}
       {attempt && (
         <>
           <AuthorizationLink
             url={attempt.authorization_url}
             expiresAt={attempt.expires_at}
           />
-          {attempt.method === "browser_callback" && (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "Sign-in completes automatically. Return here after authorizing in the browser.",
-              )}
-            </p>
-          )}
           <FormField
             label={t("Complete callback URL")}
             description={t(
-              attempt.method === "browser_callback"
-                ? "If automatic completion fails, paste the entire callback URL here."
-                : "After signing in, copy the entire URL from the browser address bar, even if the loopback page cannot be reached.",
+              "After signing in, copy the entire URL from the browser address bar, even if the loopback page cannot be reached.",
             )}
           >
             <Input
@@ -201,11 +161,7 @@ export function ProviderAuthorization({
               autoComplete="off"
               spellCheck={false}
               maxLength={16384}
-              placeholder={
-                attempt.method === "browser_callback"
-                  ? undefined
-                  : "http://127.0.0.1:1456/auth/callback?code=…&state=…"
-              }
+              placeholder="http://127.0.0.1:1456/auth/callback?code=…&state=…"
               value={callback}
               disabled={busy || !writable}
               onChange={(event) => setCallback(event.target.value)}
@@ -273,9 +229,11 @@ export function ProviderAuthorization({
           </Button>
         )}
       </div>
-      {revocationUnconfirmed && (
-        <p role="status">
-          {t("Local tokens were cleared. OpenAI revocation was not confirmed.")}
+      {tokensCleared && (
+        <p role="status" className="text-sm">
+          {t(
+            "Local tokens were cleared. Manage remote access in ChatGPT settings.",
+          )}
         </p>
       )}
       <ErrorNotice
@@ -283,6 +241,6 @@ export function ProviderAuthorization({
           status.error ?? start.error ?? complete.error ?? disconnect.error
         }
       />
-    </section>
+    </FormSection>
   );
 }

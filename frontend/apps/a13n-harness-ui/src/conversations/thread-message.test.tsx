@@ -60,17 +60,14 @@ it.each(["live", "saved"])(
               />
             }
           />
-          <Route
-            path="/threads/thread-origin"
-            element={<h1>Source conversation</h1>}
-          />
+          <Route path="/threads/thread-origin" element={<h1>Source chat</h1>} />
         </Routes>
       </MemoryRouter>,
     );
     expect(screen.getByText(parts[1].text!)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
     const disclosure = screen.getByRole("button", {
-      name: "Thread message details",
+      name: "Message details",
       expanded: false,
     });
     expect(screen.getByText("Show message")).toBeTruthy();
@@ -96,9 +93,7 @@ it.each(["live", "saved"])(
     expect(link.getAttribute("href")).toBe("/threads/thread-origin");
     expect(inputCopyText(parts)).toBe(parts[1].text);
     await user.click(link);
-    expect(
-      screen.getByRole("heading", { name: "Source conversation" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source chat" })).toBeTruthy();
   },
 );
 
@@ -123,12 +118,10 @@ it("uses the source ID without a title and does not infer provenance from ordina
       <InputContent parts={[legacy]} renderText={(text) => text} />
     </MemoryRouter>,
   );
-  expect(screen.getByText("User")).toBeTruthy();
+  expect(document.querySelector('[class*="userMessage"]')).toBeTruthy();
   expect(screen.getByText(legacy.text!)).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Thread message details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Message details" })).toBeNull();
   expect(inputCopyText([legacy])).toBe(legacy.text);
 });
 
@@ -158,7 +151,7 @@ it("reveals rich content only after keyboard expansion and copies the complete m
   );
   await user.tab();
   const disclosure = screen.getByRole("button", {
-    name: "Thread message details",
+    name: "Message details",
     expanded: false,
   });
   expect(document.activeElement).toBe(disclosure);

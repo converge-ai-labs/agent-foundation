@@ -63,11 +63,13 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     scripted_model.call(
         "ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask", to="Role: coordinator"
     )
-    submitted = await runs_kit.start_thread(service, coordinator, "delegate, then ask me")
+    context = {"headers": {"x-trace": "child-context"}}
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate, then ask me", options={"context": context})
     thread_id = submitted["thread"]["id"]
     await (await runs_kit.attempt(service))
     waiting = await runs_kit.get_run(service, submitted["run"]["id"])
     assert waiting["wait_reason"] == "call", waiting
+    assert (await _child_run(service, waiting["id"])).options["context"] == context
     scripted_model.say("42", to="Role: worker")
     await (await runs_kit.attempt(service))
     await _deliver(service)
@@ -87,6 +89,7 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     assert reply.status_code == 201, reply.text
     run = reply.json()
     assert (run["trigger"], run["parent_run_id"]) == ("resume", waiting["id"])
+    assert run["options"]["context"] == context
     scripted_model.say("Answer received", to="Role: coordinator")
     # The child steer can join this successor after its first request or start another Run.
     # Script both replies before execution: waiting until it seals deadlocks the first case.
@@ -140,10 +143,11 @@ async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settin
             assert (await session.get_one(OutboxRow, row.id)).status == "delivered"
 
 
-async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_parent_steers_its_usage_limited_child(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     edge = {"usage_limits": {"request_limit": 5}}
-    worker = {"toolsets": {"configuration": {"enabled": True}}}
+    worker = runs_kit.LOOKUP
     coordinator = await runs_kit.delegating(service, scripted_model, "async", edge=edge, worker=worker)
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
     scripted_model.say("Delegated", to="Role: coordinator")
@@ -167,7 +171,7 @@ async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, 
         await session.execute(held.values(available_at=RunRow.created_at))
 
     # Steers join at the child's next boundary: after its tool call it reads the steer, or asks once more for it.
-    scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", to="Role: worker")
+    runs_kit.lookup(scripted_model, call_id="call_find", to="Role: worker")
     scripted_model.say("42", to="Role: worker")
     scripted_model.say("42 metres", to="Role: worker")
     await (await runs_kit.attempt(service))

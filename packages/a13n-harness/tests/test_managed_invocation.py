@@ -539,6 +539,34 @@ async def test_native_tool_return_policy_bounds_text_and_preserves_multimodal_va
     assert projected.tools == ["Bearer [REDACTED]"]
 
 
+@pytest.mark.parametrize("configured", [True, False, "secret-value", {"api_key": "secret-value"}, [True], 1, None])
+async def test_tool_result_preserves_only_boolean_credential_status(configured) -> None:
+    body = {
+        "credential_configured": configured,
+        "credential": {"api_key": "private-key"},
+        "api_key": "private-key",
+        "authorization": "Bearer private-key",
+        "password": "private-password",
+        "token": "private-token",
+        "nested": [{"credential_configured": False, "credential": True}],
+    }
+    projected = await _apply_result_policy({"status": 200, "body": body}, _metadata().output_policy)
+
+    assert projected == {
+        "status": 200,
+        "body": {
+            "credential_configured": configured if isinstance(configured, bool) else "[REDACTED]",
+            "credential": "[REDACTED]",
+            "api_key": "[REDACTED]",
+            "authorization": "[REDACTED]",
+            "password": "[REDACTED]",
+            "token": "[REDACTED]",
+            "nested": [{"credential_configured": False, "credential": "[REDACTED]"}],
+        },
+    }
+    assert body["credential"] == {"api_key": "private-key"}
+
+
 async def test_native_tool_return_text_overflow_is_explicit_without_filtering_media() -> None:
     metadata = HarnessToolMetadata(
         tool_id="native.read",

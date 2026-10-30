@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type PointerEvent,
 } from "react";
 
 const ORDER_KEY = "a13n-harness-ui.project-order";
@@ -65,12 +64,6 @@ export function useProjectOrder(ids: string[]) {
   const [preview, setPreview] = useState<string[] | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const pointer = useRef<{
-    id: string;
-    x: number;
-    y: number;
-    started: boolean;
-  } | null>(null);
   const current = orderedProjects(ids, preview ?? saved);
   const commit = (next: string[]) => {
     setSaved(next);
@@ -79,14 +72,13 @@ export function useProjectOrder(ids: string[]) {
     setMoving(null);
   };
   const cancel = useCallback(() => {
-    pointer.current = null;
     setPreview(null);
     setMoving(null);
   }, []);
   const handles = useRef(new Map<string, HTMLElement>());
   useLayoutEffect(() => {
     // Moving a keyed DOM node can drop keyboard focus. Restore the active handle.
-    if (moving && !pointer.current) handles.current.get(moving)?.focus();
+    if (moving) handles.current.get(moving)?.focus();
   }, [moving, preview]);
   useEffect(() => {
     const escape = (event: globalThis.KeyboardEvent) => {
@@ -100,7 +92,14 @@ export function useProjectOrder(ids: string[]) {
     };
   }, [cancel]);
   const keyboard = (event: KeyboardEvent, id: string) => {
+    if (event.key === "Escape" && moving === id) {
+      event.preventDefault();
+      cancel();
+      setAnnouncement("Reordering cancelled.");
+      return;
+    }
     if (event.key === " " || event.key === "Enter") {
+      if (moving !== id && !(event.altKey && event.key === " ")) return;
       event.preventDefault();
       if (moving === id) {
         commit(current);
@@ -128,41 +127,6 @@ export function useProjectOrder(ids: string[]) {
       );
     }
   };
-  const pointerMove = (event: PointerEvent<HTMLElement>) => {
-    const drag = pointer.current;
-    if (!drag) return;
-    if (
-      !drag.started &&
-      Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5
-    )
-      return;
-    drag.started = true;
-    setMoving(drag.id);
-    const scroller = event.currentTarget.closest<HTMLElement>(
-      "[data-project-scroll]",
-    );
-    if (scroller) {
-      const bounds = scroller.getBoundingClientRect();
-      if (event.clientY < bounds.top + 40) scroller.scrollTop -= 18;
-      if (event.clientY > bounds.bottom - 40) scroller.scrollTop += 18;
-    }
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLElement>("[data-project-key]");
-    const targetId = target?.dataset.projectKey;
-    if (!target || !targetId || targetId === drag.id || !ids.includes(targetId))
-      return;
-    const bounds = target.getBoundingClientRect();
-    const without = current.filter((id) => id !== drag.id);
-    setPreview(
-      move(
-        current,
-        drag.id,
-        without.indexOf(targetId) +
-          (event.clientY > bounds.top + bounds.height / 2 ? 1 : 0),
-      ),
-    );
-  };
   return {
     ids: current,
     moving,
@@ -172,20 +136,8 @@ export function useProjectOrder(ids: string[]) {
       cancel();
       commit([]);
     },
-    pointerEvents: {
-      onPointerMove: pointerMove,
-      onPointerUp: () => {
-        if (pointer.current?.started) {
-          commit(current);
-          setAnnouncement("Project order saved in this browser.");
-        }
-        pointer.current = null;
-      },
-      onPointerCancel: cancel,
-      onLostPointerCapture: () => {
-        if (pointer.current) cancel();
-      },
-    },
+    place: (id: string, target: string, after: boolean) =>
+      commit(placeItem(current, id, target, after)),
     moveBy: (id: string, delta: number) =>
       commit(move(current, id, current.indexOf(id) + delta)),
     handle: (id: string) => ({
@@ -194,19 +146,70 @@ export function useProjectOrder(ids: string[]) {
         else handles.current.delete(id);
       },
       onKeyDown: (event: KeyboardEvent) => keyboard(event, id),
-      onPointerDown: (event: PointerEvent<HTMLElement>) => {
-        if (event.button !== 0) return;
-        // Capture on the stable scroll container, not the group that moves in the DOM.
-        event.currentTarget
-          .closest<HTMLElement>("[data-project-scroll]")
-          ?.setPointerCapture(event.pointerId);
-        pointer.current = {
-          id,
-          x: event.clientX,
-          y: event.clientY,
-          started: false,
-        };
-      },
     }),
+  };
+}
+
+export function placeItem(
+  ids: string[],
+  id: string,
+  target: string,
+  after: boolean,
+) {
+  if (id === target || !ids.includes(target)) return ids;
+  const next = ids.filter((item) => item !== id);
+  next.splice(next.indexOf(target) + Number(after), 0, id);
+  return next;
+}
+
+const CHAT_ORDER_KEY = "a13n-harness-ui.chat-order";
+export function useChatOrder() {
+  const [saved, setSaved] = useState<Record<string, string[]>>(() => {
+    const value = readPreference(CHAT_ORDER_KEY);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, ids]) => Array.isArray(ids))
+        .map(([key, ids]) => [
+          key,
+          (ids as unknown[]).filter(
+            (id): id is string => typeof id === "string",
+          ),
+        ]),
+    );
+  });
+  return {
+    ids: (group: string, ids: string[]) =>
+      orderedProjects(ids, saved[group] ?? []),
+    place: (
+      group: string,
+      ids: string[],
+      id: string,
+      target: string,
+      after: boolean,
+    ) => {
+      setSaved((current) => {
+        // Keep unloaded/temporarily active rows in the preference, so pagination
+        // and activity transitions cannot silently discard an earlier arrangement.
+        const next = {
+          ...current,
+          [group]: placeItem(
+            [...new Set([...(current[group] ?? []), ...ids])],
+            id,
+            target,
+            after,
+          ),
+        };
+        savePreference(CHAT_ORDER_KEY, next);
+        return next;
+      });
+    },
+    reset: (group: string) =>
+      setSaved((current) => {
+        const next = { ...current };
+        delete next[group];
+        savePreference(CHAT_ORDER_KEY, next);
+        return next;
+      }),
   };
 }

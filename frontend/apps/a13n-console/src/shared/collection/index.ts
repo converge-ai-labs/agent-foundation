@@ -6,5 +6,6 @@ export { ResourcePicker, type PickerItem } from "./picker";
 export { ResourceTable, type ResourceColumn } from "./resource-table";
 export { CollectionFooter, Toolbar } from "./toolbar";
 export { useCursor } from "./use-cursor";
+export { SortButton, ariaSort } from "./sort-button";
 /* Identity helpers for the first column of a collection. */
 export { ResourceIdentity, ResourceReference } from "../identity";

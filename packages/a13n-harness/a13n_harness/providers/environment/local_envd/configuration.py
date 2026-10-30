@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Annotated, Self
 
 from a13n_envd_client.eip.v1 import DisabledSandbox, SandboxPolicy
@@ -12,6 +12,30 @@ from a13n_harness.providers.environment.remote_envd.configuration import RemoteE
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB
 _MAX_RESPONSE_BYTES = 16 * _MIB
+
+
+def local_envd_native_path(path: str) -> Path:
+    """Translate a local Device EIP path to its Host-native path."""
+    if isinstance(Path(), PureWindowsPath):
+        if path.startswith("/UNC/"):
+            return Path("//" + path.removeprefix("/UNC/"))
+        return Path(path.removeprefix("/"))
+    return Path(path)
+
+
+def local_envd_path(path: PurePath) -> str:
+    """Translate an absolute Host path to the local Device's EIP namespace."""
+    if not path.is_absolute():
+        raise ValueError("Local Envd paths must be absolute")
+    text = path.as_posix()
+    if isinstance(path, PureWindowsPath):
+        text = text.removeprefix("//?/")
+        if text.startswith("UNC/"):
+            return "/" + text
+        if text.startswith("//"):
+            return "/UNC/" + text[2:]
+        return "/" + text
+    return text
 
 
 class LocalEnvdShellProfile(BaseModel):
@@ -51,6 +75,28 @@ class LocalEnvdEnvironmentConfiguration(RemoteEnvdEnvironmentConfiguration):
     """One fixed-cwd Session selection; never a daemon launch policy."""
 
 
+class LocalEnvdMonitoringConfiguration(BaseModel):
+    """Optional outer-daemon sampling; independent of Session execution policy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sample_interval_ms: Annotated[int, Field(ge=1000, le=60000)] = 10000
+    filesystems: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")], Path] = Field(
+        default_factory=dict, max_length=16
+    )
+    cgroup_v2_directory: Path | None = None
+
+    @field_validator("filesystems")
+    @classmethod
+    def _filesystem_paths(cls, value: dict[str, Path]) -> dict[str, Path]:
+        return {name: _absolute_os_path(path, label="monitoring filesystem") for name, path in value.items()}
+
+    @field_validator("cgroup_v2_directory")
+    @classmethod
+    def _cgroup_path(cls, value: Path | None) -> Path | None:
+        return None if value is None else _absolute_os_path(value, label="monitoring cgroup")
+
+
 class LocalEnvdLaunchConfiguration(BaseModel):
     """Host-selected daemon launch configuration, shared by every Session on this runtime."""
 
@@ -61,6 +107,10 @@ class LocalEnvdLaunchConfiguration(BaseModel):
     egress: EnvdNetworkConfiguration = Field(default_factory=lambda: EnvdNetworkConfiguration(mode="inherit"))
     default_working_directory: Path | None = None
     directory_discovery: bool = True
+    full_control: bool = False
+    computer_use: bool = False
+    computer_use_permission_timeout_ms: Annotated[int, Field(gt=0)] = 120000
+    monitoring: LocalEnvdMonitoringConfiguration | None = None
     trusted_executable_roots: tuple[Path, ...] = ()
     shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
     max_file_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
@@ -81,6 +131,10 @@ class LocalEnvdLaunchConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _consistent_configuration(self) -> Self:
+        if self.full_control and (self.trusted_executable_roots or self.shell_profiles):
+            raise ValueError("full_control cannot be combined with executable roots or shell profiles")
+        if self.computer_use and (self.sandbox.mode != "disabled" or self.egress.mode != "inherit"):
+            raise ValueError("computer_use requires disabled sandbox and inherited egress")
         if (self.execution.uid is None) != (self.execution.gid is None):
             raise ValueError("execution.uid and execution.gid must be configured together")
         profile_ids = tuple(profile.profile_id for profile in self.shell_profiles)

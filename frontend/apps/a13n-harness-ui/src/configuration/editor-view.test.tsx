@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { EditorView } from "codemirror";
 import { SourceEditor } from "./editor-view";
 
@@ -22,6 +28,17 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+
+it("opens Go to line with the advertised shortcut instead of the default Find next command", () => {
+  render(
+    <SourceEditor value={"first\nsecond\n"} language="plain" label="Source" />,
+  );
+  const content = screen.getByRole("textbox", { name: "Source" });
+  fireEvent.keyDown(content, { key: "g", ctrlKey: true });
+  expect(screen.getByRole("textbox", { name: "Go to line:" })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Find" })).toBeNull();
+});
+
 it("the actual CodeMirror editor does not turn native CRLF reads into edits and preserves CRLF when typing", () => {
   const change = vi.fn();
   const rendered = render(

@@ -145,9 +145,9 @@ async function chooseDevice() {
   await user.click(
     await screen.findByRole("option", { name: "Build machine" }),
   );
-  await user.clear(screen.getByRole("textbox", { name: "Environment alias" }));
+  await user.click(screen.getByText("Advanced routing"));
   await user.type(
-    screen.getByRole("textbox", { name: "Environment alias" }),
+    screen.getByRole("textbox", { name: "Directory alias" }),
     "build",
   );
   return user;
@@ -167,9 +167,7 @@ it("selects an explicit Device directory and preserves it when reopening", async
       }) as HTMLInputElement
     ).value,
   ).toBe("");
-  await user.click(
-    screen.getByRole("button", { name: "Select this directory" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Choose folder" }));
   await user.click(screen.getByRole("button", { name: "Use environment" }));
   expect(JSON.parse(screen.getByTestId("selection").textContent!)).toEqual({
     bindings: [
@@ -181,7 +179,11 @@ it("selects an explicit Device directory and preserves it when reopening", async
     ],
     defaultEnvironment: "workspace",
   });
-  await user.click(screen.getByRole("button", { name: "Edit build" }));
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Edit Build machine environment",
+    }),
+  );
   expect(
     (
       screen.getByRole("textbox", {
@@ -195,7 +197,7 @@ it("retains manual paths offline, retries observations, and respects disabled di
   available = false;
   mount(<Fields />);
   const user = await chooseDevice();
-  await screen.findByText(/Device unavailable/);
+  await screen.findByText(/Device offline/);
   await user.type(
     screen.getByRole("textbox", { name: "Working directory" }),
     "/known",
@@ -206,7 +208,7 @@ it("retains manual paths offline, retries observations, and respects disabled di
   available = true;
   discovery = false;
   await user.click(screen.getByRole("button", { name: "Retry connection" }));
-  await screen.findByText(/Directory browsing is disabled/);
+  await screen.findByText(/Folder browsing is off/);
   expect(
     (
       screen.getByRole("textbox", {
@@ -244,7 +246,11 @@ it("defaults to full control and can save and reopen read-only access", async ()
   expect(
     JSON.parse(screen.getByTestId("selection").textContent!).bindings,
   ).toEqual([{ ...binding, permission_ceiling: { operations: readOnly } }]);
-  await user.click(screen.getByRole("button", { name: "Edit build" }));
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Edit Build machine environment",
+    }),
+  );
   expect(
     screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
   ).toBe("Read only");
@@ -254,7 +260,11 @@ it("defaults to full control and can save and reopen read-only access", async ()
   expect(
     JSON.parse(screen.getByTestId("selection").textContent!).bindings,
   ).toEqual([{ ...binding, permission_ceiling: { operations: fullControl } }]);
-  await user.click(screen.getByRole("button", { name: "Edit build" }));
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Edit Build machine environment",
+    }),
+  );
   expect(
     screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
   ).toBe("Full control");
@@ -262,6 +272,15 @@ it("defaults to full control and can save and reopen read-only access", async ()
 it.each([
   undefined,
   { operations: ["environment.file.read_text"] },
+  { operations: ["environment.computer.read_clipboard"] },
+  { operations: ["environment.computer.write_clipboard"] },
+  {
+    operations: fullControl.filter(
+      (action) =>
+        action !== "environment.computer.read_clipboard" &&
+        action !== "environment.computer.write_clipboard",
+    ),
+  },
   {
     operations: ["environment.computer.observe", "environment.computer.click"],
   },
@@ -277,7 +296,11 @@ it.each([
     };
     mount(<Fields initial={[initial]} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit build" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Edit Build machine environment",
+      }),
+    );
     expect(
       screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
     ).toBe("Keep existing permissions");
@@ -309,15 +332,11 @@ it("forgets local configuration through the existing API without any Device conn
   const link = await screen.findByRole("link", { name: "Build project" });
   expect(link.getAttribute("href")).toContain("projects%2Fbuild.yaml");
   blocked = true;
-  await user.click(
-    screen.getByRole("button", { name: "Forget configuration" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Forget" }));
   await screen.findByText("Configuration references are invalid.");
   expect(screen.getByRole("dialog")).toBeTruthy();
   blocked = false;
-  await user.click(
-    screen.getByRole("button", { name: "Forget configuration" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Forget" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(
     requests
@@ -332,4 +351,58 @@ it("forgets local configuration through the existing API without any Device conn
       new URL(request.url).pathname.startsWith("/api/devices/"),
     ),
   ).toBe(false);
+});
+
+it("adds directories inside an existing environment and applies access changes to the group", async () => {
+  const initial: EnvironmentBinding = {
+    ...binding,
+    permission_ceiling: { operations: [...readOnly].reverse() },
+  };
+  mount(<Fields initial={[initial]} />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Add directory to Build machine",
+    }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory 2" }),
+    "/notes",
+  );
+  await user.click(screen.getByRole("button", { name: "Use environment" }));
+  const saved = JSON.parse(screen.getByTestId("selection").textContent!);
+  expect(saved.bindings).toEqual([
+    initial,
+    { ...initial, alias: "build-machine", working_directory: "/notes" },
+  ]);
+  expect(
+    screen.getAllByRole("region", { name: "Build machine environment" }),
+  ).toHaveLength(1);
+  expect(screen.getByText("Read only · 2 directories")).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Edit Build machine environment" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Allowed actions" }));
+  await user.click(await screen.findByRole("option", { name: "Full control" }));
+  await user.click(screen.getByRole("button", { name: "Use environment" }));
+  expect(
+    JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+  ).toEqual(
+    saved.bindings.map((item: EnvironmentBinding) => ({
+      ...item,
+      permission_ceiling: { operations: fullControl },
+    })),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add directory to Build machine" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory 3" }),
+    "/discarded",
+  );
+  await user.click(screen.getByText("Cancel", { selector: "button" }));
+  expect(screen.queryByText("/discarded")).toBeNull();
+  expect(
+    JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+  ).toHaveLength(2);
 });

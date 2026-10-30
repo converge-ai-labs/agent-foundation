@@ -18,7 +18,14 @@ from a13n_harness import (
     RunConfiguration,
     SubagentDefinition,
 )
-from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    SubagentCapability,
+    SubagentOperator,
+    ToolExecutionCapability,
+    ToolSearchPlan,
+    ToolSearchSelection,
+)
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
@@ -42,6 +49,8 @@ from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness_ui.compaction import BackgroundCompaction
+from a13n_harness_ui.compaction_model import CompactionRun
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
@@ -53,6 +62,7 @@ from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnectio
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
 
 from .auxiliary import capability_configuration
@@ -69,6 +79,7 @@ class ReconstructedAgent:
     run_configuration: RunConfiguration = field(default_factory=RunConfiguration)
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
+    compaction: CompactionRun | None = None
 
     def file_media_understanding(self, thread_id: str) -> FileMediaUnderstanding | None:
         if not self.media_models:
@@ -207,6 +218,7 @@ class AgentReconstructor:
         pricing_catalog: PricingCatalog | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
         organization: MemoryOrganizationRun | None = None,
+        background_compaction: BackgroundCompaction | None = None,
     ) -> ReconstructedAgent:
         if composition.memory_organization:
             if organization is None:
@@ -253,7 +265,7 @@ class AgentReconstructor:
                 composition.root,
                 plugin_catalog=plugin_catalog,
                 subagent_operator=subagent_operator,
-                root_capabilities=tuple(root_capabilities),
+                root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
@@ -263,6 +275,31 @@ class AgentReconstructor:
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
             )
+            model_resolver = HarnessUiModelResolver(
+                model_recipes,
+                subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
+                configuration=composition.run_configuration,
+            )
+            compaction = (
+                CompactionRun(background_compaction, model_resolver.fresh(), pricing_catalog)
+                if background_compaction is not None and composition.background_compaction.enabled
+                else None
+            )
+            if compaction is not None:
+                definition = replace(
+                    definition,
+                    capabilities=tuple(
+                        CompactionCapability(
+                            item.policy,
+                            background=composition.background_compaction,
+                            operator=compaction,
+                        )
+                        if isinstance(item, CompactionCapability)
+                        else item
+                        for item in definition.capabilities
+                    ),
+                )
             executable = HarnessBuilder(
                 configured_plugins_enabled=False,
                 instrumentation=self._instrumentation,
@@ -278,12 +315,8 @@ class AgentReconstructor:
             run_configuration=composition.run_configuration,
             memory_cursors=cursors,
             executable=cast(ExecutableAgent[str], executable),
-            model_resolver=HarnessUiModelResolver(
-                model_recipes,
-                subscription_sources=subscription_sources,
-                api_keys=self._api_keys,
-                configuration=composition.run_configuration,
-            ),
+            model_resolver=model_resolver,
+            compaction=compaction,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
             media_models={
                 kind: recipe.model_copy(deep=True) for kind, recipe in composition.media_understanding.items()
@@ -320,7 +353,7 @@ class AgentReconstructor:
                 usage_limits=UsageLimits(request_limit=12),
             ),
             output_type=str,
-            capabilities=(*root_capabilities, memory),
+            capabilities=(*root_capabilities, memory, CurrentAgentContextCapability()),
         )
         executable = HarnessBuilder(
             configured_plugins_enabled=False,
@@ -357,7 +390,8 @@ class AgentReconstructor:
 
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
-        capabilities: list[AbstractCapability[Any]] = []
+        capabilities: list[AbstractCapability[Any]] = [CurrentAgentContextCapability()]
+        local_sources: dict[str, AbstractCapability[Any]] = {}
         for recipe, item in zip(node.capabilities, selected, strict=True):
             capability = item.capability
             if recipe.guardian_credits and isinstance(capability, ToolPermissionsCapability):
@@ -368,6 +402,7 @@ class AgentReconstructor:
                 )
                 capabilities.append(GuardianParentCapability())
             capabilities.append(capability)
+            local_sources[recipe.capability] = capability
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         mcp_sources = {
@@ -380,19 +415,20 @@ class AgentReconstructor:
             for item in node.mcp_servers
         }
         capabilities.extend(mcp_sources.values())
-        tool_proxy = (
-            ToolProxyPlan(
+        tool_search = (
+            ToolSearchPlan(
                 groups={
-                    name: ToolProxySelection(
+                    name: ToolSearchSelection(
                         description=group.description,
-                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers),
+                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers)
+                        + tuple(local_sources[source] for source in group.capabilities),
                         plugins=group.harness_plugins,
                     )
-                    for name, group in node.tool_proxy.groups.items()
+                    for name, group in node.tool_search.groups.items()
                 },
-                config=node.tool_proxy.config,
+                config=node.tool_search.config,
             )
-            if node.tool_proxy is not None
+            if node.tool_search is not None and node.tool_search.enabled
             else None
         )
         if node.children:
@@ -406,8 +442,16 @@ class AgentReconstructor:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
             controls = (
-                frozenset({tool_proxy.config.search_name, tool_proxy.config.call_name})
-                if tool_proxy is not None
+                frozenset(
+                    {
+                        tool_search.config.search_name,
+                        tool_search.config.describe_name,
+                        tool_search.config.call_name,
+                        tool_search.config.list_name,
+                        tool_search.config.groups_name,
+                    }
+                )
+                if tool_search is not None
                 else frozenset()
             )
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
@@ -459,7 +503,7 @@ class AgentReconstructor:
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
-            tool_proxy=tool_proxy,
+            tool_search=tool_search,
             subagents=children,
             model_recovery=ModelRecoveryPolicy(
                 enabled=True,

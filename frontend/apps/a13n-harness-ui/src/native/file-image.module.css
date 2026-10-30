@@ -48,7 +48,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--a13n-secondary);
 }
 .caption span {

@@ -19,10 +19,10 @@ impl Drop for Reservation {
     fn drop(&mut self) {
         if self.started && !self.clean.load(Ordering::Acquire) {
             self.staging.retain();
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             if let Some(active) = self._processes.active.take() {
-                // Seatbelt has no PID namespace death fence. Keep the charge
-                // until Device restart when command cleanup is unconfirmed.
+                // Keep the charge until Device restart when native worker or
+                // command cleanup is unconfirmed.
                 active.forget();
             }
         }
@@ -134,6 +134,8 @@ impl Daemon {
         let runtime = Runtime::start(worker, policy, hide, reservation).await;
         #[cfg(target_os = "macos")]
         let runtime = Runtime::start(worker, reservation).await;
+        #[cfg(windows)]
+        let runtime = Runtime::start(worker, &self.config.bootstrap_files, reservation).await;
         let runtime = runtime.map_err(|_| {
             protocol_error(
                 ErrorType::Unsupported,

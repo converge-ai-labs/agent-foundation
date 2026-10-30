@@ -1,0 +1,41 @@
+.trigger.trigger {
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 100%;
+  padding-inline: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--a13n-secondary);
+}
+.icon {
+  display: none;
+  width: 16px;
+  height: 16px;
+}
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container connection-slot (max-width: 112px) {
+  .label {
+    display: none;
+  }
+  .icon {
+    display: block;
+  }
+}
+@media (pointer: coarse) {
+  .trigger.trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+.popup {
+  width: min(280px, calc(100vw - 32px));
+  font-size: 13px;
+}
+.popup p {
+  margin: 8px 0 0;
+  color: var(--a13n-secondary);
+}

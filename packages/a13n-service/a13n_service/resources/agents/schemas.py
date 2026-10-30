@@ -9,17 +9,21 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 
 from a13n_harness.capabilities import ToolReviewConfig
+from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.tools.client import ClientToolDefinition
+from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
-from a13n_service.resources.agents.tables import AgentSource
-from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
+from a13n_service.resources.agents.tables import AgentSource, PresetKind
+from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
+from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
-from a13n_service.resources.memories.schemas import MemoryMounts
+from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
 
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
@@ -56,6 +60,24 @@ class AgentModelCharacteristics(_Frozen):
 class SkillSelection(_Frozen):
     skill_id: ObjectId
     revision_id: ObjectId | None = None
+
+
+class SharedSkillSync(_Frozen):
+    """Publish mutable conventional names; the last completed publication wins."""
+
+    mode: Literal["shared"] = "shared"
+    overwrite: bool = True
+    cleanup: bool = False
+
+
+class IsolatedSkillSync(_Frozen):
+    """Reuse immutable package directories, with a soft count budget."""
+
+    mode: Literal["isolated"] = "isolated"
+    cache_count: int = Field(default=128, ge=0)
+
+
+SkillSync = Annotated[SharedSkillSync | IsolatedSkillSync, Field(discriminator="mode")]
 
 
 class DelegationContextPolicy(_Frozen):
@@ -138,15 +160,57 @@ class PluginSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
+class ToolSearchGroup(_Frozen):
+    description: str = Field(min_length=1, max_length=512)
+    capabilities: tuple[Literal["environment", "web"], ...] = ()
+    connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
+    plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
+    platform: bool = False
+
+
+class ToolSearch(ToolSearchConfiguration):
+    """Presentation of already-selected sources, composed by Harness once per agent."""
+
+    groups: dict[str, ToolSearchGroup] = Field(default_factory=dict, max_length=128)
+
+    @model_validator(mode="after")
+    def unique_sources(self) -> Self:
+        owners: set[tuple[str, str]] = set()
+        for name, group in self.groups.items():
+            validate_group(name, group.description)
+            sources = [
+                *(("capability", source) for source in group.capabilities),
+                *(("connection", source) for source in group.connections),
+                *(("plugin", source) for source in group.plugins),
+                *([("platform", "platform")] if group.platform else []),
+            ]
+            for source in sources:
+                if source in owners:
+                    raise ValueError(f"ToolSearch source {source[0]} {source[1]!r} belongs to multiple groups")
+                owners.add(source)
+        return self
+
+    @property
+    def connection_ids(self) -> frozenset[str]:
+        return frozenset(source for group in self.groups.values() for source in group.connections)
+
+
 class AgentConfig(_Frozen):
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     model: Key
     # Native settings layered over the model's own defaults.
     model_settings: ModelSettings = Field(default_factory=dict)
     model_characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
+    background_compaction: BackgroundCompactionPolicy = Field(default_factory=BackgroundCompactionPolicy)
+    # Offers explicit context handoff through the Harness summarize tool.
+    summarize: bool = False
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
+    tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
+    builtin_skills: frozenset[BuiltinSkillName] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
@@ -164,6 +228,8 @@ class AgentConfig(_Frozen):
     lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
     memory_mounts: MemoryMounts = ()
+    # Snapshotted by a new Session at its first business acceptance unless explicitly configured.
+    memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
 
     @model_validator(mode="after")
     def unique_selections(self) -> Self:
@@ -175,6 +241,16 @@ class AgentConfig(_Frozen):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
+        if self.tool_search is not None:
+            connections = {item.connection_id for item in self.connection_tools}
+            plugins = {item.instance_name for item in self.plugins}
+            for name, group in self.tool_search.groups.items():
+                if set(group.connections) - connections:
+                    raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
+                if set(group.plugins) - plugins:
+                    raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
+                if group.platform and not platform_tools(self.toolsets):
+                    raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
         return self
 
 
@@ -211,7 +287,10 @@ class AgentOverride(_Frozen):
     lazy_environment: bool | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
+    skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
+    tool_search: ToolSearch | None = None
+    builtin_skills: frozenset[BuiltinSkillName] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -228,7 +307,10 @@ _REPLACED = (
     "lazy_environment",
     "plugins",
     "skills",
+    "skill_sync",
     "connection_tools",
+    "tool_search",
+    "builtin_skills",
     "client_tools",
     "output_spec",
 )
@@ -333,7 +415,7 @@ class Agent(BaseModel):
     labels: dict[str, str]
     default_revision_id: str | None
     source: AgentSource
-    preset_kind: Literal["composer", "finding"] | None = None
+    preset_kind: PresetKind | None = None
     image_url: str | None
     archived_at: datetime | None
     version: int
@@ -349,6 +431,10 @@ class AgentRevision(BaseModel):
     agent_id: str
     number: int
     config: AgentConfig
+    builtin_instructions: Instructions | None = Field(
+        default=None,
+        description="Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",
+    )
     digest: str
     note: str | None
     created_by_id: str

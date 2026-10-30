@@ -1,7 +1,7 @@
 {
   "info": {
     "title": "Environment Interaction Protocol",
-    "version": "0.1"
+    "version": "0.3"
   },
   "methods": [
     {
@@ -306,6 +306,41 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "computer.read_clipboard",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerReadClipboardParams/properties/context"
+          }
+        },
+        {
+          "name": "max_bytes",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerReadClipboardParams/properties/max_bytes"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerReadClipboardResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.3",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerReadClipboardParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
       "name": "computer.scroll",
       "paramStructure": "by-name",
       "params": [
@@ -404,6 +439,90 @@
       "x-eip-transfer-direction": null
     },
     {
+      "name": "computer.write_clipboard",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerWriteClipboardParams/properties/context"
+          }
+        },
+        {
+          "name": "text",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerWriteClipboardParams/properties/text"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerWriteClipboardResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.3",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerWriteClipboardParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.zoom",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/context"
+          }
+        },
+        {
+          "name": "observation_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/observation_id"
+          }
+        },
+        {
+          "name": "region",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/region"
+          }
+        },
+        {
+          "name": "max_dimension",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerZoomParams/properties/max_dimension"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/ComputerZoomResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.2",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerZoomParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": "open",
+      "x-eip-transfer-direction": "server_to_client"
+    },
+    {
       "name": "device.describe",
       "paramStructure": "by-name",
       "params": [],
@@ -418,6 +537,41 @@
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/DeviceDescribeParams"
+      },
+      "x-eip-replay-class": "ledger_external",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "device.metrics",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "expected_device_id",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/DeviceMetricsParams/properties/expected_device_id"
+          }
+        },
+        {
+          "name": "expected_generation",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/DeviceMetricsParams/properties/expected_generation"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/DeviceMetricsResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.2",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/DeviceMetricsParams"
       },
       "x-eip-replay-class": "ledger_external",
       "x-eip-transfer-action": null,

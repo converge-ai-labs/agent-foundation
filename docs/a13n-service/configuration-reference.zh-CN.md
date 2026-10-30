@@ -4,12 +4,13 @@ sidebarTitle: 设置参考
 description: Service 设置的每个字段，及其环境变量、类型、范围和默认值。
 ---
 
-> [!NOTE]
-> 从 Service 加载器使用的 `Settings` 定义生成。修改定义后，请运行 `uv run --locked python scripts/docs/references.py`，不要直接编辑表格行。
+按配置节找到设置，再从对应行查阅 TOML 键或环境变量，以及接受的类型、范围和默认值。要准备完整的部署配置，请从[配置 Service](configuration.md)开始；该指南介绍优先级、角色与存储要求，以及跨字段校验。
 
-优先级、示例、角色和存储要求、跨字段校验请参阅[配置 Service](configuration.md)。下列类型和字段约束不能替代联合校验。Schema 会隐藏密钥默认值；本参考不会读取部署环境变量值。默认值适用于源码版本，并非所有历史版本。
+例如，`server.port` 对应 TOML `[server]` 节中的 `port`，也可通过环境变量 `A13N_SERVER__PORT` 设置。标有 **JSON 字段**的行共用一个环境变量：将邮件设置组成 JSON 对象，赋给 `A13N_AUTH__MAIL`。环境变量会替换文件中对应字段的值；嵌套设置会替换整个对象。
 
-完整的机器可读验证 schema，包括命名枚举和联合定义，见 [Service 设置 JSON](/reference/service-settings.json)。
+这些表格描述当前源码版本的内置设置，密钥默认值已隐藏。下载 [Service 设置 JSON](/reference/service-settings.json) 可获取完整 schema，包括命名枚举和联合定义。发行版专有的扩展设置由该发行版文档介绍。
+
+表格从 `Settings` 生成。贡献者修改定义后，应运行 `uv run --locked python scripts/docs/references.py` 重新生成英文参考，并同步翻译后的表格行。
 
 ## `server`
 
@@ -18,6 +19,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `server.host`              | `A13N_SERVER__HOST`              | 字符串        | default="127.0.0.1"                             |
 | `server.port`              | `A13N_SERVER__PORT`              | 整数          | minimum=1; maximum=65535; default=8000          |
 | `server.public_url`        | `A13N_SERVER__PUBLIC_URL`        | 字符串        | maxLength=2048; default="http://127.0.0.1:8000" |
+| `server.control_url`       | `A13N_SERVER__CONTROL_URL`       | 字符串或 null | maxLength=2048; default=null                    |
 | `server.trusted_proxies`   | `A13N_SERVER__TRUSTED_PROXIES`   | 字符串数组    | default=[]                                      |
 | `server.request_bytes`     | `A13N_SERVER__REQUEST_BYTES`     | 整数          | minimum=1024; maximum=33554432; default=2097152 |
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | 数值          | maximum=60; exclusiveMinimum=0; default=10      |
@@ -32,7 +34,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | --------------------------------------------- | --------------------------------------------------- | ----------- | ------------------------------------------------- |
 | `database.url`                                | `A13N_DATABASE__URL`                                | 字符串      | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
 | `database.auto_migrate`                       | `A13N_DATABASE__AUTO_MIGRATE`                       | 布尔值      | default=true                                      |
-| `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | 整数        | minimum=1; maximum=100; default=5                 |
+| `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | 整数        | minimum=1; maximum=1024; default=32               |
 | `database.connect_timeout`                    | `A13N_DATABASE__CONNECT_TIMEOUT`                    | 整数        | minimum=1; maximum=60; default=5                  |
 | `database.statement_timeout`                  | `A13N_DATABASE__STATEMENT_TIMEOUT`                  | 整数        | minimum=1; maximum=300; default=10                |
 | `database.migration_advisory_lock_timeout`    | `A13N_DATABASE__MIGRATION_ADVISORY_LOCK_TIMEOUT`    | 整数        | minimum=1; maximum=3600; default=900              |
@@ -95,16 +97,29 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `control`
 
-| 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值                                    |
-| -------------------------------- | -------------------------------------- | ----------- | ----------------------------------------------- |
-| `control.scan_seconds`           | `A13N_CONTROL__SCAN_SECONDS`           | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
-| `control.sweep_batch`            | `A13N_CONTROL__SWEEP_BATCH`            | 整数        | minimum=1; maximum=10000; default=100           |
-| `control.inbox_count`            | `A13N_CONTROL__INBOX_COUNT`            | 整数        | minimum=1; maximum=10000; default=128           |
-| `control.inbox_bytes`            | `A13N_CONTROL__INBOX_BYTES`            | 整数        | minimum=1024; maximum=16777216; default=2097152 |
-| `control.subscriptions`          | `A13N_CONTROL__SUBSCRIPTIONS`          | 整数        | minimum=1; maximum=1000; default=32             |
-| `control.webhook_timeout`        | `A13N_CONTROL__WEBHOOK_TIMEOUT`        | 数值        | maximum=30; exclusiveMinimum=0; default=10      |
-| `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
-| `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
+| 设置                                  | 环境变量                                    | 类型 / 选项 | 约束与默认值                                    |
+| ------------------------------------- | ------------------------------------------- | ----------- | ----------------------------------------------- |
+| `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
+| `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | 整数        | minimum=1; maximum=10000; default=100           |
+| `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | 整数        | minimum=1; maximum=10000; default=128           |
+| `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | 整数        | minimum=1024; maximum=16777216; default=2097152 |
+| `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | 整数        | minimum=1; default=60                           |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | 整数        | minimum=1; default=3600                         |
+| `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | 整数        | minimum=1; default=300                          |
+| `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | 整数        | minimum=60; maximum=604800; default=86400       |
+| `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | 整数        | minimum=1; maximum=1000; default=32             |
+| `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | 数值        | maximum=30; exclusiveMinimum=0; default=10      |
+| `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
+| `control.stream_refresh_seconds`      | `A13N_CONTROL__STREAM_REFRESH_SECONDS`      | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
+
+## `schedules`
+
+| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                               |
+| --------------------------------- | --------------------------------------- | ----------- | ------------------------------------------ |
+| `schedules.scan_seconds`          | `A13N_SCHEDULES__SCAN_SECONDS`          | 数值        | maximum=300; exclusiveMinimum=0; default=5 |
+| `schedules.batch`                 | `A13N_SCHEDULES__BATCH`                 | 整数        | minimum=1; maximum=1000; default=100       |
+| `schedules.max_per_workspace`     | `A13N_SCHEDULES__MAX_PER_WORKSPACE`     | 整数        | minimum=1; maximum=100000; default=1000    |
+| `schedules.dispatch_max_attempts` | `A13N_SCHEDULES__DISPATCH_MAX_ATTEMPTS` | 整数        | minimum=1; maximum=20; default=5           |
 
 ## `outbox`
 
@@ -147,6 +162,29 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `worker.stream_trim_seconds`     | `A13N_WORKER__STREAM_TRIM_SECONDS`     | 数值        | minimum=0; maximum=600; default=10               |
 | `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | 整数        | minimum=0; maximum=16; default=4                 |
 | `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | 整数        | minimum=0; maximum=256; default=16               |
+
+## `tool_executions`
+
+| 设置                                          | 环境变量                                            | 类型 / 选项 | 约束与默认值                                |
+| --------------------------------------------- | --------------------------------------------------- | ----------- | ------------------------------------------- |
+| `tool_executions.max_active`                  | `A13N_TOOL_EXECUTIONS__MAX_ACTIVE`                  | 整数        | minimum=1; maximum=1024; default=64         |
+| `tool_executions.foreground_wait_seconds`     | `A13N_TOOL_EXECUTIONS__FOREGROUND_WAIT_SECONDS`     | 数值        | minimum=0; maximum=300; default=5           |
+| `tool_executions.delivered_retention_seconds` | `A13N_TOOL_EXECUTIONS__DELIVERED_RETENTION_SECONDS` | 整数        | minimum=1; maximum=31536000; default=3600   |
+| `tool_executions.max_retention_seconds`       | `A13N_TOOL_EXECUTIONS__MAX_RETENTION_SECONDS`       | 整数        | minimum=1; maximum=31536000; default=86400  |
+| `tool_executions.shutdown_grace_seconds`      | `A13N_TOOL_EXECUTIONS__SHUTDOWN_GRACE_SECONDS`      | 数值        | minimum=0; maximum=3600; default=300        |
+| `tool_executions.finalization_seconds`        | `A13N_TOOL_EXECUTIONS__FINALIZATION_SECONDS`        | 数值        | maximum=300; exclusiveMinimum=0; default=10 |
+
+## `run_search`
+
+| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                                   |
+| --------------------------------- | --------------------------------------- | ----------- | ---------------------------------------------- |
+| `run_search.user_head_bytes`      | `A13N_RUN_SEARCH__USER_HEAD_BYTES`      | 整数        | minimum=256; maximum=6144; default=6144        |
+| `run_search.user_tail_bytes`      | `A13N_RUN_SEARCH__USER_TAIL_BYTES`      | 整数        | minimum=256; maximum=2048; default=2048        |
+| `run_search.assistant_head_bytes` | `A13N_RUN_SEARCH__ASSISTANT_HEAD_BYTES` | 整数        | minimum=256; maximum=4096; default=4096        |
+| `run_search.assistant_tail_bytes` | `A13N_RUN_SEARCH__ASSISTANT_TAIL_BYTES` | 整数        | minimum=256; maximum=12288; default=12288      |
+| `run_search.vector_bytes`         | `A13N_RUN_SEARCH__VECTOR_BYTES`         | 整数        | minimum=393216; maximum=786432; default=524288 |
+| `run_search.target_bytes`         | `A13N_RUN_SEARCH__TARGET_BYTES`         | 整数        | minimum=327680; maximum=655360; default=393216 |
+| `run_search.messages`             | `A13N_RUN_SEARCH__MESSAGES`             | 整数        | minimum=8; maximum=4096; default=512           |
 
 ## `environments`
 
@@ -195,21 +233,23 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `providers`
 
-| 设置                               | 环境变量                                 | 类型 / 选项   | 约束与默认值                                                  |
-| ---------------------------------- | ---------------------------------------- | ------------- | ------------------------------------------------------------- |
-| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | 字符串数组    | default=[]                                                    |
-| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | 布尔值        | default=true                                                  |
-| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | 字符串数组    | default=[]                                                    |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | 对象数组      | default=[]                                                    |
-| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | 整数          | minimum=30; maximum=1800; default=600                         |
-| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | 数值          | minimum=2; maximum=30; default=10                             |
-| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | 数值          | maximum=3600; exclusiveMinimum=0; default=30                  |
-| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | 整数          | minimum=1; maximum=86400; default=300                         |
-| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | 数值          | maximum=600; exclusiveMinimum=0; default=60                   |
-| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | 数值          | maximum=3600; exclusiveMinimum=0; default=300                 |
-| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | 整数          | minimum=65536; maximum=268435456; default=16777216            |
-| `providers.chatgpt_client_id`      | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`      | 字符串或 null | minLength=1; maxLength=256; default=null                      |
-| `providers.chatgpt_redirect_uri`   | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`   | 字符串        | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
+| 设置                                      | 环境变量                                        | 类型 / 选项   | 约束与默认值                                                  |
+| ----------------------------------------- | ----------------------------------------------- | ------------- | ------------------------------------------------------------- |
+| `providers.forward_model_context_headers` | `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS` | 布尔值        | default=true                                                  |
+| `providers.forward_mcp_context_headers`   | `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS`   | 布尔值        | default=true                                                  |
+| `providers.http_origins`                  | `A13N_PROVIDERS__HTTP_ORIGINS`                  | 字符串数组    | default=[]                                                    |
+| `providers.require_https`                 | `A13N_PROVIDERS__REQUIRE_HTTPS`                 | 布尔值        | default=true                                                  |
+| `providers.return_urls`                   | `A13N_PROVIDERS__RETURN_URLS`                   | 字符串数组    | default=[]                                                    |
+| `providers.mcp_servers`                   | `A13N_PROVIDERS__MCP_SERVERS`                   | 对象数组      | default=[]                                                    |
+| `providers.flow_seconds`                  | `A13N_PROVIDERS__FLOW_SECONDS`                  | 整数          | minimum=30; maximum=1800; default=600                         |
+| `providers.operation_seconds`             | `A13N_PROVIDERS__OPERATION_SECONDS`             | 数值          | minimum=2; maximum=30; default=10                             |
+| `providers.operation_scan_seconds`        | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS`        | 数值          | maximum=3600; exclusiveMinimum=0; default=30                  |
+| `providers.discovery_ttl`                 | `A13N_PROVIDERS__DISCOVERY_TTL`                 | 整数          | minimum=1; maximum=86400; default=300                         |
+| `providers.tool_call_seconds`             | `A13N_PROVIDERS__TOOL_CALL_SECONDS`             | 数值          | maximum=600; exclusiveMinimum=0; default=60                   |
+| `providers.model_timeout`                 | `A13N_PROVIDERS__MODEL_TIMEOUT`                 | 数值          | maximum=3600; exclusiveMinimum=0; default=300                 |
+| `providers.response_bytes`                | `A13N_PROVIDERS__RESPONSE_BYTES`                | 整数          | minimum=65536; maximum=268435456; default=16777216            |
+| `providers.chatgpt_client_id`             | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`             | 字符串或 null | minLength=1; maxLength=256; default=null                      |
+| `providers.chatgpt_redirect_uri`          | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`          | 字符串        | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
 
 ## `plugins`
 
@@ -242,3 +282,21 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | 字符串或 null                       | format="password"; default=null                                 |
 | `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"          | default="standard"                                              |
 | `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | 数值                                | maximum=60; exclusiveMinimum=0; default=10                      |
+
+## `monitoring`
+
+| 设置                                       | 环境变量                                         | 类型 / 选项   | 约束与默认值                                     |
+| ------------------------------------------ | ------------------------------------------------ | ------------- | ------------------------------------------------ |
+| `monitoring.enabled`                       | `A13N_MONITORING__ENABLED`                       | 布尔值        | default=true                                     |
+| `monitoring.allow_loopback_ws`             | `A13N_MONITORING__ALLOW_LOOPBACK_WS`             | 布尔值        | default=false                                    |
+| `monitoring.max_devices`                   | `A13N_MONITORING__MAX_DEVICES`                   | 整数          | minimum=1; maximum=512; default=64               |
+| `monitoring.poll_seconds`                  | `A13N_MONITORING__POLL_SECONDS`                  | 数值          | minimum=5; maximum=60; default=10                |
+| `monitoring.request_seconds`               | `A13N_MONITORING__REQUEST_SECONDS`               | 数值          | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_concurrency`             | `A13N_MONITORING__QUERY_CONCURRENCY`             | 整数          | minimum=1; maximum=64; default=8                 |
+| `monitoring.query_seconds`                 | `A13N_MONITORING__QUERY_SECONDS`                 | 数值          | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_bytes`                   | `A13N_MONITORING__QUERY_BYTES`                   | 整数          | minimum=65536; maximum=16777216; default=4194304 |
+| `monitoring.deployment_preset`             | `A13N_MONITORING__DEPLOYMENT_PRESET`             | 对象或 null   | default=null                                     |
+| `monitoring.deployment_query_bearer_token` | `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` | 字符串或 null | format="password"; default=null                  |
+| `monitoring.collectors`                    | `A13N_MONITORING__COLLECTORS`                    | 对象          | —                                                |
+| `monitoring.collector_seconds`             | `A13N_MONITORING__COLLECTOR_SECONDS`             | 数值          | minimum=10; maximum=300; default=30              |
+| `monitoring.collector_targets`             | `A13N_MONITORING__COLLECTOR_TARGETS`             | 整数          | minimum=1; maximum=4096; default=512             |

@@ -77,6 +77,8 @@ const session = (text: string) => ({
   created_by_id: "usr_test",
   last_run_id: null,
   run_count: 1,
+  cost: null,
+  unpriced_requests: 0,
   preview: null,
   version: 1,
   created_at: "2026-09-20T00:00:00Z",
@@ -147,20 +149,20 @@ it.each([
   [
     "",
     true,
-    "Continue conversation",
+    "Continue thread",
     "/workspace/test/sessions/sess_first?view=chat",
   ],
   [
-    "?q=thr_branch",
+    "?q=thread_0123456789abcdef0123456789abcdef",
     true,
-    "Continue conversation",
-    "/workspace/test/sessions/sess_first/threads/thr_branch?view=chat",
+    "Continue thread",
+    "/workspace/test/sessions/sess_first/threads/thread_0123456789abcdef0123456789abcdef?view=chat",
   ],
   [
-    "?q=thr_branch",
+    "?q=thread_0123456789abcdef0123456789abcdef",
     false,
     "Inspect execution",
-    "/workspace/test/sessions/sess_first/threads/thr_branch?view=debug",
+    "/workspace/test/sessions/sess_first/threads/thread_0123456789abcdef0123456789abcdef?view=debug",
   ],
   [
     "?q=sess_first",
@@ -176,7 +178,10 @@ it.each([
       baseUrl: "https://service.example",
       auth: { type: "session" },
       fetch: async () =>
-        Response.json({ items: [session("First")], next_cursor: null }),
+        Response.json({
+          items: [{ ...session("First"), labels: { "a13n.console": "debug" } }],
+          next_cursor: null,
+        }),
     });
     const cache = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -194,13 +199,154 @@ it.each([
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    const link = await screen.findByRole("link", { name: action });
+    await screen.findByText("First");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Session actions" }));
+    const link = await screen.findByRole("menuitem", { name: action });
     if (!permission)
       expect(
-        screen.queryByRole("link", { name: "Continue conversation" }),
+        screen.queryByRole("menuitem", { name: "Continue thread" }),
       ).toBeNull();
     await userEvent.setup().click(link);
     expect(await screen.findByText(expected)).toBeTruthy();
     cache.clear();
   },
 );
+
+it("finds readable identity and narrows by source and labels without navigating to a Thread", async () => {
+  const value = {
+    ...session("Review #42"),
+    origin: {
+      application: "review-bot",
+      name: "GitHub · acme/widgets #42",
+      external_id: "main_42",
+    },
+    labels: { project: "Widgets", role: "main" },
+    preview: {
+      input_text: "<system_reminder>Hidden transport wrapper</system_reminder>",
+      output_text: "Ready for review",
+      agent_name: "Reviewer",
+      status: "completed",
+      trigger: "input",
+    },
+  };
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      requests.push(new URL(new Request(input, init).url));
+      return Response.json({ items: [value], next_cursor: null });
+    },
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <SessionList />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await screen.findByText("Review #42");
+  expect(screen.queryByText(/Hidden transport wrapper/)).toBeNull();
+  // The source is display text, never a link out of the Console.
+  expect(screen.getByText("GitHub · acme/widgets #42").closest("a")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "review-bot" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("application")).toBe("review-bot"),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Remove filter Source: review-bot",
+    }),
+  );
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.has("application")).toBe(false),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Filter by project: Widgets" }),
+  );
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.getAll("label")).toEqual([
+      "project:Widgets",
+    ]),
+  );
+  await user.type(screen.getByRole("searchbox"), "deploy fix");
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("q")).toBe("deploy fix"),
+  );
+  expect(
+    screen.getByRole("link", { name: "Review #42" }).getAttribute("href"),
+  ).toBe("/workspace/test/sessions/sess_review #42?view=debug");
+  await user.click(screen.getByRole("button", { name: "Session actions" }));
+  expect(
+    screen.queryByRole("menuitem", { name: "Edit session details" }),
+  ).toBeNull();
+  cache.clear();
+});
+
+it("sorts through the Service, clears the previous cursor and keeps filters", async () => {
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      requests.push(url);
+      const second = url.searchParams.has("cursor");
+      return Response.json({
+        items: [
+          {
+            ...session(second ? "Second" : "First"),
+            cost: "0.12",
+            unpriced_requests: 1,
+          },
+        ],
+        next_cursor: second ? null : "two",
+      });
+    },
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={["/?q=review"]}>
+        <SessionList />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await screen.findByText("First");
+  expect(
+    screen.getByRole("row", {
+      name: /Known subtotal; some model calls are unpriced/,
+    }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Second");
+  await user.click(screen.getByRole("button", { name: "Sort by Cost" }));
+  await screen.findByText("First");
+  expect(requests.at(-1)?.searchParams.get("sort")).toBe("cost");
+  expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
+  expect(requests.at(-1)?.searchParams.get("q")).toBe("review");
+  expect(requests.at(-1)?.searchParams.has("cursor")).toBe(false);
+  await user.click(
+    screen.getByRole("button", { name: "Sort by Cost, Descending" }),
+  );
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("direction")).toBe("asc"),
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Sort by Cost, Ascending" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Sort by Runs" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("sort")).toBe("runs"),
+  );
+  expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
+  cache.clear();
+});

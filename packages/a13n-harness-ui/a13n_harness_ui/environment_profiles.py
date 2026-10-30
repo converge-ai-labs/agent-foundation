@@ -6,7 +6,12 @@ import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final
+from typing import TYPE_CHECKING, Final, Literal
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
+
+type LocalProfileId = Literal["environment-native", "environment-envd", "environment-desktop", "environment-sandbox"]
 
 
 class EnvironmentMode(StrEnum):
@@ -27,19 +32,33 @@ class BuiltInEnvironmentProfile:
     provider_key: str
     adapter_key: str
 
+    @property
+    def provider_configuration(self) -> dict[str, JsonValue]:
+        if self.profile_id in {"environment-envd", "environment-desktop"}:
+            return {
+                "launch": {
+                    "sandbox": {"mode": "disabled"},
+                    "egress": {"mode": "inherit"},
+                    "full_control": True,
+                    "computer_use": self.profile_id == "environment-desktop",
+                    "monitoring": {"sample_interval_ms": 60_000},
+                }
+            }
+        return {}
+
 
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"
 SANDBOX_PROFILE_ID: Final = "environment-sandbox"
 WINDOWS_EXECUTION_NOTICE: Final = (
-    "Windows supports Full Control only for built-in local execution. "
-    "Commands run as your Host account with filesystem and network access; this is not a sandbox. "
-    "Windows Sandbox is not available. Choose Full Control explicitly; no automatic fallback."
+    "Local Sandbox requires Linux, macOS, or Windows with native MXC process isolation. "
+    "Readiness is verified by creating and closing an isolation boundary and running production probes. "
+    "If unavailable, choose Full Control explicitly; no automatic fallback."
 )
 
 
 def local_sandbox_supported() -> bool:
-    """Report the release's local Windows limitation, not runtime readiness."""
-    return sys.platform != "win32"
+    """Report implemented platforms; production preflight determines readiness."""
+    return sys.platform in {"linux", "darwin", "win32"}
 
 
 def require_supported_local_profile(profile_id: str | None) -> None:
@@ -52,10 +71,7 @@ FULL_CONTROL_PROFILE: Final = BuiltInEnvironmentProfile(
     profile_id=FULL_CONTROL_PROFILE_ID,
     mode=EnvironmentMode.full_control,
     name="Full Control",
-    description=(
-        "Runs commands directly as the Host user; commands may access paths outside Project roots "
-        "and use Host networking."
-    ),
+    description=("Runs as the server account, with network access and access to files outside your project."),
     provider_key="direct_local",
     adapter_key="a13n.native-project-root",
 )
@@ -64,20 +80,39 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     mode=EnvironmentMode.sandbox,
     name="Sandbox",
     description=(
-        "Runs commands through local a13n-envd with required filesystem and process isolation and denied networking."
+        "Uses local envd. Writes need permission; network access includes localhost. "
+        "Windows allows broad file reads. Linux and macOS limit reads to allowed folders and runtime files."
     ),
+    provider_key="local_envd",
+    adapter_key="a13n.local-envd-project-root",
+)
+ENVD_PROFILE: Final = BuiltInEnvironmentProfile(
+    profile_id="environment-envd",
+    mode=EnvironmentMode.full_control,
+    name="Full Control · envd",
+    description="Uses local envd as the server account. No sandbox or desktop access.",
+    provider_key="local_envd",
+    adapter_key="a13n.local-envd-project-root",
+)
+DESKTOP_PROFILE: Final = BuiltInEnvironmentProfile(
+    profile_id="environment-desktop",
+    mode=EnvironmentMode.full_control,
+    name="Full Control · envd + Computer Use",
+    description="Uses local envd with access to view and control the server desktop.",
     provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
 )
 BUILT_IN_ENVIRONMENT_PROFILES: Final = (
     FULL_CONTROL_PROFILE,
+    ENVD_PROFILE,
+    DESKTOP_PROFILE,
     SANDBOX_PROFILE,
 )
 BUILT_IN_ENVIRONMENT_PROFILES_BY_ID: Final = MappingProxyType(
     {profile.profile_id: profile for profile in BUILT_IN_ENVIRONMENT_PROFILES}
 )
 BUILT_IN_ENVIRONMENT_PROFILES_BY_MODE: Final = MappingProxyType(
-    {profile.mode: profile for profile in BUILT_IN_ENVIRONMENT_PROFILES}
+    {profile.mode: profile for profile in (FULL_CONTROL_PROFILE, SANDBOX_PROFILE)}
 )
 
 

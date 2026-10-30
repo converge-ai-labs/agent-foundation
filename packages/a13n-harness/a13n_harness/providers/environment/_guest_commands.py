@@ -24,6 +24,7 @@ class FileCommands(Protocol):
     ) -> dict[str, JsonValue]: ...
     def read_stream(self, path: str) -> AsyncIterator[bytes]: ...
     async def write_stream(self, path: str, source: BinaryIO) -> None: ...
+    async def read_range(self, path: str, offset: int, length: int) -> bytes: ...
     def receipt(self) -> EnvironmentOperationReceipt: ...
 
 
@@ -49,4 +50,25 @@ def file_helper_source() -> str:
             f"from a13n_harness.providers.environment.{module} import {names}",
             files("a13n_harness.providers.environment").joinpath(f"{module}.py").read_text(),
         )
-    return source
+    return source.replace(
+        "from a13n_harness.environment._zip import extract_zip",
+        files("a13n_harness.environment").joinpath("_zip.py").read_text(),
+    )
+
+
+async def collect_range(stream: AsyncIterator[bytes], offset: int, length: int) -> bytes:
+    """Slice one raw download with bounded memory and close early on completion."""
+    from a13n_harness.environment._streams import closing_stream
+
+    result = bytearray()
+    async with closing_stream(stream) as chunks:
+        async for chunk in chunks:
+            if offset >= len(chunk):
+                offset -= len(chunk)
+                continue
+            selected = chunk[offset : offset + length - len(result)]
+            offset = 0
+            result.extend(selected)
+            if len(result) == length:
+                break
+    return bytes(result)

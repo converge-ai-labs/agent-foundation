@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
+    from .browser import BrowserUseCapability
     from .codeact import CodeActCapability, CodeActConfig
     from .context import (
         CompactionCapability,
@@ -94,7 +95,7 @@ if TYPE_CHECKING:
         SubagentWaitRequest,
         SubagentWaitResult,
     )
-    from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
+    from .tool_execution import ToolExecutionCapability, ToolExecutionConfig
     from .tool_review import (
         AgentToolReviewer,
         ToolCallSource,
@@ -107,6 +108,13 @@ if TYPE_CHECKING:
         ToolReviewResult,
         ToolReviewRule,
         ToolRiskLevel,
+    )
+    from .tool_search import (
+        ProxyToolSearchConfig,
+        ToolSearchCapability,
+        ToolSearchGroup,
+        ToolSearchPlan,
+        ToolSearchSelection,
     )
     from .video_url import VideoUrlCapability
     from .web import (
@@ -157,6 +165,8 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS = {
+    "a13n_harness.capabilities.browser": ("BrowserUseCapability",),
+    "a13n_harness.capabilities.tool_execution": ("ToolExecutionCapability", "ToolExecutionConfig"),
     "a13n_harness.capabilities.codeact": (
         "CodeActCapability",
         "CodeActConfig",
@@ -252,12 +262,12 @@ _EXPORTS = {
         "SubagentWaitRequest",
         "SubagentWaitResult",
     ),
-    "a13n_harness.capabilities.tool_proxy": (
-        "ToolProxyCapability",
-        "ToolProxyConfig",
-        "ToolProxyGroup",
-        "ToolProxyPlan",
-        "ToolProxySelection",
+    "a13n_harness.capabilities.tool_search": (
+        "ToolSearchCapability",
+        "ProxyToolSearchConfig",
+        "ToolSearchGroup",
+        "ToolSearchPlan",
+        "ToolSearchSelection",
     ),
     "a13n_harness.capabilities.tool_review": (
         "AgentToolReviewer",

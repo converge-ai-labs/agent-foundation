@@ -1,3 +1,4 @@
+import { EnvironmentRuntimeCatalog } from "./runtime-catalog";
 import { useTranslation } from "react-i18next";
 import { KindProviders, providerStyles, useProviderTypes } from "../providers";
 
@@ -10,12 +11,19 @@ export function EnvironmentProviders() {
   return (
     <KindProviders
       kind="environment"
+      renderCatalog={(definitions, onChoose) => (
+        <EnvironmentRuntimeCatalog
+          searchable
+          definitions={definitions}
+          onChoose={onChoose}
+        />
+      )}
       addDescription="Choose where your environments run."
       testDescription="Reads from the provider without creating or starting anything."
       notice={
         <p className={providerStyles.notice}>
           {t(
-            "Direct Local and Docker require a single-host deployment and operator configuration.",
+            "Local directories run on the worker. Docker providers use the engine and network access configured by your administrator.",
           )}
         </p>
       }

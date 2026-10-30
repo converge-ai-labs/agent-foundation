@@ -162,27 +162,29 @@ async def test_inert_catalog_and_provider_construction(api):
 
 
 async def test_create_resume_and_exact_destruction(api):
-    env = environment()
+    config = E2BRecipe(environment={"APP_MODE": "agent-default"})
+    env = environment(configuration=config)
     await env.create()
     assert api.calls.count("create") == 1
+    assert api.options[0]["envs"] == config.environment
     state = env.state
     assert state is not None and "secret" not in state.model_dump_json()
     await env.close()
     assert "kill" not in api.calls and "pause" not in api.calls
-    control = environment(state)
+    control = environment(state, configuration=config)
     await control.stop()
     assert await control.inspect() == "stopped"
     paused_calls = list(api.calls)
     with pytest.raises(EnvironmentProviderError, match="E2B"):
         await control.keepalive(deadline=datetime.now(UTC) + timedelta(seconds=30), operation_id="renew-1")
     assert api.calls.count("connect") == paused_calls.count("connect")
-    resumed = environment(state)
+    resumed = environment(state, configuration=config)
     await resumed.start()
     assert api.calls.count("create") == 1 and api.calls.count("connect") == 1
-    destroy = environment(state)
+    destroy = environment(state, configuration=config)
     await destroy.destroy()
-    assert await environment(state).inspect() == "absent"
-    await environment(state).destroy()
+    assert await environment(state, configuration=config).inspect() == "absent"
+    await environment(state, configuration=config).destroy()
     assert api.calls.count("kill") == 1
 
 
@@ -357,3 +359,102 @@ async def test_independent_opens_never_resume_or_renew(api):
         assert first.execution_id != second.execution_id
         assert first.state == second.state == state
     assert api.calls == ["attach", "inspect", "attach", "inspect"]
+
+
+@pytest.mark.parametrize("exporter", [True, False])
+async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, exporter):
+    import json
+
+    from a13n_service.providers.environment.metrics import MetricsLaunch
+
+    run = AsyncMock()
+    original = api.sandbox
+
+    def sandbox(identifier):
+        result = original(identifier)
+        result.commands = SimpleNamespace(run=run)
+        return result
+
+    monkeypatch.setattr(api, "sandbox", sandbox)
+    monkeypatch.setattr(E2BManagement, "_check_envd", AsyncMock())
+    config = E2BRecipe(execution="envd_http", template="team-envd")
+    values = {"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "authorization=private-write-token"} if exporter else {}
+    metrics = MetricsLaunch(values)
+    async with await E2B.open_provider(credential={"api_key": "test-key"}) as provider:
+        state = await provider.create(config, environment_id="env_metrics", operation_id="create", metrics=metrics)
+        options = run.call_args_list[0].kwargs
+        assert options["envs"].get("OTEL_EXPORTER_OTLP_METRICS_HEADERS") == values.get(
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS"
+        )
+        assert json.loads(options["envs"]["A13N_ENVD_CONFIG_JSON"])["monitoring"] == {"sample_interval_ms": 10_000}
+        if not exporter:
+            assert not any(key.startswith("OTEL_") for key in options["envs"])
+        assert options["envs"]["A13N_ENVD_DEVICE_ID"] == "env_metrics"
+        assert state.state["configuration_fingerprint"] == config.fingerprint
+        assert "private-write-token" not in config.model_dump_json() + state.model_dump_json() + str(api.options)
+        await provider.create(config, environment_id="env_metrics", operation_id="create", state=state, metrics=metrics)
+        await provider.start(config, environment_id="env_metrics", operation_id="start", state=state)
+        assert run.await_count == 2  # One bootstrap and its bounded TCP readiness probe.
+        assert api.calls.count("create") == 1
+
+
+async def test_envd_creation_records_identity_before_bootstrap_failure(api, monkeypatch):
+    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    bootstrap = AsyncMock(side_effect=EnvironmentError("Envd unavailable", code="environment_unavailable"))
+    monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
+    with pytest.raises(EnvironmentError):
+        await env.create()
+    assert env.state is not None
+    assert api.calls.count("create") == 1
+    assert api.options[0]["template"] == "team-envd"
+    check = AsyncMock(side_effect=EnvironmentError("Not ready", code="environment_unavailable"))
+    monkeypatch.setattr(env, "_check_envd", check)
+    with pytest.raises(EnvironmentError):
+        await env.create()
+    assert api.calls.count("create") == 1
+    assert check.await_count == 1
+    assert bootstrap.await_count == 1
+    await env.destroy()
+
+
+async def test_envd_resume_checks_without_bootstrap_or_reallocation(api, monkeypatch):
+    env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
+    bootstrap, check = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(env, "_bootstrap_envd", bootstrap)
+    monkeypatch.setattr(env, "_check_envd", check)
+    await env.create()
+    state = env.state
+    await env.stop()
+    await env.start()
+    assert env.state == state
+    assert check.await_count == 2
+    assert bootstrap.await_count == 1
+    assert api.calls.count("create") == 1
+    assert api.calls.count("connect") == 1
+    await env.destroy()
+
+
+async def test_envd_bootstrap_exit_is_actionable_and_does_not_expose_guest_output(api, monkeypatch):
+    from e2b.sandbox.commands.command_handle import CommandExitException
+
+    env = environment(configuration=E2BRecipe(execution="envd_http", template="team-envd"))
+    monkeypatch.setattr(
+        env,
+        "_bootstrap_envd",
+        AsyncMock(
+            side_effect=CommandExitException(
+                stderr="private guest stderr",
+                stdout="private guest stdout",
+                exit_code=1,
+                error=None,
+            )
+        ),
+    )
+    with pytest.raises(EnvironmentProviderError) as failure:
+        await env.create()
+    assert failure.value.code == "envd_bootstrap_failed"
+    assert "template prerequisites" in str(failure.value)
+    assert "private guest" not in str(failure.value)
+    assert env.state is not None
+    assert api.calls.count("create") == 1
+    await env.destroy()

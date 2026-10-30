@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.environment_templates import service
 from a13n_service.resources.environment_templates.schemas import Template, TemplateCreate, TemplatePage, TemplateUpdate
 from a13n_service.resources.requests import CurrentRuntime
@@ -13,16 +14,18 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1/environment-templates", tags=["environments"])
 
 
-@router.post("", response_model=Template, status_code=201, openapi_extra={"x-a13n-mcp": True})
-async def create_template(
+@router.post(
+    "", response_model=Template, status_code=201, openapi_extra=platform_operation("environment_templates", "write")
+)
+async def create_environment_template(
     response: Response, workspace_id: WorkspaceId, body: TemplateCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     result = await service.create_template(runtime.storage, actor, workspace_id, body, registry=runtime.registry)
     return tagged(response, result)
 
 
-@router.get("", response_model=TemplatePage, openapi_extra={"x-a13n-mcp": True})
-async def list_templates(
+@router.get("", response_model=TemplatePage, openapi_extra=platform_operation("environment_templates", "read"))
+async def list_environment_templates(
     workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -35,15 +38,19 @@ async def list_templates(
     )
 
 
-@router.get("/{template_id}", response_model=Template, openapi_extra={"x-a13n-mcp": True})
-async def get_template(
+@router.get(
+    "/{template_id}", response_model=Template, openapi_extra=platform_operation("environment_templates", "read")
+)
+async def get_environment_template(
     response: Response, workspace_id: WorkspaceId, template_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     return tagged(response, await service.get_template(runtime.storage, actor, workspace_id, template_id))
 
 
-@router.patch("/{template_id}", response_model=Template, openapi_extra={"x-a13n-mcp": True})
-async def update_template(
+@router.patch(
+    "/{template_id}", response_model=Template, openapi_extra=platform_operation("environment_templates", "write")
+)
+async def update_environment_template(
     response: Response,
     workspace_id: WorkspaceId,
     template_id: str,

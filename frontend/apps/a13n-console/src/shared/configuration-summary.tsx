@@ -1,6 +1,7 @@
 import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { fieldLabel, JsonView } from "./forms";
+import { JsonView } from "./forms";
+import { humanize, translatedFieldLabel } from "./forms/labels";
 
 export function ConfigurationSummary({
   value,
@@ -16,16 +17,8 @@ export function ConfigurationSummary({
     string,
     { title?: string }
   >;
-  const label = (key: string) => {
-    const title = properties[key]?.title;
-    return title
-      ? fieldLabel(t(title))
-      : t(
-          key
-            .replaceAll("_", " ")
-            .replace(/^./, (letter) => letter.toUpperCase()),
-        );
-  };
+  const label = (key: string) =>
+    translatedFieldLabel(t, properties[key]?.title ?? humanize(key));
   return (
     <dl className={fields ? "contents text-sm" : "grid gap-3 text-sm"}>
       {Object.entries(value).map(([key, item]) => (

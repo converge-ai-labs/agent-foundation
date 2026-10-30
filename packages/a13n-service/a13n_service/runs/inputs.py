@@ -1,13 +1,15 @@
 """Turning accepted message input into the content the model reads.
 
 Each text the Service writes carries its source ID in `TextContent` metadata: an inbox entry ID for queued
-messages, or the successor Run ID for a resume's accompanying input. Assets and URL content reach the model as `attachments` decides, once the run's
-environments are ready to take the files it places. URL input is fetched here under the endpoint policy rather
-than by the model provider, so no provider ever fetches an address the operator did not allow.
+messages, the successor Run ID for a resume's accompanying input, or `REMINDER_SOURCE` for the turn reminder. Assets
+and URL content reach the model as `attachments` decides, once the run's environments are ready to take the files it
+places. URL input is fetched here under the endpoint policy rather than by the model provider, so no provider ever
+fetches an address the operator did not allow.
 """
 
 import json
 import posixpath
+from collections.abc import Sequence
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
 
@@ -25,9 +27,11 @@ from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.runs import attachments
 from a13n_service.runs.attachments import Attached, Recipient
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import AssetPart, JsonPart, MessagePayload, TextPart, UrlPart
+from a13n_service.runs.schemas import AssetPart, EnvironmentMount, JsonPart, MessagePayload, TextPart, UrlPart
 from a13n_service.runs.tables import InboxEntryRow
 from a13n_service.tenancy.authorize import Principal
+
+REMINDER_SOURCE = "a13n.service.reminder"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +160,36 @@ def _child_result(entry: Offered) -> tuple[UserContent, ...]:
     return (_text(entry, "A delegated subagent run ended:\n" + json.dumps(entry.payload, ensure_ascii=False)),)
 
 
+def reminder(changes: Sequence[str]) -> TextContent | None:
+    """The turn reminder: one hidden text that names what changed since the run whose history this run continues.
+    The model reads the current state in each request, but not that its history no longer describes it."""
+    if not changes:
+        return None
+    text = "\n".join(
+        [
+            "<system-reminder>",
+            "Changed since the previous turn of this conversation:",
+            *(f"- {change}" for change in changes),
+            "</system-reminder>",
+        ]
+    )
+    return TextContent(text, metadata={"source_id": REMINDER_SOURCE, "display": False})
+
+
+def mount_changes(previous: Sequence[EnvironmentMount], current: Sequence[EnvironmentMount]) -> list[str]:
+    """The mount changes the turn reminder names: a name that now mounts another environment, such as a new primary
+    sandbox after an idle delete, or one no longer mounted."""
+    environments = {mount.name: mount.environment_id for mount in current}
+    return [
+        f'The environment mount "{mount.name}" was removed.'
+        if mount.name not in environments
+        else f'The environment mount "{mount.name}" is now a different environment. '
+        "Files and processes from earlier turns are not in it."
+        for mount in previous
+        if environments.get(mount.name) != mount.environment_id
+    ]
+
+
 async def content(
     runtime: Runtime,
     principal: Principal,
@@ -169,4 +203,22 @@ async def content(
     the run principal's access."""
     if entry.kind == "message":
         return await _message(runtime, principal, recipient, environment, entry, configuration=configuration)
+    if entry.kind == "browser_handback":
+        from a13n_service.infra.db import short_session
+        from a13n_service.runs.browsers.delivery import require_notice
+
+        async with short_session(runtime.storage) as session:
+            stored = await session.get_one(InboxEntryRow, entry.id)
+            await require_notice(session, runtime, stored)
+        return (
+            TextContent(
+                "Human control ended for Browser "
+                + str(entry.payload["browser_id"])
+                + ". Observe afresh before acting. No blocked action was replayed.",
+                metadata={"source_id": entry.id, "display": False},
+            ),
+        )
+    if entry.kind == "tool_result":
+        hint = "A retained tool execution ended. Read its result with tool_execution_result: "
+        return (_text(entry, hint + json.dumps(entry.payload, ensure_ascii=False)),)
     return _child_result(entry)

@@ -72,6 +72,15 @@ def invoke(monkeypatch: pytest.MonkeyPatch, *arguments: str):
 
 
 @pytest.mark.anyio
+async def test_design_review_configuration_disables_host_browser(tmp_path: Path) -> None:
+    review = importlib.import_module("dev.harness-ui.review")
+    configuration = review.configuration(tmp_path)
+    loaded = await load_harness_ui_settings(configuration)
+    assert loaded.candidate_error is None
+    assert loaded.configuration.document.browser.mode == "disabled"
+
+
+@pytest.mark.anyio
 async def test_first_launch_reuses_models_keys_and_guidance_but_not_history(
     development: Path, monkeypatch, capsys
 ) -> None:
@@ -283,6 +292,8 @@ def test_webui_development_launcher_prints_a_usable_authenticated_link(developme
     monkeypatch.delenv("GROK_AUTH_PATH", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
     monkeypatch.setattr(sys, "argv", ["dev.harness-ui.cli", "webui"])
+    development.parent.mkdir(parents=True)
+    development.write_text('schema_version: "1"\nbrowser:\n  mode: disabled\n')
     checked = []
 
     async def serve(server: uvicorn.Server) -> None:

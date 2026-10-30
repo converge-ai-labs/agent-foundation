@@ -46,12 +46,9 @@ export function applyObservation(
           state: "waiting",
           waitingReason:
             interrupt.reason === "approval" ? "approval" : "external_call",
+          // The step keeps its tool's name: that is what the reader approves.
           ...(interrupt.reason === "approval"
-            ? {
-                kind: "hitl" as const,
-                hitl: "approval" as const,
-                name: "Approval",
-              }
+            ? { kind: "hitl" as const, hitl: "approval" as const }
             : {}),
           detail: interrupt.metadata,
         });
@@ -130,14 +127,22 @@ export function applyObservation(
         });
       if (type === "model_request_completed")
         return updateStep(next, at, id, { state: "completed" });
-      if (type === "model_request_failed")
+      if (type === "model_request_failed") {
+        const errorCode =
+          typeof payload.error_code === "string"
+            ? payload.error_code
+            : undefined;
+        // A cancelled request was stopped, not failed.
+        if (errorCode === "cancelled")
+          return updateStep(next, at, id, { state: "interrupted" });
         return updateStep(next, at, id, {
           state: "failed",
-          errorCode:
-            typeof payload.error_code === "string"
-              ? payload.error_code
-              : undefined,
+          errorCode,
+          errorStatus: numeric(payload.status_code),
+          errorDetail:
+            typeof payload.detail === "string" ? payload.detail : undefined,
         });
+      }
     }
   }
   if (name === "a13n.harness.recovery" && type === "model_retry_scheduled") {

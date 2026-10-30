@@ -2,8 +2,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Client } from "../../service-client";
-import { allPages, data, type Schema } from "../../shared/api";
-import { modelApi } from "../models/api";
+import { data, type Schema } from "../../shared/api";
 
 /** One Agent by ID, for a single read or for several at once. */
 export function agentQuery(
@@ -38,17 +37,18 @@ export function editableAgent(
   return agent.source === "custom" && !agent.archived_at;
 }
 
-/** Revisions name their model by key; views read its display name here. */
-export function useModelsByKey() {
-  const client = useClient(),
-    { workspace } = useWorkspace();
-  const query = useQuery({
-    queryKey: ["agent-list-models", workspace.id],
-    staleTime: 60_000,
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        modelApi(client, workspace.id).models(signal, cursor),
-      ),
-  });
-  return new Map((query.data ?? []).map((model) => [model.key, model]));
+export function editablePreset(
+  agent: Pick<Schema["Agent"], "source" | "preset_kind">,
+) {
+  return (
+    agent.source === "builtin" &&
+    (agent.preset_kind === "composer" || agent.preset_kind === "finding")
+  );
+}
+
+/** Presets allow only model settings and supplemental instructions to change. */
+export function editableAgentRevision(
+  agent: Pick<Schema["Agent"], "source" | "preset_kind" | "archived_at">,
+) {
+  return !agent.archived_at && (editableAgent(agent) || editablePreset(agent));
 }

@@ -10,12 +10,12 @@ dependencies = [
     "ag-ui-protocol>=1.0.0,<2",
     "a13n-harness",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim>=2.55.0,<3",
+    "pydantic-ai-slim==2.63.*",
 ]
 
 [project.urls]
-Homepage = "https://a13n.converge.ai/"
-Documentation = "https://a13n.converge.ai/docs/a13n-stream-protocol/"
+Homepage = "https://a13n.dev/"
+Documentation = "https://a13n.dev/docs/a13n-stream-protocol/"
 Repository = "https://github.com/converge-ai-labs/agent-foundation"
 
 [dependency-groups]

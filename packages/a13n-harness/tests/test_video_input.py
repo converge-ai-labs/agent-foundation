@@ -18,7 +18,7 @@ from a13n_harness.filters.video_url import project_video_urls
 from a13n_harness.models.self_healing import SelfHealingModel
 from a13n_harness.tools._output import _apply_result_policy, _render_tool_return
 from a13n_harness.tools.metadata import ToolOutputPolicy
-from a13n_harness.toolsets.video_url import VideoUrlToolset
+from a13n_harness.toolsets.media_url import MediaUrlToolset
 from a13n_harness.video_input import encoded_video_bytes
 from pydantic_ai import BinaryContent, ToolReturn, VideoUrl
 from pydantic_ai.exceptions import ModelHTTPError
@@ -91,7 +91,7 @@ def test_aggregate_budget_and_direct_url_do_not_delegate_download():
     projected = project_video_urls(history, characteristics(8))
     assert binary_videos(projected) == [first]
     assert "video_input_too_large" in repr(projected)
-    assert "read_video_url" in repr(projected)
+    assert "read_media_url" in repr(projected)
     assert "between" in repr(projected) and YOUTUBE in repr(projected)
     assert binary_videos(history) == [first, second]
 
@@ -143,7 +143,14 @@ async def test_builder_heals_small_video_on_exact_provider_error_without_changin
         for item in request_input_content(message)
         if isinstance(item.value, BinaryContent) or item.value in ("before", "after")
     ]
-    assert canonical == content_items(input) and input == snapshot
+    expected = [
+        ContentItem(
+            item.value,
+            item.metadata.model_copy(update={"a13n.input-provenance": {"kind": "task", "run_id": result.run_id}}),
+        )
+        for item in content_items(input)
+    ]
+    assert canonical == expected and input == snapshot
 
 
 @pytest.mark.parametrize(
@@ -190,7 +197,7 @@ async def test_payload_replay_requires_repair_and_never_loops(mode):
 def mock_download(monkeypatch, handler):
     factory = httpx2.AsyncClient
     monkeypatch.setattr(
-        "a13n_harness._video_urls.httpx2.AsyncClient",
+        "a13n_harness._media_urls.httpx2.AsyncClient",
         lambda **kwargs: factory(transport=httpx2.MockTransport(handler), **kwargs),
     )
 
@@ -201,7 +208,7 @@ async def read_url(url=VIDEO, *, limit=8, configuration=None, media_type=None):
             model_characteristics=characteristics(limit), configuration=configuration or RunConfiguration()
         )
     )
-    return await VideoUrlToolset().read_video_url(ctx, url, media_type=media_type)
+    return await MediaUrlToolset().read_media_url(ctx, url, media_type=media_type)
 
 
 async def test_direct_download_settlement_and_google_sdk_validation(monkeypatch):
@@ -209,10 +216,12 @@ async def test_direct_download_settlement_and_google_sdk_validation(monkeypatch)
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider
 
-    mock_download(
-        monkeypatch, lambda request: httpx2.Response(200, content=b"123456", headers={"content-type": "video/mp4"})
-    )
-    result = await read_url()
+    with monkeypatch.context() as download_patch:
+        mock_download(
+            download_patch,
+            lambda request: httpx2.Response(200, content=b"123456", headers={"content-type": "video/mp4"}),
+        )
+        result = await read_url()
     assert isinstance(result, ToolReturn) and result.content[0].data == b"123456"
     settled = _render_tool_return(
         await _apply_result_policy(result, ToolOutputPolicy(max_inline_bytes=256 * 1024, max_output_bytes=256 * 1024))
@@ -227,13 +236,13 @@ async def test_direct_download_settlement_and_google_sdk_validation(monkeypatch)
 @pytest.mark.parametrize(
     "status,headers,data,code",
     [
-        (200, {"content-type": "video/mp4"}, b"1234567", "video_input_too_large"),
-        (200, {"content-type": "text/html"}, b"page", "video_mime_invalid"),
-        (200, {"content-type": "video/mp4"}, b"", "video_empty"),
-        (401, {}, b"", "video_download_http_error"),
-        (403, {}, b"", "video_download_http_error"),
-        (413, {}, b"", "video_download_http_error"),
-        (429, {}, b"", "video_download_http_error"),
+        (200, {"content-type": "video/mp4"}, b"1234567", "media_input_too_large"),
+        (200, {"content-type": "text/html"}, b"page", "media_mime_invalid"),
+        (200, {"content-type": "video/mp4"}, b"", "media_empty"),
+        (401, {}, b"", "media_download_http_error"),
+        (403, {}, b"", "media_download_http_error"),
+        (413, {}, b"", "media_download_http_error"),
+        (429, {}, b"", "media_download_http_error"),
     ],
 )
 async def test_download_errors_are_structured_not_model_payload_recovery(monkeypatch, status, headers, data, code):
@@ -289,7 +298,7 @@ async def test_youtube_unsupported_or_restricted_never_downloads(monkeypatch):
             configuration=RunConfiguration(),
         )
     )
-    assert "video_url_unsupported" in repr(await VideoUrlToolset().read_video_url(ctx, YOUTUBE))
+    assert "video_url_unsupported" in repr(await MediaUrlToolset().read_media_url(ctx, YOUTUBE))
     assert "video_url_unsupported" in repr(
         await read_url(YOUTUBE, configuration=RunConfiguration(allowed_hosts={"youtube.com"}))
     )
@@ -300,7 +309,7 @@ async def test_download_timeout_is_structured(monkeypatch):
         raise httpx2.ReadTimeout("timed out", request=request)
 
     mock_download(monkeypatch, handler)
-    assert "video_download_timeout" in repr(await read_url())
+    assert "media_download_timeout" in repr(await read_url())
 
 
 @pytest.mark.parametrize("phase", ["request", "body"])
@@ -308,7 +317,7 @@ async def test_download_operation_deadline_is_structured_and_closes_resources(mo
     import asyncio
     from contextlib import asynccontextmanager
 
-    import a13n_harness._video_urls as acquisition
+    import a13n_harness._media_urls as acquisition
 
     timeout = asyncio.timeout
     deadlines = []
@@ -347,7 +356,7 @@ async def test_download_operation_deadline_is_structured_and_closes_resources(mo
 
     monkeypatch.setattr(acquisition.asyncio, "timeout", shortened_timeout)
     monkeypatch.setattr(acquisition.httpx2, "AsyncClient", lambda **kwargs: Client())
-    assert "video_download_timeout" in repr(await read_url())
+    assert "media_download_timeout" in repr(await read_url())
     assert deadlines == [120.0]
     assert closed == (["client"] if phase == "request" else ["response", "client"])
 
@@ -358,7 +367,7 @@ async def test_initial_destination_denied_before_network(monkeypatch, allowed_ho
         raise AssertionError("Denied destination must not be requested")
 
     mock_download(monkeypatch, no_network)
-    assert "video_download_denied" in repr(await read_url(configuration=RunConfiguration(allowed_hosts=allowed_hosts)))
+    assert "media_download_denied" in repr(await read_url(configuration=RunConfiguration(allowed_hosts=allowed_hosts)))
 
 
 @pytest.mark.parametrize("preflight", [False, True])
@@ -379,7 +388,7 @@ async def test_oversized_download_stops_reading_and_closes_stream(monkeypatch, p
     if preflight:
         headers["content-length"] = "7"
     mock_download(monkeypatch, lambda request: httpx2.Response(200, headers=headers, stream=Stream()))
-    assert "video_input_too_large" in repr(await read_url())
+    assert "media_input_too_large" in repr(await read_url())
     assert consumed == ([] if preflight else [b"123", b"4567"])
     assert closed == [True]
 
@@ -544,4 +553,55 @@ async def test_google_wire_inline_video_payload_repair_preserves_canonical_annot
         for item in request_input_content(message)
         if isinstance(item.value, BinaryContent)
     ]
-    assert saved == [ContentItem(native, annotation)] and native.vendor_metadata is None
+    expected_annotation = annotation.model_copy(
+        update={"a13n.input-provenance": {"kind": "task", "run_id": result.run_id}}
+    )
+    assert saved == [ContentItem(native, expected_annotation)] and native.vendor_metadata is None
+
+
+@pytest.mark.parametrize("trigger", ["inline", "rejected-url"])
+def test_video_projection_detaches_recovery_envelopes_without_copying_tool_json(monkeypatch, trigger):
+    from a13n_harness.filters import video_url
+    from a13n_harness.models.self_healing import _drop_inline_media, strip_provider_native_state
+    from pydantic_ai.messages import ThinkingPart, ToolCallPart
+
+    payload = {"rows": [{"values": list(range(20))} for _ in range(100)]}
+    native = BinaryContent(b"video", media_type="video/mp4", vendor_metadata={"nested": {"fps": 1}})
+    source = native if trigger == "inline" else VideoUrl(VIDEO)
+    history = [
+        ModelResponse(
+            parts=[ThinkingPart("reasoning"), ToolCallPart("lookup", {"nested": [1]}, id="provider-call")],
+            provider_name="provider",
+            provider_response_id="provider-response",
+        ),
+        ModelRequest(parts=[ToolReturnPart("lookup", payload)]),
+        ModelRequest(parts=[UserPromptPart([source])], metadata={"application": {"source": "original"}}),
+    ]
+    snapshot = deepcopy(history)
+    copied = []
+
+    def copy_native_only(value):
+        assert isinstance(value, (BinaryContent, VideoUrl))
+        copied.append(value)
+        return deepcopy(value)
+
+    monkeypatch.setattr(video_url, "deepcopy", copy_native_only)
+    projected = project_video_urls(history, characteristics())
+    assert projected is not None
+    assert projected[1].parts[0].content is payload
+    for original, detached in zip(history, projected, strict=True):
+        assert detached is not original
+        assert detached.parts is not original.parts
+        assert all(a is not b for a, b in zip(original.parts, detached.parts, strict=True))
+    if trigger == "inline":
+        assert copied == [native]
+        projected_native = binary_videos(projected)[0]
+        assert projected_native is not native
+        assert projected_native.data is native.data
+        projected_native.vendor_metadata["nested"]["fps"] = 2
+        assert native.vendor_metadata["nested"]["fps"] == 1
+        assert _drop_inline_media(projected) == 1
+    else:
+        assert not copied
+    assert strip_provider_native_state(projected) > 0
+    assert history == snapshot

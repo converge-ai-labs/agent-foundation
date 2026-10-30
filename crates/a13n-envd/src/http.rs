@@ -33,6 +33,7 @@ use crate::{
     eip::{DataFrame, DataFrameKind, DataResetStatus},
 };
 
+const METRICS_PATH: &str = "/metrics";
 const CONTROL_PATH: &str = "/eip/control";
 const TRANSFER_PATH: &str = "/eip/transfer";
 const SESSION_HEADER: HeaderName = HeaderName::from_static("eip-session");
@@ -203,7 +204,9 @@ pub(crate) async fn serve(
                 let (stream, _) = accepted?;
                 let state = Arc::clone(&state);
                 let tls = tls.clone();
+                let connection = state.daemon.connection_guard();
                 tokio::spawn(async move {
+                    let _connection = connection;
                     let result = match tls {
                         Some(acceptor) => match acceptor.accept(stream).await {
                             Ok(stream) => serve_connection(stream, state).await,
@@ -258,8 +261,11 @@ where
 }
 
 async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResponse {
-    if request.method() != Method::POST
-        && !(request.method() == Method::DELETE && request.uri().path() == TRANSFER_PATH)
+    let metrics_request = request.uri().path() == METRICS_PATH;
+    if (metrics_request && request.method() != Method::GET)
+        || (!metrics_request
+            && request.method() != Method::POST
+            && !(request.method() == Method::DELETE && request.uri().path() == TRANSFER_PATH))
     {
         return empty_response(StatusCode::METHOD_NOT_ALLOWED);
     }
@@ -275,6 +281,7 @@ async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpRespons
         return empty_response(StatusCode::BAD_REQUEST);
     }
     match request.uri().path() {
+        METRICS_PATH => metrics(&state.daemon),
         CONTROL_PATH => control(request, state).await,
         TRANSFER_PATH => transfer(request, state).await,
         _ => empty_response(StatusCode::NOT_FOUND),
@@ -740,7 +747,7 @@ async fn read_body_bounded(mut body: Incoming, maximum: usize) -> Result<Vec<u8>
     Ok(output)
 }
 
-fn authorized(headers: &hyper::HeaderMap, credential: &[u8]) -> bool {
+pub(crate) fn authorized(headers: &hyper::HeaderMap, credential: &[u8]) -> bool {
     let Some(value) = headers.get(header::AUTHORIZATION) else {
         return false;
     };
@@ -772,6 +779,19 @@ fn content_type_is(headers: &hyper::HeaderMap, expected: &str) -> bool {
 
 fn header_text<'a>(headers: &'a hyper::HeaderMap, name: &HeaderName) -> Option<&'a str> {
     headers.get(name)?.to_str().ok()
+}
+
+fn metrics(daemon: &Daemon) -> HttpResponse {
+    let Some(report) = daemon.metrics_report() else {
+        return empty_response(StatusCode::NOT_FOUND);
+    };
+    response_with_body(
+        StatusCode::OK,
+        "text/plain; version=0.0.4; charset=utf-8",
+        Full::new(Bytes::from(crate::monitoring::prometheus::encode(&report)))
+            .map_err(infallible_to_io)
+            .boxed(),
+    )
 }
 
 fn empty_response(status: StatusCode) -> HttpResponse {
@@ -811,7 +831,7 @@ fn infallible_to_io(error: Infallible) -> io::Error {
     match error {}
 }
 
-fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
+pub(crate) fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
     let (Some(certificate), Some(private_key)) =
         (&http.tls_certificate_file, &http.tls_private_key_file)
     else {
@@ -836,7 +856,7 @@ fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
+pub(crate) async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
     let mut bytes = tokio::fs::read(path).await?;
     if bytes.ends_with(b"\r\n") {
         bytes.truncate(bytes.len() - 2);

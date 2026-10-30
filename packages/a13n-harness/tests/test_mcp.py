@@ -429,3 +429,108 @@ async def test_native_mcp_toolset_lifecycle_is_isolated_on_concurrent_cancellati
     assert len(entered) == 2
     assert len(set(entered)) == 2
     assert sorted(closed) == sorted(entered)
+
+
+@pytest.mark.anyio
+async def test_local_mcp_invocation_retains_client_after_foreground_run_close():
+    import asyncio
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+
+    server = MCPServer("retained-call")
+    entered, finish = asyncio.Event(), asyncio.Event()
+    calls = 0
+    receipt = None
+
+    @server.tool()
+    async def lookup() -> str:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await finish.wait()
+        return "retained MCP value"
+
+    async def model(messages, info):
+        nonlocal receipt
+        returns = _tool_returns(messages)
+        if not returns:
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="retained-mcp")}
+        else:
+            receipt = returns[-1].content
+            yield "conversation continues"
+
+    runtime = ToolExecutionRuntime()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            MCP(local=server, id="retained-call"),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+        ),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+    assert result.status == "completed"
+    await entered.wait()
+    assert receipt["execution_id"].startswith("exec-")
+    finish.set()
+    completed = await runtime.wait(result.thread_id, receipt["execution_id"])
+    assert completed.record.status == "succeeded", completed.record
+    assert "retained MCP value" in str(completed.result)
+    assert calls == 1
+    assert await runtime.close() == ()
+
+
+@pytest.mark.anyio
+async def test_native_mcp_app_metadata_survives_parallel_calls_and_state_roundtrip() -> None:
+    from a13n_harness import HarnessState
+    from fastmcp import FastMCP
+    from fastmcp.tools import ToolResult
+    from mcp.types import TextContent
+
+    server = FastMCP("Native Apps")
+
+    @server.tool(meta={"ui": {"resourceUri": "ui://native/app.html"}})
+    def show(value: int) -> ToolResult:
+        return ToolResult(
+            content=[TextContent(type="text", text="shown")],
+            structured_content={"value": value},
+            meta={"private": value},
+        )
+
+    @server.tool(meta={"ui": {"visibility": ["app"]}})
+    def app_only() -> str:
+        return "browser only"
+
+    async def model(messages, info):
+        assert "app_only" not in {tool.name for tool in info.function_tools}
+        if _tool_returns(messages):
+            yield "done"
+        else:
+            yield {
+                index: DeltaToolCall(name="show", json_args=json.dumps({"value": index}), tool_call_id=f"app-{index}")
+                for index in (0, 1)
+            }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(MCP(local=server, id="native-apps"),),
+    )
+    result = await executable.run("Show both", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    returns = _tool_returns(list(result.all_messages()))
+    assert {part.tool_call_id for part in returns} == {"app-0", "app-1"}
+    for part in returns:
+        value = int(part.tool_call_id[-1])
+        assert part.content == {"value": value}
+        app = part.metadata["mcp_app"]
+        assert app["toolset_id"] == "native-apps"
+        assert app["tool_input"] == {"value": value}
+        assert app["result"]["_meta"]["private"] == value
+        assert app["result"]["isError"] is False
+    # The embedded Harness preserves the public payload for its own Host.
+    state = HarnessState.model_validate_json(result.state.model_dump_json())
+    assert state == result.state

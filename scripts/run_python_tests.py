@@ -26,7 +26,11 @@ def selected_files(selections: list[str]) -> set[Path]:
     files: set[Path] = set()
     for selection in selections:
         path = Path(selection.split("::", 1)[0])
-        files.update(path.rglob("test_*.py") if path.is_dir() else (path,))
+        files.update(
+            (file for file in path.rglob("*.py") if file.match("test_*.py") or file.match("*_test.py"))
+            if path.is_dir()
+            else (path,)
+        )
     return files
 
 
@@ -53,6 +57,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, help="Override each suite's worker count; 0 runs without xdist")
     parser.add_argument("--no-lock", action="store_true", help="Do not serialize whole-workspace runs per machine")
     parser.add_argument(
+        "--shard",
+        nargs=2,
+        type=int,
+        metavar=("INDEX", "COUNT"),
+        help="Run one file shard of an explicit suite (1-based)",
+    )
+    parser.add_argument(
         "paths", nargs="*", help="Workspace test directories, files, or pytest node IDs (@FILE reads one per line)"
     )
     args = parser.parse_args(argv)
@@ -64,6 +75,19 @@ def main(argv: list[str] | None = None) -> int:
             requested.extend(line.strip() for line in Path(entry[1:]).read_text().splitlines() if line.strip())
         else:
             requested.append(entry)
+
+    if args.shard is not None:
+        index, count = args.shard
+        if not 1 <= index <= count:
+            parser.error("--shard requires 1 <= INDEX <= COUNT")
+        if len(requested) != 1 or not Path(requested[0]).is_dir():
+            parser.error("--shard requires exactly one test directory")
+        # Keep each file's fixtures together; discover new files on every run instead of keeping an allowlist.
+        files = sorted(selected_files(requested))
+        requested = [str(path) for path in files[index - 1 :: count]]
+        if not requested:
+            parser.error("test shard is empty")
+        print(f"shard {index}/{count}: {len(requested)} of {len(files)} test files", flush=True)
 
     roots = [*sorted(Path("packages").glob("*/tests")), Path("scripts/tests")]
     batches: dict[Path, list[str]] = {}

@@ -34,6 +34,7 @@ from .models import (
     ModelResource,
     ProjectResource,
     SourceDocument,
+    SubscriptionGroupResource,
     canonical_digest,
 )
 
@@ -47,9 +48,10 @@ _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
 _NORMALIZATION_VERSION = "1"
 logger = logging.getLogger(__name__)
-_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices")
+_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
+    "subscription_groups": SubscriptionGroupResource,
     "mcp": McpServerResource,
     "agents": AgentResource,
     "projects": ProjectResource,
@@ -259,6 +261,7 @@ def _parse_complete_tree(
         code="settings_invalid",
     )
     models: dict[str, ModelResource] = {}
+    subscription_groups: dict[str, SubscriptionGroupResource] = {}
     plugins: dict[str, HarnessPluginResource] = {}
     profiles: dict[str, EnvironmentProfileResource] = {}
     run_extensions: dict[str, EnvironmentRunExtensionResource] = {}
@@ -334,6 +337,7 @@ def _parse_complete_tree(
                 )
                 expected_kind = {
                     "models": "model",
+                    "subscription_groups": "subscription_group",
                     "mcp": "mcp_server",
                     "agents": "agent",
                     "projects": "project",
@@ -347,6 +351,7 @@ def _parse_complete_tree(
                     )
                 target = {
                     "models": models,
+                    "subscription_groups": subscription_groups,
                     "mcp": mcp,
                     "agents": agents,
                     "projects": projects,
@@ -404,6 +409,7 @@ def _parse_complete_tree(
             content_plugins=content_plugins,
             content_plugin_diagnostics=tuple(plugin_diagnostics),
             models=models,
+            subscription_groups=subscription_groups,
             harness_plugins=plugins,
             environment_profiles=profiles,
             environment_run_extensions=run_extensions,
@@ -515,13 +521,18 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
     if "mcpServers" not in raw:
         definitions = [(raw, ("transport",))]
     else:
-        if set(raw) != {"mcpServers"} or not isinstance(raw["mcpServers"], dict):
+        if (
+            set(raw) - {"mcpServers", "schema_version"}
+            or raw.get("schema_version", "1") not in {"1", "2"}
+            or not isinstance(raw["mcpServers"], dict)
+        ):
             raise _error("configuration_resource_invalid", "Expected an mcpServers object without extra fields.", path)
         definitions = []
         for name, server in raw["mcpServers"].items():
             if not isinstance(name, str) or not name or not isinstance(server, dict):
                 raise _error("configuration_resource_invalid", "MCP server entries must be named objects.", path)
             transport = dict(server)
+            selected_tools = transport.pop("tools", None)
             transport_type = transport.pop("type", None)
             expected_type = "stdio" if "command" in transport else "http"
             if transport_type == "streamable-http":
@@ -540,7 +551,8 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
             definitions.append(
                 (
                     {
-                        "schema_version": "1",
+                        "schema_version": raw.get("schema_version", "1"),
+                        "tools": selected_tools,
                         "kind": "mcp_server",
                         "id": resource_id,
                         "name": name,
@@ -874,7 +886,7 @@ _UniqueSafeLoader.add_constructor(
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
     # These authored diagnostics contain source IDs and group/configuration names,
     # not arbitrary resource payloads or credential validation inputs.
-    from .models import _MissingModelReferenceError, _ToolProxyConfigurationError
+    from .models import _MissingModelReferenceError, _ToolSearchConfigurationError
 
     for error in exc.errors(include_input=False, include_url=False):
         cause = error.get("ctx", {}).get("error")
@@ -888,8 +900,8 @@ def _validation_error(code: str, message: str, path: Path, exc: ValidationError)
                     "model_id": cause.model_id,
                 },
             )
-        if isinstance(cause, _ToolProxyConfigurationError):
-            code = "tool_proxy_invalid"
+        if isinstance(cause, _ToolSearchConfigurationError):
+            code = "tool_search_invalid"
             message = str(cause)
             break
     return ConfigurationError(

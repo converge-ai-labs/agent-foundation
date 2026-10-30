@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection, EIPSession
+from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 
-from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSessionBinding
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
@@ -22,6 +22,7 @@ from a13n_harness.environment.envd_policy import (
 )
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
+from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.remote_envd.configuration import (
     RemoteEnvdConnectionConfiguration,
     RemoteEnvdStateData,
@@ -176,16 +177,17 @@ class WebSocketEnvdConnections:
         timeout: float = 10,
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
-    ) -> AsyncIterator[EIPSession]:
+        session_recovery: EnvdSessionRecovery | None = None,
+    ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
-        async with DeviceEIPSessionSource(device).open_session(
+        async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,
             required_methods=required_methods,
             working_directory=working_directory,
             egress=await resolve_egress(egress, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
-            yield session
+            yield EIPSessionBinding(session, device.descriptor)
 
     async def close(self) -> None:
         """Fence admission and release all SDK-owned attachment tasks and sessions."""

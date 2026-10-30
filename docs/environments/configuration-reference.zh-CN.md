@@ -3,16 +3,15 @@ title: Provider 配置参考
 description: 从 provider 模型生成的全部内置环境 provider 配置字段。
 ---
 
-> [!NOTE]
-> 由 `scripts/docs/references.py` 从内置 provider Pydantic 模型生成。英文原页应重新生成，不要手动编辑数据行。
+找到所用 Provider 的配置模型，再查表确认字段名、可选值和默认值。`DirectLocalRootConfiguration` 等类型在下方有单独的表格。要把目标配置、后端设置和私有凭据组合成可用配置，先读[配置 Provider](configuration.md)。
 
-编写配置、理解配置/运行时/状态边界和跨字段限制时，参见[配置 provider](configuration.md)。这些是 provider 设置，不是独立守护进程 JSON 默认值。
+标为**必填**的字段必须提供。**默认值由模型工厂计算**表示模型在构造时计算该值；本参考页不会解析你的 Host 环境或凭据存储中的值。表格描述 Provider 配置对象。独立守护进程的 JSON 设置见 [Envd 配置](../a13n-envd/configuration.md)。
 
-“必填”表示没有默认值。由工厂提供的字段具有模型计算的默认值；生成本页时不会读取 Host 环境或凭据存储。下面的命名 schema 部分包含嵌套根目录、挂载和 shell 配置。运行时客户端和权威目标状态不应放入这些目标配置、账号配置和凭据对象。
+表格由内置 Provider 模型生成。贡献者修改模型后，用 `uv run --locked python scripts/docs/references.py` 重新生成英文页面，并同步翻译后的表格行。
 
 ## 云 provider
 
-六个云 provider 使用相同的目标配置、后端和私有凭据边界。下方平行列出各自 schema；能力差异见[云 provider 指南](providers.md#cloud-providers)。
+通过下表链接查找各云 Provider 的三类配置对象。目标配置描述要创建的目标，后端设置选择账号或端点，凭据提供私有认证信息。支持的操作和配置示例见[云 Provider](providers.md#cloud-providers)。
 
 | Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
@@ -30,6 +29,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `root`                     | true  | DirectLocalRootConfiguration             | —                                       |
 | `shell_profiles`           | false | 数组，元素类型为 DirectLocalShellProfile | default=[]                              |
 | `allowed_executables`      | false | string 数组                              | uniqueItems=true; default=[]            |
+| `environment`              | false | EnvironmentVariables                     | —; 默认值由模型工厂计算                 |
 | `inherit_environment`      | false | boolean                                  | default=false                           |
 | `allowed_environment_keys` | false | string 数组 或 null                      | uniqueItems=true; default=[]            |
 | `allowed_ports`            | false | integer 数组                             | uniqueItems=true; default=[]            |
@@ -55,6 +55,12 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `fixed_arguments` | false | string 数组           | default=[]                 |
 | `dialect`         | false | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false | boolean               | default=false              |
+
+## `EnvironmentVariables`
+
+Agent 命令的默认变量。它们是可读取的普通配置，不用于存放密钥；命令显式指定的值优先。
+
+类型：`object`，键和值均为字符串。
 
 ## `LocalEnvdEnvironmentConfiguration`
 
@@ -140,10 +146,11 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `RestrictedSandbox`
 
-| 字段     | 必填  | 类型 / 可选值                 | 约束与默认值 |
-| -------- | ----- | ----------------------------- | ------------ |
-| `mode`   | true  | "restricted"                  | —            |
-| `grants` | false | 数组，元素类型为 SandboxGrant | default=[]   |
+| 字段             | 必填  | 类型 / 可选值                 | 约束与默认值  |
+| ---------------- | ----- | ----------------------------- | ------------- |
+| `mode`           | true  | "restricted"                  | —             |
+| `grants`         | false | 数组，元素类型为 SandboxGrant | default=[]    |
+| `full_disk_read` | false | boolean                       | default=false |
 
 ## `SandboxGrant`
 
@@ -160,20 +167,24 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 由 Host 选择的守护进程启动配置，由该运行时上的所有会话共享。
 
-| 字段                          | 必填  | 类型 / 可选值                          | 约束与默认值                                        |
-| ----------------------------- | ----- | -------------------------------------- | --------------------------------------------------- |
-| `execution`                   | false | EnvdExecutionConfiguration             | —; 默认值由模型工厂计算                             |
-| `sandbox`                     | false | SandboxPolicy                          | —; 默认值由模型工厂计算                             |
-| `egress`                      | false | EnvdNetworkConfiguration               | —; 默认值由模型工厂计算                             |
-| `default_working_directory`   | false | string 或 null                         | format="path"; default=null                         |
-| `directory_discovery`         | false | boolean                                | default=true                                        |
-| `trusted_executable_roots`    | false | string 数组                            | default=[]                                          |
-| `shell_profiles`              | false | 数组，元素类型为 LocalEnvdShellProfile | default=[]                                          |
-| `max_file_bytes`              | false | integer                                | exclusiveMinimum=0; default=16777216                |
-| `max_output_preview_bytes`    | false | integer                                | maximum=16777216; exclusiveMinimum=0; default=65536 |
-| `max_output_bytes_per_stream` | false | integer                                | exclusiveMinimum=0; default=268435456               |
-| `max_spool_bytes`             | false | integer                                | exclusiveMinimum=0; default=1073741824              |
-| `max_device_spool_bytes`      | false | integer                                | exclusiveMinimum=0; default=4294967296              |
+| 字段                                 | 必填  | 类型 / 可选值                            | 约束与默认值                                        |
+| ------------------------------------ | ----- | ---------------------------------------- | --------------------------------------------------- |
+| `execution`                          | false | EnvdExecutionConfiguration               | —; 默认值由模型工厂计算                             |
+| `sandbox`                            | false | SandboxPolicy                            | —; 默认值由模型工厂计算                             |
+| `egress`                             | false | EnvdNetworkConfiguration                 | —; 默认值由模型工厂计算                             |
+| `default_working_directory`          | false | string 或 null                           | format="path"; default=null                         |
+| `directory_discovery`                | false | boolean                                  | default=true                                        |
+| `full_control`                       | false | boolean                                  | default=false                                       |
+| `computer_use`                       | false | boolean                                  | default=false                                       |
+| `computer_use_permission_timeout_ms` | false | integer                                  | exclusiveMinimum=0; default=120000                  |
+| `monitoring`                         | false | LocalEnvdMonitoringConfiguration 或 null | default=null                                        |
+| `trusted_executable_roots`           | false | string 数组                              | default=[]                                          |
+| `shell_profiles`                     | false | 数组，元素类型为 LocalEnvdShellProfile   | default=[]                                          |
+| `max_file_bytes`                     | false | integer                                  | exclusiveMinimum=0; default=16777216                |
+| `max_output_preview_bytes`           | false | integer                                  | maximum=16777216; exclusiveMinimum=0; default=65536 |
+| `max_output_bytes_per_stream`        | false | integer                                  | exclusiveMinimum=0; default=268435456               |
+| `max_spool_bytes`                    | false | integer                                  | exclusiveMinimum=0; default=1073741824              |
+| `max_device_spool_bytes`             | false | integer                                  | exclusiveMinimum=0; default=4294967296              |
 
 ## `EnvdExecutionConfiguration`
 
@@ -189,6 +200,16 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | ------ | ---- | ------------------------------- | ------------ |
 | `mode` | true | "inherit", "deny", "controlled" | —            |
 
+## `LocalEnvdMonitoringConfiguration`
+
+可选的外层守护进程采样配置，独立于会话执行策略。
+
+| 字段                  | 必填  | 类型 / 可选值  | 约束与默认值                               |
+| --------------------- | ----- | -------------- | ------------------------------------------ |
+| `sample_interval_ms`  | false | integer        | minimum=1000; maximum=60000; default=10000 |
+| `filesystems`         | false | object         | —; 默认值由模型工厂计算                    |
+| `cgroup_v2_directory` | false | string 或 null | format="path"; default=null                |
+
 ## `LocalEnvdShellProfile`
 
 | 字段               | 必填  | 类型 / 可选值 | 约束与默认值                        |
@@ -201,28 +222,32 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DockerRecipe`
 
-| 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                     |
-| ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
-| `pull_policy`                 | false | "never", "if_missing"                     | default="if_missing"                                                             |
-| `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false | object                                    | —; 默认值由模型工厂计算                                                          |
-| `init_script`                 | false | string 或 null                            | maxLength=1048576; format="multiline"; default=null                              |
-| `disable_network`             | false | boolean                                   | default=false                                                                    |
-| `user`                        | false | string 或 null                            | minLength=1; maxLength=128; default=null                                         |
-| `shell`                       | false | string                                    | default="/bin/sh"                                                                |
-| `python`                      | false | string                                    | default="python3"                                                                |
-| `cpus`                        | false | number 或 null                            | minimum=0.001; default=null                                                      |
-| `memory_gb`                   | false | number 或 null                            | minimum=0.006291456; default=null                                                |
-| `pids_limit`                  | false | integer 或 null                           | exclusiveMinimum=0; default=null                                                 |
-| `stop_grace_seconds`          | false | integer                                   | minimum=0; maximum=300; default=10                                               |
-| `request_timeout_seconds`     | false | integer                                   | maximum=3600; exclusiveMinimum=0; default=60                                     |
-| `max_file_bytes`              | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
-| `max_query_entries`           | false | integer                                   | exclusiveMinimum=0; default=100000                                               |
-| `max_output_preview_bytes`    | false | integer                                   | exclusiveMinimum=0; default=65536                                                |
-| `max_output_bytes_per_stream` | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
-| `max_spool_bytes`             | false | integer                                   | exclusiveMinimum=0; default=67108864                                             |
-| `max_concurrent_processes`    | false | integer                                   | exclusiveMinimum=0; default=128                                                  |
+| 字段                          | 必填  | 类型 / 可选值                  | 约束与默认值                                                                     |
+| ----------------------------- | ----- | ------------------------------ | -------------------------------------------------------------------------------- |
+| `image`                       | false | string                         | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `execution`                   | false | "native", "envd_http"          | default="native"                                                                 |
+| `desktop`                     | false | boolean                        | default=false                                                                    |
+| `mounts`                      | false | 数组：DockerMountConfiguration | default=[]                                                                       |
+| `environment`                 | false | EnvironmentVariables           | —; 默认值由模型工厂计算                                                          |
+| `init_script`                 | false | string 或 null                 | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false | boolean                        | default=false                                                                    |
+| `user`                        | false | string 或 null                 | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false | string                         | default="/bin/sh"                                                                |
+| `python`                      | false | string                         | default="python3"                                                                |
+| `cpus`                        | false | number 或 null                 | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false | number 或 null                 | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false | integer 或 null                | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false | integer                        | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false | integer                        | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false | integer                        | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false | integer                        | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false | integer                        | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false | integer                        | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false | integer                        | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false | integer                        | exclusiveMinimum=0; default=128                                                  |
+| `desktop_assistance`          | false | boolean                        | default=false                                                                    |
+| `desktop_viewer_url`          | false | string 或 null                 | maxLength=2048; default=null                                                     |
+| `pull_policy`                 | false | "never", "if_missing"          | default="if_missing"                                                             |
 
 ## `DockerMountConfiguration`
 
@@ -234,82 +259,86 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `E2BRecipe`
 
-| 字段                        | 必填  | 类型 / 可选值 | 约束与默认值                                              |
-| --------------------------- | ----- | ------------- | --------------------------------------------------------- |
-| `template`                  | false | string        | minLength=1; maxLength=256; default="base"                |
-| `root`                      | false | string        | default="/home/user"                                      |
-| `user`                      | false | string        | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string        | default="/usr/bin/python3"                                |
-| `timeout_seconds`           | false | integer       | minimum=30; maximum=86400; default=3600                   |
-| `request_timeout_seconds`   | false | number        | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean       | default=true                                              |
-| `max_file_bytes`            | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
-| `max_observation_bytes`     | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer       | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer       | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000         |
+| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
+| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
+| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
+| `execution`                 | false | "native", "envd_http" | default="native"                                          |
+| `desktop`                   | false | boolean               | default=false                                             |
+| `environment`               | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                   |
+| `root`                      | false | string                | default="/home/user"                                      |
+| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
+| `python`                    | false | string                | default="/usr/bin/python3"                                |
+| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
+| `allow_internet_access`     | false | boolean               | default=true                                              |
+| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
+| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
+| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
+| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
+| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `desktop_assistance`        | false | boolean               | default=false                                             |
+| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
 
 ## `DaytonaEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值  | 约束与默认值                                           |
-| ------------------------- | ----- | -------------- | ------------------------------------------------------ |
-| `root`                    | false | string         | default="/home/daytona"                                |
-| `python`                  | false | string         | default="python3"                                      |
-| `shell`                   | false | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `snapshot`                | false | string 或 null | maxLength=256; default=null                            |
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
+| ------------------------- | ----- | -------------------- | -------------------------------------------- |
+| `snapshot`                | true  | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean              | default=false                                |
+| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                           |
-| ------------------------- | ----- | ------------- | ------------------------------------------------------ |
-| `root`                    | false | string        | default="/"                                            |
-| `python`                  | false | string        | default="/usr/local/bin/python3"                       |
-| `shell`                   | false | string        | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `image`                   | false | string        | minLength=1; maxLength=256; default="python:3.13-slim" |
-| `timeout_seconds`         | false | integer       | minimum=300; maximum=86400; default=86400              |
-| `cpu`                     | false | number        | maximum=64; exclusiveMinimum=0; default=1              |
-| `memory`                  | false | integer       | minimum=128; maximum=262144; default=1024              |
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                 |
+| ------------------------- | ----- | -------------------- | -------------------------------------------- |
+| `image`                   | true  | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean              | default=false                                |
+| `environment`             | false | EnvironmentVariables | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false | integer              | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false | number               | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false | integer              | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                           |
-| ------------------------- | ----- | ------------- | ------------------------------------------------------ |
-| `root`                    | false | string        | default="/vercel/sandbox"                              |
-| `python`                  | false | string        | default="/vercel/runtimes/python/bin/python3"          |
-| `shell`                   | false | string        | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `runtime`                 | false | string        | minLength=1; maxLength=128; default="python3.13"       |
-| `timeout_seconds`         | false | integer       | minimum=300; maximum=18000; default=3600               |
-| `vcpus`                   | false | integer       | minimum=2; maximum=8; default=2                        |
+| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                        |
+| ------------------------- | ----- | --------------------- | ----------------------------------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables  | —; 默认值由模型工厂计算                                                             |
+| `root`                    | false | string                | default="/vercel/sandbox"                                                           |
+| `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                                       |
+| `shell`                   | false | string                | default="/bin/bash"                                                                 |
+| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120                                        |
+| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                              |
+| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000                                   |
+| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                               |
+| `execution`               | false | "native", "envd_http" | default="native"                                                                    |
+| `snapshot`                | false | string 或 null        | minLength=1; maxLength=256; `pattern="^(auto\|snap_[A-Za-z0-9_-]+)$"`; default=null |
+| `desktop`                 | false | boolean               | default=false                                                                       |
+| `runtime`                 | false | string                | minLength=1; maxLength=128; default="python3.13"                                    |
+| `timeout_seconds`         | false | integer               | minimum=300; maximum=18000; default=3600                                            |
+| `vcpus`                   | false | integer               | minimum=2; maximum=8; default=2                                                     |
 
 ## `SpritesEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值  | 约束与默认值                                           |
-| ------------------------- | ----- | -------------- | ------------------------------------------------------ |
-| `root`                    | false | string         | default="/home/sprite"                                 |
-| `python`                  | false | string         | default="python3"                                      |
-| `shell`                   | false | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false | string 或 null | maxLength=64; default=null                             |
+| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                           |
+| ------------------------- | ----- | ---------------------- | ------------------------------------------------------ |
+| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                                |
+| `root`                    | false | string                 | default="/home/sprite"                                 |
+| `python`                  | false | string                 | default="python3"                                      |
+| `shell`                   | false | string                 | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false | integer                | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false | integer                | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false | integer                | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false | string 或 null         | maxLength=64; default=null                             |
+| `execution`               | false | "native" / "envd_http" | default="native"                                       |
+| `desktop`                 | false | boolean                | default=false                                          |
 
 ## `RunloopEnvironmentConfiguration`
 
 | 字段                      | 必填  | 类型 / 可选值                                    | 约束与默认值                                           |
 | ------------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------ |
+| `environment`             | false | EnvironmentVariables                             | —; 默认值由模型工厂计算                                |
 | `root`                    | false | string                                           | default="/home/user"                                   |
 | `python`                  | false | string                                           | default="python3"                                      |
 | `shell`                   | false | string                                           | default="/bin/bash"                                    |
@@ -338,9 +367,19 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DockerConnectionConfiguration`
 
-| 字段          | 必填  | 类型 / 可选值 | 约束与默认值                      |
-| ------------- | ----- | ------------- | --------------------------------- |
-| `docker_host` | false | string        | minLength=1; 默认值由模型工厂计算 |
+| 字段          | 必填  | 类型 / 可选值                   | 约束与默认值                      |
+| ------------- | ----- | ------------------------------- | --------------------------------- |
+| `envd_http`   | false | DockerHttpConfiguration 或 null | default=null                      |
+| `docker_host` | false | string                          | minLength=1; 默认值由模型工厂计算 |
+
+## `DockerHttpConfiguration`
+
+| 字段                           | 必填  | 类型 / 可选值  | 约束与默认值                                            |
+| ------------------------------ | ----- | -------------- | ------------------------------------------------------- |
+| `host`                         | true  | string         | minLength=1; maxLength=253                              |
+| `bind_host`                    | false | string 或 null | default=null                                            |
+| `allow_plaintext_private_link` | false | boolean        | default=false                                           |
+| `credential_file`              | false | string         | maxLength=4096; default="/var/lib/a13n-envd/http-token" |
 
 ## `E2BConnectionConfiguration`
 
@@ -357,18 +396,18 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DaytonaConnectionConfiguration`
 
-| 字段              | 必填  | 类型 / 可选值 | 约束与默认值                            |
-| ----------------- | ----- | ------------- | --------------------------------------- |
-| `organization_id` | true  | string        | minLength=1; maxLength=128              |
-| `target`          | false | string        | minLength=1; maxLength=64; default="us" |
+| 字段              | 必填  | 类型 / 可选值  | 约束与默认值                             |
+| ----------------- | ----- | -------------- | ---------------------------------------- |
+| `organization_id` | false | string or null | minLength=1; maxLength=128; default=null |
+| `target`          | false | string         | minLength=1; maxLength=64; default="us"  |
 
 ## `ModalConnectionConfiguration`
 
-| 字段               | 必填  | 类型 / 可选值 | 约束与默认值                               |
-| ------------------ | ----- | ------------- | ------------------------------------------ |
-| `workspace`        | true  | string        | minLength=1; maxLength=128                 |
-| `app_name`         | true  | string        | minLength=1; maxLength=128                 |
-| `environment_name` | false | string        | minLength=1; maxLength=128; default="main" |
+| 字段               | 必填  | 类型 / 可选值  | 约束与默认值                                         |
+| ------------------ | ----- | -------------- | ---------------------------------------------------- |
+| `workspace`        | false | string 或 null | minLength=1; maxLength=128; default=null             |
+| `app_name`         | false | string         | minLength=1; maxLength=128; default="a13n-sandboxes" |
+| `environment_name` | false | string         | minLength=1; maxLength=128; default="main"           |
 
 ## `ModalCredential`
 
@@ -414,9 +453,10 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `HttpEnvdCredential`
 
-| 字段    | 必填 | 类型 / 可选值 | 约束与默认值                                   |
-| ------- | ---- | ------------- | ---------------------------------------------- |
-| `token` | true | string        | minLength=1; maxLength=4096; format="password" |
+| 字段      | 必填  | 类型 / 可选值 | 约束与默认值                                   |
+| --------- | ----- | ------------- | ---------------------------------------------- |
+| `headers` | false | object        | —; default from model factory                  |
+| `token`   | true  | string        | minLength=1; maxLength=4096; format="password" |
 
 ## `WebSocketEnvdConnectionConfiguration`
 

@@ -21,7 +21,7 @@ from a13n_service.resources.revisions import RevisionColumns
 
 # Managed presets have explicit identities within the builtin source.
 type AgentSource = Literal["custom", "builtin"]
-type PresetKind = Literal["composer", "finding"]
+type PresetKind = Literal["composer", "finding", "memory_organizer"]
 
 
 class AgentRow(Stamped, Base):
@@ -44,7 +44,7 @@ class AgentRow(Stamped, Base):
             "uq_agents_builtin", "workspace_id", "preset_kind", unique=True, postgresql_where=text("source = 'builtin'")
         ),
         CheckConstraint(
-            "(source = 'builtin' AND preset_kind IS NOT NULL AND preset_kind IN ('composer', 'finding')) OR (source = 'custom' AND preset_kind IS NULL)",
+            "(source = 'builtin' AND preset_kind IS NOT NULL AND preset_kind IN ('composer', 'finding', 'memory_organizer')) OR (source = 'custom' AND preset_kind IS NULL)",
             name="preset",
         ),
         rules(identity_guarded("agents")),

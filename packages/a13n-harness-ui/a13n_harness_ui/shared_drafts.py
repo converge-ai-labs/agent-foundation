@@ -28,6 +28,13 @@ class DraftSummary(SurfaceModel):
     unsent_since: datetime
 
 
+class DraftCapture(SurfaceModel):
+    """Exact synchronized input to consume only after submission is accepted."""
+
+    draft_id: str = Field(min_length=1, max_length=100)
+    update_base64: str = Field(min_length=1, max_length=700000)
+
+
 class DraftPresence(SurfaceModel):
     name: str = Field(default="", max_length=80)
     color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
@@ -132,6 +139,50 @@ class SharedDraft:
             closed=self.closed,
         )
 
+    def prepare_clear(self, capture: DraftCapture) -> bytes:
+        """Validate a synchronized capture without changing the shared draft."""
+        if self.closed or capture.draft_id != self.draft_id:
+            raise HarnessUiError("The shared draft instance changed.", code="draft_instance_conflict")
+        update = base64.b64decode(capture.update_base64, validate=True)
+        if len(update) > MAX_DRAFT_BYTES:
+            raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
+        captured = composer_document()
+        captured.apply_update(update)
+        composer_values(captured)
+        # A submission may consume an older acknowledged snapshot, but must not
+        # introduce edits or deletions which the room has never accepted.
+        merged = composer_document()
+        merged.apply_update(self._update)
+        before = merged.get_update()
+        merged.apply_update(update)
+        if merged.get_update() != before:
+            raise HarnessUiError("Synchronize your edits before sending.", code="draft_not_synchronized")
+        del captured.get("text", type=Text)[:]
+        return captured.get_update()
+
+    async def clear(self, update: bytes) -> bool:
+        """Consume captured identities while preserving later and concurrent edits."""
+        async with self._lock:
+            if self.closed:
+                return False
+            candidate = composer_document()
+            candidate.apply_update(self._update)
+            candidate.apply_update(update)
+            return self._publish(candidate)
+
+    def _publish(self, candidate: Doc) -> bool:
+        was_unsent = self.unsent_since is not None
+        self.document = candidate
+        self._update = candidate.get_update()
+        self._update_base64 = base64.b64encode(self._update).decode("ascii")
+        # Live tokens count even during uploads; dormant entries do not.
+        if not str(candidate.get("text", type=Text)).strip():
+            self.unsent_since = None
+        elif self.unsent_since is None:
+            self.unsent_since = datetime.now(UTC)
+        self._notify()
+        return was_unsent != (self.unsent_since is not None)
+
     async def command(
         self,
         participant: str,
@@ -167,16 +218,7 @@ class SharedDraft:
                 await validate_attachments(attachments)
                 # Publish only after the entire composer has validated. Rejected
                 # selections cannot partially replace the shared text.
-                self.document = candidate
-                self._update = accepted_update
-                self._update_base64 = base64.b64encode(accepted_update).decode("ascii")
-                text = str(candidate.get("text", type=Text))
-                # Live tokens count even during uploads; dormant entries do not.
-                nonempty = bool(text.strip())
-                if not nonempty:
-                    self.unsent_since = None
-                elif self.unsent_since is None:
-                    self.unsent_since = datetime.now(UTC)
+                return self._publish(candidate)
             self._notify()
             return was_unsent != (self.unsent_since is not None)
 

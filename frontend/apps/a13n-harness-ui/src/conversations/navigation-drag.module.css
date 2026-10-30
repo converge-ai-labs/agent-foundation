@@ -1,0 +1,52 @@
+.preview,
+.insertion {
+  position: fixed;
+  z-index: 200;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 212px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: var(--popover);
+  box-shadow: 0 3px 12px #00000014;
+  color: var(--a13n-text);
+  font-size: 13px;
+}
+.preview > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.preview > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insertion {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ring);
+}
+.insertion::before {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  top: -1px;
+  left: -1px;
+  border-radius: 50%;
+  background: inherit;
+}
+.preview[hidden],
+.insertion[hidden] {
+  display: none;
+}

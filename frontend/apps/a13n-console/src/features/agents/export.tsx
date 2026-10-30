@@ -6,6 +6,7 @@ import type { Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/identity";
 import { downloadBlob } from "../../shared/download";
 import { ErrorToast } from "../../shared/feedback";
+import { ModelKeyLabel } from "../models/model-icon";
 import { agentFile, serializeAgentFile, type AgentFile } from "./transfer";
 import type { AgentConfig } from "./configuration";
 import styles from "./agents.module.css";
@@ -37,13 +38,21 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
           <dl className={styles.previewFacts}>
             <div>
               <dt>{t("Model")}</dt>
-              <dd>{file.config.model}</dd>
+              <dd>
+                <ModelKeyLabel
+                  modelKey={file.config.model}
+                  size={16}
+                  className={styles.modelName}
+                />
+              </dd>
             </div>
             <div>
               <dt>{t("Capabilities")}</dt>
               <dd>
                 {t("{{skills}} skills · {{connections}} connections", {
-                  skills: file.config.skills?.length ?? 0,
+                  skills:
+                    (file.config.skills?.length ?? 0) +
+                    (file.config.builtin_skills?.length ?? 0),
                   connections: file.config.connection_tools?.length ?? 0,
                 })}
               </dd>
@@ -75,17 +84,19 @@ export function ExportAgent({
   agent,
   config,
   version,
+  builtinInstructions,
   trigger,
 }: {
   agent: Schema["Agent"];
   config: AgentConfig;
   version: number;
+  builtinInstructions?: string | null;
   trigger?: ReactElement;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<Error>();
-  const file = agentFile(agent, config);
+  const file = agentFile(agent, config, builtinInstructions);
   return (
     <ModalFrame
       open={open}
@@ -93,7 +104,7 @@ export function ExportAgent({
       trigger={
         trigger ?? (
           <Button variant="ghost">
-            <DownloadSimpleIcon size={14} />
+            <DownloadSimpleIcon aria-hidden="true" />
             {t("Export agent")}
           </Button>
         )
@@ -110,7 +121,6 @@ export function ExportAgent({
             {t("Close")}
           </Button>
           <Button
-            variant="outline"
             onClick={() => {
               try {
                 downloadBlob(
@@ -125,7 +135,7 @@ export function ExportAgent({
               }
             }}
           >
-            <DownloadSimpleIcon size={15} />
+            <DownloadSimpleIcon aria-hidden="true" />
             {t("Download YAML")}
           </Button>
         </div>

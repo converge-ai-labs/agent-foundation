@@ -36,11 +36,13 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     assert not path.parent.exists()
     root = yaml.safe_load(preview.files[path.name])
     assert root["schema_version"] == "1"
+    assert root["background_compaction"] == {"enabled": True, "blocking_threshold": 0.95}
     assert root["webui"] == {"sidekick": {}}
     assert root["tools"] == {
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
     result = await publish_setup(path, selection, validate_candidate=_validate())
@@ -110,6 +112,7 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
         {"enable_codeact": False},
         {"enable_ask_user_question": False, "interaction_timeout_seconds": 45},
         {"enable_ask_user_question": False, "interaction_timeout_seconds": 30, "enable_codeact": False},
+        {"execution": {"mode": "auto", "foreground_wait_seconds": 0.25}},
     ],
 )
 async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_values(
@@ -121,6 +124,7 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
         **authored_tools,
     }
     selection = _selection(tmp_path)
@@ -366,7 +370,7 @@ async def test_setup_with_global_guidance_saves_successfully(tmp_path: Path, ope
 
 
 @pytest.mark.anyio
-async def test_app_setup_discovery_isolates_and_retries_invalid_codex_policy(
+async def test_app_setup_discovery_uses_native_store_after_failed_cli_adoption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
@@ -381,8 +385,9 @@ async def test_app_setup_discovery_isolates_and_retries_invalid_codex_policy(
     ) as app:
         status = await app.setup_status()
         assert status.needed
-        assert status.providers[0].action == "retry"
-        assert status.providers[0].diagnostic
+        assert status.providers[0].action == "login"
+        assert status.providers[0].diagnostic is None
+        assert (await app.subscription_accounts.adoption())["codex"].status == "invalid"
         assert status.providers[1].provider == "grok"
         (tmp_path / "missing-codex-home").mkdir()
         status = await app.setup_status(rediscover=True)
@@ -442,7 +447,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
+async def test_sandbox_preflight_uses_production_boundary_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from a13n_harness.environment.models import EnvironmentError
@@ -501,6 +506,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
     review_outcome: str,
 ) -> None:
     import json
+    from datetime import UTC, datetime, timedelta
 
     import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
@@ -508,11 +514,14 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
-    # Both native Model factories are replaced, not the App composition or
-    # shell-review pipeline. No compatible account credential is read by a model.
+    from .test_onboarding import _codex_login_file
+
+    # Keep real native-account eligibility and the App shell-review pipeline;
+    # only inference is replaced by deterministic provider models.
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / "codex").mkdir()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     marker = tmp_path / "executed-command"
     reviewed: list[str | bool | None] = []
@@ -729,7 +738,11 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    (tmp_path / "codex").mkdir()
+    from datetime import UTC, datetime, timedelta
+
+    from .test_onboarding import _codex_login_file
+
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     calls = []
 
     async def stream(messages, info):
@@ -1075,6 +1088,34 @@ async def test_setup_seeds_memory_and_preserves_explicit_choices(tmp_path: Path,
         path, _selection(tmp_path, new_model_id="model-added", new_model_name="Added"), validate_candidate=_validate()
     )
     assert yaml.safe_load(path.read_text())["memory"] == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "existing", [None, {"enabled": False}, {"enabled": True, "model": "model-codex", "voice": "juniper"}]
+)
+async def test_live_setup_opt_in_and_add_model_preserves_explicit_settings(tmp_path, existing):
+    path = tmp_path / "config.yaml"
+    assert (
+        await publish_setup(path, _selection(tmp_path, enable_live=False), validate_candidate=_validate())
+    ).completed
+    root = yaml.safe_load(path.read_text())
+    assert "live" not in root
+    if existing is not None:
+        root["live"] = existing
+        path.write_text(yaml.safe_dump(root))
+    selection = _selection(tmp_path, new_model_id="model-another-codex", new_model_name="Another Codex")
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed
+    live = yaml.safe_load(path.read_text())["live"]
+    if existing is None:
+        assert live["enabled"] and live["model"] == "model-another-codex"
+        assert live["voice"] == "cove"
+        assert path.name in preview.files
+    else:
+        assert live == existing
+        assert path.name not in preview.files
 
 
 @pytest.mark.anyio

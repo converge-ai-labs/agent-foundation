@@ -85,6 +85,13 @@ class MemoryProviderRow(ProviderRow):
     ID_PREFIX = "memprov"
 
 
+class BrowserProviderRow(ProviderRow):
+    __tablename__ = "browser_providers"
+    PROVIDER_KIND = "browser"
+    KIND: ClassVar[str] = "browser_provider"
+    ID_PREFIX = "bprov"
+
+
 class ModelProviderOAuthRow(Base):
     """Independent mutable authorization state, shared by the provider's workspace."""
 

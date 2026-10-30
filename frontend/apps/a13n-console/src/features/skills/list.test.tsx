@@ -16,7 +16,11 @@ vi.mock("../../auth/context", () => ({
   useClient: () => ({ http, workspace: () => http }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => false }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/test",
+    can: () => false,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -47,6 +51,18 @@ const skill = (name: string, id: string) => ({
   updated_at: "2026-09-09T00:00:00Z",
 });
 
+const builtin = {
+  data: {
+    items: [
+      {
+        name: "platform-operations",
+        description: "Manage schedules and workspace resources.",
+      },
+    ],
+  },
+  response: new Response(),
+};
+
 function renderList() {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -69,6 +85,7 @@ function renderList() {
 
 it("searches the server from the first page and links by ID", async () => {
   http.GET.mockImplementation(async (path: string, options) => {
+    if (path === "/api/v1/builtin-skills") return builtin;
     const { q, cursor } = options.params.query;
     const response = path.endsWith("/agents")
       ? { items: [], next_cursor: null }
@@ -89,10 +106,22 @@ it("searches the server from the first page and links by ID", async () => {
   const { cache, user } = renderList();
   const first = await screen.findByRole("link", { name: /First skill/ });
   const row = first.closest("tr")!;
+  const builtinRow = (
+    await screen.findByRole("link", { name: /platform-operations/ })
+  ).closest("tr")!;
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+  expect(within(builtinRow).getByText("Built-in")).toBeTruthy();
+  expect(within(builtinRow).getAllByText("—")).toHaveLength(3);
+  expect(screen.getByText("2 skills on this page")).toBeTruthy();
   expect(within(row).getByText("GitHub")).toBeTruthy();
   expect(within(row).getByText("v3")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByRole("link", { name: /Second skill/ });
+  expect(
+    screen.queryByRole("link", { name: /platform-operations/ }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Previous" }));
+  await screen.findByRole("link", { name: /platform-operations/ });
   const search = screen.getByRole("searchbox", { name: "Search skills" });
   await user.click(search);
   await user.paste("REVIEW");
@@ -116,7 +145,7 @@ it("searches the server from the first page and links by ID", async () => {
   const found = await screen.findByRole("link", { name: /Document helper/ });
   expect(found.getAttribute("href")).toBe("/workspace/test/skills/sk_review");
   const matching = http.GET.mock.calls.filter(
-    ([, options]) => options.params.query?.q === "review",
+    ([, options]) => options.params?.query?.q === "review",
   );
   expect(matching.length).toBeGreaterThan(0);
   expect(
@@ -139,6 +168,7 @@ it("searches the server from the first page and links by ID", async () => {
 
 it("counts the unarchived agents using each skill and adds archived skills on request", async () => {
   http.GET.mockImplementation(async (path: string, options) => {
+    if (path === "/api/v1/builtin-skills") return builtin;
     const query = options.params.query;
     const response = path.endsWith("/agents")
       ? query.skill_id === "sk_used"
@@ -174,5 +204,39 @@ it("counts the unarchived agents using each skill and adds archived skills on re
   expect(archived.getAttribute("aria-pressed")).toBe("true");
   await screen.findByRole("link", { name: /Old skill/ });
   expect(screen.getByRole("link", { name: /Used skill/ })).toBeTruthy();
+  cache.clear();
+});
+
+it("shows builtin skills in an empty workspace and filters the complete builtin catalog", async () => {
+  http.GET.mockImplementation(async (path: string) =>
+    path === "/api/v1/builtin-skills"
+      ? builtin
+      : { data: { items: [], next_cursor: null }, response: new Response() },
+  );
+  const { cache, user } = renderList();
+  await screen.findByText("platform-operations");
+  expect(screen.queryByText("No workspace skills yet")).toBeNull();
+  expect(screen.getByText("1 skills on this page")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: /platform-operations/ })
+      .getAttribute("href"),
+  ).toBe("/workspace/test/skills/builtin/platform-operations");
+  await user.click(screen.getByRole("combobox", { name: "Source" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Built-in skills" }),
+  );
+  expect(screen.queryByText("No workspace skills yet")).toBeNull();
+  const search = screen.getByRole("searchbox", { name: "Search skills" });
+  await user.type(search, "schedule");
+  expect(screen.getByText("platform-operations")).toBeTruthy();
+  await user.clear(search);
+  await user.type(search, "missing");
+  expect(await screen.findByText("No matching skills")).toBeTruthy();
+  expect(
+    http.GET.mock.calls.every(
+      ([, options]) => options?.params?.query?.source !== "builtin",
+    ),
+  ).toBe(true);
   cache.clear();
 });

@@ -58,6 +58,46 @@ export function fixtureRun(
   };
 }
 
+/** The agent a fixture Run executed: its revision, with no overrides. */
+export function fixtureRunAgent(): Schema["RunAgent"] {
+  const config = { model: "scripted", instructions: "Check the fold." };
+  return {
+    revision: {
+      id: "rev_1",
+      agent_id: "agt_1",
+      number: 2,
+      config,
+      digest: "digest",
+      note: null,
+      created_by_id: "usr_1",
+      created_at: START,
+    },
+    config,
+  };
+}
+
+/** Session source is independent of editable display metadata. */
+export function fixtureSession(
+  overrides: Partial<Schema["SessionView"]> = {},
+): Schema["SessionView"] {
+  return {
+    id: "ses_1",
+    workspace_id: "ws_1",
+    labels: { "a13n.console": "debug" },
+    title: null,
+    origin: null,
+    created_by_id: "usr_1",
+    last_run_id: "run_2",
+    run_count: 2,
+    cost: null,
+    unpriced_requests: 0,
+    version: 1,
+    created_at: START,
+    updated_at: at(12),
+    ...overrides,
+  };
+}
+
 export function fixtureThread(
   overrides: Partial<Schema["ThreadView"]> = {},
 ): Schema["ThreadView"] {
@@ -68,7 +108,6 @@ export function fixtureThread(
     id: "thr_1",
     labels: {},
     last_run_id: "run_2",
-    message_history: [],
     mcp_headers: {},
     origin: "new",
     origin_run_id: null,
@@ -80,6 +119,51 @@ export function fixtureThread(
     version: 4,
     workspace_id: "ws_1",
     ...overrides,
+  };
+}
+
+export function fixtureNavigationPage(
+  threads: Schema["ThreadView"][],
+  params = new URLSearchParams(),
+): Schema["ThreadNavigationPage"] {
+  const ordered = [...threads].sort(
+    (a, b) =>
+      a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+  );
+  const reference = (thread: Schema["ThreadView"]) => {
+    const peers = ordered.filter((value) => value.origin === thread.origin);
+    return {
+      id: thread.id,
+      origin: thread.origin,
+      subagent: thread.subagent,
+      origin_number: peers.findIndex((value) => value.id === thread.id) + 1,
+      origin_count: peers.length,
+    };
+  };
+  const origins = params.getAll("origin"),
+    ids = params.getAll("thread_id");
+  const filtered = ordered.filter(
+    (thread) =>
+      (!origins.length || origins.includes(thread.origin)) &&
+      (!ids.length || ids.includes(thread.id)) &&
+      (!params.has("origin_run_id") ||
+        thread.origin_run_id === params.get("origin_run_id")),
+  );
+  const start = Number(params.get("cursor") ?? 0),
+    limit = Number(params.get("limit") ?? 50);
+  return {
+    items: filtered.slice(start, start + limit).map((thread) => ({
+      ...thread,
+      ...reference(thread),
+      origin_thread: threads.find(
+        (value) => value.id === thread.origin_thread_id,
+      )
+        ? reference(
+            threads.find((value) => value.id === thread.origin_thread_id)!,
+          )
+        : null,
+    })),
+    next_cursor: filtered.length > start + limit ? String(start + limit) : null,
   };
 }
 
@@ -128,6 +212,92 @@ export const fixtureForkThread = fixtureThread({
  * The Session those Threads belong to, served: a root Thread of two Runs, a
  * child Thread its second Run delegated to, and a fork of that same Run.
  */
+export function fixtureRunList(run = fixtureRun()): Schema["RunListItem"] {
+  const {
+    id,
+    workspace_id,
+    session_id,
+    thread_id,
+    agent_id,
+    agent_revision_id,
+    principal_id,
+    status,
+    trigger,
+    lineage,
+    parent_run_id,
+    source_entry_id,
+    current_attempt_id,
+    attempts,
+    max_attempts,
+    wait_reason,
+    version,
+    created_at,
+    started_at,
+    sealed_at,
+    updated_at,
+  } = run;
+  const source = run.input ?? run.resume?.input;
+  const parts = source?.content as
+    { type: string; text?: string }[] | undefined;
+  const text =
+    parts
+      ?.filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n") ?? "";
+  const characters = Array.from(text);
+  return {
+    id,
+    workspace_id,
+    session_id,
+    thread_id,
+    agent_id,
+    agent_revision_id,
+    principal_id,
+    status,
+    trigger,
+    lineage,
+    parent_run_id,
+    source_entry_id,
+    current_attempt_id,
+    attempts,
+    max_attempts,
+    wait_reason,
+    version,
+    created_at,
+    started_at,
+    sealed_at,
+    updated_at,
+    input_preview: {
+      text: characters.slice(0, 200).join(""),
+      truncated: characters.length > 200,
+    },
+  };
+}
+
+export function fixtureRunPage(
+  runs: Schema["RunView"][],
+  {
+    number = runs.length,
+    ...overrides
+  }: Partial<Schema["ThreadRunPage"]> & {
+    number?: number;
+  } = {},
+): Schema["ThreadRunPage"] {
+  return {
+    items: runs.map((run, index) => ({
+      ...fixtureRunList(run),
+      number: number - index,
+      cost: null,
+      model_calls: 0,
+      unpriced_requests: 0,
+    })),
+    total: runs.length,
+    next_cursor: null,
+    previous_cursor: null,
+    ...overrides,
+  };
+}
+
 export function fixtureBranchedSession() {
   return createClient({
     baseUrl: "https://service.example",
@@ -135,6 +305,13 @@ export function fixtureBranchedSession() {
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
       const name = url.pathname.split("/").at(-1) ?? "";
+      const page = (value: {
+        items: Schema["RunView"][];
+        next_cursor: string | null;
+      }) =>
+        Response.json(
+          fixtureRunPage(value.items, { next_cursor: value.next_cursor }),
+        );
       if (url.pathname.endsWith("/runs/run_2/lineage"))
         return Response.json({
           items: [fixtureRun({ lineage: "root", parent_run_id: null })],
@@ -155,6 +332,13 @@ export function fixtureBranchedSession() {
           key: name,
           name: name === "agt_child" ? "Researcher" : "Release Bot",
         });
+      if (url.pathname.endsWith("/sessions/ses_1/threads"))
+        return Response.json(
+          fixtureNavigationPage(
+            [fixtureThread(), fixtureChildThread, fixtureForkThread],
+            url.searchParams,
+          ),
+        );
       if (url.pathname.endsWith("/threads/thr_1"))
         return Response.json(fixtureThread());
       if (
@@ -166,7 +350,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_fork/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_fork",
@@ -178,7 +362,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_1/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_2",
@@ -193,7 +377,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_child/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_child",
@@ -219,6 +403,7 @@ const usage: StepUsage = {
   cacheWriteTokens: 0,
   costUsd: "0.0041",
   pricingStatus: "priced",
+  recordId: "usage_fixture",
 };
 
 /** A model request that read a file, edited it, and answered. */

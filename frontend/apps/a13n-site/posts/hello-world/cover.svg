@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
+  <text class="pt ink" x="75" y="126" text-anchor="middle">hello, world</text>
+  <rect class="fa" x="66" y="141" width="18" height="18"/>
+  <rect class="pf" x="135" y="144" width="12" height="12"/>
+  <rect class="pf" x="201" y="144" width="12" height="12"/>
+  <rect class="pf" x="267" y="144" width="12" height="12"/>
+  <rect class="pf" x="333" y="144" width="12" height="12"/>
+  <line class="pf dash" x1="89" y1="150" x2="130" y2="150"/>
+  <line class="pf dash" x1="152" y1="150" x2="196" y2="150"/>
+  <line class="pf dash" x1="218" y1="150" x2="262" y2="150"/>
+  <line class="pf dash" x1="284" y1="150" x2="328" y2="150"/>
+  <line class="pf dash" x1="350" y1="150" x2="411" y2="150"/>
+</svg>
