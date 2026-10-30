@@ -37,6 +37,12 @@
   text-transform: uppercase;
   margin-top: 8px;
 }
+.navigationHeadingActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
 .navigationHeading > span {
   overflow: hidden;
   text-overflow: ellipsis;

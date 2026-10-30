@@ -226,6 +226,8 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 ## 整理 Project 并在对话中工作
 
+点击侧边栏标题右侧、加号左边的三点菜单，可以选择 **Projects** 或 **Conversations**。选择 **Conversations** 后，标题变为 **Recent**，跨项目按最近交互时间排列会话，使用紧凑行且不显示项目副标题。发送输入和回复完成后，会话会向上移动；流式输出过程不改变排序。运行中、未读和星标继续显示，但不优先置顶。Coordinator 的 worker 仍收在所属会话下。加号变为 **New conversation**；若已筛选项目，新会话使用该项目。切回 **Projects** 后恢复项目分组和 **Add project**。浏览器会记住显示方式。
+
 **Projects** 标题旁的 **Add project** 用于保存名称和服务器目录，可另加根目录。它只创建 Project，不会创建空对话。展开 Project 可见最近更新的五个根对话；**Show more** 只加载该 Project 的下一页，折叠后仍保留已加载分页。**Without a project** 和 **Unavailable projects** 保留未分配对话，以及引用了已移除 Project 的对话入口。
 
 拖动 Project 手柄排序，或使用菜单中的 Move 和 Reset 操作。键盘操作：聚焦手柄，Space，上下箭头，Enter 保存或 Escape 取消。排序和展开状态只保存在当前浏览器。**Rename project** 只改显示名称。活跃工作优先显示，完成时更新导航时间。搜索覆盖所有保存根对话，包括未加载分页。打开 **Archived** 可恢复归档对话；对话不能拖到其他 Project。

@@ -12,6 +12,8 @@ import {
   MenuTrigger,
   MenuPopup,
   MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
   Tooltip,
   TooltipTrigger,
   TooltipPopup,
@@ -34,7 +36,8 @@ import {
 import { useProjects } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
-import { useThread, useThreads, useThreadOwners } from "./queries";
+import { readPreference, writePreference } from "../shell/preferences";
+import { useThread, useThreads } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
 import { CoordinatorEntry } from "./coordinator-entry";
 import { NewProject } from "./new-project";
@@ -42,7 +45,11 @@ import { RenameProject } from "../configuration/rename-project";
 import { newConversationPath } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
-import { useResults } from "./results";
+import {
+  useNavigationObservations,
+  type NavigationRow,
+} from "./navigation-observations";
+import { RecentNavigation } from "./recent-navigation";
 import { DraftNavigation } from "./draft-navigation";
 
 type Group = {
@@ -66,6 +73,17 @@ export function ConversationNavigation() {
   const scopedProject = projects.data?.find(
     (project) => project.project_id === scope,
   );
+  const [view, setView] = useState<"projects" | "recent">(() =>
+    readPreference("navigation-view", "projects") === "recent"
+      ? "recent"
+      : "projects",
+  );
+  const changeView = (value: unknown) => {
+    const next = value === "recent" ? "recent" : "projects";
+    setView(next);
+    order.cancel();
+    writePreference("navigation-view", next);
+  };
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<Group | null>(null);
   const [expanded, setExpanded] = useProjectExpansion();
@@ -172,17 +190,48 @@ export function ConversationNavigation() {
       </nav>
       <div className={styles.navigationHeading}>
         <span title={scopedProject?.name}>
-          {scopedProject?.name ?? "Projects"}
+          {view === "recent" ? "Recent" : (scopedProject?.name ?? "Projects")}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Add project"
-          title="Add project"
-          onClick={() => setAdding(true)}
-        >
-          <Plus />
-        </Button>
+        <div className={styles.navigationHeadingActions}>
+          <Menu>
+            <MenuTrigger
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label="Conversation display"
+              title="Conversation display"
+            >
+              <DotsThree />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuRadioGroup
+                value={view}
+                onValueChange={changeView}
+                aria-label="Display as"
+              >
+                <MenuRadioItem value="projects" closeOnClick>
+                  Projects
+                </MenuRadioItem>
+                <MenuRadioItem value="recent" closeOnClick>
+                  Conversations
+                </MenuRadioItem>
+              </MenuRadioGroup>
+            </MenuPopup>
+          </Menu>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={view === "recent" ? "New conversation" : "Add project"}
+            title={view === "recent" ? "New conversation" : "Add project"}
+            onClick={() =>
+              view === "recent"
+                ? navigate(
+                    newConversationPath(scopedProject?.project_id ?? null),
+                  )
+                : setAdding(true)
+            }
+          >
+            <Plus />
+          </Button>
+        </div>
       </div>
       <ErrorNotice
         error={projects.error}
@@ -194,7 +243,7 @@ export function ConversationNavigation() {
         {...order.pointerEvents}
       >
         {projects.isPending && <p role="status">Loading projects…</p>}
-        <div hidden={searching}>
+        <div hidden={searching || view !== "projects"}>
           {groups.map((group) => (
             <ProjectGroup
               key={group.id}
@@ -211,6 +260,7 @@ export function ConversationNavigation() {
                 !!scopedProject && scopedProject.project_id !== group.projectId
               }
               enabled={
+                view === "projects" &&
                 !searching &&
                 (!scopedProject || scopedProject.project_id === group.projectId)
               }
@@ -223,6 +273,16 @@ export function ConversationNavigation() {
               rename={() => setRenaming(group)}
             />
           ))}
+        </div>
+        <div hidden={searching || view !== "recent"}>
+          {view === "recent" && (
+            <RecentNavigation
+              enabled={!searching}
+              projectId={scopedProject?.project_id}
+              selected={selected}
+              selectedUpdatedAt={selectedDetail.dataUpdatedAt}
+            />
+          )}
         </div>
         {searching && (
           <SearchResults query={query.trim()} project={scopedProject} />
@@ -272,7 +332,6 @@ function ProjectGroup({
   order: ReturnType<typeof useProjectOrder>;
 }) {
   const navigate = useNavigate();
-  const results = useResults();
   const [markingRead, setMarkingRead] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [recentExpanded, setRecentExpanded] = useState(true);
@@ -297,101 +356,14 @@ function ProjectGroup({
     includeActive: true,
     includeStarred: true,
   });
-  // The selected detail can arrive before a slower sidebar refresh. Use that
-  // observation for this row, without replacing other Projects or page cursors.
-  type Row = Pick<Schema<"ThreadActivityView">, "thread"> &
-    Partial<Schema<"ThreadActivityView">>;
-  const observed = new Map<string, Row>(
-    [
-      ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
-      ...(list.data?.pages[0]?.active_rows ?? []),
-      ...(list.data?.pages[0]?.starred_rows ?? []),
-    ].map((row) => [row.thread.thread_id, row]),
-  );
-  for (const { thread, observedAt } of results.threads.values()) {
-    const page = list.data?.pages.find((page, index) =>
-      [
-        ...page.rows,
-        ...(index === 0 ? (page.active_rows ?? []) : []),
-        ...(index === 0 ? (page.starred_rows ?? []) : []),
-      ].some((row) => row.thread.thread_id === thread.thread_id),
-    );
-    if (observed.has(thread.thread_id) && observedAt <= (page?.observedAt ?? 0))
-      continue;
-    if (!belongs(thread)) {
-      observed.delete(thread.thread_id);
-      continue;
-    }
-    if (
-      observed.has(thread.thread_id) ||
-      results.tracker?.isUnread(thread.thread_id)
-    )
-      observed.set(thread.thread_id, {
-        ...observed.get(thread.thread_id),
-        thread,
-      });
-  }
-  const selectedPage = selected
-    ? list.data?.pages.find((page, index) =>
-        (index === 0
-          ? [
-              ...page.rows,
-              ...(page.active_rows ?? []),
-              ...(page.starred_rows ?? []),
-            ]
-          : page.rows
-        ).some((row) => row.thread.thread_id === selected.thread_id),
-      )
-    : undefined;
-  if (
-    selected &&
-    (!observed.has(selected.thread_id) ||
-      selectedUpdatedAt >
-        Math.max(
-          selectedPage?.observedAt ?? 0,
-          results.threads.get(selected.thread_id)?.observedAt ?? 0,
-        ))
-  ) {
-    observed.set(selected.thread_id, {
-      ...observed.get(selected.thread_id),
-      thread: selected,
+  const { observed, ownerIds, activeWorkerCounts, results, owners } =
+    useNavigationObservations({
+      list,
+      enabled: enabled && expanded,
+      belongs,
+      selected,
+      selectedUpdatedAt,
     });
-  }
-  const ownerIds = [
-    ...new Set(
-      [...observed.values()]
-        .filter(
-          (row) => !row.thread.archived && row.thread.coordinator_thread_id,
-        )
-        .map((row) => row.thread.coordinator_thread_id!),
-    ),
-  ];
-  const owners = useThreadOwners(
-    ownerIds.filter((id) => !observed.has(id)),
-    enabled && expanded,
-  );
-  for (const thread of owners.data ?? []) {
-    if (
-      belongs(thread) &&
-      ownerIds.includes(thread.thread_id) &&
-      !observed.has(thread.thread_id)
-    )
-      observed.set(thread.thread_id, { thread });
-  }
-  // Use the same reconciled observations for grouping and activity summaries.
-  // Worker disclosure queries are lazy and must not reset these counts.
-  const activeWorkerCounts = new Map<string, number>();
-  for (const { thread } of observed.values()) {
-    if (
-      !thread.archived &&
-      thread.role === "worker" &&
-      thread.coordinator_thread_id &&
-      thread.root_activity.state !== "inactive"
-    ) {
-      const owner = thread.coordinator_thread_id;
-      activeWorkerCounts.set(owner, (activeWorkerCounts.get(owner) ?? 0) + 1);
-    }
-  }
   const unreadOwners = new Set(
     [...observed.values()]
       .filter(
@@ -401,9 +373,9 @@ function ProjectGroup({
       .map(({ thread }) => thread.coordinator_thread_id)
       .filter(Boolean),
   );
-  const activeRows: Row[] = [];
-  const unreadRows: Row[] = [];
-  const recentRows: Row[] = [];
+  const activeRows: NavigationRow[] = [];
+  const unreadRows: NavigationRow[] = [];
+  const recentRows: NavigationRow[] = [];
   let unreadCount = 0;
   for (const row of observed.values()) {
     if (row.thread.archived && !ownerIds.includes(row.thread.thread_id))
@@ -420,7 +392,7 @@ function ProjectGroup({
         : recentRows
     ).push(row);
   }
-  const byTouch = (a: Row, b: Row) => {
+  const byTouch = (a: NavigationRow, b: NavigationRow) => {
     const left = a.thread.touched_at ?? a.thread.created_at;
     const right = b.thread.touched_at ?? b.thread.created_at;
     return left && right
@@ -437,7 +409,7 @@ function ProjectGroup({
   const rows = [...activeRows, ...unreadRows, ...recentRows];
   const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
   const recentStart = activeRows.length + unreadRows.length;
-  const isVisible = (row: Row, index: number) =>
+  const isVisible = (row: NavigationRow, index: number) =>
     index < recentStart ||
     row.thread.thread_id === selectedRootId ||
     (recentExpanded && (showAll || index < recentStart + 5));
