@@ -11,7 +11,7 @@ from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_service.distribution import OSS
 from a13n_service.infra import outbox
-from a13n_service.infra.db import transaction
+from a13n_service.infra.db import now, transaction
 from a13n_service.providers.browser.definition import BrowserProviderDefinition, LiveBrowser, ViewerGrant
 from a13n_service.providers.registry import Registry
 from a13n_service.runs.attempts import AttemptControl
@@ -267,9 +267,21 @@ async def test_takeover_drains_and_coalesces_only_blocked_calls(service, runs_ki
     assert current["control"] == "returning"
     with pytest.raises(BrowserHumanControl):
         await admission.admit(service.runtime, lease, binding)
+    grant = next(iter(supplier.grants))
     supplier.fail_revoke = False
     await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
-    assert not supplier.grants
+    assert supplier.grants == {grant} and grant not in supplier.revoked
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        current_time = await now(session)
+        assert row.control == "returning" and not row.viewer_revoked
+        assert row.failure == "browser_viewer_revoke_failed" and row.control_due_at > current_time
+        row.control_due_at = current_time - timedelta(seconds=1)
+    await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    assert not supplier.grants and grant in supplier.revoked
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.control == "automation" and row.viewer_revoked and row.viewer is None
     claims = await outbox.claim(
         service.runtime.storage, "browser_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
     )
@@ -502,7 +514,7 @@ async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_k
     from a13n_service.resources.providers.tables import BrowserProviderRow
 
     supplier, browser = await setup(service, runs_kit)
-    lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
+    lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
     await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     assert supplier.grants
     async with transaction(service.runtime.storage) as session:
@@ -516,9 +528,27 @@ async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_k
     supplier.fail_revoke = True
     await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
     assert supplier.grants
+    grant = next(iter(supplier.grants))
+    if cause == "provider_disabled":
+        from a13n_service.infra.errors import ServiceError
+
+        with pytest.raises(ServiceError) as error:
+            await admission.admit(service.runtime, lease, binding)
+        assert error.value.code == "disabled"
+    else:
+        with pytest.raises(BrowserHumanControl):
+            await admission.admit(service.runtime, lease, binding)
     supplier.fail_revoke = False
     await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
-    assert not supplier.grants
+    assert supplier.grants == {grant} and grant not in supplier.revoked
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        current_time = await now(session)
+        assert row.control == "returning" and not row.viewer_revoked
+        assert row.failure == "browser_viewer_revoke_failed" and row.control_due_at > current_time
+        row.control_due_at = current_time - timedelta(seconds=1)
+    await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    assert not supplier.grants and grant in supplier.revoked
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.control == "automation" and row.viewer_revoked and row.viewer is None
