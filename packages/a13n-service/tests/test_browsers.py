@@ -826,7 +826,12 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     from a13n_service.runs.tables import RunRow
 
     _, browser, lease = await accepted_handback(
-        service, runs_kit, scripted_model, background_compaction={"enabled": background}, summarize=handoff
+        service,
+        runs_kit,
+        scripted_model,
+        background_compaction={"enabled": background},
+        model_characteristics={"context_window_tokens": 10},
+        summarize=handoff,
     )
     plan = await _plan(service.runtime, lease)
 
@@ -841,13 +846,16 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     summary = AsyncMock(side_effect=summarize)
     scripted_model.say("Observe current state before acting")
     monkeypatch.setattr(context, "_compact_with_same_agent", summary)
-    monkeypatch.setattr(context, "_compaction_snapshot", lambda *args: (1000, 100, True))
+    # The previous scripted response reports 12 input tokens, exceeding both
+    # compaction and background blocking thresholds for the ten-token window.
+    fallback = context.CompactionCapability._foreground_fallback
+    fallback_calls = []
 
-    # Exercise background mode's synchronous fallback as well as ordinary compaction.
-    async def fits(ctx, request, **kwargs):
-        return "the browser is available again" in str(request.messages)
+    async def record_fallback(capability, ctx, request):
+        fallback_calls.append(True)
+        return await fallback(capability, ctx, request)
 
-    monkeypatch.setattr(context, "_compaction_request_fits", fits)
+    monkeypatch.setattr(context.CompactionCapability, "_foreground_fallback", record_fallback)
     publish = checkpoints.publish_checkpoint
     retaken = False
 
@@ -873,3 +881,4 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     state = await checkpoints.load_state(service.runtime.objects, pointer)
     assert ("Human control ended" in state.harness.model_dump_json()) is not retake_first
     assert summary.await_count == (0 if retake_first else 1)
+    assert bool(fallback_calls) is (background and not retake_first)
