@@ -414,6 +414,7 @@ class _Attempt:
     def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
+        self.last_committed_tail_bytes: bytes | None = None
         self.envd_sessions = {name: EnvdSessionRecovery(state) for name, state in plan.envd_sessions.items()}
         self.contents = Contents(plan.tail.items, plan.tail.refs)
         assert plan.tail.search is not None
@@ -723,9 +724,11 @@ class _Attempt:
             if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
-        messages = state.message_history
-        consumed = self.offers.incorporated(messages)
-        del messages
+        consumed: list[str] = []
+        if self.offers.open:
+            messages = state.message_history
+            consumed = self.offers.incorporated(messages)
+            del messages
         usage = self.usage.pending()
         search, snapshot = await self._search(snapshot, consumed)
         pointer, display = await checkpoints.publish_checkpoint(
@@ -748,52 +751,58 @@ class _Attempt:
             snapshot,
             contents=self.contents,
             control=self.control,
+            previous_tail=self.committed.tail if self.committed else None,
+            previous_tail_bytes=self.last_committed_tail_bytes,
         )
         display = display.model_copy(update={"search_terms": tuple(sorted(search.counts)) if search.changed else None})
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
         async with transaction(self.runtime.storage) as session:
             # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
-            thread, run, attempt, current = await lock_thread_lease(session, self.lease)
-            committed = await checkpoints.commit(
-                session,
-                run,
-                attempt,
-                previous=self.committed,
-                state=pointer,
-                display=display,
-                memory_cursors=cursors,
-                consumed=consumed,
-                usage=usage,
-                at=current,
-            )
-            checkpoints.retire(session, run, self.committed, committed)
-            await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)
-            if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
-                pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
-                if pending is not None and pending.desktop_control_id:
-                    outcome = Outcome(status="waiting", pending=pending)
-            if outcome is not None:
-                # Stop input polling before our seal releases the lease. A poll already waiting for
-                # this transaction's Thread lock must not mistake our own completion for lease loss.
-                if self.incoming is not None:
-                    self.incoming.cancel()
-                await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
-            else:
-                entries = await inbox.assign_steers(
+            thread, run, attempt, current = await checkpoints.lock(session, self.lease)
+            # Usage/consumption use explicit SQL; pending checkpoint fields need not flush for those reads.
+            # seal() flushes the final checkpoint and outcome together; ordinary boundaries flush on commit.
+            with session.no_autoflush:
+                committed = await checkpoints.commit(
                     session,
-                    thread,
                     run,
-                    max_count=worker.delivery_count,
-                    max_bytes=worker.delivery_bytes,
-                    scan=self.runtime.settings.control.inbox_count,
+                    attempt,
+                    previous=self.committed,
+                    state=pointer,
+                    display=display,
+                    memory_cursors=cursors,
+                    consumed=consumed,
+                    usage=usage,
+                    at=current,
                 )
-                steers = [Offered.of(entry) for entry in entries]
+                checkpoints.retire(session, run, self.committed, committed)
+                await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)
+                if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
+                    pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
+                    if pending is not None and pending.desktop_control_id:
+                        outcome = Outcome(status="waiting", pending=pending)
+                if outcome is not None:
+                    # Stop input polling before our seal releases the lease. A poll already waiting for
+                    # this transaction's Thread lock must not mistake our own completion for lease loss.
+                    if self.incoming is not None:
+                        self.incoming.cancel()
+                    await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
+                else:
+                    entries = await inbox.assign_steers(
+                        session,
+                        thread,
+                        run,
+                        max_count=worker.delivery_count,
+                        max_bytes=worker.delivery_bytes,
+                        scan=self.runtime.settings.control.inbox_count,
+                    )
+                    steers = [Offered.of(entry) for entry in entries]
         if outcome is not None and outcome.pending is not None and outcome.pending.desktop_control_id:
             self.desktop_paused = True
         CHECKPOINT_DURATION.record(time.monotonic() - started)
         self.search = search
         self.committed, self.seq = committed, self.seq + 1
+        self.last_committed_tail_bytes = display.tail_bytes
         self.fold.committed(snapshot)
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
@@ -957,7 +966,13 @@ class _Attempt:
             }
             search, snapshot = await self._search(snapshot, visible)
             display = await checkpoints.publish_display(
-                self.runtime, self.lease, snapshot, contents=self.contents, control=self.control
+                self.runtime,
+                self.lease,
+                snapshot,
+                contents=self.contents,
+                control=self.control,
+                previous_tail=self.committed.tail if self.committed else None,
+                previous_tail_bytes=self.last_committed_tail_bytes,
             )
             display = display.model_copy(
                 update={"search_terms": tuple(sorted(search.counts)) if search.changed else None}

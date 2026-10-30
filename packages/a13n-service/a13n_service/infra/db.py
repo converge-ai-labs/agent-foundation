@@ -1,7 +1,7 @@
 """One engine/session owner, short SQL transaction scopes and the database rules tables declare."""
 
 import hashlib
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 from typing import Any, ClassVar
@@ -12,6 +12,7 @@ from sqlalchemy import BigInteger, DateTime, FetchedValue, MetaData, Table, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm.interfaces import ORMOption
 
 from a13n_service.infra.errors import ServiceError
 
@@ -178,10 +179,17 @@ def after_commit(session: AsyncSession, callback: Callable[[], Awaitable[object]
 
 
 async def lock[R: Base](
-    session: AsyncSession, row_type: type[R], row_id: str, *, skip_locked: bool = False
+    session: AsyncSession,
+    row_type: type[R],
+    row_id: str,
+    *,
+    skip_locked: bool = False,
+    options: Sequence[ORMOption] = (),
 ) -> R | None:
     """Refresh and lock a row; optionally return None when another transaction holds it."""
-    return await session.get(row_type, row_id, with_for_update={"skip_locked": skip_locked}, populate_existing=True)
+    return await session.get(
+        row_type, row_id, with_for_update={"skip_locked": skip_locked}, populate_existing=True, options=options
+    )
 
 
 def assign(row: object, changes: Mapping[str, object]) -> list[str]:

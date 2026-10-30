@@ -11,8 +11,9 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.outbox import enqueue_once
@@ -128,8 +129,20 @@ async def seal(
     if outcome.failure is not None:
         run.failure = outcome.failure.model_dump()
     run.usage_at_seal = usage
-    thread.current_run_id, thread.last_run_id = None, run.id
     await session.flush()
+    # Update only the pointers and return their stamps. An ORM Thread flush would eagerly reload its
+    # deferred imported history because that immutable column has an INSERT server default.
+    version, updated_at = (
+        await session.execute(
+            update(ThreadRow)
+            .where(ThreadRow.id == thread.id)
+            .values(current_run_id=None, last_run_id=run.id)
+            .returning(ThreadRow.version, ThreadRow.updated_at)
+            .execution_options(synchronize_session="fetch")
+        )
+    ).one()
+    set_committed_value(thread, "version", version)
+    set_committed_value(thread, "updated_at", updated_at)
     await inbox.release_assigned(session, thread, run, at=at)
     await desktop_assistance.sealed(session, run, outcome.pending)
     if thread.origin == "child" and outcome.status != "waiting":
