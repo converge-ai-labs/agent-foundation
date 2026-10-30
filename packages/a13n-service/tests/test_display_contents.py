@@ -516,3 +516,53 @@ async def test_harness_handoff_reaches_service_live_and_saved_display(immediate)
         assert restored.state == call.state
     finally:
         await runtime.close()
+
+
+@pytest.mark.parametrize("change", ["content", "position", "resume_after", "search", "first", "continuation"])
+async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, tenant, change):
+    from a13n_service.runs.search import SearchState
+    from a13n_stream_protocol.display import DisplayContinuation
+
+    lease = Lease("run_reuse", "rat_reuse", "thr_reuse", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
+    contents = Contents()
+    original = item("中" * 20000)
+    snapshot = Snapshot([], Tail(items=[original], position=StreamPosition(attempt=1, sequence=1)))
+    first = await checkpoints.publish_display(runtime, lease, snapshot, contents=contents)
+    assert first.tail.refs and first.tail_bytes
+    # Bytes are captured after large values were replaced with their durable references.
+    assert first.tail_bytes == await checkpoints.load(runtime.objects, first.tail)
+    reused = await checkpoints.publish_display(
+        runtime, lease, snapshot, contents=contents, previous_tail=first.tail, previous_tail_bytes=first.tail_bytes
+    )
+    assert reused.tail == first.tail
+    changes = {
+        "content": {"items": [original.model_copy(update={"content": {"text": "changed"}})]},
+        "position": {"position": StreamPosition(attempt=1, sequence=2)},
+        "resume_after": {"resume_after": "1-2"},
+        "search": {"search": SearchState(through=1)},
+        "first": {"first": 2},
+        "continuation": {
+            "continuation": DisplayContinuation(run_id=lease.run_id, position=snapshot.tail.position, next_ordinal=2)
+        },
+    }
+    different = await checkpoints.publish_display(
+        runtime,
+        lease,
+        Snapshot([], snapshot.tail.model_copy(update=changes[change])),
+        contents=contents,
+        previous_tail=first.tail,
+        previous_tail_bytes=first.tail_bytes,
+    )
+    assert different.tail != first.tail and different.tail_bytes != first.tail_bytes
+    # Even when the tail is identical, new page publications cannot be skipped or mis-indexed.
+    paged = await checkpoints.publish_display(
+        runtime,
+        lease,
+        Snapshot([Page(items=[original])], snapshot.tail),
+        contents=contents,
+        previous_tail=reused.tail,
+        previous_tail_bytes=reused.tail_bytes,
+    )
+    assert paged.tail == reused.tail and len(paged.pages) == 1
+    page = await checkpoints.load_page(runtime.objects, paged.pages[0])
+    assert page.items[0].id == original.id and page.refs == first.tail.refs

@@ -11,6 +11,7 @@ from a13n_harness import state as state_module
 from a13n_service.api_tools import tool_name
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.runs import checkpoints
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.execute import _Attempt
 from a13n_service.runs.seal import LeaseExpirer
@@ -75,7 +76,7 @@ async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit,
         assert datetime.fromisoformat(item["started_at"]) <= datetime.fromisoformat(item["ended_at"]), item
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
-    assert await checkpoint_history_decodes() == [1, 1]  # Model boundary, then final state.
+    assert await checkpoint_history_decodes() == [1, 0]  # Final state has no outstanding input to inspect.
 
 
 async def test_a_client_tool_waits_and_resume_answers_it(
@@ -111,7 +112,41 @@ async def test_a_client_tool_waits_and_resume_answers_it(
     second = await scripted_model.request()
     tool_results = [message for message in second["messages"] if message["role"] == "tool"]
     assert tool_results and "42" in tool_results[0]["content"]
-    assert await checkpoint_history_decodes() == [1, 1, 1, 1]  # Model + waiting, resumed model + completed.
+    # Only the initial model boundary has an inbox input; deferred answers are tracked separately.
+    assert await checkpoint_history_decodes() == [1, 0, 0, 0]
+
+
+async def test_failed_checkpoint_keeps_input_for_recovery(service, scripted_model, runs_kit, monkeypatch):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    submitted = await runs_kit.start_thread(service, agent, "Keep this input")
+    run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]
+    original_commit = checkpoints.commit
+
+    async def fail_after_consumption(*args, **kwargs):
+        await original_commit(*args, **kwargs)
+        raise RuntimeError("Rollback the checkpoint after input consumption")
+
+    # Failure can precede HTTP dispatch; either queued reply must be safe for the recovery request.
+    scripted_model.say("Recovered")
+    with monkeypatch.context() as patch:
+        patch.setattr(checkpoints, "commit", fail_after_consumption)
+        await (await runs_kit.attempt(service))
+    (entry,) = await runs_kit.inbox(service, thread_id)
+    assert entry["status"] == "assigned" and entry["incorporated_checkpoint_seq"] is None
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, run_id)
+        assert run.status == "accepted" and run.checkpoint is None
+        await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+
+    scripted_model.say("Recovered")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, run_id)
+    assert run["status"] == "completed" and run["output"] == "Recovered" and run["attempts"] == 2
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    assert requests and str(runs_kit.user_texts(requests[-1])).count("Keep this input") == 1
+    (entry,) = await runs_kit.inbox(service, thread_id)
+    assert entry["status"] == "consumed" and entry["incorporated_checkpoint_seq"] == 1
 
 
 async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

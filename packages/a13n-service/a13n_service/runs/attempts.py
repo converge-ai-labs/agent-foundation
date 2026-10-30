@@ -9,6 +9,7 @@ from datetime import datetime
 
 from sqlalchemy import exists, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.interfaces import ORMOption
 
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import Storage, lock, now, transaction
@@ -138,9 +139,11 @@ def holds(lease: Lease, run: RunRow, attempt: AttemptRow, current: datetime) -> 
     )
 
 
-async def lock_lease(session: AsyncSession, lease: Lease) -> tuple[RunRow, AttemptRow, datetime]:
+async def lock_lease(
+    session: AsyncSession, lease: Lease, *, run_options: Sequence[ORMOption] = ()
+) -> tuple[RunRow, AttemptRow, datetime]:
     """Lock run → attempt and prove the lease; claim uses this suffix of the lock order."""
-    run = await lock(session, RunRow, lease.run_id)
+    run = await lock(session, RunRow, lease.run_id, options=run_options)
     attempt = await lock(session, AttemptRow, lease.attempt_id)
     current = await now(session)
     if run is None or attempt is None or not holds(lease, run, attempt, current):
@@ -148,12 +151,18 @@ async def lock_lease(session: AsyncSession, lease: Lease) -> tuple[RunRow, Attem
     return run, attempt, current
 
 
-async def lock_thread_lease(session: AsyncSession, lease: Lease) -> tuple[ThreadRow, RunRow, AttemptRow, datetime]:
+async def lock_thread_lease(
+    session: AsyncSession,
+    lease: Lease,
+    *,
+    thread_options: Sequence[ORMOption] = (),
+    run_options: Sequence[ORMOption] = (),
+) -> tuple[ThreadRow, RunRow, AttemptRow, datetime]:
     """Thread → run → attempt, for writes that also change the thread or its inbox."""
-    thread = await lock(session, ThreadRow, lease.thread_id)
+    thread = await lock(session, ThreadRow, lease.thread_id, options=thread_options)
     if thread is None:
         raise LeaseLost()
-    run, attempt, current = await lock_lease(session, lease)
+    run, attempt, current = await lock_lease(session, lease, run_options=run_options)
     return thread, run, attempt, current
 
 

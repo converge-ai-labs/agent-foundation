@@ -115,7 +115,7 @@ The object store holds immutable bytes under owner-named keys: lowercase slash-s
 | `compactions/{workspace}/{operation_hash}/{kind}.json`      | A background compaction operation's independent payloads                   |
 | `users/{user}/images/{random}`                              | User avatars                                                               |
 
-Run objects are compressed with zstd at `worker.compression_level`; a reference's digest and size describe the stored bytes. Publication writes the bytes outside any database session, then commits the reference. A checkpoint writes its state, tail and new pages concurrently and finishes every write before reporting a failure, so failure sealing cannot race a still-running write. A failed publication leaves unused objects.
+Run objects are compressed with zstd at `worker.compression_level`; a reference's digest and size describe the stored bytes. Publication writes the bytes outside any database session, then commits the reference. A checkpoint writes its state, changed tail and new pages concurrently and finishes every write before reporting a failure, so failure sealing cannot race a still-running write. A failed publication leaves unused objects.
 
 **Run object cleanup is owner-driven.** Only a run's own attempts write under its prefix, and only its pointers, its page catalog and the dependencies recorded with its checkpoint, tail and pages make an object reachable:
 
@@ -148,11 +148,11 @@ run_item_pages
 ```
 
 - A **page** holds consecutive final items. It is written once, catalogued in `run_item_pages` by the checkpoint transaction that commits it, and kept with the run; a trigger refuses every change to a catalogued page.
-- The **tail** holds every later item, `first` through `count`, plus the shared normalization continuation, and each checkpoint replaces it. Restoration preserves stable ordinals and active parser state rather than inferring continuation from visible items.
+- The **tail** holds every later item, `first` through `count`, plus the shared normalization continuation. A checkpoint replaces it when its complete serialized content changes. Restoration preserves stable ordinals and active parser state rather than inferring continuation from visible items.
 
 An item is **final** when no later event of the run can change it. Capturing a checkpoint preserves active text, reasoning, calls and parsing continuation without interrupting them. Terminal and retry policy is separate from snapshot capture; a terminal worker interrupts unfinished items except calls retained by a suspended native response. The tail's leading final items become a page once they reach `worker.page_items` items or `worker.page_bytes` serialized UTF-8 bytes before field externalization. Active items and their later items remain in the tail even when it exceeds a page limit. An argument observation that the next event can still extend is not pageable. An event that changes an item already in a page fails the attempt.
 
-Every checkpoint commit writes the tail and any new pages, so the durable view always describes exactly the restored history, and output after recovery continues it. Output streamed after the last checkpoint is provisional; a crash removes it from the durable view and the next attempt regenerates it.
+Every checkpoint commit selects the exact tail and records any new pages, so the durable view always describes exactly the restored history, and output after recovery continues it. An attempt may reuse its last successfully committed tail pointer only when the complete JSON bytes, after content externalization, are identical, including stream position, resume hint, continuation, dependencies and search metadata. This cache is attempt-local, advances only after the database commit succeeds, and is not restored by fetching an old object solely for comparison. Without cached bytes the attempt publishes a new tail. State checkpoints and new pages are still written. Output streamed after the last checkpoint is provisional; a crash removes it from the durable view and the next attempt regenerates it.
 
 Each tail may store `resume_after`, a confirmed Redis delta ID from its attempt covered by the snapshot. Saving a checkpoint reads the latest confirmed position without waiting for Redis; pending, failed or timed-out writes leave the earlier position available. Terminal displays reuse the position retained after bounded stream cleanup; new attempts start without one. Missing IDs read as null.
 

@@ -3,7 +3,8 @@
 A run writes its objects under `orgs/{org}/runs/{run}/{kind}/{attempt}/`, each to a new key and compressed with
 zstd, so a key never recurs:
 
-- `state` and `tail`: a checkpoint's state and the display items not yet in a page, replaced by each checkpoint;
+- `state`: a new execution state for each checkpoint;
+- `tail`: the display items not yet in a page, reusing the last committed object when its bytes are unchanged;
 - `pages`: display history pages, kept with the run once its page catalog records them;
 - `contents` and `subagents`: large binary content and ended inline subagent states the Harness saves through
   the run's state store, kept while the run's checkpoint references them.
@@ -28,7 +29,7 @@ from a13n_harness.state import StoredKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, defer
 
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import conflict
@@ -36,11 +37,11 @@ from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, new_key
 from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, prepare, settle
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import inbox
-from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
+from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.contents import ContentObject, Contents, decode, live_continuation
 from a13n_service.runs.display import Page, Snapshot, StreamPosition, Tail
 from a13n_service.runs.search import vector
-from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
+from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow, ThreadRow
 from a13n_service.runs.usage import UsageReport, ingest
 
 if TYPE_CHECKING:
@@ -261,6 +262,8 @@ class DisplayWrite(_Frozen):
     tail: TailPointer
     pages: tuple[PageRef, ...]
     search_terms: tuple[str, ...] | None = None
+    # Transient publication bytes; callers retain them only after the pointer commits.
+    tail_bytes: bytes | None = Field(default=None, exclude=True, repr=False)
 
 
 async def _all(writes: Sequence[Awaitable[ObjectRef]]) -> list[ObjectRef]:
@@ -275,18 +278,20 @@ async def _all(writes: Sequence[Awaitable[ObjectRef]]) -> list[ObjectRef]:
     return refs
 
 
-def _display_writes(runtime: Runtime, lease: Lease, snapshot: Snapshot) -> list[Awaitable[ObjectRef]]:
-    """The writes of a display snapshot: its tail, then its pages."""
-    return [
-        _publish(runtime, lease, "tail", snapshot.tail.model_dump_json().encode()),
-        *(_publish(runtime, lease, "pages", page.model_dump_json().encode()) for page in snapshot.pages),
-    ]
+def _display_writes(
+    runtime: Runtime, lease: Lease, snapshot: Snapshot, tail_bytes: bytes, reused_tail: TailPointer | None
+) -> list[Awaitable[ObjectRef]]:
+    """Publish changed tail bytes and every new page; state is always written independently."""
+    tail = [] if reused_tail is not None else [_publish(runtime, lease, "tail", tail_bytes)]
+    return [*tail, *(_publish(runtime, lease, "pages", page.model_dump_json().encode()) for page in snapshot.pages)]
 
 
-def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
-    tail, *pages = refs
-    return DisplayWrite(
-        tail=TailPointer(
+def _display_write(
+    snapshot: Snapshot, refs: list[ObjectRef], tail_bytes: bytes, reused_tail: TailPointer | None
+) -> DisplayWrite:
+    if reused_tail is None:
+        tail, *refs = refs
+        reused_tail = TailPointer(
             key=tail.key,
             digest=tail.digest,
             size=tail.size,
@@ -295,7 +300,10 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
             first=snapshot.tail.first,
             count=snapshot.tail.first + len(snapshot.tail.items) - 1,
             refs=snapshot.tail.refs,
-        ),
+        )
+    return DisplayWrite(
+        tail=reused_tail,
+        tail_bytes=tail_bytes,
         pages=tuple(
             PageRef(
                 key=ref.key,
@@ -305,7 +313,7 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
                 last=page.items[-1].ordinal,
                 refs=page.refs,
             )
-            for ref, page in zip(pages, snapshot.pages, strict=True)
+            for ref, page in zip(refs, snapshot.pages, strict=True)
         ),
     )
 
@@ -351,10 +359,19 @@ async def publish_display(
     *,
     contents: Contents | None = None,
     control: AttemptControl | None = None,
+    previous_tail: TailPointer | None = None,
+    previous_tail_bytes: bytes | None = None,
 ) -> DisplayWrite:
     """Write a display snapshot outside any session."""
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
-    return _display_write(snapshot, await _all(_display_writes(runtime, lease, snapshot)))
+    tail_bytes = snapshot.tail.model_dump_json().encode()
+    reused_tail = previous_tail if tail_bytes == previous_tail_bytes else None
+    return _display_write(
+        snapshot,
+        await _all(_display_writes(runtime, lease, snapshot, tail_bytes, reused_tail)),
+        tail_bytes,
+        reused_tail,
+    )
 
 
 async def publish_checkpoint(
@@ -365,13 +382,17 @@ async def publish_checkpoint(
     *,
     contents: Contents | None = None,
     control: AttemptControl | None = None,
+    previous_tail: TailPointer | None = None,
+    previous_tail_bytes: bytes | None = None,
 ) -> tuple[StatePointer, DisplayWrite]:
     """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
+    tail_bytes = snapshot.tail.model_dump_json().encode()
+    reused_tail = previous_tail if tail_bytes == previous_tail_bytes else None
     written, *display = await _all(
         [
             _publish(runtime, lease, "state", state.to_json_bytes()),
-            *_display_writes(runtime, lease, snapshot),
+            *_display_writes(runtime, lease, snapshot, tail_bytes, reused_tail),
         ]
     )
     pointer = StatePointer(
@@ -383,7 +404,7 @@ async def publish_checkpoint(
         attempt=state.attempt,
         refs=state.harness.refs,
     )
-    return pointer, _display_write(snapshot, display)
+    return pointer, _display_write(snapshot, display, tail_bytes, reused_tail)
 
 
 def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) -> None:
@@ -404,6 +425,36 @@ def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) ->
             refs=[ref.model_dump(mode="json") for ref in page.refs],
         )
         for page in display.pages
+    )
+
+
+async def lock(session: AsyncSession, lease: Lease) -> tuple[ThreadRow, RunRow, AttemptRow, datetime]:
+    """Keep the lease locks, without reloading immutable inputs unused by checkpoint/steer/seal writes."""
+    return await lock_thread_lease(
+        session,
+        lease,
+        thread_options=[
+            defer(column, raiseload=True)
+            for column in (
+                ThreadRow.message_history,
+                ThreadRow.execution,
+                ThreadRow.mcp_headers,
+                ThreadRow.subagent,
+                ThreadRow.labels,
+            )
+        ],
+        # Keep memory_mounts loaded: its server default makes eager_defaults fetch it again on UPDATE.
+        run_options=[
+            defer(column, raiseload=True)
+            for column in (
+                RunRow.revision_selection,
+                RunRow.authority,
+                RunRow.mcp_headers,
+                RunRow.environment_mounts,
+                RunRow.resume,
+                RunRow.labels,
+            )
+        ],
     )
 
 

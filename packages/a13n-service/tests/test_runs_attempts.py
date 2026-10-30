@@ -668,7 +668,8 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     sealing = execute_module.seal
 
     async def failing(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("The seal failed")
+        await sealing(*args, **kwargs)
+        raise RuntimeError("The seal failed after its writes")
 
     monkeypatch.setattr(execute_module, "seal", failing)
     scripted_model.say("Lost")
