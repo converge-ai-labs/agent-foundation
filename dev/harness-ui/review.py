@@ -27,7 +27,7 @@ from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
-ANSWER = """The checkout flow has a small but important gap: a slow request can submit the same order twice.
+ANSWER = r"""The checkout flow has a small but important gap: a slow request can submit the same order twice.
 
 ### What I found
 
@@ -56,6 +56,14 @@ async function placeOrder(order: Order) {
 | Double click | One order created | Passed |
 | Slow response | Clear pending feedback | Passed |
 | Network failure | Form retained for retry | Passed |
+
+### Reliability model
+
+With independent request failure probability $p$, one explicit retry succeeds with probability $1 - p^2$.
+
+$$
+\Pr(\text{success within } n \text{ attempts}) = \sum_{k=1}^{n} (1-p)p^{k-1} = 1-p^n
+$$
 
 The changes are ready to review. I would keep the retry behavior explicit so a failed payment never looks like a successful order.
 """

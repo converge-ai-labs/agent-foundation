@@ -205,6 +205,18 @@ Inputs, applied steering, and Agent text remain chronological. **Execution detai
 
 Reopen a conversation to read saved history and retained attachments. Child results are available through the inspection panel; historical feedback captures remain ordinary attachments. Viewing and expanding history changes only your view, not Agent context or execution.
 
+### Math formulas
+
+Messages and Markdown file previews render LaTeX math. Use `$E = mc^2$` for an inline formula. For a display formula, put `$$` on separate lines:
+
+```text
+$$
+\frac{1}{2} + \sqrt{x}
+$$
+```
+
+A fenced `math` block also renders a display formula. Long display formulas scroll horizontally with keyboard access. Invalid formulas keep readable source, and copying a message preserves its original Markdown. Escape a literal dollar sign as `\$`; ordinary code spans and fences remain source text.
+
 ## Interactive MCP tool results
 
 Opted-in [MCP Apps](mcp-apps.md) appear beside actual tool results. In saved history, choose **Open App** before any App HTML runs, then **Activate interactions** for server operations checked against current policy.
