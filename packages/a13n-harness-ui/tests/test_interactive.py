@@ -22,6 +22,8 @@ from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from pydantic_ai.models.function import FunctionModel
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 async def _retained_history(backend: SessionBackend) -> str:
     from a13n_harness_ui.interactive.history import restore_transcript

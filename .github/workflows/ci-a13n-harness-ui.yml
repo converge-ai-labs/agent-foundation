@@ -236,7 +236,7 @@ jobs:
         env:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
-          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 3
+          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 4
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle

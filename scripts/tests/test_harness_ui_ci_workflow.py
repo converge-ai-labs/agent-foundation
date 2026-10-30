@@ -90,7 +90,7 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "scripts.run_python_tests" in arguments
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
     assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
-    assert int(arguments[arguments.index("--workers") + 1]) == 3
+    assert int(arguments[arguments.index("--workers") + 1]) == 4
     assert "--shard" not in arguments
     assert "strategy" not in jobs["tests"]
     assert "if" not in by_name["Type-check UI"]

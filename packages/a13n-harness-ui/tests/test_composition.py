@@ -32,7 +32,7 @@ from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ObjectKind, open_local_store
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 class _MemoryConfiguration(BaseModel):

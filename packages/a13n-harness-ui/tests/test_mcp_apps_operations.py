@@ -30,7 +30,7 @@ from .test_mcp_apps_connections import _SERVER
 from .test_thread_repository import _initial
 from .test_tool_search_integration import _http_mcp
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.fixture
