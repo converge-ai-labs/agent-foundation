@@ -142,10 +142,21 @@ async def release(
             return Browser.model_validate(row)
         # Explicit retirement fences future use; it does not claim unknown calls completed.
         # Idle release retains the default unsettled-operation gate.
-        if row.status != "lost" and await lifecycle.in_use(session, row, include_unsettled=False):
+        retiring_return = row.source == "managed" and row.control == "returning"
+        if row.status != "lost" and await lifecycle.in_use(
+            session,
+            row,
+            include_unsettled=False,
+            include_control=not retiring_return,
+            include_notices=not retiring_return,
+        ):
             raise conflict("browser", browser_id, "browser_in_use")
         if row.claim_until is not None and row.claim_until > await now(session):
             raise conflict("browser", browser_id, "browser_operation_pending")
+        if retiring_return:
+            await session.execute(
+                update(BrowserBlockedRow).where(BrowserBlockedRow.browser_id == row.id).values(suppressed=True)
+            )
         lifecycle.release_intent(row)
         audit(session, actor, row, "release")
     await lifecycle.reconcile(runtime, workspace_id, browser_id)

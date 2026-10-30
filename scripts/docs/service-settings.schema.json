@@ -157,10 +157,21 @@
           "title": "Inbox Bytes",
           "type": "integer"
         },
+        "browser_control_min_seconds": {
+          "default": 60,
+          "minimum": 1,
+          "title": "Browser Control Min Seconds",
+          "type": "integer"
+        },
+        "browser_control_max_seconds": {
+          "default": 3600,
+          "minimum": 1,
+          "title": "Browser Control Max Seconds",
+          "type": "integer"
+        },
         "browser_control_seconds": {
           "default": 300,
-          "maximum": 3600,
-          "minimum": 60,
+          "minimum": 1,
           "title": "Browser Control Seconds",
           "type": "integer"
         },

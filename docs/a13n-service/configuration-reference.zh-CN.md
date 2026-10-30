@@ -97,18 +97,20 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `control`
 
-| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                                    |
-| --------------------------------- | --------------------------------------- | ----------- | ----------------------------------------------- |
-| `control.scan_seconds`            | `A13N_CONTROL__SCAN_SECONDS`            | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
-| `control.sweep_batch`             | `A13N_CONTROL__SWEEP_BATCH`             | 整数        | minimum=1; maximum=10000; default=100           |
-| `control.inbox_count`             | `A13N_CONTROL__INBOX_COUNT`             | 整数        | minimum=1; maximum=10000; default=128           |
-| `control.inbox_bytes`             | `A13N_CONTROL__INBOX_BYTES`             | 整数        | minimum=1024; maximum=16777216; default=2097152 |
-| `control.browser_control_seconds` | `A13N_CONTROL__BROWSER_CONTROL_SECONDS` | 整数        | minimum=60; maximum=3600; default=300           |
-| `control.browser_notice_seconds`  | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`  | 整数        | minimum=60; maximum=604800; default=86400       |
-| `control.subscriptions`           | `A13N_CONTROL__SUBSCRIPTIONS`           | 整数        | minimum=1; maximum=1000; default=32             |
-| `control.webhook_timeout`         | `A13N_CONTROL__WEBHOOK_TIMEOUT`         | 数值        | maximum=30; exclusiveMinimum=0; default=10      |
-| `control.import_timeout`          | `A13N_CONTROL__IMPORT_TIMEOUT`          | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
-| `control.stream_refresh_seconds`  | `A13N_CONTROL__STREAM_REFRESH_SECONDS`  | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
+| 设置                                  | 环境变量                                    | 类型 / 选项 | 约束与默认值                                    |
+| ------------------------------------- | ------------------------------------------- | ----------- | ----------------------------------------------- |
+| `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
+| `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | 整数        | minimum=1; maximum=10000; default=100           |
+| `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | 整数        | minimum=1; maximum=10000; default=128           |
+| `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | 整数        | minimum=1024; maximum=16777216; default=2097152 |
+| `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | 整数        | minimum=1; default=60                           |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | 整数        | minimum=1; default=3600                         |
+| `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | 整数        | minimum=1; default=300                          |
+| `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | 整数        | minimum=60; maximum=604800; default=86400       |
+| `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | 整数        | minimum=1; maximum=1000; default=32             |
+| `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | 数值        | maximum=30; exclusiveMinimum=0; default=10      |
+| `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
+| `control.stream_refresh_seconds`      | `A13N_CONTROL__STREAM_REFRESH_SECONDS`      | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
 
 ## `schedules`
 

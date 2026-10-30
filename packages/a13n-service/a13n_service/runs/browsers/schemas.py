@@ -66,14 +66,14 @@ class BrowserPage(BaseModel):
 class Takeover(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     thread_id: ObjectId
-    lease_seconds: int | None = Field(default=None, ge=60, le=3600)
+    lease_seconds: int | None = Field(default=None, ge=1, strict=True)
 
 
 class RenewControl(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     generation: int = Field(ge=1)
     episode: int = Field(ge=1)
-    lease_seconds: int | None = Field(default=None, ge=60, le=3600)
+    lease_seconds: int | None = Field(default=None, ge=1, strict=True)
 
 
 class Viewer(BaseModel):

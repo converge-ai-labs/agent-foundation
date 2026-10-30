@@ -48,6 +48,7 @@ class Supplier:
         self.protocol_calls = []
         self.grants = set()
         self.viewer_deadlines = {}
+        self.grant_allocations = {}
         self.revoked = set()
         self.lose_create = False
         self.fail_revoke = False
@@ -69,6 +70,9 @@ class Supplier:
 
     async def delete(self, allocation_id, state):
         self.live.pop(allocation_id, None)
+        grants = {grant for grant in self.grants if self.grant_allocations[grant] == allocation_id}
+        self.revoked.update(grants)
+        self.grants.difference_update(grants)
 
     async def connect(self, state):
         client = Mock(pending_requests={})
@@ -107,11 +111,14 @@ class Supplier:
         return {}
 
     async def ensure_viewer(self, state, grant_id, *, expires_at):
+        if state["id"] not in self.live:
+            raise ValueError("terminated allocation cannot grant input")
         if grant_id in self.revoked or (
             grant_id in self.viewer_deadlines and self.viewer_deadlines[grant_id] <= datetime.now(UTC)
         ):
             raise ValueError("expired or revoked grants cannot reopen")
         self.grants.add(grant_id)
+        self.grant_allocations[grant_id] = state["id"]
         self.viewer_deadlines[grant_id] = max(expires_at, self.viewer_deadlines.get(grant_id, expires_at))
         return ViewerGrant("https://viewer.example/secret", {}, self.viewer_deadlines[grant_id])
 
@@ -507,10 +514,10 @@ async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_k
             value["expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
             row.viewer = lifecycle.protect(service.runtime, row, "viewer", value)
     supplier.fail_revoke = True
-    await maintenance.maintain(service.runtime, browser["workspace_id"], browser["id"])
+    await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
     assert supplier.grants
     supplier.fail_revoke = False
-    await maintenance.maintain(service.runtime, browser["workspace_id"], browser["id"])
+    await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
     assert not supplier.grants
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])

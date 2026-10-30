@@ -62,6 +62,7 @@ class BrowserProvider(Protocol):
         Never grant input past the greatest requested deadline, or reopen an
         expired/revoked grant. A newer ensure may already have extended the expiry
         returned to an older caller. Revocation permanently fences pending ensures.
+        An ensure cannot create or revive a terminated allocation.
         """
         ...
 

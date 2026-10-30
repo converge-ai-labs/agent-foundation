@@ -37,7 +37,8 @@ class BrowserRow(Stamped, Base):
         CheckConstraint("status <> 'ready' OR handle IS NOT NULL", name="ready_handle"),
         CheckConstraint("(claim_id IS NULL) = (claim_until IS NULL)", name="claim"),
         CheckConstraint("generation > 0 AND episode >= 0", name="generation"),
-        rules(identity_guarded("browsers")),
+        Index("ix_browsers_control_due", "control_due_at", postgresql_where=text("control <> 'automation'")),
+        rules(identity_guarded("browsers"), unversioned=("control_due_at",)),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
@@ -62,6 +63,7 @@ class BrowserRow(Stamped, Base):
     control: Mapped[str] = mapped_column(default="automation")
     episode: Mapped[int] = mapped_column(default=0)
     control_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    control_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     controller_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     controller_thread_id: Mapped[str | None] = mapped_column(ForeignKey("threads.id"))
     viewer_id: Mapped[str | None]

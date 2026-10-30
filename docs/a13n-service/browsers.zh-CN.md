@@ -119,11 +119,20 @@ Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service �
 
 归还只向实际发生过受阻调用的 thread 发送内部可用性通知。现有 inbox 和 run 边界决定何时纳入该通知。等待审批的 run 继续等待，失败或取消的 run 保留原有的显式继续规则。停止或归档 thread 会抑制其待处理通知。受阻或结果未知的操作绝不会自动重放。
 
-Service 默认控制租期为 300 秒。请求接受 60–3600 秒；省略 `lease_seconds` 时使用部署配置 `control.browser_control_seconds`。每次成功续期返回实际截止时间，取原截止时间与数据库当前时间加请求租期中的较晚者。较短的续期请求不会缩短控制时间。每个请求都是新的 keepalive，不是幂等键重放。响应丢失后先读取当前浏览器，只做有界重试，不要无限重试。过期或 returning 的周期不能复活；必须等待归还完成后重新接管。
+每次接管和续期都可传入正整数 `lease_seconds`，范围由部署配置 `control.browser_control_min_seconds` 和 `control.browser_control_max_seconds` 决定（默认分别为 60 和 3600）。任一操作省略该字段时，使用 `control.browser_control_seconds`（默认 300）。超出配置范围的请求会被拒绝且不改变控制状态，不会静默裁剪。三项配置必须都是正整数并满足 `min <= default <= max`，否则启动失败。每次成功续期返回实际截止时间，取原截止时间与数据库当前时间加请求租期中的较晚者。较短的续期请求不会缩短控制时间。每个请求都是新的 keepalive，不是幂等键重放。响应丢失后先读取当前浏览器，只做有界重试，不要无限重试。过期或 returning 的周期不能复活；必须等待归还完成后重新接管。
 
-应用自行判断用户是否仍在操作。Service 不根据 viewer 打开状态或浏览器连接推断活动。应用停止续期后，控制租约到期，Service 按显式归还的安全流程收尾。Provider 被禁用、控制方失权、交互视图过期或无法维持输入授权也会触发归还。撤销或清点失败时，工具保持阻止，状态停留在 `returning`，直到清理成功。浏览器丢失不会产生可用性通知。
+例如，在 `service.toml` 中配置部署策略（接管和续期使用同一策略）：
 
-应用续期只更新 PostgreSQL。Control 角色的维护流程会在 provider 的实际授权到期前，延长同一 viewer grant。Viewer URL 可能早于 `control_expires_at` 过期；必须同时遵守两个期限，并按需重新获取当前 viewer。Provider 的输入授权寿命不足以覆盖维护窗口时，Service 会安全归还，不承诺无限维持人工控制。Provider adapter 必须实现 `ensure_viewer(state, grant_id, *, expires_at)`，保证截止时间单调，以及撤销永久阻止重新授权，包括尚未完成的请求和现有输入连接。
+```toml
+[control]
+browser_control_min_seconds = 60
+browser_control_max_seconds = 3600
+browser_control_seconds = 300
+```
+
+应用自行判断用户是否仍在操作。Service 不根据 viewer 打开状态或浏览器连接推断活动。应用停止续期后，控制租约到期，Service 按显式归还的安全流程收尾。Provider 被禁用、控制方失权、交互视图过期或无法维持输入授权也会触发归还。撤销或清点失败时，工具保持阻止，状态停留在 `returning`，直到清理成功。借用者与活跃 claim 结束后，具有工作空间写入权限的用户也可使用当前 ETag 显式释放托管浏览器。释放抑制可用性通知并终止供应商会话；终止失败时保持 `deleting` 以便重试，不表示归还成功。浏览器丢失不会产生可用性通知。
+
+应用续期只更新 PostgreSQL。Control 角色的维护流程会在 provider 的实际授权到期前，延长同一 viewer grant。Viewer URL 可能早于 `control_expires_at` 过期；必须同时遵守两个期限，并按需重新获取当前 viewer。Provider 的输入授权寿命不足以覆盖维护窗口时，Service 会安全归还，不承诺无限维持人工控制。Provider adapter 必须实现 `ensure_viewer(state, grant_id, *, expires_at)`，保证截止时间单调，以及撤销永久阻止重新授权，包括尚未完成的请求和现有输入连接。终止后迟到的 ensure 也不得复活该分配。
 
 请求可到达任意 Service API 副本。PostgreSQL 行锁和数据库时间决定续期与到期、归还的先后。Control 副本持久认领 supplier 工作，在 I/O 期间释放事务，发布结果前重新检查 claim、generation、episode、阶段和截止时间。Claim 过期允许其他副本接续，不表示旧 supplier 调用已经停止。外部输入安全依赖 provider 对同一 grant 的单调保证和永久撤销屏障。不需要 sticky session 或进程本地计时器。
 

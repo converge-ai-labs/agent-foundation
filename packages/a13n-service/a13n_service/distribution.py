@@ -75,6 +75,7 @@ from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.browsers.delivery import handbacks
+from a13n_service.runs.browsers.maintenance import control_sweep as browser_control_sweep
 from a13n_service.runs.browsers.maintenance import sweep as browser_sweep
 from a13n_service.runs.browsers.routes import router as browsers_router
 from a13n_service.runs.browsers.tables import (
@@ -465,6 +466,7 @@ OSS = Distribution(
         _prune_tool_results,
         desktop_assistance_sweep,
         browser_sweep,
+        browser_control_sweep,
         _expire_credentials,
         maintenance_sweep,
         renewal_sweep,

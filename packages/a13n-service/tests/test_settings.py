@@ -220,3 +220,50 @@ def test_invalid_harness_forwarding_default_is_rejected_at_startup(monkeypatch, 
     monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", value)
     with pytest.raises(ValueError, match="A13N_HARNESS_FORWARD_CONTEXT_HEADERS must be true or false"):
         load_settings()
+
+
+@pytest.mark.parametrize(
+    "field", ["browser_control_min_seconds", "browser_control_max_seconds", "browser_control_seconds"]
+)
+@pytest.mark.parametrize("value", [0, -1, True, 60.0, 1.5, "1.5"])
+def test_browser_control_policy_requires_positive_integers(field, value):
+    with pytest.raises(ValueError):
+        Settings.model_validate({"control": {field: value}})
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {"browser_control_min_seconds": 301},
+        {"browser_control_max_seconds": 299},
+        {"browser_control_min_seconds": 500, "browser_control_max_seconds": 400},
+    ],
+)
+def test_browser_control_default_must_nest_in_configured_bounds(bounds):
+    with pytest.raises(ValueError, match=r"control\.browser_control_min_seconds"):
+        Settings.model_validate({"control": bounds})
+
+
+def test_browser_control_policy_file_and_environment(tmp_path, monkeypatch, clean_environment):
+    config = tmp_path / "browser.toml"
+    config.write_text(
+        "[control]\nbrowser_control_min_seconds = 10\nbrowser_control_max_seconds = 7200\nbrowser_control_seconds = 120\n"
+    )
+    policy = load_settings(config).control
+    assert (policy.browser_control_min_seconds, policy.browser_control_seconds, policy.browser_control_max_seconds) == (
+        10,
+        120,
+        7200,
+    )
+    for field, value in (("MIN", "1"), ("MAX", "9000")):
+        monkeypatch.setenv(f"A13N_CONTROL__BROWSER_CONTROL_{field}_SECONDS", value)
+    monkeypatch.setenv("A13N_CONTROL__BROWSER_CONTROL_SECONDS", "8000")
+    policy = load_settings(config).control
+    assert (policy.browser_control_min_seconds, policy.browser_control_seconds, policy.browser_control_max_seconds) == (
+        1,
+        8000,
+        9000,
+    )
+    monkeypatch.setenv("A13N_CONTROL__BROWSER_CONTROL_SECONDS", "9001")
+    with pytest.raises(ValueError, match=r"control\.browser_control_min_seconds"):
+        load_settings(config)

@@ -169,8 +169,15 @@ async def unsettled(session: AsyncSession, browser_id: str) -> bool:
     )
 
 
-async def in_use(session: AsyncSession, row: BrowserRow, *, include_unsettled: bool = True) -> bool:
-    if row.control != "automation" or (include_unsettled and await unsettled(session, row.id)):
+async def in_use(
+    session: AsyncSession,
+    row: BrowserRow,
+    *,
+    include_unsettled: bool = True,
+    include_control: bool = True,
+    include_notices: bool = True,
+) -> bool:
+    if (include_control and row.control != "automation") or (include_unsettled and await unsettled(session, row.id)):
         return True
     if (
         await session.scalar(
@@ -184,6 +191,8 @@ async def in_use(session: AsyncSession, row: BrowserRow, *, include_unsettled: b
         is not None
     ):
         return True
+    if not include_notices:
+        return False
     current = await now(session)
     return (
         await session.scalar(

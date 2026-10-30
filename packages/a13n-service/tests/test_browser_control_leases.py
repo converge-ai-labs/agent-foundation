@@ -164,14 +164,17 @@ async def test_renew_wins_before_expiry_and_two_sweeps_share_one_ensure(
         return await original(*args, **kwargs)
 
     monkeypatch.setattr(supplier, "ensure_viewer", ensure)
-    first = asyncio.create_task(maintenance.Maintenance(service.runtime)())
+    dispatcher = maintenance.ControlMaintenance(service.runtime)
+    await dispatcher()
     try:
         await asyncio.wait_for(entered.wait(), 5)
-        await maintenance.Maintenance(other)()
+        other_dispatcher = maintenance.ControlMaintenance(other)
+        await other_dispatcher()
+        await asyncio.gather(*other_dispatcher.inflight)
         assert calls == [renewed.control_expires_at]
     finally:
         finish.set()
-        await first
+        await asyncio.gather(*dispatcher.inflight)
     row = await read(other, browser)
     assert row.control == "human" and row.claim_id is None
     grant = Viewer.model_validate(control.lifecycle.reveal(other, row, "viewer", row.viewer))
@@ -300,7 +303,7 @@ async def test_long_control_registration_starts_notice_ttl_only_after_verified_r
     assert len(entries) == 1
 
 
-@pytest.mark.parametrize("failure", ["short", "expired"])
+@pytest.mark.parametrize("failure", ["short", "intermediate", "expired"])
 async def test_unmaintainable_viewer_safely_returns(service, runs_kit, scripted_model, replica, monkeypatch, failure):
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
@@ -308,13 +311,15 @@ async def test_unmaintainable_viewer_safely_returns(service, runs_kit, scripted_
     async def short(*args, **kwargs):
         supplier.grants.add(args[1])
         return ViewerGrant(
-            "https://viewer.example/short", {}, datetime.now(UTC) + timedelta(seconds=5 if failure == "short" else -1)
+            "https://viewer.example/short",
+            {},
+            datetime.now(UTC) + timedelta(seconds={"short": 5, "intermediate": 60, "expired": -1}[failure]),
         )
 
     monkeypatch.setattr(supplier, "ensure_viewer", short)
     taken = await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     assert taken["control"] == "returning"
-    assert taken["failure"] == ("browser_viewer_lifetime_short" if failure == "short" else "browser_viewer_expired")
+    assert taken["failure"] == ("browser_viewer_expired" if failure == "expired" else "browser_viewer_lifetime_short")
     await control.reconcile(replica(), browser["workspace_id"], browser["id"])
     assert not supplier.grants and (await read(replica(), browser)).control == "automation"
 
@@ -353,7 +358,7 @@ async def test_out_of_order_ensure_uses_current_deadline_and_cannot_replace_newe
         else:
             # A newer out-of-order ensure extends supplier state before the first call returns.
             row = await read(other, browser)
-            await original({}, row.viewer_id, expires_at=renewed.control_expires_at)
+            await original({"id": next(iter(supplier.live))}, row.viewer_id, expires_at=renewed.control_expires_at)
     finally:
         finish.set()
         await taking
@@ -389,6 +394,7 @@ async def test_lease_downgrade_refuses_erasing_active_authority(service, runs_ki
     from a13n_service.distribution import OSS
     from a13n_service.migrations.runner import migration_connection
     from alembic import command as alembic
+    from sqlalchemy.exc import DBAPIError
 
     _, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
@@ -396,9 +402,9 @@ async def test_lease_downgrade_refuses_erasing_active_authority(service, runs_ki
 
     def downgrade():
         with migration_connection(service.runtime.settings.database, OSS) as config:
-            alembic.downgrade(config, "0f9656f6ee5b")
+            alembic.downgrade(config, "a9acb6772400")
 
-    with pytest.raises(RuntimeError, match="Renewable browser control facts exist"):
+    with pytest.raises(DBAPIError, match="Browser state exists"):
         await anyio.to_thread.run_sync(downgrade)
     assert (await read(service.runtime, browser)).control_expires_at is not None
 
@@ -470,3 +476,292 @@ async def test_only_current_controller_can_renew(service, runs_kit, scripted_mod
             other, replace(actor, id="usr_other_controller"), browser["workspace_id"], browser["id"], body
         )
     assert (await read(other, browser)).control_expires_at == row.control_expires_at
+
+
+async def test_renew_during_inflight_ensure_requeues_after_other_lane_observes_claim(
+    service, runs_kit, scripted_model, replica, monkeypatch
+):
+    supplier, browser = await setup(service, runs_kit)
+    lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
+    await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+    await renew(service.runtime, browser, seconds=600)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        value = Viewer.model_validate(control.lifecycle.reveal(service.runtime, row, "viewer", row.viewer))
+        value.expires_at = await now(session) + timedelta(seconds=40)
+        row.viewer = control.lifecycle.protect(service.runtime, row, "viewer", value.model_dump(mode="json"))
+    entered, finish = asyncio.Event(), asyncio.Event()
+    original = supplier.ensure_viewer
+
+    async def delayed(state, grant_id, *, expires_at):
+        entered.set()
+        await finish.wait()
+        grant = await original(state, grant_id, expires_at=expires_at)
+        return ViewerGrant(grant.url, grant.state, datetime.now(UTC) + timedelta(seconds=100))
+
+    monkeypatch.setattr(supplier, "ensure_viewer", delayed)
+    dispatcher = maintenance.ControlMaintenance(service.runtime)
+    await dispatcher()
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        await renew(replica(), browser, seconds=900)
+        other_dispatcher = maintenance.ControlMaintenance(replica())
+        await other_dispatcher()
+        await asyncio.gather(*other_dispatcher.inflight)
+        assert (await read(replica(), browser)).control_due_at > datetime.now(UTC) + timedelta(seconds=30)
+    finally:
+        finish.set()
+        await asyncio.gather(*dispatcher.inflight)
+    row = await read(replica(), browser)
+    assert row.control == "human" and row.control_due_at <= datetime.now(UTC)
+
+
+async def test_background_dispatcher_progresses_with_sixteen_slow_items(service, runs_kit, monkeypatch):
+    from a13n_service.infra.sweeps import run_sweeps
+
+    _, browser = await setup(service, runs_kit)
+    others = []
+    for name in (f"browser-{i}" for i in range(20)):
+        response = await service.client.post(
+            f"{service.api}/browsers", json={"provider_id": browser["provider_id"], "name": name}
+        )
+        assert response.status_code == 201, response.text
+        others.append(response.json())
+    async with transaction(service.runtime.storage) as session:
+        current = await now(session)
+        for index, item in enumerate([browser, *others]):
+            row = await session.get_one(BrowserRow, item["id"])
+            row.control = "draining"
+            row.control_due_at = current - timedelta(seconds=30 - index)
+    entered, finish, progressed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    seen = []
+    slow = {item["id"] for item in [browser, *others[:15]]}
+
+    async def reconcile(runtime, workspace_id, browser_id):
+        seen.append(browser_id)
+        if browser_id in slow:
+            if slow.issubset(seen):
+                entered.set()
+            await finish.wait()
+        elif browser_id == others[-1]["id"]:
+            progressed.set()
+
+    monkeypatch.setattr(control, "reconcile", reconcile)
+    monkeypatch.setattr(control, "maintenance_interval", lambda runtime: 0.05)
+    settings = service.runtime.settings.model_copy(
+        update={"control": service.runtime.settings.control.model_copy(update={"sweep_batch": 17})}
+    )
+    runtime = replace(service.runtime, settings=settings)
+    sweeps = [maintenance.control_sweep(runtime)]
+    task = asyncio.create_task(run_sweeps(sweeps))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        await asyncio.wait_for(progressed.wait(), 5)
+        assert slow.issubset(seen) and len(seen) >= 21 and not finish.is_set()
+    finally:
+        finish.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.gather(*sweeps[0].run.inflight)
+
+
+async def test_returning_release_keeps_borrower_and_claim_gates_and_suppresses_notices(
+    service, runs_kit, scripted_model, monkeypatch
+):
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.execute import execute
+
+    supplier, browser = await setup(service, runs_kit)
+    lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
+    await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.control = "returning"
+        row.viewer = None
+        session.add(
+            BrowserBlockedRow(
+                id="blocked_release_test",
+                browser_id=row.id,
+                thread_id=lease.thread_id,
+                run_id=lease.run_id,
+                generation=row.generation,
+                episode=row.episode,
+                expires_at=await now(session) + timedelta(minutes=10),
+            )
+        )
+    path = f"{service.api}/browsers/{browser['id']}"
+
+    async def release():
+        current = (await service.client.get(path)).json()
+        return await service.client.post(f"{path}/release", headers=runs_kit.if_match(current))
+
+    response = await release()
+    assert response.status_code == 409
+    scripted_model.say("Done")
+    await execute(service.runtime, lease, AttemptControl())
+    assert (await runs_kit.get_run(service, lease.run_id))["status"] == "completed"
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.claim_id = "claim_test"
+        row.claim_until = await now(session) + timedelta(seconds=60)
+    response = await release()
+    assert response.status_code == 409
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.claim_until = await now(session) - timedelta(seconds=1)
+    original = supplier.delete
+
+    async def failed_delete(*args):
+        raise TimeoutError("termination unknown")
+
+    monkeypatch.setattr(supplier, "delete", failed_delete)
+    response = await release()
+    assert response.status_code == 200 and response.json()["status"] == "deleting"
+    async with transaction(service.runtime.storage) as session:
+        blocked = await session.get_one(BrowserBlockedRow, "blocked_release_test")
+        assert blocked.suppressed
+    monkeypatch.setattr(supplier, "delete", original)
+    await control.lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    assert (await read(service.runtime, browser)).status == "deleted"
+    assert not supplier.grants
+
+
+async def test_due_only_update_preserves_http_etag(service, runs_kit):
+    _, browser = await setup(service, runs_kit)
+    path = f"{service.api}/browsers/{browser['id']}"
+    before = await service.client.get(path)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.control_due_at = await now(session)
+    after = await service.client.get(path)
+    assert before.headers["etag"] == after.headers["etag"]
+    assert before.json() == after.json()
+
+
+async def test_dispatcher_start_failure_is_reserved_until_recovery(service, runs_kit, replica):
+    from a13n_service.infra.tasks import Tasks
+
+    _, browser = await setup(service, runs_kit)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.control = "draining"
+        row.control_due_at = None
+    closed = Tasks()
+    closed.closed = True
+    dispatcher = maintenance.ControlMaintenance(replace(service.runtime, tasks=closed))
+    with pytest.raises(RuntimeError, match="closed"):
+        await dispatcher()
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        current = await now(session)
+        assert (
+            current
+            < row.control_due_at
+            <= current + timedelta(seconds=2 * service.runtime.settings.providers.operation_seconds + 25)
+        )
+        row.control_due_at = current - timedelta(seconds=1)
+    seen = asyncio.Event()
+    replacement = maintenance.ControlMaintenance(replica())
+
+    async def process(*args):
+        seen.set()
+
+    replacement._one = process
+    await replacement()
+    await asyncio.wait_for(seen.wait(), 5)
+    await asyncio.gather(*replacement.inflight)
+
+
+async def test_short_grants_schedule_future_maintenance_without_hot_loop(
+    service, runs_kit, scripted_model, monkeypatch
+):
+    supplier, browser = await setup(service, runs_kit)
+    lease, _ = await bound_run(service, runs_kit, scripted_model, browser)
+    await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+    await renew(service.runtime, browser, seconds=900)
+    original = supplier.ensure_viewer
+    calls = 0
+
+    async def limited(state, grant_id, *, expires_at):
+        nonlocal calls
+        calls += 1
+        grant = await original(state, grant_id, expires_at=expires_at)
+        return ViewerGrant(grant.url, grant.state, datetime.now(UTC) + timedelta(seconds=180))
+
+    monkeypatch.setattr(supplier, "ensure_viewer", limited)
+    dispatcher = maintenance.ControlMaintenance(service.runtime)
+    for _ in range(2):
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(BrowserRow, browser["id"])
+            viewer = Viewer.model_validate(control.lifecycle.reveal(service.runtime, row, "viewer", row.viewer))
+            viewer.expires_at = await now(session) + timedelta(seconds=40)
+            row.viewer = control.lifecycle.protect(service.runtime, row, "viewer", viewer.model_dump(mode="json"))
+            row.control_due_at = await now(session)
+        await dispatcher()
+        await asyncio.gather(*dispatcher.inflight)
+        row = await read(service.runtime, browser)
+        assert row.control == "human" and row.control_due_at > datetime.now(UTC) + timedelta(seconds=1)
+    assert calls == 2
+
+
+async def test_background_due_precedes_fresh_null_work(service, runs_kit, monkeypatch):
+    from a13n_service.infra.sweeps import run_sweeps
+
+    _, old = await setup(service, runs_kit)
+    fresh = await service.client.post(
+        f"{service.api}/browsers", json={"provider_id": old["provider_id"], "name": "fresh"}
+    )
+    assert fresh.status_code == 201
+    async with transaction(service.runtime.storage) as session:
+        for item in (old, fresh.json()):
+            row = await session.get_one(BrowserRow, item["id"])
+            row.control = "draining"
+            row.control_due_at = await now(session) - timedelta(seconds=10) if item == old else None
+    seen = []
+    done = asyncio.Event()
+
+    async def reconcile(runtime, workspace_id, browser_id):
+        seen.append(browser_id)
+        done.set()
+
+    monkeypatch.setattr(control, "reconcile", reconcile)
+    monkeypatch.setattr(control, "maintenance_interval", lambda runtime: 0.05)
+    settings = service.runtime.settings.model_copy(
+        update={"control": service.runtime.settings.control.model_copy(update={"sweep_batch": 1})}
+    )
+    sweeps = [maintenance.control_sweep(replace(service.runtime, settings=settings))]
+    task = asyncio.create_task(run_sweeps(sweeps))
+    try:
+        await asyncio.wait_for(done.wait(), 5)
+        assert seen[0] == old["id"]
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.gather(*sweeps[0].run.inflight)
+
+
+async def test_dispatcher_shutdown_cancels_owned_work_and_stops_admission(service, runs_kit, monkeypatch):
+    from a13n_service.infra.tasks import Tasks
+
+    _, browser = await setup(service, runs_kit)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        row.control = "draining"
+    entered = asyncio.Event()
+
+    async def reconcile(*args):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(control, "reconcile", reconcile)
+    tasks = Tasks()
+    dispatcher = maintenance.ControlMaintenance(replace(service.runtime, tasks=tasks))
+    await dispatcher()
+    await asyncio.wait_for(entered.wait(), 5)
+    await tasks.close(timeout=5)
+    assert tasks.closed and not tasks.pending
+    await dispatcher()
+    assert not dispatcher.inflight
+    assert (await read(service.runtime, browser)).control_due_at > datetime.now(UTC)

@@ -16732,8 +16732,7 @@
           "lease_seconds": {
             "anyOf": [
               {
-                "maximum": 3600.0,
-                "minimum": 60.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -21933,8 +21932,7 @@
           "lease_seconds": {
             "anyOf": [
               {
-                "maximum": 3600.0,
-                "minimum": 60.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {

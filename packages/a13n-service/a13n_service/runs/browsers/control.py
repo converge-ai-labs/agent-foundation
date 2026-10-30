@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import now, short_session, transaction
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import enqueue_once
@@ -36,6 +36,17 @@ def require_viewer(row: BrowserRow) -> None:
         raise conflict("browser", row.id, "browser_viewer_unsupported")
 
 
+def lease_seconds(runtime: Runtime, requested: int | None) -> int:
+    policy = runtime.settings.control
+    seconds = policy.browser_control_seconds if requested is None else requested
+    if not policy.browser_control_min_seconds <= seconds <= policy.browser_control_max_seconds:
+        raise invalid(
+            "lease_seconds",
+            f"must be between {policy.browser_control_min_seconds} and {policy.browser_control_max_seconds}",
+        )
+    return seconds
+
+
 async def takeover(
     runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str, body: Takeover, *, if_match: str | None
 ) -> Browser:
@@ -56,10 +67,9 @@ async def takeover(
             raise conflict("browser", row.id, "browser_viewer_unsupported")
         if row.control != "automation":
             raise conflict("browser", row.id, "browser_control_pending")
-        row.control_expires_at = await now(session) + timedelta(
-            seconds=body.lease_seconds or runtime.settings.control.browser_control_seconds
-        )
+        row.control_expires_at = await now(session) + timedelta(seconds=lease_seconds(runtime, body.lease_seconds))
         row.control = "draining"
+        row.control_due_at = None
         row.episode += 1
         row.controller_id, row.controller_thread_id = actor.id, thread.id
         row.viewer_id = new_object_id("bview")
@@ -113,7 +123,8 @@ async def renew(runtime: Runtime, actor: Principal, workspace_id: str, browser_i
             or row.control not in {"draining", "human"}
         ):
             raise conflict("browser", browser_id, "browser_control_changed")
-        if row.control_expires_at is None or row.control_expires_at <= current:
+        previous_deadline = row.control_expires_at
+        if previous_deadline is None or previous_deadline <= current:
             raise conflict("browser", browser_id, "browser_control_expired")
         if (row.expires_at is not None and row.expires_at <= current) or not await controller_allowed(
             session, runtime, row
@@ -123,10 +134,13 @@ async def renew(runtime: Runtime, actor: Principal, workspace_id: str, browser_i
             grant = Viewer.model_validate(lifecycle.reveal(runtime, row, "viewer", row.viewer)) if row.viewer else None
             if grant is None or grant.expires_at <= current:
                 raise conflict("browser", browser_id, "browser_viewer_expired")
-        row.control_expires_at = max(
-            row.control_expires_at,
-            current + timedelta(seconds=body.lease_seconds or runtime.settings.control.browser_control_seconds),
+        new_deadline = max(
+            previous_deadline,
+            current + timedelta(seconds=lease_seconds(runtime, body.lease_seconds)),
         )
+        row.control_expires_at = new_deadline
+        if new_deadline > previous_deadline:
+            row.control_due_at = current
         await session.flush()
         result = Browser.model_validate(row)
     return result
@@ -149,6 +163,7 @@ async def return_control(session: AsyncSession, row: BrowserRow, current: dateti
             )
             return
     # Changing intent fences publication immediately; an active claim still owns its I/O window.
+    row.control_due_at = None
     row.control = "returning"
     row.viewer = None
 
@@ -165,13 +180,18 @@ def owns_claim(row: BrowserRow, claim: str, generation: int, episode: int, phase
     )
 
 
+def maintenance_interval(runtime: Runtime) -> float:
+    return min(runtime.settings.providers.operation_scan_seconds, 5.0)
+
+
+def recovery_window(runtime: Runtime) -> timedelta:
+    # One crashed provider claim, a replacement open/operation/close, and polling slack.
+    return timedelta(seconds=4 * runtime.settings.providers.operation_seconds + 35 + 2 * maintenance_interval(runtime))
+
+
 def renewal_window(runtime: Runtime) -> timedelta:
-    # A bounded supplier call and a nominal sweep interval; backlog can still force safe handback.
-    return timedelta(
-        seconds=2 * runtime.settings.providers.operation_seconds
-        + 10
-        + runtime.settings.providers.operation_scan_seconds
-    )
+    # A new short grant must leave room for crash recovery and a useful maintenance interval.
+    return recovery_window(runtime) + timedelta(seconds=2 * maintenance_interval(runtime))
 
 
 async def viewer(runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str) -> Viewer:
@@ -254,7 +274,7 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                 await return_control(session, row, current)
             elif row.control == "human":
                 assert previous is not None and row.control_expires_at is not None
-                if previous.expires_at >= row.control_expires_at or previous.expires_at > current + renewal_window(
+                if previous.expires_at >= row.control_expires_at or previous.expires_at > current + recovery_window(
                     runtime
                 ):
                     return
@@ -351,6 +371,16 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str) -> Non
                 ).model_dump(mode="json"),
             )
             row.control = "human"
+            # A keepalive may have advanced the deadline while this supplier call was
+            # in flight. Wake maintenance even if another lane rescheduled our lease.
+            current_deadline = row.control_expires_at
+            if (
+                deadline is not None
+                and current_deadline is not None
+                and deadline < current_deadline
+                and granted.expires_at < current_deadline
+            ):
+                row.control_due_at = current
             return
         if failure is not None:
             return

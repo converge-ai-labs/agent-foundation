@@ -684,15 +684,7 @@ async def test_external_browser_migration_defaults_constraints_and_downgrade(ser
     from .test_browsers import setup
 
     _, managed = await setup(service, runs_kit)
-    query = "SELECT id, provider_id, name FROM browsers ORDER BY id"
-    original = rows(service.runtime.settings.database, query)
     database = service.runtime.settings.database
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, "0bbe5ff4f164")
-    assert rows(database, query) == original
-    upgrade(database, OSS)
-    assert rows(database, "SELECT source FROM browsers") == [("managed",)]
-    assert rows(database, query) == original
     # Server default also supports old managed writers during the expand rollout.
     assert rows(
         database,
@@ -710,8 +702,29 @@ async def test_external_browser_migration_defaults_constraints_and_downgrade(ser
                 connection.execute(text("UPDATE browsers SET control='human' WHERE id=:id"), {"id": external["id"]})
     finally:
         engine.dispose()
-    with pytest.raises(DBAPIError, match="cannot downgrade while external browser attachments exist"):
+    with pytest.raises(DBAPIError, match="Browser state exists"):
         with migration_connection(database, OSS) as config:
-            command.downgrade(config, "0bbe5ff4f164")
+            command.downgrade(config, "a9acb6772400")
     assert rows(database, "SELECT source FROM browsers ORDER BY source") == [("external_cdp",), ("managed",)]
+    check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_browser_control_due_migration_roundtrip_preserves_resource_stamp(service, runs_kit):
+    from .test_browsers import setup
+
+    _, browser = await setup(service, runs_kit)
+    database = service.runtime.settings.database
+    query = f"SELECT version FROM browsers WHERE id='{browser['id']}'"
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        before = rows(database, query)[0][0]
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET control_due_at=now() WHERE id=:id"), {"id": browser["id"]})
+        assert rows(database, query)[0][0] == before
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET name='updated' WHERE id=:id"), {"id": browser["id"]})
+        assert rows(database, query)[0][0] == before + 1
+    finally:
+        engine.dispose()
     check(database, OSS)
