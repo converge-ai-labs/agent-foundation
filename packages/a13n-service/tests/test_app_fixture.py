@@ -1,5 +1,7 @@
 """Test-only contract reuse preserves production assembly and per-application isolation."""
 
+import gc
+import weakref
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -17,9 +19,50 @@ from a13n_service.tenancy.authenticate import LocalAuthenticator
 from fastapi import APIRouter, Depends, FastAPI
 from fastmcp.tools import Tool
 from fastmcp.utilities.openapi import HTTPRoute
+from redis.asyncio import Redis
 from starlette.routing import Match
 
-from .conftest import _include_individual_routes, _MatchedRouter
+from .conftest import ScriptedModel, _include_individual_routes, _MatchedRouter, _serve
+
+
+@pytest.mark.anyio
+async def test_scripted_model_is_collectible_after_serving_a_request() -> None:
+    async def serve() -> tuple[weakref.ReferenceType, weakref.ReferenceType]:
+        model = ScriptedModel()
+        model.say("done")
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=model.app), base_url="https://model.test"
+        ) as client:
+            response = await client.post("/v1/chat/completions", json={"messages": []})
+            assert response.json()["choices"][0]["message"]["content"] == "done"
+        return weakref.ref(model), weakref.ref(model.app)
+
+    model, app = await serve()
+    gc.collect()
+    assert model() is None
+    assert app() is None
+
+
+@pytest.mark.anyio
+async def test_service_fixture_clears_redis_before_starting_the_runtime(
+    settings: Settings, service_app: Callable[..., FastAPI], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    open_runtime = app_module.open_runtime
+    started = False
+    async with Redis.from_url(settings.redis.url.get_secret_value()) as redis:
+        await redis.set("previous-test", "leftover")
+
+        async def checked(*args: Any, **kwargs: Any):
+            nonlocal started
+            assert await redis.get("previous-test") is None
+            runtime = await open_runtime(*args, **kwargs)
+            assert runtime.settings.redis.timeout == 2
+            started = True
+            return runtime
+
+        monkeypatch.setattr(app_module, "open_runtime", checked)
+        async with _serve(settings, "control", service_app):
+            assert started
 
 
 def test_service_apps_copy_the_contract_without_recompiling_it(

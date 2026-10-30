@@ -92,6 +92,34 @@ async def test_generated_schemas_bodies_metadata_errors_and_no_cookie_state() ->
             await mapped["update_item"].run({"item_id": "one", "authorization": "forged"})
 
 
+@pytest.mark.parametrize("explode", [False, True])
+async def test_compiled_transport_preserves_query_parameter_serialization(explode: bool) -> None:
+    app = FastAPI()
+
+    @app.get(
+        "/query",
+        operation_id="query_items",
+        openapi_extra={
+            **ADMIT,
+            "parameters": [
+                {
+                    "name": "tags",
+                    "in": "query",
+                    "style": "form",
+                    "explode": explode,
+                    "schema": {"type": "array", "items": {"type": "string"}},
+                }
+            ],
+        },
+    )
+    async def query(request: Request) -> dict:
+        return {"tags": request.query_params.getlist("tags")}
+
+    with caller():
+        result = await tools(app)["query_items"].run({"tags": ["one", "two"]})
+    assert result.structured_content["body"] == {"tags": ["one", "two"] if explode else ["one,two"]}
+
+
 async def test_path_arguments_cannot_change_operation_or_parameter_boundaries() -> None:
     app = FastAPI()
     calls = []

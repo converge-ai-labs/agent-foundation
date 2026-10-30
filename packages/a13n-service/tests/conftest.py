@@ -46,6 +46,7 @@ from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.utilities.openapi import HTTPRoute
 from pydantic import SecretStr
+from redis.asyncio import Redis
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from starlette.datastructures import URLPath
@@ -182,11 +183,20 @@ def settings(database: Database, redis_url: str, tmp_path: Path) -> Settings:
     )
 
 
+async def _flush_redis(settings: Settings) -> None:
+    # Test isolation is setup, not a best-effort application operation. Clear the database before starting
+    # background consumers, with the same loaded-runner budget as the fixture's startup check.
+    async with Redis.from_url(
+        settings.redis.url.get_secret_value(), socket_timeout=30, socket_connect_timeout=30
+    ) as redis:
+        await redis.flushdb()
+
+
 @pytest.fixture
 async def runtime(settings: Settings) -> AsyncIterator[Runtime]:
+    await _flush_redis(settings)
     async with AsyncExitStack() as stack:
         runtime = await open_runtime(stack, OSS, settings, executes=False)
-        await runtime.redis.flushdb()
         yield runtime
 
 
@@ -314,9 +324,9 @@ async def _serve(
     settings: Settings, role: ProcessRole, service_app: Callable[..., FastAPI], distribution: Distribution = OSS
 ) -> AsyncGenerator[SimpleNamespace]:
     app = service_app(distribution, role=role, settings=settings)
+    await _flush_redis(settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
-        await runtime.redis.flushdb()
         tenant = await bootstrap(
             runtime.storage,
             BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)),
@@ -427,8 +437,15 @@ class ScriptedModel:
         self.requests: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.url = ""
         app = FastAPI()
-        app.post("/v1/chat/completions", response_model=None)(self._complete)
+        app.state.scripted_model = self
+        # FastAPI caches endpoint classification; a bound method would retain this test's model.
+        app.post("/v1/chat/completions", response_model=None)(self._endpoint)
         self.app = app
+
+    @staticmethod
+    async def _endpoint(request: Request) -> StreamingResponse | JSONResponse:
+        model: ScriptedModel = request.app.state.scripted_model
+        return await model._complete(request)
 
     def say(
         self,
