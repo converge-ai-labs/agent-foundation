@@ -301,11 +301,11 @@ def downgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "cause::text = ANY (ARRAY['agent'::character varying, 'user'::character varying]::text[])",
+            "cause IN ('agent', 'user')",
             name=op.f("ck_desktop_assistance_requests_cause"),
         ),
         sa.CheckConstraint(
-            "state::text = ANY (ARRAY['viewing'::character varying, 'preparing'::character varying, 'awaiting_user'::character varying, 'claiming'::character varying, 'human_control'::character varying, 'revoking'::character varying, 'ready_to_resume'::character varying, 'consumed'::character varying, 'blocked'::character varying, 'abandoned'::character varying]::text[])",
+            "state IN ('viewing', 'preparing', 'awaiting_user', 'claiming', 'human_control', 'revoking', 'ready_to_resume', 'consumed', 'blocked', 'abandoned')",
             name=op.f("ck_desktop_assistance_requests_state"),
         ),
         sa.ForeignKeyConstraint(

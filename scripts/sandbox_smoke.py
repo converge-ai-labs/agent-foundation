@@ -93,7 +93,7 @@ def check_desktop_access(image: str) -> None:
         assert pathlib.Path(root).stat().st_mode & 0o777 == 0o700
         assert subprocess.run(['runuser', '-u', 'sandbox', '--', 'test', '-r', root + '/control.sock']).returncode != 0
         def call(request):
-            request['protocol_version'] = 1
+            request['protocol_version'] = 2
             encoded = base64.b64encode(json.dumps(request).encode()).decode()
             result = subprocess.run(['python3', '-I', '/opt/a13n-desktop-access.py', 'call',
                                      '--root', root, '--request', encoded], capture_output=True, timeout=25)
@@ -103,11 +103,12 @@ def check_desktop_access(image: str) -> None:
             return body['result']
         generation = call({'operation': 'describe'})['generation']
         grant = {'id': 'grant_smoke', 'generation': generation, 'epoch': 1}
-        assert call(dict(grant, operation='grant', mode='control', ttl_seconds=30))['state'] == 'active'
+        assert call(dict(grant, operation='grant', mode='control', expires_at=time.time() + 30))['state'] == 'active'
+        assert call(dict(grant, operation='renew', expires_at=time.time() + 60))['remaining_seconds'] > 30
         inspected = call(dict(grant, operation='inspect'))
         assert 'token' not in inspected and 'password' not in inspected
         assert call(dict(grant, operation='revoke'))['state'] == 'revoked'
-        assert call(dict(grant, operation='grant', mode='control', ttl_seconds=30))['state'] == 'revoked'
+        assert call(dict(grant, operation='grant', mode='control', expires_at=time.time() + 30))['state'] == 'revoked'
         """)
     try:
         docker(
