@@ -28,7 +28,7 @@ class E2BRecipe(E2BEnvironmentConfiguration):
 
     desktop_assistance: bool = Field(
         default=False,
-        title="Agent-requested desktop assistance",
+        title="Desktop viewing and control",
         description="Enabled by default for automatic desktop templates. Custom templates must preinstall desktop access components.",
     )
     model_config = ConfigDict(
@@ -43,5 +43,5 @@ class E2BRecipe(E2BEnvironmentConfiguration):
         if self.template == "auto" and not self.desktop:
             raise ValueError("Automatic E2B templates require desktop=True")
         if self.desktop_assistance and (not self.desktop or self.template in {"desktop", "base"}):
-            raise ValueError("Desktop assistance requires desktop=True and an automatic or compatible custom template")
+            raise ValueError("Desktop access requires desktop=True and an automatic or compatible custom template")
         return self

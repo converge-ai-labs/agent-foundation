@@ -22,7 +22,7 @@ PORT = 6081
 Identity = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{7,71}$")]
 Generation = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
 Epoch = Annotated[int, Field(strict=True, ge=1)]
-TTL = Annotated[int, Field(strict=True, ge=1, le=60)]
+Deadline = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
 
 
 class Model(BaseModel):
@@ -30,7 +30,7 @@ class Model(BaseModel):
 
 
 class RequestModel(Model):
-    protocol_version: Literal[1] = 1
+    protocol_version: Literal[2] = 2
 
 
 class Describe(RequestModel):
@@ -43,7 +43,7 @@ class Grant(RequestModel):
     id: Identity
     mode: Literal["view", "control"]
     epoch: Epoch
-    ttl_seconds: TTL = 60
+    expires_at: Deadline
 
 
 class Inspect(RequestModel):
@@ -58,7 +58,7 @@ class Renew(RequestModel):
     generation: Generation
     id: Identity
     epoch: Epoch
-    ttl_seconds: TTL = 60
+    expires_at: Deadline
 
 
 class Settle(RequestModel):
@@ -70,7 +70,7 @@ type Request = Describe | Grant | Inspect | Renew | Settle
 
 
 class Description(Model):
-    protocol_version: Literal[1]
+    protocol_version: Literal[2]
     generation: Generation
     port: Literal[6081]
     max_ttl_seconds: Literal[60]

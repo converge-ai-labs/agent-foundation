@@ -1119,7 +1119,8 @@
             "message",
             "child_result",
             "tool_result",
-            "browser_handback"
+            "browser_handback",
+            "desktop_handback"
           ],
           "title": "Kind",
           "type": "string"
@@ -1540,6 +1541,37 @@
         "run_id"
       ],
       "title": "Gap",
+      "type": "object"
+    },
+    "HistoricalDesktopPending": {
+      "additionalProperties": false,
+      "description": "Read-only projection of sealed desktop suspensions predating Computer-scoped control.",
+      "properties": {
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/PendingCall"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/PendingCall"
+          },
+          "title": "Calls",
+          "type": "array"
+        },
+        "desktop_control_id": {
+          "title": "Desktop Control Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvals",
+        "calls",
+        "desktop_control_id"
+      ],
+      "title": "HistoricalDesktopPending",
       "type": "object"
     },
     "InitialRun": {
@@ -2484,18 +2516,6 @@
           },
           "title": "Calls",
           "type": "array"
-        },
-        "desktop_control_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Desktop Control Id"
         }
       },
       "required": [
@@ -3066,9 +3086,13 @@
               "$ref": "#/$defs/Pending"
             },
             {
+              "$ref": "#/$defs/HistoricalDesktopPending"
+            },
+            {
               "type": "null"
             }
-          ]
+          ],
+          "title": "Pending"
         },
         "principal_id": {
           "title": "Principal Id",
@@ -4034,6 +4058,7 @@
         "child_result",
         "tool_result",
         "browser_handback",
+        "desktop_handback",
         "spawned"
       ],
       "type": "string"

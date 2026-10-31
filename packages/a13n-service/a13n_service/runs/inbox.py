@@ -191,13 +191,19 @@ async def append_browser_handback(
     return await _append_notice(session, thread, origin, payload, kind="browser_handback")
 
 
+async def append_desktop_handback(
+    session: AsyncSession, thread: ThreadRow, origin: RunRow, payload: dict[str, JsonValue]
+) -> InboxEntryRow:
+    return await _append_notice(session, thread, origin, payload, kind="desktop_handback")
+
+
 async def _append_notice(
     session: AsyncSession,
     thread: ThreadRow,
     origin: RunRow,
     payload: dict[str, JsonValue],
     *,
-    kind: Literal["tool_result", "browser_handback"],
+    kind: Literal["tool_result", "browser_handback", "desktop_handback"],
 ) -> InboxEntryRow:
     entry = InboxEntryRow(
         id=new_object_id("inb"),
@@ -343,13 +349,18 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     A steer that gives no options (the defaults) joins whatever options the run started with. Options it gives
     compare as submitted: the run froze its own at acceptance, so it keeps the digest of what its source submitted.
     """
-    if entry.kind == "browser_handback":
+    if entry.kind in {"browser_handback", "desktop_handback"}:
         return (
             origin is not None
             and (origin.id == run.id or origin.sealed_at is not None)
             and origin.principal_id == run.principal_id
             and origin.authority == run.authority
-            and origin.browser_binding == run.browser_binding
+            and (
+                origin.browser_binding == run.browser_binding
+                if entry.kind == "browser_handback"
+                else entry.payload["mount"] in origin.environment_mounts
+                and entry.payload["mount"] in run.environment_mounts
+            )
         )
     if entry.kind in {"child_result", "tool_result"}:
         # The origin must be this run or a sealed one this run continues: its spawning call was committed before the

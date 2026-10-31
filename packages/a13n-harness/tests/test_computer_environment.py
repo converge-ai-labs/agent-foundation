@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -7,6 +10,7 @@ from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.computer import (
     ComputerActionResult,
+    ComputerCall,
     ComputerClick,
     ComputerClipboard,
     ComputerClipboardWriteResult,
@@ -114,7 +118,7 @@ class Computer:
         )
 
 
-def mount(actions, *, guard=None):
+def mount(actions, *, guard=None, computer_guard=None):
     computer = Computer()
     binding = _Binding(
         "desktop",
@@ -126,12 +130,123 @@ def mount(actions, *, guard=None):
     runtime = create_environment_runtime(
         mounts={
             "desktop": EnvironmentMount(
-                source=binding, permission_ceiling=EnvironmentPermissionSet(operations=actions), operation_guard=guard
+                source=binding,
+                permission_ceiling=EnvironmentPermissionSet(operations=actions),
+                operation_guard=guard,
+                computer_guard=computer_guard,
             )
         },
         default_mount="desktop",
     )
     return runtime, computer
+
+
+@pytest.mark.parametrize("effect", ["not_executed", "executed", "partial", "unknown"])
+@pytest.mark.parametrize("cleanup", [False, True])
+async def test_computer_guard_receives_typed_result_before_admission_exits(effect, cleanup, monkeypatch):
+    calls = []
+
+    @asynccontextmanager
+    async def guard(call: ComputerCall):
+        assert not call.dispatched and call.result is None
+        try:
+            yield
+        finally:
+            calls.append(call)
+
+    runtime, computer = mount(COMPUTER_ACTIONS, computer_guard=guard)
+    original = computer.execute
+
+    async def execute(request):
+        return replace(await original(request), effect=effect, input_cleanup_complete=cleanup)
+
+    monkeypatch.setattr(computer, "execute", execute)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        screenshot = await environment.computer.observe()
+        result = await environment.computer.execute(
+            ComputerClick(observation=screenshot.observation, point=ComputerPoint(x=0, y=0))
+        )
+        assert calls[0].result is screenshot
+        assert calls[1].observation is screenshot.observation
+        assert calls[1].dispatched and calls[1].result is result
+        assert result.effect == effect and result.input_cleanup_complete is cleanup
+
+
+async def test_computer_guard_distinguishes_pre_dispatch_cancellation_and_clipboard_cleanup(monkeypatch):
+    calls = []
+
+    @asynccontextmanager
+    async def guard(call: ComputerCall):
+        try:
+            yield
+        finally:
+            calls.append(call)
+
+    runtime, computer = mount(COMPUTER_ACTIONS, computer_guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        with pytest.raises(EnvironmentError):
+            await environment.computer.write_clipboard("\0")
+        assert not calls[-1].dispatched and calls[-1].result is None
+        computer.clipboard_cleanup = False
+        with pytest.raises(EnvironmentError):
+            await environment.computer.write_clipboard("text")
+        assert isinstance(calls[-1].result, ComputerClipboardWriteResult)
+        assert not calls[-1].result.cleanup_complete
+
+        async def cancelled(request):
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(computer, "execute", cancelled)
+        with pytest.raises(asyncio.CancelledError):
+            await environment.computer.execute(ComputerTypeText(text="text"))
+        assert calls[-1].dispatched and calls[-1].result is None
+
+
+@pytest.mark.parametrize("stage", ["pre_dispatch", "dispatched"])
+async def test_computer_guard_receives_provider_error_before_settlement(stage, monkeypatch):
+    calls = []
+    failure = EnvironmentError("Input failed", code="environment_operation_failed", details={"dispatch_stage": stage})
+
+    @asynccontextmanager
+    async def guard(call: ComputerCall):
+        try:
+            yield
+        finally:
+            assert call.error is failure
+            calls.append(call)
+
+    runtime, computer = mount(COMPUTER_ACTIONS, computer_guard=guard)
+
+    async def fail(request):
+        raise failure
+
+    monkeypatch.setattr(computer, "execute", fail)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        with pytest.raises(EnvironmentError) as raised:
+            await environment.computer.execute(ComputerTypeText(text="text"))
+        assert raised.value is failure
+        assert calls[-1].dispatched and calls[-1].result is None
+
+
+async def test_computer_guard_rejection_never_dispatches():
+    @asynccontextmanager
+    async def guard(call: ComputerCall):
+        raise EnvironmentError("Human controls this desktop", code="environment_denied")
+        yield
+
+    runtime, computer = mount(COMPUTER_ACTIONS, computer_guard=guard)
+    async with runtime.bind(
+        thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}
+    ) as environment:
+        with pytest.raises(EnvironmentError, match="Human controls"):
+            await environment.computer.execute(ComputerTypeText(text="text"))
+        assert computer.inputs == []
 
 
 async def test_legacy_permission_default_never_exposes_desktop_and_denies_dispatch():
@@ -157,6 +272,9 @@ async def test_observe_only_mount_returns_direct_image_and_does_not_allow_input(
         assert isinstance(result, ToolReturn)
         assert isinstance(result.content[0], BinaryContent)
         assert result.content[0].vendor_metadata is None
+        again = await tools.computer_observe(alias="desktop")
+        assert result.content[0].identifier != again.content[0].identifier
+        assert result.content[0].data == again.content[0].data
         assert "mount_id" not in result.return_value
         denied = await tools.computer_click(result.return_value["observation_id"], ComputerPoint(x=1, y=1))
         assert denied["ok"] is False and denied["error"]["code"] == "environment_denied"
@@ -230,8 +348,9 @@ async def test_eip_scroll_preserves_legacy_pixels_and_requires_step_advertisemen
         captured_at=datetime.now(UTC),
     )
     assert (await provider.describe()).scroll_units == ("pixels",)
-    with pytest.raises(EnvironmentError, match="does not support"):
+    with pytest.raises(EnvironmentError, match="does not support") as refused:
         await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0), unit="steps"))
+    assert refused.value.details["dispatch_stage"] == "pre_dispatch"
     assert sent == []
     with pytest.raises(EnvironmentError, match="EIP provider operation failed"):
         await provider.execute(ComputerScroll(observation=observation, point=ComputerPoint(x=0, y=0)))

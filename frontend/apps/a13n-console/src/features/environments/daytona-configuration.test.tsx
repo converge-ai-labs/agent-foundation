@@ -21,7 +21,7 @@ function schema(variant: "daytona" | "modal") {
       },
       desktop_assistance: {
         type: "boolean",
-        title: "Desktop assistance and control",
+        title: "Desktop viewing and control",
         default: false,
       },
     },
@@ -62,7 +62,7 @@ it.each(["daytona", "modal"] as const)(
       desktop: false,
       desktop_assistance: false,
     });
-    expect(screen.queryByText("Desktop assistance and control")).toBeNull();
+    expect(screen.queryByText("Desktop viewing and control")).toBeNull();
     expect(
       (
         screen.getByRole("textbox", {

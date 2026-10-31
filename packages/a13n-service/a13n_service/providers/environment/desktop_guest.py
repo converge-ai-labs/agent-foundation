@@ -12,6 +12,7 @@ import asyncio
 import base64
 import ctypes
 import json
+import math
 import os
 import re
 import secrets
@@ -29,7 +30,6 @@ MAX_MESSAGE = 16384
 MAX_GRANTS = 16
 MAX_HISTORY = 4096
 MAX_TTL = 60
-MAX_LIFETIME = 900
 
 
 class Refused(Exception):
@@ -71,9 +71,7 @@ class Grant:
     process: asyncio.subprocess.Process = field(repr=False)
     port: int
     deadline: float
-    limit: float
     expires_at: float
-    maximum_expires_at: float
     expiry_timer: asyncio.TimerHandle | None = field(default=None, repr=False)
     state: str = "active"
 
@@ -183,21 +181,45 @@ class Supervisor:
         if blocked:
             raise Refused("input_cleanup_unconfirmed")
 
+    def deadline(self, request: dict[str, Any]) -> tuple[float, float]:
+        desired = request.get("expires_at")
+        if (
+            isinstance(desired, bool)
+            or not isinstance(desired, (int, float))
+            or not math.isfinite(desired)
+            or desired <= 0
+        ):
+            raise Refused("invalid_expiry")
+        current = time.time()
+        remaining = min(MAX_TTL, desired - current)
+        if remaining <= 0:
+            raise Refused("grant_expired")
+        return time.monotonic() + remaining, current + remaining
+
+    def extend(self, grant: Grant, request: dict[str, Any]) -> None:
+        deadline, expires_at = self.deadline(request)
+        if grant.state != "active" or grant.remaining() <= 0:
+            raise Refused("grant_not_active")
+        # A delayed shorter renewal cannot truncate current authority. The wall
+        # deadline also prevents retries from renewing beyond the accepted intent.
+        grant.deadline = max(grant.deadline, deadline)
+        grant.expires_at = max(grant.expires_at, expires_at)
+        self.schedule_expiry(grant)
+
     async def grant(self, request: dict[str, Any]) -> dict[str, Any]:
         identity, mode, epoch = request.get("id"), request.get("mode"), request.get("epoch")
-        ttl = request.get("ttl_seconds")
         if not isinstance(identity, str) or not re.fullmatch(r"[a-z][a-z0-9_]{7,71}", identity):
             raise Refused("invalid_grant_id")
         if mode not in ("view", "control") or type(epoch) is not int or epoch < 1:
             raise Refused("invalid_grant")
-        if type(ttl) is not int or not 1 <= ttl <= MAX_TTL:
-            raise Refused("invalid_ttl")
+        self.deadline(request)
         if identity in self.revocations:
             raise Refused("grant_not_active")
         if existing := self.grants.get(identity):
             if (existing.mode, existing.epoch) != (mode, epoch):
                 raise Refused("grant_conflict")
-            # Retried creation never extends a lease or resurrects a revoked grant.
+            if existing.state == "active":
+                self.extend(existing, request)
             return existing.public(self.generation, credential=True)
         if (
             len(self.grants) + len(self.revocations) >= MAX_HISTORY
@@ -251,7 +273,7 @@ class Supervisor:
 
         try:
             await self.wait_ready(process, port)
-            now = time.monotonic()
+            deadline, expires_at = self.deadline(request)
             grant = Grant(
                 identity,
                 mode,
@@ -260,10 +282,8 @@ class Supervisor:
                 password,
                 process,
                 port,
-                now + ttl,
-                now + MAX_LIFETIME,
-                time.time() + ttl,
-                time.time() + MAX_LIFETIME,
+                deadline,
+                expires_at,
             )
             self.grants[identity] = grant
             if mode == "control":
@@ -308,12 +328,12 @@ class Supervisor:
     async def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         async with self.lock:
             await self.reap()
-            if type(request.get("protocol_version")) is not int or request.get("protocol_version") != 1:
+            if type(request.get("protocol_version")) is not int or request.get("protocol_version") != 2:
                 raise Refused("unsupported_protocol_version")
             operation = request.get("operation")
             if operation == "describe":
                 return {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "generation": self.generation,
                     "port": self.port,
                     "max_ttl_seconds": MAX_TTL,
@@ -361,14 +381,7 @@ class Supervisor:
             if operation == "revoke":
                 await self.revoke(grant)
             elif operation == "renew":
-                ttl = request.get("ttl_seconds")
-                if type(ttl) is not int or not 1 <= ttl <= MAX_TTL:
-                    raise Refused("invalid_ttl")
-                if grant.state != "active":
-                    raise Refused("grant_not_active")
-                grant.deadline = min(time.monotonic() + ttl, grant.limit)
-                grant.expires_at = min(time.time() + ttl, grant.maximum_expires_at)
-                self.schedule_expiry(grant)
+                self.extend(grant, request)
             elif operation != "inspect":
                 raise Refused("unsupported_operation")
             return grant.public(self.generation)

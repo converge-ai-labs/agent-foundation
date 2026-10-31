@@ -203,18 +203,23 @@ async def content(
     the run principal's access."""
     if entry.kind == "message":
         return await _message(runtime, principal, recipient, environment, entry, configuration=configuration)
-    if entry.kind == "browser_handback":
+    if entry.kind in {"browser_handback", "desktop_handback"}:
         from a13n_service.infra.db import short_session
-        from a13n_service.runs.browsers.delivery import require_notice
+        from a13n_service.runs.notices import require_notice
 
         async with short_session(runtime.storage) as session:
             stored = await session.get_one(InboxEntryRow, entry.id)
             await require_notice(session, runtime, stored)
+        target = (
+            "Browser " + str(entry.payload["browser_id"])
+            if entry.kind == "browser_handback"
+            else 'desktop on mount "' + EnvironmentMount.model_validate(entry.payload["mount"]).name + '"'
+        )
         return (
             TextContent(
-                "Human control ended for Browser "
-                + str(entry.payload["browser_id"])
-                + ". Observe afresh before acting. No blocked action was replayed.",
+                "Human control ended for "
+                + target
+                + ". Observe afresh and make a new model decision before acting. No blocked action was replayed.",
                 metadata={"source_id": entry.id, "display": False},
             ),
         )

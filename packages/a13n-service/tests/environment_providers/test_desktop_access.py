@@ -22,6 +22,7 @@ def supervisor(tmp_path, monkeypatch):
     instance = guest.Supervisor(tmp_path, ":99", "/private/Xauthority", 6081, "websockify")
     clock = [100.0]
     monkeypatch.setattr(guest.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(guest.time, "time", lambda: 1_000_000 + clock[0])
     commands = []
 
     class Process:
@@ -56,12 +57,12 @@ def supervisor(tmp_path, monkeypatch):
 
 async def request(instance, operation, **fields):
     return await instance.dispatch(
-        {"protocol_version": 1, "operation": operation, "generation": instance.generation, **fields}
+        {"protocol_version": 2, "operation": operation, "generation": instance.generation, **fields}
     )
 
 
 async def grant(instance, identity="control_first", mode="control", epoch=1, ttl=60):
-    return await request(instance, "grant", id=identity, mode=mode, epoch=epoch, ttl_seconds=ttl)
+    return await request(instance, "grant", id=identity, mode=mode, epoch=epoch, expires_at=guest.time.time() + ttl)
 
 
 async def test_revoke_is_idempotent_does_not_revoke_viewer_and_cannot_resurrect(supervisor):
@@ -92,21 +93,60 @@ async def test_revoke_is_idempotent_does_not_revoke_viewer_and_cannot_resurrect(
     assert (await grant(instance, "control_new", epoch=2))["state"] == "active"
 
 
-async def test_expiry_and_maximum_lifetime_are_enforced_before_renewal(supervisor):
+async def test_expiry_cannot_revive_but_active_renewal_can_exceed_fifteen_minutes(supervisor):
     instance, clock, _ = supervisor
     await grant(instance)
     clock[0] = 160
     with pytest.raises(guest.Refused, match="grant_not_active"):
-        await request(instance, "renew", id="control_first", epoch=1, ttl_seconds=60)
+        await request(instance, "renew", id="control_first", epoch=1, expires_at=guest.time.time() + 60)
     assert instance.grants["control_first"].state == "expired"
     assert (instance.root / "tokens").read_text() == ""
     await grant(instance, "control_second", epoch=2)
-    for now in range(210, 1060, 50):
+    for now in range(210, 2210, 50):
         clock[0] = now
-        await request(instance, "renew", id="control_second", epoch=2, ttl_seconds=60)
-    clock[0] = 1060
+        await request(instance, "renew", id="control_second", epoch=2, expires_at=guest.time.time() + 60)
+    assert instance.grants["control_second"].state == "active"
+    clock[0] += 61
     with pytest.raises(guest.Refused, match="grant_not_active"):
-        await request(instance, "renew", id="control_second", epoch=2, ttl_seconds=60)
+        await request(instance, "renew", id="control_second", epoch=2, expires_at=guest.time.time() + 60)
+
+
+async def test_out_of_order_absolute_renewal_never_shortens_or_revives(supervisor):
+    instance, clock, _ = supervisor
+    await grant(instance)
+    clock[0] = 120
+    await request(instance, "renew", id="control_first", epoch=1, expires_at=1_000_180)
+    current = instance.grants["control_first"]
+    assert current.deadline == 180
+    clock[0] = 130
+    await request(instance, "renew", id="control_first", epoch=1, expires_at=1_000_150)
+    assert current.deadline == 180 and current.expires_at == 1_000_180
+    # A retried create uses the same connection and never changes its identity.
+    token = current.token
+    await request(instance, "grant", id="control_first", mode="control", epoch=1, expires_at=1_000_180)
+    assert current.token == token and current.deadline == 180
+    clock[0] = 181
+    with pytest.raises(guest.Refused, match="grant_not_active"):
+        await request(instance, "renew", id="control_first", epoch=1, expires_at=1_000_240)
+    assert current.state == "expired"
+
+
+async def test_grant_deadline_includes_backend_startup_and_is_capped(supervisor, monkeypatch):
+    instance, clock, _ = supervisor
+
+    async def ready(process, port):
+        clock[0] += 5
+
+    monkeypatch.setattr(instance, "wait_ready", ready)
+    result = await grant(instance, ttl=20)
+    assert result["remaining_seconds"] == 15
+    await request(instance, "revoke", id="control_first", epoch=1)
+    result = await grant(instance, "control_next", epoch=2, ttl=600)
+    assert result["remaining_seconds"] == 60
+    await request(instance, "revoke", id="control_next", epoch=2)
+    with pytest.raises(guest.Refused, match="grant_expired"):
+        await grant(instance, "control_late", epoch=3, ttl=1)
+    assert "control_late" not in instance.grants
 
 
 async def test_unconfirmed_cleanup_blocks_control_but_still_expires_other_grants(supervisor, monkeypatch):
@@ -131,16 +171,16 @@ async def test_unconfirmed_cleanup_blocks_control_but_still_expires_other_grants
 
 async def test_stale_generation_and_invalid_inputs_never_dispatch(supervisor):
     instance, _, commands = supervisor
-    for version in (None, 0, 2, True, "1"):
+    for version in (None, 0, 1, True, "2"):
         with pytest.raises(guest.Refused, match="unsupported_protocol_version"):
             await instance.dispatch({"protocol_version": version, "operation": "describe"})
     with pytest.raises(guest.Refused, match="unsupported_protocol_version"):
         await instance.dispatch({"operation": "describe"})
     with pytest.raises(guest.Refused, match="stale_generation"):
-        await instance.dispatch({"protocol_version": 1, "operation": "grant", "generation": "old"})
-    for ttl in (0, 61, True, 1.5, "30"):
-        with pytest.raises(guest.Refused, match="invalid_ttl"):
-            await grant(instance, ttl=ttl)
+        await instance.dispatch({"protocol_version": 2, "operation": "grant", "generation": "old"})
+    for expiry in (0, -1, True, float("inf"), float("nan"), "30"):
+        with pytest.raises(guest.Refused, match="invalid_expiry"):
+            await request(instance, "grant", id="control_first", mode="control", epoch=1, expires_at=expiry)
     for identity in ("../password", "a", "view\nother", "/tmp/password"):
         with pytest.raises(guest.Refused, match="invalid_grant_id"):
             await grant(instance, identity)
@@ -193,7 +233,7 @@ async def test_expiry_kills_input_even_while_management_lock_is_busy(supervisor)
 
 async def test_protocol_redacts_credentials_and_rejects_wrong_reply_correlation():
     generation = "a" * 32
-    command = protocol.Grant(generation=generation, id="grant_first", mode="control", epoch=3)
+    command = protocol.Grant(generation=generation, id="grant_first", mode="control", epoch=3, expires_at=1000.0)
     response = {
         "generation": generation,
         "id": "grant_first",
@@ -277,7 +317,7 @@ async def test_e2b_access_attaches_only_saved_running_desktop_and_never_starts_i
                 {
                     "result": {
                         "generation": "a" * 32,
-                        "protocol_version": 1,
+                        "protocol_version": 2,
                         "port": 6081,
                         "max_ttl_seconds": 60,
                         "read_only_enforced": True,

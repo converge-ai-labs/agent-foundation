@@ -228,6 +228,10 @@ class Control(Section):
     browser_control_seconds: int = Field(default=300, ge=1)
     # Starts only when viewer revocation and inventory synchronization complete successfully.
     browser_notice_seconds: int = Field(default=86400, ge=60, le=604800)
+    desktop_control_min_seconds: int = Field(default=60, ge=1)
+    desktop_control_max_seconds: int = Field(default=3600, ge=1, le=31536000)
+    desktop_control_seconds: int = Field(default=300, ge=1)
+    desktop_notice_seconds: int = Field(default=86400, ge=60, le=604800)
     # Per workspace; also bounds the subscriptions one transition stages deliveries for.
     subscriptions: int = Field(default=32, ge=1, le=1000)
     # One whole webhook POST.
@@ -238,7 +242,13 @@ class Control(Section):
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
 
     @field_validator(
-        "browser_control_min_seconds", "browser_control_max_seconds", "browser_control_seconds", mode="before"
+        "browser_control_min_seconds",
+        "browser_control_max_seconds",
+        "browser_control_seconds",
+        "desktop_control_min_seconds",
+        "desktop_control_max_seconds",
+        "desktop_control_seconds",
+        mode="before",
     )
     @classmethod
     def control_seconds_integer(cls, value: object) -> int:
@@ -246,7 +256,7 @@ class Control(Section):
             return int(value)
         if isinstance(value, int) and not isinstance(value, bool):
             return value
-        raise ValueError("browser control duration must be a positive integer")
+        raise ValueError("control duration must be a positive integer")
 
     @model_validator(mode="after")
     def control_bounds(self) -> "Control":
@@ -254,6 +264,11 @@ class Control(Section):
             raise ValueError(
                 "control.browser_control_min_seconds must not exceed control.browser_control_seconds, "
                 "which must not exceed control.browser_control_max_seconds"
+            )
+        if not self.desktop_control_min_seconds <= self.desktop_control_seconds <= self.desktop_control_max_seconds:
+            raise ValueError(
+                "control.desktop_control_min_seconds must not exceed control.desktop_control_seconds, "
+                "which must not exceed control.desktop_control_max_seconds"
             )
         return self
 

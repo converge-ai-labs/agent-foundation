@@ -15,7 +15,7 @@ from a13n_harness.providers.environment.native.http import NativeHTTP
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environments.daytona import DAYTONA
 from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
-from a13n_service.runs.desktop_assistance.admission import target_key
+from a13n_service.runs.environments.desktop.identity import target_key
 
 from .test_native_http_providers import BACKENDS, NativeCloud
 
@@ -70,7 +70,7 @@ def test_access_is_attach_only_and_revoke_does_not_depend_on_preview(fault, monk
                 elif payload["operation"] == "describe":
                     reply = {
                         "result": {
-                            "protocol_version": 1,
+                            "protocol_version": 2,
                             "generation": generation,
                             "port": 6081,
                             "max_ttl_seconds": 60,

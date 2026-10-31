@@ -57,7 +57,6 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents.service import load_revision
-from a13n_service.resources.agents.toolsets import enabled_tools
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
@@ -72,15 +71,11 @@ from a13n_service.runs.attempts import (
     lock_thread_lease,
 )
 from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
-from a13n_service.runs.browsers.delivery import StaleNotice, require_notice
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
-from a13n_service.runs.desktop_assistance import execution as desktop_execution
-from a13n_service.runs.desktop_assistance.execution import ExecutionFence
-from a13n_service.runs.desktop_assistance.tools import DesktopAssistanceCapability
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, open_mounts, prepare
 from a13n_service.runs.environments.lifecycle import public_message
@@ -89,6 +84,8 @@ from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
 from a13n_service.runs.mcp_apps.capture import Captures
+from a13n_service.runs.notices import KINDS as NOTICE_KINDS
+from a13n_service.runs.notices import StaleNotice, require_notices
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -289,10 +286,10 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         obsolete_notice = (
             not assigned
             and source is not None
-            and source.kind == "browser_handback"
+            and source.kind in NOTICE_KINDS
             and source.status == "failed"
             and source.failure is not None
-            and source.failure.get("code") == "browser_notice_stale"
+            and source.failure.get("code") in {"browser_notice_stale", "desktop_notice_stale"}
         )
         if obsolete_notice:
             # A corrected first cut may already contain other incorporated input which
@@ -406,8 +403,6 @@ def _initial(
         answers = deferred.fork_results(pending)
     if answers is None:
         raise ValueError("A waiting parent requires explicit resume results")
-    if pending.desktop_control_id and not pending.calls and not pending.approvals:
-        return state, None
     return state, deferred.resume(deferred.load(base.deferred), answers)
 
 
@@ -430,7 +425,7 @@ class _Offers:
 
     def pending_notice(self, messages: list[ModelMessage]) -> bool:
         ids = set(steering_input_ids(messages)) | self.initial
-        return any(entry.kind == "browser_handback" and entry.id in ids for entry in self.open.values())
+        return any(entry.kind in NOTICE_KINDS and entry.id in ids for entry in self.open.values())
 
     def consumed(self, entry_ids: list[str]) -> None:
         for entry_id in entry_ids:
@@ -493,11 +488,7 @@ class _Attempt:
             runtime.storage, lease.run_id, lease.attempt_id, self.usage, check=self.check.reconcile
         )
         self.yielding = False
-        self.desktop_paused = False
-        self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))
-        self.boundaries.wait_for_model = self.desktop_enabled or any(
-            entry.kind == "browser_handback" for entry in plan.assigned
-        )
+        self.boundaries.wait_for_model = any(entry.kind in NOTICE_KINDS for entry in plan.assigned)
         self.live: ThreadStream | None = None
 
     async def run(self) -> None:
@@ -587,8 +578,6 @@ class _Attempt:
         """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
         runtime, lease = self.runtime, self.lease
         root = self.plan.agent
-        if self.desktop_enabled:
-            await desktop_execution.prepare(runtime, lease, supported=not root.subagents)
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
         async with resources(lease, self._open_resources()) as host, AsyncExitStack() as stack:
@@ -598,14 +587,8 @@ class _Attempt:
                     [
                         self.boundaries,
                         InputBoundary(self.boundaries, self.offers.pending_notice),
-                        *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *host.memory,
-                        *(
-                            [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
-                            if enabled_tools(root.config.toolsets, "computer")
-                            else []
-                        ),
                     ]
                     if node is root
                     else host.capabilities(node)
@@ -735,12 +718,7 @@ class _Attempt:
             staged.state,
             cursors=staged.cursors,
             snapshot=staged.display,
-            pause_boundary=staged.at == "model" and self.desktop_enabled,
         )
-        if self.desktop_paused:
-            self.boundaries.stop()
-            stream.cancel()
-            return
         output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
         if staged.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
@@ -758,7 +736,6 @@ class _Attempt:
         *,
         cursors: dict[str, str | None],
         snapshot: Snapshot,
-        pause_boundary: bool = False,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
     ) -> list[Offered]:
@@ -769,7 +746,6 @@ class _Attempt:
                     state,
                     cursors=cursors,
                     snapshot=snapshot,
-                    pause_boundary=pause_boundary,
                     outcome=outcome,
                     deferred=deferred,
                     rejected=rejected,
@@ -793,7 +769,6 @@ class _Attempt:
         *,
         cursors: dict[str, str | None],
         snapshot: Snapshot,
-        pause_boundary: bool,
         outcome: Outcome | None,
         deferred: JsonValue,
         rejected: list[StaleNotice],
@@ -849,10 +824,12 @@ class _Attempt:
             # This transaction is the observation boundary: retake either suppresses the hint
             # first, or follows its durable incorporation. No model request carrying a new
             # Browser notice dispatches before this commit, and no lock spans external I/O.
-            for entry_id in consumed:
-                if self.offers.open[entry_id].kind == "browser_handback":
-                    entry = await session.get_one(InboxEntryRow, entry_id)
-                    await require_notice(session, self.runtime, entry)
+            notices = [
+                await session.get_one(InboxEntryRow, entry_id)
+                for entry_id in consumed
+                if self.offers.open[entry_id].kind in NOTICE_KINDS
+            ]
+            await require_notices(session, self.runtime, notices)
             for error in rejected:
                 await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
             # Usage/consumption use explicit SQL; pending checkpoint fields need not flush for those reads.
@@ -872,10 +849,6 @@ class _Attempt:
                 )
                 checkpoints.retire(session, run, self.committed, committed)
                 await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)
-                if pause_boundary or (self.desktop_enabled and outcome is not None and outcome.status == "waiting"):
-                    pending = await desktop_execution.pending(session, run, outcome.pending if outcome else None)
-                    if pending is not None and pending.desktop_control_id:
-                        outcome = Outcome(status="waiting", pending=pending)
                 if outcome is not None:
                     # Stop input polling before our seal releases the lease. A poll already waiting for
                     # this transaction's Thread lock must not mistake our own completion for lease loss.
@@ -892,8 +865,6 @@ class _Attempt:
                         scan=self.runtime.settings.control.inbox_count,
                     )
                     steers = [Offered.of(entry) for entry in entries]
-        if outcome is not None and outcome.pending is not None and outcome.pending.desktop_control_id:
-            self.desktop_paused = True
         CHECKPOINT_DURATION.record(time.monotonic() - started)
         self.search = search
         self.committed, self.seq = committed, self.seq + 1
@@ -919,7 +890,7 @@ class _Attempt:
                     continue
                 if not self.boundaries.accepting_steers:
                     return  # Keep the unconsumed entry for continuation after native completion.
-                if entry.kind == "browser_handback":
+                if entry.kind in NOTICE_KINDS:
                     self.boundaries.wait_for_model = True
                 try:
                     await stream.steer(
@@ -1011,8 +982,6 @@ class _Attempt:
         stream.cancel()
 
     async def _end(self, result: HarnessRunResult) -> None:
-        if self.desktop_paused:
-            return
         self.usage.add(result.usage_records)
         if result.status == "failed":
             assert result.failure is not None

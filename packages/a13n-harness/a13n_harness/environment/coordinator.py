@@ -1717,7 +1717,13 @@ async def _mount_scope(
     requested: _MountRequest,
     scope: EnvironmentScope,
 ) -> AsyncGenerator[_MountExecution]:
-    provider = _MountExecution(requested.mount.source, scope, requested.mount.observer, requested.mount.operation_guard)
+    provider = _MountExecution(
+        requested.mount.source,
+        scope,
+        requested.mount.observer,
+        requested.mount.operation_guard,
+        requested.mount.computer_guard,
+    )
     try:
         yield provider
     finally:

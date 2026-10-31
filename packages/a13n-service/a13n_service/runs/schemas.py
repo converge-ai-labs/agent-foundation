@@ -37,7 +37,9 @@ from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
-type Trigger = Literal["input", "queued", "resume", "child_result", "tool_result", "browser_handback", "spawned"]
+type Trigger = Literal[
+    "input", "queued", "resume", "child_result", "tool_result", "browser_handback", "desktop_handback", "spawned"
+]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
@@ -351,12 +353,19 @@ class Pending(_Frozen):
 
     approvals: tuple[PendingCall, ...]
     calls: tuple[PendingCall, ...]
-    desktop_control_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def historical_null(cls, value: object) -> object:
+        # Old native approval/call checkpoints carried an unused null desktop field.
+        if isinstance(value, dict) and value.get("desktop_control_id") is None:
+            return {key: item for key, item in value.items() if key != "desktop_control_id"}
+        return value
 
     @model_validator(mode="after")
     def bounded(self) -> "Pending":
         items = (*self.approvals, *self.calls)
-        if not (1 <= len(items) <= 128 or (not items and self.desktop_control_id is not None)):
+        if not 1 <= len(items) <= 128:
             raise ValueError("Pending requires one to 128 calls")
         if len({item.tool_call_id for item in items}) != len(items):
             raise ValueError("Pending call IDs must be unique across categories")
@@ -364,11 +373,17 @@ class Pending(_Frozen):
 
     @property
     def reason(self) -> WaitReason:
-        if self.desktop_control_id:
-            return "multiple" if self.approvals or self.calls else "desktop_control"
         if self.approvals and self.calls:
             return "multiple"
         return "approval" if self.approvals else "call"
+
+
+class HistoricalDesktopPending(_Frozen):
+    """Read-only projection of sealed desktop suspensions predating Computer-scoped control."""
+
+    approvals: tuple[PendingCall, ...]
+    calls: tuple[PendingCall, ...]
+    desktop_control_id: str
 
 
 class Outcome(_Frozen):
@@ -547,7 +562,7 @@ class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result", "tool_result", "browser_handback"]
+    kind: Literal["message", "child_result", "tool_result", "browser_handback", "desktop_handback"]
     delivery: Delivery
     position: int
     status: EntryStatus
@@ -596,7 +611,7 @@ class RunView(BaseModel):
     resume: Resume | None
     resumed_by_id: str | None
     wait_reason: WaitReason | None
-    pending: Pending | None
+    pending: Pending | HistoricalDesktopPending | None
     environment_mounts: list[EnvironmentMount]
     memory_mounts: list[MemoryMount | FrozenMemoryMount]
     # The options its message chose, frozen at acceptance; a resume or child result inherits its origin's.

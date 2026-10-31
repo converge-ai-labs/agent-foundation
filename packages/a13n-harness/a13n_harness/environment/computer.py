@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
@@ -45,6 +46,8 @@ class ComputerObservation(BaseModel):
 class ComputerScreenshot:
     observation: ComputerObservation
     data: bytes
+    # Identify this capture through native model content, independently of identical pixels.
+    image_identifier: str = field(default_factory=lambda: f"screen-{secrets.token_hex(12)}")
 
 
 class ComputerRegion(BaseModel):
@@ -169,6 +172,31 @@ class ComputerClipboardWriteResult:
     receipt: EnvironmentOperationReceipt
     effect: Literal["not_executed", "executed", "partial", "unknown"]
     cleanup_complete: bool
+
+
+@dataclass(slots=True)
+class ComputerCall:
+    """One facade dispatch, shared with the Host's Computer admission scope.
+
+    The facade marks dispatch immediately before calling the provider and publishes
+    its validated typed result before leaving admission. A missing result after
+    dispatch is not evidence that external input stopped. Effect uncertainty and
+    input cleanup are independent; a normal Python return does not imply cleanup.
+    """
+
+    action: EnvironmentAction
+    observation: ComputerObservation | None = None
+    dispatched: bool = False
+    error: EnvironmentError | None = None
+    result: (
+        ComputerActionResult
+        | ComputerClipboardWriteResult
+        | ComputerScreenshot
+        | ComputerDescription
+        | ComputerClipboard
+        | ComputerZoom
+        | None
+    ) = None
 
 
 class ProviderComputerOperations(Protocol):

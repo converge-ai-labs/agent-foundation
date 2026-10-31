@@ -238,37 +238,37 @@ If the model returns relative positions, add this agent configuration fragment:
 
 Pass positions from 0 to 1000 directly. Tools convert them to screenshot pixels, including both drag endpoints. Models that return pixels use the default `pixels` mode. Scroll distances and keyboard input are unchanged. Verify the application result after each action.
 
-### Agent-requested desktop assistance
+### Desktop access prerequisites
 
-Use a fresh dedicated desktop for a task that may need human input. The recipe must enable `desktop: true` and `desktop_assistance: true`; the agent needs Computer tools and mount observation permission. Prepare the provider's compatible desktop-access endpoint using the [provider guide](../environments/providers.md).
+Enable `desktop: true` and `desktop_assistance: true` in the recipe. This prepares human viewing and Computer control, not an agent tool. Service has no built-in desktop-assistance request tool; an application can supply its own request workflow. Configure the agent's Computer tools and mount permissions separately. Prepare a compatible desktop-access v2 endpoint using the [provider guide](../environments/providers.md).
 
-For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Engine and Envd access do not provide this browser route. Plain WS is accepted only on loopback. E2B needs an automatically prepared or compatible custom desktop template; a stock `desktop` template alone is insufficient. Daytona and Modal use their prepared desktop supervisor and provider-specific routes.
-
-When an assistance card appears:
-
-1. Choose **Open read-only desktop** to inspect the task.
-2. Choose **Take control** and wait for input to become available.
-3. Complete the requested operation, then choose **Finish assistance**.
-4. Review the other pending questions and approvals, then choose **Submit responses**. Finishing assistance records its result; submitting the complete batch continues the agent.
-
-Service revokes human access before continuation. The agent then observes the current screen and replans. One controller can operate the desktop at a time. Assistance lasts at most 15 minutes, with renewable connection grants of at most 60 seconds. Closing the page or losing permission ends input; unconfirmed cleanup keeps the task paused.
-
-Prior shell/process-input activity, initialization scripts or untracked execution history block assistance because background input cannot be excluded. Infrastructure administrators and independent clients remain trusted operators outside Service's control.
+For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Engine and Envd access do not provide this browser route. Plain WS is accepted only on loopback. E2B needs an automatically prepared or compatible custom desktop template; a stock `desktop` template alone is insufficient. Other providers use their prepared supervisor and provider-specific routes. Opening the viewer does not start or extend the environment.
 
 ### Get and return desktop control
 
-To take control during a supported running task:
+1. Open **Desktop** in an interactive conversation and select its environment mount.
+2. Choose **View desktop** for read-only viewing, or **Take control** to reserve Computer input. Service waits for admitted Computer actions to settle.
+3. When **You control Computer** appears, choose **Connect input**. Files, Shell, processes, scripts, other desktops and the agent's model work continue.
+4. Choose **Renew control** when more time is needed. The default lease is five minutes; operators configure the default and request bounds through `control.desktop_control_seconds`, `control.desktop_control_min_seconds` and `control.desktop_control_max_seconds`.
+5. Choose **Return control** when finished. Service revokes input and confirms held-key/button cleanup before reopening the Computer channel.
 
-1. Open **Desktop control**, select its desktop mount if needed, and choose **Open read-only desktop**. Viewing leaves the agent running.
-2. Choose **Get control**. Wait while **Pausing agent** is shown: Service drains admitted work and saves its results before enabling input.
-3. Make your changes. Add a note if the agent needs an explanation.
-4. Choose **Return control and continue**. After confirmed access cleanup, the successor run keeps completed results, observes the screen and replans.
+Closing the viewer or page disconnects that viewer and leaves control unchanged until explicit handback or lease expiry. Short connection grants refresh separately from the human lease. One principal controls a native desktop at a time, including when multiple environment aliases or threads share it. Read-only viewers remain independent. Browser control has its own lifecycle.
 
-If the agent's own assistance request wins first, use its assistance card. For mixed questions or approvals, return control before submitting the full response batch. If continuation fails after handback, **Continue agent** retries continuation without repeating completed tools.
+A Computer call blocked during takeover returns a not-executed result and registers a handback notice for that thread. The agent can continue other work or finish its turn without polling. After verified handback, the existing inbox delivers availability guidance to eligible callers. The agent must observe the current desktop and make a new model decision before sending input; old gestures are never replayed. A settled child is not restarted. Pending questions and approvals still require their ordinary complete response batch.
 
-Closing the page, disconnecting or choosing **End control, keep paused** leaves the task paused. Reconnect to finish handback. After expiry, explicit continuation becomes available only after confirmed cleanup. Uncertain execution, lost worker ownership, unmanaged background commands and configured subagent graphs block takeover. Each run selects one desktop mount; controlling a completed task does not start another run.
+Unknown Computer effects or unconfirmed input cleanup keep Computer access blocked for reconciliation. This control boundary covers managed Computer calls, including calls inside CodeAct. It does not freeze arbitrary guest processes, Shell-launched UI automation or independent clients.
 
-Upgrade Service control and worker roles together before using desktop handoff. After user-control history exists, database rollback to the old structure is rejected; repair forward.
+### Upgrade desktop control
+
+This change replaces Run-scoped assistance and pause/resume APIs with Environment-scoped Computer control. Use a coordinated cutover:
+
+1. Stop new task and takeover admission on the old release. Drain its active workers and retained tool executions.
+2. Using the old release, revoke and reconcile every legacy desktop grant and reservation. Complete and resume legacy desktop waits, or cancel their current thread head. Keep completed historical runs unchanged. Resolve unknown cleanup before proceeding.
+3. Stop all old control and worker replicas. Back up the database, then run the schema migration once through the supported migration process. The migration refuses remaining live reservations, unresolved assistance or resumable desktop waits.
+4. Upgrade control, workers and clients together. Prepare desktop guests with protocol v2 before enabling human access. Existing v1 guests require an explicit compatible replacement or operator-managed upgrade; attachment does not upgrade them.
+5. Verify viewing, takeover and handback on a prepared target before reopening admission.
+
+Mixed old/new replicas are unsupported for this cutover. Database downgrade refuses new control or handback history that the old release cannot represent. Repair forward after new history exists.
 
 ### Automatic Sprites desktops
 

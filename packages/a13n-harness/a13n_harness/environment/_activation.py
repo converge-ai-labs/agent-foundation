@@ -9,6 +9,7 @@ from itertools import count
 
 from a13n_logging import get_logger
 
+from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
 from a13n_harness.environment.models import (
     ENVIRONMENT_ACTION_DISPATCH,
@@ -38,9 +39,11 @@ class _MountExecution:
         scope: EnvironmentScope,
         observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None,
         operation_guard: Callable[[EnvironmentAction], AbstractAsyncContextManager[None]] | None = None,
+        computer_guard: Callable[[ComputerCall], AbstractAsyncContextManager[None]] | None = None,
     ) -> None:
         self._source, self._scope, self._observer = source, scope, observer
         self._operation_guard = operation_guard
+        self._computer_guard = computer_guard
         descriptor = source.descriptor
         if not isinstance(descriptor, EnvironmentDescriptor):
             raise EnvironmentError("Source returned an invalid descriptor.", code="environment_request_invalid")
@@ -98,6 +101,14 @@ class _MountExecution:
             yield
         else:
             async with self._operation_guard(action):
+                yield
+
+    @asynccontextmanager
+    async def admit_computer(self, call: ComputerCall) -> AsyncGenerator[None]:
+        if self._computer_guard is None:
+            yield
+        else:
+            async with self._computer_guard(call):
                 yield
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:

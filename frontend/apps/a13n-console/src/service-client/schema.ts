@@ -1033,91 +1033,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/desktop-assistance/{assistance_id}/complete": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Complete Assistance */
-    post: operations["complete_assistance"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/desktop-assistance/{assistance_id}/control": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Control Desktop */
-    post: operations["control_desktop"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/desktop-assistance/{assistance_id}/disconnect": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Disconnect Desktop */
-    post: operations["disconnect_desktop"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/desktop-assistance/{assistance_id}/request-control": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Request Control */
-    post: operations["request_control"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/desktop-assistance/{assistance_id}/view": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** View Desktop */
-    post: operations["view_desktop"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/devices": {
     parameters: {
       query?: never;
@@ -1396,6 +1311,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/desktop-control": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Desktop Control */
+    get: operations["get_desktop_control"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-control/handback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Return Desktop Control */
+    post: operations["return_desktop_control"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-control/renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew Desktop Control */
+    post: operations["renew_desktop_control"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-control/takeover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Take Over Desktop */
+    post: operations["take_over_desktop"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/desktop-preview": {
     parameters: {
       query?: never;
@@ -1407,6 +1390,23 @@ export interface paths {
     get: operations["get_environment_desktop_preview"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-viewer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Open Desktop Viewer */
+    post: operations["open_desktop_viewer"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2745,58 +2745,6 @@ export interface paths {
     get: operations["get_run_content"];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/runs/{run_id}/desktop-assistance/{call_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Assistance */
-    get: operations["get_assistance"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/runs/{run_id}/desktop-control": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Control */
-    get: operations["get_control"];
-    put?: never;
-    /** Open Control */
-    post: operations["open_control"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/runs/{run_id}/desktop-control/view": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Open View */
-    post: operations["open_view"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4725,21 +4673,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
-    /** Access */
-    Access: {
-      assistance: components["schemas"]["View"];
-      /** Expires In Seconds */
-      expires_in_seconds: number;
-      /**
-       * Mode
-       * @enum {string}
-       */
-      mode: "view" | "control";
-      /** Password */
-      password: string;
-      /** Websocket Url */
-      websocket_url: string;
-    };
     /** AccountDisable */
     AccountDisable: {
       /**
@@ -6071,24 +6004,6 @@ export interface components {
             | "capacity"
           );
     };
-    /** Completion */
-    Completion: {
-      /** Epoch */
-      epoch: number;
-      /**
-       * Note
-       * @default
-       */
-      note?: string;
-      /**
-       * Outcome
-       * @default completed
-       * @enum {string}
-       */
-      outcome?: "completed" | "abandoned";
-      /** Session Id */
-      session_id: string;
-    };
     /**
      * ComputerCheck
      * @description A point-in-time capability probe, not an Agent or mount permission grant.
@@ -6452,10 +6367,27 @@ export interface components {
     };
     /** Control */
     Control: {
-      /** Epoch */
-      epoch: number;
-      /** Session Id */
-      session_id: string;
+      /**
+       * Control
+       * @enum {string}
+       */
+      control: "automation" | "draining" | "human" | "returning";
+      /** Controller Id */
+      controller_id: string | null;
+      /** Controller Thread Id */
+      controller_thread_id: string | null;
+      /** Episode */
+      episode: number;
+      /** Expires At */
+      expires_at: string | null;
+      /** Failure */
+      failure: string | null;
+      /** Generation */
+      generation: number;
+      /** Id */
+      id: string;
+      /** Version */
+      version: number;
     };
     /** @enum {string} */
     ControlStatus: "automation" | "draining" | "human" | "returning";
@@ -7022,7 +6954,12 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "message" | "child_result" | "tool_result" | "browser_handback";
+      kind:
+        | "message"
+        | "child_result"
+        | "tool_result"
+        | "browser_handback"
+        | "desktop_handback";
       options: components["schemas"]["RunOptions-Output"];
       /** Origin Run Id */
       origin_run_id: string | null;
@@ -7822,6 +7759,18 @@ export interface components {
       headers: {
         [key: string]: string;
       };
+    };
+    /**
+     * HistoricalDesktopPending
+     * @description Read-only projection of sealed desktop suspensions predating Computer-scoped control.
+     */
+    HistoricalDesktopPending: {
+      /** Approvals */
+      approvals: components["schemas"]["PendingCall"][];
+      /** Calls */
+      calls: components["schemas"]["PendingCall"][];
+      /** Desktop Control Id */
+      desktop_control_id: string;
     };
     /** History */
     History: {
@@ -9663,14 +9612,14 @@ export interface components {
        */
       type: "once";
     };
-    /** OpenView */
-    OpenView: {
-      /** Mount */
-      mount: string;
-      /** Reason */
-      reason: string;
-      /** Session Id */
-      session_id: string;
+    /** OpenViewer */
+    OpenViewer: {
+      /**
+       * Mode
+       * @default view
+       * @enum {string}
+       */
+      mode?: "view" | "control";
     };
     /** OpenedApp */
     OpenedApp: {
@@ -9894,8 +9843,6 @@ export interface components {
       approvals: components["schemas"]["PendingCall"][];
       /** Calls */
       calls: components["schemas"]["PendingCall"][];
-      /** Desktop Control Id */
-      desktop_control_id?: string | null;
     };
     /** PendingCall */
     PendingCall: {
@@ -10392,6 +10339,15 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /** Renew */
+    Renew: {
+      /** Episode */
+      episode: number;
+      /** Generation */
+      generation: number;
+      /** Lease Seconds */
+      lease_seconds?: number | null;
+    };
     /** RenewControl */
     RenewControl: {
       /** Episode */
@@ -10400,13 +10356,6 @@ export interface components {
       generation: number;
       /** Lease Seconds */
       lease_seconds?: number | null;
-    };
-    /** Request */
-    Request: {
-      /** Mount */
-      mount: string;
-      /** Reason */
-      reason: string;
     };
     /**
      * RequestContext
@@ -10924,7 +10873,11 @@ export interface components {
       output: components["schemas"]["JsonValue"] | null;
       /** Parent Run Id */
       parent_run_id: string | null;
-      pending: components["schemas"]["Pending"] | null;
+      /** Pending */
+      pending:
+        | components["schemas"]["Pending"]
+        | components["schemas"]["HistoricalDesktopPending"]
+        | null;
       /** Principal Id */
       principal_id: string;
       resume: components["schemas"]["Resume"] | null;
@@ -12081,13 +12034,6 @@ export interface components {
       /** Thread Count */
       thread_count?: number | null;
     };
-    /** Takeover */
-    Takeover: {
-      /** Lease Seconds */
-      lease_seconds?: number | null;
-      /** Thread Id */
-      thread_id: string;
-    };
     /** Template */
     Template: {
       config: components["schemas"]["TemplateConfig"];
@@ -12725,6 +12671,7 @@ export interface components {
       | "child_result"
       | "tool_result"
       | "browser_handback"
+      | "desktop_handback"
       | "spawned";
     /** TypedQuery */
     TypedQuery: {
@@ -12992,60 +12939,6 @@ export interface components {
      * @enum {string}
      */
     VideoUrlType: "youtube";
-    /** View */
-    View: {
-      /**
-       * Cause
-       * @enum {string}
-       */
-      cause: "agent" | "user";
-      /** Controller Id */
-      controller_id: string | null;
-      /**
-       * Deadline
-       * Format: date-time
-       */
-      deadline: string;
-      /** Environment Id */
-      environment_id: string;
-      /** Epoch */
-      epoch: number;
-      /** Failure */
-      failure: string | null;
-      /** Id */
-      id: string;
-      /** Lease Expires At */
-      lease_expires_at: string | null;
-      /** Mount */
-      mount: string;
-      /** Outcome */
-      outcome: {
-        [key: string]: unknown;
-      } | null;
-      /** Reason */
-      reason: string;
-      /** Run Id */
-      run_id: string;
-      /** State */
-      state: string;
-      /** Tool Call Id */
-      tool_call_id: string | null;
-    };
-    /**
-     * Viewer
-     * @description Sensitive, authorized control response; excluded from ordinary Browser reads.
-     */
-    Viewer: {
-      /** Episode */
-      episode: number;
-      /**
-       * Expires At
-       * Format: date-time
-       */
-      expires_at: string;
-      /** Url */
-      url: string;
-    };
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple" | "desktop_control";
     /** @enum {string} */
@@ -13134,6 +13027,56 @@ export interface components {
     WorkspaceUpdate: {
       /** Name */
       name?: string | null;
+    };
+    /** Takeover */
+    a13n_service__runs__browsers__schemas__Takeover: {
+      /** Lease Seconds */
+      lease_seconds?: number | null;
+      /** Thread Id */
+      thread_id: string;
+    };
+    /**
+     * Viewer
+     * @description Sensitive, authorized control response; excluded from ordinary Browser reads.
+     */
+    a13n_service__runs__browsers__schemas__Viewer: {
+      /** Episode */
+      episode: number;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Url */
+      url: string;
+    };
+    /** Takeover */
+    a13n_service__runs__environments__desktop__schemas__Takeover: {
+      /** Lease Seconds */
+      lease_seconds?: number | null;
+      /** Thread Id */
+      thread_id: string;
+    };
+    /** Viewer */
+    a13n_service__runs__environments__desktop__schemas__Viewer: {
+      /** Episode */
+      episode: number;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Generation */
+      generation: number;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "view" | "control";
+      /** Password */
+      password: string;
+      /** Websocket Url */
+      websocket_url: string;
     };
   };
   responses: {
@@ -14467,7 +14410,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["Takeover"];
+        "application/json": components["schemas"]["a13n_service__runs__browsers__schemas__Takeover"];
       };
     };
     responses: {
@@ -14504,7 +14447,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Viewer"];
+          "application/json": components["schemas"]["a13n_service__runs__browsers__schemas__Viewer"];
         };
       };
       400: components["responses"]["Error"];
@@ -15284,161 +15227,6 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  complete_assistance: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        assistance_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Completion"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  control_desktop: {
-    parameters: {
-      query?: {
-        renew?: boolean;
-      };
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        assistance_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Control"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Access"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  disconnect_desktop: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        assistance_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Control"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  request_control: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        assistance_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  view_desktop: {
-    parameters: {
-      query?: {
-        renew?: boolean;
-      };
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        assistance_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Control"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Access"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
   list_devices: {
     parameters: {
       query?: {
@@ -16193,6 +15981,126 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_desktop_control: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Control"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  return_desktop_control: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Control"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  renew_desktop_control: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Renew"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Control"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  take_over_desktop: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["a13n_service__runs__environments__desktop__schemas__Takeover"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Control"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_environment_desktop_preview: {
     parameters: {
       query?: never;
@@ -16215,6 +16123,37 @@ export interface operations {
         content: {
           "image/jpeg": unknown;
           "image/png": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  open_desktop_viewer: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OpenViewer"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["a13n_service__runs__environments__desktop__schemas__Viewer"];
         };
       };
       400: components["responses"]["Error"];
@@ -19558,123 +19497,6 @@ export interface operations {
             | components["schemas"]["RunContent"]
             | components["schemas"]["ContentSummary"]
             | components["schemas"]["TextRead"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_assistance: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        run_id: string;
-        call_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_control: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"] | null;
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  open_control: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Request"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["View"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  open_view: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
-        "X-Workspace-ID"?: string | null;
-      };
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["OpenView"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Access"];
         };
       };
       400: components["responses"]["Error"];

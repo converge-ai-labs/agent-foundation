@@ -305,8 +305,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         session,
         thread,
         principal_id=principal.id,
-        resume_run_id=parent.id if source.trigger == "resume" and parent else None,
     )
+    if source.trigger == "desktop_handback" and source.entry is not None:
+        # Eligibility proved the desired mount still equals its originating frozen binding.
+        # Preserve that exact value rather than constructing a new binding from later selection.
+        frozen = source.entry.payload["mount"]
+        mounts = [frozen if mount["name"] == frozen["name"] else mount for mount in mounts]
     payload = source.resume.input if source.resume is not None else None
     if source.entry is not None and source.entry.kind == "message":
         payload = MessagePayload.model_validate(source.entry.payload)
@@ -422,12 +426,18 @@ async def _source(
         return explicit
     if entry.kind == "message":
         return await Source.load(session, runtime, thread, entry, "queued")
-    if entry.kind == "browser_handback":
-        from a13n_service.runs.browsers.delivery import require_notice
+    if entry.kind in {"browser_handback", "desktop_handback"}:
+        from a13n_service.runs.notices import require_notice
 
         await require_notice(session, runtime, entry)
         origin = await session.get_one(RunRow, entry.origin_run_id)
-        return await Source.inherited(session, runtime, origin, "browser_handback", entry=entry)
+        return await Source.inherited(
+            session,
+            runtime,
+            origin,
+            "browser_handback" if entry.kind == "browser_handback" else "desktop_handback",
+            entry=entry,
+        )
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
     return await Source.inherited(

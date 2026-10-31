@@ -7,7 +7,7 @@ from pydantic import Field, model_validator
 
 
 class SpritesRecipe(SpritesEnvironmentConfiguration):
-    desktop_assistance: bool = Field(default=False, title="Desktop assistance and control")
+    desktop_assistance: bool = Field(default=False, title="Desktop viewing and control")
 
     @model_validator(mode="before")
     @classmethod
@@ -21,5 +21,5 @@ class SpritesRecipe(SpritesEnvironmentConfiguration):
     @model_validator(mode="after")
     def assistance_requires_desktop(self) -> Self:
         if self.desktop_assistance and not self.desktop:
-            raise ValueError("Desktop assistance requires desktop=True")
+            raise ValueError("Desktop access requires desktop=True")
         return self

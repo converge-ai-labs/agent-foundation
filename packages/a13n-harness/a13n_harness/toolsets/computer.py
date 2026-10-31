@@ -148,6 +148,7 @@ class ComputerToolset:
                     BinaryContent(
                         data=screenshot.data,
                         media_type=screenshot.observation.mime_type,
+                        identifier=screenshot.image_identifier,
                     )
                 ],
                 metadata={"a13n.computer.screenshot": True},

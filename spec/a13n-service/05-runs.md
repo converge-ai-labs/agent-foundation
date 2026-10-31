@@ -165,7 +165,7 @@ runs
   trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')
   lineage IN ('root', 'continue', 'fork')
   status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')
-  wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')
+  wait_reason IN ('approval', 'call', 'multiple')
   CHECK ((source_entry_id IS NULL) <> (resume IS NULL))
   CHECK ((resume IS NULL) = (resumed_by_id IS NULL))
   CHECK ((request_key IS NULL) = (request_digest IS NULL))
@@ -479,7 +479,7 @@ The seal transaction stages durable reclamation of objects outside the run's fin
 
 **Waits.** A run waits when the Harness suspends on deferred calls. `pending` has two required arrays: `approvals` authorizes or denies server-side execution, and `calls` receives externally supplied results. Client-side tools, built-in questions and custom human-operated tools all belong in `calls`. Each call has `tool_call_id`, `tool_name`, `arguments` and optional `presentation`. The combined batch contains one to 128 calls with unique IDs across both categories. `wait_reason` summarizes category presence: approvals alone is `approval`, calls alone is `call`, both is `multiple`. It does not identify whether a human or application supplies the result.
 
-A user-requested desktop pause also seals a waiting Run, with `pending.desktop_control_id` identifying the Service control record rather than a fabricated tool call. Both arrays may be empty for this wait (`wait_reason = desktop_control`); native calls present alongside it produce `multiple`. The [desktop control contract](06a-environment-management.md#user-requested-desktop-control) owns admission, quiescence and handback. A successor resumes the saved history after validated handback, while incomplete native calls still require the full result batch.
+Computer takeover leaves the Run lifecycle unchanged. Only blocked Computer callers receive a typed inbox handback notice under the [Computer-only control contract](06a-environment-management.md#handback-and-fresh-observation). It neither supplies deferred results nor changes the full-batch resume requirement.
 
 **Presentation.** Complete Harness requests, including each model call, target call, stable target identity and metadata, remain in the checkpoint. Public `pending` uses the target call ID, name and arguments; resume answers are keyed by that ID. Harness writes the result back to the associated model call. The public pending/resume schema is unchanged. Pending records use the [Harness deferred format transition](../a13n-harness/07-tool-execution.md#approval-and-deferred-calls); older native pending arrays are not silently converted. Pending approvals retain the existing approval presentation; pending calls have no presentation. Other metadata is never copied to public pending. Built-in question rendering and validation use the actual tool name and arguments; other calls display their tool names and arguments and use the generic call-result path.
 

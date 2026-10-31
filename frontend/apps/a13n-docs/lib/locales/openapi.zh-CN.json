@@ -1,4 +1,10 @@
 {
+  "Read-only projection of sealed desktop suspensions predating Computer-scoped control.": "仅用于读取 Computer 范围控制引入前已封存的桌面暂停记录。",
+  "Get Desktop Control": "获取桌面控制状态",
+  "Return Desktop Control": "归还桌面控制权",
+  "Renew Desktop Control": "续期桌面控制权",
+  "Take Over Desktop": "接管桌面",
+  "Open Desktop Viewer": "打开桌面查看器",
   "Attach Browser": "接入浏览器",
   "Delete Browser Provider": "删除浏览器提供商",
   "Bind Browser": "绑定浏览器",

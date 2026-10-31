@@ -104,9 +104,13 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer        | minimum=1; maximum=10000; default=128           |
 | `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | integer        | minimum=1024; maximum=16777216; default=2097152 |
 | `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
-| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; default=3600                         |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600       |
 | `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
 | `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
+| `control.desktop_control_min_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
+| `control.desktop_control_max_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MAX_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600       |
+| `control.desktop_control_seconds`     | `A13N_CONTROL__DESKTOP_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
+| `control.desktop_notice_seconds`      | `A13N_CONTROL__DESKTOP_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
 | `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | integer        | minimum=1; maximum=1000; default=32             |
 | `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | number         | maximum=30; exclusiveMinimum=0; default=10      |
 | `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | number         | maximum=120; exclusiveMinimum=0; default=30     |
