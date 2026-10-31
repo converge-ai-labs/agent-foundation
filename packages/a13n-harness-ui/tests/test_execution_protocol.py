@@ -19,7 +19,7 @@ from .test_app import _write_configuration
 from .test_configuration_protocol import HEADERS, settled
 from .test_interactive_protocol import frame_until, listener, listener_with_app
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize(

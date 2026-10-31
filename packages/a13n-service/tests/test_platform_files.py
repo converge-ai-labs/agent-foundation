@@ -5,6 +5,7 @@ import re
 from contextlib import asynccontextmanager
 from functools import partial
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pytest
 from a13n_harness import HarnessBuilder, HarnessEvent, HarnessExtensionEvent, RunBindings
@@ -15,17 +16,37 @@ from a13n_harness.environment.files import FileQueryRequest, FileTextSearchReque
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from a13n_service.app import _registry
 from a13n_service.distribution import OSS
+from a13n_service.infra.schema import model_schema
 from a13n_service.resources.agents.composer import configuration
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.toolsets import environment_configuration
 from a13n_service.runs.host import _environment
 from a13n_service.runs.platform_files import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_platform_files
 from a13n_service.settings import Settings
+from pydantic import BaseModel, create_model
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 pytestmark = pytest.mark.anyio
+
+
+def test_catalog_model_schemas_compile_once_and_return_independent_documents():
+    class Nested(BaseModel):
+        names: list[str]
+
+    model = create_model("Configuration", nested=(Nested, ...))
+    other = create_model("Configuration", count=(int, ...))
+    expected = model.model_json_schema()
+    with patch.object(model, "model_json_schema", wraps=model.model_json_schema) as generate:
+        first = model_schema(model)
+        assert first == expected
+        first["properties"].clear()
+        first["$defs"]["Nested"]["properties"].clear()
+        assert model_schema(model) == expected
+        assert generate.call_count == 1
+    assert model_schema(other) == other.model_json_schema()
+    assert model_schema(other) != expected
 
 
 @asynccontextmanager

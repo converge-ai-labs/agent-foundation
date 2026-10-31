@@ -40,14 +40,18 @@ from a13n_service.settings import Database, LocalProvisioning, ProcessRole, Prov
 from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
 from argon2 import PasswordHasher
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.utilities.openapi import HTTPRoute
 from pydantic import SecretStr
+from redis.asyncio import Redis
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
+from starlette.datastructures import URLPath
+from starlette.routing import BaseRoute, Match
+from starlette.types import Receive, Scope, Send
 from testcontainers.core.config import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
@@ -179,11 +183,20 @@ def settings(database: Database, redis_url: str, tmp_path: Path) -> Settings:
     )
 
 
+async def _flush_redis(settings: Settings) -> None:
+    # Test isolation is setup, not a best-effort application operation. Clear the database before starting
+    # background consumers, with the same loaded-runner budget as the fixture's startup check.
+    async with Redis.from_url(
+        settings.redis.url.get_secret_value(), socket_timeout=30, socket_connect_timeout=30
+    ) as redis:
+        await redis.flushdb()
+
+
 @pytest.fixture
 async def runtime(settings: Settings) -> AsyncIterator[Runtime]:
+    await _flush_redis(settings)
     async with AsyncExitStack() as stack:
         runtime = await open_runtime(stack, OSS, settings, executes=False)
-        await runtime.redis.flushdb()
         yield runtime
 
 
@@ -192,12 +205,64 @@ async def tenant(runtime: Runtime) -> Bootstrapped:
     return await bootstrap(runtime.storage, BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)))
 
 
+class _MatchedRouter(BaseRoute):
+    """Avoid compiling an included router until a request can match one of its declared paths.
+
+    OSS routers contain direct HTTP routes and are included without a prefix or added dependencies. Their
+    public matchers can reject unrelated requests before FastAPI compiles the app-local dependency graph.
+    Positive and partial matches still use the original included router, including its dependency overrides.
+    """
+
+    def __init__(self, route: BaseRoute, declared: Sequence[APIRoute]) -> None:
+        self.route = route
+        self.declared = declared
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        if any(route.matches(scope)[0] != Match.NONE for route in self.declared):
+            return self.route.matches(scope)
+        return Match.NONE, {}
+
+    def url_path_for(self, name: str, /, **path_params: Any) -> URLPath:
+        return self.route.url_path_for(name, **path_params)
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self.route.handle(scope, receive, send)
+
+
+def _include_individual_routes(
+    app: FastAPI, router: APIRouter, include: Callable[[FastAPI, APIRouter], None]
+) -> dict[int, Sequence[APIRoute]]:
+    """Keep the original router lifecycle, but give each HTTP route its own include context."""
+    start = len(app.routes)
+    include(app, router)
+    lifespan = app.router.lifespan_context
+    del app.router.routes[start:]
+    included: dict[int, Sequence[APIRoute]] = {}
+    for declared in router.routes:
+        assert isinstance(declared, APIRoute), "OSS fixtures require direct HTTP routes"
+        single = APIRouter(
+            routes=[declared],
+            default_response_class=router.default_response_class,
+            generate_unique_id_function=router.generate_unique_id_function,
+            strict_content_type=router.strict_content_type,
+        )
+        start = len(app.routes)
+        include(app, single)
+        for route in app.routes[start:]:
+            included[id(route)] = (declared,)
+    # The original include already registered lifecycle handlers exactly once. Single-route containers
+    # contribute only their dispatch definitions, not hundreds of redundant default lifespans.
+    app.router.lifespan_context = lifespan
+    return included
+
+
 @pytest.fixture(scope="session")
 def service_app() -> Callable[..., FastAPI]:
     """Compile fixed OSS definitions once per worker.
 
     JSON snapshots restore independent OpenAPI and parsed MCP schemas without repeatedly compiling them.
     Only definitions and migration head IDs are reused; apps, tools, runtimes and lifespans are always fresh.
+    Individual include contexts and public-path prefilters compile only the HTTP routes a test uses.
     Extensions and direct build_app calls still use the unpatched production builders.
     """
     schema: str | None = None
@@ -233,11 +298,23 @@ def service_app() -> Callable[..., FastAPI]:
                 schema = json.dumps(app.openapi())
             return mcp
 
-        # Assembly is synchronous: restore the production builder before entering any asynchronous lifespan.
+        included: dict[int, Sequence[APIRoute]] = {}
+        include = FastAPI.include_router
+
+        def include_router(app: FastAPI, router: APIRouter) -> None:
+            included.update(_include_individual_routes(app, router, include))
+
+        # Assembly is synchronous: restore the production builders before entering any asynchronous lifespan.
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(app_module, "build_mcp", assemble)
             patch.setattr(app_module, "heads", lambda _: expected)
-            return build_app(distribution, role=role, settings=settings, console=console)
+            patch.setattr(FastAPI, "include_router", include_router)
+            app = build_app(distribution, role=role, settings=settings, console=console)
+        # Build the actual OpenAPI/MCP contract first. These wrappers affect dispatch only, after schema caching.
+        app.router.routes[:] = [
+            _MatchedRouter(route, included[id(route)]) if id(route) in included else route for route in app.routes
+        ]
+        return app
 
     return build
 
@@ -247,9 +324,9 @@ async def _serve(
     settings: Settings, role: ProcessRole, service_app: Callable[..., FastAPI], distribution: Distribution = OSS
 ) -> AsyncGenerator[SimpleNamespace]:
     app = service_app(distribution, role=role, settings=settings)
+    await _flush_redis(settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
-        await runtime.redis.flushdb()
         tenant = await bootstrap(
             runtime.storage,
             BootstrapInput(email=EMAIL, password=SecretStr(PASSWORD)),
@@ -360,8 +437,15 @@ class ScriptedModel:
         self.requests: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.url = ""
         app = FastAPI()
-        app.post("/v1/chat/completions", response_model=None)(self._complete)
+        app.state.scripted_model = self
+        # FastAPI caches endpoint classification; a bound method would retain this test's model.
+        app.post("/v1/chat/completions", response_model=None)(self._endpoint)
         self.app = app
+
+    @staticmethod
+    async def _endpoint(request: Request) -> StreamingResponse | JSONResponse:
+        model: ScriptedModel = request.app.state.scripted_model
+        return await model._complete(request)
 
     def say(
         self,

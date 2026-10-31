@@ -6,8 +6,9 @@ on:
     paths:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
-      - ".github/service-test-durations.json"
       - "conftest.py"
+      - "scripts/run_python_tests.py"
+      - ".github/service-test-durations.json"
       - "dev/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
@@ -32,8 +33,9 @@ on:
     paths:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
-      - ".github/service-test-durations.json"
       - "conftest.py"
+      - "scripts/run_python_tests.py"
+      - ".github/service-test-durations.json"
       - "dev/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
@@ -91,8 +93,9 @@ jobs:
             tests:
               - '.github/workflows/ci-a13n-service.yml'
               - '.github/workflows/release-a13n-service.yml'
-              - '.github/service-test-durations.json'
               - 'conftest.py'
+              - 'scripts/run_python_tests.py'
+              - '.github/service-test-durations.json'
               - 'dev/**'
               - 'packages/a13n-service/pyproject.toml'
               - 'packages/a13n-service/*.py'
@@ -128,7 +131,7 @@ jobs:
           import json
           import os
           from pathlib import Path
-          from statistics import median
+          from scripts.run_python_tests import balanced_shards
 
           matrix = [{"name": "checks", "runner": "ubuntu-latest", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
@@ -141,23 +144,13 @@ jobs:
                   and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
                   and not path.is_relative_to(root / "environment_providers")
               )
-              # Historical seconds are weights, never an allowlist. New files get the
-              # current suite's median; removed files' stale timings have no effect.
+              # Weights never select tests: new files receive the current suite's median.
               durations = json.loads(Path(".github/service-test-durations.json").read_text())
-              known = [durations[path] for path in files if path in durations]
-              fallback = median(known) if known else 1.0
-              weights = {path: durations.get(path, fallback) for path in files}
-              shards = [[], []]
-              totals = [0.0, 0.0]
-              for path in sorted(files, key=lambda path: (-weights[path], path)):
-                  shard = min(range(2), key=lambda index: (totals[index], len(shards[index]), index))
-                  shards[shard].append(path)
-                  totals[shard] += weights[path]
-              for shard, targets in enumerate(shards):
-                  print(f"Service shard {shard + 1}: {len(targets)} files, {totals[shard]:.1f} historical test-seconds")
+              for shard, targets in enumerate(balanced_shards(files, 6, durations), start=1):
                   assert targets, "Service test shards must not be empty"
+                  print(f"Service shard {shard}: {len(targets)} files")
                   matrix.append({
-                      "name": f"tests-{shard + 1}",
+                      "name": f"tests-{shard}",
                       "runner": "ubuntu-24.04",
                       "targets": "\n".join(targets),
                   })
@@ -247,9 +240,9 @@ jobs:
 
       - name: Test a13n Service
         if: startsWith(matrix.name, 'tests-')
-        # Separate runners shorten the critical path without increasing per-runner contention.
+        # Balanced runner shards preserve file-local fixtures and execute the complete suite.
         # Individual stalled tests still fail through faulthandler below.
-        timeout-minutes: 15
+        timeout-minutes: 6
         env:
           TEST_TARGETS: ${{ matrix.targets }}
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -259,7 +252,7 @@ jobs:
             targets+=("$target")
           done <<< "$TEST_TARGETS"
           /usr/bin/time -p uv run --locked python -m pytest \
-            -n 3 --dist loadgroup --max-worker-restart=0 \
+            -n 4 --dist loadgroup --max-worker-restart=0 \
             -vv --tb=short --durations=30 -r a \
             --junitxml=test-results/service.xml \
             --browser-executable="$BROWSER_EXECUTABLE" \

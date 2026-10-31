@@ -17,6 +17,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_interactive import _seed, no_real_model_requests  # noqa: F401  (autouse guard)
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("mode", ["normal", "goal"])

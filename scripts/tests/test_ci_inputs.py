@@ -6,7 +6,6 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from statistics import median
 
 import pytest
 import yaml
@@ -229,7 +228,7 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
     output.write_text("")
     subprocess.run(
         ["bash", "-c", step["run"]],
-        env={**os.environ, "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        env={**os.environ, "PYTHONPATH": str(ROOT), "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
         cwd=root,
         check=True,
     )
@@ -241,10 +240,11 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "tests-1", "tests-2"]
-    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
-    assert all(shards)
-    assert not set(shards[0]) & set(shards[1])
+    assert [entry["name"] for entry in matrix] == ["checks", *[f"tests-{index}" for index in range(1, 7)]]
+    assert all(entry["targets"] for entry in matrix[1:])
+    targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
+    assert targets
+    assert len(targets) == len(set(targets))
     root = ROOT / "packages/a13n-service/tests"
     expected = {
         str(path.relative_to(ROOT))
@@ -253,19 +253,14 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
         and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
         and root / "environment_providers" not in path.parents
     }
-    assert set(shards[0]) | set(shards[1]) == expected
-    durations = json.loads((ROOT / ".github/service-test-durations.json").read_text())
-    fallback = median(durations[path] for path in expected if path in durations)
-    totals = [sum(durations.get(path, fallback) for path in shard) for shard in shards]
-    assert abs(totals[0] - totals[1]) < sum(totals) * 0.01
+    assert set(targets) == expected
     assert matrix == _service_matrix(workflow, "true", tmp_path)
-    for event in ("pull_request", "push"):
-        assert ".github/service-test-durations.json" in workflow[True][event]["paths"]
     assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
     assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
-    assert "-n 3 --dist loadgroup" in test["run"]
+    assert "-n 4 --dist loadgroup" in test["run"]
+    assert test["timeout-minutes"] == 6
     assert test["if"] == "startsWith(matrix.name, 'tests-')"
     assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
     require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
@@ -282,10 +277,17 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     assert jobs["python"]["needs"] == ["changes", "validation"]
 
 
-def test_service_shards_include_new_nested_files_and_pass_paths_literally(tmp_path: Path) -> None:
+def test_service_selection_includes_new_nested_files_and_passes_paths_literally(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     root = tmp_path / "packages/a13n-service/tests"
-    included = ["test_first.py", "nested/test_second.py", "nested/third_test.py", "test_space $(false).py"]
+    included = [
+        "test_first.py",
+        "nested/test_second.py",
+        "nested/third_test.py",
+        "test_space $(false).py",
+        "test_fifth.py",
+        "test_sixth.py",
+    ]
     excluded = [
         "conftest.py",
         "helper.py",
@@ -297,60 +299,40 @@ def test_service_shards_include_new_nested_files_and_pass_paths_literally(tmp_pa
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
-    (tmp_path / ".github").mkdir()
-    (tmp_path / ".github/service-test-durations.json").write_text("{}")
+    timings = tmp_path / ".github/service-test-durations.json"
+    timings.parent.mkdir()
+    timings.write_text(json.dumps({"packages/a13n-service/tests/deleted.py": 10000}))
     matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
-    shards = [entry["targets"].splitlines() for entry in matrix[1:]]
+    targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     expected = sorted(str((root / name).relative_to(tmp_path)) for name in included)
-    assert shards == [expected[::2], expected[1::2]]
+    assert sorted(targets) == expected
 
     # Execute the actual workflow command with a fake uv to check shell argument boundaries.
     executable = tmp_path / "uv"
     executable.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
     executable.chmod(0o755)
     step = next(step for step in workflow["jobs"]["validation"]["steps"] if step["name"] == "Test a13n Service")
-    for entry, targets in zip(matrix[1:], shards, strict=True):
-        result = subprocess.run(
-            ["bash", "-e", "-c", step["run"]],
-            env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": entry["targets"]},
-            cwd=tmp_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert json.loads(result.stdout)[-len(targets) :] == targets
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": "\n".join(targets)},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(result.stdout)[-len(targets) :] == targets
 
 
-def test_service_shards_balance_heavy_files_and_include_unmeasured_files(tmp_path: Path) -> None:
-    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
-    root = tmp_path / "packages/a13n-service/tests"
-    root.mkdir(parents=True)
-    # Alternating alphabetically would put both heavy files on the same runner.
-    weights = {"test_a.py": 100, "test_b.py": 10, "test_c.py": 90, "test_d.py": 10}
-    for name in [*weights, "test_new.py"]:
-        (root / name).touch()
-    durations = {f"packages/a13n-service/tests/{name}": value for name, value in weights.items()}
-    durations["packages/a13n-service/tests/test_removed.py"] = 10000
-    (tmp_path / ".github").mkdir()
-    (tmp_path / ".github/service-test-durations.json").write_text(json.dumps(durations))
-    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
-    shards = [[Path(path).name for path in entry["targets"].splitlines()] for entry in matrix[1:]]
-    assert sorted(name for shard in shards for name in shard) == sorted([*weights, "test_new.py"])
-    assert not any({"test_a.py", "test_c.py"} <= set(shard) for shard in shards)
-    # The unknown file receives the current files' median (50), ignoring the stale entry.
-    totals = [sum(weights.get(name, 50) for name in shard) for shard in shards]
-    assert max(totals) == 140
-
-
-@pytest.mark.parametrize("count", [0, 1])
-def test_service_shards_reject_empty_shards(tmp_path: Path, count: int) -> None:
+@pytest.mark.parametrize("count", [0, 1, 3])
+def test_service_selection_rejects_empty_shards(tmp_path: Path, count: int) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     root = tmp_path / "packages/a13n-service/tests"
     root.mkdir(parents=True)
     for index in range(count):
         (root / f"test_{index}.py").touch()
-    (tmp_path / ".github").mkdir()
-    (tmp_path / ".github/service-test-durations.json").write_text("{}")
+    timings = tmp_path / ".github/service-test-durations.json"
+    timings.parent.mkdir()
+    timings.write_text("{}")
     with pytest.raises(subprocess.CalledProcessError):
         _service_matrix(workflow, "true", tmp_path, root=tmp_path)
 
@@ -378,6 +360,8 @@ def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(
 @pytest.mark.parametrize(
     "path",
     [
+        ".github/service-test-durations.json",
+        "scripts/run_python_tests.py",
         "packages/a13n-service/pyproject.toml",
         "packages/a13n-service/hatch_build.py",
         "packages/a13n-service/build_docs.py",
@@ -471,10 +455,18 @@ def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_tes
     assert options["cache-from"] == "type=gha,scope=service-e2e-sandbox"
     assert options["cache-to"] == "type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true"
     # A restored cache never skips the build or test gate, and never substitutes a released daemon.
-    assert "if" not in build and "continue-on-error" not in build and "build-args" not in options
+    assert build["if"] == "matrix.sandbox"
+    buildx = next(step for step in steps if step.get("uses", "").startswith("docker/setup-buildx-action@"))
+    assert buildx["if"] == build["if"]
+    assert "continue-on-error" not in build and "build-args" not in options
     run = next(step for step in steps if step.get("run", "").startswith("make service-e2e "))
     assert steps.index(build) < steps.index(run)
     assert "--require-all" in run["run"] and "if" not in run
+    assert run["env"]["SELECTION"] == "${{ matrix.selection }}"
+    assert "-k '$SELECTION'" in run["run"]
+    assert workflow["jobs"]["scenarios"]["strategy"]["fail-fast"] is False
+    reports = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert reports["with"]["name"] == "service-e2e-${{ matrix.name }}-${{ github.run_attempt }}"
 
 
 @pytest.mark.parametrize("support", ["success", "failure", "cancelled", "skipped"])

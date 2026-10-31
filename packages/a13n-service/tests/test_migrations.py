@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from a13n_service.distribution import OSS
+from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.db import transaction
 from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_TOOLS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
@@ -14,7 +14,7 @@ from a13n_service.runs.tables import SessionRow
 from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
-from sqlalchemy import create_engine, text
+from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 RULES = """
@@ -51,6 +51,28 @@ def rows(database: Database, query: str) -> list[tuple[str, ...]]:
             return [tuple(row) for row in connection.execute(text(query))]
     finally:
         engine.dispose()
+
+
+def test_migration_connection_assembles_schema_once(empty_database: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"metadata": 0, "rules": 0}
+    metadata = Distribution.metadata
+    table_rules = Distribution.table_rules
+
+    def counted_metadata(distribution: Distribution) -> MetaData:
+        calls["metadata"] += 1
+        return metadata(distribution)
+
+    def counted_rules(distribution: Distribution) -> dict[str, list[str]]:
+        calls["rules"] += 1
+        return table_rules(distribution)
+
+    monkeypatch.setattr(Distribution, "metadata", counted_metadata)
+    monkeypatch.setattr(Distribution, "table_rules", counted_rules)
+    with migration_connection(empty_database, OSS) as config:
+        assert config.attributes["connection"].scalar(text("SELECT 1")) == 1
+        assert set(config.attributes["metadata"].tables) == {row.__table__.key for row in OSS.tables}
+        assert config.attributes["rules"] == table_rules(OSS)
+    assert calls == {"metadata": 1, "rules": 1}
 
 
 def test_revisions_match_metadata_and_rules(empty_database: Database, database: Database) -> None:

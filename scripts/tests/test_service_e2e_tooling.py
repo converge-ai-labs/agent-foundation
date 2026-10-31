@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import httpx2
 import pytest
+import yaml
 from a13n_service.settings import load_settings
 
 from dev.fixtures.process import fixture_process
@@ -136,6 +137,15 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_hosted_jour
         path.relative_to(ROOT).as_posix() for path in (ROOT / "e2e/service").glob("test_*.py")
     }
     assert f"{lifecycle}[docker]" in default
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
+    shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
+    selected: set[str] = set()
+    for shard in shards:
+        nodes = collect_scenarios("--require-all", "-k", shard["selection"])
+        assert nodes and not selected.intersection(nodes)
+        assert (f"{lifecycle}[docker]" in nodes) == shard["sandbox"]
+        selected.update(nodes)
+    assert selected == default
     assert not {node for node in default if "e2b" in node or "modal" in node}
     assert f"{lifecycle}[modal]" in collect_scenarios("--hosted")
     assert f"{lifecycle}[modal]" in collect_scenarios("-m", "hosted")

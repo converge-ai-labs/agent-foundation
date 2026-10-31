@@ -26,6 +26,7 @@ from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.schema import model_schema
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
 from a13n_service.resources.providers.probe import probe, supports_probe
@@ -389,8 +390,8 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
     described = ProviderType(
         type=definition.type,
         display_name=definition.display_name,
-        configuration_schema=definition.configuration_model.model_json_schema(),
-        credential_schema=None if credential is None else credential.model_json_schema(),
+        configuration_schema=model_schema(definition.configuration_model),
+        credential_schema=None if credential is None else model_schema(credential),
         authentication=definition.authentication,
         setup_url=definition.setup_url,
         setup_label=definition.setup_label,
@@ -409,7 +410,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))
     elif isinstance(definition, EnvironmentManagementDefinition):
-        described.environment_schema = definition.environment_model.model_json_schema()
+        described.environment_schema = model_schema(definition.environment_model)
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy
     return described

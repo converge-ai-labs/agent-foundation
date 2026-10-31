@@ -19,7 +19,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from .test_app import _settings, _write_configuration
 from .test_mcp_runtime import _SERVER
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def input_configuration(tmp_path: Path, *, retained: bool) -> Path:

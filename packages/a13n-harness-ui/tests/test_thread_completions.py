@@ -13,7 +13,7 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from .test_app import _reconstructed, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_success_survives_later_failure_cancellation_and_app_restart(tmp_path, monkeypatch):
