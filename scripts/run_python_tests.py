@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from statistics import median
 
 LOCK_VARIABLE = "A13N_TEST_LOCK"
 
@@ -32,6 +34,20 @@ def selected_files(selections: list[str]) -> set[Path]:
             else (path,)
         )
     return files
+
+
+def balanced_shards(files: list[str], count: int, durations: dict[str, float]) -> list[list[str]]:
+    """Balance whole files by historical seconds; timings never select or exclude tests."""
+    known = [durations[path] for path in files if path in durations]
+    fallback = median(known) if known else 1.0
+    weights = {path: durations.get(path, fallback) for path in files}
+    shards: list[list[str]] = [[] for _ in range(count)]
+    totals = [0.0] * count
+    for path in sorted(files, key=lambda path: (-weights[path], path)):
+        shard = min(range(count), key=lambda index: (totals[index], len(shards[index]), index))
+        shards[shard].append(path)
+        totals[shard] += weights[path]
+    return shards
 
 
 @contextlib.contextmanager
@@ -63,12 +79,15 @@ def main(argv: list[str] | None = None) -> int:
         metavar=("INDEX", "COUNT"),
         help="Run one file shard of an explicit suite (1-based)",
     )
+    parser.add_argument("--durations", type=Path, help="JSON file of historical file seconds for balanced --shard")
     parser.add_argument(
         "paths", nargs="*", help="Workspace test directories, files, or pytest node IDs (@FILE reads one per line)"
     )
     args = parser.parse_args(argv)
     if args.workers is not None and args.workers < 0:
         parser.error("--workers must be non-negative")
+    if args.durations is not None and args.shard is None:
+        parser.error("--durations requires --shard")
     requested: list[str] = []
     for entry in args.paths:
         if entry.startswith("@"):
@@ -83,8 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         if len(requested) != 1 or not Path(requested[0]).is_dir():
             parser.error("--shard requires exactly one test directory")
         # Keep each file's fixtures together; discover new files on every run instead of keeping an allowlist.
-        files = sorted(selected_files(requested))
-        requested = [str(path) for path in files[index - 1 :: count]]
+        files = sorted(str(path) for path in selected_files(requested))
+        if args.durations is None:
+            requested = files[index - 1 :: count]
+        else:
+            durations = json.loads(args.durations.read_text())
+            requested = balanced_shards(files, count, durations)[index - 1]
         if not requested:
             parser.error("test shard is empty")
         print(f"shard {index}/{count}: {len(requested)} of {len(files)} test files", flush=True)

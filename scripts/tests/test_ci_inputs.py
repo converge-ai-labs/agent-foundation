@@ -228,7 +228,7 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
     output.write_text("")
     subprocess.run(
         ["bash", "-c", step["run"]],
-        env={**os.environ, "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        env={**os.environ, "PYTHONPATH": str(ROOT), "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
         cwd=root,
         check=True,
     )
@@ -240,8 +240,9 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "tests"]
-    targets = matrix[1]["targets"].splitlines()
+    assert [entry["name"] for entry in matrix] == ["checks", "tests-1", "tests-2", "tests-3", "tests-4"]
+    assert all(entry["targets"] for entry in matrix[1:])
+    targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
     assert len(targets) == len(set(targets))
     root = ROOT / "packages/a13n-service/tests"
@@ -252,20 +253,20 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
         and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
         and root / "environment_providers" not in path.parents
     }
-    assert targets == sorted(expected)
+    assert set(targets) == expected
     assert matrix == _service_matrix(workflow, "true", tmp_path)
     assert {entry["runner"] for entry in matrix} <= {"ubuntu-latest", "ubuntu-24.04"}
     assert jobs["validation"]["strategy"]["matrix"]["include"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
     assert "-n 4 --dist loadgroup" in test["run"]
-    assert test["timeout-minutes"] == 15
-    assert test["if"] == "matrix.name == 'tests'"
+    assert test["timeout-minutes"] == 6
+    assert test["if"] == "startsWith(matrix.name, 'tests-')"
     assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
     require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
     assert require_execution["if"] == test["if"]
     providers = next(step for step in steps if step["name"] == "Test native Environment management drivers")
-    assert providers["if"] == test["if"]
+    assert providers["if"] == "matrix.name == 'tests-1'"
     assert "packages/a13n-service/tests/environment_providers" in providers["run"]
     reports = next(step for step in steps if step["name"] == "Retain Service test reports")
     assert reports["if"] == "always()"
@@ -291,10 +292,13 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
+    timings = tmp_path / ".github/service-test-durations.json"
+    timings.parent.mkdir()
+    timings.write_text(json.dumps({"packages/a13n-service/tests/deleted.py": 10000}))
     matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
-    targets = matrix[1]["targets"].splitlines()
+    targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     expected = sorted(str((root / name).relative_to(tmp_path)) for name in included)
-    assert targets == expected
+    assert sorted(targets) == expected
 
     # Execute the actual workflow command with a fake uv to check shell argument boundaries.
     executable = tmp_path / "uv"
@@ -303,7 +307,7 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
     step = next(step for step in workflow["jobs"]["validation"]["steps"] if step["name"] == "Test a13n Service")
     result = subprocess.run(
         ["bash", "-e", "-c", step["run"]],
-        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": matrix[1]["targets"]},
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "TEST_TARGETS": "\n".join(targets)},
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -312,19 +316,18 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
     assert json.loads(result.stdout)[-len(targets) :] == targets
 
 
-@pytest.mark.parametrize("count", [0, 1])
-def test_service_selection_requires_at_least_one_file(tmp_path: Path, count: int) -> None:
+@pytest.mark.parametrize("count", [0, 1, 3])
+def test_service_selection_rejects_empty_shards(tmp_path: Path, count: int) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     root = tmp_path / "packages/a13n-service/tests"
     root.mkdir(parents=True)
     for index in range(count):
         (root / f"test_{index}.py").touch()
-    if count:
-        matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
-        assert matrix[1]["targets"] == "packages/a13n-service/tests/test_0.py"
-    else:
-        with pytest.raises(subprocess.CalledProcessError):
-            _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+    timings = tmp_path / ".github/service-test-durations.json"
+    timings.parent.mkdir()
+    timings.write_text("{}")
+    with pytest.raises(subprocess.CalledProcessError):
+        _service_matrix(workflow, "true", tmp_path, root=tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -350,6 +353,8 @@ def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(
 @pytest.mark.parametrize(
     "path",
     [
+        ".github/service-test-durations.json",
+        "scripts/run_python_tests.py",
         "packages/a13n-service/pyproject.toml",
         "packages/a13n-service/hatch_build.py",
         "packages/a13n-service/build_docs.py",

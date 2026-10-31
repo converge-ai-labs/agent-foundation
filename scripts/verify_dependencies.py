@@ -45,6 +45,8 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "test_pr_labels.py": (".github/workflows/*.yml",),
     "test_ci_inputs.py": (
+        "scripts/run_python_tests.py",
+        ".github/service-test-durations.json",
         ".github/workflows/ci-*.yml",
         ".github/workflows/images.yml",
     ),
@@ -52,6 +54,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
     "test_sandbox_init.py": ("deploy/docker/images/sandbox/*.sh",),
     "test_harness_ui_ci_workflow.py": (
+        ".github/ui-test-durations.json",
         ".github/workflows/ci-a13n-harness-ui*.yml",
         ".github/workflows/images.yml",
     ),

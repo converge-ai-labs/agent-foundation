@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.run_python_tests import default_workers, main
+from scripts.run_python_tests import balanced_shards, default_workers, main
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 SERVICE = "packages/a13n-service/tests"
@@ -81,9 +81,30 @@ def test_file_shards_are_disjoint_complete_and_include_new_nested_files(test_wor
     assert all(command[3:7] == ["-n", "3", "--dist", "loadgroup"] for command in test_workspace)
 
 
+def test_balanced_shards_use_current_files_and_median_for_missing_timings() -> None:
+    files = ["slow.py", "medium.py", "fast.py", "new.py"]
+    durations = {"slow.py": 10.0, "medium.py": 6.0, "fast.py": 2.0, "deleted.py": 10000.0}
+    assert balanced_shards(files, 2, durations) == [["slow.py", "fast.py"], ["medium.py", "new.py"]]
+    assert balanced_shards(list(reversed(files)), 2, durations) == balanced_shards(files, 2, durations)
+    assert balanced_shards(files, 2, {}) == [["fast.py", "new.py"], ["medium.py", "slow.py"]]
+
+
+def test_balanced_cli_shards_cover_discovered_files_once(test_workspace, tmp_path: Path) -> None:
+    new = Path(UI) / "nested/test_new.py"
+    new.parent.mkdir()
+    new.touch()
+    durations = tmp_path / "durations.json"
+    durations.write_text(json.dumps({f"{UI}/test_one.py": 20.0, f"{UI}/test_two.py": 2.0, "deleted.py": 10000.0}))
+    for shard in (1, 2):
+        assert main(["--shard", str(shard), "2", "--durations", str(durations), UI]) == 0
+    selections = [command[7:] for command in test_workspace]
+    assert selections == [[f"{UI}/test_one.py"], [str(new), f"{UI}/test_two.py"]]
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
+        ["--durations", "durations.json", UI],
         ["--shard", "0", "2", UI],
         ["--shard", "3", "2", UI],
         ["--shard", "1", "0", UI],
