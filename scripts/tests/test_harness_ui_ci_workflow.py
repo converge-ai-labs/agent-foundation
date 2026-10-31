@@ -92,8 +92,8 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
     assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
     assert int(arguments[arguments.index("--workers") + 1]) == 4
-    assert "--shard ${{ matrix.shard }} 2 --durations .github/ui-test-durations.json" in tests["run"]
-    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
+    assert "--shard ${{ matrix.shard }} 3 --durations .github/ui-test-durations.json" in tests["run"]
+    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2, 3]}}
     assert by_name["Type-check UI"]["if"] == "matrix.shard == 1"
     assert by_name["Test native command lifecycle"]["if"] == "matrix.shard == 1"
     assert (
@@ -120,7 +120,17 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run check" in frontend
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test" in frontend
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build" in frontend
-    assert jobs["frontend"]["strategy"] == {"fail-fast": False, "matrix": {"phase": ["checks", "tests"]}}
+    assert jobs["frontend"]["strategy"] == {
+        "fail-fast": False,
+        "matrix": {
+            "include": [
+                {"phase": "checks", "shard": 1},
+                {"phase": "tests", "shard": 1},
+                {"phase": "tests", "shard": 2},
+            ]
+        },
+    }
+    assert "--shard=${{ matrix.shard }}/2" in frontend
     frontend_steps = {step["name"]: step for step in jobs["frontend"]["steps"]}
     for name in ("Check frontend workspace", "Build frontend workspace"):
         assert frontend_steps[name]["if"] == "matrix.phase == 'checks'"
@@ -140,6 +150,13 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "--filter a13n-harness-ui-webui run test" in webui_tests["run"]
     assert "/usr/bin/time -p" in webui_tests["run"]
     assert "--maxWorkers=2" in webui_tests["run"]
+    assert "--shard=${{ matrix.shard }}/2" in webui_tests["run"]
+    assert jobs["webui"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
+    for job, prefix in (("frontend", "console-shared"), ("webui", "webui")):
+        report = next(
+            step for step in jobs[job]["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        assert report["with"]["name"] == prefix + "-${{ matrix.shard }}-${{ github.run_attempt }}"
     assert webui.index("run check") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
     tooling = shlex.split(distribution["Test distribution tooling"]["run"])

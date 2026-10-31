@@ -240,7 +240,7 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "tests-1", "tests-2", "tests-3", "tests-4"]
+    assert [entry["name"] for entry in matrix] == ["checks", *[f"tests-{index}" for index in range(1, 7)]]
     assert all(entry["targets"] for entry in matrix[1:])
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
@@ -280,7 +280,14 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
 def test_service_selection_includes_new_nested_files_and_passes_paths_literally(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     root = tmp_path / "packages/a13n-service/tests"
-    included = ["test_first.py", "nested/test_second.py", "nested/third_test.py", "test_space $(false).py"]
+    included = [
+        "test_first.py",
+        "nested/test_second.py",
+        "nested/third_test.py",
+        "test_space $(false).py",
+        "test_fifth.py",
+        "test_sixth.py",
+    ]
     excluded = [
         "conftest.py",
         "helper.py",
@@ -448,10 +455,18 @@ def test_e2e_builds_current_checkout_with_optional_layer_cache_and_loads_the_tes
     assert options["cache-from"] == "type=gha,scope=service-e2e-sandbox"
     assert options["cache-to"] == "type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true"
     # A restored cache never skips the build or test gate, and never substitutes a released daemon.
-    assert "if" not in build and "continue-on-error" not in build and "build-args" not in options
+    assert build["if"] == "matrix.sandbox"
+    buildx = next(step for step in steps if step.get("uses", "").startswith("docker/setup-buildx-action@"))
+    assert buildx["if"] == build["if"]
+    assert "continue-on-error" not in build and "build-args" not in options
     run = next(step for step in steps if step.get("run", "").startswith("make service-e2e "))
     assert steps.index(build) < steps.index(run)
     assert "--require-all" in run["run"] and "if" not in run
+    assert run["env"]["SELECTION"] == "${{ matrix.selection }}"
+    assert "-k '$SELECTION'" in run["run"]
+    assert workflow["jobs"]["scenarios"]["strategy"]["fail-fast"] is False
+    reports = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert reports["with"]["name"] == "service-e2e-${{ matrix.name }}-${{ github.run_attempt }}"
 
 
 @pytest.mark.parametrize("support", ["success", "failure", "cancelled", "skipped"])

@@ -193,11 +193,11 @@ jobs:
               - 'scripts/tests/test_prepare_a13n_harness_ui_assets.py'
 
   tests:
-    name: UI Python tests (${{ matrix.shard }}/2)
+    name: UI Python tests (${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04
@@ -245,7 +245,7 @@ jobs:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 4
-          --shard ${{ matrix.shard }} 2 --durations .github/ui-test-durations.json
+          --shard ${{ matrix.shard }} 3 --durations .github/ui-test-durations.json
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
@@ -265,11 +265,17 @@ jobs:
           retention-days: 7
 
   frontend:
-    name: Console and shared frontend (${{ matrix.phase }})
+    name: Console and shared frontend (${{ matrix.phase }} ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        phase: [checks, tests]
+        include:
+          - phase: checks
+            shard: 1
+          - phase: tests
+            shard: 1
+          - phase: tests
+            shard: 2
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
@@ -306,13 +312,14 @@ jobs:
         if: matrix.phase == 'tests'
         run: >-
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test
+          --shard=${{ matrix.shard }}/2
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain frontend test reports
         if: always() && matrix.phase == 'tests'
         uses: actions/upload-artifact@v4
         with:
-          name: console-shared-${{ github.run_attempt }}
+          name: console-shared-${{ matrix.shard }}-${{ github.run_attempt }}
           # Avoid walking pnpm's node_modules links and uploading each shared report repeatedly.
           path: |
             frontend/apps/*/test-results/*.xml
@@ -324,7 +331,11 @@ jobs:
         run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build
 
   webui:
-    name: WebUI tests
+    name: WebUI tests (${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04
@@ -372,13 +383,14 @@ jobs:
         timeout-minutes: 6
         run: >-
           /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test --maxWorkers=2
+          --shard=${{ matrix.shard }}/2
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain WebUI test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: webui-${{ github.run_attempt }}
+          name: webui-${{ matrix.shard }}-${{ github.run_attempt }}
           path: frontend/apps/a13n-harness-ui/test-results/*.xml
           retention-days: 7
 
