@@ -55,6 +55,8 @@ The instance login key grants full workbench and Host access. Give guests a [sha
 
 ## Organize Projects and work in a conversation
 
+Open the three-dot menu immediately left of the sidebar heading’s plus button to choose **Projects** or **Conversations**. **Conversations** changes the heading to **Recent** and lists chats across Projects, newest interaction first, in compact rows without Project subtitles. Sending input and completing a reply move the chat up; streamed progress does not. Running, unread and starred chats keep their indicators without overriding time order. Coordinator workers stay under their owner. The plus button opens **New chat**. **Projects** restores the grouped view and **Add project**. Your display choice is remembered in this browser.
+
 1. Use **Add project** beside **Projects** to name a Project and select an existing server directory. Add more roots when needed. Creating the Project does not create a conversation.
 2. Open **Home** or the Project's **+** to prepare a new conversation. A Project supplies working directories and creation defaults; a projectless conversation is also supported.
 3. Open **Agent & Model settings**, check your selections, write the task, and press **Send**.

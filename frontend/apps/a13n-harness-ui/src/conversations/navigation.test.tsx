@@ -97,6 +97,7 @@ let pauseMore: Promise<void> | null;
 let pauseActivity: Promise<void> | null;
 let pageAborted: boolean;
 let recentTitle: string;
+let recentThreads: ReturnType<typeof thread>[];
 let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
@@ -117,6 +118,14 @@ beforeEach(() => {
   pauseActivity = null;
   pageAborted = false;
   recentTitle = "Recent 1";
+  recentThreads = [
+    {
+      ...thread("Newest chat", "project-two"),
+      touched_at: "2026-10-30T02:00:00Z",
+    },
+    { ...thread("Older chat"), touched_at: "2026-10-30T01:00:00Z" },
+  ];
+
   vi.mocked(watchSummary).mockClear();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -234,6 +243,39 @@ beforeEach(() => {
         return json({ thread: thread("selected-old") });
       if (url.pathname === "/api/threads/activity") {
         activity.push(url);
+        if (
+          url.searchParams.get("limit") === "30" &&
+          url.searchParams.get("include_active") === "true" &&
+          !url.searchParams.has("coordinator_thread_id")
+        ) {
+          if (failMore)
+            return json({ error: { message: "Recent list unavailable" } }, 503);
+          const project = url.searchParams.get("project_id");
+          const scoped = (item: ReturnType<typeof thread>) =>
+            !item.archived &&
+            (!project || item.configuration.project_id === project);
+          const active = activeThreads.filter(scoped);
+          const rows = recentThreads.filter(
+            (item) =>
+              scoped(item) &&
+              !active.some((other) => other.thread_id === item.thread_id),
+          );
+          const offset = Number(
+            url.searchParams.get("cursor")?.split("-").at(-1) ?? 0,
+          );
+          return json({
+            rows: rows.slice(offset, offset + 1).map((item) => ({
+              thread: item,
+              project_name: projects.find(
+                (p) => p.project_id === item.configuration.project_id,
+              )?.name,
+            })),
+            active_rows: offset ? [] : active.map((item) => ({ thread: item })),
+            next_cursor:
+              offset + 1 < rows.length ? `recent-${offset + 1}` : null,
+            total: rows.length + active.length,
+          });
+        }
         if (url.searchParams.get("query"))
           return json(
             workerThreads.length
@@ -2251,4 +2293,274 @@ it("version-checks cross-project drops and leaves the original chat in place on 
     }),
   ).toBe(chat);
   expect(screen.getByLabelText("Current route").textContent).toBe("/");
+});
+
+it("switches between project groups and recent chats, retains pages, and changes the plus action", async () => {
+  const user = userEvent.setup();
+  const view = mount();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByText("Recent 5");
+  await user.click(
+    screen.getByRole("button", { name: "Conversation display" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitemradio", { name: "Conversations" }),
+  );
+  const recent = await screen.findByRole("region", {
+    name: "Recent chats",
+  });
+  await within(recent).findByText("Newest chat");
+  expect(within(recent).queryByText("Two")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add project" })).toBeNull();
+  expect(activity.at(-1)?.searchParams.get("include_active")).toBe("true");
+  expect(activity.at(-1)?.searchParams.get("include_starred")).toBe("false");
+  expect(activity.at(-1)?.searchParams.has("project_id")).toBe(false);
+  failMore = true;
+  await user.click(
+    within(recent).getByRole("button", {
+      name: "Show more recent chats",
+    }),
+  );
+  await within(recent).findByText("Recent list unavailable");
+  expect(within(recent).getByText("Newest chat")).toBeTruthy();
+  failMore = false;
+  await user.click(
+    within(recent).getByRole("button", {
+      name: "Show more recent chats",
+    }),
+  );
+  await within(recent).findByText("Older chat");
+  await user.click(screen.getByRole("button", { name: "New chat" }));
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/new?project=",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Conversation display" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitemradio", { name: "Projects" }),
+  );
+  expect(screen.getByText("Recent 5")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Add project" }));
+  expect(
+    await screen.findByRole("dialog", { name: "Add project" }),
+  ).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await user.click(
+    screen.getByRole("button", { name: "Conversation display" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitemradio", { name: "Conversations" }),
+  );
+  expect(screen.getByRole("link", { name: /Older chat/ })).toBeTruthy();
+  view.unmount();
+  mount();
+  expect(
+    await screen.findByRole("region", { name: "Recent chats" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+});
+
+it("keeps server recency order on refresh without promoting stars or running chats", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  recentThreads[1].starred = true;
+  recentThreads[1].root_activity.state = "running";
+  mount();
+  await screen.findByText("Newest chat");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show more recent chats" }),
+  );
+  await screen.findByText("Older chat");
+  const list = screen.getByRole("region", { name: "Recent chats" });
+  expect(
+    within(list)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["/threads/Newest%20chat", "/threads/Older%20chat"]);
+  recentThreads.reverse();
+  recentThreads[0].touched_at = "2026-10-30T03:00:00Z";
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/threads/Older%20chat", "/threads/Newest%20chat"]),
+  );
+});
+
+it("retains an off-page selected worker under its Coordinator in Recent", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  coordinators = [{ ...thread("older-coordinator"), role: "coordinator" }];
+  workerThreads = [
+    {
+      ...thread("selected-worker"),
+      role: "worker",
+      coordinator_thread_id: "older-coordinator",
+    },
+  ];
+  mount("/threads/selected-worker");
+  const recent = await screen.findByRole("region", {
+    name: "Recent chats",
+  });
+  await within(recent).findByRole("link", { name: /older-coordinator/ });
+  expect(
+    within(recent).queryByRole("link", { name: /selected-worker/ }),
+  ).toBeNull();
+  fireEvent.click(within(recent).getByRole("button", { name: /workers/i }));
+  expect(
+    await within(recent).findByRole("link", { name: /selected-worker/ }),
+  ).toBeTruthy();
+});
+
+it("shows active worker counts in Recent without changing chronological order or fetching disclosures", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  coordinators = [
+    {
+      ...thread("busy-owner"),
+      role: "coordinator",
+      touched_at: "2026-10-30T00:00:00Z",
+    },
+  ];
+  recentThreads.push(coordinators[0]);
+  activeThreads = ["worker-one", "worker-two"].map((id) => ({
+    ...thread(id),
+    role: "worker",
+    coordinator_thread_id: "busy-owner",
+    root_activity: { state: "running" },
+  }));
+  activeThreads.push({
+    ...thread("archived-worker"),
+    role: "worker",
+    coordinator_thread_id: "busy-owner",
+    root_activity: { state: "running" },
+    archived: true,
+  });
+  mount();
+  const recent = await screen.findByRole("region", {
+    name: "Recent chats",
+  });
+  const owner = await within(recent).findByRole("link", { name: /busy-owner/ });
+  expect(within(owner).getByLabelText("2 workers active")).toBeTruthy();
+  expect(within(recent).getAllByRole("link")[0].textContent).toBe(
+    "Newest chat",
+  );
+  expect(
+    within(recent).queryByRole("link", { name: /worker-one|worker-two/ }),
+  ).toBeNull();
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
+  // Keep the old owner's history page loaded so it remains after its workers stop.
+  fireEvent.click(
+    within(recent).getByRole("button", {
+      name: "Show more recent chats",
+    }),
+  );
+  await within(recent).findByRole("link", { name: "Older chat" });
+  fireEvent.click(
+    within(recent).getByRole("button", {
+      name: "Show more recent chats",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      within(recent).queryByRole("button", {
+        name: "Show more recent chats",
+      }),
+    ).toBeNull(),
+  );
+  activeThreads = activeThreads.slice(1);
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await within(owner).findByLabelText("1 worker active");
+  activeThreads = [];
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await waitFor(() =>
+    expect(within(owner).queryByLabelText(/worker.*active/)).toBeNull(),
+  );
+  expect(within(recent).getAllByRole("link")[0].textContent).toBe(
+    "Newest chat",
+  );
+});
+
+it("keeps an archived Coordinator reachable for an unselected active worker in Recent", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  coordinators = [
+    { ...thread("archived-owner"), role: "coordinator", archived: true },
+  ];
+  const worker = {
+    ...thread("active-worker"),
+    role: "worker" as const,
+    coordinator_thread_id: "archived-owner",
+    root_activity: { state: "running" },
+  };
+  activeThreads = [worker];
+  workerThreads = [worker];
+  mount();
+  const recent = await screen.findByRole("region", {
+    name: "Recent chats",
+  });
+  await within(recent).findByRole("link", { name: /archived-owner/ });
+  expect(
+    within(recent).getByRole("button", { name: "Restore archived-owner" }),
+  ).toBeTruthy();
+  expect(
+    within(recent).queryByRole("link", { name: /active-worker/ }),
+  ).toBeNull();
+  fireEvent.click(
+    within(recent).getByRole("button", {
+      name: "Expand workers for archived-owner",
+    }),
+  );
+  const workers = await within(recent).findByLabelText(
+    "Workers for archived-owner",
+  );
+  expect(
+    await within(workers).findByRole("link", { name: /active-worker/ }),
+  ).toBeTruthy();
+  expect(within(workers).getAllByRole("link")).toHaveLength(1);
+});
+
+it("keeps the archived owner of an off-page unread worker reachable in Recent", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  coordinators = [
+    { ...thread("unread-owner"), role: "coordinator", archived: true },
+  ];
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const worker = {
+    ...thread("unread-worker"),
+    role: "worker",
+    coordinator_thread_id: "unread-owner",
+    completion: {
+      version: 1,
+      run_id: "run-done",
+      continuation_id: "a".repeat(64),
+      completed_at: "2026-10-30T00:00:00Z",
+    },
+  } as Schema<"ThreadSummary">;
+  await results.follow({ ...worker, completion: null });
+  results.observe(worker);
+  mount("/", false, results);
+  const recent = await screen.findByRole("region", {
+    name: "Recent chats",
+  });
+  await within(recent).findByRole("link", { name: /unread-owner/ });
+  expect(
+    within(recent).getByRole("button", { name: "Restore unread-owner" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(recent).getByRole("button", {
+      name: "Expand workers for unread-owner",
+    }),
+  );
+  const workers = await within(recent).findByLabelText(
+    "Workers for unread-owner",
+  );
+  const row = await within(workers).findByRole("link", {
+    name: /unread-worker/,
+  });
+  expect(within(row).getByRole("img", { name: "New result" })).toBeTruthy();
+  vi.restoreAllMocks();
 });

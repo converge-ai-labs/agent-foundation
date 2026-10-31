@@ -55,6 +55,8 @@ flowchart TB
 
 ## 整理 Project 并在对话中工作
 
+点击侧边栏标题右侧、加号左边的三点菜单，可以选择 **Projects** 或 **Conversations**。选择 **Conversations** 后，标题变为 **Recent**，跨项目按最近交互时间排列会话，使用紧凑行且不显示项目副标题。发送输入和回复完成后，会话会向上移动；流式输出过程不改变排序。运行中、未读和星标继续显示，但不优先置顶。Coordinator 的 worker 仍收在所属会话下。加号变为 **New chat**。切回 **Projects** 后恢复项目分组和 **Add project**。浏览器会记住显示方式。
+
 1. 点击 **Projects** 旁的 **Add project**，填写名称并选择已有的服务器目录，按需添加其他根目录。创建 Project 不会创建对话。
 2. 通过 **Home** 或 Project 的 **+** 准备新对话。Project 提供工作目录和创建默认值，也可以不绑定 Project。
 3. 打开 **Agent & Model settings**，检查选择，写下任务并点击 **Send**。
