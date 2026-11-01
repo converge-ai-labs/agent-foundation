@@ -87,7 +87,7 @@ def identity(runtime: Runtime, account: ResolvedProvider) -> dict:
 @asynccontextmanager
 async def open_provider(runtime: Runtime, account: ResolvedProvider) -> AsyncIterator[BrowserProvider]:
     definition = runtime.registry.get("browser", account.type)
-    with anyio.fail_after(runtime.settings.providers.operation_seconds):
+    with anyio.fail_after(runtime.settings.browsers.operation_seconds):
         provider = await definition.open_provider(
             account.config, account.reveal_credential(runtime.keys), runtime.endpoint_policy
         )
@@ -125,7 +125,7 @@ def release_intent(row: BrowserRow) -> None:
 async def connect_external(runtime: Runtime, state: dict, policy: EndpointPolicy) -> Chromium:
     await validate_cdp_endpoint(policy, state["cdp_url"])
     browser = await Chromium.connect(
-        state["cdp_url"], headers=state["headers"], timeout=runtime.settings.providers.operation_seconds, discover=False
+        state["cdp_url"], headers=state["headers"], timeout=runtime.settings.browsers.operation_seconds, discover=False
     )
     try:
         # Browser-only command: reject a page-level debugger socket before exposing native tools.
@@ -313,7 +313,7 @@ async def reconcile(
             row.failure = "browser_provider_disabled"
             return
         row.claim_id = claim_id
-        row.claim_until = current + timedelta(seconds=runtime.settings.providers.operation_seconds + 15)
+        row.claim_until = current + timedelta(seconds=runtime.settings.browsers.operation_seconds + 15)
         if phase == "creating":
             row.create_dispatched = True
         elif phase == "starting":
@@ -325,14 +325,14 @@ async def reconcile(
         if selected.account is None:
             assert selected.state is not None
             if phase != "deleting":
-                with anyio.fail_after(runtime.settings.providers.operation_seconds):
+                with anyio.fail_after(runtime.settings.browsers.operation_seconds):
                     browser = await connect_external(runtime, selected.state, policy or runtime.endpoint_policy)
                     with anyio.CancelScope(shield=True), anyio.move_on_after(5):
                         await browser.close()
                 live = LiveBrowser(selected.state)
         else:
             async with open_provider(runtime, selected.account) as provider:
-                with anyio.fail_after(runtime.settings.providers.operation_seconds):
+                with anyio.fail_after(runtime.settings.browsers.operation_seconds):
                     if phase == "deleting":
                         await provider.delete(browser_id, selected.state)
                     elif phase == "stopping":
@@ -364,7 +364,12 @@ async def reconcile(
             return
         row.claim_id = row.claim_until = None
         row.failure = failure
-        if failure is not None:
+        if failure is not None and not (
+            phase == "starting"
+            and failure == "browser_start_unresolved"
+            and live is not None
+            and live.status == "stopped"
+        ):
             if phase == "creating" and create and not_dispatched:
                 row.create_dispatched = False
             elif phase == "starting" and start and not_dispatched:
@@ -389,7 +394,7 @@ async def reconcile(
             row.runtime_id = live.runtime_id
             row.expires_at = live.expires_at
             row.status = live.status
-            if phase in {"creating", "starting"}:
+            if phase in {"creating", "starting"} and failure is None:
                 row.last_used_at = await now(session)
             await expire(session, row)
 

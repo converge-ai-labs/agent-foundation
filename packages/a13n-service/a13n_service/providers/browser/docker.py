@@ -174,8 +174,10 @@ class Docker(SelfHosted):
         def read() -> bytes:
             chunks, metadata = container.get_archive(f"{ROOT}/downloads/{guid}", chunk_size=65536)
             try:
-                if metadata["size"] > max_bytes or metadata.get("linkTarget"):
+                if metadata.get("linkTarget"):
                     raise BrowserProviderError("download_size_or_kind", certainty="not_dispatched")
+                if metadata["size"] > max_bytes:
+                    raise BrowserProviderError("download_too_large", certainty="not_dispatched")
                 buffer = bytearray()
                 for chunk in chunks:
                     buffer.extend(chunk)
@@ -183,8 +185,10 @@ class Docker(SelfHosted):
                         raise BrowserProviderError("download_too_large", certainty="not_dispatched")
                 with tarfile.open(fileobj=io.BytesIO(buffer)) as archive:
                     member = archive.next()
-                    if member is None or not member.isfile() or member.name != guid or member.size > max_bytes:
+                    if member is None or not member.isfile() or member.name != guid:
                         raise BrowserProviderError("download_size_or_kind", certainty="not_dispatched")
+                    if member.size > max_bytes:
+                        raise BrowserProviderError("download_too_large", certainty="not_dispatched")
                     file = archive.extractfile(member)
                     assert file is not None
                     return file.read(max_bytes + 1)

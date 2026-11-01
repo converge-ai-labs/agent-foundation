@@ -1,5 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { BrowserViewer } from "./viewer";
 
@@ -59,7 +66,12 @@ function start() {
     cache,
     ...render(
       <QueryClientProvider client={cache}>
-        <BrowserViewer id="br" generation={2} episode={3} />
+        <BrowserViewer
+          id="br"
+          generation={2}
+          episode={3}
+          controlExpiresAt={new Date(Date.now() + 60000).toISOString()}
+        />
       </QueryClientProvider>,
     ),
   };
@@ -93,6 +105,23 @@ it("keeps credentials out of caches and enables input only on the mounted connec
   expect(post).toHaveBeenCalledTimes(1); // Unmount neither stops nor hands back the Browser.
 });
 
+it("does not renew without user action and disables input at grant expiry", async () => {
+  vi.useFakeTimers();
+  post.mockResolvedValue(reply(grant(20)));
+  start();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  act(() => viewers[0].dispatchEvent(new Event("connect")));
+  expect(screen.getByText("Viewer access expires: {{time}}")).toBeTruthy();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(20000);
+  });
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(viewers[0].viewOnly).toBe(true);
+  expect(viewers[0].disconnect).toHaveBeenCalledOnce();
+});
+
 it("expires input at the published deadline while a renewal is still unresolved", async () => {
   vi.useFakeTimers();
   post
@@ -107,6 +136,8 @@ it("expires input at the published deadline while a renewal is still unresolved"
   await act(async () => {
     await vi.advanceTimersByTimeAsync(15000);
   });
+  expect(post).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Renew control" }));
   expect(post).toHaveBeenLastCalledWith(
     "/api/v1/browsers/{browser_id}/renew",
     expect.objectContaining({ body: { generation: 2, episode: 3 } }),
@@ -125,14 +156,24 @@ it("extends input only after reading a renewed supplier grant", async () => {
   vi.useFakeTimers();
   post
     .mockResolvedValueOnce(reply(grant(20)))
-    .mockResolvedValueOnce(reply({}))
+    .mockResolvedValueOnce(
+      reply({ control_expires_at: new Date(Date.now() + 60000).toISOString() }),
+    )
     .mockImplementation(() => Promise.resolve(reply(grant(60))));
   const { unmount } = start();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
+  act(() => viewers[0].dispatchEvent(new Event("connect")));
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(20000);
+    await vi.advanceTimersByTimeAsync(15000);
+  });
+  expect(post).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Renew control" }));
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
   });
   expect(post.mock.calls.map(([path]) => path.split("/").at(-1))).toEqual([
     "viewer",

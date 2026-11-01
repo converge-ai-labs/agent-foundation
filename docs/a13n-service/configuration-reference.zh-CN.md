@@ -201,12 +201,13 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `browsers`
 
-| 设置                       | 环境变量                         | 类型 / 选项   | 约束与默认值                |
-| -------------------------- | -------------------------------- | ------------- | --------------------------- |
-| `browsers.root`            | `A13N_BROWSERS__ROOT`            | 字符串或 null | format="path"; default=null |
-| `browsers.native_enabled`  | `A13N_BROWSERS__NATIVE_ENABLED`  | 布尔值        | default=false               |
-| `browsers.native_chromium` | `A13N_BROWSERS__NATIVE_CHROMIUM` | 字符串        | default="chromium"          |
-| `browsers.docker_host`     | `A13N_BROWSERS__DOCKER_HOST`     | 字符串或 null | default=null                |
+| 设置                         | 环境变量                           | 类型 / 选项   | 约束与默认值                                  |
+| ---------------------------- | ---------------------------------- | ------------- | --------------------------------------------- |
+| `browsers.operation_seconds` | `A13N_BROWSERS__OPERATION_SECONDS` | 数字          | maximum=3600; exclusiveMinimum=0; default=120 |
+| `browsers.root`              | `A13N_BROWSERS__ROOT`              | 字符串或 null | format="path"; default=null                   |
+| `browsers.native_enabled`    | `A13N_BROWSERS__NATIVE_ENABLED`    | 布尔值        | default=false                                 |
+| `browsers.native_chromium`   | `A13N_BROWSERS__NATIVE_CHROMIUM`   | 字符串        | default="chromium"                            |
+| `browsers.docker_host`       | `A13N_BROWSERS__DOCKER_HOST`       | 字符串或 null | default=null                                  |
 
 ## `provisioning`
 

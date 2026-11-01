@@ -96,6 +96,29 @@ async def test_uncertain_start_inspects_without_restarting(service, runs_kit):
     assert second["status"] == "ready" and second["generation"] == 2 and supplier.starts == 1
 
 
+async def test_uncertain_start_confirmed_stopped_can_start_again(service, runs_kit):
+    supplier, browser = await setup(service, runs_kit, supplier=RetainedSupplier(), supports_stop=True)
+    await command(service, runs_kit, browser["id"], "prepare")
+    await command(service, runs_kit, browser["id"], "stop")
+    original_start = supplier.start
+
+    async def failed_start(allocation_id, state, *, generation):
+        supplier.starts += 1
+        raise TimeoutError("start outcome unknown")
+
+    supplier.start = failed_start
+    first = await command(service, runs_kit, browser["id"], "prepare")
+    assert first["status"] == "starting" and first["generation"] == 2
+    await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    stopped = (await service.client.get(f"{service.api}/browsers/{browser['id']}")).json()
+    assert stopped["status"] == "stopped" and stopped["generation"] == 2
+    assert stopped["failure"] == "browser_start_unresolved"
+    supplier.start = original_start
+    ready = await command(service, runs_kit, browser["id"], "prepare")
+    assert ready["status"] == "ready" and ready["generation"] == 3
+    assert supplier.starts == 2 and supplier.creates == 1
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 async def test_idle_stop_and_independent_delete_preserve_last_use(service, runs_kit, legacy):
     policies = {"idle_seconds": 60} if legacy else {"stop_after_seconds": 60, "delete_after_seconds": 180}
@@ -190,3 +213,32 @@ async def test_paid_refusal_never_publishes_reconcilable_intent(
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.status == "ready" and row.generation == (2 if status == "stopped" else 1)
         assert not await lifecycle.unsettled(session, row.id)
+
+
+@pytest.mark.parametrize("browser_budget", [2, 5])
+async def test_slow_provider_create_uses_browser_budget_and_reconciles(service, runs_kit, browser_budget):
+    import anyio
+
+    class SlowSupplier(RetainedSupplier):
+        async def create(self, allocation_id, recipe):
+            live = await super().create(allocation_id, recipe)
+            await anyio.sleep(3)
+            return live
+
+    supplier, browser = await setup(service, runs_kit, supplier=SlowSupplier(), supports_stop=True)
+    settings = service.runtime.settings.model_copy(
+        update={
+            "providers": service.runtime.settings.providers.model_copy(update={"operation_seconds": 2}),
+            "browsers": service.runtime.settings.browsers.model_copy(update={"operation_seconds": browser_budget}),
+        }
+    )
+    runtime = replace(service.runtime, settings=settings)
+    await lifecycle.prepare(runtime, browser["workspace_id"], browser["id"])
+    first = (await service.client.get(f"{service.api}/browsers/{browser['id']}")).json()
+    if browser_budget == 2:
+        assert first["status"] == "creating"
+        assert first["failure"] == "browser_provider_unknown"
+        await lifecycle.prepare(runtime, browser["workspace_id"], browser["id"])
+        first = (await service.client.get(f"{service.api}/browsers/{browser['id']}")).json()
+    assert first["status"] == "ready"
+    assert supplier.creates == 1

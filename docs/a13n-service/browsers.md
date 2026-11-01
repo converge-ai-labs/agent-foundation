@@ -49,6 +49,8 @@ Create a Docker browser provider with `type: "docker"` and `configuration: {"ima
 
 A containerized Service needs the Engine socket, a persistent mount for `browsers.root`, and host networking. Browser endpoints are published only on the Engine host's loopback interface. A bridge-network Service container cannot reach them through its own loopback. The Browser container retains its own network and filesystem isolation. The Service account's Engine access is privileged operator authority; give it only to a trusted deployment. Remote Engines and multi-host scheduling are unsupported. Keep CDP and the guest viewer ports private; Console uses the authenticated Service WebSocket relay, including `wss` behind HTTPS. Reverse proxies must forward WebSocket upgrades.
 
+Browser page navigation is not restricted by Service's provider endpoint policy. Apply any required outbound network restrictions, including access to internal services and metadata endpoints, at the deployment network boundary for both Docker and Native browsers.
+
 Native requires Linux with operator-installed Chromium, `Xvfb`, `openbox`, `xauth`, `x11vnc` and `websockify` on PATH. Enable it explicitly:
 
 ```toml
@@ -59,6 +61,8 @@ native_chromium = "/usr/bin/chromium"
 ```
 
 Create a provider with `type: "native"` and empty configuration. Native executes as the Service account and is for local debugging, not tenant isolation. A Service exit can end its runtime; the next authorized start reuses its private profile only after proving the previous writer has stopped. Docker browsers survive Service-only exit. Either provider advances the browser generation after a runtime restart, invalidating old references and tab ownership. Restored tabs are never reassigned by URL or title.
+
+Service applies a cancellation budget to each claimed Browser lifecycle provider operation, configured by `browsers.operation_seconds` (default 120 seconds). This is not a hard response deadline: shielded cleanup and blocking provider I/O can delay completion after cancellation.
 
 ## Use Console
 

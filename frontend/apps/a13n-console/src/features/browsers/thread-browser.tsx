@@ -397,6 +397,7 @@ function BrowserControl({
           id={browser.id}
           generation={browser.generation}
           episode={browser.episode}
+          controlExpiresAt={browser.control_expires_at}
         />
       )}
     </section>

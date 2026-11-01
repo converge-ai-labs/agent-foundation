@@ -34,6 +34,7 @@ import { FormActions } from "../../shared/forms";
 import { CopyableId } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers/manage-link";
+import { useProviderTypes } from "../providers/kind-providers";
 import { useBrowser } from "./api";
 
 export function BrowsersPage() {
@@ -215,6 +216,11 @@ function CreateBrowserForm({
           .then(data),
       ),
   });
+  const types = useProviderTypes("browser");
+  const provider = providers.data?.find((item) => item.id === providerId);
+  const definition = types.data?.items.find(
+    (item) => item.type === provider?.type,
+  );
   const save = useMutation({
     mutationFn: () =>
       client
@@ -223,8 +229,14 @@ function CreateBrowserForm({
           body: {
             name,
             provider_id: providerId,
-            stop_after_seconds: stop === "" ? null : Number(stop),
-            delete_after_seconds: remove === "" ? null : Number(remove),
+            ...(definition?.supports_stop
+              ? {
+                  stop_after_seconds: stop === "" ? null : Number(stop),
+                  delete_after_seconds: remove === "" ? null : Number(remove),
+                }
+              : remove === ""
+                ? {}
+                : { delete_after_seconds: Number(remove) }),
           },
         })
         .then(data),
@@ -263,24 +275,28 @@ function CreateBrowserForm({
         !providers.data?.some((item) => item.enabled) && (
           <ManageProvidersLink category="browsers" />
         )}
-      <FormField
-        label={t("Stop after idle (seconds)")}
-        description={t(
-          "Leave blank to keep running. The default is 30 minutes.",
-        )}
-      >
-        <Input
-          type="number"
-          min={60}
-          max={604800}
-          value={stop}
-          onChange={(event) => setStop(event.target.value)}
-        />
-      </FormField>
+      {definition?.supports_stop && (
+        <FormField
+          label={t("Stop after idle (seconds)")}
+          description={t(
+            "Leave blank to keep running. The default is 30 minutes.",
+          )}
+        >
+          <Input
+            type="number"
+            min={60}
+            max={604800}
+            value={stop}
+            onChange={(event) => setStop(event.target.value)}
+          />
+        </FormField>
+      )}
       <FormField
         label={t("Delete after idle (seconds)")}
         description={t(
-          "Leave blank to retain the profile until you delete it. This timer is independent of stopping.",
+          definition?.supports_stop
+            ? "Leave blank to retain the profile until you delete it. This timer is independent of stopping."
+            : "Leave blank for the default 30-minute idle deletion.",
         )}
       >
         <Input
@@ -291,10 +307,10 @@ function CreateBrowserForm({
           onChange={(event) => setRemove(event.target.value)}
         />
       </FormField>
-      <ErrorNotice error={save.error ?? providers.error} />
+      <ErrorNotice error={save.error ?? providers.error ?? types.error} />
       <FormActions
         pending={save.isPending}
-        disabled={!name.trim() || !providerId}
+        disabled={!name.trim() || !providerId || !definition}
         onCancel={close}
         label={t("Create browser")}
       />
@@ -373,6 +389,27 @@ export function BrowserLifecycle({
   const client = useClient();
   const cache = useQueryClient();
   const { workspace, can } = useWorkspace();
+  const providers = useQuery({
+    queryKey: ["browser-providers", workspace.id, "options"],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/browser-providers", {
+            params: { query: { cursor, limit: 100 } },
+            signal,
+          })
+          .then(data),
+      ),
+    enabled: browser.source === "managed",
+  });
+  const types = useProviderTypes("browser", browser.source === "managed");
+  const provider = providers.data?.find(
+    (item) => item.id === browser.provider_id,
+  );
+  const supportsStop = types.data?.items.find(
+    (item) => item.type === provider?.type,
+  )?.supports_stop;
   const refresh = () => {
     void cache.invalidateQueries({ queryKey: ["browsers", workspace.id] });
   };
@@ -404,6 +441,7 @@ export function BrowserLifecycle({
         )}
         {can("write") &&
           browser.source === "managed" &&
+          supportsStop === true &&
           browser.status === "ready" &&
           browser.control === "automation" && (
             <Button

@@ -278,3 +278,37 @@ asyncio.run(main())
             await parent.wait()
         await provider.delete(identity, None)
         await provider.close()
+
+
+async def test_native_survives_executor_thread_exit(tmp_path, monkeypatch):
+    """The runtime is owned by the Service process, not a transient I/O worker."""
+    from concurrent.futures import ThreadPoolExecutor
+    from functools import partial
+
+    from a13n_service.providers.browser import native
+
+    chromium = os.environ.get("A13N_TEST_BROWSER_NATIVE_CHROMIUM")
+    if not chromium:
+        pytest.skip("Requires A13N_TEST_BROWSER_NATIVE_CHROMIUM and installed Linux desktop binaries")
+    executor = ThreadPoolExecutor(max_workers=1)
+    executor.submit(lambda: None).result()
+    original_blocking = native.blocking
+
+    async def transient_spawn(function, *args, **kwargs):
+        if function is subprocess.Popen:
+            return await asyncio.get_running_loop().run_in_executor(executor, partial(function, *args, **kwargs))
+        return await original_blocking(function, *args, **kwargs)
+
+    monkeypatch.setattr(native, "blocking", transient_spawn)
+    identity = "browser_worker_" + uuid4().hex[:16]
+    provider = Native(tmp_path, chromium)
+    try:
+        live = await provider.create(identity, Recipe())
+        executor.shutdown(wait=True)
+        await asyncio.sleep(1)
+        observed = await provider.inspect(identity, live.state)
+        assert observed and observed.status == "ready" and observed.runtime_id == live.runtime_id
+    finally:
+        executor.shutdown(wait=True)
+        await provider.delete(identity, None)
+        await provider.close()

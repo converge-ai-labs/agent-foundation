@@ -369,6 +369,8 @@ class Environments(Section):
 
 
 class Browsers(Section):
+    # Cancellation budget for one claimed browser lifecycle provider operation.
+    operation_seconds: float = Field(default=120, gt=0, le=3600)
     # The operator owns this persistent identity/fence directory; recipes cannot choose host paths.
     root: Path | None = None
     native_enabled: bool = False

@@ -26,6 +26,7 @@ from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
 from a13n_service.resources.providers.probe import probe, supports_probe
@@ -412,4 +413,6 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         described.environment_schema = definition.environment_model.model_json_schema()
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy
+    elif isinstance(definition, BrowserProviderDefinition):
+        described.supports_stop = definition.supports_stop
     return described

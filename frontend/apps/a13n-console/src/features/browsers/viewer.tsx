@@ -1,4 +1,5 @@
 import type RFB from "@novnc/novnc/lib/rfb";
+import { Button } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -11,10 +12,12 @@ export function BrowserViewer({
   id,
   generation,
   episode,
+  controlExpiresAt,
 }: {
   id: string;
   generation: number;
   episode: number;
+  controlExpiresAt: string | null;
 }) {
   const client = useClient();
   const { workspace } = useWorkspace();
@@ -23,10 +26,14 @@ export function BrowserViewer({
   const [iframe, setIframe] = useState<string>();
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<unknown>();
+  const [deadline, setDeadline] = useState(controlExpiresAt);
+  const [grantDeadline, setGrantDeadline] = useState<string>();
+  const [renewing, setRenewing] = useState(false);
+  const renewRef = useRef<() => void>(() => {});
   useEffect(() => {
     let active = true;
+    let renewalPending = false;
     let rfb: RFB | undefined;
-    let renewal: ReturnType<typeof setTimeout> | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
     const abort = new AbortController();
     const api = client.workspace(workspace.id);
@@ -41,7 +48,6 @@ export function BrowserViewer({
     function fail(cause: unknown) {
       if (!active) return;
       active = false;
-      clearTimeout(renewal);
       clearTimeout(expiry);
       disconnect();
       setIframe(undefined);
@@ -49,6 +55,7 @@ export function BrowserViewer({
       setError(cause);
     }
     function arm(deadline: string) {
+      setGrantDeadline(deadline);
       clearTimeout(expiry);
       expiry = setTimeout(
         () =>
@@ -77,9 +84,11 @@ export function BrowserViewer({
       return grant;
     }
     async function renew() {
-      if (!active) return;
+      if (!active || renewalPending) return;
+      renewalPending = true;
       try {
-        await api
+        setRenewing(true);
+        const browser = await api
           .POST("/api/v1/browsers/{browser_id}/renew", {
             params,
             body: { generation, episode },
@@ -89,12 +98,16 @@ export function BrowserViewer({
         // Only the supplier's published grant extends local input, not the requested lease.
         const grant = await readGrant();
         if (!active) return;
+        setDeadline(browser.control_expires_at);
         arm(grant.expires_at);
-        renewal = setTimeout(() => void renew(), 15000);
       } catch (cause) {
         fail(cause);
+      } finally {
+        renewalPending = false;
+        if (active) setRenewing(false);
       }
     }
+    renewRef.current = () => void renew();
     void (async () => {
       try {
         const grant = await readGrant();
@@ -137,7 +150,6 @@ export function BrowserViewer({
           setIframe(grant.url);
           setConnected(true);
         }
-        renewal = setTimeout(() => void renew(), 15000);
       } catch (cause) {
         fail(cause);
       }
@@ -145,7 +157,7 @@ export function BrowserViewer({
     return () => {
       active = false;
       abort.abort();
-      clearTimeout(renewal);
+      renewRef.current = () => {};
       clearTimeout(expiry);
       disconnect();
     };
@@ -161,6 +173,34 @@ export function BrowserViewer({
               : "Connecting to browser…",
           )}
         </p>
+      )}
+      {!error && connected && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {deadline && (
+            <span>
+              {t("Control expires: {{time}}", {
+                time: new Date(deadline).toLocaleString(),
+              })}
+            </span>
+          )}
+          {grantDeadline &&
+            deadline &&
+            Date.parse(grantDeadline) < Date.parse(deadline) && (
+              <span>
+                {t("Viewer access expires: {{time}}", {
+                  time: new Date(grantDeadline).toLocaleString(),
+                })}
+              </span>
+            )}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={renewing}
+            onClick={() => renewRef.current()}
+          >
+            {t("Renew control")}
+          </Button>
+        </div>
       )}
       {!error &&
         (iframe ? (

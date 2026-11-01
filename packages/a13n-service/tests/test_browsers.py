@@ -162,6 +162,15 @@ async def setup(service, runs_kit, *, supplier=None, supports_stop=False, **poli
     return supplier, response.json()
 
 
+@pytest.mark.parametrize("supports_stop", [False, True])
+async def test_browser_provider_type_exposes_stop_capability(service, runs_kit, supports_stop):
+    await setup(service, runs_kit, supports_stop=supports_stop)
+    response = await service.client.get("/api/v1/provider-types/browser")
+    assert response.status_code == 200
+    definition = next(item for item in response.json()["items"] if item["type"] == "fake_browser")
+    assert definition["supports_stop"] is supports_stop
+
+
 async def bound_run(
     service,
     runs_kit,

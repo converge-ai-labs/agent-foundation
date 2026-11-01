@@ -55,6 +55,13 @@
     "Browsers": {
       "additionalProperties": false,
       "properties": {
+        "operation_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Operation Seconds",
+          "type": "number"
+        },
         "root": {
           "anyOf": [
             {

@@ -10,7 +10,7 @@ import {
   fixtureSession,
   fixtureThread,
 } from "../conversations/transcript/fixture";
-import { BrowserLifecycle, BrowsersPage } from "./page";
+import { BrowserLifecycle, BrowsersPage, CreateBrowser } from "./page";
 import { ThreadBrowserDialog } from "./thread-browser";
 
 let client: Client;
@@ -23,6 +23,7 @@ let options: Schema["Browser"][];
 let catalogFails: boolean;
 let refuse: boolean;
 let requests: Request[];
+let supportsStop: boolean;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -42,6 +43,7 @@ vi.mock("react-i18next", () => ({
 }));
 vi.mock("./viewer", () => ({ BrowserViewer: () => <div>Mounted viewer</div> }));
 beforeEach(() => {
+  supportsStop = true;
   verbs = ["read", "run", "write"];
   thread = fixtureThread({ version: 1 });
   session = fixtureSession();
@@ -52,6 +54,7 @@ beforeEach(() => {
     status: "ready",
     control: "automation",
     source: "managed",
+    provider_id: "provider_1",
     generation: 1,
     episode: 0,
   } as Schema["Browser"];
@@ -76,6 +79,17 @@ beforeEach(() => {
           );
         return Response.json(path.endsWith("/browser") ? thread : browser);
       }
+      if (path.endsWith("/provider-types/browser"))
+        return Response.json({
+          items: [{ type: "fake", supports_stop: supportsStop }],
+        });
+      if (path.endsWith("/browser-providers"))
+        return Response.json({
+          items: [
+            { id: "provider_1", type: "fake", name: "Fake", enabled: true },
+          ],
+          next_cursor: null,
+        });
       if (path.endsWith("/threads/thr_1/browser"))
         return Response.json({
           browser_id: browser.id,
@@ -268,9 +282,54 @@ it("shows the legacy terminal idle timeout in Browser details", async () => {
 });
 it("stops the observed generation and keeps deletion on the resource surface", async () => {
   start(true);
-  await userEvent.click(screen.getByRole("button", { name: "Stop browser" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Stop browser" }),
+  );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0].url).toContain("/stop");
   expect(requests[0].headers.get("If-Match")).toBe('"browser_1:3"');
   expect(screen.getByRole("button", { name: "Delete browser" })).toBeTruthy();
 });
+
+it("does not offer stop when the provider cannot retain a stopped profile", async () => {
+  supportsStop = false;
+  start(true);
+  await waitFor(() =>
+    expect(cache.getQueryData(["browser-provider-types"])).toBeTruthy(),
+  );
+  expect(screen.queryByRole("button", { name: "Stop browser" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Delete browser" })).toBeTruthy();
+});
+
+it.each(["", "3600"])(
+  "uses the non-stop provider policy for delete value %s",
+  async (remove) => {
+    supportsStop = false;
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter>
+          <CreateBrowser onCreated={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Create browser" }));
+    await user.type(screen.getByLabelText("Name"), "Example");
+    await user.click(await screen.findByRole("combobox", { name: "Provider" }));
+    await user.click(await screen.findByRole("option", { name: "Fake" }));
+    expect(screen.queryByLabelText("Stop after idle (seconds)")).toBeNull();
+    if (remove)
+      await user.type(
+        screen.getByLabelText("Delete after idle (seconds)"),
+        remove,
+      );
+    await user.click(screen.getByRole("button", { name: "Create browser" }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    const body = await requests[0].json();
+    expect(body).toEqual({
+      name: "Example",
+      provider_id: "provider_1",
+      ...(remove ? { delete_after_seconds: 3600 } : {}),
+    });
+  },
+);

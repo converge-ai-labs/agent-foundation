@@ -9,20 +9,23 @@ from typing import Literal
 from a13n_harness.capabilities.browser import BrowserError
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from a13n_harness.tools import current_invocation_scope
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from a13n_service.infra.db import short_session, transaction
-from a13n_service.providers.browser.definition import BrowserProvider
+from a13n_service.providers.browser.definition import BrowserProvider, BrowserProviderError
 from a13n_service.resources.assets import service as assets
 from a13n_service.resources.assets.schemas import AssetCreate
 from a13n_service.resources.uploads import service as uploads
+from a13n_service.resources.uploads.schemas import FileName
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers.tables import BrowserDownloadRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
+
+_FILE_NAME = TypeAdapter(FileName)
 
 
 @dataclass
@@ -62,7 +65,10 @@ class Files:
                 self.runtime.storage, self.runtime.objects, principal, self.lease.workspace_id, asset_id
             )
             await self.authorize("read", asset_ids)
-            staged.append(await self.provider.upload_file(self.state, asset.name, content))
+            name = asset.name
+            if name in {".", ".."} or any(c in name for c in ("/", "\\", "\x00")):
+                name = asset_id
+            staged.append(await self.provider.upload_file(self.state, name, content))
         await self.authorize("read", asset_ids)
         await native.upload(target, tuple(staged), revision=revision)
         return "Workspace asset files selected. Observe the form before submitting."
@@ -84,11 +90,21 @@ class Files:
             async with short_session(self.runtime.storage) as session:
                 upload_id = await session.scalar(known)
             if upload_id is None:
-                content = await self.provider.download_file(
-                    self.state, guid, max_bytes=self.runtime.settings.objects.max_bytes
-                )
+                try:
+                    content = await self.provider.download_file(
+                        self.state, guid, max_bytes=self.runtime.settings.objects.max_bytes
+                    )
+                except BrowserProviderError as error:
+                    if error.code != "download_too_large":
+                        raise
+                    item.update(state="failed", error="download_too_large")
+                    continue
                 principal = await self.authorize("write")
                 name = posixpath.basename(item["name"].replace("\\", "/"))[:255] or "download"
+                try:
+                    name = _FILE_NAME.validate_python(name)
+                except ValidationError:
+                    name = "download"
                 staged = await uploads.store(
                     self.runtime.storage,
                     self.runtime.objects,

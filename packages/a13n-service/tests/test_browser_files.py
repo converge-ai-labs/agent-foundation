@@ -97,6 +97,19 @@ async def test_upload_assets_enforces_scope_retirement_paths_and_size(service, r
     transfer.provider.upload_file.assert_not_awaited()
 
 
+@pytest.mark.parametrize("name", ["folder/input.txt", "..", r"folder\input.txt"])
+async def test_upload_uses_asset_id_for_names_that_are_not_safe_paths(
+    service, runs_kit, scripted_model, monkeypatch, name
+):
+    transfer, actor, _ = await fixture(service, runs_kit, scripted_model, monkeypatch)
+    item = await asset(service, actor)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(AssetRow, item.id)
+        row.name = name
+    await transfer.upload(AsyncMock(), "input", (f"asset:{item.id}",), revision="fresh")
+    transfer.provider.upload_file.assert_awaited_once_with(transfer.state, item.id, b"upload bytes")
+
+
 async def test_download_publication_is_deduplicated_scoped_and_hides_paths(
     service, runs_kit, scripted_model, monkeypatch
 ):
@@ -138,6 +151,40 @@ async def test_download_publication_is_deduplicated_scoped_and_hides_paths(
     with pytest.raises(ServiceError, match="does not cover"):
         await transfer.downloads(native)
     transfer.provider.download_file.assert_not_awaited()
+
+
+async def test_download_bad_item_does_not_block_later_assets(service, runs_kit, scripted_model, monkeypatch):
+    from a13n_service.providers.browser.definition import BrowserProviderError
+
+    transfer, _, _ = await fixture(service, runs_kit, scripted_model, monkeypatch)
+    native = AsyncMock()
+    native.downloads.return_value = json.dumps(
+        {
+            "downloads": [
+                {"name": "huge.txt", "state": "completed", "path": "/private/huge"},
+                {"name": "bad\u0000name", "state": "completed", "path": "/private/bad"},
+                {"name": "good.txt", "state": "completed", "path": "/private/good"},
+            ]
+        }
+    )
+
+    async def download(state, guid, *, max_bytes):
+        if guid == "huge":
+            raise BrowserProviderError("download_too_large", certainty="not_dispatched")
+        return b"content"
+
+    transfer.provider.download_file.side_effect = download
+    first = json.loads(await transfer.downloads(native))
+    second = json.loads(await transfer.downloads(native))
+    assert first == second
+    huge, bad, good = first["downloads"]
+    assert huge["state"] == "failed" and huge["error"] == "download_too_large"
+    assert bad["name"] == "download" and bad["asset_id"].startswith("ast_")
+    assert good["name"] == "good.txt" and good["asset_id"].startswith("ast_")
+    assert all("path" not in item for item in first["downloads"])
+    transfer.provider.download_file.side_effect = BrowserProviderError("unavailable", certainty="unknown")
+    with pytest.raises(BrowserProviderError, match="Browser provider operation failed"):
+        await transfer.downloads(native)
 
 
 async def test_unsupported_provider_never_exposes_host_download_paths(service, runs_kit, scripted_model, monkeypatch):

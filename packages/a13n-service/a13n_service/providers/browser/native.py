@@ -7,7 +7,6 @@ import shutil
 import signal
 import socket
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +16,8 @@ from a13n_service.providers.browser import runtime
 from a13n_service.providers.browser.definition import BrowserProviderError, LiveBrowser
 from a13n_service.providers.browser.selfhost import Allocation, SelfHosted, blocking, desktop_result
 from a13n_service.providers.environment import desktop_guest
+
+_CLEANUP_TIMEOUT = 30
 
 
 class Configuration(BaseModel):
@@ -61,6 +62,8 @@ class Native(SelfHosted):
         boot = (await blocking(Path("/proc/sys/kernel/random/boot_id").read_text)).strip()
         if allocation.record.get("boot") != boot:
             return LiveBrowser(state, status="stopped", runtime_id=state["runtime_id"])
+        if allocation.record.get("launch_unresolved"):
+            raise BrowserProviderError("native_writer_unconfirmed")
         pid = allocation.record.get("pid")
         if pid is not None and (info is None or info["pid"] != pid):
             if await blocking(runtime.group_alive, pid):
@@ -113,21 +116,65 @@ class Native(SelfHosted):
             "--parent",
             str(os.getpid()),
         ]
-        allocation.record["boot"] = boot
+        allocation.record.update(boot=boot, launch_unresolved=True)
         await allocation.save()
         log = await blocking((allocation.root / "runtime.log").open, "ab")
+
+        async def spawn_and_record():
+            try:
+                # PDEATHSIG tracks the spawning thread: use the event-loop thread.
+                process = await asyncio.create_subprocess_exec(
+                    *command, start_new_session=True, stdin=asyncio.subprocess.DEVNULL, stdout=log, stderr=log
+                )
+            except Exception:
+                allocation.record.pop("launch_unresolved")
+                await allocation.save()
+                raise
+            finally:
+                await blocking(log.close)
+            try:
+                allocation.record["pid"] = process.pid
+                allocation.record["started"] = await blocking(runtime.process_identity, process.pid)
+                allocation.record.pop("launch_unresolved")
+                await allocation.save()
+            except Exception:
+                # The durable unresolved marker fences the profile if cleanup cannot be confirmed.
+                allocation.record["launch_unresolved"] = True
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                async with asyncio.timeout(_CLEANUP_TIMEOUT):
+                    await process.wait()
+                    while await blocking(runtime.group_alive, process.pid):
+                        await asyncio.sleep(0.1)
+                allocation.record.pop("launch_unresolved")
+                await allocation.save()
+                raise
+            return process
+
+        # Keep the allocation lock until the child identity is durable, even when
+        # the caller uses raw Task.cancel rather than an AnyIO cancellation scope.
+        spawn = asyncio.create_task(spawn_and_record())
+        cancelled = None
+        while not spawn.done():
+            try:
+                await asyncio.shield(spawn)
+            except asyncio.CancelledError as error:
+                cancelled = error
+            except Exception:
+                break
         try:
-            process = await blocking(
-                subprocess.Popen, command, start_new_session=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log
-            )
-        finally:
-            await blocking(log.close)
-        allocation.record["pid"] = process.pid
-        allocation.record["started"] = await blocking(runtime.process_identity, process.pid)
-        await allocation.save()
+            process = spawn.result()
+        except Exception as error:
+            if cancelled is not None:
+                raise cancelled from error
+            raise
+        if cancelled is not None:
+            raise cancelled
         async with asyncio.timeout(40):
             while True:
-                if await blocking(process.poll) is not None:
+                if process.returncode is not None:
                     raise BrowserProviderError("native_start_failed", certainty="known")
                 info = await self.information(allocation)
                 if info and info["pid"] == process.pid and info["ready"]:
@@ -141,6 +188,8 @@ class Native(SelfHosted):
         boot = (await blocking(Path("/proc/sys/kernel/random/boot_id").read_text)).strip()
         if allocation.record.get("boot") != boot:
             return
+        if allocation.record.get("launch_unresolved"):
+            raise BrowserProviderError("native_writer_unconfirmed")
         pid, started = allocation.record.get("pid"), allocation.record.get("started")
         if pid is None:
             return
@@ -174,8 +223,10 @@ class Native(SelfHosted):
             descriptor = os.open(Path(self.download_directory(allocation)) / guid, os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(descriptor, "rb") as file:
                 info = os.fstat(file.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_size > max_bytes:
+                if not stat.S_ISREG(info.st_mode):
                     raise BrowserProviderError("download_size_or_kind", certainty="not_dispatched")
+                if info.st_size > max_bytes:
+                    raise BrowserProviderError("download_too_large", certainty="not_dispatched")
                 content = file.read(max_bytes + 1)
                 if len(content) > max_bytes:
                     raise BrowserProviderError("download_too_large", certainty="not_dispatched")
