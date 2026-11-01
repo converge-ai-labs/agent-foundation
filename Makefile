@@ -499,7 +499,12 @@ images: image-a13n-service image-browser image-sandbox image-sandbox-slim image-
 .PHONY: image-check-browser
 image-check-browser: sync ## Check retained Chromium, real viewer input, files and critical-process supervision
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(BROWSER_IMAGE)")" = "browser"
-	@A13N_TEST_BROWSER_DOCKER_IMAGE="$(BROWSER_IMAGE)" uv run --locked pytest packages/a13n-service/tests/test_browser_selfhost_live.py -q -k 'profile_input_and_recovery or critical_child_exit'
+	@A13N_TEST_BROWSER_DOCKER_IMAGE="$(BROWSER_IMAGE)" uv run --locked pytest -q --junitxml=test-results/browser-docker.xml \
+		packages/a13n-service/tests/test_browser_selfhost_live.py::test_docker_profile_input_and_recovery \
+		packages/a13n-service/tests/test_browser_selfhost_live.py::test_docker_critical_child_exit_ends_runtime \
+		'packages/a13n-service/tests/test_browser_selfhost_live.py::test_selfhost_service_asset_transfer[docker]' \
+		packages/a13n-service/tests/test_browser_selfhost_live.py::test_docker_scripted_model_browser_tools
+	@uv run --locked python -c "import xml.etree.ElementTree as ET; r = ET.parse('test-results/browser-docker.xml').getroot(); assert r.findall('.//testcase') and not r.findall('.//skipped')"
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image

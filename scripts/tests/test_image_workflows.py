@@ -65,17 +65,18 @@ def test_compose_renders_default_and_complete_docker_overrides(tmp_path, legacy_
 
 
 @pytest.mark.parametrize(
-    "event,service_changed,sandbox_changed,expected",
+    "event,service_changed,browser_changed,sandbox_changed,expected",
     [
-        ("workflow_dispatch", "false", "false", {"a13n-service", "a13n-sandbox"}),
-        ("push", "true", "false", {"a13n-service"}),
-        ("push", "false", "true", {"a13n-sandbox"}),
-        ("push", "true", "true", {"a13n-service", "a13n-sandbox"}),
-        ("push", "false", "false", set()),
+        ("workflow_dispatch", "false", "false", "false", {"a13n-service", "a13n-browser", "a13n-sandbox"}),
+        ("push", "true", "false", "false", {"a13n-service"}),
+        ("push", "false", "true", "false", {"a13n-browser"}),
+        ("push", "false", "false", "true", {"a13n-sandbox"}),
+        ("push", "true", "true", "true", {"a13n-service", "a13n-browser", "a13n-sandbox"}),
+        ("push", "false", "false", "false", set()),
     ],
 )
 def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_tags(
-    tmp_path, monkeypatch, event, service_changed, sandbox_changed, expected
+    tmp_path, monkeypatch, event, service_changed, browser_changed, sandbox_changed, expected
 ) -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
     assert workflow[True]["push"]["branches"] == ["main"]
@@ -94,6 +95,7 @@ def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_t
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_EVENT_NAME", event)
     monkeypatch.setenv("A13N_SERVICE_CHANGED", service_changed)
+    monkeypatch.setenv("BROWSER_CHANGED", browser_changed)
     monkeypatch.setenv("SANDBOX_CHANGED", sandbox_changed)
     matrix = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
@@ -104,7 +106,7 @@ def test_development_images_publish_only_variant_dev_tags_without_smoke_or_sha_t
     assert {(image["variant"], image["tag"]) for image in sandbox} == (
         {("standard", "dev"), ("slim", "dev-slim"), ("desktop", "dev-desktop")} if "a13n-sandbox" in expected else set()
     )
-    assert all(image["tag"] == "dev" for image in images if image["name"] == "a13n-service")
+    assert all(image["tag"] == "dev" for image in images if image["name"] in {"a13n-service", "a13n-browser"})
     assert "SANDBOX_VARIANT={0}" in build["with"]["build-args"]
     assert "matrix.variant" in build["with"]["cache-to"]
 
@@ -321,7 +323,10 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),
         ("deploy/docker/images/sandbox/entrypoint.sh", {"sandbox"}),
         ("deploy/docker/images/sandbox/desktop.py", {"sandbox"}),
-        ("packages/a13n-service/a13n_service/providers/environment/desktop_guest.py", {"service", "sandbox"}),
+        (
+            "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
+            {"service", "browser", "sandbox"},
+        ),
         ("deploy/docker/images/sandbox/init-skills.sh", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
         ("uv.lock", {"service"}),
@@ -499,6 +504,7 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
     monkeypatch.setenv("A13N_SERVICE_CHANGED", "false")
+    monkeypatch.setenv("BROWSER_CHANGED", "false")
     monkeypatch.setenv("SANDBOX_CHANGED", "true")
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
     images = json.loads(output.read_text().removeprefix("images="))
