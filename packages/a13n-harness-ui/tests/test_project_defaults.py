@@ -21,7 +21,7 @@ from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_co
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def _project(path: Path, defaults: dict) -> str:

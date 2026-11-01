@@ -18,6 +18,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_interactive import _retained_history, _seed, no_real_model_requests  # noqa: F401  (autouse guard)
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.anyio
 async def test_cross_directory_resume_reassigns_thread_without_retargeting_projects(

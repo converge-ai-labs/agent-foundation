@@ -16,7 +16,7 @@ from a13n_harness_ui.webui import create_webui
 
 from .test_model_accounts import _codex_credential, _jwt
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_native_account_http_lifecycle_and_explicit_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

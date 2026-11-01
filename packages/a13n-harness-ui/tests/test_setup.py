@@ -10,6 +10,8 @@ from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.memory_organization import MemoryOrganizer
 from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def _selection(tmp_path: Path, **changes: object) -> SetupSelection:
     return SetupSelection.model_validate(

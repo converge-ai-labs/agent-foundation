@@ -21,6 +21,12 @@
   font-weight: 500;
   margin-top: 4px;
 }
+.navigationHeadingActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
 .navigationHeading > span {
   overflow: hidden;
   text-overflow: ellipsis;

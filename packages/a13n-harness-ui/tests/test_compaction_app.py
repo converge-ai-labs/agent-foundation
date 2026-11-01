@@ -13,7 +13,7 @@ from pydantic_ai.usage import RequestUsage
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize("enabled", [None, False, True])

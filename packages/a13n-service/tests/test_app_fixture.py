@@ -1,8 +1,12 @@
 """Test-only contract reuse preserves production assembly and per-application isolation."""
 
-from collections.abc import Callable
-from typing import Any
+import gc
+import weakref
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Annotated, Any
 
+import httpx2
 import pytest
 from a13n_service import api_tools as api_tools_module
 from a13n_service import app as app_module
@@ -12,9 +16,53 @@ from a13n_service.distribution import OSS, Distribution
 from a13n_service.mcp import build_mcp
 from a13n_service.settings import Settings
 from a13n_service.tenancy.authenticate import LocalAuthenticator
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastmcp.tools import Tool
 from fastmcp.utilities.openapi import HTTPRoute
+from redis.asyncio import Redis
+from starlette.routing import Match
+
+from .conftest import ScriptedModel, _include_individual_routes, _MatchedRouter, _serve
+
+
+@pytest.mark.anyio
+async def test_scripted_model_is_collectible_after_serving_a_request() -> None:
+    async def serve() -> tuple[weakref.ReferenceType, weakref.ReferenceType]:
+        model = ScriptedModel()
+        model.say("done")
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=model.app), base_url="https://model.test"
+        ) as client:
+            response = await client.post("/v1/chat/completions", json={"messages": []})
+            assert response.json()["choices"][0]["message"]["content"] == "done"
+        return weakref.ref(model), weakref.ref(model.app)
+
+    model, app = await serve()
+    gc.collect()
+    assert model() is None
+    assert app() is None
+
+
+@pytest.mark.anyio
+async def test_service_fixture_clears_redis_before_starting_the_runtime(
+    settings: Settings, service_app: Callable[..., FastAPI], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    open_runtime = app_module.open_runtime
+    started = False
+    async with Redis.from_url(settings.redis.url.get_secret_value()) as redis:
+        await redis.set("previous-test", "leftover")
+
+        async def checked(*args: Any, **kwargs: Any):
+            nonlocal started
+            assert await redis.get("previous-test") is None
+            runtime = await open_runtime(*args, **kwargs)
+            assert runtime.settings.redis.timeout == 2
+            started = True
+            return runtime
+
+        monkeypatch.setattr(app_module, "open_runtime", checked)
+        async with _serve(settings, "control", service_app):
+            assert started
 
 
 def test_service_apps_copy_the_contract_without_recompiling_it(
@@ -107,3 +155,130 @@ def test_service_apps_compile_extensions_and_preserve_worker_roles(
     worker = service_app(role="worker", settings=settings)
     assert worker.openapi_schema is None
     assert {route.path for route in worker.routes} == {"/healthz", "/readyz"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("root_path", ["", "/mounted"])
+async def test_router_prefilter_preserves_dispatch_and_app_local_overrides(root_path: str) -> None:
+    events: list[str] = []
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        events.append("start")
+        yield
+        events.append("stop")
+
+    router = APIRouter(prefix="/prefix", lifespan=lifespan)
+
+    def value() -> str:
+        return "original"
+
+    @router.get("/items/special")
+    async def special() -> dict[str, str]:
+        return {"item": "special"}
+
+    @router.get("/items/{item_id:int}")
+    async def item(item_id: int, dependency: Annotated[str, Depends(value)]) -> dict:
+        return {"item": item_id, "value": dependency}
+
+    @router.post("/files/{path:path}")
+    async def file(path: str, body: dict[str, int]) -> dict:
+        return {"path": path, "body": body}
+
+    @router.post("/items/{item_id:int}")
+    async def update(item_id: int) -> dict:
+        return {"updated": item_id}
+
+    direct, filtered = FastAPI(), FastAPI()
+    direct.include_router(router)
+    included = _include_individual_routes(filtered, router, FastAPI.include_router)
+    assert filtered.openapi() == direct.openapi()
+    for app in (direct, filtered):
+        app.dependency_overrides[value] = lambda: "overridden"
+    filtered.router.routes[:] = [
+        _MatchedRouter(route, included[id(route)]) if id(route) in included else route for route in filtered.routes
+    ]
+    assert filtered.url_path_for("item", item_id=7) == direct.url_path_for("item", item_id=7)
+    cases = [
+        ("GET", "/items/special", None, 200),
+        ("GET", "/items/7", None, 200),
+        ("POST", "/items/7", None, 200),
+        ("GET", "/items/7/", None, 307),
+        ("DELETE", "/items/7", None, 405),
+        ("GET", "/items/not-an-int", None, 404),
+        ("GET", "/unknown", None, 404),
+        ("POST", "/files/a/b.txt", {"count": 1}, 200),
+        ("POST", "/files/a/b.txt", {"count": "invalid"}, 422),
+    ]
+    async with (
+        direct.router.lifespan_context(direct),
+        filtered.router.lifespan_context(filtered),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=direct, root_path=root_path), base_url="https://service.test"
+        ) as expected,
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=filtered, root_path=root_path), base_url="https://service.test"
+        ) as actual,
+    ):
+        for method, path, body, status in cases:
+            left = await expected.request(method, root_path + "/prefix" + path, json=body)
+            right = await actual.request(method, root_path + "/prefix" + path, json=body)
+            assert right.status_code == left.status_code == status
+            assert right.content == left.content
+            assert dict(right.headers) == dict(left.headers)
+        filtered.dependency_overrides[value] = lambda: "second"
+        assert (await actual.get(root_path + "/prefix/items/7")).json()["value"] == "second"
+        assert (await expected.get(root_path + "/prefix/items/7")).json()["value"] == "overridden"
+        assert events == ["start", "start"]
+    assert events == ["start", "start", "stop", "stop"]
+
+
+def test_router_prefilter_does_not_enter_unmatched_routers(monkeypatch: pytest.MonkeyPatch) -> None:
+    router = APIRouter()
+
+    @router.get("/items/{item_id}")
+    async def item(item_id: str) -> dict:
+        return {"id": item_id}
+
+    app = FastAPI()
+    app.include_router(router)
+    included = app.routes[-1]
+    filtered = _MatchedRouter(included, tuple(router.routes))
+    calls = []
+    original = included.matches
+
+    def matches(scope):
+        calls.append(scope["path"])
+        return original(scope)
+
+    monkeypatch.setattr(included, "matches", matches)
+    scope = {"type": "http", "root_path": "", "method": "GET", "path": "/elsewhere"}
+    assert filtered.matches(scope) == (Match.NONE, {})
+    assert calls == []
+    assert filtered.matches({**scope, "path": "/items/one"})[0] == Match.FULL
+    assert filtered.matches({**scope, "path": "/items/one", "method": "DELETE"})[0] == Match.PARTIAL
+    assert calls == ["/items/one", "/items/one"]
+
+
+def test_individual_routes_leave_unrequested_siblings_uncompiled(monkeypatch: pytest.MonkeyPatch) -> None:
+    router = APIRouter()
+
+    @router.get("/first")
+    async def first() -> dict:
+        return {}
+
+    @router.get("/second")
+    async def second() -> dict:
+        return {}
+
+    app = FastAPI()
+    included = _include_individual_routes(app, router, FastAPI.include_router)
+    first_route, second_route = app.routes[-2:]
+
+    def unexpected(scope):
+        pytest.fail("Matching the first route must not enter its sibling's include context")
+
+    monkeypatch.setattr(second_route, "matches", unexpected)
+    scope = {"type": "http", "root_path": "", "method": "GET", "path": "/first"}
+    assert _MatchedRouter(first_route, included[id(first_route)]).matches(scope)[0] == Match.FULL
+    assert _MatchedRouter(second_route, included[id(second_route)]).matches(scope) == (Match.NONE, {})

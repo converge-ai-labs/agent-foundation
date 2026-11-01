@@ -199,7 +199,10 @@ async def test_write_rechecks_external_edit_and_cleans_temporary(
     real_fsync = os.fsync
 
     def external_edit(fd: int) -> None:
+        before = path.stat()
         path.write_bytes(b"external")
+        # Equal-size writes can land in the same filesystem timestamp tick.
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
         real_fsync(fd)
 
     monkeypatch.setattr(os, "fsync", external_edit)

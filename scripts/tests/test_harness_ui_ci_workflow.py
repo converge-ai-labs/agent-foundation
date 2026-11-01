@@ -47,6 +47,7 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
     [
         ("ci-a13n-harness-ui.yml", "tests"),
         ("ci-a13n-harness-ui.yml", "distribution"),
+        ("ci-a13n-harness-ui.yml", "webui"),
         ("ci-a13n-harness-ui.yml", "windows"),
     ],
 )
@@ -90,9 +91,9 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "scripts.run_python_tests" in arguments
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
     assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
-    assert int(arguments[arguments.index("--workers") + 1]) == 3
-    assert "--shard ${{ matrix.shard }} 2" in tests["run"]
-    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
+    assert int(arguments[arguments.index("--workers") + 1]) == 4
+    assert "--shard ${{ matrix.shard }} 3 --durations .github/ui-test-durations.json" in tests["run"]
+    assert jobs["tests"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2, 3]}}
     assert by_name["Type-check UI"]["if"] == "matrix.shard == 1"
     assert by_name["Test native command lifecycle"]["if"] == "matrix.shard == 1"
     assert (
@@ -119,16 +120,44 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run check" in frontend
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test" in frontend
     assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build" in frontend
+    assert jobs["frontend"]["strategy"] == {
+        "fail-fast": False,
+        "matrix": {
+            "include": [
+                {"phase": "checks", "shard": 1},
+                {"phase": "tests", "shard": 1},
+                {"phase": "tests", "shard": 2},
+            ]
+        },
+    }
+    assert "--shard=${{ matrix.shard }}/2" in frontend
+    frontend_steps = {step["name"]: step for step in jobs["frontend"]["steps"]}
+    for name in ("Check frontend workspace", "Build frontend workspace"):
+        assert frontend_steps[name]["if"] == "matrix.phase == 'checks'"
+    assert frontend_steps["Test Console and shared frontend"]["if"] == "matrix.phase == 'tests'"
     distribution = {step["name"]: step for step in jobs["distribution"]["steps"]}
     webui = "\n".join(step.get("run", "") for step in jobs["distribution"]["steps"])
-    for script, name in (("check", "Check WebUI"), ("test", "Test WebUI"), ("build", "Build WebUI assets")):
+    for script, name in (("check", "Check WebUI"), ("build", "Build WebUI assets")):
         command = f"--filter a13n-harness-ui-webui run {script}"
         assert webui.count(command) == 1
         assert command in distribution[name]["run"]
         assert "if" not in distribution[name]
-    assert "/usr/bin/time -p" in distribution["Test WebUI"]["run"]
-    assert "--maxWorkers=2" in distribution["Test WebUI"]["run"]
-    assert webui.index("run check") < webui.index("run test") < webui.index("run build")
+    assert "run test" not in webui
+    assert jobs["webui"]["needs"] == "changes"
+    assert jobs["webui"]["if"] == jobs["distribution"]["if"]
+    webui_tests = next(step for step in jobs["webui"]["steps"] if step["name"] == "Test WebUI")
+    assert "if" not in webui_tests
+    assert "--filter a13n-harness-ui-webui run test" in webui_tests["run"]
+    assert "/usr/bin/time -p" in webui_tests["run"]
+    assert "--maxWorkers=2" in webui_tests["run"]
+    assert "--shard=${{ matrix.shard }}/2" in webui_tests["run"]
+    assert jobs["webui"]["strategy"] == {"fail-fast": False, "matrix": {"shard": [1, 2]}}
+    for job, prefix in (("frontend", "console-shared"), ("webui", "webui")):
+        report = next(
+            step for step in jobs[job]["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        assert report["with"]["name"] == prefix + "-${{ matrix.shard }}-${{ github.run_attempt }}"
+    assert webui.index("run check") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
     tooling = shlex.split(distribution["Test distribution tooling"]["run"])
     assert {arg for arg in tooling if arg.startswith("scripts/tests/")} == {
@@ -142,22 +171,24 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     ):
         assert "if" not in distribution[name]
     assert "prettier --check apps/a13n-harness-ui" in webui
-    assert jobs["linux"]["needs"] == ["changes", "tests", "frontend", "distribution"]
+    assert jobs["linux"]["needs"] == ["changes", "tests", "frontend", "webui", "distribution"]
     assert jobs["linux"]["name"] == "UI (Linux)"
     assert jobs["linux"]["if"].startswith("always() &&")
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped", ""])
 @pytest.mark.parametrize("selected", [True, False])
-@pytest.mark.parametrize("component", ["TESTS", "FRONTEND", "DISTRIBUTION"])
+@pytest.mark.parametrize("component", ["TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"])
 def test_linux_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
     env = {"CHANGES_RESULT": "success"}
-    for name in ("TESTS", "FRONTEND", "DISTRIBUTION"):
+    for name in ("TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"):
         env[f"{name}_RESULT"] = "success"
         env[f"{name}_SELECTED"] = "true"
         assert gate["env"][f"{name}_SELECTED"] == (
-            "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs." + name.lower() + " == 'true' }}"
+            "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs."
+            + ("distribution" if name == "WEBUI" else name.lower())
+            + " == 'true' }}"
         )
         assert gate["env"][f"{name}_RESULT"] == "${{ needs." + name.lower() + ".result }}"
     env[f"{component}_RESULT"] = result
@@ -187,6 +218,7 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["frontend/package.json"], {"frontend", "distribution"}),
         (["frontend/pnpm-lock.yaml"], {"frontend", "distribution"}),
         (["frontend/.prettierignore"], {"frontend", "distribution"}),
+        ([".github/ui-test-durations.json"], {"tests"}),
         (["packages/a13n-harness-ui/tests/test_cli_interactions.py"], {"tests"}),
         (["packages/a13n-harness-ui/tests/conftest.py"], {"tests"}),
         (["packages/a13n-harness/tests/providers_environment/test_direct_local.py"], {"tests"}),

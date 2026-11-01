@@ -27,16 +27,22 @@ def configuration(distribution: Distribution) -> Config:
     return config
 
 
-def heads(distribution: Distribution) -> tuple[str, ...]:
-    result = tuple(ScriptDirectory.from_config(configuration(distribution)).get_heads())
+def _heads(config: Config) -> tuple[str, ...]:
+    result = tuple(ScriptDirectory.from_config(config).get_heads())
     if len(result) > 1:
         raise ValueError("Distribution migration graph must have at most one head")
     return result
 
 
+def heads(distribution: Distribution) -> tuple[str, ...]:
+    return _heads(configuration(distribution))
+
+
 @contextmanager
 def migration_connection(settings: Database, distribution: Distribution) -> Iterator[Config]:
-    heads(distribution)
+    # Validate and execute the same composition without copying every table twice.
+    config = configuration(distribution)
+    _heads(config)
     engine = create_engine(
         settings.url.get_secret_value(), poolclass=NullPool, connect_args={"connect_timeout": settings.connect_timeout}
     )
@@ -53,7 +59,6 @@ def migration_connection(settings: Database, distribution: Distribution) -> Iter
                 text(f"SET idle_in_transaction_session_timeout = {settings.migration_idle_transaction_timeout * 1000}")
             )
             connection.commit()
-            config = configuration(distribution)
             config.attributes["connection"] = connection
             yield config
     finally:
