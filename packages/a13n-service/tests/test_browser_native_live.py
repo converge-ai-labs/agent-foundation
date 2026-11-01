@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import os
+import shlex
+import shutil
 import struct
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -62,6 +64,18 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
     chromium = os.environ.get("A13N_TEST_BROWSER_NATIVE_CHROMIUM")
     if not chromium:
         pytest.skip("Requires A13N_TEST_BROWSER_NATIVE_CHROMIUM and installed Linux desktop binaries")
+    x11vnc = shutil.which("x11vnc")
+    assert x11vnc
+    wrapper_dir = tmp_path / "bin"
+    wrapper_dir.mkdir()
+    debug_log = tmp_path / "x11vnc-debug.log"
+    wrapper = wrapper_dir / "x11vnc"
+    wrapper.write_text(
+        f'#!/bin/sh\nif [ "$1" = -storepasswd ]; then exec {shlex.quote(x11vnc)} "$@"; fi\n'
+        f'exec {shlex.quote(x11vnc)} -dk -o {shlex.quote(str(debug_log))} "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{wrapper_dir}:{os.environ['PATH']}")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-test-not-owned")
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     identity = "browser_native_" + uuid4().hex[:16]
@@ -114,6 +128,11 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
                     "x11": await blocking(native_x11_focus, tmp_path, screenshot),
                 }
 
+            await connection.evaluate(
+                page,
+                "window.keyEvents = []; ['keydown', 'keypress', 'keyup', 'input'].forEach(t => "
+                "document.addEventListener(t, e => window.keyEvents.push([t, e.key, e.isTrusted]), true))",
+            )
             before_input = await input_diagnostics()
             before_input["send_seconds_remaining"] = (grant.expires_at - datetime.now(UTC)).total_seconds()
             for down in (1, 0):
@@ -131,6 +150,14 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
                         "frame": frame,
                         "before": before_input,
                         "after": await input_diagnostics(output / "native-input-desktop.xwd"),
+                        "dom_events": await connection.evaluate(page, "window.keyEvents"),
+                        "x11vnc_events": [
+                            line
+                            for line in debug_log.read_text().splitlines()
+                            if "# keyboard(" in line or "XTestFakeKeyEvent(" in line
+                        ]
+                        if debug_log.exists()
+                        else "debug log missing",
                     },
                 )
                 screenshot = await connection.send("Page.captureScreenshot", page=page)
