@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   SettingsChoice as ChoiceField,
   SettingsSection,
@@ -45,6 +46,7 @@ export function ProviderAccount({
   onReady?: (ready: boolean) => void;
   onIdentity?: (identity: string) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const { provider, label, login_methods: loginMethods } = connection;
   const nativeAccountId =
     accountId ??
@@ -275,20 +277,20 @@ export function ProviderAccount({
         disabled={!!activeLogin.data?.session_id || !loginMethods.length}
         onClick={() => start.mutate(false)}
       >
-        {account.data?.usable ? "Reconnect account" : "Connect account"}
+        {account.data?.usable ? t("Reconnect account") : t("Connect account")}
       </Button>
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Refresh status"
-        title="Refresh status"
+        aria-label={t("Refresh status")}
+        title={t("Refresh status")}
         onClick={() => void account.refetch()}
       >
         <ArrowsClockwise aria-hidden />
       </Button>
       {account.data?.availability === "available" && (
         <Button variant="ghost" onClick={() => setLogoutOpen(true)}>
-          Log out account
+          {t("Log out account")}
         </Button>
       )}
     </div>
@@ -313,29 +315,32 @@ export function ProviderAccount({
             <div className={accountStyles.identity}>
               <p className={accountStyles.accountStatus}>
                 {account.isPending
-                  ? "Checking account…"
+                  ? t("Checking account…")
                   : account.data?.usable
-                    ? "Connected"
+                    ? t("Connected")
                     : ready
-                      ? "Account available · refreshes on first use"
-                      : "Not connected"}
+                      ? t("Account available · refreshes on first use")
+                      : t("Not connected")}
                 {account.data?.availability === "available" &&
                   ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
               </p>
               {account.data?.account_id && (
                 <p>
-                  Account: {account.data.account_id} ·{" "}
+                  {t("Account: {{id}}", { id: account.data.account_id })} ·{" "}
                   {account.data.shared_with_cli
-                    ? `Shared with ${label} CLI`
-                    : "Host account"}
+                    ? t("Shared with {{provider}} CLI", { provider: label })
+                    : t("Host account")}
                 </p>
               )}
               {account.data?.expires_at && (
                 <p className={accountStyles.help}>
-                  Session expires{" "}
-                  {new Date(account.data.expires_at).toLocaleString()}
+                  {t("Session expires {{date}}", {
+                    date: new Date(account.data.expires_at).toLocaleString(
+                      i18n.resolvedLanguage,
+                    ),
+                  })}
                   {account.data.required_action === "refresh"
-                    ? " · refreshes on first use"
+                    ? t(" · refreshes on first use")
                     : ""}
                 </p>
               )}
@@ -355,10 +360,11 @@ export function ProviderAccount({
           {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
-              <summary>Account source</summary>
+              <summary>{t("Account source")}</summary>
               <p>
-                Choosing an account replaces this server's selection. If its
-                credentials are missing, no other account is used.
+                {t(
+                  "Choosing an account replaces this server's selection. If its credentials are missing, no other account is used.",
+                )}
               </p>
               <div className={styles.actions}>
                 {sources.data?.map((candidate) => (
@@ -373,31 +379,35 @@ export function ProviderAccount({
                     onClick={() => select.mutate(candidate.selection)}
                   >
                     {candidate.label}
-                    {candidate.selected ? " · selected" : ""}
+                    {candidate.selected ? t(" · selected") : ""}
                   </Button>
                 ))}
                 <Button
                   variant="outline"
                   onClick={() => void sources.refetch()}
                 >
-                  Find accounts
+                  {t("Find accounts")}
                 </Button>
               </div>
               {!sources.isPending && !sources.data?.length && (
-                <p>No saved accounts found. Connect an account to sign in.</p>
+                <p>
+                  {t("No saved accounts found. Connect an account to sign in.")}
+                </p>
               )}
             </details>
           )}
           <div className={styles.stack}>
             {loginMethods.length > 1 && (
               <details className={accountStyles.advanced}>
-                <summary>Advanced login options</summary>
+                <summary>{t("Advanced login options")}</summary>
                 <SettingsSection>
                   <ChoiceField
-                    label="Login method"
+                    label={t("Login method")}
                     description={
                       method === "browser"
-                        ? "The browser must reach this server. For remote servers, use a device code or paste the full ChatGPT callback URL."
+                        ? t(
+                            "The browser must reach this server. For remote servers, use a device code or paste the full ChatGPT callback URL.",
+                          )
                         : undefined
                     }
                     value={method}
@@ -405,10 +415,10 @@ export function ProviderAccount({
                       value: method,
                       label:
                         method === "device"
-                          ? "Device code"
+                          ? t("Device code")
                           : method === "manual_callback"
-                            ? "Paste callback URL"
-                            : "Browser callback",
+                            ? t("Paste callback URL")
+                            : t("Browser callback"),
                     }))}
                     onValueChange={(value) =>
                       setMethod(
@@ -422,28 +432,39 @@ export function ProviderAccount({
             {activeLogin.data?.provider &&
               activeLogin.data.provider !== provider && (
                 <p role="status">
-                  A {activeLogin.data.provider} login is in progress. Return to
-                  that connection to finish or cancel it.
+                  {t(
+                    "A {{provider}} login is in progress. Return to that connection to finish or cancel it.",
+                    { provider: activeLogin.data.provider },
+                  )}
                 </p>
               )}
           </div>
         </>
       )}
       {session && (
-        <section aria-label="Provider login" className={accountStyles.login}>
+        <section
+          aria-label={t("Provider login")}
+          className={accountStyles.login}
+        >
           <div className={accountStyles.loginHeader}>
             <h3>
-              {active ? "Finish connecting your account" : "Account login"}
+              {active
+                ? t("Finish connecting your account")
+                : t("Account login")}
             </h3>
             <span role="status" className={accountStyles.loginStatus}>
-              Login: {login.data?.state ?? "starting"}
+              {t("Login: {{state}}", {
+                state: t(`login.${login.data?.state ?? "starting"}`, {
+                  defaultValue: login.data?.state ?? "starting",
+                }),
+              })}
             </span>
           </div>
           {active && (url || code) && (
             <ol className={accountStyles.loginSteps}>
               {url && (
                 <li>
-                  <span>Open the verification page</span>
+                  <span>{t("Open the verification page")}</span>
                   <a
                     className={accountStyles.verificationLink}
                     href={url}
@@ -451,16 +472,16 @@ export function ProviderAccount({
                     rel="noopener noreferrer"
                   >
                     <span>
-                      {provider === "chatgpt" ? "Sign in with ChatGPT" : url}
+                      {provider === "chatgpt" ? t("Sign in with ChatGPT") : url}
                     </span>
                     <ArrowSquareOut size={18} aria-hidden="true" />
-                    <span className="sr-only"> (opens in a new tab)</span>
+                    <span className="sr-only">{t("(opens in a new tab)")}</span>
                   </a>
                 </li>
               )}
               {code && (
                 <li>
-                  <span>Enter this device code</span>
+                  <span>{t("Enter this device code")}</span>
                   <div className={accountStyles.deviceCodeRow}>
                     <strong className={accountStyles.deviceCode}>{code}</strong>
                     <Button variant="outline" onClick={() => void copyCode()}>
@@ -469,12 +490,14 @@ export function ProviderAccount({
                       ) : (
                         <Copy aria-hidden="true" />
                       )}
-                      {copiedCode === code ? "Copied" : "Copy code"}
+                      {copiedCode === code ? t("Copied") : t("Copy code")}
                     </Button>
                   </div>
                   {copyFailed && (
                     <p role="status">
-                      Couldn't copy. Select the code above and copy it manually.
+                      {t(
+                        "Couldn't copy. Select the code above and copy it manually.",
+                      )}
                     </p>
                   )}
                 </li>
@@ -494,13 +517,15 @@ export function ProviderAccount({
                 className={accountStyles.advanced}
                 open={method === "manual_callback" || undefined}
               >
-                <summary>Callback can't reach this server?</summary>
+                <summary>{t("Callback can't reach this server?")}</summary>
                 <div className={styles.stack}>
                   <p>
                     {login.data.message ??
-                      "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code."}
+                      t(
+                        "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code.",
+                      )}
                   </p>
-                  <FormField label="Complete callback URL">
+                  <FormField label={t("Complete callback URL")}>
                     <Input
                       type="password"
                       autoComplete="off"
@@ -527,10 +552,12 @@ export function ProviderAccount({
                     disabled={!callbackUrl.trim() || callbackSent}
                     onClick={() => callback.mutate()}
                   >
-                    Complete sign-in
+                    {t("Complete sign-in")}
                   </Button>
                   {callbackSent && (
-                    <p role="status">Callback received. Completing sign-in…</p>
+                    <p role="status">
+                      {t("Callback received. Completing sign-in…")}
+                    </p>
                   )}
                 </div>
               </details>
@@ -538,7 +565,7 @@ export function ProviderAccount({
           {login.data?.error_code ===
             "account_switch_confirmation_required" && (
             <Button variant="outline" onClick={() => setSwitchOpen(true)}>
-              Switch account…
+              {t("Switch account…")}
             </Button>
           )}
           {active && (
@@ -547,20 +574,22 @@ export function ProviderAccount({
               loading={cancel.isPending}
               onClick={() => cancel.mutate()}
             >
-              Cancel login
+              {t("Cancel login")}
             </Button>
           )}
         </section>
       )}
       <p className={accountStyles.help}>
-        This account is shared by everyone on this server.
+        {t("This account is shared by everyone on this server.")}
       </p>
       <ModalFrame
         open={switchOpen}
         onOpenChange={setSwitchOpen}
-        title="Allow account switching?"
-        description="Signing in may replace this provider's account for everyone on this server."
-        closeLabel="Close"
+        title={t("Allow account switching?")}
+        description={t(
+          "Signing in may replace this provider's account for everyone on this server.",
+        )}
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -568,13 +597,13 @@ export function ProviderAccount({
               disabled={start.isPending}
               onClick={() => setSwitchOpen(false)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               loading={start.isPending}
               onClick={() => start.mutate(true)}
             >
-              Switch and log in
+              {t("Switch and log in")}
             </Button>
           </>
         }
@@ -584,17 +613,25 @@ export function ProviderAccount({
       <ModalFrame
         open={logoutOpen}
         onOpenChange={setLogoutOpen}
-        title={`Log out of ${provider}?`}
+        title={t("Log out of {{provider}}?", { provider })}
         description={
           provider === "chatgpt"
-            ? "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in."
+            ? t(
+                "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in.",
+              )
             : nativeAccountId
-              ? "Sign out of this saved account? The original CLI login and other accounts are kept."
+              ? t(
+                  "Sign out of this saved account? The original CLI login and other accounts are kept.",
+                )
               : account.data?.source_id?.startsWith("native:")
-                ? "Sign everyone out of this account on this server. Other accounts, models and agents are kept. GitHub authorization stays active."
-                : "Sign out of this local account, including the official CLI and other servers sharing it. Other accounts, models, agents and this browser login are kept. Provider authorization stays active."
+                ? t(
+                    "Sign everyone out of this account on this server. Other accounts, models and agents are kept. GitHub authorization stays active.",
+                  )
+                : t(
+                    "Sign out of this local account, including the official CLI and other servers sharing it. Other accounts, models, agents and this browser login are kept. Provider authorization stays active.",
+                  )
         }
-        closeLabel="Close"
+        closeLabel={t("Close")}
         footer={
           <>
             <Button
@@ -602,14 +639,14 @@ export function ProviderAccount({
               disabled={logout.isPending}
               onClick={() => setLogoutOpen(false)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               loading={logout.isPending}
               onClick={() => logout.mutate()}
             >
-              Log out
+              {t("Log out")}
             </Button>
           </>
         }
@@ -621,7 +658,9 @@ export function ProviderAccount({
   return inline ? (
     <div className={accountStyles.inlineAccount}>{content}</div>
   ) : (
-    <Panel title={`${label} account`}>{content}</Panel>
+    <Panel title={t("{{provider}} account", { provider: label })}>
+      {content}
+    </Panel>
   );
 }
 

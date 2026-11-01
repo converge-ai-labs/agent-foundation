@@ -12,6 +12,8 @@ import { BrowserRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
+import { LanguageProvider } from "../i18n/language";
+import { i18n } from "../i18n";
 import { SetupWizard } from "./wizard";
 import {
   readWizardDraft,
@@ -203,17 +205,22 @@ function mount(selected = status) {
   });
   const transport = createTransport("", () => {});
   return render(
-    <QueryClientProvider client={queries}>
-      <TransportContext value={transport}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/setup" element={<SetupWizard status={selected} />} />
-            <Route path="/threads/:threadId" element={<p>First chat</p>} />
-            <Route path="/" element={<p>Workbench</p>} />
-          </Routes>
-        </BrowserRouter>
-      </TransportContext>
-    </QueryClientProvider>,
+    <LanguageProvider>
+      <QueryClientProvider client={queries}>
+        <TransportContext value={transport}>
+          <BrowserRouter>
+            <Routes>
+              <Route
+                path="/setup"
+                element={<SetupWizard status={selected} />}
+              />
+              <Route path="/threads/:threadId" element={<p>First chat</p>} />
+              <Route path="/" element={<p>Workbench</p>} />
+            </Routes>
+          </BrowserRouter>
+        </TransportContext>
+      </QueryClientProvider>
+    </LanguageProvider>,
   );
 }
 beforeEach(() => {
@@ -232,8 +239,9 @@ beforeEach(() => {
   }));
   vi.stubGlobal("fetch", vi.fn(fetcher));
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.unstubAllGlobals();
 });
 async function continueStep() {
@@ -808,4 +816,64 @@ it("shows configuration validation failures and recovers after correcting the Pr
     ).toBe(false),
   );
   expect(screen.queryByText("Project directory does not exist")).toBeNull();
+});
+
+it("switches onboarding languages without losing choices, focus selection, or replaying preparation", async () => {
+  mount();
+  await chooseModel();
+  fireEvent.click(screen.getByText("Agent options"));
+  const instructions = screen.getByLabelText(
+    "Additional agent instructions",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(instructions, {
+    target: { value: "Keep my instructions 原样保留" },
+  });
+  instructions.setSelectionRange(5, 7);
+  const identity = readWizardDraft(status.draft_scope!)!.threadId;
+  const preparations = calls.filter(
+    (c) => c.path === "/api/models/prepare",
+  ).length;
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Display language" }));
+  await user.click(await screen.findByRole("option", { name: "简体中文" }));
+  expect(screen.getByLabelText("附加智能体指令")).toBe(instructions);
+  expect(instructions.value).toBe("Keep my instructions 原样保留");
+  expect(instructions.selectionStart).toBe(5);
+  expect(instructions.selectionEnd).toBe(7);
+  expect(readWizardDraft(status.draft_scope!)!.threadId).toBe(identity);
+  expect(calls.filter((c) => c.path === "/api/models/prepare")).toHaveLength(
+    preparations,
+  );
+  expect(document.documentElement.lang).toBe("zh-CN");
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await screen.findByText("生成的文件（2）");
+  expect(screen.getByText("第 2 步，共 2 步")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "保存并开始" }));
+  await screen.findByText("First chat");
+  expect(creationId).toBe(identity);
+  expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
+  expect(
+    calls.filter((c) => c.path === "/api/threads" && c.method === "POST"),
+  ).toHaveLength(1);
+  expect(calls.some((c) => c.path.includes("submit"))).toBe(false);
+});
+
+it("keeps an unsaved provider key in memory when switching language without saving or persisting it", async () => {
+  mount();
+  await selectApi();
+  const field = await screen.findByLabelText("Provider API key");
+  fireEvent.change(field, {
+    target: { value: "test-only-unsaved-provider-key" },
+  });
+  const writes = calls.filter((call) => call.method !== "GET").length;
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Display language" }));
+  await user.click(await screen.findByRole("option", { name: "简体中文" }));
+  expect(screen.getByLabelText("提供商 API 密钥")).toBe(field);
+  expect(field).toHaveProperty("value", "test-only-unsaved-provider-key");
+  expect(JSON.stringify(localStorage)).not.toContain(
+    "test-only-unsaved-provider-key",
+  );
+  expect(calls.filter((call) => call.method !== "GET")).toHaveLength(writes);
+  expect(screen.getByRole("button", { name: "保存 API 密钥" })).toBeTruthy();
 });

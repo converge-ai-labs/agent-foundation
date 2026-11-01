@@ -5,10 +5,13 @@ import "./shell/theme.css";
 import { a13nLogoUrl } from "a13n-ui";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { i18n } from "./i18n";
 import { BrowserApp } from "./app";
 import { InstallProvider } from "./shell/install";
 import { readPreference } from "./shell/preferences";
 import { desktopPlatform, isDesktop } from "./platform";
+
+document.documentElement.lang = i18n.resolvedLanguage ?? "en";
 
 // Apply the same theme to startup and authenticated content, before first paint.
 document.documentElement.classList.toggle(

@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsRow } from "../shell/settings";
 import { useId, type ComponentProps, type ReactNode } from "react";
 import { FormField, SearchPicker } from "a13n-ui";
@@ -26,6 +27,7 @@ export function ResourceChoice({
   row?: boolean;
   actions?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const id = useId();
   const choices = Array.from(
     new Map(
@@ -43,9 +45,11 @@ export function ResourceChoice({
       placeholder={
         placeholder ??
         choices.find((item) => item.value === "")?.label ??
-        "Choose an option"
+        t("Choose an option")
       }
-      emptyMessage={loading ? "Loading resources…" : "No matching resources."}
+      emptyMessage={
+        loading ? t("Loading resources…") : t("No matching resources.")
+      }
       value={value}
       disabled={
         !unresolved &&
@@ -58,13 +62,13 @@ export function ResourceChoice({
         ...(unresolved
           ? [
               {
-                label: "Current selection",
+                label: t("Current selection"),
                 options: [
                   {
                     value,
                     label: loading
-                      ? "Loading selection…"
-                      : `${value} (unavailable)`,
+                      ? t("Loading selection…")
+                      : t("{{value}} (unavailable)", { value }),
                     disabled: true,
                   },
                 ],

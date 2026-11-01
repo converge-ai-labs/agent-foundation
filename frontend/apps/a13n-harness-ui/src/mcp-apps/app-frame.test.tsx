@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { LanguageChoice, LanguageProvider } from "../i18n/language";
+import { i18n } from "../i18n";
+import userEvent from "@testing-library/user-event";
 import { AppFrame } from "./app-frame";
 
 const bridge = vi.hoisted(() => ({
@@ -28,8 +31,10 @@ beforeEach(() => {
     get: () => ({ add: vi.fn() }),
   });
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  localStorage.clear();
+  await i18n.changeLanguage("en");
   vi.useRealTimers();
   vi.clearAllMocks();
   document.documentElement.classList.remove("dark");
@@ -104,4 +109,30 @@ it("keeps the original result available when sandbox startup never completes", a
     "saved tool result stays",
   );
   expect(bridge.sendToolResult).not.toHaveBeenCalled();
+});
+
+it("propagates the actual display-language control to an initialized MCP App without reconnecting or replaying results", async () => {
+  render(
+    <LanguageProvider>
+      <LanguageChoice />
+      <AppFrame {...props} />
+    </LanguageProvider>,
+  );
+  const frame = screen.getByTitle("Example");
+  act(() => bridge.oninitialized());
+  await waitFor(() => expect(bridge.sendToolResult).toHaveBeenCalledTimes(1));
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Display language" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", { name: "简体中文" }),
+  );
+  await waitFor(() =>
+    expect(bridge.setHostContext).toHaveBeenLastCalledWith(
+      expect.objectContaining({ locale: "zh-CN" }),
+    ),
+  );
+  expect(screen.getByTitle("Example")).toBe(frame);
+  expect(bridge.connect).toHaveBeenCalledTimes(1);
+  expect(bridge.sendToolResult).toHaveBeenCalledTimes(1);
 });
