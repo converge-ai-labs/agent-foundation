@@ -3,12 +3,19 @@
 import hashlib
 
 from a13n_harness.environment.models import EnvironmentState
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.infra.db import now
+from a13n_service.infra.errors import conflict
 from a13n_service.infra.ids import new_object_id
-from a13n_service.runs.environments.desktop.tables import DesktopControlRow
+from a13n_service.runs.environments.desktop.tables import (
+    ComputerOperationRow,
+    DesktopBlockedRow,
+    DesktopControlRow,
+    DesktopViewerRow,
+)
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 
@@ -36,7 +43,7 @@ def environment_key(environment: EnvironmentRow) -> str | None:
     return target_key(Handle.model_validate(environment.handle).state) if environment.handle else None
 
 
-async def target(session: AsyncSession, key: str) -> DesktopControlRow:
+async def _locked(session: AsyncSession, key: str) -> DesktopControlRow:
     await session.execute(
         insert(DesktopControlRow).values(id=new_object_id("dctrl"), target_key=key).on_conflict_do_nothing()
     )
@@ -50,18 +57,42 @@ async def target(session: AsyncSession, key: str) -> DesktopControlRow:
     return row
 
 
-async def aliases(session: AsyncSession, environment: EnvironmentRow) -> list[str]:
-    state = Handle.model_validate(environment.handle).state if environment.handle else None
-    if state is None or not isinstance(state.state, dict):
-        return [environment.id]
-    field = TARGET_FIELDS.get(state.provider_key)
-    if field is None:
-        return [environment.id]
-    return list(
-        await session.scalars(
-            select(EnvironmentRow.id).where(
-                EnvironmentRow.handle["state"]["provider_key"].astext == state.provider_key,
-                EnvironmentRow.handle["state"]["state"][field].astext == state.state[field],
-            )
-        )
+async def target(session: AsyncSession, key: str) -> DesktopControlRow:
+    row = await _locked(session, key)
+    if row.failure == "environment_lost":
+        raise conflict("desktop_control", row.id, "environment_lost")
+    return row
+
+
+async def invalidate(session: AsyncSession, state: EnvironmentState | None) -> None:
+    """Retire a proven-lost native target under the lifecycle owner's Environment lock.
+
+    The tombstone also rejects aliases whose own lifecycle has not observed the loss.
+    No guest cleanup or availability notice is appropriate for a target that no longer exists.
+    """
+    key = target_key(state)
+    if key is None:
+        return
+    row = await _locked(session, key)
+    if row.failure == "environment_lost":
+        return
+    current = await now(session)
+    row.generation += 1
+    row.control = "automation"
+    row.failure = "environment_lost"
+    row.controller_id = row.controller_thread_id = None
+    row.expires_at = row.viewer = row.grant_id = row.guest_generation = None
+    row.claim_id = row.claim_until = row.due_at = None
+    row.grant_dispatched = False
+    # Target destruction ends possible execution without inventing effect/cleanup evidence.
+    await session.execute(
+        update(ComputerOperationRow)
+        .where(ComputerOperationRow.control_id == row.id, ComputerOperationRow.settled_at.is_(None))
+        .values(settled_at=current)
+    )
+    await session.execute(
+        update(DesktopViewerRow).where(DesktopViewerRow.control_id == row.id).values(expires_at=current)
+    )
+    await session.execute(
+        update(DesktopBlockedRow).where(DesktopBlockedRow.control_id == row.id).values(suppressed=True)
     )

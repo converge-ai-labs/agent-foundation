@@ -328,3 +328,72 @@ it("does not enable a delayed connection after its grant has expired", async () 
   expect(viewers[0].disconnect).toHaveBeenCalled();
   vi.restoreAllMocks();
 });
+
+it("discards pending Connect intent across another tab's return and retake", async () => {
+  const { cache } = start();
+  let resolve!: (value: object) => void;
+  post.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Connect input" }));
+  expect(post.mock.calls[0][1].body).toMatchObject({
+    mode: "control",
+    generation: 1,
+    episode: 1,
+  });
+  const retaken = { ...human, episode: 2, version: 6 };
+  get.mockResolvedValue(reply(retaken));
+  act(() => {
+    cache.setQueryData(key, { value: retaken });
+  });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Connect input",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  await act(async () => {
+    resolve(reply({ ...grant(), episode: 2 }));
+  });
+  expect(viewers).toHaveLength(0);
+  // Connecting again is a new explicit user intent for the new episode.
+  post.mockResolvedValueOnce(reply({ ...grant(), episode: 2 }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
+  await waitFor(() => expect(viewers).toHaveLength(1));
+  expect(post.mock.calls[1][1].body).toMatchObject({
+    generation: 1,
+    episode: 2,
+  });
+});
+
+it("renews read-only viewing with its existing viewer identity and connection", async () => {
+  start();
+  const button = await screen.findByRole("button", { name: "View desktop" });
+  vi.useFakeTimers();
+  const reader = { ...grant("view"), viewer_id: "dview_stable" };
+  post.mockResolvedValueOnce(reply(reader));
+  fireEvent.click(button);
+  await act(async () => {});
+  expect(viewers).toHaveLength(1);
+  post.mockImplementation(async () =>
+    reply({
+      ...reader,
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+    }),
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(45001);
+  });
+  expect(post.mock.calls[1][1].body).toMatchObject({
+    mode: "view",
+    viewer_id: "dview_stable",
+  });
+  expect(viewers).toHaveLength(1);
+  expect(viewers[0].disconnect).not.toHaveBeenCalled();
+});

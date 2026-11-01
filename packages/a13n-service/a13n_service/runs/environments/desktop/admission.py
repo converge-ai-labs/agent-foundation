@@ -8,8 +8,11 @@ import anyio
 from a13n_harness.environment.computer import (
     ComputerActionResult,
     ComputerCall,
+    ComputerClipboard,
     ComputerClipboardWriteResult,
+    ComputerDescription,
     ComputerScreenshot,
+    ComputerZoom,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
 from a13n_harness.tool_execution import current_execution
@@ -143,7 +146,7 @@ def evidence(call: ComputerCall) -> Settlement:
         return Settlement(result.cleanup_complete, result.effect, result.cleanup_complete)
     if call.error is not None and call.error.details.get("dispatch_stage") == "pre_dispatch":
         return Settlement(True, "not_executed", True)
-    if call.action in freshness.READ_ACTIONS:
+    if isinstance(result, (ComputerScreenshot, ComputerDescription, ComputerClipboard, ComputerZoom)):
         return Settlement(True, None, True)
     return Settlement(False, "unknown", None)
 
@@ -154,6 +157,9 @@ async def settle(runtime: Runtime, permit: Permit, call: ComputerCall) -> None:
         control = await lock(session, DesktopControlRow, permit.control_id)
         operation = await lock(session, ComputerOperationRow, permit.id)
         assert control is not None and operation is not None
+        if control.generation != permit.generation:
+            # Authoritative target loss already retired this operation; late evidence cannot revive it.
+            return
         operation.dispatched = call.dispatched
         operation.effect = result.effect
         operation.cleanup_complete = result.cleanup_complete

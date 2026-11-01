@@ -36,9 +36,13 @@ class Renew(BaseModel):
 class OpenViewer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["view", "control"] = "view"
+    generation: int | None = Field(default=None, ge=1, strict=True)
+    episode: int | None = Field(default=None, ge=0, strict=True)
+    viewer_id: str | None = Field(default=None, max_length=72)
 
 
 class Viewer(BaseModel):
+    viewer_id: str | None = None
     mode: Literal["view", "control"]
     websocket_url: str = Field(repr=False)
     password: str = Field(repr=False)

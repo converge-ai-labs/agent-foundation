@@ -346,3 +346,16 @@ async def test_revoke_before_delayed_grant_cannot_resurrect_input(supervisor):
     with pytest.raises(guest.Refused, match="grant_not_active"):
         await grant(instance, "control_delayed", epoch=3)
     assert commands == []
+
+
+async def test_read_only_refresh_exceeds_history_limit_without_allocating_identities(supervisor):
+    instance, clock, commands = supervisor
+    first = await grant(instance, "view_stable", "view")
+    for _ in range(guest.MAX_HISTORY + 1):
+        clock[0] += 45
+        renewed = await grant(instance, "view_stable", "view")
+        assert (renewed["token"], renewed["password"]) == (first["token"], first["password"])
+    assert len(instance.grants) == 1 and len(commands) == 2
+    assert (await grant(instance))["state"] == "active"
+    clock[0] += 61
+    assert (await grant(instance, "view_stable", "view"))["state"] == "expired"

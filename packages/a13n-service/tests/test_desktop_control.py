@@ -1,7 +1,7 @@
 """Native-target control through real SQL; provider I/O is an explicit fake guest."""
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import replace
 from datetime import timedelta
 from uuid import uuid4
@@ -158,7 +158,11 @@ async def test_control_renewal_and_verified_return(service, desktop):
     current = await control.get(other, actor, service.tenant.workspace_id, environment_id)
     assert current.expires_at >= max(long.expires_at, short.expires_at)
     granted = await viewer.open_viewer(
-        other, actor, service.tenant.workspace_id, environment_id, OpenViewer(mode="control")
+        other,
+        actor,
+        service.tenant.workspace_id,
+        environment_id,
+        OpenViewer(mode="control", generation=human.generation, episode=human.episode),
     )
     assert granted.password == "password"
     returned = await control.handback(
@@ -414,7 +418,14 @@ async def test_http_control_is_independent_of_resume_and_keeps_credentials_out_o
         },
     )
     assert renewed.status_code == 200, renewed.text
-    opened = await service.client.post(root + "/desktop-viewer", json={"mode": "control"})
+    opened = await service.client.post(
+        root + "/desktop-viewer",
+        json={
+            "mode": "control",
+            "generation": human.json()["generation"],
+            "episode": human.json()["episode"],
+        },
+    )
     assert opened.status_code == 200, opened.text
     assert opened.headers["cache-control"] == "no-store"
     assert opened.json()["password"] == "password"
@@ -755,3 +766,253 @@ async def test_computer_admission_is_scoped_to_native_target_across_threads(serv
             assert registrations[0].thread_id == lease.thread_id
             assert registrations[0].mount["environment_id"] == other_id
     assert (await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)).id == human.id
+
+
+@pytest.mark.parametrize("outcome", ["missing", "unknown", "cancelled", "not_dispatched", "completed"])
+async def test_read_drain_requires_completion_evidence(service, desktop, outcome):
+    from a13n_harness.environment.computer import ComputerCall, ComputerDescription
+    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow
+
+    lease, mount, state = await admitted(service, desktop)
+    call = ComputerCall(EnvironmentAction.COMPUTER_DESCRIBE)
+    with pytest.raises(asyncio.CancelledError) if outcome == "cancelled" else nullcontext():
+        async with admission.operation(service.runtime, lease, mount, state, call):
+            call.dispatched = True
+            if outcome == "cancelled":
+                raise asyncio.CancelledError
+            if outcome in {"unknown", "not_dispatched"}:
+                call.error = EnvironmentError(
+                    "Read failed",
+                    code="environment_operation_failed",
+                    details={"dispatch_stage": "pre_dispatch" if outcome == "not_dispatched" else "dispatched"},
+                )
+            if outcome == "completed":
+                call.result = ComputerDescription(targets=(), observe_ready=True, input_ready=True)
+    from sqlalchemy import select
+
+    async with transaction(service.runtime.storage) as session:
+        operation = await session.scalar(
+            select(ComputerOperationRow).where(ComputerOperationRow.run_id == lease.run_id)
+        )
+        assert (operation.settled_at is not None) == (outcome in {"not_dispatched", "completed"})
+    assert (await begin(service, desktop)).control == (
+        "human" if outcome in {"not_dispatched", "completed"} else "draining"
+    )
+
+
+@pytest.mark.parametrize("failure", ["lost", "credential_changed", "network"])
+async def test_native_loss_retires_desktop_obligations_and_fences_aliases(service, desktop, failure):
+    from a13n_harness.environment.computer import ComputerCall
+    from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments import lifecycle, renewal
+    from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.tables import ComputerOperationRow, DesktopBlockedRow, DesktopViewerRow
+    from sqlalchemy import select
+
+    _, environment_id, actor, calls, *_ = desktop
+    lease, mount, state = await admitted(service, desktop)
+    call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE, dispatched=True)
+    permit = await admission.admit(service.runtime, lease, mount, state, call)
+    await admission.settle(service.runtime, permit, call)
+    read = await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
+    draining = await begin(service, desktop)
+    with pytest.raises(EnvironmentError):
+        await admission.admit(service.runtime, lease, mount, state, call)
+    async with transaction(service.runtime.storage) as session:
+        original = await session.get(EnvironmentRow, environment_id)
+        template_id, handle, provider = original.template_id, original.handle, original.provider_identity
+        original.renew_at = await now(session)
+    response = await service.client.post(f"{service.api}/environments", json={"template_id": template_id})
+    assert response.status_code == 201, response.text
+    alias_id = response.json()["id"]
+    async with transaction(service.runtime.storage) as session:
+        alias = await session.get(EnvironmentRow, alias_id)
+        alias.status, alias.handle, alias.provider_identity = "ready", handle, provider
+        alias.operation_id = alias.operation_started_at = None
+        await session.flush()
+        assert await session.scalar(select(lifecycle.in_use(alias_id)))
+    claim = await renewal.claim(service.runtime, environment_id)
+    assert claim is not None
+    claim = replace(claim, credential_changed=failure == "credential_changed")
+    error = (
+        RuntimeError("network unavailable")
+        if failure == "network"
+        else provider_error("e2b", "missing", EnvironmentProviderErrorCategory.MISSING)
+    )
+    before = len(calls)
+    await renewal.publish(service.runtime, claim, error)
+    # Replaying publication and late local settlement cannot revive or re-invalidate the target.
+    await renewal.publish(service.runtime, claim, error)
+    await admission.settle(service.runtime, permit, call)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, draining.id)
+        operation = await session.get(ComputerOperationRow, permit.id)
+        blocked = await session.scalar(select(DesktopBlockedRow).where(DesktopBlockedRow.control_id == row.id))
+        reader = await session.scalar(select(DesktopViewerRow).where(DesktopViewerRow.control_id == row.id))
+        if failure == "lost":
+            assert row.generation == draining.generation + 1
+            assert row.control == "automation" and row.failure == "environment_lost"
+            assert row.viewer is None and row.claim_id is None and row.due_at is None
+            assert operation.settled_at is not None and operation.effect == "unknown"
+            assert blocked.suppressed and blocked.entry_id is None
+            assert reader.expires_at < read.expires_at
+            assert not await session.scalar(select(lifecycle.in_use(alias_id)))
+        else:
+            assert row.generation == draining.generation and row.control == "draining"
+            assert operation.settled_at is None and not blocked.suppressed
+            assert await session.scalar(select(lifecycle.in_use(alias_id)))
+    if failure == "lost":
+        with pytest.raises(ServiceError, match="environment lost"):
+            await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, alias_id, OpenViewer())
+        await control.reconcile(service.runtime, draining.id)
+        assert len(calls) == before
+
+
+async def test_read_viewer_renews_one_identity_at_capacity(service, desktop):
+    from a13n_service.runs.environments.desktop.tables import DesktopViewerRow
+    from sqlalchemy import func, select
+
+    _, environment_id, actor, calls, grants, _ = desktop
+    readers = [
+        await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
+        for _ in range(16)
+    ]
+    original = readers[0]
+    for _ in range(20):
+        renewed = await viewer.open_viewer(
+            service.runtime,
+            actor,
+            service.tenant.workspace_id,
+            environment_id,
+            OpenViewer(viewer_id=original.viewer_id),
+        )
+        assert renewed.viewer_id == original.viewer_id
+        assert (renewed.websocket_url, renewed.password) == (original.websocket_url, original.password)
+        assert renewed.expires_at >= original.expires_at
+    assert len(grants) == 16
+    assert {request.id for request in calls[-40:] if isinstance(request, wire.Grant)} == {original.viewer_id}
+    async with transaction(service.runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(DesktopViewerRow)) == 16
+
+
+@pytest.mark.parametrize("change", ["expired", "principal", "guest_generation", "revoked", "authority"])
+async def test_read_viewer_renewal_rechecks_authority_and_never_resurrects(service, desktop, change):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments.desktop.tables import DesktopViewerRow
+
+    from .test_platform_tools import set_role
+
+    _, environment_id, actor, calls, grants, _ = desktop
+    original = await viewer.open_viewer(
+        service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer()
+    )
+    async with transaction(service.runtime.storage) as session:
+        reader = await session.get(DesktopViewerRow, original.viewer_id)
+        if change == "expired":
+            reader.expires_at = await now(session) - timedelta(seconds=1)
+        elif change == "guest_generation":
+            reader.guest_generation = "b" * 32
+        elif change == "authority":
+            await set_role(session, service, "viewer")
+    if change == "authority":
+        async with transaction(service.runtime.storage) as session:
+            actor = await principal_for(session, service.runtime.access, actor.id)
+    if change == "principal":
+        actor = replace(actor, id="different-principal")
+    if change == "revoked":
+        grants[original.viewer_id] = grants[original.viewer_id].model_copy(update={"state": "revoked"})
+    before = len([request for request in calls if isinstance(request, wire.Grant)])
+    with pytest.raises(ServiceError):
+        await viewer.open_viewer(
+            service.runtime,
+            actor,
+            service.tenant.workspace_id,
+            environment_id,
+            OpenViewer(viewer_id=original.viewer_id),
+        )
+    assert len(grants) == 1
+    after = len([request for request in calls if isinstance(request, wire.Grant)])
+    assert after == before + (change == "revoked")
+
+
+async def test_control_viewer_binds_connect_intent_to_initiating_episode(service, desktop):
+    from a13n_service.infra.errors import ServiceError
+
+    _, environment_id, actor, *_ = desktop
+    first = await begin(service, desktop)
+    intent = OpenViewer(mode="control", generation=first.generation, episode=first.episode)
+    await control.handback(
+        service.runtime, actor, service.tenant.workspace_id, environment_id, if_match=etag(first.id, first.version)
+    )
+    second = await begin(service, desktop)
+    assert second.episode == first.episode + 1
+    for body in [intent, OpenViewer(mode="control")]:
+        with pytest.raises(ServiceError):
+            await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, body)
+    grant = await viewer.open_viewer(
+        service.runtime,
+        actor,
+        service.tenant.workspace_id,
+        environment_id,
+        OpenViewer(mode="control", generation=second.generation, episode=second.episode),
+    )
+    assert grant.episode == second.episode
+
+
+@pytest.mark.parametrize("mode", ["view", "control"])
+async def test_loss_fences_inflight_viewer_publication(service, desktop, mode):
+    from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments import renewal
+
+    _, environment_id, actor, _, _, state = desktop
+    initial = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    state["grant_entered"], state["grant_release"] = asyncio.Event(), asyncio.Event()
+    pending = asyncio.create_task(
+        begin(service, desktop)
+        if mode == "control"
+        else viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
+    )
+    await asyncio.wait_for(state["grant_entered"].wait(), 5)
+    try:
+        async with transaction(service.runtime.storage) as session:
+            (await session.get(EnvironmentRow, environment_id)).renew_at = await now(session)
+        claim = await renewal.claim(service.runtime, environment_id)
+        assert claim is not None
+        await renewal.publish(
+            service.runtime, claim, provider_error("e2b", "missing", EnvironmentProviderErrorCategory.MISSING)
+        )
+    finally:
+        state["grant_release"].set()
+    with pytest.raises(ServiceError):
+        await asyncio.wait_for(pending, 5)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, initial.id)
+        assert row.generation == initial.generation + 1
+        assert row.failure == "environment_lost" and row.viewer is None and row.claim_id is None
+
+
+async def test_start_loss_invalidates_original_native_target_idempotently(service, desktop):
+    from a13n_service.infra.db import lock
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments import lifecycle
+
+    _, environment_id, actor, *_ = desktop
+    initial = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    async with transaction(service.runtime.storage) as session:
+        environment = await lock(session, EnvironmentRow, environment_id)
+        await lifecycle.begin(session, environment, "starting")
+        operation = await lifecycle.claim_locked(service.runtime, session, environment, owner="test")
+        assert operation is not None
+    outcome = lifecycle.Outcome(operation.target.state, lifecycle.LOST)
+    await lifecycle.publish(service.runtime, operation, outcome)
+    await lifecycle.publish(service.runtime, operation, outcome)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, initial.id)
+        assert row.generation == initial.generation + 1 and row.failure == "environment_lost"
+    with pytest.raises(ServiceError):
+        await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())

@@ -125,7 +125,14 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
         await asyncio.wait_for(running, 120)
         run = await runs_kit.get_run(service, first["run"]["id"])
         assert run["status"] == "completed", run.get("failure")
-        claimed = await service.client.post(root + "/desktop-viewer", json={"mode": "control"})
+        claimed = await service.client.post(
+            root + "/desktop-viewer",
+            json={
+                "mode": "control",
+                "generation": requested.json()["generation"],
+                "episode": requested.json()["episode"],
+            },
+        )
         assert claimed.status_code == 200, claimed.text
         access = claimed.json()
         controller = await asyncio.to_thread(RFB, access["websocket_url"], access["password"])

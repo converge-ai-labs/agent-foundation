@@ -14597,6 +14597,30 @@
       "OpenViewer": {
         "additionalProperties": false,
         "properties": {
+          "episode": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
           "mode": {
             "default": "view",
             "enum": [
@@ -14605,6 +14629,18 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "viewer_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewer Id"
           }
         },
         "title": "OpenViewer",
@@ -24666,6 +24702,17 @@
           "password": {
             "title": "Password",
             "type": "string"
+          },
+          "viewer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewer Id"
           },
           "websocket_url": {
             "title": "Websocket Url",

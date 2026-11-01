@@ -9614,12 +9614,18 @@ export interface components {
     };
     /** OpenViewer */
     OpenViewer: {
+      /** Episode */
+      episode?: number | null;
+      /** Generation */
+      generation?: number | null;
       /**
        * Mode
        * @default view
        * @enum {string}
        */
       mode?: "view" | "control";
+      /** Viewer Id */
+      viewer_id?: string | null;
     };
     /** OpenedApp */
     OpenedApp: {
@@ -13075,6 +13081,8 @@ export interface components {
       mode: "view" | "control";
       /** Password */
       password: string;
+      /** Viewer Id */
+      viewer_id?: string | null;
       /** Websocket Url */
       websocket_url: string;
     };

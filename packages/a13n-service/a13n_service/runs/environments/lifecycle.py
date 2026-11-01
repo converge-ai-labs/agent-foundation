@@ -696,6 +696,10 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             )
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
+            if fault is LOST:
+                from a13n_service.runs.environments.desktop.identity import invalidate
+
+                await invalidate(session, handle.state)
             return
         reached = _REACHES[operation.phase]
         environment.status = reached

@@ -131,6 +131,10 @@ export function EnvironmentDesktop({
   const [connected, setConnected] = useState(false);
   const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
+  const openingAuthority = useRef<{
+    control: Control;
+    mode: Viewer["mode"];
+  } | null>(null);
   const screen = useRef<HTMLDivElement>(null),
     rfb = useRef<RFB | null>(null);
   const epoch = useRef(0),
@@ -160,6 +164,7 @@ export function EnvironmentDesktop({
   function closeLocal() {
     epoch.current++;
     openingRef.current = false;
+    openingAuthority.current = null;
     setOpening(false);
     const instance = rfb.current;
     rfb.current = null;
@@ -177,7 +182,9 @@ export function EnvironmentDesktop({
     revalidateSession(cause);
   }
   async function openViewer(mode: Viewer["mode"]) {
-    if (openingRef.current) return;
+    const initial = authority.current;
+    if (openingRef.current || !initial) return;
+    openingAuthority.current = { control: initial, mode };
     openingRef.current = true;
     setOpening(true);
     const ticket = epoch.current;
@@ -185,12 +192,19 @@ export function EnvironmentDesktop({
       const grant = data(
         await api.POST("/api/v1/environments/{environment_id}/desktop-viewer", {
           params: { path },
-          body: { mode },
+          body: {
+            mode,
+            generation: initial.generation,
+            episode: initial.episode,
+            viewer_id:
+              mode === "view" ? currentViewer.current?.viewer_id : undefined,
+          },
         }),
       );
       if (!alive.current || ticket !== epoch.current) return;
       if (
         !authority.current ||
+        !permitsViewer(initial, grant, actorId) ||
         !permitsViewer(authority.current, grant, actorId)
       )
         throw new Error(
@@ -202,6 +216,7 @@ export function EnvironmentDesktop({
     } finally {
       if (alive.current && ticket === epoch.current) {
         openingRef.current = false;
+        openingAuthority.current = null;
         setOpening(false);
       }
     }
@@ -221,11 +236,20 @@ export function EnvironmentDesktop({
     };
   }, []);
 
-  // Revoke local input immediately when metadata invalidates its generation or lease.
+  // Invalidate pending Connect intent too, including return/retake in another tab.
   useEffect(() => {
+    const pending = openingAuthority.current;
+    const pendingChanged =
+      pending &&
+      (!control ||
+        control.generation !== pending.control.generation ||
+        control.episode !== pending.control.episode ||
+        (pending.mode === "control" &&
+          (control.control !== "human" || control.controller_id !== actorId)));
     if (
-      viewer &&
-      (query.isError || !control || !permitsViewer(control, viewer, actorId))
+      query.isError ||
+      pendingChanged ||
+      (viewer && (!control || !permitsViewer(control, viewer, actorId)))
     )
       actions.current.close();
   }, [control, viewer, actorId, query.isError]);

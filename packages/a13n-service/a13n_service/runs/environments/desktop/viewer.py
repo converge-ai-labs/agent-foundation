@@ -24,6 +24,8 @@ async def open_viewer(
         environment, row, selected = await control.find(session, runtime, actor, workspace_id, environment_id)
         current = await now(session)
         if body.mode == "control":
+            if (body.generation, body.episode) != (row.generation, row.episode):
+                raise conflict("environment", environment_id, "desktop_control_changed")
             owner = await session.get(EnvironmentRow, row.environment_id) if row.environment_id else None
             if (
                 row.control != "human"
@@ -40,30 +42,44 @@ async def open_viewer(
             viewer.expires_at = min(viewer.expires_at, row.expires_at)
             return viewer
         # Reserve before remote dispatch, so an uncertain call also prevents idle reclamation.
-        readers = await session.scalar(
-            select(func.count())
-            .select_from(DesktopViewerRow)
-            .where(DesktopViewerRow.control_id == row.id, DesktopViewerRow.expires_at > current)
-        )
-        if (readers or 0) >= 16:
-            raise conflict("environment", environment_id, "desktop_viewer_limit")
-        viewer_id = new_object_id("dview")
         deadline = current + timedelta(seconds=60)
-        key, generation, episode = row.target_key, row.generation, max(1, row.episode)
-        session.add(
-            DesktopViewerRow(
-                id=viewer_id,
+        key, generation = row.target_key, row.generation
+        if body.viewer_id is not None:
+            reader = await lock(session, DesktopViewerRow, body.viewer_id)
+            if (
+                reader is None
+                or reader.control_id != row.id
+                or reader.environment_id != environment.id
+                or reader.principal_id != actor.id
+                or reader.expires_at <= current
+                or reader.guest_generation is None
+            ):
+                raise conflict("environment", environment_id, "desktop_viewer_unavailable")
+            reader.expires_at = max(reader.expires_at, deadline)
+        else:
+            readers = await session.scalar(
+                select(func.count())
+                .select_from(DesktopViewerRow)
+                .where(DesktopViewerRow.control_id == row.id, DesktopViewerRow.expires_at > current)
+            )
+            if (readers or 0) >= 16:
+                raise conflict("environment", environment_id, "desktop_viewer_limit")
+            reader = DesktopViewerRow(
+                id=new_object_id("dview"),
                 control_id=row.id,
                 environment_id=environment.id,
                 principal_id=actor.id,
-                episode=episode,
+                episode=max(1, row.episode),
                 expires_at=deadline,
             )
-        )
+            session.add(reader)
+        viewer_id, episode, guest_generation = reader.id, reader.episode, reader.guest_generation
     async with access.connection(runtime, selected, new_object_id("dopen")) as send:
         description = await send(wire.Describe())
         if not isinstance(description, wire.Description):
             raise conflict("environment", environment_id, "desktop_endpoint_unavailable")
+        if guest_generation is not None and description.generation != guest_generation:
+            raise conflict("environment", environment_id, "desktop_target_changed")
         route = viewer_url(description.websocket_url)
         granted = await send(
             wire.Grant(
@@ -93,6 +109,7 @@ async def open_viewer(
             assert reader is not None
             reader.guest_generation = description.generation
         return Viewer(
+            viewer_id=viewer_id,
             mode="view",
             websocket_url=route + "?token=" + quote(granted.token.get_secret_value(), safe=""),
             password=granted.password.get_secret_value(),

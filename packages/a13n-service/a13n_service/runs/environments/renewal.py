@@ -43,6 +43,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, open_provider, provider_identity
+from a13n_service.runs.environments.desktop import identity
 from a13n_service.runs.environments.lifecycle import LOST, Fault, fault_of, lost, reached_with, record_failure
 from a13n_service.runs.environments.schemas import EnvironmentFailure, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -163,7 +164,10 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
                 details={"reason": "provider"},
             )
         elif category == EnvironmentProviderErrorCategory.MISSING:
-            _fail(environment, lost(renewal.credential_changed), current)
+            fault = lost(renewal.credential_changed)
+            _fail(environment, fault, current)
+            if fault is LOST:
+                await identity.invalidate(session, renewal.target.state)
         else:
             logger.warning(
                 "Environment renewal failed",
