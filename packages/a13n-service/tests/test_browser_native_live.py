@@ -3,12 +3,8 @@
 import asyncio
 import base64
 import os
-import re
-import shlex
-import shutil
 import struct
 import subprocess
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -24,110 +20,6 @@ from .environment_providers.desktop_access_rfb import RFB
 from .http_support import serve_http
 
 pytestmark = pytest.mark.anyio
-
-
-def native_display(root):
-    for proc in Path("/proc").glob("[0-9]*/environ"):
-        try:
-            env = dict(item.split(b"=", 1) for item in proc.read_bytes().split(b"\0") if b"=" in item)
-            if str(root).encode() in env.get(b"XAUTHORITY", b"") and b"DISPLAY" in env:
-                return {**os.environ, "DISPLAY": env[b"DISPLAY"].decode(), "XAUTHORITY": env[b"XAUTHORITY"].decode()}
-        except (OSError, ValueError):
-            continue
-    raise RuntimeError("test display not found")
-
-
-def native_windows(root):
-    env = native_display(root)
-    tree = subprocess.run(["xwininfo", "-root", "-tree"], env=env, capture_output=True, text=True, timeout=2)
-    # Output only window IDs and geometry, not titles or page URLs.
-    windows = re.findall(r"(0x[0-9a-f]+) .*? (\d+x\d+[+-]\d+[+-]\d+)", tree.stdout)[:50]
-    focused = native_x11_focus(root).get("input_focus", "")
-    if re.fullmatch(r"0x[0-9a-f]+", focused) and focused not in {xid for xid, _ in windows}:
-        windows.append((focused, "unknown"))
-    details = []
-    window_pids = set()
-    for xid, geometry in windows:
-        props = subprocess.run(
-            ["xprop", "-id", xid, "WM_CLASS", "_NET_WM_PID", "WM_STATE", "_NET_WM_STATE"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        lines = [
-            line[:180]
-            for line in props.stdout.splitlines()
-            if line.startswith(("WM_CLASS(", "_NET_WM_PID(", "WM_STATE(", "_NET_WM_STATE(", "\t\twindow state:"))
-        ]
-        for line in lines:
-            match = re.fullmatch(r"_NET_WM_PID\(CARDINAL\) = (\d+)", line)
-            if match:
-                window_pids.add(int(match.group(1)))
-        attributes = subprocess.run(["xwininfo", "-id", xid], env=env, capture_output=True, text=True, timeout=2)
-        state = next((line.strip() for line in attributes.stdout.splitlines() if "Map State:" in line), "unknown")
-        details.append({"xid": xid, "geometry": geometry, "map_state": state, "properties": lines})
-    processes = []
-    for proc in Path("/proc").glob("[0-9]*/environ"):
-        try:
-            fields = dict(item.split(b"=", 1) for item in proc.read_bytes().split(b"\0") if b"=" in item)
-            pid = int(proc.parent.name)
-            owned_display = fields.get(b"XAUTHORITY", b"").decode() == env["XAUTHORITY"]
-            if not owned_display and pid not in window_pids:
-                continue
-            exe = os.readlink(proc.parent / "exe")
-            if pid in window_pids or Path(exe).name in ("chrome", "chromium", "x11vnc", "openbox"):
-                processes.append(
-                    {"pid": int(proc.parent.name), "exe": exe, "display": fields.get(b"DISPLAY", b"").decode()}
-                )
-        except (OSError, ValueError, UnicodeDecodeError):
-            continue
-    return {"display": env["DISPLAY"], "windows": details, "processes": processes[:30]}
-
-
-async def start_raw_probe(root):
-    try:
-        env = await blocking(native_display, root)
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(Path(__file__).with_name("native_input_probe.py")),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        assert process.stdout is not None
-        try:
-            ready = await asyncio.wait_for(process.stdout.readline(), 2)
-        except BaseException:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            raise
-        if ready != b"ready\n":
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            return None, "probe failed to start"
-        return process, "ready"
-    except Exception as exc:
-        return None, f"probe unavailable: {type(exc).__name__}"
-
-
-async def stop_raw_probe(process):
-    if process is None:
-        return []
-    already_exited = process.returncode is not None
-    if not already_exited:
-        process.terminate()
-    try:
-        output, _ = await asyncio.wait_for(process.communicate(), 2)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise
-    if already_exited:
-        raise RuntimeError(f"probe exited early: {process.returncode}")
-    return [line for line in output.decode(errors="replace").splitlines() if line in ("raw_press", "raw_release")][:20]
 
 
 def native_x11_focus(root, screenshot=None):
@@ -170,18 +62,6 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
     chromium = os.environ.get("A13N_TEST_BROWSER_NATIVE_CHROMIUM")
     if not chromium:
         pytest.skip("Requires A13N_TEST_BROWSER_NATIVE_CHROMIUM and installed Linux desktop binaries")
-    x11vnc = shutil.which("x11vnc")
-    assert x11vnc
-    wrapper_dir = tmp_path / "bin"
-    wrapper_dir.mkdir()
-    debug_log = tmp_path / "x11vnc-debug.log"
-    wrapper = wrapper_dir / "x11vnc"
-    wrapper.write_text(
-        f'#!/bin/sh\nif [ "$1" = -storepasswd ]; then exec {shlex.quote(x11vnc)} "$@"; fi\n'
-        f'exec {shlex.quote(x11vnc)} -dk -o {shlex.quote(str(debug_log))} "$@"\n'
-    )
-    wrapper.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{wrapper_dir}:{os.environ['PATH']}")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-test-not-owned")
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     identity = "browser_native_" + uuid4().hex[:16]
@@ -234,62 +114,27 @@ async def test_native_profile_input_and_recovery(tmp_path, monkeypatch):
                     "x11": await blocking(native_x11_focus, tmp_path, screenshot),
                 }
 
-            await connection.evaluate(
-                page,
-                "window.keyEvents = []; ['keydown', 'keypress', 'keyup', 'input'].forEach(t => "
-                "document.addEventListener(t, e => window.keyEvents.push([t, e.key, e.isTrusted]), true))",
-            )
-            try:
-                before_input = await input_diagnostics()
-            except Exception as exc:
-                before_input = {"error": type(exc).__name__}
-            probe, probe_status = await start_raw_probe(tmp_path)
+            before_input = await input_diagnostics()
             before_input["send_seconds_remaining"] = (grant.expires_at - datetime.now(UTC)).total_seconds()
-            raw_events = []
+            for down in (1, 0):
+                await blocking(rfb.send, struct.pack("!BBHI", 4, down, 0, ord("n")))
             try:
-                try:
-                    for down in (1, 0):
-                        await blocking(rfb.send, struct.pack("!BBHI", 4, down, 0, ord("n")))
-                    async with asyncio.timeout(5):
-                        while await connection.evaluate(page, "document.querySelector('input').value") != "n":
-                            await asyncio.sleep(0.1)
-                finally:
-                    try:
-                        raw_events = await stop_raw_probe(probe)
-                    except Exception as exc:
-                        probe_status = f"probe cleanup error: {type(exc).__name__}"
+                async with asyncio.timeout(5):
+                    while await connection.evaluate(page, "document.querySelector('input').value") != "n":
+                        await asyncio.sleep(0.1)
             except TimeoutError:
-                try:
-                    try:
-                        window_info = await blocking(native_windows, tmp_path)
-                        cdp_window = await connection.send("Browser.getWindowForTarget", {"targetId": target})
-                    except Exception as exc:
-                        window_info, cdp_window = f"diagnostic error: {type(exc).__name__}", None
-                    output = Path("test-results")
-                    output.mkdir(exist_ok=True)
-                    print(
-                        "Native input diagnostics:",
-                        {
-                            "frame": frame,
-                            "window_info": window_info,
-                            "cdp_window": cdp_window,
-                            "raw_probe": {"status": probe_status, "events": raw_events},
-                            "before": before_input,
-                            "after": await input_diagnostics(output / "native-input-desktop.xwd"),
-                            "dom_events": await connection.evaluate(page, "window.keyEvents"),
-                            "x11vnc_events": [
-                                line
-                                for line in debug_log.read_text().splitlines()
-                                if "# keyboard(" in line or "XTestFakeKeyEvent(" in line
-                            ]
-                            if debug_log.exists()
-                            else "debug log missing",
-                        },
-                    )
-                    screenshot = await connection.send("Page.captureScreenshot", page=page)
-                    (output / "native-input-page.png").write_bytes(base64.b64decode(screenshot["data"]))
-                except Exception as exc:
-                    print(f"Native input diagnostics failed: {type(exc).__name__}")
+                output = Path("test-results")
+                output.mkdir(exist_ok=True)
+                print(
+                    "Native input diagnostics:",
+                    {
+                        "frame": frame,
+                        "before": before_input,
+                        "after": await input_diagnostics(output / "native-input-desktop.xwd"),
+                    },
+                )
+                screenshot = await connection.send("Page.captureScreenshot", page=page)
+                (output / "native-input-page.png").write_bytes(base64.b64decode(screenshot["data"]))
                 raise
             await provider.close()
             await asyncio.sleep(max(0, (grant.expires_at - datetime.now(UTC)).total_seconds()) + 0.5)
