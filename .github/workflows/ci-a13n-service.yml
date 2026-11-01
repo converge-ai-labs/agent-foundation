@@ -274,7 +274,7 @@ jobs:
         if: matrix.name == 'tests-1'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb openbox xauth x11vnc websockify
+          sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
 
       - name: Test native Browser lifecycle and Service assets
         if: matrix.name == 'tests-1'
