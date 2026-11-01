@@ -273,3 +273,58 @@ async def test_native_unconfirmed_cleanup_keeps_durable_fence(tmp_path, monkeypa
         if child and child.returncode is None:
             original_killpg(child.pid, signal.SIGKILL)
             await child.wait()
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "same_id", "stopped"),
+    [
+        (409, "exited", True, True),
+        (409, "created", True, True),
+        (409, "dead", True, True),
+        (409, "running", True, False),
+        (409, "paused", True, False),
+        (409, None, True, False),
+        (409, "exited", False, False),
+        (500, "exited", True, False),
+    ],
+)
+async def test_docker_observe_exec_race(tmp_path, code, status, same_id, stopped):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from a13n_service.providers.browser.docker import LABEL, Configuration, Docker
+    from a13n_service.providers.browser.selfhost import Allocation
+    from docker.errors import APIError, NotFound
+    from requests import Response
+
+    response = Response()
+    response.status_code = code
+    error = APIError("exec failed", response=response)
+    initial = SimpleNamespace(
+        id="container", labels={LABEL: "browser_race"}, status="running", exec_run=Mock(side_effect=error)
+    )
+    current = (
+        SimpleNamespace(id="container" if same_id else "other", labels={LABEL: "browser_race"}, status=status)
+        if status is not None
+        else NotFound("missing")
+    )
+    client = SimpleNamespace(
+        info=Mock(return_value={"ID": "daemon"}), containers=SimpleNamespace(get=Mock(side_effect=[initial, current]))
+    )
+    provider = Docker(tmp_path, client, Configuration())
+    allocation = Allocation(
+        "browser_race", tmp_path, {"daemon": "daemon", "container_id": "container", "runtime_id": "runtime"}
+    )
+    if stopped:
+        live = await provider.observe(allocation)
+        assert live.status == "stopped" and live.runtime_id == "runtime"
+        assert live.state["container_id"] == "container"
+    elif not same_id:
+        with pytest.raises(BrowserProviderError) as raised:
+            await provider.observe(allocation)
+        assert raised.value.code == "docker_identity_changed"
+    else:
+        with pytest.raises(APIError) as raised:
+            await provider.observe(allocation)
+        assert raised.value is error
+    assert client.containers.get.call_count == (1 if code != 409 else 2)

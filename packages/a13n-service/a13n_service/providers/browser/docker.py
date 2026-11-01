@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from docker import DockerClient
-from docker.errors import ImageNotFound, NotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_service.providers.browser.definition import BrowserProviderError, LiveBrowser
@@ -102,20 +102,28 @@ class Docker(SelfHosted):
             return LiveBrowser(state, status="stopped", runtime_id=state["runtime_id"])
         if container.status != "running":
             raise BrowserProviderError("docker_runtime_unavailable")
-        result = await blocking(
-            container.exec_run,
-            [
-                "python3",
-                "-I",
-                "-c",
-                "import json,pathlib; "
-                f"p=pathlib.Path('{ROOT}/runtime.json'); d=json.loads(p.read_text()); "
-                "s=pathlib.Path('/proc/'+str(d['pid'])+'/stat').read_text().rsplit(')',1)[1].split(); "
-                "d['ready']=d['ready'] and s[19]==d['started'] and s[0]!='Z' "
-                "and pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==d['boot']; "
-                "print(json.dumps(d))",
-            ],
-        )
+        try:
+            result = await blocking(
+                container.exec_run,
+                [
+                    "python3",
+                    "-I",
+                    "-c",
+                    "import json,pathlib; "
+                    f"p=pathlib.Path('{ROOT}/runtime.json'); d=json.loads(p.read_text()); "
+                    "s=pathlib.Path('/proc/'+str(d['pid'])+'/stat').read_text().rsplit(')',1)[1].split(); "
+                    "d['ready']=d['ready'] and s[19]==d['started'] and s[0]!='Z' "
+                    "and pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==d['boot']; "
+                    "print(json.dumps(d))",
+                ],
+            )
+        except APIError as error:
+            if error.response is None or error.response.status_code != 409:
+                raise
+            current = await self.container(allocation)
+            if current is not None and current.id == container.id and current.status in {"created", "exited", "dead"}:
+                return LiveBrowser(state, status="stopped", runtime_id=state["runtime_id"])
+            raise
         if result.exit_code != 0:
             raise BrowserProviderError("docker_start_pending")
         info = json.loads(result.output)
