@@ -52,6 +52,48 @@
       "title": "Authentication",
       "type": "object"
     },
+    "Browsers": {
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root"
+        },
+        "native_enabled": {
+          "default": false,
+          "title": "Native Enabled",
+          "type": "boolean"
+        },
+        "native_chromium": {
+          "default": "chromium",
+          "title": "Native Chromium",
+          "type": "string"
+        },
+        "docker_host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Docker Host"
+        }
+      },
+      "title": "Browsers",
+      "type": "object"
+    },
     "Composer": {
       "additionalProperties": false,
       "properties": {
@@ -165,6 +207,7 @@
         },
         "browser_control_max_seconds": {
           "default": 3600,
+          "maximum": 31536000,
           "minimum": 1,
           "title": "Browser Control Max Seconds",
           "type": "integer"
@@ -1971,6 +2014,9 @@
     },
     "environments": {
       "$ref": "#/$defs/Environments"
+    },
+    "browsers": {
+      "$ref": "#/$defs/Browsers"
     },
     "provisioning": {
       "$ref": "#/$defs/Provisioning"

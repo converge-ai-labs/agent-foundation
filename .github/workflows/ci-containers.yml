@@ -16,6 +16,9 @@ on:
       - "scripts/sandbox_smoke.py"
       - "scripts/k8s_local.py"
       - "deploy/docker/images/sandbox/**"
+      - "deploy/docker/images/browser/**"
+      - "packages/a13n-service/tests/test_browser_selfhost_live.py"
+      - "packages/a13n-service/tests/environment_providers/desktop_access_rfb.py"
       - "LICENSE"
       - "Makefile"
       - "crates/a13n-envd/**"
@@ -95,6 +98,18 @@ jobs:
               - 'frontend/tsconfig.base.json'
               - 'frontend/apps/a13n-console/package.json'
               - 'frontend/packages/a13n-ui/package.json'
+            browser:
+              - '.dockerignore'
+              - 'Makefile'
+              - '.github/workflows/ci-containers.yml'
+              - 'deploy/docker/images/browser/**'
+              - 'packages/a13n-service/a13n_service/providers/browser/**'
+              - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
+              - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
+              - 'packages/a13n-service/tests/environment_providers/desktop_access_rfb.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'LICENSE'
             sandbox:
               - '.dockerignore'
               - 'Makefile'
@@ -112,6 +127,7 @@ jobs:
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
+          BROWSER_CHANGED: ${{ steps.filter.outputs.browser }}
         run: |
           python - <<'PY'
           import json
@@ -127,6 +143,14 @@ jobs:
                   # The single-host stack's first run: Console, first administrator, sign-in and its generated key.
                   "smoke_target": "compose-smoke",
               })
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["BROWSER_CHANGED"] == "true":
+              for arch, runner in (("amd64", "ubuntu-24.04"), ("arm64", "ubuntu-24.04-arm")):
+                  images.append({
+                      "name": f"a13n-browser-{arch}",
+                      "runner": runner,
+                      "build_target": "image-browser",
+                      "check_target": "image-check-browser",
+                  })
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               for arch, runner in (("amd64", "ubuntu-24.04"), ("arm64", "ubuntu-24.04-arm")):
                   images.append({
@@ -155,6 +179,18 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Set up Python for Browser integration checks
+        if: startsWith(matrix.name, 'a13n-browser-')
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv for Browser integration checks
+        if: startsWith(matrix.name, 'a13n-browser-')
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
       - name: Build and smoke-check image
         run: make ${{ matrix.build_target }} ${{ matrix.check_target }} ${{ matrix.smoke_target }}

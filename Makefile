@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
 A13N_SERVICE_IMAGE ?= a13n-service:local
+BROWSER_IMAGE ?= a13n-browser:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 SANDBOX_SLIM_IMAGE ?= a13n-sandbox:local-slim
 SANDBOX_DESKTOP_IMAGE ?= a13n-sandbox:local-desktop
@@ -476,6 +477,10 @@ release-check: ## Validate a component version (component=a13n-harness|a13n-harn
 image-a13n-service: ## Build the local a13n-service container image, which serves the Console
 	@docker build -f deploy/docker/images/a13n-service/Dockerfile -t "$(A13N_SERVICE_IMAGE)" .
 
+.PHONY: image-browser
+image-browser: ## Build the private retained Chromium runtime for Service Browsers
+	@docker build -f deploy/docker/images/browser/Dockerfile -t "$(BROWSER_IMAGE)" .
+
 .PHONY: image-sandbox
 image-sandbox: ## Build the standard sandbox with a13n-envd and agent-browser
 	@docker build -f deploy/docker/images/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
@@ -489,7 +494,12 @@ image-sandbox-desktop: ## Build the sandbox with an automatically started X11 de
 	@docker build -f deploy/docker/images/sandbox/Dockerfile --build-arg SANDBOX_VARIANT=desktop -t "$(SANDBOX_DESKTOP_IMAGE)" .
 
 .PHONY: images
-images: image-a13n-service image-sandbox image-sandbox-slim image-sandbox-desktop ## Build all local container images
+images: image-a13n-service image-browser image-sandbox image-sandbox-slim image-sandbox-desktop ## Build all local container images
+
+.PHONY: image-check-browser
+image-check-browser: sync ## Check retained Chromium, real viewer input, files and critical-process supervision
+	@test "$$(docker image inspect --format '{{.Config.User}}' "$(BROWSER_IMAGE)")" = "browser"
+	@A13N_TEST_BROWSER_DOCKER_IMAGE="$(BROWSER_IMAGE)" uv run --locked pytest packages/a13n-service/tests/test_browser_selfhost_live.py -q -k 'profile_input_and_recovery or critical_child_exit'
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image
@@ -523,7 +533,7 @@ image-check-sandbox-slim: ## Smoke-check the minimal daemon image without develo
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-browser image-check-sandbox image-check-sandbox-slim image-check-sandbox-desktop
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks

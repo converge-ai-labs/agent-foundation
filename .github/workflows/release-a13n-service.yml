@@ -120,8 +120,16 @@ jobs:
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish-image:
-    name: Publish a13n-service image
+    name: Publish ${{ matrix.name }} image
     needs: [build-python, publish-python]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: a13n-service
+            file: deploy/docker/images/a13n-service/Dockerfile
+          - name: a13n-browser
+            file: deploy/docker/images/browser/Dockerfile
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -153,7 +161,7 @@ jobs:
       - name: Resolve image tags
         id: image-tags
         env:
-          IMAGE: ${{ env.A13N_SERVICE_IMAGE }}
+          IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           {
@@ -169,19 +177,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/docker/images/a13n-service/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.image-tags.outputs.tags }}
           build-args: |
             BUILD_VERSION=${{ needs.build-python.outputs.version }}
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=release-a13n-service
-          cache-to: type=gha,mode=max,scope=release-a13n-service
+          cache-from: type=gha,scope=release-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.name }}
 
       - name: Verify published image tags
         env:
-          IMAGE: ${{ env.A13N_SERVICE_IMAGE }}
+          IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}')"

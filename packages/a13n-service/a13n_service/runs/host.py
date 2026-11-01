@@ -180,7 +180,18 @@ class Host:
         parts = self.plan.parts[agent.revision_id]
         if agent.revision_id in self.browsers:
             features.append(
-                BrowserUseCapability(enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE)
+                BrowserUseCapability(
+                    enabled_tools=parts.browser_tools,
+                    on_human_control=lambda: BROWSER_GUIDANCE,
+                    file_instructions=(
+                        "Upload workspace assets into an observed file input: action='upload', ref, "
+                        "and 1-16 paths in the form asset:<asset_id>. Host or Environment paths are not accepted. "
+                        "Only unretired assets in this workspace may be uploaded. "
+                        "action='downloads' takes no ref/paths; it publishes completed tracked downloads "
+                        "as workspace assets and returns asset IDs, never Host paths. Publication requires "
+                        "workspace write authority. File transfer requires a supporting Browser provider."
+                    ),
+                )
             )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))

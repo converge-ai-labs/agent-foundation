@@ -1,6 +1,7 @@
 import {
   type Icon,
   BrainIcon,
+  GlobeIcon,
   LightbulbIcon,
   ChartBarIcon,
   PulseIcon,
@@ -39,6 +40,7 @@ export const navigationGroups: {
         ],
       ],
       ["connections", "Connections", PlugIcon],
+      ["browsers", "Browsers", GlobeIcon],
       [
         "environments",
         "Environments",
@@ -79,6 +81,7 @@ export function routeSkeleton(
     "/memories": 5,
     "/memory-spaces": 5,
     "/environments": 4,
+    "/browsers": 4,
     "/connections": 3,
     "/traces": 5,
     "/findings": 5,

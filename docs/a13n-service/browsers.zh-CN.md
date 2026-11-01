@@ -6,7 +6,7 @@ description: 接入已有浏览器或预留托管浏览器，再绑定到原生 
 浏览器资源让多个 run 和 thread 共享活跃浏览器。使用 `managed` 让 provider 分配浏览器，或使用 `external_cdp` 接入已有浏览器。Service 独立于[环境](environments.md)管理访问、标签页归属和逻辑选择。
 
 > [!IMPORTANT]
-> 外部 CDP 接入无需浏览器 provider。内置发行版尚无真实托管浏览器供应商或 Console 接管界面。托管分配需要部署方注册 provider，可通过 `GET /api/v1/provider-types/browser` 查询。人工控制需要兼容的托管 provider 和接入应用。
+> 推荐使用 Docker 自托管 provider。Native 供运维人员在 Linux 上调试。两者都支持跨停止/启动保留私有浏览器 profile，以及 Console 接管。先按下文配置运行环境，再通过 `GET /api/v1/provider-types/browser` 查询可用类型。外部 CDP 接入无需 provider。
 
 ## 预留并绑定浏览器
 
@@ -27,7 +27,45 @@ description: 接入已有浏览器或预留托管浏览器，再绑定到原生 
 
 将示例 ID 替换为返回的浏览器 ID。通过 `GET /api/v1/threads/{thread_id}/browser` 读取期望绑定；向 PUT 端点发送 JSON `null` 可解除绑定。绑定变更对后续 run 生效，已接受的 run 保留原绑定。子 thread 和 fork 得到的 thread 需要显式绑定。
 
-原生工具支持观察、读取、导航、操作、等待、标签页、对话框、截图及下载记录查看。在 provider 提供经过授权的传输边界之前，上传不可用。浏览器所在主机的文件路径不是 run 所挂载环境中的路径。
+原生工具支持观察、读取、导航、操作、等待、标签页、对话框、截图和文件。使用 Docker 或 Native 时，`browser_files` 上传的 `paths` 接受 `asset:<asset_id>` 引用，而非主机路径。Asset 必须在 run 的工作空间和冻结权限范围内可读。已完成且受跟踪的下载在 run 的 `write` 权限下发布为工作空间 asset，重复查看复用同一发布结果。外部 CDP 不支持文件传输。浏览器文件系统独立于挂载环境。
+
+## 配置自托管浏览器
+
+在同一 Linux 主机上运行 Service 和本地 Docker Engine。将 `browsers.root` 设为 Service 账号可写的持久私有目录。管理这些浏览器的所有 control 和 worker 进程必须使用相同目录、Engine 和主机网络。目录保留精确分配标识和终结屏障。每个 Docker 浏览器的 profile 保存在原容器文件系统中；不要清理保留的容器，也不要用新建容器替代。
+
+```toml
+[browsers]
+root = "/var/lib/a13n/browsers"
+docker_host = "unix:///var/run/docker.sock"
+```
+
+在源码 checkout 中构建浏览器镜像：
+
+```sh
+make image-browser BROWSER_IMAGE=a13n-browser:local
+```
+
+创建 `type: "docker"`、`configuration: {"image": "a13n-browser:local", "pull_policy": "never"}` 的浏览器 provider。Recipe 接受 `width` 和 `height`，空 recipe 使用默认桌面尺寸。`pull_policy: "if_missing"` 允许拉取本地缺失的显式指定镜像。镜像变更影响新分配；保留的浏览器继续使用原容器。
+
+容器化 Service 需要 Engine socket、`browsers.root` 持久挂载和主机网络。浏览器端点只发布在 Engine 主机的 loopback 接口。桥接网络中的 Service 容器无法通过自己的 loopback 访问这些端点。Browser 容器仍保留独立网络和文件系统隔离。Service 账号的 Engine 访问属于高权限运维授权，只应授予受信任部署。不支持远程 Engine 和多主机调度。CDP 和 guest viewer 端口必须保持私有；Console 使用经过认证的 Service WebSocket 转发，在 HTTPS 下使用 `wss`。反向代理必须转发 WebSocket upgrade。
+
+Native 要求 Linux，且运维人员已安装 Chromium、`Xvfb`、`openbox`、`xauth`、`x11vnc` 和 `websockify`，并可通过 PATH 找到。需显式启用：
+
+```toml
+[browsers]
+root = "/var/lib/a13n/browsers"
+native_enabled = true
+native_chromium = "/usr/bin/chromium"
+```
+
+创建 `type: "native"`、空配置的 provider。Native 以 Service 账号运行，用于本地调试，不提供租户隔离。Service 退出可能终止其 runtime；下一次获准启动只有在证明旧 writer 已停止后才复用私有 profile。Docker 浏览器在仅 Service 退出时继续存活。任一 provider 的 runtime 重启都会推进浏览器 generation，使旧引用和标签页归属失效。恢复的标签页不会按 URL 或标题重新分配。
+
+## 使用 Console
+
+1. 打开 **Providers → Browser providers**，配置可用的 provider 类型。
+2. 打开 **Browsers**，创建托管浏览器或接入外部 CDP。在详情中启动、停止或释放，并查看保留策略和故障状态。
+3. 在 session 中打开 thread 的 **Browser** 操作，选择浏览器、标签页范围和准备方式。在提交下一个 run 前保存。Run 详情单独显示其已捕获绑定，与 thread 的期望绑定区分。
+4. 选择 **Take control**，等待人工控制，再选择 **Open viewer**。需要更多时间时使用 **Renew control**，完成后使用 **Return control**。关闭 viewer 不会归还控制权或停止浏览器，有限租约仍会到期。
 
 ## 接入已有浏览器
 
@@ -82,19 +120,23 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/browsers/$BROWSER_ID/release
 
 ## 选择准备和保留策略
 
-| 选项                                                             | 行为                                                        |
-| ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| `preparation: "first_use"`                                       | 默认值。首次获准的浏览器调用触发准备；外部资源只建立连接。  |
-| `preparation: "run_start"`                                       | 开始执行时准备浏览器。                                      |
-| 创建时设置 `prepare: true`，或调用 `POST /browsers/{id}/prepare` | 在 agent 使用前显式准备。                                   |
-| `idle_seconds: 1800`                                             | 托管默认值。达到可释放的空闲时长后释放；允许 60–604800 秒。 |
-| `idle_seconds: null`                                             | 外部默认值。保留到显式释放或托管供应商会话过期。            |
+| 选项                                                             | 行为                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `preparation: "first_use"`                                       | 默认值。首次获准的浏览器调用触发准备；外部资源只建立连接。               |
+| `preparation: "run_start"`                                       | 开始执行时准备浏览器。                                                   |
+| 创建时设置 `prepare: true`，或调用 `POST /browsers/{id}/prepare` | 在 agent 使用前显式准备。                                                |
+| `stop_after_seconds: 1800`                                       | Docker/Native 默认值。在符合条件的空闲时间后停止 runtime，保留 profile。 |
+| `delete_after_seconds: null`                                     | Docker/Native 默认值。保留分配直到显式释放。                             |
+| `idle_seconds: 1800`                                             | 旧版终结式空闲释放；不支持停止的 provider 仍以此为默认值。               |
+| `idle_seconds: null`                                             | 旧版显式释放保留策略，也是外部资源默认值。                               |
+
+停止和删除策略分别从最后一次获准使用开始计时，接受 60–604800 秒或 null，不能与旧版 `idle_seconds` 同时设置。停止不会重置删除时钟。删除到期优先于停止。使用工作空间 `write` 权限和当前浏览器 `If-Match` 调用 `POST /api/v1/browsers/{id}/stop` 可显式停止。`stopped` 保留浏览器、绑定和 profile；下一次获准使用或 `prepare` 启动新 generation。已接受、运行中或等待中的借用 run、未结算调用、人工控制和有效归还义务都会阻止停止及空闲删除。
 
 准备与保留策略相互独立。读取浏览器资源的 `status`、`control`、`expires_at` 和 `failure`。`reserved` 表示尚无就绪的分配；`creating` 表示准备结果未确定；`ready` 表示已确认活跃会话。元数据读取不会触发分配，并发准备会收敛到同一分配。托管创建失败后，准备会检查原标识。只有供应商确认请求未分派时，才会重试创建。如果结果持续未确定，应显式释放以完成供应商清理隔离，再预留并绑定新浏览器。
 
 活跃 run、尚未结算的浏览器调用、人工控制和有效的待处理归还通知会阻止空闲释放。供应商到期仍可能终止会话。`lost` 或 `deleted` 的浏览器不会自动重启。需要替换时，创建并绑定另一个浏览器。
 
-Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service 访问权限，先读取浏览器的当前 ETag，再带 `If-Match` 调用 `POST /api/v1/browsers/{id}/release`。活跃使用导致释放不安全时，Service 会拒绝请求。托管释放会终止供应商会话，不保存可恢复的 profile。外部释放保留已有浏览器。借用者及活跃 claim 结束后，显式释放可以终止处于自动化控制的资源标识，即使旧调用的结果仍未知。历史仍保持未知；外部操作可能仍在运行。已释放的标识不能重用。期望绑定指向 lost 或 deleted 浏览器时，后续 run 会被拒绝，必须显式解除绑定或绑定另一个浏览器。
+Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service 访问权限，先读取浏览器的当前 ETag，再带 `If-Match` 调用 `POST /api/v1/browsers/{id}/release`。活跃使用导致释放不安全时，Service 会拒绝请求。托管释放会永久删除所属 runtime 和 profile。外部释放保留已有浏览器。借用者及活跃 claim 结束后，显式释放可以终止处于自动化控制的资源标识，即使旧调用的结果仍未知。历史仍保持未知；外部操作可能仍在运行。已释放的标识不能重用。期望绑定指向 lost 或 deleted 浏览器时，后续 run 会被拒绝，必须显式解除绑定或绑定另一个浏览器。
 
 ## 选择标签页访问范围
 
@@ -104,11 +146,11 @@ Run 完成和解除绑定都会保留浏览器及标签页。要释放 Service �
 
 ## 接管并归还控制权
 
-对于支持 viewer 的托管资源，接入应用通过直接 HTTP 调用实现下列流程。接管、续期、归还和交互视图访问不进入 MCP 发现。
+Console 为支持 viewer 的托管资源提供此流程。接入应用使用相同的直接 HTTP 调用。接管、续期、归还和交互视图访问不进入 MCP 发现。
 
 1. 读取浏览器的当前 ETag，带 `If-Match` 和 `{"thread_id": "<bound-thread-id>", "lease_seconds": 300}` 调用 `POST /api/v1/browsers/{id}/takeover`。 控制租约从 Service 关闭准入时开始计时，包含 draining 阶段。
 2. 查询浏览器，直到 `control` 变为 `human`。`draining` 表示 Service 已关闭浏览器工具准入，正在等待此前获准的工作结束。结果未知的调用不会因超时被当作成功完成。
-3. 以控制方主体调用 `POST /api/v1/browsers/{id}/viewer`。返回的 URL 是敏感信息，请遵守有效期和响应的 `no-store` 策略。
+3. 以控制方主体调用 `POST /api/v1/browsers/{id}/viewer`。所有返回的 viewer 凭证均为敏感信息，请遵守响应的 `no-store` 策略。`protocol: "iframe"` 使用供应商 URL；`protocol: "vnc"` 使用同源 WebSocket URL 和 VNC 密码，并提供 `binary` 与 `a13n.browser.<token>` 子协议。即使 Service 离线，guest 也会对已有输入连接执行到期和撤销。
 4. 应用认为用户仍在操作时，向 `POST /api/v1/browsers/{id}/renew` 发送响应中的 `generation`、`episode` 和可选的 `lease_seconds`。在 `control_expires_at` 前续期，包括 draining 阶段。续期不需要 `If-Match`。控制方必须仍有浏览器权限和工作区 `run` 权限。
 5. 完成人工操作后，读取新的 ETag，带 `If-Match` 调用 `POST /api/v1/browsers/{id}/handback`。
 6. 等待 `control: "automation"`。Service 会先撤销交互视图输入、同步精确标签页并使旧引用失效，再开放工具。

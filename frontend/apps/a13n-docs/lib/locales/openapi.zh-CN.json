@@ -13,6 +13,7 @@
   "List Browsers": "列出浏览器",
   "List browser providers": "列出浏览器提供商",
   "Prepare Browser": "准备浏览器",
+  "Stop Browser": "停止浏览器",
   "Release Browser": "释放浏览器",
   "Sensitive, authorized control response; excluded from ordinary Browser reads.": "包含敏感信息的授权控制响应；普通浏览器查询不返回此信息。",
   "Takeover Browser": "接管浏览器",

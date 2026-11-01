@@ -21,6 +21,9 @@ class LiveBrowser:
     # Portable supplier state, encrypted by Service; never part of a resource read.
     state: dict[str, JsonValue] = field(repr=False)
     expires_at: datetime | None = None
+    # Retained allocations distinguish a stopped profile from a missing resource.
+    status: Literal["ready", "stopped"] = "ready"
+    runtime_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +53,22 @@ class BrowserProvider(Protocol):
         """
         ...
 
+    async def stop(self, allocation_id: str, state: dict[str, JsonValue]) -> LiveBrowser:
+        """Confirm runtime/input termination while retaining the exact allocation and profile.
+
+        Replays fence delayed starts of the stopped runtime, without stopping a newer runtime.
+        Only definitions advertising supports_stop implement stop/start.
+        """
+        ...
+
+    async def start(self, allocation_id: str, state: dict[str, JsonValue], *, generation: int) -> LiveBrowser:
+        """Start the retained profile once for this generation; never replace the allocation.
+
+        The generation is an idempotency key. Terminal deletion fences delayed starts.
+        An uncertain start is recovered by inspect, not resubmitted by Service.
+        """
+        ...
+
     async def connect(self, state: dict[str, JsonValue]) -> Chromium:
         """Borrow a browser-level CDP connection; close disconnects, not terminates."""
         ...
@@ -74,6 +93,14 @@ class BrowserProvider(Protocol):
         """
         ...
 
+    async def upload_file(self, state: dict[str, JsonValue], name: str, content: bytes) -> str:
+        """Stage authorized bytes in this runtime's private upload area; return its CDP path."""
+        ...
+
+    async def download_file(self, state: dict[str, JsonValue], guid: str, *, max_bytes: int) -> bytes:
+        """Read one tracked download GUID, never an arbitrary Host/profile path."""
+        ...
+
     async def close(self) -> None: ...
 
 
@@ -91,6 +118,8 @@ class BrowserProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C
     backend_identity: Callable[[C], JsonValue]
     provider_factory: Callable[[C, K | None, EndpointPolicy], Awaitable[BrowserProvider]]
     supports_viewer: bool = False
+    supports_stop: bool = False
+    supports_files: bool = False
 
     def validate_domain(self) -> None:
         if not isinstance(self.recipe_model, type) or not issubclass(self.recipe_model, BaseModel):

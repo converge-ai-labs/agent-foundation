@@ -80,6 +80,7 @@ from a13n_service.runs.browsers.maintenance import sweep as browser_sweep
 from a13n_service.runs.browsers.routes import router as browsers_router
 from a13n_service.runs.browsers.tables import (
     BrowserBlockedRow,
+    BrowserDownloadRow,
     BrowserOperationRow,
     BrowserRow,
     BrowserSelectionRow,
@@ -372,6 +373,7 @@ OSS = Distribution(
         ThreadBrowserRow,
         BrowserTabRow,
         BrowserSelectionRow,
+        BrowserDownloadRow,
         BrowserOperationRow,
         BrowserBlockedRow,
         EnvironmentTemplateRow,

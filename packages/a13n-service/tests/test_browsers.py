@@ -132,9 +132,9 @@ class Supplier:
         pass
 
 
-async def setup(service, runs_kit):
+async def setup(service, runs_kit, *, supplier=None, supports_stop=False, **policies):
     await runs_kit.pause_sweeps(service)
-    supplier = Supplier()
+    supplier = supplier or Supplier()
 
     async def factory(config, credential, policy):
         return supplier
@@ -147,6 +147,7 @@ async def setup(service, runs_kit):
         backend_identity=lambda config: "test",
         provider_factory=factory,
         supports_viewer=True,
+        supports_stop=supports_stop,
     )
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, definition)))
     service.app.state.runtime = service.runtime
@@ -155,7 +156,7 @@ async def setup(service, runs_kit):
     )
     assert response.status_code == 201, response.text
     response = await service.client.post(
-        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared"}
+        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared", **policies}
     )
     assert response.status_code == 201, response.text
     return supplier, response.json()

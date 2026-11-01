@@ -240,10 +240,12 @@ def _key_ring(encryption: Encryption) -> KeyRing:
 
 
 def _registry(distribution: Distribution, config: Settings) -> Registry:
+    from a13n_service.providers.browser.builtins import builtins
+
     environments = config.environments
     return Registry.of(
         offered(
-            distribution.providers,
+            (*distribution.providers, *builtins(config.browsers)),
             allow_local=config.provisioning.local.enabled,
             docker_host=environments.docker_host,
             docker_mount_roots=environments.docker_mount_roots,
@@ -400,11 +402,17 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.browsers.tables import BrowserRow
+        from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow
         from a13n_service.runs.devices.transport import install as install_device_transport
 
         if DeviceRow in distribution.tables:
             install_device_transport(app)
+        if BrowserRow in distribution.tables:
+            app.add_api_websocket_route(
+                "/api/v1/browsers/{browser_id}/viewer/connect", browser_viewer_relay, name="browser_viewer_connect"
+            )
         app.add_middleware(CredentialAccess, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))

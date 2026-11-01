@@ -368,6 +368,22 @@ class Environments(Section):
         return roots
 
 
+class Browsers(Section):
+    # The operator owns this persistent identity/fence directory; recipes cannot choose host paths.
+    root: Path | None = None
+    native_enabled: bool = False
+    native_chromium: str = "chromium"
+    docker_host: str | None = None
+
+    @model_validator(mode="after")
+    def explicit_root(self) -> "Browsers":
+        if self.native_enabled and self.root is None:
+            raise ValueError("browsers.root is required when Native is enabled")
+        if self.root is not None and (not self.root.is_absolute() or ".." in self.root.parts):
+            raise ValueError("browsers.root must be an absolute normalized path")
+        return self
+
+
 class LocalProvisioning(Section):
     # Local commands run under the Service account, without container isolation.
     enabled: bool = False
@@ -646,6 +662,7 @@ class Settings(Section):
     tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
     run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
+    browsers: Browsers = Field(default_factory=Browsers)
     provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     providers: Providers = Field(default_factory=Providers)

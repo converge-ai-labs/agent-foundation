@@ -11,7 +11,7 @@ from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import JsonValue
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import Envelope, SecretLocation
@@ -22,7 +22,13 @@ from a13n_service.infra.outbound import validate_cdp_endpoint
 from a13n_service.providers.browser.definition import BrowserProvider, BrowserProviderError, LiveBrowser
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import BrowserProviderRow
-from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserOperationRow, BrowserRow
+from a13n_service.runs.browsers.tables import (
+    BrowserBlockedRow,
+    BrowserOperationRow,
+    BrowserRow,
+    BrowserSelectionRow,
+    BrowserTabRow,
+)
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
@@ -158,11 +164,15 @@ async def target(session: AsyncSession, runtime: Runtime, row: BrowserRow) -> Ta
     )
 
 
-async def unsettled(session: AsyncSession, browser_id: str) -> bool:
+async def unsettled(session: AsyncSession, browser_id: str, *, excluding_id: str | None = None) -> bool:
     return (
         await session.scalar(
             select(BrowserOperationRow.id)
-            .where(BrowserOperationRow.browser_id == browser_id, BrowserOperationRow.settled_at.is_(None))
+            .where(
+                BrowserOperationRow.browser_id == browser_id,
+                BrowserOperationRow.settled_at.is_(None),
+                BrowserOperationRow.id != excluding_id,
+            )
             .limit(1)
         )
         is not None
@@ -230,6 +240,39 @@ async def mark_lost(session: AsyncSession, row: BrowserRow, reason: str) -> None
     )
 
 
+async def invalidate_runtime(session: AsyncSession, row: BrowserRow) -> None:
+    """Retire exact target/control provenance; restored pages acquire no old ownership."""
+    row.observation_epoch += 1
+    row.viewer = row.human_baseline = None
+    row.viewer_id = row.controller_id = row.controller_thread_id = None
+    row.control = "automation"
+    row.control_expires_at = row.control_due_at = None
+    row.viewer_revoked = False
+    await session.execute(delete(BrowserSelectionRow).where(BrowserSelectionRow.browser_id == row.id))
+    await session.execute(delete(BrowserTabRow).where(BrowserTabRow.browser_id == row.id))
+    await session.execute(
+        update(BrowserBlockedRow).where(BrowserBlockedRow.browser_id == row.id).values(suppressed=True)
+    )
+
+
+async def prepare_intent(session: AsyncSession, row: BrowserRow, *, operation_id: str | None = None) -> None:
+    usable(row)
+    if row.status == "reserved":
+        row.status = "creating"
+    elif row.status == "stopped":
+        if await unsettled(session, row.id, excluding_id=operation_id):
+            raise conflict("browser", row.id, "browser_operation_pending")
+        row.generation += 1
+        row.start_dispatched = False
+        row.status = "starting"
+        await invalidate_runtime(session, row)
+
+
+def stop_intent(row: BrowserRow) -> None:
+    row.status = "stopping"
+    row.observation_epoch += 1
+
+
 async def prepare(
     runtime: Runtime,
     workspace_id: str,
@@ -241,9 +284,7 @@ async def prepare(
     """Start allocation once. Another caller or maintenance can complete the same intent."""
     async with transaction(runtime.storage) as session:
         row = await find(session, workspace_id, browser_id, lock=True)
-        usable(row)
-        if row.status == "reserved":
-            row.status = "creating"
+        await prepare_intent(session, row)
     await reconcile(runtime, workspace_id, browser_id, policy=policy, inspect_ready=inspect_ready)
 
 
@@ -260,18 +301,23 @@ async def reconcile(
     async with transaction(runtime.storage) as session:
         row = await find(session, workspace_id, browser_id, lock=True)
         current = await now(session)
-        phases = {"creating", "deleting", "ready"} if inspect_ready else {"creating", "deleting"}
+        phases = {"creating", "starting", "stopping", "deleting"}
+        if inspect_ready:
+            phases.update(("ready", "stopped"))
         if row.status not in phases or (row.claim_until is not None and row.claim_until > current):
             return
         selected = await target(session, runtime, row)
         phase, create = row.status, row.status == "creating" and not row.create_dispatched
-        if phase == "creating" and selected.account is not None and not selected.account.enabled:
+        start = phase == "starting" and not row.start_dispatched
+        if phase in {"creating", "starting"} and selected.account is not None and not selected.account.enabled:
             row.failure = "browser_provider_disabled"
             return
         row.claim_id = claim_id
         row.claim_until = current + timedelta(seconds=runtime.settings.providers.operation_seconds + 15)
         if phase == "creating":
             row.create_dispatched = True
+        elif phase == "starting":
+            row.start_dispatched = True
     live: LiveBrowser | None = None
     failure: str | None = None
     not_dispatched = False
@@ -289,6 +335,12 @@ async def reconcile(
                 with anyio.fail_after(runtime.settings.providers.operation_seconds):
                     if phase == "deleting":
                         await provider.delete(browser_id, selected.state)
+                    elif phase == "stopping":
+                        assert selected.state is not None
+                        live = await provider.stop(browser_id, selected.state)
+                    elif start:
+                        assert selected.state is not None
+                        live = await provider.start(browser_id, selected.state, generation=selected.generation)
                     elif create:
                         recipe = runtime.registry.get("browser", selected.account.type).recipe_model.model_validate(
                             selected.recipe
@@ -296,8 +348,10 @@ async def reconcile(
                         live = await provider.create(browser_id, recipe)
                     else:
                         live = await provider.inspect(browser_id, selected.state)
-                        if live is None and phase == "creating":
-                            failure = "browser_create_unresolved"
+                        if live is None and phase in {"creating", "starting"}:
+                            failure = f"browser_{'create' if phase == 'creating' else 'start'}_unresolved"
+                        elif phase == "starting" and live is not None and live.status == "stopped":
+                            failure = "browser_start_unresolved"
     except BrowserProviderError as error:
         # Provider codes are internal categories, never upstream exception text.
         failure = "browser_provider_failed"
@@ -313,6 +367,8 @@ async def reconcile(
         if failure is not None:
             if phase == "creating" and create and not_dispatched:
                 row.create_dispatched = False
+            elif phase == "starting" and start and not_dispatched:
+                row.start_dispatched = False
             return
         if phase == "deleting":
             row.status = "deleted"
@@ -320,14 +376,20 @@ async def reconcile(
             row.viewer_id = row.controller_id = row.controller_thread_id = None
             row.control = "automation"
             row.control_expires_at = None
-        elif phase == "ready" and live is None:
+        elif phase in {"ready", "stopped"} and live is None:
             await mark_lost(session, row, "browser_lost")
         else:
             assert live is not None
+            if phase in {"ready", "stopped"} and live.runtime_id != row.runtime_id:
+                row.generation += 1
+                await invalidate_runtime(session, row)
+            if live.status == "stopped" and phase != "stopped":
+                await invalidate_runtime(session, row)
             row.handle = protect(runtime, row, "handle", live.state)
+            row.runtime_id = live.runtime_id
             row.expires_at = live.expires_at
-            row.status = "ready"
-            if phase == "creating":
+            row.status = live.status
+            if phase in {"creating", "starting"}:
                 row.last_used_at = await now(session)
             await expire(session, row)
 

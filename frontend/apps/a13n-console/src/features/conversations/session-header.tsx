@@ -15,6 +15,7 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  GlobeIcon,
   PencilSimpleIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
@@ -36,6 +37,7 @@ import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
 import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
+import { ThreadBrowserDialog } from "../browsers/thread-browser";
 import { SessionEditor } from "./session-editor";
 import { sessionTitle } from "./session-identity";
 import { isInteractive } from "./transcript/run-actions";
@@ -72,6 +74,7 @@ export function SessionHeader() {
   const { total } = useThreadRuns(runId ? threadId : "", runId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
+  const [browser, setBrowser] = useState(false);
   const [editing, setEditing] = useState(false);
   const title = session.data && sessionTitle(session.data);
   const [execution, setExecution] = useState(false);
@@ -205,6 +208,12 @@ export function SessionHeader() {
             </MenuItem>
           )}
           {thread && (
+            <MenuItem onClick={() => setBrowser(true)}>
+              <GlobeIcon size={14} aria-hidden="true" />
+              {t("Browser")}
+            </MenuItem>
+          )}
+          {thread && (
             <MenuItem onClick={() => setMounts(true)}>
               <MonitorIcon size={14} aria-hidden="true" />
               {t("Environments and memory")}
@@ -237,6 +246,13 @@ export function SessionHeader() {
           </MenuItem>
         </MenuPopup>
       </Menu>
+      {browser && thread && (
+        <ThreadBrowserDialog
+          key={thread.id}
+          thread={thread}
+          onClose={() => setBrowser(false)}
+        />
+      )}
       {thread && (
         <ThreadMountsDialog
           thread={thread}

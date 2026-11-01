@@ -230,6 +230,30 @@ function RunDetails({ selected }: { selected: Run }) {
           </>
         )}
       </Section>
+      <Section title={t("Captured browser")} collapsible>
+        {run.browser_binding ? (
+          <div className="flex flex-col gap-2">
+            <CopyableId value={run.browser_binding.browser_id} />
+            <p className={styles.note}>
+              {t(
+                run.browser_binding.tab_access === "global"
+                  ? "All browser tabs"
+                  : "Thread-owned tabs",
+              )}{" "}
+              ·{" "}
+              {t(
+                run.browser_binding.preparation === "run_start"
+                  ? "When the run starts"
+                  : "On first browser tool use",
+              )}
+            </p>
+          </div>
+        ) : (
+          <p className={styles.note}>
+            {t("No browser captured for this run.")}
+          </p>
+        )}
+      </Section>
       <Section title={t("Attempts")}>
         <ErrorNotice error={attempts.error} />
         {attempts.isPending ? (

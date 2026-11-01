@@ -12,6 +12,7 @@ import asyncio
 import base64
 import ctypes
 import json
+import math
 import os
 import re
 import secrets
@@ -20,6 +21,7 @@ import socket
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -59,6 +61,16 @@ def publish(path: Path, contents: str) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def control_address(root: Path):
+    """Keep the filesystem socket private without Linux's sockaddr_un path-length limit."""
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        yield f"/proc/self/fd/{descriptor}/control.sock"
+    finally:
+        os.close(descriptor)
 
 
 @dataclass
@@ -183,9 +195,43 @@ class Supervisor:
         if blocked:
             raise Refused("input_cleanup_unconfirmed")
 
-    async def grant(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def ensure(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Browser grants use absolute deadlines; Environment grant/renew keep v1 semantics."""
+        identity, expires_at = request.get("id"), request.get("expires_at")
+        if not isinstance(identity, str) or not re.fullmatch(r"[a-z][a-z0-9_]{7,71}", identity):
+            raise Refused("invalid_grant_id")
+        if (
+            not isinstance(expires_at, (int, float))
+            or isinstance(expires_at, bool)
+            or not math.isfinite(expires_at)
+            or expires_at <= time.time()
+        ):
+            raise Refused("invalid_expiry")
+        if identity in self.revocations:
+            raise Refused("grant_not_active")
+        existing = self.grants.get(identity)
+        if existing is not None:
+            if existing.state != "active" or existing.remaining() <= 0:
+                raise Refused("grant_not_active")
+            if expires_at > existing.expires_at:
+                existing.deadline = time.monotonic() + (expires_at - time.time())
+                existing.expires_at = expires_at
+                self.schedule_expiry(existing)
+        else:
+            await self.grant(
+                {"id": identity, "mode": "control", "epoch": self.epoch + 1, "ttl_seconds": MAX_TTL},
+                absolute_expiry=expires_at,
+            )
+            existing = self.grants[identity]
+        if existing.remaining() <= 0:
+            await self.revoke(existing, "expired")
+            raise Refused("grant_not_active")
+        return {**existing.public(self.generation, credential=True), "expires_at": existing.expires_at}
+
+    async def grant(self, request: dict[str, Any], *, absolute_expiry: float | None = None) -> dict[str, Any]:
         identity, mode, epoch = request.get("id"), request.get("mode"), request.get("epoch")
         ttl = request.get("ttl_seconds")
+        absolute_deadline = time.monotonic() + (absolute_expiry - time.time()) if absolute_expiry is not None else None
         if not isinstance(identity, str) or not re.fullmatch(r"[a-z][a-z0-9_]{7,71}", identity):
             raise Refused("invalid_grant_id")
         if mode not in ("view", "control") or type(epoch) is not int or epoch < 1:
@@ -260,9 +306,9 @@ class Supervisor:
                 password,
                 process,
                 port,
-                now + ttl,
+                absolute_deadline if absolute_deadline is not None else now + ttl,
                 now + MAX_LIFETIME,
-                time.time() + ttl,
+                absolute_expiry if absolute_expiry is not None else time.time() + ttl,
                 time.time() + MAX_LIFETIME,
             )
             self.grants[identity] = grant
@@ -329,10 +375,18 @@ class Supervisor:
                 return {"generation": self.generation, "input_cleanup_complete": True}
             if operation == "grant":
                 return await self.grant(request)
+            if operation == "ensure":
+                return await self.ensure(request)
             identity = request.get("id")
             if not isinstance(identity, str):
                 raise Refused("invalid_grant_id")
             grant = self.grants.get(identity)
+            if operation == "revoke_browser":
+                operation = "revoke"
+                request = {
+                    **request,
+                    "epoch": grant.epoch if grant is not None else self.revocations.get(identity, self.epoch + 1),
+                }
             if grant is None:
                 epoch = request.get("epoch")
                 if (
@@ -400,7 +454,7 @@ class Supervisor:
         import fcntl
 
         private_directory(self.root)
-        with (self.root / "lock").open("w") as lock:
+        with (self.root / "lock").open("w") as lock, control_address(self.root) as endpoint:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -420,7 +474,7 @@ class Supervisor:
                 # Do not advertise management readiness while Docker can only reach
                 # its port-forwarding listener and the WebSocket backend is absent.
                 await self.wait_ready(self.proxy_process, self.port)
-                async with await asyncio.start_unix_server(self.connection, path=address, limit=MAX_MESSAGE):
+                async with await asyncio.start_unix_server(self.connection, path=endpoint, limit=MAX_MESSAGE):
                     publish(self.root / "generation", self.generation)
                     loop = asyncio.get_running_loop()
                     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -508,7 +562,8 @@ def release_input(display_name: str, authority: str | None) -> None:
 
 async def call(root: Path, request: dict[str, Any]) -> dict[str, Any]:
     async def exchange() -> dict[str, Any]:
-        reader, writer = await asyncio.open_unix_connection(root / "control.sock", limit=MAX_MESSAGE)
+        with control_address(root) as endpoint:
+            reader, writer = await asyncio.open_unix_connection(endpoint, limit=MAX_MESSAGE)
         try:
             writer.write(json.dumps(request).encode() + b"\n")
             await writer.drain()

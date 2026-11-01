@@ -116,6 +116,11 @@ const EnvironmentsPage = lazy(() =>
     default: module.EnvironmentsPage,
   })),
 );
+const BrowsersPage = lazy(() =>
+  import("./features/browsers/page").then((module) => ({
+    default: module.BrowsersPage,
+  })),
+);
 const ConnectionsPage = lazy(() =>
   import("./features/connections/page").then((module) => ({
     default: module.ConnectionsPage,
@@ -289,6 +294,7 @@ function AppContent() {
                     >
                       <Route index element={<Navigate to="agents" replace />} />
                       <Route path="agents" element={<Agents />} />
+                      <Route path="browsers" element={<BrowsersPage />} />
                       <Route path="agents/new" element={<CreateAgent />} />
                       <Route path="agents/:agentId" element={<AgentDetail />} />
                       <Route path="schedules" element={<SchedulesPage />} />

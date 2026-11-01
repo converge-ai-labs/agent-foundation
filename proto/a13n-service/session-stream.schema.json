@@ -542,6 +542,40 @@
       "title": "AssetPart",
       "type": "object"
     },
+    "BrowserBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "browser_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Browser Id",
+          "type": "string"
+        },
+        "preparation": {
+          "default": "first_use",
+          "enum": [
+            "first_use",
+            "run_start"
+          ],
+          "title": "Preparation",
+          "type": "string"
+        },
+        "tab_access": {
+          "default": "thread",
+          "enum": [
+            "global",
+            "thread"
+          ],
+          "title": "Tab Access",
+          "type": "string"
+        }
+      },
+      "required": [
+        "browser_id"
+      ],
+      "title": "BrowserBinding",
+      "type": "object"
+    },
     "BuiltinSkillName": {
       "const": "platform-operations",
       "type": "string"
@@ -2943,6 +2977,17 @@
         "attempts": {
           "title": "Attempts",
           "type": "integer"
+        },
+        "browser_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BrowserBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "cancel_requested_at": {
           "anyOf": [

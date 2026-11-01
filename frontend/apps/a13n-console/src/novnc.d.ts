@@ -3,7 +3,11 @@ declare module "@novnc/novnc/lib/rfb" {
     constructor(
       target: HTMLElement,
       url: string,
-      options: { credentials: { password: string }; shared: boolean },
+      options: {
+        credentials: { password: string };
+        shared: boolean;
+        wsProtocols?: string[];
+      },
     );
     viewOnly: boolean;
     scaleViewport: boolean;

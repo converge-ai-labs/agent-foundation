@@ -374,10 +374,14 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str, lease:
                 runtime,
                 row,
                 "viewer",
-                Viewer(
-                    url=granted.url,
-                    expires_at=granted.expires_at,
-                    episode=episode,
+                Viewer.model_validate(
+                    {
+                        **granted.state,
+                        "url": granted.url,
+                        "expires_at": granted.expires_at,
+                        "episode": episode,
+                        "generation": generation,
+                    }
                 ).model_dump(mode="json"),
             )
             row.control = "human"
