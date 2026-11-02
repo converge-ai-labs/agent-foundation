@@ -16,7 +16,6 @@ from a13n_service.runs.thread_stream import frames_schema as thread_frames_schem
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
 SKILL_SCHEMA = ROOT / "packages/a13n-service/a13n_service/builtin_skills/platform-operations/schemas/agent-config.json"
-PLATFORM_SCHEMA = SKILL_SCHEMA.with_name("platform-tools.json")
 PLATFORM_TOOLS = ROOT / "packages/a13n-service/a13n_service/infra/platform_tools.json"
 
 
@@ -31,24 +30,6 @@ def platform_tools(distribution: Distribution = OSS) -> list[dict]:
         ],
         key=lambda tool: (PLATFORM_GROUPS.index(tool["group"]), tool["key"]),
     )
-
-
-def platform_schemas(distribution: Distribution = OSS) -> dict[str, object]:
-    """Release-bound model inputs compiled from the same explicit definitions as invocation."""
-    definitions = tuple(tool for contribution in distribution.platform_tools for tool in contribution())
-    validate_catalog(definitions)
-    return {
-        "tools": [
-            {
-                "name": tool.name,
-                "group": tool.group,
-                "effect": tool.effect,
-                "description": tool.description,
-                "input_schema": tool.inputs.model_json_schema(),
-            }
-            for tool in sorted(definitions, key=lambda tool: (PLATFORM_GROUPS.index(tool.group), tool.name))
-        ]
-    }
 
 
 def documents(distribution: Distribution = OSS) -> dict[Path, object]:
@@ -88,10 +69,6 @@ def main() -> None:
     changed = []
     outputs = {} if args.skills_only else documents(distribution)
     outputs[SKILL_SCHEMA] = AgentConfig.model_json_schema()
-    # The large release asset is ignored in Git, like the prepared Console.
-    # Ordinary drift checks cover committed contracts; asset checks are explicit.
-    if not args.check or args.skills_only:
-        outputs[PLATFORM_SCHEMA] = platform_schemas(distribution)
     for target, schema in outputs.items():
         if args.check:
             try:

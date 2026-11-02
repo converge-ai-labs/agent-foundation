@@ -14,7 +14,3 @@ a13n-service --config service.toml user disable --email someone@example.com
 ```
 
 Configuration is a TOML file (`--config` or `A13N_SETTINGS_FILE`) with `A13N_<SECTION>__<FIELD>` environment overrides; see the [configuration guide](../../docs/a13n-service/configuration.md). The package layout, import rules and behavior are specified in the [Service contract](../../spec/a13n-service/README.md); local development uses [`make dev`](../../dev/service/README.md).
-
-### Release Skill assets
-
-`make a13n-service-assets` prepares the Console and release Skill schemas with the selected Service dependencies installed. The generated `builtin_skills/platform-operations/schemas/platform-tools.json` is ignored in Git and included in both wheel and sdist. Rebuilding a wheel from the prepared sdist preserves this asset without importing Service or adding runtime dependencies to the isolated build environment. Release builds reject missing prepared assets. Ordinary contract drift checks validate committed contracts; `scripts/export-a13n-service-openapi.py --skills-only --check` additionally verifies the prepared Skill schemas. Local development uses the enabled tools' discovered schemas and does not require this optional offline file.

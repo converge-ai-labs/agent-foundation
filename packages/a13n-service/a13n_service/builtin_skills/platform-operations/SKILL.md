@@ -34,7 +34,7 @@ Read only the references needed for the current task:
 - [Versions and conflicts](references/versions-and-conflicts.md): observed versions, review and partial success.
 - [Permissions and errors](references/permissions-and-errors.md): scope and safe failures.
 
-Use `view`, `ls`, `glob`, and `grep` under this directory or `/platform-instance`. [AgentConfig](schemas/agent-config.json) is generated at build time from the shared request model. Use the enabled tools' discovered schemas for exact fields and required versions. Release bundles also include `schemas/platform-tools.json` for offline inspection, generated from the same explicit definitions during asset preparation. [Instance catalog](/platform-instance/catalog.json) is generated at process startup from the deployment's registered Providers and Toolsets. Catalog support does not mean that the workspace has configured or authorized a resource.
+Use `view`, `ls`, `glob`, and `grep` under this directory or `/platform-instance`. [AgentConfig](schemas/agent-config.json) is generated at build time from the shared request model. Use the enabled tools' discovered schemas for exact fields and required versions. [Instance catalog](/platform-instance/catalog.json) is generated at process startup from the deployment's registered Providers and Toolsets. Catalog support does not mean that the workspace has configured or authorized a resource.
 
 Keep questions focused on decisions that affect the result. Read current state before proposing a concrete change. When review is required, the request must show the exact target, parameters and original version. A changed target or configuration needs a new review. Report real result IDs and any unresolved errors.
 
