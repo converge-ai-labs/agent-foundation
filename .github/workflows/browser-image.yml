@@ -12,6 +12,7 @@ on:
       - 'packages/a13n-service/tests/test_browser_selfhost_live.py'
       - 'LICENSE'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/browser-image.yml'
       - '.dockerignore'
@@ -37,6 +38,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
