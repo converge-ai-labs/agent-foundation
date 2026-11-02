@@ -158,9 +158,16 @@ export function NativeWorkspace({
     () => readPreference("native-layout", "sidebar") === "tabs",
   );
   const [nativeActive, setNativeActive] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => readPreference("native-panel", "open") === "closed",
-  );
+  const panelKey = `native-panel.${threadId ?? "new"}`;
+  const [panelStates, setPanelStates] = useState<Record<string, boolean>>({});
+  const sidebarCollapsed =
+    panelStates[panelKey] ??
+    readPreference(panelKey, readPreference("native-panel", "open")) ===
+      "closed";
+  const setSidebarCollapsed = (collapsed: boolean) => {
+    setPanelStates((previous) => ({ ...previous, [panelKey]: collapsed }));
+    writePreference(panelKey, collapsed ? "closed" : "open");
+  };
   const narrow = useMediaQuery("(max-width: 999px)");
   const [narrowSidebar, setNarrowSidebar] = useState(false);
   const singleView =
@@ -212,9 +219,6 @@ export function NativeWorkspace({
   useEffect(() => {
     writePreference("native-layout", tabLayout ? "tabs" : "sidebar");
   }, [tabLayout]);
-  useEffect(() => {
-    writePreference("native-panel", sidebarCollapsed ? "closed" : "open");
-  }, [sidebarCollapsed]);
   const [width, setWidth] = usePanelSize("a13n.native.width", 44, 0, 100);
   const resizeStart = useRef<{
     pointerId: number;
