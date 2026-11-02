@@ -1,6 +1,6 @@
 # Harness UI WebUI
 
-This private English-only React application provides collaborative chats, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
+This private React application provides collaborative chats, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
 
 [Harness WebUI design](../../../spec/a13n-harness-ui/webui/06-design-guidelines.md) owns presentation; [workbench interaction](../../../spec/a13n-harness-ui/webui/04-workbench-interaction.md) owns behavior and recovery.
 
@@ -74,3 +74,21 @@ pnpm --dir frontend --filter a13n-harness-ui-webui run generate:check
 Generation uses the locked Python environment without opening an App. The drift check compares temporary outputs without modifying committed files. Runtime channel decoders remain separate from generated compile-time declarations.
 
 See [browser-server operation](../../../docs/a13n-harness-ui/webui.md) and [HTTP integration](../../../docs/a13n-harness-ui/http-api.md) for backend behavior and lifecycle boundaries.
+
+## Display language
+
+Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. Other workbench workflows remain in English. This is the first implementation slice of [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248), not complete application localization.
+
+Choose **System**, **English**, or **简体中文** during login/setup or in General settings. The preference belongs to this viewer's browser, independently of Console. System scans browser languages in order: `en` variants select English, `zh` variants select Simplified Chinese, and no supported match selects English. Automatic resolution never saves a manual language choice. If browser storage is unavailable, a manual choice lasts for the current page session.
+
+Switching updates text and document language without remounting the application or replaying requests. The existing MCP Apps Host-context observer forwards locale changes without remounting Apps or replaying tool results. Model/user content, source, credentials, provider diagnostics, identifiers and paths retain their original values.
+
+Messages live in application-owned `src/i18n/locales/{en,zh-CN}.json`. Use `useTranslation` from `src/i18n`, whole messages with interpolation, i18next number formatting, and each language's plural categories. Shared `a13n-ui` components receive translated strings from their callers. English fallback remains available at runtime; keep both catalogs complete for every message added in this slice.
+
+Run the focused catalog, preference and language-control checks from the repository root:
+
+```bash
+pnpm --dir frontend --filter a13n-harness-ui-webui test src/i18n
+```
+
+These tests also run in the existing Harness UI frontend CI suite. Catalog checks cover missing/empty values, interpolation and locale-required plurals, with invalid fixtures. Literal onboarding translation calls and dynamic login-state labels have focused coverage. Application-wide untranslated-source detection and the remaining conversation/configuration/native-panel workflows remain follow-up work under #1248.

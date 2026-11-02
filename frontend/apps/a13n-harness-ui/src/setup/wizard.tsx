@@ -1,3 +1,5 @@
+import { LanguageChoice } from "../i18n/language";
+import { useTranslation } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +36,7 @@ import styles from "./wizard.module.css";
 type Selection = Schema<"SetupSelection">;
 
 export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const navigate = useNavigate();
@@ -80,8 +83,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const selection: Selection = draft.selection;
   const apiKey = selection.model?.authentication.kind === "api_key";
   const steps = apiKey
-    ? ["Model", "Shell review", "Workspace"]
-    : ["Model", "Workspace"];
+    ? [t("Model"), t("Shell review"), t("Workspace")]
+    : [t("Model"), t("Workspace")];
   const workspaceStep = steps.length - 1;
   const reviewStep = apiKey && draft.step === 1;
   const workspaceActive = draft.step === workspaceStep && !draft.pending;
@@ -134,26 +137,37 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const preparing = preview.isFetching || (sandbox && sandboxCheck.isFetching);
   const preparationError = preview.error || (sandbox && sandboxCheck.error);
   const preparationStatus = preview.isFetching
-    ? "Checking configuration…"
+    ? t("Checking configuration…")
     : sandbox && sandboxCheck.isFetching
       ? runtime.data?.phase === "downloading"
-        ? `Downloading envd… ${Math.round((runtime.data.downloaded_bytes ?? 0) / 1024 / 1024)} MB${runtime.data.total_bytes ? ` / ${Math.round(runtime.data.total_bytes / 1024 / 1024)} MB` : ""}`
+        ? runtime.data.total_bytes
+          ? t("Downloading envd… {{downloaded}} MB / {{total}} MB", {
+              downloaded: Math.round(
+                (runtime.data.downloaded_bytes ?? 0) / 1024 / 1024,
+              ),
+              total: Math.round(runtime.data.total_bytes / 1024 / 1024),
+            })
+          : t("Downloading envd… {{downloaded}} MB", {
+              downloaded: Math.round(
+                (runtime.data.downloaded_bytes ?? 0) / 1024 / 1024,
+              ),
+            })
         : runtime.data?.phase === "verifying"
-          ? "Verifying envd download…"
+          ? t("Verifying envd download…")
           : runtime.data?.phase === "checking"
-            ? "Checking envd installation…"
+            ? t("Checking envd installation…")
             : runtime.data?.installed
-              ? "Checking Sandbox isolation…"
-              : "Preparing envd download…"
+              ? t("Checking Sandbox isolation…")
+              : t("Preparing envd download…")
       : cancelled
-        ? "Preparation cancelled. Retry or choose Full Control."
+        ? t("Preparation cancelled. Retry or choose Full Control.")
         : preparationError
-          ? "Setup needs attention. Review the error above and retry."
+          ? t("Setup needs attention. Review the error above and retry.")
           : sandbox && !sandboxReady
-            ? "Sandbox is not ready. Retry or choose Full Control."
+            ? t("Sandbox is not ready. Retry or choose Full Control.")
             : currentPreview
-              ? "Ready to save"
-              : "Checking configuration…";
+              ? t("Ready to save")
+              : t("Checking configuration…");
 
   const run = async (operation: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -276,7 +290,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         );
         if (!publication.completed)
           throw new Error(
-            publication.error_message || "Setup was only partially saved.",
+            publication.error_message || t("Setup was only partially saved."),
           );
       } catch {
         // A transport failure is not evidence of rollback. Reconcile ordinary files.
@@ -301,19 +315,22 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         finalFocus={false}
         className={styles.wizard}
         closeProps={{
-          "aria-label": "Set up later",
+          "aria-label": t("Set up later"),
           disabled: busy,
         }}
       >
         <DialogHeader>
-          <DialogTitle className={styles.title}>Set up Harness</DialogTitle>
+          <DialogTitle className={styles.title}>
+            {t("Set up Harness")}
+          </DialogTitle>
           <DialogDescription>
-            Connect a model and choose where it can work.
+            {t("Connect a model and choose where it can work.")}
           </DialogDescription>
-          <ol className={styles.steps} aria-label="Setup progress">
+          <LanguageChoice />
+          <ol className={styles.steps} aria-label={t("Setup progress")}>
             {steps.map((step, index) => (
               <li
-                key={step}
+                key={index}
                 aria-current={index === draft.step ? "step" : undefined}
                 data-complete={index < draft.step}
               >
@@ -329,25 +346,34 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
           <div className={styles.content}>
             <h2 ref={heading} tabIndex={-1}>
               {draft.step === 0
-                ? "Choose your everyday model"
+                ? t("Choose your everyday model")
                 : reviewStep
-                  ? "Choose a shell review model"
-                  : "Decide where your agent works"}
+                  ? t("Choose a shell review model")
+                  : t("Decide where your agent works")}
             </h2>
-            <ErrorNotice error={error} />
+            <ErrorNotice
+              error={error}
+              message={
+                error instanceof Error && !(error instanceof ApiError)
+                  ? t(error.message)
+                  : undefined
+              }
+            />
             {!storageAvailable && (
               <p role="alert">
-                Browser storage is off. Your choices will be lost on refresh.
-                Enable storage before saving.
+                {t(
+                  "Browser storage is off. Your choices will be lost on refresh. Enable storage before saving.",
+                )}
               </p>
             )}
-            {phase && <p role="status">{phase}</p>}
+            {phase && <p role="status">{t(phase)}</p>}
             {draft.pending ? (
               <div className={styles.stack}>
-                <h3>Resume your saved setup</h3>
+                <h3>{t("Resume your saved setup")}</h3>
                 <p>
-                  Your settings may already be saved. Resume to check the saved
-                  files and first chat. No message will be sent.
+                  {t(
+                    "Your settings may already be saved. Resume to check the saved files and first chat. No message will be sent.",
+                  )}
                 </p>
                 <Button
                   loading={busy}
@@ -358,7 +384,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     })
                   }
                 >
-                  Resume setup
+                  {t("Resume setup")}
                 </Button>
                 <Button
                   variant="outline"
@@ -368,7 +394,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     void preview.refetch();
                   }}
                 >
-                  Review changes
+                  {t("Review changes")}
                 </Button>
               </div>
             ) : (
@@ -389,7 +415,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       onReady={setModelReady}
                     />
                     <details className={styles.advanced}>
-                      <summary>Agent options</summary>
+                      <summary>{t("Agent options")}</summary>
                       <div className={styles.stack}>
                         <label className={styles.check}>
                           <input
@@ -403,7 +429,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Enable recommended model tools
+                          {t("Enable recommended model tools")}
                         </label>
                         <label className={styles.check}>
                           <input
@@ -417,9 +443,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Include built-in subagents
+                          {t("Include built-in subagents")}
                         </label>
-                        <FormField label="Additional agent instructions">
+                        <FormField label={t("Additional agent instructions")}>
                           <Textarea
                             rows={4}
                             value={selection.instructions ?? ""}
@@ -453,21 +479,25 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <div
                       className={styles.environments}
                       role="group"
-                      aria-label="Local mode · Harness server"
+                      aria-label={t("Local mode · Harness server")}
                     >
                       {(
                         [
                           [
                             "environment-native",
-                            "Full Control",
+                            t("Full Control"),
                             Desktop,
-                            "Run directly as your host account with full filesystem and network access.",
+                            t(
+                              "Run directly as your host account with full filesystem and network access.",
+                            ),
                           ],
                           [
                             "environment-sandbox",
-                            "Sandbox",
+                            t("Sandbox"),
                             ShieldCheck,
-                            "Runs in a sandbox. Downloads envd if needed and checks isolation.",
+                            t(
+                              "Runs in a sandbox. Downloads envd if needed and checks isolation.",
+                            ),
                           ],
                         ] as const
                       ).map(([value, label, Icon, description]) => (
@@ -488,15 +518,17 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     </div>
                     <div className={styles.runtimeStatus}>
                       <strong>
-                        {sandbox ? "Sandbox runtime" : "Direct execution"}
+                        {sandbox ? t("Sandbox runtime") : t("Direct execution")}
                       </strong>
                       <p>
                         {sandbox
-                          ? "envd runs on this server."
-                          : "No envd download is needed for Full Control with Direct."}
+                          ? t("envd runs on this server.")
+                          : t(
+                              "No envd download is needed for Full Control with Direct.",
+                            )}
                       </p>
                       <Link to="/settings/runtime">
-                        Manage envd & Computer Use
+                        {t("Manage envd & Computer Use")}
                       </Link>
                       {sandbox && (
                         <>
@@ -504,7 +536,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           {sandboxCheck.isFetching &&
                             runtime.data?.phase === "downloading" && (
                               <progress
-                                aria-label="envd download"
+                                aria-label={t("envd download")}
                                 max={runtime.data.total_bytes ?? undefined}
                                 value={
                                   runtime.data.total_bytes
@@ -525,7 +557,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                                 });
                               }}
                             >
-                              Cancel preparation
+                              {t("Cancel preparation")}
                             </Button>
                           )}
                           {Object.entries(readiness)
@@ -547,7 +579,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                                 else void sandboxCheck.refetch();
                               }}
                             >
-                              Retry sandbox
+                              {t("Retry sandbox")}
                             </Button>
                           )}
                         </>
@@ -559,12 +591,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           size="sm"
                           onClick={() => void preview.refetch()}
                         >
-                          Check again
+                          {t("Check again")}
                         </Button>
                       )}
                     </div>
                     <TextField
-                      label="Project directory (optional)"
+                      label={t("Project directory (optional)")}
                       value={selection.project_path ?? ""}
                       onChange={(path) =>
                         changeSelection({
@@ -572,7 +604,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           project_path: path || null,
                         })
                       }
-                      description="An existing folder on the server. Leave blank for a new workspace."
+                      description={t(
+                        "An existing folder on the server. Leave blank for a new workspace.",
+                      )}
                     />
                     <LiveOptIn
                       model={selection.model}
@@ -583,7 +617,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     />
                     {!apiKey && (
                       <details className={styles.advanced}>
-                        <summary>Shell review</summary>
+                        <summary>{t("Shell review")}</summary>
                         <label className={styles.check}>
                           <input
                             type="checkbox"
@@ -594,35 +628,39 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Review shell commands before execution
+                          {t("Review shell commands before execution")}
                         </label>
-                        <p>Uses model requests to review commands.</p>
+                        <p>{t("Uses model requests to review commands.")}</p>
                       </details>
                     )}
                     {apiKey && (
                       <p>
-                        Shell review:{" "}
-                        {selection.shell_review_model ||
-                          "Off — no model selected"}
+                        {t("Shell review: {{model}}", {
+                          model:
+                            selection.shell_review_model ||
+                            t("Off — no model selected"),
+                        })}
                       </p>
                     )}
                     <div className={styles.summary}>
                       <strong>{selection.model?.route}</strong>
                       <span>
-                        {sandbox ? "Sandbox" : "Full Control"} ·{" "}
-                        {selection.project_path || "Without a project"}
+                        {sandbox ? t("Sandbox") : t("Full Control")} ·{" "}
+                        {selection.project_path || t("Without a project")}
                       </span>
                     </div>
                     {currentPreview && (
                       <>
                         <p>
-                          Automatic memory updates use model quota. Manage them
-                          in Settings → Memory.
+                          {t(
+                            "Automatic memory updates use model quota. Manage them in Settings → Memory.",
+                          )}
                         </p>
                         <details className={styles.advanced}>
                           <summary>
-                            Generated files (
-                            {Object.keys(currentPreview.files).length})
+                            {t("Generated files ({{count}})", {
+                              count: Object.keys(currentPreview.files).length,
+                            })}
                           </summary>
                           {Object.entries(currentPreview.files).map(
                             ([path, content]) => (
@@ -644,7 +682,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         <DialogFooter variant="bare" className={styles.footer}>
           {workspaceActive && (
             <p className={styles.preparationStatus} role="status">
-              {phase || preparationStatus}
+              {phase ? t(phase) : preparationStatus}
             </p>
           )}
           <button
@@ -653,11 +691,14 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             disabled={busy}
             onClick={close}
           >
-            Set up later
+            {t("Set up later")}
           </button>
           <div>
             <span className={styles.stepCount}>
-              Step {draft.step + 1} of {steps.length}
+              {t("Step {{step}} of {{total}}", {
+                step: draft.step + 1,
+                total: steps.length,
+              })}
             </span>
             {draft.step > 0 && !draft.pending && (
               <Button
@@ -665,7 +706,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 disabled={busy}
                 onClick={() => patch({ step: draft.step - 1 })}
               >
-                Back
+                {t("Back")}
               </Button>
             )}
             {!draft.pending &&
@@ -681,7 +722,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                   }
                   onClick={() => void save()}
                 >
-                  Save and start <ArrowRight />
+                  {t("Save and start")}
+                  <ArrowRight />
                 </Button>
               ) : (
                 <Button
@@ -695,8 +737,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                   onClick={() => patch({ step: draft.step + 1 })}
                 >
                   {reviewStep && !selection.shell_review_model
-                    ? "Skip shell review"
-                    : "Continue"}{" "}
+                    ? t("Skip shell review")
+                    : t("Continue")}{" "}
                   <ArrowRight />
                 </Button>
               ))}

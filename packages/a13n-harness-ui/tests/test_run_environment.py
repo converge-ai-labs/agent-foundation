@@ -16,7 +16,7 @@ from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, Root
 
 from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def _stub_sandbox_runtime(app, thread_id, monkeypatch):

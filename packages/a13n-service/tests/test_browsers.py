@@ -110,7 +110,7 @@ class Supplier:
         assert method in {"Page.enable", "Runtime.enable"}, method
         return {}
 
-    async def ensure_viewer(self, state, grant_id, *, expires_at):
+    async def ensure_viewer(self, state, grant_id, *, episode, expires_at):
         if state["id"] not in self.live:
             raise ValueError("terminated allocation cannot grant input")
         if grant_id in self.revoked or (
@@ -122,7 +122,7 @@ class Supplier:
         self.viewer_deadlines[grant_id] = max(expires_at, self.viewer_deadlines.get(grant_id, expires_at))
         return ViewerGrant("https://viewer.example/secret", {}, self.viewer_deadlines[grant_id])
 
-    async def revoke_viewer(self, state, grant_id):
+    async def revoke_viewer(self, state, grant_id, *, episode):
         if self.fail_revoke:
             raise TimeoutError("still connected")
         self.revoked.add(grant_id)
@@ -132,9 +132,9 @@ class Supplier:
         pass
 
 
-async def setup(service, runs_kit):
+async def setup(service, runs_kit, *, supplier=None, supports_stop=False, **policies):
     await runs_kit.pause_sweeps(service)
-    supplier = Supplier()
+    supplier = supplier or Supplier()
 
     async def factory(config, credential, policy):
         return supplier
@@ -147,6 +147,7 @@ async def setup(service, runs_kit):
         backend_identity=lambda config: "test",
         provider_factory=factory,
         supports_viewer=True,
+        supports_stop=supports_stop,
     )
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, definition)))
     service.app.state.runtime = service.runtime
@@ -155,10 +156,19 @@ async def setup(service, runs_kit):
     )
     assert response.status_code == 201, response.text
     response = await service.client.post(
-        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared"}
+        f"{service.api}/browsers", json={"provider_id": response.json()["id"], "name": "Shared", **policies}
     )
     assert response.status_code == 201, response.text
     return supplier, response.json()
+
+
+@pytest.mark.parametrize("supports_stop", [False, True])
+async def test_browser_provider_type_exposes_stop_capability(service, runs_kit, supports_stop):
+    await setup(service, runs_kit, supports_stop=supports_stop)
+    response = await service.client.get("/api/v1/provider-types/browser")
+    assert response.status_code == 200
+    definition = next(item for item in response.json()["items"] if item["type"] == "fake_browser")
+    assert definition["supports_stop"] is supports_stop
 
 
 async def bound_run(

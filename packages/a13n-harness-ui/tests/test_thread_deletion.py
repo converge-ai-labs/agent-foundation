@@ -20,7 +20,7 @@ from .test_builtin_subagents import _source
 from .test_sharing_webui import create_link, shared_server
 from .test_tool_executions import install_slow_tool
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_delete_removes_archived_chat_files_and_shares_but_preserves_fork(tmp_path, monkeypatch):

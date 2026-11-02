@@ -5,6 +5,9 @@ import {
   MenuPopup,
   MenuTrigger,
   SegmentedControl,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
 } from "a13n-ui";
 import {
   ArrowSquareOutIcon,
@@ -15,12 +18,13 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  GlobeIcon,
   PencilSimpleIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
-import { useState } from "react";
+import { useState, type Ref } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
@@ -47,7 +51,21 @@ import styles from "./conversations.module.css";
  * The actions menu closes the first line, so a narrow screen keeps it beside
  * the name and moves only the view controls to a second line.
  */
-export function SessionHeader() {
+export function SessionHeader({
+  browserOpen = false,
+  onToggleBrowser,
+  browserTriggerRef,
+  desktopOpen = false,
+  onToggleDesktop,
+  desktopTriggerRef,
+}: {
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
+  browserTriggerRef?: Ref<HTMLButtonElement>;
+  desktopOpen?: boolean;
+  onToggleDesktop?: () => void;
+  desktopTriggerRef?: Ref<HTMLButtonElement>;
+}) {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
   const { basePath, can, workspace } = useWorkspace();
@@ -171,6 +189,50 @@ export function SessionHeader() {
           ]}
         />
       </div>
+      {thread && onToggleBrowser && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                ref={browserTriggerRef}
+                variant={browserOpen ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label={t("Browser")}
+                aria-expanded={browserOpen}
+                aria-controls="session-browser"
+                onClick={onToggleBrowser}
+              />
+            }
+          >
+            <GlobeIcon size={16} aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Browser")}</TooltipPopup>
+        </Tooltip>
+      )}
+      {thread &&
+        can("run") &&
+        isInteractive(thread, session.data) &&
+        !thread.archived_at &&
+        onToggleDesktop && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  ref={desktopTriggerRef}
+                  variant={desktopOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  aria-label={t("Desktop")}
+                  aria-expanded={desktopOpen}
+                  aria-controls="session-desktop"
+                  onClick={onToggleDesktop}
+                />
+              }
+            >
+              <MonitorIcon size={16} aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipPopup>{t("Desktop")}</TooltipPopup>
+          </Tooltip>
+        )}
       <Menu>
         <MenuTrigger
           render={

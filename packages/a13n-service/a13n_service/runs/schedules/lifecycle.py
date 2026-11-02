@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import stored
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import webhooks
 from a13n_service.runs.schedules.calendar import TIMEZONE_DATA_VERSION, Calendar
@@ -73,7 +74,7 @@ async def occurrence(
         name=row.name,
         schedule=rule(row),
         max_lateness_seconds=row.max_lateness_seconds,
-        invocation=ScheduleInvocation.model_validate(row.invocation),
+        invocation=stored.read(ScheduleInvocation, row.invocation),
         timezone_data_version=TIMEZONE_DATA_VERSION,
         utc_offset_seconds=int(offset.total_seconds()) if offset is not None else None,
     )

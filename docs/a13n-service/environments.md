@@ -246,15 +246,15 @@ For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{cont
 
 ### Get and return desktop control
 
-1. Open **Desktop** in an interactive conversation and select its environment mount.
-2. Choose **View desktop** for read-only viewing, or **Take control** to reserve Computer input. Service blocks subsequent Computer calls and authorizes the human viewer. Already admitted calls may finish, including sending input.
-3. When **You control Computer** appears, choose **Connect input**. Files, Shell, processes, scripts, other desktops and the agent's model work continue.
+1. Select the **Desktop** icon beside **Browser** in an interactive conversation. The right-side panel automatically opens a read-only view of the selected environment mount.
+2. Choose **Take control** to reserve Computer input. Service blocks subsequent Computer calls and connects input once authorized. Already admitted calls may finish, including sending input.
+3. Use the desktop while files, Shell, processes, scripts, other desktops and the agent's model work continue.
 4. Choose **Renew control** when more time is needed. The default lease is five minutes; operators configure the default and request bounds through `control.desktop_control_seconds`, `control.desktop_control_min_seconds` and `control.desktop_control_max_seconds`.
 5. Choose **Return control** when finished. Service revokes input and confirms held-key/button cleanup before reopening the Computer channel.
 
 Closing the viewer or page disconnects that viewer and leaves control unchanged until explicit handback or lease expiry. Short connection grants refresh separately from the human lease. One principal controls a native desktop at a time, including when multiple environment aliases or threads share it. Read-only viewers remain independent. Browser control has its own lifecycle.
 
-A Computer call blocked during takeover returns a not-executed result and registers a handback notice for that thread. The agent can continue other work or finish its turn without polling. After verified handback, the existing inbox delivers availability guidance to eligible callers. The agent must observe the current desktop and make a new model decision before sending input; old gestures are never replayed. A settled child is not restarted. Pending questions and approvals still require their ordinary complete response batch.
+Each normal model request includes the current Computer admission state for known native desktop mounts, separately from permissions and readiness. An agent that sees human control can call `computer_notify(alias="workspace")` to register for handback without attempting a blocked action. A Computer call blocked during takeover also registers the same notice automatically. Registrations deduplicate per thread and takeover; registration after handback returns `already_available` and does not subscribe to a future takeover. The agent can continue other work or finish its turn without polling. After verified handback, the existing inbox delivers availability guidance to eligible callers. The agent must observe the current desktop and make a new model decision before sending input; old gestures are never replayed. A settled child is not restarted. Pending questions and approvals still require their ordinary complete response batch.
 
 Unconfirmed human-viewer revocation or held-input cleanup keeps Computer access blocked for reconciliation. Failed or abandoned agent Computer calls do not delay takeover. This control boundary covers managed Computer calls, including calls inside CodeAct. It does not freeze arbitrary guest processes, Shell-launched UI automation or independent clients.
 

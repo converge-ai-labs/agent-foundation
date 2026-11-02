@@ -15,7 +15,7 @@ from .test_migrations import rows
 
 pytestmark = pytest.mark.anyio
 OLD_HEAD = "29270d0290da"
-NEW_HEAD = "c810697ccc5c"
+NEW_HEAD = "9ded2d06bd00"
 
 
 @pytest.fixture

@@ -104,8 +104,8 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     # A platform group is an opt-in toolset of its operations; a read runs, a write asks.
     execution = next(toolset for toolset in catalogue.items if toolset.key == "execution")
     assert execution.platform and not execution.default_enabled
-    defaults = {tool.description: tool.default_permission for tool in execution.tools}
-    assert defaults["GET /traces/{trace_id}"] == "allow" and defaults["POST /findings"] == "ask"
+    defaults = {tool.model_name: tool.default_permission for tool in execution.tools}
+    assert defaults["get_trace"] == "allow" and defaults["create_finding"] == "ask"
 
 
 def test_toolsets_normalize_to_the_whole_catalogue() -> None:
@@ -181,7 +181,7 @@ def test_permissions_compile_from_each_selection() -> None:
 
     assert rules["environment.shell_exec"] == "ask" and rules["filesystem.view"] == "inherit"
     assert "web.search" not in rules
-    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents" not in rules
+    assert rules[f"mcp/service-platform/{finding}"] == "allow" and "mcp/service-platform/list_agents" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
     assert rules["tool/a13n-service-client/lookup"] == "deny"
@@ -1211,6 +1211,21 @@ def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choice
     assert "computer_zoom" in projected.computer_tools
     assert "computer_click" not in projected.computer_tools
     assert selected.toolsets["computer"].tools["type_text"].permission == "ask"
+    assert "computer_notify" not in projected.computer_tools  # Service owns this tool, not the provider.
+    assert toolsets.enabled_tool(selected.toolsets, "computer", "notify") is not None
+    disabled = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"enabled": False}}}})
+    assert toolsets.enabled_tool(disabled.toolsets, "computer", "notify") is None
+    denied = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"permission": "deny"}}}})
+    notify = next(
+        tool
+        for group in toolsets.catalog(frozenset()).items
+        if group.key == "computer"
+        for tool in group.tools
+        if tool.key == "notify"
+    )
+    assert notify.execution_id == toolsets.COMPUTER_NOTIFY_TOOL_ID
+    assert notify.model_name == "computer_notify"
+    assert denied.toolsets["computer"].tools["notify"].permission == "deny"
 
 
 def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overrides():

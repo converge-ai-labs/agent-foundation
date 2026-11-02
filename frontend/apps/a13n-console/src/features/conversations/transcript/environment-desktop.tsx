@@ -1,5 +1,5 @@
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
-import { MonitorIcon } from "@phosphor-icons/react";
+import { Button, ChoiceField } from "a13n-ui";
+import { MonitorIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,29 +16,33 @@ import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
 import { conversationQueries } from "../api";
 import styles from "./environment-desktop.module.css";
 
-/** The entry point belongs to the Thread, not to a Run or a pending tool call. */
-export function ThreadDesktop({ threadId }: { threadId: string }) {
+/** The panel belongs to the Thread, independently of Run status. */
+export function ThreadDesktopPanel({
+  threadId,
+  onClose,
+}: {
+  threadId: string;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   return (
-    <ModalFrame
-      open={open}
-      onOpenChange={setOpen}
-      title={t("Environment desktop")}
-      description={t(
-        "Take control of Computer input while the Agent continues its other work.",
-      )}
-      closeLabel={t("Close")}
-      size="xl"
-      trigger={
-        <Button className={styles.trigger} size="sm" variant="outline">
-          <MonitorIcon size={14} />
-          {t("Desktop")}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        <MonitorIcon size={16} aria-hidden="true" />
+        <h2 className="flex-1 text-sm font-medium">{t("Desktop")}</h2>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("Close desktop panel")}
+          onClick={onClose}
+        >
+          <XIcon size={16} />
         </Button>
-      }
-    >
-      {open && <DesktopMounts threadId={threadId} />}
-    </ModalFrame>
+      </div>
+      <div className="a13n-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+        <DesktopMounts threadId={threadId} />
+      </div>
+    </div>
   );
 }
 
@@ -131,6 +135,9 @@ export function EnvironmentDesktop({
   const [connected, setConnected] = useState(false);
   const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
+  const controlIntent = useRef<{ generation: number; episode: number } | null>(
+    null,
+  );
   const openingAuthority = useRef<{
     control: Control;
     mode: Viewer["mode"];
@@ -165,6 +172,7 @@ export function EnvironmentDesktop({
     epoch.current++;
     openingRef.current = false;
     openingAuthority.current = null;
+    controlIntent.current = null;
     setOpening(false);
     const instance = rfb.current;
     rfb.current = null;
@@ -177,6 +185,7 @@ export function EnvironmentDesktop({
     setConnected(false);
   }
   function fail(cause: unknown) {
+    controlIntent.current = null;
     closeLocal();
     setError(cause);
     revalidateSession(cause);
@@ -238,6 +247,17 @@ export function EnvironmentDesktop({
 
   // Invalidate pending Connect intent too, including return/retake in another tab.
   useEffect(() => {
+    const intent = controlIntent.current;
+    if (
+      intent &&
+      (!control ||
+        query.isError ||
+        control.generation !== intent.generation ||
+        control.episode !== intent.episode ||
+        control.controller_id !== actorId ||
+        !["draining", "human"].includes(control.control))
+    )
+      controlIntent.current = null;
     const pending = openingAuthority.current;
     const pendingChanged =
       pending &&
@@ -253,6 +273,26 @@ export function EnvironmentDesktop({
     )
       actions.current.close();
   }, [control, viewer, actorId, query.isError]);
+
+  // Opening the panel starts observation. Only this panel's explicit Take control
+  // intent may automatically upgrade a connection after authorization completes.
+  useEffect(() => {
+    if (!control || busy || query.isError || error || openingRef.current)
+      return;
+    const intent = controlIntent.current;
+    const controlling =
+      intent &&
+      control.control === "human" &&
+      control.controller_id === actorId &&
+      !!control.expires_at &&
+      Date.parse(control.expires_at) > Date.now();
+    if (controlling && viewer?.mode !== "control") {
+      actions.current.close();
+      void actions.current.open("control");
+    } else if (!viewer && !(intent && control.control === "draining")) {
+      void actions.current.open("view");
+    }
+  }, [control, busy, query.isError, error, viewer, actorId]);
 
   const url = viewer?.websocket_url,
     password = viewer?.password;
@@ -347,7 +387,10 @@ export function EnvironmentDesktop({
 
   async function command(kind: "takeover" | "renew" | "handback") {
     if (busy || !query.data) return;
-    if (kind !== "renew") closeLocal();
+    if (kind !== "renew") {
+      controlIntent.current = null;
+      closeLocal();
+    }
     setBusy(true);
     setError(undefined);
     await cache.cancelQueries({ queryKey: key });
@@ -376,6 +419,11 @@ export function EnvironmentDesktop({
               );
       const updated = representation(result);
       if (!alive.current) return;
+      if (kind === "takeover")
+        controlIntent.current = {
+          generation: updated.value.generation,
+          episode: updated.value.episode,
+        };
       cache.setQueryData(key, updated);
     } catch (cause) {
       if (alive.current) fail(cause);
@@ -433,17 +481,6 @@ export function EnvironmentDesktop({
             </p>
           )}
           <div className={styles.actions}>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || opening || !!viewer || query.isError}
-              onClick={() => {
-                setError(undefined);
-                void openViewer("view");
-              }}
-            >
-              {t("View desktop")}
-            </Button>
             {control.control === "automation" && (
               <Button
                 size="sm"
@@ -456,22 +493,23 @@ export function EnvironmentDesktop({
             )}
             {human && (
               <>
-                <Button
-                  size="sm"
-                  disabled={
-                    busy ||
-                    opening ||
-                    viewer?.mode === "control" ||
-                    query.isError
-                  }
-                  onClick={() => {
-                    closeLocal();
-                    setError(undefined);
-                    void openViewer("control");
-                  }}
-                >
-                  {t("Connect input")}
-                </Button>
+                {viewer?.mode !== "control" && (
+                  <Button
+                    size="sm"
+                    disabled={busy || opening || query.isError}
+                    onClick={() => {
+                      closeLocal();
+                      controlIntent.current = {
+                        generation: control.generation,
+                        episode: control.episode,
+                      };
+                      setError(undefined);
+                      void openViewer("control");
+                    }}
+                  >
+                    {t("Take control")}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -493,15 +531,10 @@ export function EnvironmentDesktop({
                 {t("Return control")}
               </Button>
             )}
-            {(viewer || opening) && (
-              <Button size="sm" variant="ghost" onClick={closeLocal}>
-                {t("Close viewer")}
-              </Button>
-            )}
           </div>
           <p className={styles.hint}>
             {t(
-              "Closing the viewer leaves control unchanged. Return control explicitly, or let its lease expire. Runs are never paused or resumed here.",
+              "The Agent can continue other work. Closing this panel does not return control.",
             )}
           </p>
         </>

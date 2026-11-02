@@ -28,6 +28,8 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from .test_interactive import _seed
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def _function_model(function):
     async def stream(messages, info):

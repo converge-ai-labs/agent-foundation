@@ -27,7 +27,7 @@ GENERATION = "a" * 32
 
 
 @pytest.fixture
-async def desktop(service, scripted_model, runs_kit, monkeypatch):
+async def desktop(service, scripted_model, runs_kit, monkeypatch, request):
     await runs_kit.pause_sweeps(service)
     response = await service.client.post(
         f"{service.api}/environment-providers",
@@ -67,7 +67,11 @@ async def desktop(service, scripted_model, runs_kit, monkeypatch):
             {
                 "name": "workspace",
                 "environment_id": environment_id,
-                "permission_ceiling": {"operations": ["environment.computer.observe", "environment.computer.click"]},
+                "permission_ceiling": {
+                    "operations": request.param
+                    if hasattr(request, "param")
+                    else ["environment.computer.observe", "environment.computer.click"]
+                },
             }
         ],
     )
@@ -1068,3 +1072,85 @@ async def test_observation_registration_requires_unchanged_automation_episode(se
         assert owner.observations["agent"][call.result.image_identifier].reference == call.result.observation
     else:
         assert owner.observations == {}
+
+
+async def test_context_reads_current_alias_control_without_registering_or_creating_rows(service, desktop):
+    from a13n_service.runs.environments.desktop.context import project
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+    from sqlalchemy import select
+
+    async with transaction(service.runtime.storage) as session:
+        environment = await session.get_one(EnvironmentRow, desktop[1])
+        state = Handle.model_validate(environment.handle).state
+    states = {"workspace": state, "alias": state}
+    initial = await project(service.runtime.storage, states)
+    assert [item["admission"] for item in initial] == ["open", "open"]
+    async with transaction(service.runtime.storage) as session:
+        assert not list(await session.scalars(select(DesktopControlRow)))
+        assert not list(await session.scalars(select(DesktopBlockedRow)))
+    human = await begin(service, desktop)
+    blocked = await project(service.runtime.storage, states)
+    assert [item["admission"] for item in blocked] == ["human_control", "human_control"]
+    assert all(item["episode"] == human.episode for item in blocked)
+    async with transaction(service.runtime.storage) as session:
+        assert not list(await session.scalars(select(DesktopBlockedRow)))
+        row = await session.get_one(DesktopControlRow, human.id)
+        row.control = "automation"
+        row.failure = "environment_lost"
+    lost = await project(service.runtime.storage, states)
+    assert [item["admission"] for item in lost] == ["unavailable", "unavailable"]
+    assert all(set(item) == {"alias", "admission", "hint", "control", "generation", "episode"} for item in lost)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["unknown_alias", "unknown_state", "binding", "lost", "archived", "cancelled", "expired"],
+)
+async def test_explicit_notify_rechecks_authority_without_registering_on_failure(service, desktop, failure):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.attempts import LeaseLost
+    from a13n_service.runs.environments.desktop import admission, identity
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+    from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
+    from sqlalchemy import select
+
+    lease, mount, state = await admitted(service, desktop)
+    await begin(service, desktop)
+    alias = mount.name
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, lease.run_id)
+        if failure == "unknown_alias":
+            alias = "not-mounted"
+        elif failure == "unknown_state":
+            state = None
+        elif failure == "binding":
+            state = state.model_copy(update={"state": {"sandbox_id": "different-target"}})
+        elif failure == "lost":
+            await identity.invalidate(session, state)
+        elif failure == "archived":
+            thread = await session.get_one(ThreadRow, lease.thread_id)
+            thread.archived_at = await now(session)
+        elif failure == "cancelled":
+            run.cancel_requested_at = await now(session)
+        elif failure == "expired":
+            attempt = await session.get_one(AttemptRow, lease.attempt_id)
+            attempt.lease_expires_at = await now(session) - timedelta(seconds=1)
+    with pytest.raises((ServiceError, LeaseLost)):
+        await admission.register_handback(service.runtime, lease, alias, state)
+    async with transaction(service.runtime.storage) as session:
+        assert not list(await session.scalars(select(DesktopBlockedRow)))
+
+
+@pytest.mark.parametrize("desktop", [[]], indirect=True)
+async def test_explicit_notify_requires_computer_mount_permission(service, desktop):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.environments.desktop.admission import register_handback
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+    from sqlalchemy import select
+
+    lease, mount, state = await admitted(service, desktop)
+    await begin(service, desktop)
+    with pytest.raises(ServiceError, match="Computer use"):
+        await register_handback(service.runtime, lease, mount.name, state)
+    async with transaction(service.runtime.storage) as session:
+        assert not list(await session.scalars(select(DesktopBlockedRow)))

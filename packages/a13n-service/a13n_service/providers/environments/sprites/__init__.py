@@ -5,8 +5,8 @@ from a13n_harness.providers.environment.sprites.shared import SpritesConnectionC
 
 from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 
-from .configuration import SpritesRecipe
 from .management import SpritesManagement
 
 

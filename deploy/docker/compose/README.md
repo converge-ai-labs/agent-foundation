@@ -35,6 +35,18 @@ CLI bootstrap is completed by the next Service startup; if you run it inside an 
 
 `make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
 
+## Docker Browsers
+
+For a Linux host with Docker Engine, use the separate Browser-enabled stack:
+
+```sh
+docker compose -f deploy/docker/compose/a13n-service-browser.yaml up -d --wait
+```
+
+Open Console, register an administrator, then create a Docker Browser provider under Browsers → Manage providers. The Service uses host networking to reach dynamically created Browser containers. PostgreSQL and Redis bind to host loopback ports 15432 and 16379 by default; set `A13N_POSTGRES_PORT` and `A13N_REDIS_PORT` if occupied. `A13N_PORT` controls the Service port. The Service binds loopback; configure a trusted HTTPS reverse proxy and `A13N_PUBLIC_URL` for remote access. Docker socket access grants host-level authority; use this stack only on a trusted host. Browser containers are created by the provider, not Compose, and should be deleted through Console before removing the stack.
+
+The default Browser image is `ghcr.io/converge-ai-labs/a13n-browser:latest`; it must be published before use. A new container pulls it by default. A stopped Browser retains its existing container and profile rather than automatically upgrading. See the [Browser guide](../../../docs/a13n-service/browsers.md) for provider configuration and trust boundaries.
+
 ## Configuration
 
 The Service's `environment` in the Compose file sets its settings as `A13N_<SECTION>__<FIELD>` variables over the image's defaults: the public URL, PostgreSQL, Redis and the encryption key file. Add other settings the same way, with list values as JSON; see the [configuration reference](../../../docs/a13n-service/configuration-reference.md) for every setting. The included database password protects only this unpublished local database. The Service reads its configuration at startup: after an edit, run `up -d --wait` again, which recreates the Service.

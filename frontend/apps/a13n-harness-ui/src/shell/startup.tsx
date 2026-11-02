@@ -1,3 +1,5 @@
+import { LanguageChoice } from "../i18n/language";
+import { useTranslation } from "../i18n";
 import { Button, Logo } from "a13n-ui";
 import shell from "./workbench.module.css";
 import styles from "./startup.module.css";
@@ -17,6 +19,7 @@ export function Startup({
   connecting: boolean;
   retry: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <main className={shell.shell} aria-busy={connecting}>
       <aside
@@ -39,11 +42,14 @@ export function Startup({
       </aside>
       <section className={styles.content}>
         <div className={styles.status}>
-          {error && <h1>Can't connect to Harness UI</h1>}
-          <p role="status">{error || "Connecting to Harness UI…"}</p>
+          <LanguageChoice />
+          {error && <h1>{t("Can't connect to Harness UI")}</h1>}
+          <p role="status">
+            {error ? t(error) : t("Connecting to Harness UI…")}
+          </p>
           {!connecting && (
             <Button variant="outline" onClick={retry}>
-              Retry connection
+              {t("Retry connection")}
             </Button>
           )}
         </div>

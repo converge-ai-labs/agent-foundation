@@ -1,3 +1,4 @@
+import { LanguageChoice } from "../i18n/language";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
@@ -81,6 +82,7 @@ export function GeneralSettings() {
   );
   return (
     <>
+      <LanguageChoice />
       <ErrorNotice error={sources.error} />
       {sources.isPending ? (
         <Skeleton className="h-80 w-full" />

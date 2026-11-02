@@ -203,6 +203,16 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | string or null  | minLength=1; maxLength=2048; default=null     |
 | `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | array of string | maxItems=64; default=[]                       |
 
+## `browsers`
+
+| Setting                      | Environment variable               | Type / choices | Constraints and default                       |
+| ---------------------------- | ---------------------------------- | -------------- | --------------------------------------------- |
+| `browsers.operation_seconds` | `A13N_BROWSERS__OPERATION_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=120 |
+| `browsers.root`              | `A13N_BROWSERS__ROOT`              | string or null | format="path"; default=null                   |
+| `browsers.native_enabled`    | `A13N_BROWSERS__NATIVE_ENABLED`    | boolean        | default=false                                 |
+| `browsers.native_chromium`   | `A13N_BROWSERS__NATIVE_CHROMIUM`   | string         | default="chromium"                            |
+| `browsers.docker_host`       | `A13N_BROWSERS__DOCKER_HOST`       | string or null | default=null                                  |
+
 ## `provisioning`
 
 | Setting                           | Environment variable                                   | Type / choices        | Constraints and default                   |

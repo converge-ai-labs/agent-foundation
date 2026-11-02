@@ -98,7 +98,17 @@ jobs:
         run: make service-e2e-check
 
   scenarios:
-    name: Service E2E scenarios
+    name: Service E2E scenarios (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: memory-recovery
+            selection: test_memory or test_recovery
+            sandbox: false
+          - name: other
+            selection: not (test_memory or test_recovery)
+            sandbox: true
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -114,8 +124,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Set up Docker Buildx
+        if: matrix.sandbox
         uses: docker/setup-buildx-action@v3
       - name: Build the native Docker execution image
+        if: matrix.sandbox
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -128,7 +140,9 @@ jobs:
           cache-from: type=gha,scope=service-e2e-sandbox
           cache-to: type=gha,scope=service-e2e-sandbox,mode=max,ignore-error=true
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
-        run: make service-e2e SERVICE_E2E_ARGS="--require-all --junitxml=test-results/service-e2e.xml"
+        env:
+          SELECTION: ${{ matrix.selection }}
+        run: make service-e2e SERVICE_E2E_ARGS="--require-all -k '$SELECTION' --junitxml=test-results/service-e2e.xml"
       - name: Report collected, executed and skipped journeys
         if: always()
         shell: bash
@@ -147,7 +161,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: service-e2e-${{ github.run_attempt }}
+          name: service-e2e-${{ matrix.name }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 

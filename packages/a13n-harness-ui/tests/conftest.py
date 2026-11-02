@@ -67,6 +67,41 @@ def no_automatic_host_browser(request: pytest.FixtureRequest, monkeypatch: pytes
     )
 
 
+@pytest.fixture(scope="session")
+def migrated_database_template(tmp_path_factory: pytest.TempPathFactory) -> bytes:
+    """Migrate one empty database per worker; snapshots contain no application data."""
+    from a13n_harness_ui.storage.migration import DatabaseMigrator
+
+    path = tmp_path_factory.mktemp("database-template") / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator.upgrade()
+    migrator.verify_current()
+    # The migrator disposes every connection, checkpointing SQLite's WAL before this read.
+    return path.read_bytes()
+
+
+@pytest.fixture
+def migrated_databases(monkeypatch: pytest.MonkeyPatch, migrated_database_template: bytes) -> None:
+    """Opt-in App tests start from independent migrated files, then use the real storage lifecycle.
+
+    Migration and database-construction tests do not request this fixture. Existing databases,
+    including damaged or old schemas, still go through the original upgrade and verification.
+    """
+    from a13n_harness_ui.settings import DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS
+    from a13n_harness_ui.storage import database
+    from a13n_harness_ui.storage.migration import DatabaseMigrator
+
+    def migrator(path: Path | str, *, busy_timeout_seconds: float = DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS):
+        target = Path(path).resolve()
+        if not target.exists():
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with target.open("xb") as stream:
+                stream.write(migrated_database_template)
+        return DatabaseMigrator(target, busy_timeout_seconds=busy_timeout_seconds)
+
+    monkeypatch.setattr(database, "DatabaseMigrator", migrator)
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

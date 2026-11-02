@@ -44,6 +44,12 @@ async def create(runtime: Runtime, actor: Principal, workspace_id: str, body: Br
             recipe = definition.recipe_model.model_validate(body.recipe).model_dump(mode="json")
         except ValidationError:
             raise invalid("recipe", "Recipe does not match the Browser provider schema") from None
+        legacy = "idle_seconds" in body.model_fields_set
+        policies = body.model_fields_set & {"stop_after_seconds", "delete_after_seconds"}
+        if legacy and policies:
+            raise invalid("idle_seconds", "Use legacy idle_seconds or independent stop/delete policies, not both")
+        if not definition.supports_stop and "stop_after_seconds" in policies and body.stop_after_seconds is not None:
+            raise invalid("stop_after_seconds", "This provider does not retain stopped Browser profiles")
         row = BrowserRow(
             id=new_object_id("browser"),
             organization_id=scope.organization_id,
@@ -52,7 +58,9 @@ async def create(runtime: Runtime, actor: Principal, workspace_id: str, body: Br
             name=body.name,
             recipe=recipe,
             provider_identity=lifecycle.identity(runtime, account),
-            idle_seconds=body.idle_seconds,
+            idle_seconds=body.idle_seconds if legacy else (None if definition.supports_stop or policies else 1800),
+            stop_after_seconds=body.stop_after_seconds if definition.supports_stop and not legacy else None,
+            delete_after_seconds=body.delete_after_seconds if not legacy else None,
             created_by_id=actor.id,
         )
         session.add(row)
@@ -128,6 +136,31 @@ async def prepare(runtime: Runtime, actor: Principal, workspace_id: str, browser
         await lifecycle.authorize_use(session, actor, row, scope)
         external = row.source == "external_cdp"
     await lifecycle.prepare(runtime, workspace_id, browser_id, inspect_ready=external)
+    return await get(runtime, actor, workspace_id, browser_id)
+
+
+async def stop(
+    runtime: Runtime, actor: Principal, workspace_id: str, browser_id: str, *, if_match: str | None
+) -> Browser:
+    async with transaction(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "write")
+        row = await lifecycle.find(session, workspace_id, browser_id, lock=True)
+        require_match(if_match, row.id, row.version)
+        lifecycle.usable(row)
+        selected = await lifecycle.target(session, runtime, row)
+        if selected.account is None or not runtime.registry.get("browser", selected.account.type).supports_stop:
+            raise conflict("browser", browser_id, "browser_stop_unsupported")
+        if await lifecycle.in_use(session, row):
+            raise conflict("browser", browser_id, "browser_in_use")
+        if row.claim_until is not None and row.claim_until > await now(session):
+            raise conflict("browser", browser_id, "browser_operation_pending")
+        if row.status in {"reserved", "stopped"}:
+            return Browser.model_validate(row)
+        if row.status not in {"ready", "stopping"}:
+            raise conflict("browser", browser_id, "browser_operation_pending")
+        lifecycle.stop_intent(row)
+        audit(session, actor, row, "stop")
+    await lifecycle.reconcile(runtime, workspace_id, browser_id)
     return await get(runtime, actor, workspace_id, browser_id)
 
 

@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from a13n_service.infra.ids import ObjectId
 
-type BrowserStatus = Literal["reserved", "creating", "ready", "deleting", "deleted", "lost"]
+type BrowserStatus = Literal[
+    "reserved", "creating", "ready", "stopping", "stopped", "starting", "deleting", "deleted", "lost"
+]
 type ControlStatus = Literal["automation", "draining", "human", "returning"]
 
 
@@ -18,7 +20,10 @@ class BrowserCreate(BaseModel):
     recipe: dict[str, JsonValue] = Field(default_factory=dict)
     # Explicit prepare and first use share the same state machine.
     prepare: bool = False
-    idle_seconds: int | None = Field(default=1800, ge=60, le=604800)
+    # Explicit legacy input keeps terminal idle-release semantics.
+    idle_seconds: int | None = Field(default=None, ge=60, le=604800)
+    stop_after_seconds: int | None = Field(default=1800, ge=60, le=604800)
+    delete_after_seconds: int | None = Field(default=None, ge=60, le=604800)
 
 
 class BrowserAttach(BaseModel):
@@ -51,6 +56,8 @@ class Browser(BaseModel):
     episode: int
     control_expires_at: datetime | None
     idle_seconds: int | None
+    stop_after_seconds: int | None
+    delete_after_seconds: int | None
     expires_at: datetime | None
     failure: str | None
     version: int
@@ -80,5 +87,9 @@ class Viewer(BaseModel):
     """Sensitive, authorized control response; excluded from ordinary Browser reads."""
 
     url: str = Field(repr=False)
+    protocol: Literal["iframe", "vnc"] = "iframe"
+    password: str | None = Field(default=None, repr=False)
+    token: str | None = Field(default=None, repr=False)
+    generation: int | None = None
     expires_at: datetime
     episode: int

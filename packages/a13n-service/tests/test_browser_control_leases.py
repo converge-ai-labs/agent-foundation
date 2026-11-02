@@ -243,7 +243,7 @@ async def test_replica_crash_recovers_claim_or_uncommitted_revoke(
         # Crash after committed returning claim, before supplier revoke.
         original_revoke = supplier.revoke_viewer
 
-        async def crash_revoke(*args):
+        async def crash_revoke(*args, **kwargs):
             entered.set()
             await asyncio.Event().wait()
 
@@ -337,7 +337,7 @@ async def test_out_of_order_ensure_uses_current_deadline_and_cannot_replace_newe
     original = supplier.ensure_viewer
     calls = 0
 
-    async def ensure(state, grant_id, *, expires_at):
+    async def ensure(state, grant_id, *, episode, expires_at):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -346,7 +346,7 @@ async def test_out_of_order_ensure_uses_current_deadline_and_cannot_replace_newe
             if replacement:
                 # A stale response captured before the newer supplier call is not publishable.
                 return ViewerGrant("https://viewer.example/old", {}, expires_at)
-        result = await original(state, grant_id, expires_at=expires_at)
+        result = await original(state, grant_id, episode=episode, expires_at=expires_at)
         return ViewerGrant("https://viewer.example/current", result.state, result.expires_at)
 
     monkeypatch.setattr(supplier, "ensure_viewer", ensure)
@@ -361,7 +361,12 @@ async def test_out_of_order_ensure_uses_current_deadline_and_cannot_replace_newe
         else:
             # A newer out-of-order ensure extends supplier state before the first call returns.
             row = await read(other, browser)
-            await original({"id": next(iter(supplier.live))}, row.viewer_id, expires_at=renewed.control_expires_at)
+            await original(
+                {"id": next(iter(supplier.live))},
+                row.viewer_id,
+                episode=row.episode,
+                expires_at=renewed.control_expires_at,
+            )
     finally:
         finish.set()
         await taking
@@ -496,10 +501,10 @@ async def test_renew_during_inflight_ensure_requeues_after_other_lane_observes_c
     entered, finish = asyncio.Event(), asyncio.Event()
     original = supplier.ensure_viewer
 
-    async def delayed(state, grant_id, *, expires_at):
+    async def delayed(state, grant_id, *, episode, expires_at):
         entered.set()
         await finish.wait()
-        grant = await original(state, grant_id, expires_at=expires_at)
+        grant = await original(state, grant_id, episode=episode, expires_at=expires_at)
         return ViewerGrant(grant.url, grant.state, datetime.now(UTC) + timedelta(seconds=100))
 
     monkeypatch.setattr(supplier, "ensure_viewer", delayed)
@@ -686,10 +691,10 @@ async def test_short_grants_schedule_future_maintenance_without_hot_loop(
     original = supplier.ensure_viewer
     calls = 0
 
-    async def limited(state, grant_id, *, expires_at):
+    async def limited(state, grant_id, *, episode, expires_at):
         nonlocal calls
         calls += 1
-        grant = await original(state, grant_id, expires_at=expires_at)
+        grant = await original(state, grant_id, episode=episode, expires_at=expires_at)
         return ViewerGrant(grant.url, grant.state, datetime.now(UTC) + timedelta(seconds=180))
 
     monkeypatch.setattr(supplier, "ensure_viewer", limited)
@@ -785,12 +790,12 @@ async def test_failed_revoke_cools_down_all_reconcile_paths(
     calls = 0
     original = supplier.revoke_viewer
 
-    async def revoke(*args):
+    async def revoke(*args, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 1:
             raise TimeoutError("revoke failed")
-        return await original(*args)
+        return await original(*args, **kwargs)
 
     monkeypatch.setattr(supplier, "revoke_viewer", revoke)
     assert (await command(service, runs_kit, browser["id"], "handback"))["control"] == "returning"

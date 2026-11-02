@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import ExecutionPolicy
 from a13n_service.infra.errors import ServiceError, invalid
-from a13n_service.resources.agents import instructions
+from a13n_service.resources.agents import instructions, stored
 from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
@@ -48,6 +48,7 @@ from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.environments.desktop.freshness import Freshness
+from a13n_service.runs.environments.desktop.notify import HandbackNotifications
 from a13n_service.runs.environments.mounts import PRIMARY, has_primary
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
@@ -146,7 +147,7 @@ async def resolve_host(
         )
     return HostPlan(
         parts,
-        execution=ExecutionPolicy().overlay(RunOptions.model_validate(run.options).execution),
+        execution=ExecutionPolicy().overlay(stored.require(RunOptions, run.options, kind="run", id=run.id).execution),
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
@@ -176,13 +177,26 @@ class Host:
         """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
         features.append(Freshness())
+        if enabled_tool(agent.config.toolsets, "computer", "notify") is not None:
+            features.append(HandbackNotifications(self.runtime, self.lease))
         if retain_tools:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
         if agent.revision_id in self.browsers:
             features.append(
-                BrowserUseCapability(enabled_tools=parts.browser_tools, on_human_control=lambda: BROWSER_GUIDANCE)
+                BrowserUseCapability(
+                    enabled_tools=parts.browser_tools,
+                    on_human_control=lambda: BROWSER_GUIDANCE,
+                    file_instructions=(
+                        "Upload workspace assets into an observed file input: action='upload', ref, "
+                        "and 1-16 paths in the form asset:<asset_id>. Host or Environment paths are not accepted. "
+                        "Only unretired assets in this workspace may be uploaded. "
+                        "action='downloads' takes no ref/paths; it publishes completed tracked downloads "
+                        "as workspace assets and returns asset IDs, never Host paths. Publication requires "
+                        "workspace write authority. File transfer requires a supporting Browser provider."
+                    ),
+                )
             )
         if parts.builtin_instructions is not None:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
@@ -218,7 +232,7 @@ class Host:
         """`given` with what the agent binds of its own: its web backends and its media understanding."""
         return replace(
             given,
-            model_context=ModelContext(self.lease.run_id),
+            model_context=ModelContext(self.lease.run_id, self.runtime.storage),
             web=self.webs.get(agent.revision_id),
             browser_backend=self.browsers.get(agent.revision_id),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,

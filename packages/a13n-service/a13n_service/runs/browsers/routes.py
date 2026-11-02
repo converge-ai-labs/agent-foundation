@@ -1,9 +1,9 @@
 """Managed Browser metadata and explicit human control."""
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
-from a13n_service.runs.browsers import control, service
+from a13n_service.runs.browsers import control, service, viewer
 from a13n_service.runs.browsers.schemas import (
     Browser,
     BrowserAttach,
@@ -53,6 +53,18 @@ async def prepare_browser(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, actor: Actor, browser_id: str
 ) -> Browser:
     return tagged(response, await service.prepare(runtime, actor, workspace_id, browser_id))
+
+
+@router.post("/browsers/{browser_id}/stop", openapi_extra={"x-a13n-mcp": True})
+async def stop_browser(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    browser_id: str,
+    if_match: IfMatch = None,
+) -> Browser:
+    return tagged(response, await service.stop(runtime, actor, workspace_id, browser_id, if_match=if_match))
 
 
 @router.post("/browsers/{browser_id}/release", openapi_extra={"x-a13n-mcp": True})
@@ -125,7 +137,12 @@ async def handback_browser(
 
 @router.post("/browsers/{browser_id}/viewer", openapi_extra={"x-a13n-mcp": False})
 async def browser_viewer(
-    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, actor: Actor, browser_id: str
+    runtime: CurrentRuntime,
+    request: Request,
+    response: Response,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    browser_id: str,
 ) -> Viewer:
     response.headers["Cache-Control"] = "no-store"
-    return await control.viewer(runtime, actor, workspace_id, browser_id)
+    return viewer.public_viewer(request, browser_id, await control.viewer(runtime, actor, workspace_id, browser_id))

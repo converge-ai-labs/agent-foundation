@@ -23,7 +23,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.http import http_execution
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.management import E2BManagement
 from pydantic import SecretStr
 

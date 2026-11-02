@@ -1,3 +1,5 @@
+import { LanguageProvider, LanguageChoice } from "./i18n/language";
+import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter } from "react-router";
 import { GuestApp } from "./guest-app";
@@ -59,6 +61,13 @@ function retainKey(key: string) {
   }
 }
 export function BrowserApp() {
+  return (
+    <LanguageProvider>
+      <BrowserContent />
+    </LanguageProvider>
+  );
+}
+function BrowserContent() {
   const shareId = /^\/share\/([^/]+)(?:\/|$)/.exec(
     window.location.pathname,
   )?.[1];
@@ -69,6 +78,7 @@ export function BrowserApp() {
   );
 }
 function OwnerApp() {
+  const { t } = useTranslation();
   // Consume and remove the URL credential before mounting the router or any network consumer.
   const [key, setKey] = useState(initialKey);
   const [input, setInput] = useState("");
@@ -238,12 +248,14 @@ function OwnerApp() {
                           <Logo alt="" width={24} height={24} />
                           <span>Harness</span>
                         </div>
-                        <h1>Log in to Harness UI</h1>
+                        <LanguageChoice />
+                        <h1>{t("Log in to Harness UI")}</h1>
                         <p>
-                          Use the login key printed by your Harness server, not
-                          a model API key.
+                          {t(
+                            "Use the login key printed by your Harness server, not a model API key.",
+                          )}
                         </p>
-                        {pushWarning && <p role="alert">{pushWarning}</p>}
+                        {pushWarning && <p role="alert">{t(pushWarning)}</p>}
                         <form
                           className={styles.stack}
                           onSubmit={(event) => {
@@ -255,7 +267,7 @@ function OwnerApp() {
                           }}
                         >
                           <TextField
-                            label="Instance API key"
+                            label={t("Instance API key")}
                             type="password"
                             autoFocus
                             value={input}
@@ -263,7 +275,7 @@ function OwnerApp() {
                           />
                           {error && (
                             <p role="alert" className={styles.accessError}>
-                              {error}
+                              {t(error)}
                             </p>
                           )}
                           <Button
@@ -271,13 +283,14 @@ function OwnerApp() {
                             loading={connecting}
                             disabled={!input.trim()}
                           >
-                            Log in
+                            {t("Log in")}
                           </Button>
                         </form>
                         {drafts.current.size > 0 && (
                           <p>
-                            Your edits are still here. Log in without reloading
-                            to keep them.
+                            {t(
+                              "Your edits are still here. Log in without reloading to keep them.",
+                            )}
                           </p>
                         )}
                       </div>

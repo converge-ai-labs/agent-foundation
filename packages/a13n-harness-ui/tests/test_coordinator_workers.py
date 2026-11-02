@@ -14,7 +14,7 @@ from .test_app import _CompletedReconstructor, _settings
 from .test_coordinators import coordinator_configuration, create_coordinator
 from .test_thread_collaboration import controller
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_creation_owns_only_new_lead_workers_and_retains_failed_admission(tmp_path: Path, monkeypatch) -> None:

@@ -12,6 +12,7 @@ on:
       - "deploy/docker/images/a13n-service/entrypoint.sh"
       - "deploy/docker/images/a13n-service/service.toml"
       - "deploy/docker/images/sandbox/**"
+      - "deploy/docker/images/browser/**"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/*"
@@ -97,6 +98,13 @@ jobs:
               - 'frontend/pnpm-workspace.yaml'
               - 'frontend/tsconfig.base.json'
               - 'proto/a13n-service/openapi.json'
+            browser:
+              - '.dockerignore'
+              - '.github/workflows/images.yml'
+              - 'deploy/docker/images/browser/**'
+              - 'packages/a13n-service/a13n_service/providers/browser/runtime.py'
+              - 'packages/a13n-service/a13n_service/providers/environment/desktop_guest.py'
+              - 'LICENSE'
             sandbox:
               - '.dockerignore'
               - '.github/workflows/images.yml'
@@ -112,6 +120,7 @@ jobs:
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
+          BROWSER_CHANGED: ${{ steps.filter.outputs.browser }}
         run: |
           python - <<'PY'
           import json
@@ -124,6 +133,17 @@ jobs:
                   "runner": "ubuntu-latest",
                   "file": "deploy/docker/images/a13n-service/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-service",
+                  "context": ".",
+                  "platforms": "linux/amd64,linux/arm64",
+                  "variant": "standard",
+                  "tag": "dev",
+              })
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["BROWSER_CHANGED"] == "true":
+              images.append({
+                  "name": "a13n-browser",
+                  "runner": "ubuntu-latest",
+                  "file": "deploy/docker/images/browser/Dockerfile",
+                  "image": "ghcr.io/converge-ai-labs/a13n-browser",
                   "context": ".",
                   "platforms": "linux/amd64,linux/arm64",
                   "variant": "standard",

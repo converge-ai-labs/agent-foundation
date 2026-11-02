@@ -7,7 +7,6 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../../shared/api";
 import { EnvironmentDesktop } from "./environment-desktop";
@@ -68,21 +67,22 @@ const reply = (value: object) => ({
   data: value,
   response: new Response(null, { headers: { ETag: '"control:3"' } }),
 });
-function grant(
-  mode = "control",
-  expires_at = new Date(Date.now() + 60000).toISOString(),
-) {
+function grant(mode = "control", episode = 1, ttl = 60000) {
   return {
     mode,
     websocket_url: "wss://desktop.example/secret",
     password: "secret-password",
     generation: 1,
-    episode: 1,
-    expires_at,
+    episode,
+    expires_at: new Date(Date.now() + ttl).toISOString(),
+    viewer_id: mode === "view" ? "dview_stable" : null,
   };
 }
 function start(initial = human) {
   get.mockResolvedValue(reply(initial));
+  post.mockImplementation(async (_path, { body }) =>
+    reply(grant(body.mode, body.episode)),
+  );
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -103,52 +103,81 @@ function start(initial = human) {
     changeEnvironment: () => result.rerender(wrap("other")),
   };
 }
-async function connect() {
-  post.mockResolvedValueOnce(reply(grant()));
-  fireEvent.click(await screen.findByRole("button", { name: "Connect input" }));
+async function observing() {
   await waitFor(() => expect(viewers).toHaveLength(1));
+  act(() => viewers[0].dispatchEvent(new Event("connect")));
   expect(viewers[0].viewOnly).toBe(true);
-  act(() => {
-    viewers[0].dispatchEvent(new Event("connect"));
-  });
-  expect(viewers[0].viewOnly).toBe(false);
+}
+async function connect(ttl = 60000) {
+  await observing();
+  post.mockResolvedValueOnce(reply(grant("control", 1, ttl)));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  expect(viewers[1].viewOnly).toBe(true);
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
+  expect(viewers[1].viewOnly).toBe(false);
 }
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   viewers.length = 0;
 });
 
-it("takes over independently, connects only after settlement, renews and returns without Run commands", async () => {
-  const user = userEvent.setup();
+it("opens read-only automatically and unmounting only disconnects locally", async () => {
+  const { unmount } = start(automated);
+  await observing();
+  expect(post.mock.calls[0][1].body).toMatchObject({
+    mode: "view",
+    generation: 1,
+    episode: 0,
+  });
+  expect(screen.queryByRole("button", { name: "View desktop" })).toBeNull();
+  unmount();
+  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it("takes control in one action, waits for authorization, renews and returns without Run commands", async () => {
   const { cache } = start(automated);
-  await screen.findByRole("button", { name: "Take control" });
-  expect(post).not.toHaveBeenCalled();
+  await observing();
   const draining = { ...human, control: "draining" as const };
   get.mockResolvedValue(reply(draining));
   post.mockResolvedValueOnce(reply(draining));
-  await user.click(screen.getByRole("button", { name: "Take control" }));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
   await screen.findByText("Authorizing Computer control");
-  expect(screen.queryByRole("button", { name: "Connect input" })).toBeNull();
-  expect(post.mock.calls[0][1].body).toEqual({ thread_id: "thread" });
+  expect(post).toHaveBeenCalledTimes(2);
+  expect(post.mock.calls[1][1].body).toEqual({ thread_id: "thread" });
   get.mockResolvedValue(reply(human));
-  act(() => {
-    cache.setQueryData(key, { value: human, etag: '"control:3"' });
-  });
-  await connect();
+  act(() => cache.setQueryData(key, { value: human, etag: '"control:3"' }));
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
+  expect(viewers[1].viewOnly).toBe(false);
   expect(JSON.stringify(cache.getQueryData(key))).not.toContain("secret");
   expect(cache.getMutationCache().getAll()).toHaveLength(0);
   post.mockResolvedValueOnce(reply({ ...human, version: 4 }));
-  await user.click(screen.getByRole("button", { name: "Renew control" }));
-  await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
-  expect(post.mock.calls[2][1].body).toEqual({ generation: 1, episode: 1 });
-  get.mockResolvedValue(reply({ ...automated, episode: 1, version: 5 }));
-  post.mockResolvedValueOnce(reply({ ...automated, episode: 1, version: 5 }));
-  await user.click(screen.getByRole("button", { name: "Return control" }));
-  expect(viewers[0].viewOnly).toBe(true);
-  expect(viewers[0].disconnect).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Renew control" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(4));
+  expect(post.mock.calls[3][1].body).toEqual({ generation: 1, episode: 1 });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Return control",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  const returned = { ...automated, episode: 1, version: 5 };
+  get.mockResolvedValue(reply(returned));
+  post.mockResolvedValueOnce(reply(returned));
+  fireEvent.click(screen.getByRole("button", { name: "Return control" }));
   await screen.findByText("Agent controls Computer");
+  await waitFor(() => expect(viewers).toHaveLength(3));
+  expect(viewers[1].viewOnly).toBe(true);
+  expect(viewers[1].disconnect).toHaveBeenCalled();
+  expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
   expect(
     post.mock.calls.every(([path]) => path.startsWith("/api/v1/environments/")),
   ).toBe(true);
@@ -157,23 +186,8 @@ it("takes over independently, connects only after settlement, renews and returns
   ).toBeNull();
 });
 
-it("views read-only without acquiring control and closing only disconnects locally", async () => {
-  start();
-  post.mockResolvedValueOnce(reply(grant("view")));
-  fireEvent.click(await screen.findByRole("button", { name: "View desktop" }));
-  await waitFor(() => expect(viewers).toHaveLength(1));
-  act(() => {
-    viewers[0].dispatchEvent(new Event("connect"));
-  });
-  expect(viewers[0].viewOnly).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Close viewer" }));
-  expect(viewers[0].disconnect).toHaveBeenCalled();
-  expect(post).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("You control Computer")).toBeTruthy();
-});
-
 it.each(["retake", "return", "controller"])(
-  "disables input when metadata reports %s",
+  "revokes input on %s and never restores it without an action",
   async (change) => {
     const { cache } = start();
     await connect();
@@ -185,16 +199,18 @@ it.each(["retake", "return", "controller"])(
           ? { control: "returning" }
           : { controller_id: "someone-else" }),
     };
-    act(() => {
-      cache.setQueryData(key, { value: updated });
-    });
-    await waitFor(() => expect(viewers[0].disconnect).toHaveBeenCalled());
-    expect(viewers[0].viewOnly).toBe(true);
+    get.mockResolvedValue(reply(updated));
+    act(() => cache.setQueryData(key, { value: updated }));
+    await waitFor(() => expect(viewers[1].disconnect).toHaveBeenCalled());
+    expect(viewers[1].viewOnly).toBe(true);
+    await waitFor(() => expect(viewers).toHaveLength(3));
+    expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
   },
 );
 
-it("does not attach a late viewer after closing or changing Environment", async () => {
+it("discards late grants after changing Environment", async () => {
   const { changeEnvironment } = start();
+  await observing();
   let resolve!: (value: object) => void;
   post.mockImplementationOnce(
     () =>
@@ -202,94 +218,94 @@ it("does not attach a late viewer after closing or changing Environment", async 
         resolve = done;
       }),
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Connect input" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close viewer" }));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
   changeEnvironment();
-  await act(async () => {
-    resolve(reply(grant()));
-  });
-  expect(viewers).toHaveLength(0);
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  await act(async () => resolve(reply(grant())));
+  expect(viewers).toHaveLength(2);
+  expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
 });
 
-it("keeps input disabled when handback fails and exposes explicit recovery", async () => {
+it("keeps input disabled when handback fails and exposes recovery", async () => {
   start();
   await connect();
   post.mockRejectedValueOnce(new Error("Cleanup could not be confirmed"));
   fireEvent.click(screen.getByRole("button", { name: "Return control" }));
   await screen.findByText("Cleanup could not be confirmed");
-  expect(viewers[0].viewOnly).toBe(true);
-  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(viewers[1].viewOnly).toBe(true);
+  expect(viewers[1].disconnect).toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Return control" })).toBeTruthy();
 });
 
-it("refreshes a short viewer grant without reconnecting or renewing the human lease", async () => {
-  const { cache } = start();
-  await connect();
-  vi.useFakeTimers();
-  post.mockResolvedValue(
-    reply(grant("control", new Date(Date.now() + 60000).toISOString())),
-  );
-  // A fresh connection arms the short-lived grant timer.
-  fireEvent.click(screen.getByRole("button", { name: "Close viewer" }));
-  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
-  await act(async () => {});
-  const count = viewers.length;
-  post.mockImplementation(async () =>
-    reply(grant("control", new Date(Date.now() + 60000).toISOString())),
-  );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(45001);
-  });
-  expect(
-    post.mock.calls.filter(([path]) => path.endsWith("/desktop-viewer")),
-  ).toHaveLength(3);
-  expect(viewers).toHaveLength(count);
-  expect(post.mock.calls.some(([path]) => path.endsWith("/renew"))).toBe(false);
-  expect(JSON.stringify(cache.getQueryData(key))).not.toContain("secret");
-});
+it.each(["view", "control"])(
+  "refreshes %s grants without reconnecting or renewing the human lease",
+  async (mode) => {
+    const { cache } = start();
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(viewers).toHaveLength(1);
+    if (mode === "control") {
+      fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+      await act(async () => {});
+      expect(viewers).toHaveLength(2);
+    }
+    const count = viewers.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(45001);
+    });
+    expect(post.mock.calls.at(-1)?.[1].body).toMatchObject({
+      mode,
+      ...(mode === "view" ? { viewer_id: "dview_stable" } : {}),
+    });
+    expect(viewers).toHaveLength(count);
+    expect(post.mock.calls.some(([path]) => path.endsWith("/renew"))).toBe(
+      false,
+    );
+    expect(JSON.stringify(cache.getQueryData(key))).not.toContain("secret");
+  },
+);
 
-it("closes at lease expiry even when the next viewer refresh never responds", async () => {
+it("expires input even when grant refresh never responds", async () => {
   start();
-  await screen.findByRole("button", { name: "Connect input" });
+  await observing();
   vi.useFakeTimers();
-  post.mockResolvedValueOnce(
-    reply(grant("control", new Date(Date.now() + 30000).toISOString())),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
+  post.mockResolvedValueOnce(reply(grant("control", 1, 30000)));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
   await act(async () => {});
-  expect(viewers).toHaveLength(1);
-  act(() => {
-    viewers[0].dispatchEvent(new Event("connect"));
-  });
+  expect(viewers).toHaveLength(2);
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
   post.mockImplementationOnce(() => new Promise(() => {}));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(30001);
   });
-  expect(viewers[0].viewOnly).toBe(true);
-  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(viewers[1].viewOnly).toBe(true);
+  expect(viewers[1].disconnect).toHaveBeenCalled();
   expect(
     screen.getByText("Desktop access expired. Open it again to reconnect."),
   ).toBeTruthy();
 });
 
 it.each(["disconnect", "securityfailure"])(
-  "clears credentials and disables input on %s",
+  "disables input on %s and retry starts read-only",
   async (event) => {
     start();
     await connect();
-    act(() => {
-      viewers[0].dispatchEvent(new Event(event));
-    });
-    expect(viewers[0].viewOnly).toBe(true);
-    expect(viewers[0].disconnect).toHaveBeenCalled();
+    act(() => viewers[1].dispatchEvent(new Event(event)));
+    expect(viewers[1].viewOnly).toBe(true);
+    expect(viewers[1].disconnect).toHaveBeenCalled();
     expect(screen.queryByText("Input enabled")).toBeNull();
     expect(
       screen.getByText("Desktop disconnected. Open it again to reconnect."),
     ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(viewers).toHaveLength(3));
+    expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
   },
 );
 
-it("disconnects when authority refresh fails and on unmount", async () => {
+it("disconnects on authority errors and unmount; recovery does not restore input", async () => {
   const { cache, unmount } = start();
   await connect();
   get.mockRejectedValueOnce(new Error("Authority unavailable"));
@@ -297,40 +313,34 @@ it("disconnects when authority refresh fails and on unmount", async () => {
     await cache.refetchQueries({ queryKey: key });
   });
   await screen.findByText("Authority unavailable");
-  expect(viewers[0].viewOnly).toBe(true);
-  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(viewers[1].viewOnly).toBe(true);
+  expect(viewers[1].disconnect).toHaveBeenCalled();
   get.mockResolvedValue(reply(human));
   await act(async () => {
     await cache.refetchQueries({ queryKey: key });
   });
-  post.mockResolvedValueOnce(reply(grant()));
-  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
-  await waitFor(() => expect(viewers).toHaveLength(2));
+  await waitFor(() => expect(viewers).toHaveLength(3));
+  expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
   unmount();
+  expect(viewers[2].disconnect).toHaveBeenCalled();
+});
+
+it("does not enable a delayed connection after expiry", async () => {
+  start();
+  await observing();
+  const now = Date.now();
+  post.mockResolvedValueOnce(reply(grant("control", 1, 30000)));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  vi.spyOn(Date, "now").mockReturnValue(now + 30001);
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
   expect(viewers[1].viewOnly).toBe(true);
   expect(viewers[1].disconnect).toHaveBeenCalled();
 });
 
-it("does not enable a delayed connection after its grant has expired", async () => {
-  start();
-  await screen.findByRole("button", { name: "Connect input" });
-  const now = Date.now();
-  post.mockResolvedValueOnce(
-    reply(grant("control", new Date(now + 30000).toISOString())),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
-  await waitFor(() => expect(viewers).toHaveLength(1));
-  vi.spyOn(Date, "now").mockReturnValue(now + 30001);
-  act(() => {
-    viewers[0].dispatchEvent(new Event("connect"));
-  });
-  expect(viewers[0].viewOnly).toBe(true);
-  expect(viewers[0].disconnect).toHaveBeenCalled();
-  vi.restoreAllMocks();
-});
-
-it("discards pending Connect intent across another tab's return and retake", async () => {
+it("invalidates pending control grants across another tab's return and retake", async () => {
   const { cache } = start();
+  await observing();
   let resolve!: (value: object) => void;
   post.mockImplementationOnce(
     () =>
@@ -338,62 +348,24 @@ it("discards pending Connect intent across another tab's return and retake", asy
         resolve = done;
       }),
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Connect input" }));
-  expect(post.mock.calls[0][1].body).toMatchObject({
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  expect(post.mock.calls[1][1].body).toMatchObject({
     mode: "control",
     generation: 1,
     episode: 1,
   });
   const retaken = { ...human, episode: 2, version: 6 };
   get.mockResolvedValue(reply(retaken));
-  act(() => {
-    cache.setQueryData(key, { value: retaken });
-  });
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Connect input",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  await act(async () => {
-    resolve(reply({ ...grant(), episode: 2 }));
-  });
-  expect(viewers).toHaveLength(0);
-  // Connecting again is a new explicit user intent for the new episode.
-  post.mockResolvedValueOnce(reply({ ...grant(), episode: 2 }));
-  fireEvent.click(screen.getByRole("button", { name: "Connect input" }));
-  await waitFor(() => expect(viewers).toHaveLength(1));
-  expect(post.mock.calls[1][1].body).toMatchObject({
+  act(() => cache.setQueryData(key, { value: retaken }));
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  await act(async () => resolve(reply({ ...grant(), episode: 2 })));
+  expect(viewers).toHaveLength(2);
+  expect(post.mock.calls.at(-1)?.[1].body.mode).toBe("view");
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await waitFor(() => expect(viewers).toHaveLength(3));
+  expect(post.mock.calls.at(-1)?.[1].body).toMatchObject({
+    mode: "control",
     generation: 1,
     episode: 2,
   });
-});
-
-it("renews read-only viewing with its existing viewer identity and connection", async () => {
-  start();
-  const button = await screen.findByRole("button", { name: "View desktop" });
-  vi.useFakeTimers();
-  const reader = { ...grant("view"), viewer_id: "dview_stable" };
-  post.mockResolvedValueOnce(reply(reader));
-  fireEvent.click(button);
-  await act(async () => {});
-  expect(viewers).toHaveLength(1);
-  post.mockImplementation(async () =>
-    reply({
-      ...reader,
-      expires_at: new Date(Date.now() + 60000).toISOString(),
-    }),
-  );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(45001);
-  });
-  expect(post.mock.calls[1][1].body).toMatchObject({
-    mode: "view",
-    viewer_id: "dview_stable",
-  });
-  expect(viewers).toHaveLength(1);
-  expect(viewers[0].disconnect).not.toHaveBeenCalled();
 });

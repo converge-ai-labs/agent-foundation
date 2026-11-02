@@ -7,8 +7,9 @@ from sqlalchemy import ForeignKeyConstraint, String
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
 # run's display pages by ordinal and pending answers by tool call. Memory organization state is keyed by Space;
 # model dispatches are keyed by Harness call ID. Browser bindings use Thread IDs; tabs and selections use
-# Browser/target and Browser/Thread pairs. Every other row has a Service object ID.
+# Browser/target and Browser/Thread pairs; downloads use Browser/generation/GUID. Every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
+    "browser_downloads",
     "browser_tabs",
     "browser_selections",
     "thread_browsers",
@@ -40,6 +41,11 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
     assert [column.name for column in metadata.tables["thread_browsers"].primary_key.columns] == ["thread_id"]
+    assert [column.name for column in metadata.tables["browser_downloads"].primary_key.columns] == [
+        "browser_id",
+        "generation",
+        "guid",
+    ]
     assert [column.name for column in metadata.tables["browser_tabs"].primary_key.columns] == [
         "browser_id",
         "target_id",

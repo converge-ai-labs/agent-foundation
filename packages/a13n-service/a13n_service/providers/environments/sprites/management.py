@@ -22,8 +22,8 @@ from a13n_harness.providers.environment.sprites.shared import (
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
+from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 
-from .configuration import SpritesRecipe
 from .desktop_install import install, revision
 
 

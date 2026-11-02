@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import at_field, conflict, invalid, not_found
 from a13n_service.providers.registry import Registry, WebOperation, web_operations
-from a13n_service.resources.agents import definition, toolsets
+from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, PluginSelection, SkillSelection, SubagentSelection
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import ScrapeConfiguration, SearchConfiguration
@@ -364,7 +364,7 @@ async def subagent_graph(
                 graph[revision.id] = Subagent(
                     agent_id=revision.agent_id,
                     revision_id=revision.id,
-                    config=AgentConfig.model_validate(revision.config),
+                    config=stored.require(AgentConfig, revision.config, kind="agent_revision", id=revision.id),
                     description=head.description or head.name,
                 )
         depth += 1

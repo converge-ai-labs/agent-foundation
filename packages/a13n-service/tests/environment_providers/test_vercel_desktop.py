@@ -22,7 +22,7 @@ from a13n_harness.providers.environment.vercel.shared import (
     VercelEnvironmentConfiguration,
 )
 from a13n_service.providers.environment import desktop_access as access
-from a13n_service.providers.environments.vercel.configuration import VercelRecipe
+from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 from a13n_service.providers.environments.vercel.management import VercelManagement
 
 pytestmark = pytest.mark.anyio

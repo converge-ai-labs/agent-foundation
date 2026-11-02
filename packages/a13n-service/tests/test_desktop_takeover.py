@@ -252,7 +252,10 @@ async def test_human_control_allows_real_files_shell_and_new_codeact_scripts(
             return CodeActPolicyToolset(
                 wrapped=toolset,
                 policy=CodeActToolPolicy(
-                    tools={name: True for name in ("view", "shell_exec", "shell_info", "shell_input", "shell_wait")}
+                    tools={
+                        name: True
+                        for name in ("view", "shell_exec", "shell_info", "shell_input", "shell_wait", "computer_notify")
+                    }
                 ),
             )
 
@@ -364,6 +367,7 @@ async def test_human_control_allows_real_files_shell_and_new_codeact_scripts(
                         "print(await shell_info(process_id=process_id))",
                         "print(await shell_input(process_id=process_id, data='process-control-proof\\n', close_stdin=True))",
                         "print(await shell_wait(process_id=process_id, timeout_seconds=5))",
+                        "print(await computer_notify(alias='workspace'))",
                     ]
                 )
             },
@@ -409,6 +413,7 @@ async def test_human_control_allows_real_files_shell_and_new_codeact_scripts(
         assert any(item["toolCallId"] == "blocked" and "human control" in str(item["result"]) for item in results)
         process = [item["result"] for item in results if item["toolCallId"] in {"process-proof", "process-result"}]
         assert "process-control-proof" in str(process) and "exited" in str(process), process
+        assert "registered" in str(process), process
         computer.observe.assert_not_awaited()
     finally:
         await local.close()
@@ -512,6 +517,91 @@ async def test_handback_reaches_live_child_without_resurrecting_settled_child(
             (registration,) = list(await session.scalars(select(DesktopBlockedRow)))
             assert registration.thread_id == child.thread_id
             assert registration.suppressed is settled
+    finally:
+        gate.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+
+async def test_explicit_notify_deduplicates_with_blocked_calls_and_wakes_idle_root(
+    service, connected, scripted_model, runs_kit
+):
+    from a13n_service.infra.outbox import claim as claim_outbox
+    from a13n_service.runs.environments.desktop.delivery import handbacks
+
+    from .test_model_context import _contexts
+
+    first, environment_id, actor, *_ = connected
+    human = await begin(service, connected)
+    scripted_model.call("computer_notify", {"alias": "workspace"}, call_id="notify")
+    scripted_model.call("computer_notify", {"alias": "workspace"}, call_id="duplicate")
+    scripted_model.call("computer_observe", {}, call_id="blocked")
+    scripted_model.say("I will continue after handback.")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, first["run"]["id"])
+    assert run["status"] == "completed", run.get("failure")
+    for _ in range(4):
+        request = await scripted_model.request()
+        computer = _contexts(request, "service-context")[-1]["computer"]
+        assert computer[0]["admission"] == "human_control"
+        assert "computer_notify" in computer[0]["hint"]
+        assert "password" not in json.dumps(computer)
+    async with transaction(service.runtime.storage) as session:
+        registrations = list(await session.scalars(select(DesktopBlockedRow)))
+        assert len(registrations) == 1
+        assert registrations[0].run_id == run["id"]
+    returned = await control.handback(
+        service.runtime,
+        actor,
+        service.tenant.workspace_id,
+        environment_id,
+        if_match=etag(human.id, human.version),
+    )
+    assert returned.control == "automation"
+    # Delivery uses the same durable notice and ordinary idle-root advance.
+    notices = await claim_outbox(
+        service.runtime.storage, "desktop_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    assert len(notices) == 1
+    await handbacks(service.runtime)(notices[0])
+    thread = await runs_kit.get_thread(service, run["thread_id"])
+    assert thread["current_run_id"] is not None and thread["current_run_id"] != run["id"]
+
+
+async def test_notify_after_handback_reports_available_without_registering(
+    service, connected, scripted_model, runs_kit
+):
+    from .test_model_context import _contexts
+
+    first, environment_id, actor, *_ = connected
+    human = await begin(service, connected)
+    gate = asyncio.Event()
+    scripted_model.call("computer_notify", {"alias": "workspace"}, call_id="notify", gate=gate)
+    scripted_model.say("I can observe again.")
+    running = await runs_kit.attempt(service)
+    try:
+        request = await asyncio.wait_for(scripted_model.request(), 10)
+        assert _contexts(request, "service-context")[-1]["computer"][0]["admission"] == "human_control"
+        await control.handback(
+            service.runtime,
+            actor,
+            service.tenant.workspace_id,
+            environment_id,
+            if_match=etag(human.id, human.version),
+        )
+        gate.set()
+        await asyncio.wait_for(running, 15)
+        run = await runs_kit.get_run(service, first["run"]["id"])
+        assert run["status"] == "completed", run.get("failure")
+        items = await runs_kit.items(service, run["id"])
+        result = next(item["content"]["result"] for item in items["items"] if item["kind"] == "tool_call")
+        assert "already_available" in result
+        request = await scripted_model.request()
+        computer = _contexts(request, "service-context")[-1]["computer"][0]
+        assert computer["admission"] == "open" and "fresh observation" in computer["hint"]
+        async with transaction(service.runtime.storage) as session:
+            assert not list(await session.scalars(select(DesktopBlockedRow)))
     finally:
         gate.set()
         if not running.done():

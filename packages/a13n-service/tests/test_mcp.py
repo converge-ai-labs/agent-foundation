@@ -211,8 +211,11 @@ async def test_distribution_authentication_and_explicit_operation_admission(
         await runs_kit.start_thread(service, agent, "inspect agents")
         (lease,) = await claim(service.runtime, worker_id="extension-test", worker_build="test", limit=1)
         token = await issue(service.runtime, lease, frozenset({"agents"}))
+        from .platform_support import rpc as platform_rpc
+
         async with client(service, {"secret": token}) as http:
-            response = await rpc(http, "tools/list")
+            assert (await rpc(http, "tools/list")).status_code == 401
+            response = await platform_rpc(http, "tools/list")
             assert response.status_code == 200, response.text
             names = {tool["name"] for tool in response.json()["result"]["tools"]}
             assert names and "extension_selected" not in names
@@ -257,6 +260,11 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert ("/api/v1/usage", "get") in selected
     assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
     assert ("/api/v1/usage/context", "get") in selected
+    overview_parameters = {
+        item["name"]: item["schema"] for item in schema["paths"]["/api/v1/usage/overview"]["get"]["parameters"]
+    }
+    assert overview_parameters["group_by"]["anyOf"][0]["enum"] == ["agents", "models"]
+    assert overview_parameters["metric"]["enum"] == ["cost", "tokens"]
     for path in ("overview", "agents", "models", "members"):
         assert (f"/api/v1/usage/{path}", "get") in selected
     assert ("/api/v1/skills", "post") in selected

@@ -58,6 +58,7 @@ type Resource = { value: Schema["Provider"]; etag?: string };
 const categories: Record<ProviderKind, ProviderCategoryValue> = {
   environment: "environments",
   memory: "memory",
+  browser: "browsers",
 };
 
 /** The types a deployment offers for one provider kind. */
@@ -337,7 +338,7 @@ export function ProviderForm({
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
   const configChanged =
-    kind === "environment" &&
+    (kind === "environment" || kind === "browser") &&
     !!basis &&
     JSON.stringify(configuration) !== JSON.stringify(basis.value.config);
   function done() {
@@ -481,7 +482,7 @@ export function ProviderForm({
           retry={() => void reload()}
         />
       )}
-      {kind === "environment" ? (
+      {kind === "environment" || kind === "browser" ? (
         hasFields(configSchema) && (
           <ProviderGroup>
             <ProviderConfigurationFields

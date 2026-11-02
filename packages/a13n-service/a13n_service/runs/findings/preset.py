@@ -13,14 +13,16 @@ RULES = {
 # The selected traces, the Run's executed configuration, an existing finding and the submission.
 TOOLS = frozenset(
     {
-        ("GET", "/api/v1/traces/{trace_id}"),
-        ("GET", "/api/v1/traces/{trace_id}/spans"),
-        ("GET", "/api/v1/traces/{trace_id}/spans/{span_id}/content"),
-        ("GET", "/api/v1/runs/{run_id}/agent"),
-        ("GET", "/api/v1/findings/{finding_id}"),
-        ("POST", "/api/v1/findings"),
+        "get_trace",
+        "list_trace_spans",
+        "read_content",
+        "search_content",
+        "get_run_configuration",
+        "get_finding",
+        "create_finding",
     }
 )
+
 
 NAME = "Finding Agent"
 DESCRIPTION = "Inspect execution evidence and report actionable findings."
@@ -37,7 +39,7 @@ def configuration(model: str) -> AgentConfig:
             "execution": ToolsetSelection(
                 tools={
                     tool.key: ToolSelection(enabled=True, permission="allow")
-                    if (tool.method, tool.path) in TOOLS
+                    if tool.key in TOOLS
                     else ToolSelection(enabled=False)
                     for tool in PLATFORM_TOOLS
                     if tool.group == "execution"

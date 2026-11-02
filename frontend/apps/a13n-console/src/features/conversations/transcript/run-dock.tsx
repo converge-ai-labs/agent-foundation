@@ -23,7 +23,6 @@ import { ForkRun } from "../fork-run";
 import { Composer, RunOptions, useRunOptions } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
-import { ThreadDesktop } from "./environment-desktop";
 import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
@@ -52,8 +51,6 @@ export function ThreadDock({
   hidden?: boolean;
 }) {
   const latest = useRun(thread.current_run_id ?? thread.last_run_id);
-  const interactive = useInteractiveThread(thread);
-  const { workspace, can } = useWorkspace();
   return (
     <div className={styles.dock} data-thread-dock hidden={hidden}>
       <div className={styles.queue}>
@@ -65,12 +62,6 @@ export function ThreadDock({
           }
         />
       </div>
-      {interactive && can("run") && (
-        <ThreadDesktop
-          key={`${workspace.id}:${thread.id}`}
-          threadId={thread.id}
-        />
-      )}
       {children}
     </div>
   );

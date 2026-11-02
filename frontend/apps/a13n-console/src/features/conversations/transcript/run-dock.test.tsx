@@ -612,35 +612,3 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
     expect(posts).toHaveLength(0);
   },
 );
-
-it("keeps the Thread desktop open across Run changes, and closes on Thread identity change", async () => {
-  const { changeThread } = mount({ status: "running" });
-  fireEvent.click(await screen.findByRole("button", { name: "Desktop" }));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Environment desktop",
-  });
-  await screen.findByText("No environments mounted.");
-  changeThread({ current_run_id: "successor", last_run_id: "run" });
-  expect(screen.getByRole("dialog", { name: "Environment desktop" })).toBe(
-    dialog,
-  );
-  changeThread({ id: "other" });
-  expect(
-    screen.queryByRole("dialog", { name: "Environment desktop" }),
-  ).toBeNull();
-});
-
-it.each([{ origin: "child" as const }, { consoleStarted: false }])(
-  "withholds the desktop entry point for a non-interactive Thread %j",
-  async (options) => {
-    mount(options);
-    await screen.findByText("Queued messages");
-    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
-  },
-);
-
-it("withholds desktop controls without run permission", () => {
-  denied = ["run"];
-  mount();
-  expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
-});

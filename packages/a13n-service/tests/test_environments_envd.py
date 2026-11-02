@@ -130,7 +130,7 @@ async def test_managed_sampler_bootstrap_enables_real_envd_without_exporter(daem
     )
     from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
     from a13n_service.providers.environment.metrics import MetricsLaunch
-    from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+    from a13n_service.providers.environment.recipes.e2b import E2BRecipe
     from a13n_service.providers.environments.e2b.management import E2BManagement
     from pydantic import SecretStr
 

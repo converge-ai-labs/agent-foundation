@@ -38,6 +38,14 @@ export const providerCategories = [
     empty: "Add a provider before creating templates.",
   },
   {
+    value: "browsers",
+    label: "Browser",
+    emptyTitle: "No browser providers yet",
+    icon: GlobeIcon,
+    description: "Configure where your agents' browsers run.",
+    empty: "Add a provider, then create browsers with private profiles.",
+  },
+  {
     value: "connectors",
     label: "Connector",
     emptyTitle: "No connector providers yet",

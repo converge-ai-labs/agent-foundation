@@ -752,7 +752,19 @@
   min-height: 48px;
   margin: 0;
   padding: 12px 16px;
+  border: 0;
   border-radius: 0;
+  background: transparent;
+  scale: none;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+/* Card headers keep their edges and hover fill while pressed. */
+.outlinedDisclosure
+  [data-slot="disclosure-surface"]
+  > button:is(:hover, :active) {
+  background: var(--a13n-hover);
 }
 
 .platformTools [data-slot="collapsible-panel"] > div {
@@ -771,18 +783,4 @@
   width: 16px;
   height: 16px;
   margin-left: 4px;
-  rotate: none;
-  transform: rotate(0deg);
-}
-.outlinedDisclosure
-  [data-slot="disclosure-surface"]
-  > button[aria-expanded="true"]
-  > svg {
-  transform: rotate(90deg);
-}
-
-.outlinedDisclosure [data-slot="disclosure-surface"] > button {
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-  line-height: 20px;
 }

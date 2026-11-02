@@ -14,6 +14,36 @@
   min-height: 0;
   position: relative;
 }
+.sessionWorkspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.resourcePane {
+  display: flex;
+  flex: 0 0 48%;
+  min-width: 360px;
+  min-height: 0;
+  border-left: 1px solid var(--a13n-border-soft);
+  background: var(--a13n-canvas);
+}
+.resourcePane[hidden] {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .sessionWorkspace {
+    flex-direction: column;
+  }
+  .resourcePane {
+    order: -1;
+    flex: 0 1 50%;
+    min-width: 0;
+    max-height: 50%;
+    border-left: 0;
+    border-bottom: 1px solid var(--a13n-border-soft);
+  }
+}
 .sessionContent {
   flex: 1;
   min-width: 0;

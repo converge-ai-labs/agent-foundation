@@ -5,6 +5,8 @@ from typing import Self
 from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
 from pydantic import ConfigDict, Field, model_validator
 
+from a13n_service.settings import RENEWAL_HORIZON_SECONDS
+
 
 class E2BRecipe(E2BEnvironmentConfiguration):
     template: str = Field(
@@ -45,3 +47,7 @@ class E2BRecipe(E2BEnvironmentConfiguration):
         if self.desktop_assistance and (not self.desktop or self.template in {"desktop", "base"}):
             raise ValueError("Desktop access requires desktop=True and an automatic or compatible custom template")
         return self
+
+
+class CloudRecipe(E2BRecipe):
+    timeout_seconds: int = Field(default=3600, ge=RENEWAL_HORIZON_SECONDS, le=86_400, title="Sandbox timeout (seconds)")

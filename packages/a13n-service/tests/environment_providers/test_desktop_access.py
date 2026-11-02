@@ -10,7 +10,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError, Environmen
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
 from a13n_service.providers.environment import desktop_access as protocol
 from a13n_service.providers.environment import desktop_guest as guest
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.management import E2BManagement
 from pydantic import SecretStr
 
@@ -211,6 +211,21 @@ async def test_private_runtime_rejects_symlinks_and_world_access(tmp_path):
         guest.private_directory(link)
 
 
+async def test_control_socket_communicates_under_long_private_root(tmp_path):
+    root = tmp_path / ("private-" + "x" * 120)
+    guest.private_directory(root)
+    address = root / "control.sock"
+    assert len(str(address).encode()) > 108
+    instance = guest.Supervisor(root, ":99", "/private/Xauthority", 6081, "websockify")
+    with guest.control_address(root) as endpoint:
+        async with await asyncio.start_unix_server(instance.connection, path=endpoint):
+            response = await guest.call(root, {"protocol_version": 2, "operation": "describe"})
+            assert response["result"]["generation"] == instance.generation
+            assert address.is_socket()
+            assert root.stat().st_mode & 0o777 == 0o700
+    assert not address.exists()
+
+
 async def test_wall_clock_expiry_handles_suspended_vm_clock(supervisor, monkeypatch):
     instance, _, _ = supervisor
     await grant(instance)
@@ -359,3 +374,13 @@ async def test_read_only_refresh_exceeds_history_limit_without_allocating_identi
     assert (await grant(instance))["state"] == "active"
     clock[0] += 61
     assert (await grant(instance, "view_stable", "view"))["state"] == "expired"
+
+
+async def test_environment_history_capacity_refuses_new_grant_and_unknown_revoke(supervisor):
+    instance, _, _ = supervisor
+    instance.revocations.update({f"grant_{index:08d}": index + 1 for index in range(guest.MAX_HISTORY)})
+    with pytest.raises(guest.Refused, match="capacity_exceeded"):
+        await request(instance, "grant", id="grant_newest", mode="control", epoch=1, expires_at=guest.time.time() + 60)
+    with pytest.raises(guest.Refused, match="capacity_exceeded"):
+        await request(instance, "revoke", id="grant_unknown", epoch=1)
+    assert len(instance.revocations) == guest.MAX_HISTORY

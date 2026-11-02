@@ -21,14 +21,16 @@ from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, source_tool_id
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, ValidationInfo
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
+from a13n_service.infra.schema import model_schema
 from a13n_service.providers.registry import WebOperation
 
 PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
-PLATFORM_SOURCE = "platform"
+COMPUTER_NOTIFY_TOOL_ID = "service.computer_notify"
+PLATFORM_SOURCE = "service-platform"
 
 type ToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"] | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
@@ -140,7 +142,7 @@ class _Tool:
             default_enabled=self.default_enabled,
             # A selection starts with `inherit`, which takes this default.
             default_permission=self.default_permission,
-            config_schema=self.config.model_json_schema(),
+            config_schema=model_schema(self.config),
             supported_permissions=_PERMISSIONS,
             resource_selector=None
             if self.operation is None
@@ -166,7 +168,7 @@ class _Toolset:
             description=self.description,
             default_enabled=self.default_enabled,
             platform=self.platform,
-            config_schema=self.config.model_json_schema(),
+            config_schema=model_schema(self.config),
             tools=tuple(tool.definition(supported_operations) for tool in self.tools),
         )
 
@@ -183,7 +185,7 @@ def _platform(group: PlatformGroup, display_name: str, description: str) -> _Too
                 tool.summary,
                 source_tool_id(PLATFORM_SOURCE, tool.key, kind="mcp"),
                 tool.key,
-                description=f"{tool.method} {tool.path.removeprefix('/api/v1')}",
+                description=tool.summary,
                 default_permission="allow" if tool.effect == "read" else "ask",
             )
             for tool in PLATFORM_TOOLS
@@ -347,6 +349,13 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 "computer_write_clipboard",
                 description="Replace the desktop clipboard with plain text without pasting",
             ),
+            _Tool(
+                "notify",
+                "Notify on handback",
+                COMPUTER_NOTIFY_TOOL_ID,
+                "computer_notify",
+                description="Register for a notice when human Computer control ends",
+            ),
         ),
         description="Observe and control an explicitly authorized desktop. Requires a compatible environment.",
         config=ComputerConfiguration,
@@ -507,13 +516,21 @@ def catalog(supported_web_operations: frozenset[str]) -> ToolsetCatalog:
     return ToolsetCatalog(items=tuple(toolset.definition(supported_web_operations) for toolset in _TOOLSETS))
 
 
-def normalize_toolsets(value: dict[ToolsetKey, ToolsetSelection]) -> dict[ToolsetKey, ToolsetSelection]:
+def normalize_toolsets(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo | None = None
+) -> dict[ToolsetKey, ToolsetSelection]:
     """Every toolset of the catalogue with its defaults materialized and its typed config validated."""
+    if info is not None and info.context and info.context.get("preserve_toolsets"):
+        return value
     return {toolset.key: _normalize(toolset, value.get(toolset.key)) for toolset in _TOOLSETS}
 
 
-def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> dict[ToolsetKey, ToolsetSelection]:
+def normalize_toolset_overrides(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo | None = None
+) -> dict[ToolsetKey, ToolsetSelection]:
     """Only the submitted toolsets, each a whole replacement; omitted toolsets keep the revision's."""
+    if info is not None and info.context and info.context.get("preserve_toolsets"):
+        return value
     return {key: _normalize(_BY_KEY[key], selected) for key, selected in value.items()}
 
 
@@ -531,8 +548,20 @@ def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetS
     return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)
 
 
-Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolsets)]
-ToolsetOverrides = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolset_overrides)]
+def _validate_toolsets(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo
+) -> dict[ToolsetKey, ToolsetSelection]:
+    return normalize_toolsets(value, info)
+
+
+def _validate_overrides(
+    value: dict[ToolsetKey, ToolsetSelection], info: ValidationInfo
+) -> dict[ToolsetKey, ToolsetSelection]:
+    return normalize_toolset_overrides(value, info)
+
+
+Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(_validate_toolsets)]
+ToolsetOverrides = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(_validate_overrides)]
 
 
 def default_toolsets() -> dict[ToolsetKey, ToolsetSelection]:
@@ -608,7 +637,9 @@ def environment_configuration(toolsets: dict[ToolsetKey, ToolsetSelection]) -> D
         computer_tools=frozenset(
             tool.model_name
             for tool in _BY_KEY["computer"].tools
-            if computer is not None and computer.tools.get(tool.key, ToolSelection()).enabled
+            if tool.execution_id != COMPUTER_NOTIFY_TOOL_ID
+            and computer is not None
+            and computer.tools.get(tool.key, ToolSelection()).enabled
         ),
         file_tools=frozenset(tool.model_name for tool in _BY_KEY["files"].tools if files.tools[tool.key].enabled),
         shell_tools=frozenset(tool.model_name for tool in _BY_KEY["shell"].tools if shell.tools[tool.key].enabled),

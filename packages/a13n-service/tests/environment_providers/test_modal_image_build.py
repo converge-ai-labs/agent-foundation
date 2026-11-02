@@ -58,7 +58,7 @@ async def test_unexpected_image_identity_is_refused(sdk):
 
 
 def test_custom_images_keep_defaults_and_automatic_has_desktop_requirements():
-    from a13n_service.providers.environments.modal.configuration import ModalRecipe
+    from a13n_service.providers.environment.recipes.modal import ModalRecipe
 
     auto = ModalRecipe(desktop=True)
     assert (auto.image, auto.desktop_assistance, auto.cpu, auto.memory, auto.timeout_seconds) == (

@@ -16,7 +16,7 @@ from a13n_harness.providers.environment.e2b.configuration import E2BConnectionCo
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
 from a13n_harness.providers.environment.e2b.provider import E2BProviderRuntime
 from a13n_harness.providers.environment.e2b.shared import descriptor
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.providers.environments.e2b.definition import E2B
 from a13n_service.providers.environments.e2b.management import E2BManagement
 from e2b.api.client.models import SandboxState

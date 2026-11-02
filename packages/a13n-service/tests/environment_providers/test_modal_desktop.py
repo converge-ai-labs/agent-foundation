@@ -9,8 +9,8 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.providers.environments.modal import management as module
-from a13n_service.providers.environments.modal.configuration import ModalRecipe
 
 
 def management(*, assistance=True, snapshot=False):

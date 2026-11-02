@@ -120,8 +120,16 @@ jobs:
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish-image:
-    name: Publish a13n-service image
+    name: Publish ${{ matrix.name }} image
     needs: [build-python, publish-python]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: a13n-service
+            file: deploy/docker/images/a13n-service/Dockerfile
+          - name: a13n-browser
+            file: deploy/docker/images/browser/Dockerfile
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -153,13 +161,14 @@ jobs:
       - name: Resolve image tags
         id: image-tags
         env:
-          IMAGE: ${{ env.A13N_SERVICE_IMAGE }}
+          IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
+          IMAGE_NAME: ${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           {
             echo "tags<<EOF"
             echo "$IMAGE:$VERSION"
-            if [[ "$VERSION" != *-rc.* ]]; then
+            if [[ "$IMAGE_NAME" != a13n-browser && "$VERSION" != *-rc.* ]]; then
               echo "$IMAGE:latest"
             fi
             echo "EOF"
@@ -169,26 +178,27 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/docker/images/a13n-service/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.image-tags.outputs.tags }}
           build-args: |
             BUILD_VERSION=${{ needs.build-python.outputs.version }}
             BUILD_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=release-a13n-service
-          cache-to: type=gha,mode=max,scope=release-a13n-service
+          cache-from: type=gha,scope=release-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.name }}
 
       - name: Verify published image tags
         env:
-          IMAGE: ${{ env.A13N_SERVICE_IMAGE }}
+          IMAGE: ghcr.io/converge-ai-labs/${{ matrix.name }}
+          IMAGE_NAME: ${{ matrix.name }}
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
           version_digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}')"
           test -n "$version_digest"
           platforms="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')"
           [[ "$platforms" == *linux/amd64* && "$platforms" == *linux/arm64* ]]
-          if [[ "$VERSION" != *-rc.* ]]; then
+          if [[ "$IMAGE_NAME" != a13n-browser && "$VERSION" != *-rc.* ]]; then
             latest_digest="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest.Digest}}')"
             test "$version_digest" = "$latest_digest"
           fi
@@ -247,6 +257,9 @@ jobs:
           sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service.yaml > dist/a13n-service.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service.yaml
+          sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
+            deploy/docker/compose/a13n-service-browser.yaml > dist/a13n-service-browser.yaml
+          grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-browser.yaml
           sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service-quickstart.yaml > dist/a13n-service-quickstart.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-quickstart.yaml

@@ -40,8 +40,8 @@ def tool_name(operation_id: str) -> str:
 
 
 def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Sequence[APIRoute]) -> list[Tool]:
-    selected = deepcopy(schema)
-    selected["paths"] = {}
+    # Parsing builds independent HTTPRoute models; only the path selection changes here.
+    selected = {**schema, "paths": {}}
     admitted: set[tuple[str, str]] = set()
     for path, item in schema.get("paths", {}).items():
         operations = {
@@ -107,19 +107,28 @@ def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str,
     A header whose schema declares `MCP_ENTITY_TAG` takes that argument name and unquoted versions. A body that
     admits only `{}` is optional, and omission sends `{}`.
     """
-    parameters = deepcopy(route.flat_param_schema)
-    properties = parameters.setdefault("properties", {})
-    transport = {}
-    for key, mapping in route.parameter_map.items():
-        if mapping["location"] == "body" or (
-            mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS
-        ):
-            properties.pop(key, None)
-            parameters["required"] = [item for item in parameters.get("required", []) if item != key]
-        else:
-            if mapping["location"] == "cookie":
-                raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
-            transport[key] = mapping
+    # Body properties are replaced by the nested request_body schema below. Filter them before copying:
+    # large request bodies otherwise copy every field twice, only to discard the flattened copy.
+    omitted = {
+        key
+        for key, mapping in route.parameter_map.items()
+        if mapping["location"] == "body"
+        or (mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS)
+    }
+    parameters = deepcopy(
+        {
+            **route.flat_param_schema,
+            "properties": {
+                key: value for key, value in route.flat_param_schema.get("properties", {}).items() if key not in omitted
+            },
+        }
+    )
+    if omitted:
+        parameters["required"] = [key for key in parameters.get("required", []) if key not in omitted]
+    properties = parameters["properties"]
+    transport = {key: mapping for key, mapping in route.parameter_map.items() if key not in omitted}
+    if any(mapping["location"] == "cookie" for mapping in transport.values()):
+        raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
     # Rename only after body fields are gone, so a body field never shadows or swallows a renamed header.
     mappings: dict[str, dict[str, str]] = {}
     entity_tags = set()

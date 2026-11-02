@@ -38,6 +38,9 @@ import { SessionBodyLoading, SessionError } from "./session-feedback";
 import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
+import { ThreadBrowserPanel } from "../browsers/thread-browser";
+import { ThreadDesktopPanel } from "./transcript/environment-desktop";
+import { isInteractive } from "./transcript/run-actions";
 import { SessionStreamProvider } from "./session-stream";
 import { useSession } from "./queries";
 import { validSpaceSelection } from "../memories/session-settings";
@@ -252,7 +255,7 @@ export function NewConversation() {
 export function SessionLayout() {
   const { t } = useTranslation();
   const { sessionId = "", threadId, runId } = useParams();
-  const { workspace } = useWorkspace();
+  const { workspace, can } = useWorkspace();
   const { search } = useLocation();
   const client = useClient(),
     cache = useQueryClient();
@@ -283,6 +286,31 @@ export function SessionLayout() {
   const target =
     selectedThread.data ?? (first?.id === targetThread ? first : undefined);
   const selectedRun = runId ?? target?.current_run_id ?? target?.last_run_id;
+  const [browserPanel, setBrowserPanel] = useState({
+    threadId: "",
+    open: false,
+  });
+  const browserTrigger = useRef<HTMLButtonElement>(null);
+  const [desktopThread, setDesktopThread] = useState<string>();
+  const desktopTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setDesktopThread(undefined);
+  }, [workspace.id, threadId]);
+  const desktopOpen =
+    desktopThread === threadId &&
+    !!threadId &&
+    can("run") &&
+    isInteractive(target, session.data) &&
+    !target?.archived_at;
+  const browserOpen = browserPanel.threadId === threadId && browserPanel.open;
+  const closeDesktop = () => {
+    setDesktopThread(undefined);
+    desktopTrigger.current?.focus();
+  };
+  const closeBrowser = () => {
+    setBrowserPanel((current) => ({ ...current, open: false }));
+    browserTrigger.current?.focus();
+  };
   useEffect(() => {
     // Start loading the transcript module while the target is being resolved.
     void import("./transcript").catch(() => undefined);
@@ -319,48 +347,94 @@ export function SessionLayout() {
       >
         <RunCollapseProvider>
           <div className={styles.sessionDetail}>
-            <SessionHeader />
-            <div
-              className={`${styles.sessionContent} a13n-scrollbar`}
-              data-session-stage
-            >
-              <SessionError
-                error={
-                  session.error ??
-                  (!threadId ? (roots.error ?? fallback.error) : null)
-                }
-                retry={() => {
-                  void session.refetch();
-                  if (!threadId) {
-                    void roots.refetch();
-                    if (chat) void fallback.refetch();
+            <SessionHeader
+              browserOpen={browserOpen}
+              browserTriggerRef={browserTrigger}
+              onToggleBrowser={() => {
+                setDesktopThread(undefined);
+                if (threadId) setBrowserPanel({ threadId, open: !browserOpen });
+              }}
+              desktopOpen={desktopOpen}
+              desktopTriggerRef={desktopTrigger}
+              onToggleDesktop={() => {
+                setBrowserPanel((current) => ({ ...current, open: false }));
+                setDesktopThread(desktopOpen ? undefined : threadId);
+              }}
+            />
+            <div className={styles.sessionWorkspace}>
+              <div
+                className={`${styles.sessionContent} a13n-scrollbar`}
+                data-session-stage
+              >
+                <SessionError
+                  error={
+                    session.error ??
+                    (!threadId ? (roots.error ?? fallback.error) : null)
                   }
-                }}
-              />
-              <Suspense fallback={<SessionBodyLoading />}>
-                {session.isPending ? (
-                  <SessionBodyLoading />
-                ) : !session.data ? null : threadId ? (
-                  <Outlet />
-                ) : first ? (
-                  <Navigate to={`threads/${first.id}${search}`} replace />
-                ) : roots.isPending ||
-                  (chat &&
-                    roots.data?.items.length === 0 &&
-                    fallback.isPending) ? (
-                  <SessionBodyLoading />
-                ) : roots.data?.items.length || fallback.data?.items.length ? (
-                  <ThreadChoices sessionId={sessionId} />
-                ) : !roots.error && !fallback.error ? (
-                  <Empty
-                    icon={<ChatsIcon aria-hidden="true" />}
-                    title={t("No threads yet")}
-                    description={t(
-                      "Threads created by the host application appear here.",
-                    )}
+                  retry={() => {
+                    void session.refetch();
+                    if (!threadId) {
+                      void roots.refetch();
+                      if (chat) void fallback.refetch();
+                    }
+                  }}
+                />
+                <Suspense fallback={<SessionBodyLoading />}>
+                  {session.isPending ? (
+                    <SessionBodyLoading />
+                  ) : !session.data ? null : threadId ? (
+                    <Outlet />
+                  ) : first ? (
+                    <Navigate to={`threads/${first.id}${search}`} replace />
+                  ) : roots.isPending ||
+                    (chat &&
+                      roots.data?.items.length === 0 &&
+                      fallback.isPending) ? (
+                    <SessionBodyLoading />
+                  ) : roots.data?.items.length ||
+                    fallback.data?.items.length ? (
+                    <ThreadChoices sessionId={sessionId} />
+                  ) : !roots.error && !fallback.error ? (
+                    <Empty
+                      icon={<ChatsIcon aria-hidden="true" />}
+                      title={t("No threads yet")}
+                      description={t(
+                        "Threads created by the host application appear here.",
+                      )}
+                    />
+                  ) : null}
+                </Suspense>
+              </div>
+              {threadId &&
+                browserPanel.threadId === threadId &&
+                target?.session_id === sessionId && (
+                  <aside
+                    id="session-browser"
+                    aria-label={t("Browser")}
+                    hidden={!browserOpen}
+                    className={styles.resourcePane}
+                  >
+                    <ThreadBrowserPanel
+                      key={threadId}
+                      thread={target}
+                      active={browserOpen}
+                      onClose={closeBrowser}
+                    />
+                  </aside>
+                )}
+              {desktopOpen && threadId && target?.session_id === sessionId && (
+                <aside
+                  id="session-desktop"
+                  aria-label={t("Desktop")}
+                  className={styles.resourcePane}
+                >
+                  <ThreadDesktopPanel
+                    key={`${workspace.id}:${threadId}`}
+                    threadId={threadId}
+                    onClose={closeDesktop}
                   />
-                ) : null}
-              </Suspense>
+                </aside>
+              )}
             </div>
           </div>
         </RunCollapseProvider>

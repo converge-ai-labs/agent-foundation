@@ -48,19 +48,14 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         assert json.loads(target.read_text()) == schema
 
 
-def test_exported_platform_tools_name_every_platform_operation() -> None:
-    """The Console reads this export, so each entry carries the tool's name, group and operation."""
-    exported = contract.documents()
-    tools = exported[contract.PLATFORM_TOOLS]
-    operations = {
-        (method.upper(), path)
-        for path, item in exported[contract.TARGET / "openapi.json"]["paths"].items()
-        for method, operation in item.items()
-        if isinstance(operation, dict) and contract.PLATFORM_METADATA in operation
-    }
-    assert tools and {(tool["method"], tool["path"]) for tool in tools} == operations
+def test_exported_platform_tools_are_independent_of_http_admission() -> None:
+    from a13n_service.platform_catalog import catalog
+
+    tools = contract.documents()[contract.PLATFORM_TOOLS]
+    assert {tool["key"] for tool in tools} == {tool.name for tool in catalog()}
     assert len({tool["key"] for tool in tools}) == len(tools)
     assert {tool["group"] for tool in tools} <= set(contract.PLATFORM_GROUPS)
+    assert all(set(tool) == {"key", "group", "effect", "summary"} for tool in tools)
     assert all(tool["key"] and tool["summary"] for tool in tools)
 
 
@@ -68,7 +63,9 @@ def test_export_and_drift_check_work_without_sdk_directory(tmp_path: Path, monke
     target = tmp_path / "proto/a13n-service"
     monkeypatch.setattr(contract, "TARGET", target)
     monkeypatch.setattr(contract, "SKILL_SCHEMA", tmp_path / "package/agent-config.json")
-    monkeypatch.setattr(contract, "documents", lambda: {target / "openapi.json": {"info": {"version": "1"}}})
+    monkeypatch.setattr(
+        contract, "documents", lambda distribution: {target / "openapi.json": {"info": {"version": "1"}}}
+    )
     monkeypatch.setattr("sys.argv", ["export"])
     contract.main()
     assert not (tmp_path / "sdk").exists()

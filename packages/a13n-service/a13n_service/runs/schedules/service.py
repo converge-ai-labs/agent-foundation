@@ -11,6 +11,7 @@ from a13n_service.infra.db import advisory_lock, assign, now, short_session, tra
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, rate_limited
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
+from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.validation import validate_config
 from a13n_service.resources.memories.schemas import SessionMemorySettings
 from a13n_service.resources.memories.service import resolve_memory
@@ -235,11 +236,14 @@ async def update(
         authorize(actor, scope, "run", authority=authority)
         require_match(if_match, row.id, row.version)
         require_editable(row)
-        config = ScheduleConfig.model_validate(
+        config = stored.require(
+            ScheduleConfig,
             {
                 **queries.view(row).model_dump(mode="json", include=set(ScheduleConfig.model_fields)),
                 **body.model_dump(mode="json", exclude_unset=True, exclude={"target"}),
-            }
+            },
+            kind="schedule",
+            id=row.id,
         )
         await validate_invocation(session, runtime, actor, scope, config.invocation, authority)
         current = await now(session)
@@ -302,7 +306,12 @@ async def transition(
         cancelled = None
         if command == "enable":
             await validate_invocation(
-                session, runtime, actor, scope, ScheduleInvocation.model_validate(row.invocation), authority
+                session,
+                runtime,
+                actor,
+                scope,
+                stored.require(ScheduleInvocation, row.invocation, kind="schedule", id=row.id),
+                authority,
             )
             if row.state == "enabled":
                 return queries.view(row)

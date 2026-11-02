@@ -24,8 +24,7 @@ from a13n_harness.providers.environment.native.errors import failure
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
-
-from .configuration import ModalRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 
 if TYPE_CHECKING:
     import modal

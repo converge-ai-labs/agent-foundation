@@ -33,6 +33,8 @@ class UsageWindow(BaseModel):
 
 
 class OverviewQuery(UsageWindow):
+    group_by: Literal["agents", "models"] | None = None
+    metric: Literal["cost", "tokens"] = "cost"
     timezone: str = Field(default="UTC", max_length=128)
 
     @field_validator("timezone")
@@ -71,10 +73,18 @@ class DailyUsage(BaseModel):
     usage: ModelMetrics
 
 
+class UsageSeries(BaseModel):
+    # Null key is the combined remainder; empty key is an unattributed model.
+    key: str | None
+    name: str | None
+    daily: list[DailyUsage]
+
+
 class UsageOverview(BaseModel):
     usage: ModelMetrics
     runs: RunMetrics
     daily: list[DailyUsage]
+    series: list[UsageSeries] = Field(default_factory=list)
 
 
 class AgentUsage(BaseModel):

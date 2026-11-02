@@ -18,6 +18,8 @@ from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 from click.testing import CliRunner
 from pydantic import ValidationError
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.fixture(autouse=True)
 def no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:

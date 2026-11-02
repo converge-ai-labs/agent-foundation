@@ -25,19 +25,28 @@ async def maintain(runtime: Runtime, workspace_id: str, browser_id: str) -> None
         if await lifecycle.expire(session, row):
             return
         current = await now(session)
+        delete_after = row.idle_seconds if row.idle_seconds is not None else row.delete_after_seconds
+        delete_due = delete_after is not None and row.last_used_at + timedelta(seconds=delete_after) <= current
+        stop_due = (
+            row.status == "ready"
+            and row.stop_after_seconds is not None
+            and row.last_used_at + timedelta(seconds=row.stop_after_seconds) <= current
+        )
         if (
-            row.status in {"reserved", "ready"}
-            and row.idle_seconds is not None
-            and row.last_used_at + timedelta(seconds=row.idle_seconds) <= current
+            row.status in {"reserved", "ready", "stopped"}
+            and (delete_due or stop_due)
             and (row.claim_until is None or row.claim_until <= current)
             and not await lifecycle.in_use(session, row)
         ):
-            lifecycle.release_intent(row)
+            if delete_due:
+                lifecycle.release_intent(row)
+            else:
+                lifecycle.stop_intent(row)
             record(
                 session,
                 WorkspaceScope(row.organization_id, row.workspace_id),
                 actor_id=None,
-                action="browser.release",
+                action="browser.release" if delete_due else "browser.stop",
                 target_kind="browser",
                 target_id=row.id,
                 details={"reason": "idle"},
