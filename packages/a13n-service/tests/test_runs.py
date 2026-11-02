@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 from a13n_harness import state as state_module
-from a13n_service.api_tools import tool_name
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.runs import checkpoints
@@ -552,7 +551,6 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
 
 async def test_the_agent_composer_creates_an_agent_once_approved(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    paths = service.app.openapi()["paths"]
     async with listen(service.app) as url:
         settings = service.runtime.settings
         runtime = replace(
@@ -581,11 +579,11 @@ async def test_the_agent_composer_creates_an_agent_once_approved(service, script
         async def custom() -> list[dict[str, Any]]:
             return (await service.client.get(agents, params={"source": "custom"})).json()["items"]
 
-        scripted_model.call(tool_name(paths["/api/v1/models"]["get"]["operationId"]), {}, call_id="call_find")
+        scripted_model.call("list_models", {}, call_id="call_find")
         config = {"model": model, "instructions": "Greet people."}
         scripted_model.call(
-            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
-            {"request_body": {"name": "Greeter", "config": config}},
+            "create_agent",
+            {"name": "Greeter", **config},
             call_id="call_create",
         )
         started = await runs_kit.start_thread(service, composer, "make a greeter")
@@ -612,9 +610,8 @@ async def test_the_agent_composer_creates_an_agent_once_approved(service, script
         assert model in found[0]["content"]
         created = [message for message in requests[2]["messages"] if message["role"] == "tool"][-1]
         result = json.loads(created["content"])
-        assert result["status"] == 201
-        assert result["body"]["id"] == greeter["id"]
-        assert result["body"]["default_revision_id"] == greeter["default_revision_id"]
+        assert result["id"] == greeter["id"]
+        assert result["default_revision_id"] == greeter["default_revision_id"]
 
 
 async def test_composer_provider_card_keeps_credentials_out_of_the_run(service, scripted_model, runs_kit, listen):
@@ -664,7 +661,6 @@ async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
     service, scripted_model, runs_kit, listen
 ) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    paths = service.app.openapi()["paths"]
     async with listen(service.app) as url:
         settings = service.runtime.settings
         runtime = replace(
@@ -675,8 +671,8 @@ async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
         composer = (await service.client.post(f"{service.api}/agent-composer")).json()
         config = {"model": "Bad Model", "instructions": "Greet people."}
         scripted_model.call(
-            tool_name(paths["/api/v1/agents"]["post"]["operationId"]),
-            {"request_body": {"name": "Greeter", "config": config}},
+            "create_agent",
+            {"name": "Greeter", **config},
             call_id="call_create",
         )
         started = await runs_kit.start_thread(service, composer, "make a greeter")
@@ -693,19 +689,16 @@ async def test_the_agent_composer_reads_where_its_arguments_do_not_fit(
         [failure] = [
             json.loads(message["content"])["error"] for message in requests[1]["messages"] if message["role"] == "tool"
         ]
-        # The original HTTP field path and classified reason, never the submitted value.
+        # The direct tool field and classified reason, never the submitted value.
         result = json.loads(failure)
-        assert result["status"] == 400
-        assert result["body"]["error"]["details"]["fields"] == [
-            {"field": "body.config.model", "reason": "string_pattern_mismatch"}
-        ]
+        assert result["error"]["code"] == "invalid_argument"
+        assert result["error"]["fields"] == [{"path": ["model"], "type": "string_pattern_mismatch"}]
         assert "Bad Model" not in failure
 
 
 async def test_the_agent_composer_reads_the_revision_it_starts_from(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
     """Configuring from an older version names a revision other than the default, which the composer reads."""
     await runs_kit.pause_sweeps(service)
-    paths = service.app.openapi()["paths"]
     async with listen(service.app) as url:
         settings = service.runtime.settings
         runtime = replace(
@@ -722,9 +715,9 @@ async def test_the_agent_composer_reads_the_revision_it_starts_from(service, scr
         assert newer.status_code == 201, newer.text
         composer = (await service.client.post(f"{service.api}/agent-composer")).json()
 
-        older = {"agent_id": target["id"], "revision_id": target["default_revision_id"]}
+        older = {"agent_id": target["id"], "revision_id": target["default_revision_id"], "section": "instructions"}
         scripted_model.call(
-            tool_name(paths["/api/v1/agents/{agent_id}/revisions/{revision_id}"]["get"]["operationId"]),
+            "get_agent_revision",
             older,
             call_id="call_read",
         )

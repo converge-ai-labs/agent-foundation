@@ -104,8 +104,8 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     # A platform group is an opt-in toolset of its operations; a read runs, a write asks.
     execution = next(toolset for toolset in catalogue.items if toolset.key == "execution")
     assert execution.platform and not execution.default_enabled
-    defaults = {tool.description: tool.default_permission for tool in execution.tools}
-    assert defaults["GET /traces/{trace_id}"] == "allow" and defaults["POST /findings"] == "ask"
+    defaults = {tool.model_name: tool.default_permission for tool in execution.tools}
+    assert defaults["get_trace"] == "allow" and defaults["create_finding"] == "ask"
 
 
 def test_toolsets_normalize_to_the_whole_catalogue() -> None:
@@ -181,7 +181,7 @@ def test_permissions_compile_from_each_selection() -> None:
 
     assert rules["environment.shell_exec"] == "ask" and rules["filesystem.view"] == "inherit"
     assert "web.search" not in rules
-    assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents" not in rules
+    assert rules[f"mcp/service-platform/{finding}"] == "allow" and "mcp/service-platform/list_agents" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
     assert rules["tool/a13n-service-client/lookup"] == "deny"
