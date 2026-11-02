@@ -371,7 +371,11 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
                 assert (
                     await viewer.get(
                         f"{service.api}/usage/{endpoint}",
-                        params={**WINDOW, "principal_id": principal_id},
+                        params={
+                            **WINDOW,
+                            "principal_id": principal_id,
+                            **({"group_by": "agents"} if endpoint == "overview" else {}),
+                        },
                         headers={"X-Workspace-ID": service.tenant.workspace_id},
                     )
                 ).status_code == 403
@@ -388,7 +392,11 @@ async def test_dst_day_uses_local_calendar_with_both_repeated_hours(service, scr
         records=[("scripted", 0, 4, 0, Decimal(0), fall_back + timedelta(hours=hour)) for hour in (5, 6)],
     )
     result = await read(
-        service, start="2026-11-01T00:00:00-04:00", end="2026-11-02T00:00:00-05:00", timezone="America/New_York"
+        service,
+        start="2026-11-01T00:00:00-04:00",
+        end="2026-11-02T00:00:00-05:00",
+        timezone="America/New_York",
+        group_by="models",
     )
     assert len(result["daily"]) == 1
     assert result["daily"][0]["date"] == "2026-11-01"
@@ -647,8 +655,9 @@ async def test_members_attribute_execution_identity_and_filter_all_views(service
     for metric in ("requests", "input_tokens", "output_tokens", "cache_read_tokens", "unpriced_requests"):
         assert sum(row["usage"][metric] for row in groups) == total["usage"][metric]
     for principal_id, requests in ((user_id, 1), (account["id"], 3)):
-        overview = await read(service, principal_id=principal_id)
+        overview = await read(service, principal_id=principal_id, group_by="models")
         assert overview["usage"]["requests"] == requests
+        assert sum(day["usage"]["requests"] for item in overview["series"] for day in item["daily"]) == requests
         assert sum(day["usage"]["requests"] for day in overview["daily"]) == requests
         for endpoint in ("agents", "models"):
             items = (await read(service, endpoint, principal_id=principal_id))["items"]
@@ -822,3 +831,40 @@ async def test_duration_ranking_keeps_sealed_waiting_runs_last(service, scripted
         second = (await service.client.get(path, params={**params, "cursor": first["next_cursor"]})).json()
         assert [run["id"] for run in second["items"]] == [waiting_id]
         assert second["next_cursor"] is None
+
+
+async def test_stacked_overview_ranks_window_and_preserves_daily_totals(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    agents = [agent] + [await runs_kit.add_agent(service, f"Series {index}", "scripted") for index in range(1, 7)]
+    for index, identity in enumerate(agents):
+        await observed_run(
+            service,
+            runs_kit,
+            identity,
+            records=[
+                ("scripted", (7 - index) * 100, 10, 20, Decimal(index + 1), START),
+                (None, 50, 5, 0, None, START + timedelta(days=1)),
+            ],
+        )
+    plain = await read(service)
+    stacked = await read(service, group_by="agents")
+    assert stacked["usage"] == plain["usage"]
+    assert stacked["daily"] == plain["daily"]
+    assert [item["key"] for item in stacked["series"]] == [item["id"] for item in reversed(agents[2:])] + [None]
+    assert stacked["series"][-1]["daily"][0]["usage"]["cost"] == "3"
+    assert all(item["daily"][1]["usage"]["cost"] is None for item in stacked["series"])
+    for day in stacked["daily"]:
+        points = [
+            point["usage"] for item in stacked["series"] for point in item["daily"] if point["date"] == day["date"]
+        ]
+        for field in ("requests", "input_tokens", "output_tokens", "cache_read_tokens", "unpriced_requests"):
+            assert sum(point[field] for point in points) == day["usage"][field]
+    tokens = await read(service, group_by="agents", metric="tokens")
+    assert [item["key"] for item in tokens["series"]] == [item["id"] for item in agents[:5]] + [None]
+    models = await read(service, group_by="models")
+    assert [item["key"] for item in models["series"]] == ["scripted", ""]
+    assert models["daily"] == plain["daily"]
+    empty = await read(service, group_by="models", start=(START - timedelta(days=3)).isoformat(), end=START.isoformat())
+    assert empty["series"] == []
+    assert all(day["usage"]["cost"] == "0" for day in empty["daily"])

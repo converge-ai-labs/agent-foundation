@@ -53,6 +53,7 @@ from a13n_service.usage.schemas import (
     RunUsageQuery,
     UsageFilter,
     UsageOverview,
+    UsageSeries,
     UsageSummary,
     UsageWindow,
 )
@@ -123,6 +124,63 @@ def _runs(row: RowMapping) -> RunMetrics:
     return RunMetrics(runs=row["runs"] or 0, average_duration_seconds=row["average_duration_seconds"])
 
 
+def _stacked_overview(workspace_id: str, query: OverviewQuery, day: ColumnElement) -> Select:
+    """Rank the full window, then bound the returned daily series to five plus Others."""
+    if query.group_by == "agents":
+        key, name = RunRow.agent_id, AgentRow.name
+        source = _model_query(workspace_id, query).join(RunRow, RunRow.id == UsageRecordRow.run_id)
+        source = source.join(AgentRow, AgentRow.id == RunRow.agent_id)
+    else:
+        key, name = func.coalesce(ModelRow.key, ""), ModelRow.name
+        source = _model_query(workspace_id, query).outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
+    buckets = (
+        source.add_columns(day.label("day"), key.label("key"), name.label("name"))
+        .group_by(day, key, name)
+        .cte("daily_groups")
+    )
+    amount = (
+        func.sum(buckets.c.cost)
+        if query.metric == "cost"
+        else func.sum(buckets.c.input_tokens + buckets.c.output_tokens)
+    )
+    ranked = (
+        select(
+            buckets.c.key,
+            func.row_number().over(order_by=(amount.desc().nulls_last(), buckets.c.key)).label("rank"),
+        )
+        .group_by(buckets.c.key)
+        .cte("ranked_groups")
+    )
+    rank = case((ranked.c.rank <= 5, ranked.c.rank), else_=6)
+    series_key = case((ranked.c.rank <= 5, buckets.c.key), else_=None)
+    series_name = case((ranked.c.rank <= 5, buckets.c.name), else_=None)
+    # Totals, daily totals and stacks share one statement/snapshot, including unknown costs.
+    return (
+        select(
+            buckets.c.day,
+            rank.label("rank"),
+            series_key.label("key"),
+            series_name.label("name"),
+            *(
+                func.sum(buckets.c[field]).label(field)
+                for field in (
+                    "requests",
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_read_tokens",
+                    "cost",
+                    "unpriced_requests",
+                )
+            ),
+        )
+        .select_from(buckets.join(ranked, ranked.c.key == buckets.c.key))
+        .group_by(
+            func.grouping_sets(tuple_(), tuple_(buckets.c.day), tuple_(buckets.c.day, rank, series_key, series_name))
+        )
+        .order_by(rank, buckets.c.day)
+    )
+
+
 async def overview(storage: Storage, actor: Principal, workspace_id: str, query: OverviewQuery) -> UsageOverview:
     async with short_session(storage) as session:
         scope = await workspace_scope(
@@ -131,10 +189,25 @@ async def overview(storage: Storage, actor: Principal, workspace_id: str, query:
         # One statement computes totals and daily buckets from the same observations.
         day = func.date(func.timezone(query.timezone, UsageRecordRow.ingested_at))
         statement = _model_query(scope.workspace_id, query).add_columns(day.label("day"))
-        rows = (await session.execute(statement.group_by(func.rollup(day)))).mappings().all()
+        rows = (
+            (
+                await session.execute(
+                    _stacked_overview(scope.workspace_id, query, day)
+                    if query.group_by
+                    else statement.group_by(func.rollup(day))
+                )
+            )
+            .mappings()
+            .all()
+        )
         runs = (await session.execute(_run_query(scope.workspace_id, query))).mappings().one()
     totals = next(row for row in rows if row["day"] is None)
-    days = {row["day"]: _metrics(row) for row in rows if row["day"] is not None}
+    days = {row["day"]: _metrics(row) for row in rows if row["day"] is not None and row.get("rank") is None}
+    series: dict[int, UsageSeries] = {}
+    for row in rows:
+        if row.get("rank") is not None:
+            item = series.setdefault(row["rank"], UsageSeries(key=row["key"], name=row["name"], daily=[]))
+            item.daily.append(DailyUsage(date=row["day"], usage=_metrics(row)))
     empty = ModelMetrics(
         requests=0,
         input_tokens=0,
@@ -150,6 +223,7 @@ async def overview(storage: Storage, actor: Principal, workspace_id: str, query:
     return UsageOverview(
         usage=_metrics(totals),
         runs=_runs(runs),
+        series=list(series.values()),
         daily=[
             DailyUsage(date=day, usage=days.get(day, empty))
             for offset in range((last - first).days + 1)

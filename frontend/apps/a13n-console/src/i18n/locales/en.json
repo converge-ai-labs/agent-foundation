@@ -3574,5 +3574,8 @@
   "Fewest runs": "Fewest runs",
   "Highest cost": "Highest cost",
   "Lowest cost": "Lowest cost",
-  "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}"
+  "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}",
+  "Others": "Others",
+  "Chart grouping": "Chart grouping",
+  "Chart legend": "Chart legend"
 }

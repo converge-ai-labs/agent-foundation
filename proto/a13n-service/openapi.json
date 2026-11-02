@@ -24144,6 +24144,13 @@
           "runs": {
             "$ref": "#/components/schemas/RunMetrics"
           },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/UsageSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
           "usage": {
             "$ref": "#/components/schemas/ModelMetrics"
           }
@@ -24154,6 +24161,46 @@
           "daily"
         ],
         "title": "UsageOverview",
+        "type": "object"
+      },
+      "UsageSeries": {
+        "properties": {
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/DailyUsage"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "daily"
+        ],
+        "title": "UsageSeries",
         "type": "object"
       },
       "UsageSummary": {
@@ -53321,6 +53368,40 @@
               ],
               "description": "Filter by Run execution identity; requires workspace admin.",
               "title": "Principal Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agents",
+                    "models"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric",
+            "required": false,
+            "schema": {
+              "default": "cost",
+              "enum": [
+                "cost",
+                "tokens"
+              ],
+              "title": "Metric",
+              "type": "string"
             }
           },
           {
