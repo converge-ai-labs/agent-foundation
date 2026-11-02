@@ -129,12 +129,15 @@ it("localizes built-in browser type labels without refetching or rewriting cache
       ),
     },
   );
+  expect(
+    result.current.browser.data?.items.map((item) => item.display_name),
+  ).toEqual(["Docker browser", "Native browser", "Custom provider"]);
   await act(async () => {
     await i18n.changeLanguage("zh-CN");
   });
   expect(
     result.current.browser.data?.items.map((item) => item.display_name),
-  ).toEqual(["Docker 浏览器", "本机浏览器（Linux 调试）", "Custom provider"]);
+  ).toEqual(["Docker 浏览器", "本机浏览器", "Custom provider"]);
   expect(result.current.environment.data).toEqual(catalog);
   expect(cache.getQueryData(["browser-provider-types"])).toEqual(catalog);
   expect(state.GET).not.toHaveBeenCalled();

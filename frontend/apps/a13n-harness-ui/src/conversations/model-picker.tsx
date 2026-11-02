@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { CheckIcon } from "@phosphor-icons/react";
 import { Button, Input } from "a13n-ui";
@@ -23,6 +24,7 @@ export function ModelOptions({
   disabled?: boolean;
   onChange: (value: string | undefined) => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const defaultModel = models.find((item) => item.model_id === defaultModelId);
   const model = models.find(
@@ -42,12 +44,12 @@ export function ModelOptions({
       <Input
         autoFocus={autoFocus}
         className={styles.search}
-        aria-label="Search models"
-        placeholder="Search models…"
+        aria-label={t("Search models")}
+        placeholder={t("Search models…")}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <div className={styles.modelList} aria-label="Models">
+      <div className={styles.modelList} aria-label={t("Models")}>
         <Button
           variant="ghost"
           disabled={disabled}
@@ -56,12 +58,14 @@ export function ModelOptions({
           onClick={() => onChange(undefined)}
         >
           <span>
-            {defaultSource === "thread" ? "Chat default" : "Agent default"}
+            {defaultSource === "thread"
+              ? t("Chat default")
+              : t("Agent default")}
             <small>
               {defaultModel ? (
                 <ModelIdentity model={defaultModel} />
               ) : (
-                "No default model"
+                t("No default model")
               )}
             </small>
           </span>
@@ -90,10 +94,12 @@ export function ModelOptions({
           </Button>
         ))}
         {filtered.length === 0 && (
-          <p className={styles.hint}>No models found.</p>
+          <p className={styles.hint}>{t("No models found.")}</p>
         )}
         {value && !model && (
-          <p className={styles.hint}>{value} (unavailable)</p>
+          <p className={styles.hint}>
+            {t("{{name}} (unavailable)", { name: value })}
+          </p>
         )}
       </div>
     </>

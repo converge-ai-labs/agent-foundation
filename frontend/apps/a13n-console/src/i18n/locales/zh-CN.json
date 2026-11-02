@@ -3451,6 +3451,9 @@
   "Remove variable {{number}}": "删除变量 {{number}}",
   "Variable names must be unique.": "变量名不能重复。",
   "Add variable": "添加变量",
+  "Add item": "添加项",
+  "Item {{number}}": "第 {{number}} 项",
+  "Remove item {{number}}": "删除第 {{number}} 项",
   "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.": "自行指定镜像和高级配置。切换为内置环境会恢复默认高级配置，保留 CPU、内存、挂载和环境变量。",
   "Load Vercel teams": "加载 Vercel 团队",
   "Vercel team": "Vercel 团队",
@@ -3637,5 +3640,5 @@
   "Choose where your browsers run.": "选择浏览器的运行位置。",
   "Check the saved browser provider's availability without creating a browser.": "检查已保存的浏览器提供方是否可用，不创建浏览器。",
   "Docker browser": "Docker 浏览器",
-  "Native browser (Linux debugging)": "本机浏览器（Linux 调试）"
+  "Native browser (Linux debugging)": "本机浏览器"
 }
