@@ -1575,9 +1575,13 @@ async def test_service_executes_computer_observation_and_retains_its_screenshot(
     assert run["status"] == "completed", run
     request = await scripted_model.request()
     names = {tool["function"]["name"] for tool in request.get("tools", [])}
+    # Service owns notification registration; native operations also require mount permission.
+    assert ("computer_notify" in names) is tool_enabled
     if not (tool_enabled and mount_enabled):
         assert not calls
-        assert not any(name.startswith("computer_") for name in names)
+        assert {name for name in names if name.startswith("computer_")} == (
+            {"computer_notify"} if tool_enabled else set()
+        )
         return
     assert calls == [(None, 1280)]
     assert "computer_observe" in names and "computer_click" not in names
