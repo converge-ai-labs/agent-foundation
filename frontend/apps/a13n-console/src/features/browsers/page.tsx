@@ -141,7 +141,7 @@ export function BrowsersPage() {
             icon={<GlobeIcon />}
             title={t(search ? "No matching browsers" : "No browsers yet")}
             description={t(
-              "Create a browser, then select it in a debug session's Browser menu.",
+              "Create a browser, then select it from Browser in your session.",
             )}
             action={
               !search && can("write") ? (
@@ -170,9 +170,6 @@ export function CreateBrowser({
       open={open}
       onOpenChange={setOpen}
       title={t("Create browser")}
-      description={t(
-        "A browser owns a private profile. Stopping keeps its cookies and storage; deleting removes them.",
-      )}
       closeLabel={t("Close")}
       trigger={
         <Button>
@@ -279,7 +276,7 @@ function CreateBrowserForm({
         <FormField
           label={t("Stop after idle (seconds)")}
           description={t(
-            "Leave blank to keep running. The default is 30 minutes.",
+            "Stopping keeps cookies and storage. Blank keeps it running.",
           )}
         >
           <Input
@@ -295,8 +292,8 @@ function CreateBrowserForm({
         label={t("Delete after idle (seconds)")}
         description={t(
           definition?.supports_stop
-            ? "Leave blank to retain the profile until you delete it. This timer is independent of stopping."
-            : "Leave blank for the default 30-minute idle deletion.",
+            ? "Deleting removes the profile. Blank keeps it until you delete it."
+            : "Deletes the browser and profile. Default: 30 minutes.",
         )}
       >
         <Input
@@ -340,8 +337,6 @@ function BrowserDetails({ id, onClose }: { id: string; onClose: () => void }) {
             <CopyableId value={id} />
           </div>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <dt className="text-muted-foreground">{t("Runtime generation")}</dt>
-            <dd>{query.data.generation}</dd>
             <dt className="text-muted-foreground">{t("Stop after idle")}</dt>
             <dd>
               {query.data.stop_after_seconds === null
@@ -362,11 +357,6 @@ function BrowserDetails({ id, onClose }: { id: string; onClose: () => void }) {
           {query.data.failure && (
             <ErrorNotice error={new Error(query.data.failure)} />
           )}
-          <p className="text-sm text-muted-foreground">
-            {t(
-              "Select this browser in a debug session to take control. Starting a retained browser preserves its profile and begins a new runtime generation.",
-            )}
-          </p>
           <BrowserLifecycle browser={query.data} />
         </div>
       ) : (
@@ -457,7 +447,7 @@ export function BrowserLifecycle({
             title={t("Delete browser")}
             subject={browser.name}
             description={t(
-              "Permanently remove this browser and its private profile. Browsers in use cannot be deleted.",
+              "Permanently delete this browser, including its cookies and storage.",
             )}
             danger
             trigger={t("Delete browser")}

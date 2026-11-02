@@ -157,10 +157,14 @@ it("extends input only after reading a renewed supplier grant", async () => {
   post
     .mockResolvedValueOnce(reply(grant(20)))
     .mockResolvedValueOnce(
-      reply({ control_expires_at: new Date(Date.now() + 60000).toISOString() }),
+      reply({
+        id: "br",
+        version: 4,
+        control_expires_at: new Date(Date.now() + 60000).toISOString(),
+      }),
     )
     .mockImplementation(() => Promise.resolve(reply(grant(60))));
-  const { unmount } = start();
+  const { cache, unmount } = start();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
@@ -181,6 +185,18 @@ it("extends input only after reading a renewed supplier grant", async () => {
     "viewer",
   ]);
   expect(viewers[0].disconnect).not.toHaveBeenCalled();
+  expect(cache.getQueryData(["browsers", "ws", "detail", "br"])).toMatchObject({
+    id: "br",
+    version: 4,
+  });
+  expect(
+    JSON.stringify(
+      cache
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.state.data),
+    ),
+  ).not.toContain("private");
   unmount();
   expect(viewers[0].disconnect).toHaveBeenCalledOnce();
 });

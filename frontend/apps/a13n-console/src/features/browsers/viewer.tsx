@@ -1,4 +1,5 @@
 import type RFB from "@novnc/novnc/lib/rfb";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,7 @@ export function BrowserViewer({
   controlExpiresAt: string | null;
 }) {
   const client = useClient();
+  const cache = useQueryClient();
   const { workspace } = useWorkspace();
   const { t } = useTranslation();
   const screen = useRef<HTMLDivElement>(null);
@@ -95,6 +97,8 @@ export function BrowserViewer({
             signal: abort.signal,
           })
           .then(data);
+        if (!active) return;
+        cache.setQueryData(["browsers", workspace.id, "detail", id], browser);
         // Only the supplier's published grant extends local input, not the requested lease.
         const grant = await readGrant();
         if (!active) return;
@@ -161,17 +165,13 @@ export function BrowserViewer({
       clearTimeout(expiry);
       disconnect();
     };
-  }, [client, workspace.id, id, generation, episode, t]);
+  }, [client, cache, workspace.id, id, generation, episode, t]);
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <ErrorNotice error={error} />
-      {!error && (
+      {!error && !connected && (
         <p role="status" className="text-xs text-muted-foreground">
-          {t(
-            connected
-              ? "You control this browser. Return control when finished."
-              : "Connecting to browser…",
-          )}
+          {t("Connecting to browser…")}
         </p>
       )}
       {!error && connected && (
@@ -208,14 +208,16 @@ export function BrowserViewer({
             title={t("Browser viewer")}
             src={iframe}
             referrerPolicy="no-referrer"
-            className="h-[min(52vh,520px)] w-full rounded-lg border-0"
+            className="aspect-[8/5] w-full rounded-lg border-0"
           />
         ) : (
-          <div
-            ref={screen}
-            aria-label={t("Browser viewer")}
-            className="aspect-[8/5] w-full overflow-hidden rounded-lg bg-black sm:aspect-auto sm:h-[min(52vh,520px)]"
-          />
+          <div className="relative aspect-[8/5] w-full overflow-hidden rounded-lg bg-black">
+            <div
+              ref={screen}
+              aria-label={t("Browser viewer")}
+              className="absolute inset-0"
+            />
+          </div>
         ))}
     </div>
   );

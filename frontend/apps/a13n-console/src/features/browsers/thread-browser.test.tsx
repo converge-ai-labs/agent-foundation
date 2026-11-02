@@ -11,7 +11,7 @@ import {
   fixtureThread,
 } from "../conversations/transcript/fixture";
 import { BrowserLifecycle, BrowsersPage, CreateBrowser } from "./page";
-import { ThreadBrowserDialog } from "./thread-browser";
+import { ThreadBrowserPanel } from "./thread-browser";
 
 let client: Client;
 let cache: QueryClient;
@@ -123,12 +123,48 @@ function start(lifecycle = false) {
         {lifecycle ? (
           <BrowserLifecycle browser={browser} />
         ) : (
-          <ThreadBrowserDialog thread={thread} onClose={() => {}} />
+          <ThreadBrowserPanel thread={thread} onClose={() => {}} />
         )}
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+it("preserves the binding draft while a closed panel disconnects only its viewer", async () => {
+  const user = userEvent.setup();
+  browser = { ...browser, control: "human", episode: 1 };
+  const panel = (active: boolean) => (
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <ThreadBrowserPanel
+          thread={thread}
+          active={active}
+          onClose={() => {}}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const view = render(panel(true));
+  await user.click(await screen.findByRole("button", { name: "Open viewer" }));
+  await screen.findByText("Mounted viewer");
+  await user.click(screen.getByRole("button", { name: "Select browser" }));
+  await user.click(screen.getByRole("combobox", { name: "Tab access" }));
+  await user.click(screen.getByRole("option", { name: "All browser tabs" }));
+  view.rerender(panel(false));
+  expect(screen.queryByText("Mounted viewer")).toBeNull();
+  expect(requests).toEqual([]);
+  thread = fixtureThread({ version: 2 });
+  act(() =>
+    cache.setQueryData(conversationKeys("ws").thread(thread.id), thread),
+  );
+  view.rerender(panel(true));
+  await screen.findByText("Mounted viewer");
+  await user.click(screen.getByRole("button", { name: "Save selection" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].headers.get("If-Match")).toBe('\"thr_1:1\"');
+  expect(await requests[0].clone().json()).toMatchObject({
+    tab_access: "global",
+  });
+});
 it.each(["viewer", "application", "child", "archived"])(
   "withholds Thread mutation and control for %s",
   async (kind) => {

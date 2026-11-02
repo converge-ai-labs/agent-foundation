@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ChoiceField } from "a13n-ui";
+import { GlobeIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -17,33 +18,44 @@ import { useBrowser, useBrowserOptions } from "./api";
 import { BrowserLifecycle } from "./page";
 import { BrowserViewer } from "./viewer";
 
-export function ThreadBrowserDialog({
+export function ThreadBrowserPanel({
   thread,
+  active = true,
   onClose,
 }: {
   thread: Schema["ThreadView"];
+  active?: boolean;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      size="xl"
-      title={t("Browser")}
-      description={t(
-        "The thread's selection applies to later runs. Each accepted run keeps its captured browser binding.",
-      )}
-      closeLabel={t("Close")}
-    >
-      <ThreadBrowser thread={thread} />
-    </ModalFrame>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        <GlobeIcon size={16} aria-hidden="true" />
+        <h2 className="flex-1 text-sm font-medium">{t("Browser")}</h2>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("Close browser panel")}
+          onClick={onClose}
+        >
+          <XIcon size={16} />
+        </Button>
+      </div>
+      <div className="a13n-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+        <ThreadBrowser thread={thread} active={active} />
+      </div>
+    </div>
   );
 }
 
-function ThreadBrowser({ thread: initial }: { thread: Schema["ThreadView"] }) {
+function ThreadBrowser({
+  thread: initial,
+  active,
+}: {
+  thread: Schema["ThreadView"];
+  active: boolean;
+}) {
   const { t } = useTranslation();
   const client = useClient();
   const { workspace, can, basePath } = useWorkspace();
@@ -78,16 +90,6 @@ function ThreadBrowser({ thread: initial }: { thread: Schema["ThreadView"] }) {
   const browser = useBrowser(selection?.browser_id);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{t("Selected for later runs")}</h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          render={<Link to={`${basePath}/browsers`} />}
-        >
-          {t("Manage browsers")}
-        </Button>
-      </div>
       <ErrorNotice
         error={binding.error ?? thread.error ?? browser.error}
         retry={() => {
@@ -106,13 +108,15 @@ function ThreadBrowser({ thread: initial }: { thread: Schema["ThreadView"] }) {
         />
       ) : (
         !binding.error && (
-          <>
+          <div className="flex items-start justify-between gap-3">
             {selection ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="min-w-0 break-words font-medium">
-                  {browser.data?.name ?? selection.browser_id}
-                </span>
-                {browser.data && <StatePill state={browser.data.status} />}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="min-w-0 break-words text-sm font-medium">
+                    {browser.data?.name ?? selection.browser_id}
+                  </h3>
+                  {browser.data && <StatePill state={browser.data.status} />}
+                </div>
                 <span className="text-xs text-muted-foreground">
                   {t(
                     selection.tab_access === "global"
@@ -127,9 +131,9 @@ function ThreadBrowser({ thread: initial }: { thread: Schema["ThreadView"] }) {
               </p>
             )}
             {editable && !binding.error && (
-              <div>
+              <div className="shrink-0">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={() => setEditing(true)}
                 >
@@ -137,25 +141,35 @@ function ThreadBrowser({ thread: initial }: { thread: Schema["ThreadView"] }) {
                 </Button>
               </div>
             )}
-          </>
+          </div>
         )
       )}
       {browser.data && (
         <>
-          <BrowserLifecycle
-            browser={browser.data}
-            allowed={editable}
-            showDelete={false}
-          />
           {editable && (
             <BrowserControl
               key={browser.data.id}
               browser={browser.data}
               threadId={initial.id}
+              active={active}
             />
           )}
+          <BrowserLifecycle
+            browser={browser.data}
+            allowed={editable}
+            showDelete={false}
+          />
         </>
       )}
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          render={<Link to={`${basePath}/browsers`} />}
+        >
+          {t("Manage browsers")}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -228,6 +242,9 @@ function BindingForm({
         save.mutate();
       }}
     >
+      <p className="text-xs text-muted-foreground">
+        {t("Applies to the next run.")}
+      </p>
       <ChoiceField
         label={t("Browser")}
         value={id}
@@ -294,9 +311,11 @@ function BindingForm({
 function BrowserControl({
   browser,
   threadId,
+  active,
 }: {
   browser: Schema["Browser"];
   threadId: string;
+  active: boolean;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -327,59 +346,63 @@ function BrowserControl({
         {t("External CDP browsers do not provide a viewer or human control.")}
       </p>
     );
-  if (["deleted", "deleting", "lost"].includes(browser.status)) return null;
+  if (["stopped", "deleted", "deleting", "lost"].includes(browser.status))
+    return null;
   return (
     <section className="flex flex-col gap-3" aria-label={t("Browser control")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{t("Browser control")}</h3>
         <span className="text-xs text-muted-foreground">
           {t(`browser.control.${browser.control}`, {
             defaultValue: browser.control,
           })}
         </span>
+        <div className="flex flex-wrap gap-2">
+          {browser.control === "automation" && browser.status === "ready" && (
+            <Button
+              size="sm"
+              loading={operation.isPending}
+              onClick={() => operation.mutate("takeover")}
+            >
+              {t("Take control")}
+            </Button>
+          )}
+          {browser.control === "human" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setViewing(!viewing)}
+            >
+              {t(viewing ? "Close viewer" : "Open viewer")}
+            </Button>
+          )}
+          {(browser.control === "draining" || browser.control === "human") && (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={operation.isPending}
+              onClick={() => {
+                setViewing(false);
+                operation.mutate("handback");
+              }}
+            >
+              {t("Return control")}
+            </Button>
+          )}
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground">
-        {t(
-          "Taking control pauses automation across this browser. Closing the viewer disconnects you; return control explicitly or let the lease expire.",
-        )}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {browser.control === "automation" && browser.status === "ready" && (
-          <Button
-            loading={operation.isPending}
-            onClick={() => operation.mutate("takeover")}
-          >
-            {t("Take control")}
-          </Button>
-        )}
-        {browser.control === "human" && (
-          <Button variant="outline" onClick={() => setViewing(!viewing)}>
-            {t(viewing ? "Close viewer" : "Open viewer")}
-          </Button>
-        )}
-        {(browser.control === "draining" || browser.control === "human") && (
-          <Button
-            variant="outline"
-            loading={operation.isPending}
-            onClick={() => {
-              setViewing(false);
-              operation.mutate("handback");
-            }}
-          >
-            {t("Return control")}
-          </Button>
-        )}
-      </div>
+      {browser.control === "automation" && browser.status === "ready" && (
+        <p className="text-xs text-muted-foreground">
+          {t("Take control to pause the agent and use the browser.")}
+        </p>
+      )}
       {browser.control === "draining" && (
         <p role="status" className="text-sm text-muted-foreground">
-          {t("Waiting for browser operations to settle before enabling input.")}
+          {t("Pausing the agent…")}
         </p>
       )}
       {browser.control === "returning" && (
         <p role="status" className="text-sm text-muted-foreground">
-          {t(
-            "Revoking human input and reconciling tabs before automation resumes.",
-          )}
+          {t("Returning control to the agent…")}
         </p>
       )}
       <ErrorNotice
@@ -391,7 +414,7 @@ function BrowserControl({
           operation.reset();
         }}
       />
-      {viewing && browser.control === "human" && (
+      {active && viewing && browser.control === "human" && (
         <BrowserViewer
           key={`${browser.generation}:${browser.episode}`}
           id={browser.id}
