@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   createContext,
   useContext,
@@ -38,14 +39,6 @@ type SearchOption = ComponentProps<
 >["groups"][number]["options"][number];
 
 type Page = "root" | "model" | "agent" | "thinking" | "speed" | "reasoning";
-const titles: Record<Page, string> = {
-  root: "Agent & Model",
-  model: "Select model",
-  agent: "Select agent",
-  thinking: "Thinking",
-  speed: "Speed",
-  reasoning: "Reasoning mode",
-};
 const SettingsContext = createContext<{
   page: Page;
   navigate: (page: Page) => void;
@@ -61,8 +54,17 @@ export function ComposerSettings({
   className?: string;
   label?: ReactNode;
 }) {
-  const rootTitle = "Agent & Model";
-  const navigationLabel = "Agent & Model settings";
+  const { t } = useTranslation();
+  const titles: Record<Page, string> = {
+    root: t("Agent & Model"),
+    model: t("Select model"),
+    agent: t("Select agent"),
+    thinking: t("Thinking"),
+    speed: t("Speed"),
+    reasoning: t("Reasoning mode"),
+  };
+  const rootTitle = titles.root;
+  const navigationLabel = t("Agent & Model settings");
   const [open, setOpen] = useState(false);
   const [page, navigate] = useState<Page>("root");
   const [mobile, setMobile] = useState(
@@ -88,9 +90,13 @@ export function ComposerSettings({
   const showHeader = mobile || page !== "root";
   const help =
     page === "thinking"
-      ? "Higher thinking levels spend more time and tokens on a response. Available levels depend on the selected model. Default uses the model’s saved setting."
+      ? t(
+          "Higher thinking levels spend more time and tokens on a response. Available levels depend on the selected model. Default uses the model’s saved setting.",
+        )
       : page === "speed"
-        ? "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates."
+        ? t(
+            "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates.",
+          )
         : undefined;
   const content = (
     <SettingsContext value={{ page, navigate }}>
@@ -103,8 +109,8 @@ export function ComposerSettings({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={`Back to ${navigationLabel}`}
-            title={`Back to ${navigationLabel}`}
+            aria-label={t("Back to Agent & Model settings")}
+            title={t("Back to Agent & Model settings")}
             onClick={() => navigate("root")}
           >
             <CaretLeft />
@@ -121,7 +127,9 @@ export function ComposerSettings({
                   variant="ghost"
                   size="icon-sm"
                   tooltip={false}
-                  aria-label={`About ${titles[page].toLowerCase()}`}
+                  aria-label={
+                    page === "thinking" ? t("About thinking") : t("About speed")
+                  }
                 />
               }
             >
@@ -134,8 +142,8 @@ export function ComposerSettings({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={`Close ${navigationLabel}`}
-            title={`Close ${navigationLabel}`}
+            aria-label={t("Close Agent & Model settings")}
+            title={t("Close Agent & Model settings")}
             onClick={() => changeOpen(false)}
           >
             <X />
@@ -164,7 +172,7 @@ export function ComposerSettings({
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
-        <span>{label ?? "Model"}</span>
+        <span>{label ?? t("Model")}</span>
         <CaretDown aria-hidden="true" />
       </DialogTrigger>
       <DialogPopup
@@ -178,7 +186,7 @@ export function ComposerSettings({
   ) : (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
-        <span>{label ?? "Model"}</span>
+        <span>{label ?? t("Model")}</span>
         <CaretDown aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" className={styles.popup}>
@@ -220,13 +228,17 @@ export function SettingsChoices({
   value,
   onChange,
   disabled,
-  label,
+  searchLabel,
+  searchPlaceholder,
+  emptyLabel,
 }: {
   options: readonly SearchOption[];
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
-  label: string;
+  searchLabel: string;
+  searchPlaceholder: string;
+  emptyLabel: string;
 }) {
   const [query, setQuery] = useState("");
   const filtered = options.filter((item) =>
@@ -239,8 +251,8 @@ export function SettingsChoices({
     <div className={styles.choices}>
       {options.length > 8 && (
         <Input
-          aria-label={`Search ${label}`}
-          placeholder={`Search ${label}…`}
+          aria-label={searchLabel}
+          placeholder={searchPlaceholder}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -268,7 +280,7 @@ export function SettingsChoices({
           {value === item.value && <Check aria-hidden />}
         </Button>
       ))}
-      {!filtered.length && <p>No matching {label}.</p>}
+      {!filtered.length && <p>{emptyLabel}</p>}
     </div>
   );
 }

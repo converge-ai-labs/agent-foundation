@@ -1,10 +1,12 @@
 """Browser-only durable admission. Unknown calls never become drained by lease expiry."""
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
 from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.errors import conflict
@@ -13,7 +15,7 @@ from a13n_service.resources.agents import stored
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers import lifecycle
 from a13n_service.runs.browsers.schemas import BrowserBinding
-from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserOperationRow, BrowserSelectionRow
+from a13n_service.runs.browsers.tables import BrowserBlockedRow, BrowserOperationRow, BrowserRow, BrowserSelectionRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import RunOptions
 from a13n_service.runs.tables import RunRow
@@ -44,51 +46,11 @@ async def admit(
 ) -> Permit:
     permit: Permit | None = None
     async with transaction(runtime.storage) as session:
-        await lifecycle.lock_owners(session, (lease.thread_id,))
-        run, principal = await lock_owner(session, runtime, lease)
-        if run.browser_binding != binding.model_dump(mode="json"):
-            raise conflict("browser", binding.browser_id, "browser_binding_changed")
-        row = await lifecycle.find(session, lease.workspace_id, binding.browser_id, lock=True)
-        lifecycle.usable(row)
-        await lifecycle.authorize_use(
-            session,
-            principal,
-            row,
-            WorkspaceScope(lease.organization_id, lease.workspace_id),
-            authority=ExecutionAuthority.model_validate(run.authority),
-        )
-        current = await now(session)
-        if row.expires_at is not None and row.expires_at <= current:
-            raise conflict("browser", row.id, "browser_expired")
+        run, row, current = await checked(session, runtime, lease, binding)
         if row.control != "automation":
             if not register_blocked:
                 raise BrowserHumanControl(GUIDANCE)
-            registration = await session.scalar(
-                select(BrowserBlockedRow).where(
-                    BrowserBlockedRow.browser_id == row.id,
-                    BrowserBlockedRow.generation == row.generation,
-                    BrowserBlockedRow.episode == row.episode,
-                    BrowserBlockedRow.thread_id == lease.thread_id,
-                )
-            )
-            if registration is not None and registration.suppressed:
-                # A new actual block establishes new provenance. Old queued hints must keep referring
-                # to the retired identity, never to a renewed registration under another Run's authority.
-                await session.delete(registration)
-                await session.flush()
-                registration = None
-            if registration is None:
-                session.add(
-                    BrowserBlockedRow(
-                        id=new_object_id("bblock"),
-                        browser_id=row.id,
-                        thread_id=lease.thread_id,
-                        run_id=run.id,
-                        generation=row.generation,
-                        episode=row.episode,
-                        expires_at=None,
-                    )
-                )
+            await register(session, row, run)
         else:
             if row.status == "stopping":
                 raise BrowserError("The browser is stopping. No call was dispatched.")
@@ -142,6 +104,71 @@ async def admit(
     if permit is None:
         raise BrowserHumanControl(GUIDANCE)
     return permit
+
+
+async def checked(
+    session: AsyncSession, runtime: Runtime, lease: Lease, binding: BrowserBinding
+) -> tuple[RunRow, BrowserRow, datetime]:
+    """Check current execution authority and binding under the handback arbitration lock."""
+    await lifecycle.lock_owners(session, (lease.thread_id,))
+    run, principal = await lock_owner(session, runtime, lease)
+    if run.browser_binding != binding.model_dump(mode="json"):
+        raise conflict("browser", binding.browser_id, "browser_binding_changed")
+    row = await lifecycle.find(session, lease.workspace_id, binding.browser_id, lock=True)
+    lifecycle.usable(row)
+    await lifecycle.authorize_use(
+        session,
+        principal,
+        row,
+        WorkspaceScope(lease.organization_id, lease.workspace_id),
+        authority=ExecutionAuthority.model_validate(run.authority),
+    )
+    current = await now(session)
+    if row.expires_at is not None and row.expires_at <= current:
+        raise conflict("browser", row.id, "browser_expired")
+    return run, row, current
+
+
+async def register(session: AsyncSession, row: BrowserRow, run: RunRow) -> None:
+    """Coalesce explicit requests and blocked calls under the caller-held Browser lock."""
+    registration = await session.scalar(
+        select(BrowserBlockedRow).where(
+            BrowserBlockedRow.browser_id == row.id,
+            BrowserBlockedRow.generation == row.generation,
+            BrowserBlockedRow.episode == row.episode,
+            BrowserBlockedRow.thread_id == run.thread_id,
+        )
+    )
+    if registration is not None and registration.suppressed:
+        # New intent gets new provenance; queued hints still name the retired identity.
+        await session.delete(registration)
+        await session.flush()
+        registration = None
+    if registration is None:
+        session.add(
+            BrowserBlockedRow(
+                id=new_object_id("bblock"),
+                browser_id=row.id,
+                thread_id=run.thread_id,
+                run_id=run.id,
+                generation=row.generation,
+                episode=row.episode,
+                expires_at=None,
+            )
+        )
+
+
+async def availability(runtime: Runtime, lease: Lease, binding: BrowserBinding, *, notify: bool = False) -> str:
+    """Inspect without provisioning or page access; optionally register atomically with handback."""
+    async with transaction(runtime.storage) as session:
+        run, row, _ = await checked(session, runtime, lease, binding)
+        if row.status in {"stopping", "stopped"}:
+            raise BrowserError("Browser runtime is unavailable. Handback cannot repair it.")
+        if row.control != "automation":
+            if notify:
+                await register(session, row, run)
+            return "takeover"
+        return "available" if row.status == "ready" else "not_ready"
 
 
 async def prepare(runtime: Runtime, lease: Lease, permit: Permit) -> Permit:

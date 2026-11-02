@@ -1,4 +1,4 @@
-"""Process-local handback notices for Threads whose browser calls were blocked."""
+"""Process-local handback notices requested explicitly or by blocked browser calls."""
 
 from collections.abc import Awaitable, Callable
 
@@ -15,7 +15,7 @@ BLOCKED = (
     "Do not poll or retry browser tools while waiting. After notification, observe afresh before acting."
 )
 HANDBACK = (
-    "Browser human control ended. This Thread previously attempted a browser tool during takeover. "
+    "Browser human control ended. This Thread requested a handback reminder. "
     "No blocked action was replayed. Obtain a fresh browser_observe result before continuing any "
     "still-relevant browser work. This notice does not resume a previous Goal or its budget."
 )
@@ -43,11 +43,21 @@ class BrowserHandback:
             self._episode += 1
         self.available = False
 
+    def register(self, thread_id: str) -> dict[str, str]:
+        if thread_id in self._suppressed:
+            return {"status": "suppressed", "message": "This Thread was stopped; handback notification is suppressed."}
+        self._pending[thread_id] = self._episode
+        self.retry(thread_id)
+        return {
+            "status": "registered",
+            "message": "One handback reminder is registered for this Thread, even if the turn ends. "
+            "Host shutdown or browser failure cancels it. Continue independent work or end the turn; do not poll.",
+        }
+
     def blocked(self, thread_id: str) -> str:
         if thread_id in self._suppressed:
             return "Browser action was not executed. This Thread was stopped; handback notification is suppressed."
-        self._pending[thread_id] = self._episode
-        self.retry(thread_id)
+        self.register(thread_id)
         return BLOCKED
 
     def released(self) -> None:

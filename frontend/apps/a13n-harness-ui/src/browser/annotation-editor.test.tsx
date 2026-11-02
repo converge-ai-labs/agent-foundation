@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "../i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
@@ -66,8 +67,9 @@ beforeEach(() => {
   vi.mocked(copyAnnotation).mockResolvedValue(undefined);
   vi.mocked(downloadAnnotation).mockResolvedValue(undefined);
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -238,4 +240,27 @@ it("waits for text writes, preserves edits on failed copy, and offers download o
   expect(downloadAnnotation).toHaveBeenCalledOnce();
   click("Copy PNG (Ctrl/⌘ Enter)");
   await waitFor(() => expect(onCopied).toHaveBeenCalledOnce());
+});
+
+it("preserves annotation history and the active text draft when language changes", async () => {
+  await show();
+  click("Start mark");
+  click("Move mark");
+  click("End mark");
+  const saved = state();
+  click("Text (T)");
+  click("Start mark");
+  const input = screen.getByRole("textbox", { name: "Annotation text" });
+  fireEvent.change(input, { target: { value: "Keep this 用户文本" } });
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(screen.getByRole("dialog", { name: "标注截图" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "标注文本" })).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this 用户文本");
+  expect(state()).toEqual(saved);
+  click("应用文本（Ctrl/⌘ Enter）");
+  expect(state().annotations.at(-1).text).toBe("Keep this 用户文本");
+  click("撤销（Ctrl/⌘ Z）");
+  expect(state()).toEqual(saved);
 });

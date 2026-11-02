@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useState, type ReactNode } from "react";
 import { Button } from "a13n-ui";
 import { Check, CheckCircle, CircleDashed, Copy } from "@phosphor-icons/react";
@@ -13,8 +14,9 @@ export function BrowserRequirements({
   controls?: Partial<Record<string, ReactNode>>;
   status?: "Checking…" | "Not checked";
 }) {
+  const { t } = useTranslation();
   return (
-    <ul className={styles.requirements} aria-label="Browser requirements">
+    <ul className={styles.requirements} aria-label={t("Browser requirements")}>
       {requirements
         .filter((requirement) => !requirement.managed)
         .map((requirement) => (
@@ -34,24 +36,27 @@ export function BrowserRequirements({
             <div>
               <div className={styles.requirementHeading}>
                 <strong>
-                  {requirement.name}
+                  {t(requirement.name)}
                   <small className={styles.requirementKind}>
-                    {requirement.required === false ? "Optional" : "Required"}
+                    {requirement.required === false
+                      ? t("Optional")
+                      : t("Required")}
                   </small>
                 </strong>
                 {(status || !requirement.installed) && (
                   <span className={styles.state}>
-                    {status ??
-                      (requirement.required === false
-                        ? "Not installed"
-                        : "Missing")}
+                    {status
+                      ? t(status)
+                      : requirement.required === false
+                        ? t("Not installed")
+                        : t("Missing")}
                   </span>
                 )}
               </div>
-              {requirement.purpose && <span>{requirement.purpose}</span>}
+              {requirement.purpose && <span>{t(requirement.purpose)}</span>}
               {requirement.detail &&
                 (!controls[requirement.name] || !requirement.installed) && (
-                  <span>{requirement.detail}</span>
+                  <span>{t(requirement.detail)}</span>
                 )}
               {controls[requirement.name] && (
                 <div className={styles.requirementControl}>
@@ -70,6 +75,7 @@ export function BrowserInstallInstructions({
 }: {
   steps: Schema<"BrowserInstallStep">[];
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState("");
   const [copyError, setCopyError] = useState("");
   const copy = async (title: string, command: string) => {
@@ -86,24 +92,24 @@ export function BrowserInstallInstructions({
   if (!steps.length) return null;
   return (
     <details className={styles.instructions}>
-      <summary>Manual installation commands</summary>
+      <summary>{t("Manual installation commands")}</summary>
       <p>
-        Run these commands on the Host running Harness UI. In Docker, install in
-        the container or image. System packages may require administrator
-        access. Optional components are not needed for basic browsing.
+        {t(
+          "Run these commands on the Host running Harness UI. In Docker, install in the container or image. System packages may require administrator access. Optional components are not needed for basic browsing.",
+        )}
       </p>
       {steps.map((step) => (
         <section key={step.title} className={styles.step}>
           <div>
-            <strong>{step.title}</strong>
+            <strong>{t(step.title)}</strong>
             <Button
               variant="ghost"
               size="sm"
-              aria-label={`Copy ${step.title} command`}
+              aria-label={t("Copy {{title}} command", { title: t(step.title) })}
               onClick={() => void copy(step.title, step.command)}
             >
               {copied === step.title ? <Check /> : <Copy />}
-              {copied === step.title ? "Copied" : "Copy"}
+              {copied === step.title ? t("Copied") : t("Copy")}
             </Button>
           </div>
           <pre>
@@ -113,7 +119,7 @@ export function BrowserInstallInstructions({
       ))}
       {copyError && (
         <p role="alert" className={styles.error}>
-          {copyError}
+          {t(copyError)}
         </p>
       )}
     </details>

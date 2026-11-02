@@ -6,6 +6,9 @@ import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Composer, ComposerDrafts, useDraft } from "./composer";
 import { ThreadDraft } from "./draft";
+import { EditorView } from "@codemirror/view";
+import { i18n } from "../i18n";
+import { LanguageProvider, LanguageChoice } from "../i18n/language";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
@@ -83,9 +86,14 @@ const configuration = {
   environment_profile_id: "native",
 } as unknown as Schema<"ThreadConfiguration">;
 const get = vi.fn(async () => ({ data: [] }));
-const transport = { client: { GET: get } } as unknown as Transport;
+const post = vi.fn();
+const transport = { client: { GET: get, POST: post } } as unknown as Transport;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
+  localStorage.clear();
+  get.mockClear();
+  post.mockClear();
   mobile = false;
   mediaListeners.clear();
   draft = new ThreadDraft();
@@ -129,15 +137,21 @@ beforeEach(() => {
     }),
   });
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   query.clear();
   draft.doc.destroy();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear();
+  await i18n.changeLanguage("en");
 });
 
-function Input() {
+function Input({
+  selectors = catalog,
+}: {
+  selectors?: Schema<"ThreadSelectorCatalog">;
+}) {
   const state = useDraft("thread-responsive");
   const disabled =
     state.submission.kind === "pending" || state.submission.kind === "unknown";
@@ -153,7 +167,7 @@ function Input() {
       reconcile={() => {}}
       leadingControls={
         <RunEnvironments
-          catalog={catalog}
+          catalog={selectors}
           configuration={configuration}
           value={state.environment}
           disabled={disabled}
@@ -165,7 +179,7 @@ function Input() {
       }
       controls={() => (
         <ThreadRunChoices
-          catalog={catalog}
+          catalog={selectors}
           agentId="writer"
           modelId={state.modelId}
           controls={state.controls}
@@ -185,19 +199,170 @@ function Input() {
     />
   );
 }
-function mount() {
+function mount(selectors = catalog) {
   return render(
     <QueryClientProvider client={query}>
       <TransportContext value={transport}>
         <MemoryRouter>
           <ComposerDrafts value={new Map([["thread-responsive", draft]])}>
-            <Input />
+            <LanguageProvider>
+              <LanguageChoice />
+              <Input selectors={selectors} />
+            </LanguageProvider>
           </ComposerDrafts>
         </MemoryRouter>
       </TransportContext>
     </QueryClientProvider>,
   );
 }
+
+it.each([false, true])(
+  "keeps model/agent searches, editor state and explicit controls through language changes (mobile: %s)",
+  async (onMobile) => {
+    mobile = onMobile;
+    const user = userEvent.setup();
+    draft.doc.getText("text").insert(0, "Keep 用户输入 and source_id");
+    draft.modelId = "one";
+    draft.controls = { thinking: "low", fast: false, reasoning_mode: "pro" };
+    const originalControls = draft.controls;
+    const selectors = {
+      ...catalog,
+      agents: [
+        ...catalog.agents,
+        ...Array.from({ length: 9 }, (_, index) => ({
+          ...catalog.agents[0],
+          agent_id: `agent-${index}`,
+          name: `Agent ${index}`,
+        })),
+      ],
+    };
+    mount(selectors);
+    const textbox = screen.getByRole("textbox", { name: "Message" });
+    const editor = EditorView.findFromDOM(textbox)!;
+    const document = draft.doc;
+    const undo = draft.undo;
+    act(() => editor.dispatch({ selection: { anchor: 5, head: 9 } }));
+    const selection = editor.state.selection.toJSON();
+
+    // Use the real preference control before entering the focus-trapping panel.
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "简体中文" }));
+    await user.click(screen.getByRole("button", { name: "智能体与模型设置" }));
+    expect(screen.getByRole("button", { name: "思考" }).textContent).toContain(
+      "低",
+    );
+    expect(screen.getByRole("button", { name: "速度" }).textContent).toContain(
+      "标准",
+    );
+    await user.click(screen.getByRole("button", { name: "模型" }));
+    const search = screen.getByRole("textbox", {
+      name: "搜索模型",
+    }) as HTMLInputElement;
+    await user.type(search, "two");
+    search.setSelectionRange(1, 2);
+    const reads = get.mock.calls.length;
+    await act(() => i18n.changeLanguage("en"));
+    expect(screen.getByRole("textbox", { name: "Search models" })).toBe(search);
+    expect(search.value).toBe("two");
+    expect([search.selectionStart, search.selectionEnd]).toEqual([1, 2]);
+    expect(window.document.activeElement).toBe(search);
+    expect(screen.getByRole("button", { name: "Model Two" })).toBeTruthy();
+    expect(draft.controls).toBe(originalControls);
+    expect(draft.modelId).toBe("one");
+    expect(get).toHaveBeenCalledTimes(reads);
+    expect(post).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Back to Agent & Model settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Agent" }));
+    const agents = screen.getByRole("textbox", {
+      name: "Search agents",
+    }) as HTMLInputElement;
+    await user.type(agents, "writer");
+    await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByRole("textbox", { name: "搜索智能体" })).toBe(agents);
+    expect(agents.value).toBe("writer");
+    expect(
+      screen
+        .getByRole("button", { name: /Writer\s*writer/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(draft.controls).toBe(originalControls);
+
+    await user.click(
+      screen.getByRole("button", { name: "返回智能体与模型设置" }),
+    );
+    await user.click(screen.getByRole("button", { name: "思考" }));
+    await user.click(screen.getByRole("button", { name: "高" }));
+    expect(draft.controls).toEqual({
+      thinking: "high",
+      fast: false,
+      reasoning_mode: "pro",
+    });
+    await user.click(screen.getByRole("button", { name: "推理模式" }));
+    await user.click(screen.getByRole("button", { name: "默认" }));
+    expect(draft.controls).toEqual({
+      thinking: "high",
+      fast: false,
+      reasoning_mode: null,
+    });
+    expect(
+      screen.getByRole("button", { name: "推理模式" }).textContent,
+    ).toContain("Pro · 模型默认");
+    await user.click(screen.getByRole("button", { name: "速度" }));
+    await user.click(screen.getByRole("button", { name: "使用模型速度设置" }));
+    expect(draft.controls).toEqual({
+      thinking: "high",
+      fast: null,
+      reasoning_mode: null,
+    });
+    await user.keyboard("[Escape]");
+    expect(draft.doc).toBe(document);
+    expect(draft.undo).toBe(undo);
+    expect(draft.doc.getText("text").toString()).toBe(
+      "Keep 用户输入 and source_id",
+    );
+    expect(EditorView.findFromDOM(textbox)).toBe(editor);
+    expect(editor.state.selection.toJSON()).toEqual(selection);
+    expect(draft.submission.kind).toBe("idle");
+    expect(post).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves an unknown submission and locked choices when the language changes", async () => {
+  const user = userEvent.setup();
+  draft.modelId = "one";
+  draft.controls = { fast: false, thinking: "low" };
+  mount();
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Speed" }));
+  act(() => {
+    draft.submission = {
+      kind: "unknown",
+      action: "send",
+      receipt: "receipt-original",
+      message: "Check delivery first",
+    };
+    draft.notify();
+  });
+  const submission = draft.submission;
+  const controls = draft.controls;
+  const reads = get.mock.calls.length;
+  await act(() => i18n.changeLanguage("zh-CN"));
+  const standard = screen.getByRole("button", { name: "标准模式" });
+  expect(standard).toHaveProperty("disabled", true);
+  expect(standard.getAttribute("aria-pressed")).toBe("true");
+  await user.click(standard);
+  await act(() => i18n.changeLanguage("en"));
+  expect(draft.submission).toBe(submission);
+  expect(draft.controls).toBe(controls);
+  expect(draft.modelId).toBe("one");
+  expect(get).toHaveBeenCalledTimes(reads);
+  expect(post).not.toHaveBeenCalled();
+});
 
 it.each([false, true])(
   "keeps model overrides while navigating compact option pages (mobile: %s)",

@@ -255,9 +255,10 @@ export function ThreadRow({
         >
           <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
-            {row.thread.role === "coordinator" && title !== "Coordinator" && (
-              <span className={styles.srOnly}>{t("Coordinator")}</span>
-            )}
+            {row.thread.role === "coordinator" &&
+              title !== t("Coordinator") && (
+                <span className={styles.srOnly}>{t("Coordinator")}</span>
+              )}
             {showProject && (
               <small>
                 {row.project_name ??

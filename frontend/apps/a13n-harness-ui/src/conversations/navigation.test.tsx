@@ -523,8 +523,13 @@ it("keeps expanded workers and authored titles intact through language changes",
     }),
   );
   const worker = await screen.findByRole("link", { name: "Untitled chat" });
+  const coordinator = screen.getByRole("link", { name: "Coordinator" });
   const calls = vi.mocked(fetch).mock.calls.length;
   await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("link", { name: /^Coordinator\s*协调者$/ })).toBe(
+    coordinator,
+  );
+  expect(within(coordinator).getByText("Coordinator").tagName).toBe("STRONG");
   expect(screen.getByRole("link", { name: "Untitled chat" })).toBe(worker);
   expect(worker.getAttribute("aria-current")).toBe("page");
   expect(
