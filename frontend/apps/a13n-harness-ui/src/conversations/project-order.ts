@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import {
   useCallback,
   useEffect,
@@ -55,6 +56,7 @@ function move(ids: string[], id: string, index: number) {
 
 // Presentation only: never write Project configuration or Thread metadata.
 export function useProjectOrder(ids: string[]) {
+  const { t } = useTranslation();
   const [saved, setSaved] = useState<string[]>(() => {
     const value = readPreference(ORDER_KEY);
     return Array.isArray(value)
@@ -63,7 +65,11 @@ export function useProjectOrder(ids: string[]) {
   });
   const [preview, setPreview] = useState<string[] | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [announcement, setAnnouncement] = useState<
+    | { kind: "cancelled" | "saved" | "moving" }
+    | { kind: "position"; position: number; total: number }
+    | null
+  >(null);
   const current = orderedProjects(ids, preview ?? saved);
   const commit = (next: string[]) => {
     setSaved(next);
@@ -95,7 +101,7 @@ export function useProjectOrder(ids: string[]) {
     if (event.key === "Escape" && moving === id) {
       event.preventDefault();
       cancel();
-      setAnnouncement("Reordering cancelled.");
+      setAnnouncement({ kind: "cancelled" });
       return;
     }
     if (event.key === " " || event.key === "Enter") {
@@ -103,13 +109,11 @@ export function useProjectOrder(ids: string[]) {
       event.preventDefault();
       if (moving === id) {
         commit(current);
-        setAnnouncement("Project order saved in this browser.");
+        setAnnouncement({ kind: "saved" });
       } else {
         setMoving(id);
         setPreview(current);
-        setAnnouncement(
-          "Use Up and Down to move, Enter to save, Escape to cancel.",
-        );
+        setAnnouncement({ kind: "moving" });
       }
     } else if (
       moving === id &&
@@ -122,15 +126,28 @@ export function useProjectOrder(ids: string[]) {
         current.indexOf(id) + (event.key === "ArrowUp" ? -1 : 1),
       );
       setPreview(next);
-      setAnnouncement(
-        `Project position ${next.indexOf(id) + 1} of ${next.length}.`,
-      );
+      setAnnouncement({
+        kind: "position",
+        position: next.indexOf(id) + 1,
+        total: next.length,
+      });
     }
   };
   return {
     ids: current,
     moving,
-    announcement,
+    announcement: !announcement
+      ? ""
+      : announcement.kind === "cancelled"
+        ? t("Reordering cancelled.")
+        : announcement.kind === "saved"
+          ? t("Project order saved in this browser.")
+          : announcement.kind === "moving"
+            ? t("Use Up and Down to move, Enter to save, Escape to cancel.")
+            : t(
+                "Project position {{position, number}} of {{total, number}}.",
+                announcement,
+              ),
     cancel,
     reset: () => {
       cancel();

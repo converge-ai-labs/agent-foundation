@@ -49,6 +49,7 @@ export function previewInput(
 export function conversationTitle(
   thread: Schema<"ThreadSummary"> | undefined,
   localInputs: readonly LocalInput[] = [],
+  fallback = "Untitled chat",
 ) {
   const first = localInputs.find(
     (input) => input.action === "send" && input.state === "accepted",
@@ -61,6 +62,6 @@ export function conversationTitle(
       .join(" ")
       .trim()
       .slice(0, 160) ||
-    "Untitled chat"
+    fallback
   );
 }
