@@ -430,5 +430,12 @@
   "Download": "下载",
   "Loading image…": "正在加载图片…",
   "This image cannot be previewed. Download the original to inspect it.": "无法预览此图片，请下载原文件查看。",
-  "Current status is unavailable; stopping is not yet confirmed.": "当前状态不可用，尚未确认停止。"
+  "Current status is unavailable; stopping is not yet confirmed.": "当前状态不可用，尚未确认停止。",
+  "Your message may already be sent. Open the chat and check before sending again.": "你的消息可能已发送。再次发送前，请打开聊天确认。",
+  "Review the archived chat's outcome before sending this input again.": "再次发送此内容前，请先确认已归档聊天的结果。",
+  "Couldn't remove the saved draft from this browser.": "无法从此浏览器中删除已保存的草稿。",
+  "Couldn't save the draft. Keep this tab open to keep your input.": "无法保存草稿。请保持此标签页打开，以保留输入。",
+  "Checking the previous creation attempt…": "正在检查上一次创建尝试…",
+  "The coordinator must be available in this project. Retry or remove the assignment.": "协调者必须在此项目中可用。请重试或移除指派。",
+  "Review chat settings before sending.": "发送前请检查聊天设置。"
 }

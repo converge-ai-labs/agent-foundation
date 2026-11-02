@@ -82,7 +82,8 @@ export function ComposerEditor({
     ],
     [description, local, t],
   );
-  const initialAttributes = useRef(contentAttributes);
+  const currentAttributes = useRef(contentAttributes);
+  currentAttributes.current = contentAttributes;
   const send = useRef(submit);
   const report = useRef(presence);
   const person = useRef(profile);
@@ -182,7 +183,7 @@ export function ComposerEditor({
               ),
             ]
           : []),
-        attributes.current.of(initialAttributes.current),
+        attributes.current.of(currentAttributes.current),
         skills.current.of([]),
         keymap.of([
           ...["Enter", "Mod-Enter"].map((key) => ({

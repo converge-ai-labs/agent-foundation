@@ -129,6 +129,47 @@ function synchronizedDraft(text = "") {
   return draft;
 }
 
+it("keeps the current language when rejoining a replacement shared draft", async () => {
+  const draft = synchronizedDraft();
+  const { post, connect, close } = mount({ draft });
+  const original = screen.getByRole("textbox", { name: "Shared prompt" });
+  await language("简体中文");
+  const description = original.getAttribute("aria-description");
+  expect(original.textContent).toContain("提出问题，或描述任务…");
+  const replacement = new Y.Doc();
+  act(() =>
+    draft.receive({
+      draft_id: "draft-two",
+      participant_id: "alice",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(replacement)),
+    }),
+  );
+  replacement.destroy();
+  await userEvent.click(screen.getByRole("button", { name: "保留我的输入" }));
+  const rejoined = screen.getByRole("textbox", { name: "共享输入" });
+  expect(rejoined).not.toBe(original);
+  expect(rejoined.textContent).toContain("提出问题，或描述任务…");
+  expect(rejoined.getAttribute("aria-description")).toBe(description);
+  expect(draft.draftId).toBe("draft-two");
+  expect(values(draft.doc).prompt).toBe("");
+  const editor = EditorView.findFromDOM(rejoined)!;
+  act(() =>
+    editor.dispatch({
+      changes: { from: 0, insert: "保留 source_id" },
+      userEvent: "input.type",
+    }),
+  );
+  await language("English");
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(rejoined);
+  expect(values(draft.doc).prompt).toBe("保留 source_id");
+  act(() => draft.undo.undo());
+  expect(rejoined.textContent).toContain("Ask anything, or describe a task…");
+  expect(connect).toHaveBeenCalledOnce();
+  expect(close).not.toHaveBeenCalled();
+  expect(post).not.toHaveBeenCalled();
+});
+
 it("switches the real language control without replacing the editor, selection, undo history or staged image", async () => {
   const createObjectURL = vi.fn().mockReturnValue("blob:local-image");
   const revokeObjectURL = vi.fn();
