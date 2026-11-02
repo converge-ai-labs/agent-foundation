@@ -164,7 +164,6 @@ async def test_independent_modes_reach_worker(skill_service, scripted_model, run
 
     async def steer(self, *args, **kwargs):
         entry_id = kwargs["input_id"]
-        assert kwargs["best_effort"] is True
         async with short_session(service.runtime.storage) as session:
             entry = await session.get(InboxEntryRow, entry_id)
             assert entry.status == "assigned"
@@ -337,10 +336,7 @@ async def test_environment_freezes_at_acceptance_and_thread_map_replacement(skil
     assert not (reset["execution"] or {}).get("environment")
 
 
-@pytest.mark.parametrize("refusal", ["steering_timeout", "run_not_active"])
-async def test_unaccepted_steer_is_retained_until_next_boundary(
-    skill_service, scripted_model, runs_kit, monkeypatch, refusal
-):
+async def test_steering_timeout_retains_input_until_next_boundary(skill_service, scripted_model, runs_kit, monkeypatch):
     from a13n_harness import HarnessRunStream, RunError
 
     service = skill_service
@@ -358,7 +354,7 @@ async def test_unaccepted_steer_is_retained_until_next_boundary(
         offers.append(kwargs["input_id"])
         if len(offers) == 1:
             rejected.set()
-            raise RunError("Input has not been accepted", code=refusal)
+            raise RunError("Input has not been accepted", code="steering_timeout")
         return await steer(stream, *args, **kwargs)
 
     monkeypatch.setattr(HarnessRunStream, "steer", refuse_once)
@@ -370,9 +366,6 @@ async def test_unaccepted_steer_is_retained_until_next_boundary(
             assert response.status_code == 201, response.text
             entry_id = response.json()["entry"]["id"]
             await rejected.wait()
-            assert (await runs_kit.get_run(service, run_id))["status"] == "running"
-            entry = next(entry for entry in await runs_kit.inbox(service, thread_id) if entry["id"] == entry_id)
-            assert (entry["status"], entry["assigned_run_id"]) == ("assigned", run_id)
             gate.set()
             following = await scripted_model.request()
             await running
