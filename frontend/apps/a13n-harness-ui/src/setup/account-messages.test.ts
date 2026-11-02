@@ -49,6 +49,26 @@ it.each([
 );
 
 it.each([
+  "account_switch_confirmation_required",
+  "oauth_callback_invalid",
+  "future_provider_error",
+])(
+  "localizes the Host failure message with error code %s",
+  async (error_code) => {
+    const message =
+      "Login did not complete. Check account status before retrying; no fallback was started.";
+    for (const locale of ["en", "zh-CN"]) {
+      await i18n.changeLanguage(locale);
+      expect(loginMessage({ ...base, error_code, message }, i18n.t)).toBe(
+        i18n.t(message),
+      );
+      if (locale === "zh-CN") expect(i18n.t(message)).not.toBe(message);
+      expect(loginMessage({ ...base, error_code }, i18n.t)).toBe(base.message);
+    }
+  },
+);
+
+it.each([
   ["codex", "browser"],
   ["grok", "browser"],
   ["copilot", "device"],

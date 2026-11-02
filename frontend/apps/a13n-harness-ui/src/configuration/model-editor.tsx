@@ -557,7 +557,7 @@ function LoadedModelEditor({
       description: t("Use custom model ID"),
     });
   const defaultsSummary = [
-    selectedPreset?.label ?? t("Custom settings"),
+    selectedPreset ? t(selectedPreset.label) : t("Custom settings"),
     contextBudget
       ? t("{{count, number}} context", { count: contextBudget })
       : t("Model default context"),
@@ -812,8 +812,8 @@ function LoadedModelEditor({
                       value: item.value,
                       label:
                         index === 0
-                          ? t("{{preset}} (default)", { preset: item.label })
-                          : item.label,
+                          ? t("{{preset}} (default)", { preset: t(item.label) })
+                          : t(item.label),
                     })),
                   ]}
                   onValueChange={(preset) => {

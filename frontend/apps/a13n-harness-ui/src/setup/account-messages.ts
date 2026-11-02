@@ -48,11 +48,15 @@ export function loginMessage(
         return t("Device authorization denied. No fallback was started.");
       case "device_authorization_unsupported":
         return t("Device authorization unsupported. No fallback was started.");
-      case "oauth_login_failed":
-        return t(
-          "Login did not complete. Check account status before retrying; no fallback was started.",
-        );
     }
+    // The Host preserves typed error codes while using this same failure text.
+    const failureMessage =
+      "Login did not complete. Check account status before retrying; no fallback was started.";
+    if (
+      status.error_code === "oauth_login_failed" ||
+      status.message === failureMessage
+    )
+      return t(failureMessage);
     if (status.state === "expired" && !status.error_code)
       return t("The login expired. Start a new login.");
   }

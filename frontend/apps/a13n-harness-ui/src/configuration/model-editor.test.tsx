@@ -15,6 +15,7 @@ import { parse } from "yaml";
 import { MemoryRouter } from "react-router";
 import { ModelFields } from "./model-editor";
 import { AddModelButton } from "./models";
+import { i18n } from "../i18n";
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -152,8 +153,9 @@ vi.mock("../setup/accounts", () => ({
     return null;
   },
 }));
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.clearAllMocks();
   mocks.accountReady = false;
   mocks.groups = [];
@@ -294,6 +296,39 @@ it("provider defaults remove preset-owned fields without removing custom native 
   expect(parse(source()).settings).toEqual({ temperature: 0.3 });
   expect(source()).toContain("# Keep custom setting");
 });
+it("localizes preset labels without changing the draft or replaying preparation", async () => {
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText(/High reasoning ·/);
+  await openDefaults(user);
+  const before = source();
+  const prepareCalls = mocks.prepare.mock.calls.length;
+
+  await act(() => i18n.changeLanguage("zh-CN"));
+  const preset = screen.getByRole("combobox", { name: "设置预设" });
+  expect(preset.textContent).toContain("高强度推理（默认）");
+  expect(source()).toBe(before);
+  await user.click(preset);
+  await user.click(
+    await screen.findByRole("option", { name: "提供商默认设置" }),
+  );
+  expect(preset.textContent).toContain("提供商默认设置");
+  expect(parse(source()).settings).toEqual({ temperature: 0.3 });
+  expect(source()).toContain("# Keep custom setting");
+
+  await user.click(screen.getByRole("tab", { name: "连接" }));
+  await screen.findByText(/提供商默认设置 ·/);
+  const updated = source();
+  await act(() => i18n.changeLanguage("en"));
+  await screen.findByText(/Provider defaults ·/);
+  await openDefaults(user);
+  expect(
+    screen.getByRole("combobox", { name: "Settings preset" }).textContent,
+  ).toContain("Provider defaults");
+  expect(source()).toBe(updated);
+  expect(mocks.prepare).toHaveBeenCalledTimes(prepareCalls);
+});
+
 it("an old prepare cannot overwrite advanced source edits", async () => {
   let complete!: (value: unknown) => void;
   mocks.prepare.mockImplementation(
