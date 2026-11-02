@@ -41,6 +41,7 @@ function UsageBrowser() {
         : { start: range.start.toISOString(), end: range.end.toISOString() },
     [range, now],
   );
+  const [metric, setMetric] = useState<"cost" | "tokens">("cost");
   const [selectedGroup, setGroup] = useState<UsageGroup>("agents");
   const [selectedMember, setMember] = useState<Schema["MemberUsage"] | null>(
     null,
@@ -49,25 +50,41 @@ function UsageBrowser() {
   const group =
     !admin && selectedGroup === "members" ? "agents" : selectedGroup;
   const principalId = member?.principal_id;
+  const chartGroup = group === "models" ? "models" : "agents";
   const toolbarRef = useRef<HTMLDivElement>(null);
   function selectMember(value: Schema["MemberUsage"] | null) {
     setMember(value);
     if (value && group === "members") setGroup("agents");
   }
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const query = useQuery({
+  const query = useQuery<Schema["UsageOverview"]>({
     queryKey: [
       "usage",
       workspace.id,
       "overview",
+      chartGroup,
+      metric,
       window,
       timezone,
       principalId,
     ],
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[5] === window &&
+      previousQuery?.queryKey[7] === principalId
+        ? previous
+        : undefined,
     queryFn: async ({ signal }) =>
       data(
         await client.workspace(workspace.id).GET("/api/v1/usage/overview", {
-          params: { query: { ...window, timezone, principal_id: principalId } },
+          params: {
+            query: {
+              ...window,
+              timezone,
+              principal_id: principalId,
+              group_by: chartGroup,
+              metric,
+            },
+          },
           signal,
         }),
       ),
@@ -192,7 +209,15 @@ function UsageBrowser() {
                 )}
               </p>
             )}
-            <UsageChart days={overview.daily} />
+            <UsageChart
+              pending={query.isPlaceholderData}
+              days={overview.daily}
+              series={overview.series ?? []}
+              metric={metric}
+              onMetricChange={setMetric}
+              group={chartGroup}
+              onGroupChange={setGroup}
+            />
           </div>
         )
       )}
