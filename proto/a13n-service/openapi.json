@@ -16520,6 +16520,17 @@
             "title": "Supports Test",
             "type": "boolean"
           },
+          "supports_viewer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Viewer"
+          },
           "type": {
             "title": "Type",
             "type": "string"

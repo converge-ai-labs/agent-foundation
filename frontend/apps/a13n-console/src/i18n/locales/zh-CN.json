@@ -3637,5 +3637,6 @@
   "Lowest cost": "费用最低",
   "Sort by {{field}}, {{direction}}": "按{{field}}排序，{{direction}}",
   "Others": "其他",
-  "Chart grouping": "图表分组"
+  "Chart grouping": "图表分组",
+  "This browser provider does not support a viewer or human control.": "此浏览器提供商不支持查看器或人工控制。"
 }

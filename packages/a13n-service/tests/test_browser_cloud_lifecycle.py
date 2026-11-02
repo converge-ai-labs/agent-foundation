@@ -52,7 +52,13 @@ async def test_browserbase_exact_session_lifecycle():
         live = await provider.create("alloc-1", BrowserbaseRecipe())
         assert live.runtime_id == "session-1"
         assert (await provider.inspect("alloc-1", live.state)).runtime_id == "session-1"
+        before = len(calls)
         await provider.delete("alloc-1", live.state)
+        assert calls[before:] == [
+            ("GET", "/v1/sessions/session-1"),
+            ("POST", "/v1/sessions/session-1"),
+            ("GET", "/v1/sessions/session-1"),
+        ]
         assert await provider.inspect("alloc-1", live.state) is None
         assert calls.count(("POST", "/v1/sessions")) == 1
     finally:
@@ -106,7 +112,14 @@ async def test_kernel_exact_session_and_scope():
     provider = Kernel(KernelConfiguration(organization_id="org"), api("kernel", handler))
     try:
         live = await provider.create("alloc-1", KernelRecipe())
+        before = len(calls)
         await provider.delete("alloc-1", live.state)
+        assert calls[before:] == [
+            ("GET", "/auth/context"),
+            ("GET", "/browsers/session-1"),
+            ("DELETE", "/browsers/session-1"),
+            ("GET", "/browsers/session-1"),
+        ]
         assert await provider.inspect("alloc-1", live.state) is None
         assert calls.count(("POST", "/browsers")) == 1
     finally:
@@ -336,3 +349,184 @@ async def test_kernel_preflight_failure_reconciles_to_first_create(service, runs
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.status == "ready"
     assert calls == [("GET", "/auth/context"), ("GET", "/auth/context"), ("POST", "/browsers")]
+
+
+@pytest.mark.parametrize("supplier", ["browserbase", "kernel"])
+@pytest.mark.parametrize(
+    "status,certainty",
+    [
+        (400, "rejected"),
+        (401, "rejected"),
+        (403, "rejected"),
+        (404, "unknown"),
+        (408, "unknown"),
+        (409, "unknown"),
+        (422, "unknown"),
+        (429, "unknown"),
+        (500, "unknown"),
+    ],
+)
+async def test_create_rejection_is_distinct_from_unknown(supplier, status, certainty):
+    async def handler(request):
+        if request.url.path == "/auth/context":
+            return httpx2.Response(
+                200, json={"organization": {"id": "org"}, "authorization": {"effective_scope": {"project_id": None}}}
+            )
+        return httpx2.Response(status)
+
+    client = api(supplier, handler)
+    provider = (
+        Browserbase(BrowserbaseConfiguration(project_id="project"), client)
+        if supplier == "browserbase"
+        else Kernel(KernelConfiguration(organization_id="org"), client)
+    )
+    recipe = BrowserbaseRecipe() if supplier == "browserbase" else KernelRecipe()
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await provider.create("alloc-1", recipe)
+        assert error.value.certainty == certainty
+    finally:
+        await provider.close()
+
+
+def test_release_only_shortcuts_proven_unallocated_creates():
+    from a13n_service.runs.browsers.lifecycle import release_intent
+    from a13n_service.runs.browsers.tables import BrowserRow
+
+    for dispatched, expected in [(False, "deleted"), (True, "deleting")]:
+        row = BrowserRow(status="creating", source="managed", create_dispatched=dispatched)
+        release_intent(row)
+        assert row.status == expected
+
+
+@pytest.mark.parametrize("supplier", ["browserbase", "kernel"])
+@pytest.mark.parametrize("release", [True, False])
+async def test_rejected_create_can_release_or_retry(service, runs_kit, monkeypatch, supplier, release):
+    from dataclasses import replace
+
+    from a13n_service.distribution import OSS
+    from a13n_service.infra.db import transaction
+    from a13n_service.providers.browser import cloud
+    from a13n_service.providers.browser.builtins import builtins
+    from a13n_service.providers.registry import Registry
+    from a13n_service.runs.browsers import lifecycle
+    from a13n_service.runs.browsers.tables import BrowserRow
+    from a13n_service.settings import Browsers
+
+    posts = 0
+
+    async def handler(request):
+        nonlocal posts
+        if request.url.path == "/auth/context":
+            return httpx2.Response(
+                200, json={"organization": {"id": "org"}, "authorization": {"effective_scope": {"project_id": None}}}
+            )
+        if request.method == "POST":
+            posts += 1
+            if posts == 1:
+                return httpx2.Response(400)
+            body = json.loads(request.content)
+            if supplier == "kernel":
+                return httpx2.Response(200, json={**body, "session_id": "s", "cdp_ws_url": "wss://example.com/cdp"})
+            return httpx2.Response(200, json={"id": "s"})
+        return httpx2.Response(
+            200,
+            json={
+                "id": "s",
+                "projectId": "project",
+                "userMetadata": {"a13n_allocation": browser["id"]},
+                "status": "RUNNING",
+                "connectUrl": "wss://example.com/cdp",
+            },
+        )
+
+    original_init = cloud.CloudAPI.__init__
+
+    def init(self, supplier, credential, policy, **kwargs):
+        original_init(self, supplier, credential, policy, transport=httpx2.MockTransport(handler))
+
+    monkeypatch.setattr(cloud.CloudAPI, "__init__", init)
+    await runs_kit.pause_sweeps(service)
+    service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, *builtins(Browsers(root=None)))))
+    service.app.state.runtime = service.runtime
+    config = {"project_id": "project"} if supplier == "browserbase" else {"organization_id": "org"}
+    account = await service.client.post(
+        f"{service.api}/browser-providers",
+        json={"type": supplier, "name": supplier, "config": config, "credential": {"api_key": "test"}},
+    )
+    assert account.status_code == 201, account.text
+    response = await service.client.post(
+        f"{service.api}/browsers", json={"provider_id": account.json()["id"], "name": "Browser", "recipe": {}}
+    )
+    assert response.status_code == 201, response.text
+    browser = response.json()
+    await lifecycle.prepare(service.runtime, browser["workspace_id"], browser["id"])
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.status == "creating" and not row.create_dispatched
+        if release:
+            lifecycle.release_intent(row)
+            assert row.status == "deleted"
+    if not release:
+        await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(BrowserRow, browser["id"])
+            assert row.status == "ready"
+    assert posts == (1 if release else 2)
+
+
+async def test_browserbase_confirmation_failure_does_not_recreate(service, runs_kit, monkeypatch):
+    from dataclasses import replace
+
+    from a13n_service.distribution import OSS
+    from a13n_service.infra.db import transaction
+    from a13n_service.providers.browser import cloud
+    from a13n_service.providers.browser.builtins import builtins
+    from a13n_service.providers.registry import Registry
+    from a13n_service.runs.browsers import lifecycle
+    from a13n_service.runs.browsers.tables import BrowserRow
+    from a13n_service.settings import Browsers
+
+    calls = []
+
+    async def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.method == "POST":
+            return httpx2.Response(200, json={"id": "s"})
+        return httpx2.Response(401)
+
+    original_init = cloud.CloudAPI.__init__
+
+    def init(self, supplier, credential, policy, **kwargs):
+        original_init(self, supplier, credential, policy, transport=httpx2.MockTransport(handler))
+
+    monkeypatch.setattr(cloud.CloudAPI, "__init__", init)
+    await runs_kit.pause_sweeps(service)
+    service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, *builtins(Browsers(root=None)))))
+    service.app.state.runtime = service.runtime
+    account = await service.client.post(
+        f"{service.api}/browser-providers",
+        json={
+            "type": "browserbase",
+            "name": "BB",
+            "config": {"project_id": "project"},
+            "credential": {"api_key": "test"},
+        },
+    )
+    assert account.status_code == 201, account.text
+    response = await service.client.post(
+        f"{service.api}/browsers", json={"provider_id": account.json()["id"], "name": "Browser", "recipe": {}}
+    )
+    assert response.status_code == 201, response.text
+    browser = response.json()
+    await lifecycle.prepare(service.runtime, browser["workspace_id"], browser["id"])
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.status == "creating" and row.create_dispatched
+    await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(BrowserRow, browser["id"])
+        assert row.status == "creating" and row.create_dispatched
+        lifecycle.release_intent(row)
+        assert row.status == "deleting"
+    assert sum(method == "POST" for method, _ in calls) == 1

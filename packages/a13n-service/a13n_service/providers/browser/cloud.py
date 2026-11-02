@@ -7,7 +7,7 @@ never retries requests, follows redirects, or includes upstream details in error
 import re
 from datetime import datetime
 from typing import Literal
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit
 
 import httpx2
 from a13n_harness.capabilities.browser.cdp import Chromium
@@ -15,7 +15,9 @@ from a13n_harness.http import outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
-from a13n_service.providers.browser.definition import BrowserProviderError, LiveBrowser
+from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.outbound import bound_response, validate_cdp_endpoint
+from a13n_service.providers.browser.definition import BrowserProviderError, LiveBrowser, ViewerGrant
 
 
 class BrowserbaseConfiguration(BaseModel):
@@ -55,19 +57,25 @@ class CloudAPI:
         policy: EndpointPolicy,
         *,
         transport: httpx2.AsyncBaseTransport | None = None,
+        max_bytes: int = 16777216,
     ) -> None:
         self.supplier = supplier
         self.policy = policy
         self.base = "https://api.browserbase.com" if supplier == "browserbase" else "https://api.onkernel.com"
         key = credential.api_key.get_secret_value()
         headers = {"X-BB-API-Key": key} if supplier == "browserbase" else {"Authorization": f"Bearer {key}"}
+
+        async def check_response(response: httpx2.Response) -> None:
+            bound_response(response, max_bytes)
+
         self.client = httpx2.AsyncClient(
             base_url=self.base,
-            headers=headers,
+            headers={**headers, "accept-encoding": "identity"},
             verify=outbound_tls_verify(),
             timeout=30,
             follow_redirects=False,
             transport=transport,
+            event_hooks={"response": [check_response]},
         )
 
     async def request(
@@ -78,6 +86,7 @@ class CloudAPI:
         body: dict | None = None,
         params: dict | None = None,
         allow_missing: bool = False,
+        create: bool = False,
     ) -> httpx2.Response:
         # Only fixed, provider-owned paths are accepted; callers cannot redirect credentials.
         if not path.startswith("/") or path.startswith("//"):
@@ -92,14 +101,19 @@ class CloudAPI:
             raise BrowserProviderError("cloud_endpoint_denied", certainty="not_dispatched") from None
         try:
             response = await self.client.send(request)
-        except httpx2.HTTPError:
+        except (httpx2.HTTPError, ServiceError):
             raise BrowserProviderError("cloud_request_failed") from None
         if response.status_code >= 300 and not (allow_missing and response.status_code == 404):
-            certainty = (
-                "unknown"
-                if response.status_code < 400 or response.status_code in {408, 409, 429} or response.status_code >= 500
-                else "known"
-            )
+            if create:
+                certainty = "rejected" if response.status_code in {400, 401, 403} else "unknown"
+            else:
+                certainty = (
+                    "unknown"
+                    if response.status_code < 400
+                    or response.status_code in {408, 409, 429}
+                    or response.status_code >= 500
+                    else "known"
+                )
             raise BrowserProviderError("cloud_request_failed", certainty=certainty)
         return response
 
@@ -115,7 +129,7 @@ async def _connect(api: CloudAPI, state: dict[str, JsonValue]) -> Chromium:
         parsed = urlsplit(url)
         if parsed.scheme != "wss":
             raise EndpointPolicyError("cloud CDP requires secure WebSocket")
-        await api.policy.validate(urlunsplit(("https", parsed.netloc, parsed.path, "", parsed.fragment)))
+        await validate_cdp_endpoint(api.policy, url)
     except (EndpointPolicyError, ValueError):
         raise BrowserProviderError("cloud_endpoint_denied", certainty="not_dispatched") from None
     try:
@@ -125,7 +139,31 @@ async def _connect(api: CloudAPI, state: dict[str, JsonValue]) -> Chromium:
         raise BrowserProviderError("cloud_connect_failed") from None
 
 
-class Browserbase:
+class CloudUnsupportedOperations:
+    """Operations not advertised by either managed cloud provider."""
+
+    async def stop(self, allocation_id: str, state: dict[str, JsonValue]) -> LiveBrowser:
+        raise NotImplementedError("Cloud browser stop is not supported")
+
+    async def start(self, allocation_id: str, state: dict[str, JsonValue], *, generation: int) -> LiveBrowser:
+        raise NotImplementedError("Cloud browser start is not supported")
+
+    async def ensure_viewer(
+        self, state: dict[str, JsonValue], grant_id: str, *, episode: int, expires_at: datetime
+    ) -> ViewerGrant:
+        raise NotImplementedError("Cloud browser viewer is not supported")
+
+    async def revoke_viewer(self, state: dict[str, JsonValue], grant_id: str, *, episode: int) -> None:
+        raise NotImplementedError("Cloud browser viewer is not supported")
+
+    async def upload_file(self, state: dict[str, JsonValue], name: str, content: bytes) -> str:
+        raise NotImplementedError("Cloud browser files are not supported")
+
+    async def download_file(self, state: dict[str, JsonValue], guid: str, *, max_bytes: int) -> bytes:
+        raise NotImplementedError("Cloud browser files are not supported")
+
+
+class Browserbase(CloudUnsupportedOperations):
     """One session per Service allocation, recovered by its exact metadata."""
 
     def __init__(self, config: BrowserbaseConfiguration, api: CloudAPI):
@@ -160,7 +198,7 @@ class Browserbase:
             raise BrowserProviderError("cloud_identity_mismatch")
         return item
 
-    async def _live(self, allocation_id: str, item: dict) -> LiveBrowser:
+    def _live(self, allocation_id: str, item: dict) -> LiveBrowser:
         if item.get("status") != "RUNNING":
             raise BrowserProviderError("cloud_session_not_ready")
         session_id = item.get("id")
@@ -182,6 +220,7 @@ class Browserbase:
         response = await self.api.request(
             "POST",
             "/v1/sessions",
+            create=True,
             body={
                 "projectId": self.config.project_id,
                 "timeout": recipe.timeout,
@@ -192,7 +231,7 @@ class Browserbase:
         item = response.json()
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             raise BrowserProviderError("cloud_invalid_response")
-        return await self._live(allocation_id, await self._get(allocation_id, item["id"]))
+        return self._live(allocation_id, await self._get(allocation_id, item["id"]))
 
     async def inspect(self, allocation_id: str, state: dict[str, JsonValue] | None) -> LiveBrowser | None:
         if state is None:
@@ -208,14 +247,15 @@ class Browserbase:
             raise BrowserProviderError("cloud_session_not_ready")
         if item.get("status") != "RUNNING":
             raise BrowserProviderError("cloud_invalid_response")
-        return await self._live(allocation_id, item)
+        return self._live(allocation_id, item)
 
     async def delete(self, allocation_id: str, state: dict[str, JsonValue] | None) -> None:
         item = await self._find(allocation_id) if state is None else await self._get(allocation_id, str(state["id"]))
         if item is None or not isinstance(item.get("id"), str):
             raise BrowserProviderError("cloud_delete_unresolved")
         session_id = item["id"]
-        item = await self._get(allocation_id, session_id)
+        if state is None:
+            item = await self._get(allocation_id, session_id)
         if item.get("status") not in {"ERROR", "TIMED_OUT", "COMPLETED"}:
             await self.api.request(
                 "POST",
@@ -233,7 +273,7 @@ class Browserbase:
         await self.api.close()
 
 
-class Kernel:
+class Kernel(CloudUnsupportedOperations):
     """Use a tagged session in a verified Kernel authorization scope."""
 
     def __init__(self, config: KernelConfiguration, api: CloudAPI):
@@ -284,6 +324,7 @@ class Kernel:
         response = await self.api.request(
             "POST",
             "/browsers",
+            create=True,
             body={
                 "name": allocation_id,
                 "tags": {"a13n_allocation": allocation_id},
@@ -317,7 +358,6 @@ class Kernel:
         if not isinstance(item.get("session_id"), str):
             raise BrowserProviderError("cloud_delete_unresolved")
         session_id = item["session_id"]
-        item = await self._get(allocation_id, session_id)
         if not item.get("deleted_at"):
             await self.api.request("DELETE", f"/browsers/{quote(session_id, safe='')}", allow_missing=True)
             item = await self._get(allocation_id, session_id)

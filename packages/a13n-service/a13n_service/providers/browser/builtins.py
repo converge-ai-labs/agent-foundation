@@ -10,18 +10,18 @@ from a13n_service.providers.browser.selfhost import Recipe, blocking
 from a13n_service.settings import Browsers
 
 
-def builtins(settings: Browsers) -> tuple[BrowserProviderDefinition, ...]:
+def builtins(settings: Browsers, response_bytes: int = 16777216) -> tuple[BrowserProviderDefinition, ...]:
     async def open_browserbase(
         config: cloud.BrowserbaseConfiguration, credential: cloud.CloudCredential | None, policy: EndpointPolicy
     ):
         assert credential is not None
-        return cloud.Browserbase(config, cloud.CloudAPI("browserbase", credential, policy))
+        return cloud.Browserbase(config, cloud.CloudAPI("browserbase", credential, policy, max_bytes=response_bytes))
 
     async def open_kernel(
         config: cloud.KernelConfiguration, credential: cloud.CloudCredential | None, policy: EndpointPolicy
     ):
         assert credential is not None
-        return cloud.Kernel(config, cloud.CloudAPI("kernel", credential, policy))
+        return cloud.Kernel(config, cloud.CloudAPI("kernel", credential, policy, max_bytes=response_bytes))
 
     definitions: list[BrowserProviderDefinition] = [
         BrowserProviderDefinition(

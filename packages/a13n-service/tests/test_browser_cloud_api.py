@@ -102,3 +102,32 @@ async def test_cloud_validates_effective_request_url_before_dispatch():
         assert not calls
     finally:
         await api.close()
+
+
+@pytest.mark.parametrize("encoding,content", [("identity", b"12345"), ("gzip", b"compressed")])
+async def test_cloud_rejects_oversized_or_compressed_mutation_response(encoding, content):
+    calls = []
+
+    class Stream(httpx2.AsyncByteStream):
+        async def __aiter__(self):
+            yield content
+
+    async def handler(request):
+        calls.append(request)
+        return httpx2.Response(200, headers={"content-encoding": encoding}, stream=Stream(), request=request)
+
+    api = CloudAPI(
+        "kernel",
+        CloudCredential(api_key=SecretStr("fixture")),
+        EndpointPolicy(),
+        transport=httpx2.MockTransport(handler),
+        max_bytes=4,
+    )
+    try:
+        with pytest.raises(BrowserProviderError) as error:
+            await api.request("POST", "/browsers", body={})
+        assert error.value.certainty == "unknown"
+        assert len(calls) == 1
+        assert calls[0].headers["accept-encoding"] == "identity"
+    finally:
+        await api.close()

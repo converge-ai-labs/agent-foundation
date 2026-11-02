@@ -751,6 +751,7 @@
   "Actor": "Actor",
   "Not required": "Not required",
   "Add a provider before creating templates.": "Add a provider before creating templates.",
+  "Add a provider, then create browsers for your agents.": "Add a provider, then create browsers for your agents.",
   "Add a provider, then save a model alias for your agents.": "Add a provider, then save a model alias for your agents.",
   "Add an account or endpoint, then choose the models your agents can use.": "Add an account or endpoint, then choose the models your agents can use.",
   "Add existing member": "Add existing member",
@@ -3636,5 +3637,6 @@
   "Lowest cost": "Lowest cost",
   "Sort by {{field}}, {{direction}}": "Sort by {{field}}, {{direction}}",
   "Others": "Others",
-  "Chart grouping": "Chart grouping"
+  "Chart grouping": "Chart grouping",
+  "This browser provider does not support a viewer or human control.": "This browser provider does not support a viewer or human control."
 }

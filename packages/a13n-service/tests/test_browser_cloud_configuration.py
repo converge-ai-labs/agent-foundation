@@ -57,3 +57,34 @@ def test_cloud_definitions_available_without_local_browser_root() -> None:
     kernel = definitions["kernel"]
     config = kernel.configuration_model.model_validate({"organization_id": "org"})
     assert kernel.backend_identity(config) == {"organization_id": "org", "project_id": None}
+
+
+@pytest.mark.anyio
+async def test_cloud_optional_operations_fail_explicitly() -> None:
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock
+
+    from a13n_service.providers.browser.cloud import (
+        Browserbase,
+        BrowserbaseConfiguration,
+        CloudAPI,
+        Kernel,
+        KernelConfiguration,
+    )
+
+    providers = [
+        Browserbase(BrowserbaseConfiguration(project_id="project"), MagicMock(spec=CloudAPI)),
+        Kernel(KernelConfiguration(organization_id="org"), MagicMock(spec=CloudAPI)),
+    ]
+    for provider in providers:
+        operations = [
+            provider.stop("allocation", {}),
+            provider.start("allocation", {}, generation=1),
+            provider.ensure_viewer({}, "grant", episode=1, expires_at=datetime.now(UTC)),
+            provider.revoke_viewer({}, "grant", episode=1),
+            provider.upload_file({}, "file", b"data"),
+            provider.download_file({}, "guid", max_bytes=1),
+        ]
+        for operation in operations:
+            with pytest.raises(NotImplementedError, match="not supported"):
+                await operation

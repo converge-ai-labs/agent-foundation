@@ -62,8 +62,20 @@ from .http_support import serve_http
 # Opt in before collection so the ordinary Service suite retains its no-skips contract.
 collect_ignore = [] if os.environ.get("A13N_COLLECTOR_TEST") == "1" else ["test_monitoring_collectors_live.py"]
 # Cloud tests are selected before collection and never read credentials in ordinary runs.
+_CLOUD_LIVE_FILES = {"test_browser_cloud_live.py", "test_browser_cloud_adapter_live.py"}
+
 if not os.environ.get("A13N_CLOUD_BROWSER_TEST"):
-    collect_ignore.extend(["test_browser_cloud_live.py", "test_browser_cloud_adapter_live.py"])
+    collect_ignore.extend(sorted(_CLOUD_LIVE_FILES))
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    # Explicit file arguments (used by CI sharding) bypass collect_ignore.
+    if os.environ.get("A13N_CLOUD_BROWSER_TEST"):
+        return
+    deselected = [item for item in items if item.path.name in _CLOUD_LIVE_FILES]
+    if deselected:
+        items[:] = [item for item in items if item.path.name not in _CLOUD_LIVE_FILES]
+        config.hook.pytest_deselected(items=deselected)
 
 
 @pytest.fixture(scope="session")

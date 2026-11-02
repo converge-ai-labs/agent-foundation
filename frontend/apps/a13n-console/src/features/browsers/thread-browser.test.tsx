@@ -24,6 +24,7 @@ let catalogFails: boolean;
 let refuse: boolean;
 let requests: Request[];
 let supportsStop: boolean;
+let supportsViewer: boolean;
 let recipeSchema: Record<string, unknown> | undefined;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
@@ -45,6 +46,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("./viewer", () => ({ BrowserViewer: () => <div>Mounted viewer</div> }));
 beforeEach(() => {
   supportsStop = true;
+  supportsViewer = true;
   recipeSchema = undefined;
   verbs = ["read", "run", "write"];
   thread = fixtureThread({ version: 1 });
@@ -87,6 +89,7 @@ beforeEach(() => {
             {
               type: "fake",
               supports_stop: supportsStop,
+              supports_viewer: supportsViewer,
               browser_recipe_schema: recipeSchema,
             },
           ],
@@ -410,4 +413,13 @@ it("renders provider recipe defaults and submits edited values", async () => {
   expect(await requests[0].json()).toMatchObject({
     recipe: { region: "us-west", timeout: 120 },
   });
+});
+
+it("explains when a managed provider cannot offer human control", async () => {
+  supportsViewer = false;
+  start();
+  await screen.findByText(
+    "This browser provider does not support a viewer or human control.",
+  );
+  expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
 });

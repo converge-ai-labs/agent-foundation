@@ -10350,6 +10350,8 @@ export interface components {
       supports_stop?: boolean | null;
       /** Supports Test */
       supports_test: boolean;
+      /** Supports Viewer */
+      supports_viewer?: boolean | null;
       /** Type */
       type: string;
     };

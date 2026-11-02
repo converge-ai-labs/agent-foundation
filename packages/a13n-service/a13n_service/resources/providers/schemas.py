@@ -118,6 +118,7 @@ class ProviderType(BaseModel):
     # Browser types: per-allocation creation inputs.
     browser_recipe_schema: dict[str, JsonValue] | None = None
     supports_stop: bool | None = None
+    supports_viewer: bool | None = None
     supports_destroy: bool | None = None
 
 

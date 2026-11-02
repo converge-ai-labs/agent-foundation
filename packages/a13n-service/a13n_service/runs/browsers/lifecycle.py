@@ -114,7 +114,8 @@ async def authorize_use(
 
 def release_intent(row: BrowserRow) -> None:
     row.claim_id = row.claim_until = None
-    row.status = "deleted" if row.status == "reserved" else "deleting"
+    never_created = row.status == "reserved" or (row.status == "creating" and not row.create_dispatched)
+    row.status = "deleted" if never_created else "deleting"
     if row.source == "external_cdp":
         row.status = "deleted"
         row.handle = None
@@ -321,6 +322,7 @@ async def reconcile(
     live: LiveBrowser | None = None
     failure: str | None = None
     not_dispatched = False
+    rejected = False
     try:
         if selected.account is None:
             assert selected.state is not None
@@ -356,6 +358,7 @@ async def reconcile(
         # Provider codes are internal categories, never upstream exception text.
         failure = "browser_provider_failed"
         not_dispatched = error.certainty == "not_dispatched"
+        rejected = error.certainty == "rejected"
     except Exception:
         failure = "browser_connection_failed" if selected.account is None else "browser_provider_unknown"
     async with transaction(runtime.storage) as session:
@@ -370,7 +373,7 @@ async def reconcile(
             and live is not None
             and live.status == "stopped"
         ):
-            if phase == "creating" and create and not_dispatched:
+            if phase == "creating" and create and (not_dispatched or rejected):
                 row.create_dispatched = False
             elif phase == "starting" and start and not_dispatched:
                 row.start_dispatched = False
