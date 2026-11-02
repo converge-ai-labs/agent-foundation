@@ -44,10 +44,13 @@ export function Panel({
 export function ErrorNotice({
   error,
   retry,
+  message,
   inline = false,
 }: {
   error: unknown;
   retry?: () => void;
+  /** Display text; the original error still owns recovery classification. */
+  message?: string;
   /** One quiet line for secondary content, without the notice frame. */
   inline?: boolean;
 }) {
@@ -60,7 +63,9 @@ export function ErrorNotice({
     >
       <div className={styles.errorMessage}>
         <WarningCircleIcon size={inline ? 14 : 18} aria-hidden="true" />
-        <span>{error instanceof Error ? error.message : String(error)}</span>
+        <span>
+          {message ?? (error instanceof Error ? error.message : String(error))}
+        </span>
       </div>
       {retry && (
         <Button variant="ghost" size="sm" onClick={retry}>

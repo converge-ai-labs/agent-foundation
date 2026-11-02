@@ -23,6 +23,7 @@ import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
 import { CredentialKeys } from "./credential-keys";
 import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
 import { copyText } from "../platform";
+import { accountMessage, loginMessage } from "./account-messages";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -269,6 +270,7 @@ export function ProviderAccount({
       setCopyFailed(true);
     }
   }
+  const loginGuidance = login.data ? loginMessage(login.data, t) : undefined;
   const accountActions = (
     <div className={styles.actions}>
       <Button
@@ -345,7 +347,7 @@ export function ProviderAccount({
                 </p>
               )}
               {account.data?.message && (
-                <p role="status">{account.data.message}</p>
+                <p role="status">{accountMessage(account.data.message, t)}</p>
               )}
             </div>
             {accountActions}
@@ -504,27 +506,22 @@ export function ProviderAccount({
               )}
             </ol>
           )}
-          {login.data?.message &&
+          {loginGuidance &&
             !(
               active &&
               provider === "chatgpt" &&
-              login.data.state === "waiting"
-            ) && <p>{login.data.message}</p>}
+              login.data?.state === "waiting"
+            ) && <p>{loginGuidance}</p>}
           {active &&
             provider === "chatgpt" &&
             login.data?.state === "waiting" && (
               <details
                 className={accountStyles.advanced}
-                open={method === "manual_callback" || undefined}
+                open={login.data.method === "manual_callback" || undefined}
               >
                 <summary>{t("Callback can't reach this server?")}</summary>
                 <div className={styles.stack}>
-                  <p>
-                    {login.data.message ??
-                      t(
-                        "After signing in, paste the full URL from your browser, even if that page shows an error. It contains a private one-time code.",
-                      )}
-                  </p>
+                  <p>{loginGuidance}</p>
                   <FormField label={t("Complete callback URL")}>
                     <Input
                       type="password"

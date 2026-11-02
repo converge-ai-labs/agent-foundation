@@ -352,10 +352,11 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                   : t("Decide where your agent works")}
             </h2>
             <ErrorNotice
-              error={
+              error={error}
+              message={
                 error instanceof Error && !(error instanceof ApiError)
-                  ? new Error(t(error.message))
-                  : error
+                  ? t(error.message)
+                  : undefined
               }
             />
             {!storageAvailable && (

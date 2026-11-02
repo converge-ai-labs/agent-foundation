@@ -14,6 +14,7 @@ import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
 import { LanguageProvider } from "../i18n/language";
 import { i18n } from "../i18n";
+import { ConnectionNoticeContext } from "../shell/connection";
 import { SetupWizard } from "./wizard";
 import {
   readWizardDraft,
@@ -196,7 +197,7 @@ async function fetcher(request: Request): Promise<Response> {
         );
   throw new Error(`Unexpected request: ${request.method} ${path}`);
 }
-function mount(selected = status) {
+function mount(selected = status, disconnected = false) {
   const queries = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -208,16 +209,18 @@ function mount(selected = status) {
     <LanguageProvider>
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
-          <BrowserRouter>
-            <Routes>
-              <Route
-                path="/setup"
-                element={<SetupWizard status={selected} />}
-              />
-              <Route path="/threads/:threadId" element={<p>First chat</p>} />
-              <Route path="/" element={<p>Workbench</p>} />
-            </Routes>
-          </BrowserRouter>
+          <ConnectionNoticeContext.Provider value={disconnected}>
+            <BrowserRouter>
+              <Routes>
+                <Route
+                  path="/setup"
+                  element={<SetupWizard status={selected} />}
+                />
+                <Route path="/threads/:threadId" element={<p>First chat</p>} />
+                <Route path="/" element={<p>Workbench</p>} />
+              </Routes>
+            </BrowserRouter>
+          </ConnectionNoticeContext.Provider>
         </TransportContext>
       </QueryClientProvider>
     </LanguageProvider>,
@@ -877,3 +880,41 @@ it("keeps an unsaved provider key in memory when switching language without savi
   expect(calls.filter((call) => call.method !== "GET")).toHaveLength(writes);
   expect(screen.getByRole("button", { name: "保存 API 密钥" })).toBeTruthy();
 });
+
+it.each([
+  ["reconcile", true],
+  ["first chat", true],
+  ["reconcile", false],
+] as const)(
+  "keeps %s network recovery with global notice=%s and allows resume",
+  async (stage, disconnected) => {
+    mount(status, disconnected);
+    await reviewConfiguration();
+    override = async (request) => {
+      const path = new URL(request.url).pathname;
+      if (
+        (stage === "reconcile" &&
+          path.startsWith("/api/configuration/sources/")) ||
+        (stage === "first chat" && path.startsWith("/api/threads"))
+      )
+        throw new TypeError("Connection interrupted");
+      return undefined;
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Resume setup" }),
+      ).toHaveProperty("disabled", false),
+    );
+    if (disconnected) expect(screen.queryByRole("alert")).toBeNull();
+    else
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Unable to reach the server",
+      );
+    expect(readWizardDraft(status.draft_scope!)?.pending?.files).toEqual(files);
+    override = undefined;
+    fireEvent.click(screen.getByRole("button", { name: "Resume setup" }));
+    await screen.findByText("First chat");
+    expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
+  },
+);

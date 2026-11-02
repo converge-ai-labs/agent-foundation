@@ -6,7 +6,8 @@ import { readLanguage } from "./preferences";
 export { useTranslation } from "react-i18next";
 
 export const i18n = createInstance();
-await i18n.use(initReactI18next).init({
+void i18n.use(initReactI18next).init({
+  initImmediate: false,
   lng: readLanguage(),
   fallbackLng: "en",
   supportedLngs: ["en", "zh-CN"],

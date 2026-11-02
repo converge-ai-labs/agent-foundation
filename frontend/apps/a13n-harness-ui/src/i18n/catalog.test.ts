@@ -120,6 +120,7 @@ const surfaces = [
   "configuration/model-editor.tsx",
   "configuration/resource-choice.tsx",
   "setup/accounts.tsx",
+  "setup/account-messages.ts",
 ];
 it("keeps literal onboarding translation calls in the catalogs", () => {
   const missing: string[] = [];
