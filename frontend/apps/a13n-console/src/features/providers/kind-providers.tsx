@@ -64,6 +64,7 @@ const categories: Record<ProviderKind, ProviderCategoryValue> = {
 /** The types a deployment offers for one provider kind. */
 export function useProviderTypes(kind: ProviderKind, enabled = true) {
   const client = useClient();
+  const { t } = useTranslation();
   return useQuery({
     queryKey: [`${kind}-provider-types`],
     enabled,
@@ -74,6 +75,23 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
           signal,
         })
         .then(data),
+    // Translate the observer's presentation without changing cached server data.
+    select: (catalog) =>
+      kind === "browser"
+        ? {
+            ...catalog,
+            items: catalog.items.map((definition) => ({
+              ...definition,
+              display_name:
+                definition.display_name === "Docker browser"
+                  ? t("Docker browser")
+                  : definition.display_name ===
+                      "Native browser (Linux debugging)"
+                    ? t("Native browser (Linux debugging)")
+                    : definition.display_name,
+            })),
+          }
+        : catalog,
   });
 }
 

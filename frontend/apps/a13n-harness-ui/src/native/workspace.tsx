@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { ViewLink } from "./view-link";
 import {
   useContext,
@@ -109,6 +110,7 @@ export function NativeWorkspace({
   onFocus: (target: Schema<"PageTarget"> | null) => void;
   unauthorized: () => void;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const projects = useProjects();
   const status = useStatus();
@@ -824,8 +826,8 @@ export function NativeWorkspace({
     },
     {
       key: "browser" as const,
-      label: "Browser",
-      description: "View the host browser",
+      label: t("Browser"),
+      description: t("View the host browser"),
       icon: Globe,
       available: status.data?.features?.browser,
     },
@@ -856,7 +858,7 @@ export function NativeWorkspace({
                   ? "Changes"
                   : tab.kind === "terminal"
                     ? "Terminal"
-                    : "Browser",
+                    : t("Browser"),
       icon:
         tab.kind === "new"
           ? Plus
@@ -1080,8 +1082,16 @@ export function NativeWorkspace({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Close tab: ${label}`}
-                        title={`Close ${label}`}
+                        aria-label={
+                          tab.kind === "browser"
+                            ? t("Close tab: {{label}}", { label })
+                            : `Close tab: ${label}`
+                        }
+                        title={
+                          tab.kind === "browser"
+                            ? t("Close {{label}}", { label })
+                            : `Close ${label}`
+                        }
                         disabled={projectLoading}
                         onClick={() => closeTab(tab.id)}
                       >
@@ -1220,12 +1230,12 @@ export function NativeWorkspace({
               ref={paneElement}
               tabIndex={-1}
               className={styles.pane}
-              aria-label="Browser panel"
+              aria-label={t("Browser panel")}
             >
               {nativeFeedback}
               {opening && (
                 <span role="status" className={styles.directoryLoading}>
-                  Opening…
+                  {t("Opening…")}
                 </span>
               )}
               {supportingExpanded && (

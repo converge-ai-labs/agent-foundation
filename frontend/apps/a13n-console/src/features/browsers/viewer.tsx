@@ -8,6 +8,8 @@ import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 
+class BrowserViewerError extends Error {}
+
 /** Credentials belong only to this mounted connection, never a query or mutation cache. */
 export function BrowserViewer({
   id,
@@ -23,7 +25,7 @@ export function BrowserViewer({
   const client = useClient();
   const cache = useQueryClient();
   const { workspace } = useWorkspace();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const screen = useRef<HTMLDivElement>(null);
   const [iframe, setIframe] = useState<string>();
   const [connected, setConnected] = useState(false);
@@ -62,8 +64,8 @@ export function BrowserViewer({
       expiry = setTimeout(
         () =>
           fail(
-            new Error(
-              t("Browser access expired. Reopen the viewer to reconnect."),
+            new BrowserViewerError(
+              "Browser access expired. Reopen the viewer to reconnect.",
             ),
           ),
         Math.max(0, Date.parse(deadline) - Date.now()),
@@ -80,8 +82,8 @@ export function BrowserViewer({
         grant.episode !== episode ||
         (grant.generation != null && grant.generation !== generation)
       )
-        throw new Error(
-          t("Browser control changed. Reopen the viewer to reconnect."),
+        throw new BrowserViewerError(
+          "Browser control changed. Reopen the viewer to reconnect.",
         );
       return grant;
     }
@@ -142,13 +144,13 @@ export function BrowserViewer({
           });
           instance.addEventListener("disconnect", () =>
             fail(
-              new Error(
-                t("Browser disconnected. Reopen the viewer to reconnect."),
+              new BrowserViewerError(
+                "Browser disconnected. Reopen the viewer to reconnect.",
               ),
             ),
           );
           instance.addEventListener("securityfailure", () =>
-            fail(new Error(t("Browser connection was refused."))),
+            fail(new BrowserViewerError("Browser connection was refused.")),
           );
         } else {
           setIframe(grant.url);
@@ -165,10 +167,16 @@ export function BrowserViewer({
       clearTimeout(expiry);
       disconnect();
     };
-  }, [client, cache, workspace.id, id, generation, episode, t]);
+  }, [client, cache, workspace.id, id, generation, episode]);
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <ErrorNotice error={error} />
+      <ErrorNotice
+        error={
+          error instanceof BrowserViewerError
+            ? new Error(t(error.message))
+            : error
+        }
+      />
       {!error && !connected && (
         <p role="status" className="text-xs text-muted-foreground">
           {t("Connecting to browser…")}
@@ -179,7 +187,7 @@ export function BrowserViewer({
           {deadline && (
             <span>
               {t("Control expires: {{time}}", {
-                time: new Date(deadline).toLocaleString(),
+                time: new Date(deadline).toLocaleString(i18n.resolvedLanguage),
               })}
             </span>
           )}
@@ -188,7 +196,9 @@ export function BrowserViewer({
             Date.parse(grantDeadline) < Date.parse(deadline) && (
               <span>
                 {t("Viewer access expires: {{time}}", {
-                  time: new Date(grantDeadline).toLocaleString(),
+                  time: new Date(grantDeadline).toLocaleString(
+                    i18n.resolvedLanguage,
+                  ),
                 })}
               </span>
             )}

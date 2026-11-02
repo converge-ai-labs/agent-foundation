@@ -8,14 +8,14 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { i18n } from "../../i18n";
 import { BrowserViewer } from "./viewer";
 
-const { post, client, t, viewers } = vi.hoisted(() => {
+const { post, client, viewers } = vi.hoisted(() => {
   const post = vi.fn();
   return {
     post,
     client: { workspace: () => ({ POST: post }) },
-    t: (value: string) => value,
     viewers: [] as Array<
       EventTarget & {
         viewOnly: boolean;
@@ -30,7 +30,6 @@ vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws" } }),
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t }) }));
 vi.mock("@novnc/novnc/lib/rfb", () => ({
   default: {
     default: class extends EventTarget {
@@ -76,8 +75,9 @@ function start() {
     ),
   };
 }
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.useRealTimers();
   vi.clearAllMocks();
   viewers.length = 0;
@@ -113,7 +113,7 @@ it("does not renew without user action and disables input at grant expiry", asyn
     await vi.advanceTimersByTimeAsync(0);
   });
   act(() => viewers[0].dispatchEvent(new Event("connect")));
-  expect(screen.getByText("Viewer access expires: {{time}}")).toBeTruthy();
+  expect(screen.getByText(/^Viewer access expires:/)).toBeTruthy();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(20000);
   });
@@ -244,4 +244,37 @@ it("retains iframe supplier compatibility without caching its URL", async () => 
   expect(cache.getQueryCache().getAll()).toEqual([]);
   expect(viewers).toHaveLength(0);
   unmount();
+});
+
+it("changes viewer language and dates without replaying grants or disconnecting", async () => {
+  const deadline = new Date(Date.now() + 10000).toISOString();
+  post.mockResolvedValue(reply({ ...grant(), expires_at: deadline }));
+  start();
+  await waitFor(() => expect(viewers).toHaveLength(1));
+  const viewer = viewers[0];
+  act(() => viewer.dispatchEvent(new Event("connect")));
+  await act(async () => {
+    await i18n.changeLanguage("zh-CN");
+  });
+  expect(
+    screen.getByRole("button", { name: i18n.t("Renew control") }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      i18n.t("Viewer access expires: {{time}}", {
+        time: new Date(deadline).toLocaleString("zh-CN"),
+      }),
+    ),
+  ).toBeTruthy();
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(viewer.disconnect).not.toHaveBeenCalled();
+  act(() => viewer.dispatchEvent(new Event("securityfailure")));
+  expect(
+    screen.getByText(i18n.t("Browser connection was refused.")),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+  expect(screen.getByText("Browser connection was refused.")).toBeTruthy();
+  expect(post).toHaveBeenCalledTimes(1);
 });

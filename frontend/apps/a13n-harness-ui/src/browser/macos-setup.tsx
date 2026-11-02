@@ -1,9 +1,11 @@
+import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { Button } from "a13n-ui";
 import { ErrorNotice } from "../shell/ui";
 import { useTransport } from "../transport/context";
 
 export function MacCaptureSettings() {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const [pending, setPending] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -29,13 +31,13 @@ export function MacCaptureSettings() {
         disabled={pending}
         onClick={() => void open()}
       >
-        {pending ? "Opening…" : "Open Mac Screen Recording settings"}
+        {pending ? t("Opening…") : t("Open Mac Screen Recording settings")}
       </Button>
       {opened && (
         <p role="status" className="text-xs text-muted-foreground">
-          Settings opened on the Mac running Harness UI. Allow Screen Recording
-          for its launcher app, then reconnect. macOS may require restarting the
-          app.
+          {t(
+            "Settings opened on the Mac running Harness UI. Allow Screen Recording for its launcher app, then reconnect. macOS may require restarting the app.",
+          )}
         </p>
       )}
       <ErrorNotice error={error} />
