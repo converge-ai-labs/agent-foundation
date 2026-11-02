@@ -164,6 +164,7 @@ async def test_independent_modes_reach_worker(skill_service, scripted_model, run
 
     async def steer(self, *args, **kwargs):
         entry_id = kwargs["input_id"]
+        assert kwargs["best_effort"] is True
         async with short_session(service.runtime.storage) as session:
             entry = await session.get(InboxEntryRow, entry_id)
             assert entry.status == "assigned"
@@ -334,3 +335,55 @@ async def test_environment_freezes_at_acceptance_and_thread_map_replacement(skil
     assert entries[queued.json()["entry"]["id"]]["assigned_run_id"] == later["id"]
     reset = await _patch(service, runs_kit, thread_id, {"execution": {"environment": None}})
     assert not (reset["execution"] or {}).get("environment")
+
+
+@pytest.mark.parametrize("refusal", ["steering_timeout", "run_not_active"])
+async def test_unaccepted_steer_is_retained_until_next_boundary(
+    skill_service, scripted_model, runs_kit, monkeypatch, refusal
+):
+    from a13n_harness import HarnessRunStream, RunError
+
+    service = skill_service
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
+    gate, rejected = asyncio.Event(), asyncio.Event()
+    runs_kit.lookup(scripted_model, call_id="call_lookup", gate=gate)
+    scripted_model.say("done")
+    started = await runs_kit.start_thread(service, agent, "start")
+    thread_id, run_id = started["thread"]["id"], started["run"]["id"]
+    steer = HarnessRunStream.steer
+    offers = []
+
+    async def refuse_once(stream, *args, **kwargs):
+        offers.append(kwargs["input_id"])
+        if len(offers) == 1:
+            rejected.set()
+            raise RunError("Input has not been accepted", code=refusal)
+        return await steer(stream, *args, **kwargs)
+
+    monkeypatch.setattr(HarnessRunStream, "steer", refuse_once)
+    running = await runs_kit.attempt(service)
+    try:
+        async with asyncio.timeout(15):
+            await scripted_model.request()
+            response = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "Keep this guidance"))
+            assert response.status_code == 201, response.text
+            entry_id = response.json()["entry"]["id"]
+            await rejected.wait()
+            assert (await runs_kit.get_run(service, run_id))["status"] == "running"
+            entry = next(entry for entry in await runs_kit.inbox(service, thread_id) if entry["id"] == entry_id)
+            assert (entry["status"], entry["assigned_run_id"]) == ("assigned", run_id)
+            gate.set()
+            following = await scripted_model.request()
+            await running
+    finally:
+        gate.set()
+        if not running.done():
+            running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+    assert offers == [entry_id, entry_id]
+    assert str(runs_kit.user_texts(following)).count("Keep this guidance") == 1
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+    entry = next(entry for entry in await runs_kit.inbox(service, thread_id) if entry["id"] == entry_id)
+    assert (entry["status"], entry["assigned_run_id"]) == ("consumed", run_id)

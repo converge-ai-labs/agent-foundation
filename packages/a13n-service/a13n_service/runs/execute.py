@@ -926,10 +926,13 @@ class _Attempt:
                         content,
                         input_id=entry.id,
                         immediate=entry.kind == "message" and self.plan.host.execution.steering == "immediate",
+                        best_effort=True,
                     )
                 except RunError as error:
-                    if error.code != "run_not_active":
+                    if error.code not in {"run_not_active", "steering_timeout"}:
                         raise
+                    # Neither refusal accepted the input. Keep its assignment and FIFO position
+                    # for the next boundary, recovery, or ordinary terminal continuation.
                     return
                 self.offers.open[entry.id] = self.offers.unsent.pop(0)
 

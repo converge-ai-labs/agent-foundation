@@ -327,3 +327,72 @@ async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted
     assert (await runs_kit.get_run(service, run_id))["status"] == "accepted"
     attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [item["status"] for item in attempts] == ["yielded"]
+
+
+async def test_user_steers_queue_during_child_wait_without_failing_or_replaying(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:
+    from a13n_harness import HarnessRunStream
+
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.call("delegate", DELEGATE, call_id="call_delegate", to="Role: coordinator")
+    scripted_model.call("wait_subagent", {"timeout_seconds": 300}, call_id="call_wait", to="Role: coordinator")
+    scripted_model.say("Follow-ups received", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate and wait")
+    thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
+    polling, release, accepted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    statuses, steer = ChildRuns._statuses, HarnessRunStream.steer
+    enqueued = []
+
+    async def polled(operator, run_ids):
+        polling.set()
+        await release.wait()
+        return await statuses(operator, run_ids)
+
+    async def steered(stream, *args, **kwargs):
+        result = await steer(stream, *args, **kwargs)
+        enqueued.append(kwargs["input_id"])
+        if len(enqueued) == 2:
+            accepted.set()
+        return result
+
+    monkeypatch.setattr(ChildRuns, "_statuses", polled)
+    monkeypatch.setattr(HarnessRunStream, "steer", steered)
+    running = await runs_kit.attempt(service)
+    try:
+        async with asyncio.timeout(15):
+            await polling.wait()
+            entries = []
+            for text in ("First follow-up", "Second follow-up"):
+                response = await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, text))
+                assert response.status_code == 201, response.text
+                entries.append(response.json()["entry"]["id"])
+            await accepted.wait()
+            assert enqueued == entries
+            assert (await runs_kit.get_run(service, run_id))["status"] == "running"
+            inbox = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
+            assert [inbox[entry_id]["status"] for entry_id in entries] == ["assigned", "assigned"]
+            child = await _child_run(service, run_id)
+            scripted_model.say("42", to="Role: worker")
+            await (await runs_kit.attempt(service))
+            release.set()
+            await running
+    finally:
+        release.set()
+        if not running.done():
+            running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+    assert (await runs_kit.get_run(service, child.id))["status"] == "completed"
+    inbox = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
+    assert [inbox[entry_id]["status"] for entry_id in entries] == ["consumed", "consumed"]
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    followups = [request for request in requests if "First follow-up" in str(runs_kit.user_texts(request))]
+    assert len(followups) == 1
+    texts = str(runs_kit.user_texts(followups[0]))
+    assert texts.count("First follow-up") == texts.count("Second follow-up") == 1
+    assert texts.index("First follow-up") < texts.index("Second follow-up")
+    attempts = (await service.client.get(f"{service.api}/runs/{child.id}/attempts")).json()["items"]
+    assert len(attempts) == 1 and attempts[0]["status"] == "succeeded"
