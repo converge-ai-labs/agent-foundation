@@ -25,8 +25,7 @@ from a13n_service.providers.environment.metrics import (
     observe,
     scrape_target,
 )
-
-from .configuration import DockerRecipe
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
 
 
 def resolve_image(client, image_ref: str, *, pull_policy: Literal["never", "if_missing"] = "if_missing"):

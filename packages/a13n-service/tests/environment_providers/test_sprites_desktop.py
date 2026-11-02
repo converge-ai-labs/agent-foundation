@@ -23,8 +23,8 @@ from a13n_harness.providers.environment.sprites.shared import (
     SpritesTargetState,
 )
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment.recipes.sprites import SpritesRecipe
 from a13n_service.providers.environments.sprites import management
-from a13n_service.providers.environments.sprites.configuration import SpritesRecipe
 from a13n_service.providers.environments.sprites.desktop_install import _LAUNCH, revision
 from a13n_service.providers.environments.sprites.management import SpritesManagement
 

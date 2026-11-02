@@ -6,8 +6,8 @@ import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration, resolved_runtime
 from a13n_harness.providers.environment.native.configuration import TokenCredential
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 from a13n_service.providers.environments.daytona import desktop_build as build
-from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
 
 pytestmark = pytest.mark.anyio
 

@@ -21,7 +21,7 @@ from a13n_harness.providers.environment.daytona.http import HttpReference, http_
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
-from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 from a13n_service.providers.environments.daytona.management import DaytonaManagement
 
 pytestmark = [

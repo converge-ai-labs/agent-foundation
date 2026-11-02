@@ -24,6 +24,7 @@ from a13n_service.providers.registry import Registry
 from a13n_service.resources.environment_templates.schemas import (
     Template,
     TemplateConfig,
+    TemplateConfigurationChanges,
     TemplateCreate,
     TemplatePage,
     TemplateUpdate,
@@ -45,6 +46,7 @@ async def _validated_config(
     registry: Registry,
     *,
     current: EnvironmentTemplateRow | None,
+    recipe_type: str | None = None,
 ) -> dict[str, JsonValue]:
     """The config to store: the recipe normalized by the provider type.
 
@@ -52,6 +54,8 @@ async def _validated_config(
     provider.
     """
     provider = await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="read")
+    if recipe_type is not None and provider.type != recipe_type:
+        raise invalid("recipe.type", "Recipe type must match the selected provider")
     normalized = validate_config(registry, provider.type, config)
     if current is None or (provider_id, normalized["recipe"]) != (current.provider_id, current.config["recipe"]):
         await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="write")
@@ -70,11 +74,19 @@ def validate_config(registry: Registry, provider_type: str, config: TemplateConf
 
 
 async def create_template(
-    storage: Storage, actor: Principal, workspace_id: str, body: TemplateCreate, *, registry: Registry
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    body: TemplateCreate,
+    *,
+    registry: Registry,
+    recipe_type: str | None = None,
 ) -> Template:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        config = await _validated_config(session, actor, scope, body.provider_id, body.config, registry, current=None)
+        config = await _validated_config(
+            session, actor, scope, body.provider_id, body.config, registry, current=None, recipe_type=recipe_type
+        )
         row = await insert_template(session, actor, scope, body, config=config)
         return Template.model_validate(row)
 
@@ -144,17 +156,31 @@ async def update_template(
     *,
     if_match: str | None,
     registry: Registry,
+    config_changes: TemplateConfigurationChanges | None = None,
+    recipe_type: str | None = None,
 ) -> Template:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, EnvironmentTemplateRow, scope, template_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        if config_changes is not None:
+            if (
+                body.provider_id is not None
+                and body.provider_id != row.provider_id
+                and "recipe" not in config_changes.model_fields_set
+            ):
+                raise invalid("recipe", "Changing provider requires its complete new recipe")
+            if config_changes.model_fields_set:
+                config = TemplateConfig.model_validate(
+                    {**row.config, **config_changes.model_dump(exclude_unset=True, mode="json")}
+                )
+                body = body.model_copy(update={"config": config})
         values = given(body, "provider_id", "name", "labels", "enabled")
         if body.provider_id is not None or body.config is not None:
             provider_id = body.provider_id or row.provider_id
             config = body.config or TemplateConfig.model_validate(row.config)
             values["config"] = await _validated_config(
-                session, actor, scope, provider_id, config, registry, current=row
+                session, actor, scope, provider_id, config, registry, current=row, recipe_type=recipe_type
             )
         if "description" in body.model_fields_set:
             values["description"] = body.description

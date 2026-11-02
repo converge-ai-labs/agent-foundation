@@ -116,6 +116,7 @@ async def result(
     offset: int,
     limit: int,
     version: str | None,
+    query: str | None = None,
 ) -> reads.TextRead:
     async with short_session(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
@@ -126,7 +127,7 @@ async def result(
     payload = json.loads(await read(runtime.objects, ref)) if ref is not None else None
     value = None if payload is None else {"result": payload["result"], "retry_prompt": payload["retry_prompt"]}
     result = reads.read_value(
-        value, source=f"tool-executions/{execution_id}/result", offset=offset, limit=limit, version=version
+        value, source=f"tool-executions/{execution_id}/result", offset=offset, limit=limit, version=version, query=query
     )
     return result
 

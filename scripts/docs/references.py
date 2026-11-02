@@ -43,8 +43,8 @@ from a13n_harness.providers.environment.vercel.provider import (
     VercelConnectionConfiguration,
     VercelEnvironmentConfiguration,
 )
-from a13n_service.providers.environments.docker.configuration import DockerRecipe
-from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
+from a13n_service.providers.environment.recipes.e2b import E2BRecipe
 from a13n_service.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[2]

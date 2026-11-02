@@ -6,6 +6,8 @@ The model sees each skill by the name its SKILL.md declares, which agent validat
 import hashlib
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 from anyio import to_thread
 from sqlalchemy import exists, select
@@ -259,6 +261,29 @@ async def create_revision(
     *,
     if_match: str | None,
 ) -> SkillRevision:
+    """The new revision, or the unchanged default package."""
+    result = await change_source(storage, objects, github, actor, workspace_id, skill_id, body, if_match=if_match)
+    return result.revision
+
+
+@dataclass(frozen=True)
+class SkillSourceChange:
+    skill: Skill
+    revision: SkillRevision
+    status: Literal["created", "unchanged"]
+
+
+async def change_source(
+    storage: Storage,
+    objects: ObjectStore,
+    github: GitHub,
+    actor: Principal,
+    workspace_id: str,
+    skill_id: str,
+    body: SkillRevisionCreate,
+    *,
+    if_match: str | None,
+) -> SkillSourceChange:
     """The new revision, or the default one when the package's manifest equals it."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
@@ -280,7 +305,9 @@ async def create_revision(
         if created:
             audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
             await session.flush()
-        return revision_view(head, revision)
+        return SkillSourceChange(
+            await _view(session, head), revision_view(head, revision), "created" if created else "unchanged"
+        )
 
 
 def revision_view(head: SkillRow, revision: SkillRevisionRow) -> SkillRevision:

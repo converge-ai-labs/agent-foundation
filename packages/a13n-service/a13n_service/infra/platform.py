@@ -42,14 +42,12 @@ class PlatformTool(PlatformOperation):
     """An admitted operation as an agent tool, keyed by its MCP tool name."""
 
     key: str
-    method: str
-    path: str
     summary: str
 
 
-# Generated from the admitted routes by `make service-contract-generate`, so configuration validates without them.
+# Generated from explicitly owned business definitions; independent of OpenAPI admission.
 PLATFORM_TOOLS = TypeAdapter(tuple[PlatformTool, ...]).validate_json(
-    files("a13n_service.infra").joinpath("platform_tools.json").read_bytes()
+    files("a13n_service.infra").joinpath("business_tools.json").read_bytes()
 )
 
 

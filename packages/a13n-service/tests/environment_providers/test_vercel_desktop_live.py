@@ -22,7 +22,7 @@ from a13n_harness.providers.environment.vercel.http import HttpReference, http_e
 from a13n_harness.providers.environment.vercel.shared import (
     VercelConnectionConfiguration,
 )
-from a13n_service.providers.environments.vercel.configuration import VercelRecipe
+from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 from a13n_service.providers.environments.vercel.management import VercelManagement
 
 pytestmark = [

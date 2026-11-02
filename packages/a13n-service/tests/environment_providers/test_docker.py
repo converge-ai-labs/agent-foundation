@@ -13,7 +13,7 @@ from a13n_harness.providers.environment.docker.configuration import DockerMountC
 from a13n_harness.providers.environment.docker.connection import DockerHttpConfiguration
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
-from a13n_service.providers.environments.docker.configuration import DockerRecipe
+from a13n_service.providers.environment.recipes.docker import DockerRecipe
 from a13n_service.providers.environments.docker.definition import DOCKER
 from a13n_service.providers.environments.docker.management import DockerManagement
 from docker.errors import ImageNotFound, NotFound

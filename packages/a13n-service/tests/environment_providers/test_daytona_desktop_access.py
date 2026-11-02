@@ -13,8 +13,8 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.daytona.shared import DaytonaEnvironmentConfiguration
 from a13n_harness.providers.environment.native.http import NativeHTTP
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 from a13n_service.providers.environments.daytona import DAYTONA
-from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
 from a13n_service.runs.desktop_assistance.admission import target_key
 
 from .test_native_http_providers import BACKENDS, NativeCloud

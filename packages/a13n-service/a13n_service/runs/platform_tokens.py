@@ -33,7 +33,7 @@ from a13n_service.tenancy.access import (
 from a13n_service.tenancy.authorize import ExecutionAuthority
 
 PREFIX = "a13n_run_"
-_LOCATION = SecretLocation(None, "run_platform_tokens", "platform_operations_v1", "service")
+_LOCATION = SecretLocation(None, "run_platform_tokens", "business_tools_v1", "service")
 _LIFETIME = timedelta(minutes=5)
 
 

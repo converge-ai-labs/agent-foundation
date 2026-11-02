@@ -1,4 +1,4 @@
-"""Schedule tools preserve HTTP semantics, Harness review and durable execution authority."""
+"""Business task tools retain review/delegation; external management MCP keeps its API contract."""
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -17,7 +17,9 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES
 from sqlalchemy import select
 
-from .mcp_support import call, client, key, rpc
+from .business_support import call as business_call
+from .business_support import rpc as business_rpc
+from .mcp_support import call, client, key
 from .test_platform_tools import lease_for, set_role
 from .test_schedules import configuration
 
@@ -51,14 +53,14 @@ async def test_schedule_discovery_selection_and_group_scope(service, scripted_mo
     lease, _, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset({"schedules"}))
     async with client(service, {"secret": token}) as http:
-        tools = (await rpc(http, "tools/list")).json()["result"]["tools"]
+        tools = (await business_rpc(http, "tools/list")).json()["result"]["tools"]
         assert {tool["name"] for tool in tools} == READS | WRITES
         for tool in tools:
             read = tool["name"] in READS
             assert tool["_meta"]["x-a13n-platform"] == {"group": "schedules", "effect": "read" if read else "write"}
             assert tool["annotations"]["readOnlyHint"] is read
         http.headers["x-workspace-id"] = "ws_another"
-        assert (await rpc(http, "tools/list")).status_code == 403
+        assert (await business_rpc(http, "tools/list")).status_code == 403
         del http.headers["x-workspace-id"]
         assert (await http.post(f"/api/v1/runs/{lease.run_id}/interrupt")).status_code == 403
 
@@ -72,21 +74,17 @@ async def test_schedule_discovery_selection_and_group_scope(service, scripted_mo
 
     token = await issue(service.runtime, lease, frozenset({"agents"}))
     async with client(service, {"secret": token}) as http:
-        tools = (await rpc(http, "tools/list")).json()["result"]["tools"]
+        tools = (await business_rpc(http, "tools/list")).json()["result"]["tools"]
         assert not (READS | WRITES) & {tool["name"] for tool in tools}
-        assert (await rpc(http, "tools/call", name="list_schedules", arguments={})).json()["result"]["isError"]
+        assert (await business_rpc(http, "tools/call", name="list_schedules", arguments={})).json()["result"]["isError"]
         assert (await http.get("/api/v1/schedules")).status_code == 403
 
 
-@pytest.mark.parametrize(("kind", "credential_kind"), [("cron", "run"), ("once", "api_key")])
-async def test_schedule_mcp_management(service, scripted_model, runs_kit, kind, credential_kind):
+async def test_external_schedule_mcp_management(service, scripted_model, runs_kit):
+    kind = "once"
     await runs_kit.pause_sweeps(service)
-    lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
-    credential = (
-        {"secret": await issue(service.runtime, lease, frozenset({"schedules"}))}
-        if credential_kind == "run"
-        else await key(service)
-    )
+    _lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
+    credential = await key(service)
     body = {**configuration(agent["id"]), "schedule": rule(kind)}
     async with client(service, credential) as http:
         preview = await call(
@@ -214,16 +212,17 @@ async def test_schedule_tools_cannot_expand_run_permissions(service, scripted_mo
     async with transaction(service.runtime.storage) as session:
         await set_role(session, service, "admin")
     async with client(service, {"secret": token}) as http:
-        assert (await call(http, service, "GET", "/schedules"))["status"] == 200
-        result = await call(
+        assert "items" in await business_call(http, "list_schedules")
+        result = await business_call(
             http,
-            service,
-            "POST",
-            "/schedules",
+            "create_schedule",
+            name="Daily report",
+            instructions="Report today",
+            agent_id=agent["id"],
+            schedule=rule("cron"),
             idempotency_key="forbidden",
-            request_body=configuration(agent["id"]),
         )
-        assert result["status"] == 403
+        assert result["error"]["code"] == "forbidden"
     async with short_session(service.runtime.storage) as session:
         assert (await session.scalars(select(ScheduleRow))).all() == []
 
@@ -243,17 +242,20 @@ async def test_composer_reviews_durable_schedule_and_preserves_authority(
     )
     scripted_model.call(
         "preview_schedule",
-        {
-            "request_body": {
-                "schedule": body["schedule"],
-                "after": datetime.now(UTC).isoformat(),
-                "count": 1,
-            }
-        },
+        {"schedule": body["schedule"], "after": datetime.now(UTC).isoformat(), "count": 1},
         call_id="preview",
     )
     scripted_model.call(
-        "create_schedule", {"idempotency_key": "reviewed-schedule", "request_body": body}, call_id="create"
+        "create_schedule",
+        {
+            "idempotency_key": "reviewed-schedule",
+            "name": body["name"],
+            "instructions": "Report today",
+            "agent_id": target["id"],
+            "schedule": body["schedule"],
+            "state": "enabled",
+        },
+        call_id="create",
     )
     async with transaction(service.runtime.storage) as session:
         await set_role(session, service, "builder")
@@ -316,3 +318,66 @@ async def test_composer_reviews_durable_schedule_and_preserves_authority(
             entry = await session.get_one(InboxEntryRow, occurrence.entry_id)
             scheduled_run = await session.get_one(RunRow, entry.assigned_run_id)
             assert set(scheduled_run.authority["verbs"]) == BUILT_IN_ROLES["builder"]
+
+
+async def test_internal_task_contract_lifecycle_and_versioned_edits(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
+    token = await issue(service.runtime, lease, frozenset({"schedules"}))
+    async with client(service, {"secret": token}) as http:
+        args = {
+            "name": "Daily report",
+            "instructions": "Report today",
+            "agent_id": agent["id"],
+            "schedule": rule("cron"),
+            "structured_inputs": [{"scope": "tests"}],
+            "idempotency_key": "internal-task",
+        }
+        created = await business_call(http, "create_schedule", **args)
+        assert created["state"] == "paused", created
+        replay = await business_call(http, "create_schedule", **args)
+        assert replay["id"] == created["id"]
+        reused = await business_call(http, "create_schedule", **{**args, "instructions": "Another task"})
+        assert reused["error"]["details"]["reason"] == "idempotency_key_reused"
+        target = {"schedule_id": created["id"]}
+        changed = await business_call(
+            http,
+            "update_schedule",
+            **target,
+            expected_version=f"{created['id']}:{created['version']}",
+            instructions="Report and verify",
+        )
+        assert changed["invocation"]["payload"]["content"] == [
+            {"type": "text", "text": "Report and verify"},
+            {"type": "json", "value": {"scope": "tests"}},
+        ]
+        stale = await business_call(
+            http, "pause_schedule", **target, expected_version=f"{created['id']}:{created['version']}"
+        )
+        assert stale["error"]["code"] == "precondition_failed"
+        missing = await business_rpc(
+            http, "tools/call", name="update_schedule", arguments={**target, "name": "Missing version"}
+        )
+        assert missing.json()["result"]["isError"]
+        dispatch_args = {
+            **target,
+            "expected_version": f"{changed['id']}:{changed['version']}",
+            "idempotency_key": "internal-dispatch",
+        }
+        occurrence = await business_call(http, "dispatch_schedule", **dispatch_args)
+        assert occurrence["status"] == "pending"
+        assert occurrence["snapshot"]["invocation"] == changed["invocation"]
+        repeated = await business_call(http, "dispatch_schedule", **dispatch_args)
+        assert repeated["id"] == occurrence["id"]
+        archived = await business_call(
+            http, "archive_schedule", **target, expected_version=dispatch_args["expected_version"]
+        )
+        assert archived["state"] == "archived"
+        # Removed raw arguments cannot be smuggled into the same-named task contract.
+        rejected = await business_rpc(
+            http,
+            "tools/call",
+            name="create_schedule",
+            arguments={"request_body": configuration(agent["id"]), "idempotency_key": "raw"},
+        )
+        assert rejected.json()["result"]["isError"]

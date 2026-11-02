@@ -1,0 +1,680 @@
+[
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "archive_agent",
+    "summary": "Archive agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "compare_agent_revisions",
+    "summary": "Versioned unified diff of two revisions of this agent, optionally limited to one configuration section."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "create_agent",
+    "summary": "Create an Agent and its complete initial configuration atomically.\n\nModel and instructions are direct fields; advanced capabilities are optional."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "duplicate_agent",
+    "summary": "Duplicate agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent",
+    "summary": "Get agent"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_agent_revision",
+    "summary": "Get agent revision"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "get_toolset_definition",
+    "summary": "Read up to five exact definitions. Oversized values provide a versioned fragment reference."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agent_revisions",
+    "summary": "List agent revisions"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_agents",
+    "summary": "Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only\narchived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those\nwith a revision pinning that skill or that skill revision."
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "list_toolsets",
+    "summary": "List toolsets"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "search_toolsets",
+    "summary": "Search full names and descriptions; definitions are read separately by exact name."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "set_default_agent_revision",
+    "summary": "Set default agent revision"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "unarchive_agent",
+    "summary": "Unarchive agent"
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "update_agent_configuration",
+    "summary": "Publish only specified configuration changes against the version read.\n\nOmitted fields preserve the base revision, including exact Skill pins. Supplied\ncollections and structured sections replace those sections whole. Null only\nclears nullable fields. Related changes validate and publish atomically.\nThe default revision is the base unless a historical base is explicitly named."
+  },
+  {
+    "effect": "write",
+    "group": "agents",
+    "key": "update_agent_metadata",
+    "summary": "Update agent metadata"
+  },
+  {
+    "effect": "read",
+    "group": "agents",
+    "key": "validate_agent_configuration",
+    "summary": "No content when creating a revision of the configuration would accept it, else the same `invalid_argument`\nerror with the field's path relative to `config`; nothing is stored."
+  },
+  {
+    "effect": "write",
+    "group": "models",
+    "key": "create_model",
+    "summary": "Create a model with direct settings and complete typed advanced configuration."
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_media_defaults",
+    "summary": "Get media defaults"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_model",
+    "summary": "Get model"
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "get_model_catalog",
+    "summary": "Read public model metadata and prices. Filter by provider and model to avoid a large full-catalog response.\n\nBoth filters match exactly and combine with AND; omitted filters leave that dimension unrestricted.\nNo match returns empty items with the catalog status. Refreshes always fetch the full catalog when due.\nCopy the selected item's characteristics, pricing and ref into model config, pricing and catalog_ref when saving."
+  },
+  {
+    "effect": "read",
+    "group": "models",
+    "key": "list_models",
+    "summary": "List models"
+  },
+  {
+    "effect": "write",
+    "group": "models",
+    "key": "update_model",
+    "summary": "Change specified model fields against the version read; preserve all omitted settings.\n\nSupplied native settings, pricing, characteristics, headers and raw-body sections\nreplace those sections whole. Provider/API validation remains authoritative."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "configure_connection_access",
+    "summary": "Request trusted credential/configuration setup for this exact connection version. This Host does not collect secrets in model arguments or start browser OAuth on the Agent's behalf."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "create_connection",
+    "summary": "Create non-secret connection settings. Complete credentials and connector setup in trusted Console configuration."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connection",
+    "summary": "Read non-secret connection settings, readiness and version before editing."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connection_tool_definition",
+    "summary": "Read exact tool definitions; fragments remain bound to this authorized connection and content version."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connector_action_definition",
+    "summary": "Read up to five exact definitions. Oversized values provide a versioned fragment reference."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "get_connector_app",
+    "summary": "Get connector app"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connection_tools",
+    "summary": "Discover the configured connection's tools under its current authorization."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connections",
+    "summary": "List connection readiness without exposing connector setup or credential values."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connector_actions",
+    "summary": "List connector actions"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_connector_apps",
+    "summary": "List connector apps"
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "list_mcp_servers",
+    "summary": "Search suggested Remote MCP server definitions and their setup requirements."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "revoke_connection",
+    "summary": "Revoke access using the observed connection version and report local and remote outcomes."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "search_connection_tools",
+    "summary": "Search names and descriptions with a cursor bound to this connection's catalog snapshot."
+  },
+  {
+    "effect": "read",
+    "group": "connections",
+    "key": "search_connector_actions",
+    "summary": "Search full names and descriptions; definitions are read separately by exact name."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "test_connection",
+    "summary": "Test the configured connection. External calls have effects; unknown results must be reconciled, never blindly replayed."
+  },
+  {
+    "effect": "write",
+    "group": "connections",
+    "key": "update_connection",
+    "summary": "Change only specified non-secret fields at the observed version. Endpoint/auth changes use the existing credential invalidation rules."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "archive_skill",
+    "summary": "Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "create_skill",
+    "summary": "Create skill"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "get_skill",
+    "summary": "Get skill"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "get_skill_revision",
+    "summary": "Get skill revision"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skill_revisions",
+    "summary": "List skill revisions"
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "list_skills",
+    "summary": "Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of\nsource the default revision was read from; `archived` keeps only archived skills, or only open ones."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "set_default_skill_revision",
+    "summary": "Set default skill revision"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "unarchive_skill",
+    "summary": "Unarchive skill"
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "update_skill_metadata",
+    "summary": "Name, description and labels; an archived skill changes only by unarchiving."
+  },
+  {
+    "effect": "write",
+    "group": "skills",
+    "key": "update_skill_source",
+    "summary": "A package whose manifest equals the default revision's creates nothing and returns that revision."
+  },
+  {
+    "effect": "read",
+    "group": "skills",
+    "key": "validate_skill_source",
+    "summary": "The manifest the package would give a new skill or revision, checked as creation checks it; nothing is\nstored."
+  },
+  {
+    "effect": "write",
+    "group": "environment_templates",
+    "key": "create_environment_template",
+    "summary": "Create a template using the selected provider's typed recipe and explicit lifecycle policy."
+  },
+  {
+    "effect": "read",
+    "group": "environment_templates",
+    "key": "get_environment_template",
+    "summary": "Get environment template"
+  },
+  {
+    "effect": "read",
+    "group": "environment_templates",
+    "key": "list_environment_templates",
+    "summary": "List environment templates"
+  },
+  {
+    "effect": "write",
+    "group": "environment_templates",
+    "key": "update_environment_template",
+    "summary": "Change only named template fields; preserve every omitted lifecycle value and recipe.\n\nRecipe replacement is typed and complete. Changing provider requires its new\nrecipe; no incompatible old recipe is implicitly carried across providers."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "discover_model_provider_models",
+    "summary": "Discover upstream model identifiers through an authorized configured provider."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_browser_provider",
+    "summary": "Read browser provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_connector_provider",
+    "summary": "Read connector provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_environment_provider",
+    "summary": "Read environment provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_model_provider",
+    "summary": "Read model provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "get_web_provider",
+    "summary": "Read web provider configuration and readiness; credentials are never returned."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_browser_providers",
+    "summary": "List configured browser providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_connector_providers",
+    "summary": "List configured connector providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_environment_providers",
+    "summary": "List configured environment providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_model_providers",
+    "summary": "List configured model providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "read",
+    "group": "providers",
+    "key": "list_web_providers",
+    "summary": "List configured web providers and their credential readiness, without secret values."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_browser_provider",
+    "summary": "Test browser provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_connector_provider",
+    "summary": "Test connector provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_environment_provider",
+    "summary": "Test environment provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_model_provider",
+    "summary": "Test model provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "providers",
+    "key": "test_web_provider",
+    "summary": "Test web provider connectivity. This may make an external call and requires write approval."
+  },
+  {
+    "effect": "write",
+    "group": "execution",
+    "key": "create_finding",
+    "summary": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites only selected traces it has read."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_finding",
+    "summary": "Get finding"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_inbox_entry",
+    "summary": "Read an inbox entry's disposition and references to its payload, options and failure."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_message_authors",
+    "summary": "Get message senders' current display names, emails, account kinds, status and avatar URLs.\n\nSupply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;\nonly message entries in that session are returned. This is not an arbitrary user or member-directory lookup.\nUse returned names to identify senders in answers; retain IDs when needed for precise references."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run",
+    "summary": "Read Run status and previews with version-bound references for its complete sections."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_attempt",
+    "summary": "Get run attempt"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_configuration",
+    "summary": "Read the frozen original/effective configuration and override references. These are immutable execution facts, not editable Agent configuration."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_run_lineage",
+    "summary": "The run and its ancestors, nearest first, across fork origins."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_session",
+    "summary": "Get session"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_thread",
+    "summary": "Get thread"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_tool_execution",
+    "summary": "Get tool execution"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_tool_execution_result",
+    "summary": "Read the retained result with a version-bound handle for continuation and literal search."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_trace",
+    "summary": "Read a redacted observation summary and version-bound content references."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_trace_backend",
+    "summary": "The backend trace queries read, and how far back they find a trace."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_trace_span",
+    "summary": "Read a redacted observation summary and version-bound content references."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_attempt_spans",
+    "summary": "The attempt's spans, including its inline child runs."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_finding_analyses",
+    "summary": "List finding analyses"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_findings",
+    "summary": "List findings"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_inbox",
+    "summary": "In inbox order."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_attempts",
+    "summary": "List run attempts"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_run_items",
+    "summary": "Discover a bounded ordinal window and ready-to-use content handles. Continue next_before/next_after even for empty filtered windows."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_runs",
+    "summary": "List runs"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_session_threads",
+    "summary": "Lightweight Session navigation, oldest first, with stable per-origin positions and parent references."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_sessions",
+    "summary": "List sessions"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_thread_runs",
+    "summary": "Page chronological history from an anchor, or rank all Thread runs by a recorded metric."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_threads",
+    "summary": "List threads"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_tool_executions",
+    "summary": "List tool executions"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_trace_spans",
+    "summary": "The trace's spans."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "list_traces",
+    "summary": "Trace root spans, one per attempt. A cursor keeps the window of the first page."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "read_content",
+    "summary": "Read bounded content from a parent result or continue it without reconstructing source paths or offsets.\n\nContent changes fail explicitly. A handle conveys no authority; current source access is checked on every call."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "search_content",
+    "summary": "Find the next literal match in the exact content version named by a parent or continuation reference."
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "search_traces",
+    "summary": "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "archive_schedule",
+    "summary": "Archive a schedule at its observed version and return its actual lifecycle state."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "create_schedule",
+    "summary": "Schedule a task. State enabled delegates future execution as the creator; default paused only saves it.\n\nThe service builds and validates the invocation. Reuse an idempotency key only for identical intent."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "dispatch_schedule",
+    "summary": "Accept one manual occurrence, preserving immutable task snapshot and durable replay semantics."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "enable_schedule",
+    "summary": "Enable future execution of the saved task as its creator."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule",
+    "summary": "Read a schedule and its version before changing its task or lifecycle."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule_occurrence",
+    "summary": "Read one immutable occurrence snapshot with optional current execution observations."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule_status",
+    "summary": "Observe next fire, pending work and unfinished occurrences."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedule_occurrences",
+    "summary": "Read occurrence history with status, trigger, time, unfinished and execution-observation filters."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedules",
+    "summary": "List schedules using state, executor, creator, label and text filters."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "pause_schedule",
+    "summary": "Pause future scheduled execution without rewriting accepted occurrence snapshots."
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "preview_schedule",
+    "summary": "Preview future firing times without creating or changing a task."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "update_schedule",
+    "summary": "Change only specified task fields at the observed version. Omitted invocation and execution choices survive."
+  }
+]

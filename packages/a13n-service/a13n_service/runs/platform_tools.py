@@ -10,7 +10,9 @@ from a13n_harness import AgentContext
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool, WrapperToolset
 
 from a13n_service.infra.platform import PLATFORM_TOOLS, PlatformGroup
@@ -31,6 +33,15 @@ class PlatformToolset(WrapperToolset[AgentContext]):
         result = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
             if name in self.tools:
+                # Exercise the selected model's real adapter before offering a tool. Do not
+                # repair a schema, remove a tool, or silently select another model on failure.
+                try:
+                    if isinstance(ctx.model, Model):
+                        ctx.model.prepare_request(None, ModelRequestParameters(function_tools=[tool.tool_def]))
+                except (ValueError, TypeError, RecursionError, UserError) as error:
+                    raise UserError(
+                        f"Business tool {name} schema is incompatible with the selected model at parameters: {error}"
+                    ) from error
                 metadata = {**(tool.tool_def.metadata or {}), TOOL_IDENTITY_KEY: self.tools[name]}
                 result[name] = replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
         return result
@@ -50,7 +61,7 @@ async def platform_capability(
         request.headers["authorization"] = "Bearer " + await issue(runtime, lease, groups)
 
     server = runtime.settings.server
-    url = (server.control_url or server.public_url).rstrip("/") + "/api/v1/mcp/"
+    url = (server.control_url or server.public_url).rstrip("/") + "/api/v1/business-tools/"
     http = httpx2.AsyncClient(
         event_hooks={"request": [credentials]},
         headers={"host": urlsplit(server.public_url).netloc},

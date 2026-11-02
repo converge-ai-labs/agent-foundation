@@ -22,8 +22,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
-
-from .configuration import VercelRecipe
+from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 
 
 class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfiguration, NamedTargetState]):

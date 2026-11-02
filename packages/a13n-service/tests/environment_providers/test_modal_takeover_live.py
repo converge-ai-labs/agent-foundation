@@ -13,7 +13,7 @@ import pytest
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.infra.db import transaction
-from a13n_service.providers.environments.modal.configuration import ModalRecipe
+from a13n_service.providers.environment.recipes.modal import ModalRecipe
 from a13n_service.providers.environments.modal.management import ModalManagement
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow

@@ -6,6 +6,7 @@ definitions and the plugin factories the deployment installed.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from pydantic import JsonValue, ValidationError
@@ -26,6 +27,7 @@ from a13n_service.resources.agents.plugins import catalog as describe_plugins
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentConfig,
+    AgentConfigurationChanges,
     AgentCreate,
     AgentDuplicate,
     AgentOverride,
@@ -36,6 +38,7 @@ from a13n_service.resources.agents.schemas import (
     AgentSource,
     AgentUpdate,
     AgentValidate,
+    apply_configuration_changes,
     apply_override,
     freeze_override,
 )
@@ -239,22 +242,96 @@ async def create_revision(
         scope = await workspace_scope(session, actor, workspace_id, "write")
         head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
         preset_edits.require_editable(head, if_match)
-        await preset_edits.validate_edit(session, head, body.config)
-        config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
-        revision, created = await revisions.publish(
-            session,
-            head,
-            AgentRevisionRow,
-            config,
-            actor=actor,
-            note=body.note,
-            make_default=body.make_default,
+        return await _publish_revision(session, actor, scope, head, body, registry=registry, plugins=plugins)
+
+
+async def _publish_revision(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    head: AgentRow,
+    body: AgentRevisionCreate,
+    *,
+    registry: Registry,
+    plugins: HarnessPluginFactoryCatalog,
+) -> AgentRevision:
+    await preset_edits.validate_edit(session, head, body.config)
+    config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
+    revision, created = await revisions.publish(
+        session,
+        head,
+        AgentRevisionRow,
+        config,
+        actor=actor,
+        note=body.note,
+        make_default=body.make_default,
+    )
+    if created:
+        audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
+        await session.flush()
+        await session.refresh(revision)
+    return _revision_view(head, revision)
+
+
+@dataclass(frozen=True)
+class ConfigurationChange:
+    agent: Agent
+    revision: AgentRevision
+    changed_fields: tuple[str, ...]
+    status: Literal["published", "unchanged"]
+
+
+async def change_configuration(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    agent_id: str,
+    changes: AgentConfigurationChanges,
+    *,
+    expected_version: str,
+    registry: Registry,
+    plugins: HarnessPluginFactoryCatalog,
+    base_revision_id: str | None = None,
+    make_default: bool = True,
+    note: str | None = None,
+) -> ConfigurationChange:
+    """Publish a typed delta against the observed head, without rereading/retrying on conflict.
+
+    Historical bases are explicit and still require the current head precondition.
+    Authorization, preservation, validation and publication share the same transaction.
+    """
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
+        preset_edits.require_editable(head, expected_version)
+        selected_revision_id = base_revision_id or head.default_revision_id
+        assert selected_revision_id is not None  # A committed Agent always has a default.
+        base = await _revision(session, head, selected_revision_id)
+        previous = _selected(base).config
+        changes = AgentConfigurationChanges.model_validate(changes.model_dump(exclude_unset=True))
+        try:
+            config = apply_configuration_changes(previous, changes)
+        except ValidationError as error:
+            raise invalid("changes", "The combined configuration is invalid") from error
+        changed = tuple(
+            sorted(name for name in changes.model_fields_set if getattr(previous, name) != getattr(config, name))
         )
-        if created:
-            audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
-            await session.flush()
-            await session.refresh(revision)
-        return _revision_view(head, revision)
+        previous_version = head.version
+        revision = await _publish_revision(
+            session,
+            actor,
+            scope,
+            head,
+            AgentRevisionCreate(config=config, note=note, make_default=make_default),
+            registry=registry,
+            plugins=plugins,
+        )
+        return ConfigurationChange(
+            agent=agent_view(head),
+            revision=revision,
+            changed_fields=changed,
+            status="unchanged" if head.version == previous_version else "published",
+        )
 
 
 async def validate_revision(
@@ -361,7 +438,9 @@ async def list_revision_summaries(
         actor,
         AgentRow,
         AgentRevisionRow,
-        lambda head, row: read_views.revision_summary(AgentRevision.model_validate(row), head.default_revision_id),
+        lambda head, row: read_views.revision_summary(
+            AgentRevision.model_validate(row, context={"preserve_toolsets": True}), head.default_revision_id
+        ),
         workspace_id,
         agent_id,
         limit=limit,
@@ -384,7 +463,7 @@ async def list_revisions(
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
-    view = AgentRevision.model_validate(revision)
+    view = AgentRevision.model_validate(revision, context={"preserve_toolsets": True})
     return view.model_copy(
         update={"builtin_instructions": instructions.for_preset(head.preset_kind) if head.builtin else None}
     )
@@ -457,11 +536,15 @@ async def load_revision(session: AsyncSession, agent_id: str, revision_id: str) 
 
 
 def _selected(revision: AgentRevisionRow) -> SelectedRevision:
+    try:
+        config = AgentConfig.model_validate(revision.config)
+    except ValidationError as error:
+        raise conflict("agent_revision", revision.id, "configuration_unavailable") from error
     return SelectedRevision(
         agent_id=revision.agent_id,
         revision_id=revision.id,
         digest=revision.digest,
-        config=AgentConfig.model_validate(revision.config),
+        config=config,
     )
 
 

@@ -12,7 +12,8 @@ from a13n_harness.capabilities import ToolReviewConfig
 from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.tools.client import ClientToolDefinition
 from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, ValidationInfo, model_validator
+from pydantic.experimental.missing_sentinel import MISSING
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.execution_policy import ExecutionOverride
@@ -232,7 +233,7 @@ class AgentConfig(_Frozen):
     memory: SessionMemorySettings = Field(default_factory=SessionMemorySettings)
 
     @model_validator(mode="after")
-    def unique_selections(self) -> Self:
+    def unique_selections(self, info: ValidationInfo) -> Self:
         for label, values in (
             ("Skills", [item.skill_id for item in self.skills]),
             ("Connections", [item.connection_id for item in self.connection_tools]),
@@ -249,9 +250,59 @@ class AgentConfig(_Frozen):
                     raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
                 if set(group.plugins) - plugins:
                     raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
-                if group.platform and not platform_tools(self.toolsets):
+                if (
+                    group.platform
+                    and not (info.context and info.context.get("preserve_toolsets"))
+                    and not platform_tools(self.toolsets)
+                ):
                     raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
         return self
+
+
+class AgentConfigurationChanges(_Frozen):
+    """Sparse typed configuration edit; supplied collections/sections replace them whole.
+
+    Omission preserves the base revision. Null clears only nullable fields. The
+    merged AgentConfig performs cross-field validation before publication.
+    """
+
+    execution: ExecutionOverride | MISSING | None = Field(default=MISSING)
+    model: Key | MISSING = Field(default=MISSING)
+    model_settings: ModelSettings | MISSING = Field(default=MISSING)
+    model_characteristics: AgentModelCharacteristics | MISSING = Field(default=MISSING)
+    background_compaction: BackgroundCompactionPolicy | MISSING = Field(default=MISSING)
+    summarize: bool | MISSING = Field(default=MISSING)
+    instructions: Instructions | MISSING = Field(default=MISSING)
+    toolsets: Toolsets | MISSING = Field(default=MISSING)
+    skills: tuple[SkillSelection, ...] | MISSING = Field(default=MISSING, max_length=512)
+    skill_sync: SkillSync | MISSING = Field(default=MISSING)
+    connection_tools: tuple[ConnectionSelection, ...] | MISSING = Field(default=MISSING, max_length=128)
+    tool_search: ToolSearch | MISSING | None = Field(default=MISSING)
+    builtin_skills: frozenset[BuiltinSkillName] | MISSING = Field(default=MISSING)
+    client_tools: tuple[ClientToolDefinition, ...] | MISSING = Field(default=MISSING, max_length=128)
+    user_questions: bool | MISSING = Field(default=MISSING)
+    subagent_mode: Literal["inline", "async"] | MISSING = Field(default=MISSING)
+    subagents: dict[BoundedKey, SubagentSelection] | MISSING = Field(default=MISSING, max_length=128)
+    reviewer: AgentReviewer | MISSING | None = Field(default=MISSING)
+    media_understanding: MediaUnderstandingSelection | MISSING = Field(default=MISSING)
+    plugins: tuple[PluginSelection, ...] | MISSING = Field(default=MISSING, max_length=128)
+    output_spec: OutputSpec | MISSING | None = Field(default=MISSING)
+    retries: RetryConfig | MISSING | None = Field(default=MISSING)
+    default_environment_template_id: ObjectId | MISSING | None = Field(default=MISSING)
+    lazy_environment: bool | MISSING = Field(default=MISSING)
+    memory_mounts: MemoryMounts | MISSING = Field(default=MISSING)
+    memory: SessionMemorySettings | MISSING = Field(default=MISSING)
+
+
+def apply_configuration_changes(config: AgentConfig, changes: AgentConfigurationChanges) -> AgentConfig:
+    """Replace explicitly supplied sections atomically; omission preserves exact pins and settings.
+
+    Collections and nested sections are replaced as a whole. Null clears only fields
+    whose owning AgentConfig type permits null; it never means 'use a default'.
+    """
+    return AgentConfig.model_validate(
+        {**dict(config), **{name: getattr(changes, name) for name in changes.model_fields_set}}
+    )
 
 
 class SubagentOverride(_Frozen):
@@ -316,7 +367,9 @@ _REPLACED = (
 )
 
 
-def apply_override(config: AgentConfig, override: AgentOverride) -> AgentConfig:
+def apply_override(
+    config: AgentConfig, override: AgentOverride, *, validation_context: dict[str, object] | None = None
+) -> AgentConfig:
     """The configuration a run executes: its revision's with the override applied, validated as a whole."""
     fields: dict[str, object] = dict(config)
     fields.update((name, value) for name in _REPLACED if (value := getattr(override, name)) is not None)
@@ -337,7 +390,7 @@ def apply_override(config: AgentConfig, override: AgentOverride) -> AgentConfig:
             current = config.subagents.get(name)
             edges[name] = {**(dict(current) if current is not None else {}), **changes}
         fields["subagents"] = edges
-    return AgentConfig.model_validate(fields)
+    return AgentConfig.model_validate(fields, context=validation_context)
 
 
 def freeze_override(override: AgentOverride, validated: AgentConfig) -> AgentOverride:

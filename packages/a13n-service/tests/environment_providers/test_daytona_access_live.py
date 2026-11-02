@@ -13,7 +13,7 @@ from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionC
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_service.providers.environment import desktop_access as wire
-from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
+from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 from a13n_service.providers.environments.daytona.management import DaytonaManagement
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 

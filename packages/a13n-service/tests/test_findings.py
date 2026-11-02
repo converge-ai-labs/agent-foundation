@@ -20,11 +20,6 @@ pytestmark = pytest.mark.anyio
 TRACE = "a" * 32
 
 
-def operation(service, method, path):
-    """The platform tool of an API operation."""
-    return tool_name(service.app.openapi()["paths"][f"/api/v1{path}"][method]["operationId"])
-
-
 def actor(service, role="admin"):
     return Principal(
         service.tenant.principal_id, "user", (Grant(service.tenant.organization_id, None, BUILT_IN_ROLES[role]),)
@@ -179,11 +174,8 @@ async def test_presets_coexist_and_finder_writes_only_findings(service, scripted
         f"/api/v1/agents/{finder.json()['id']}/revisions/{finder.json()['default_revision_id']}"
     )
     config = revision.json()["config"]
-    operations = {tool.key: (tool.method, tool.path) for tool in PLATFORM_TOOLS}
     selected = {
-        operations[key]: tool["permission"]
-        for key, tool in config["toolsets"]["execution"]["tools"].items()
-        if tool["enabled"]
+        key: tool["permission"] for key, tool in config["toolsets"]["execution"]["tools"].items() if tool["enabled"]
     }
     assert selected == dict.fromkeys(preset.TOOLS, "allow")
     others = ("files", "shell", "memory", *(group for group in PLATFORM_GROUPS if group != "execution"))
@@ -286,19 +278,17 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
             FindingCreate.model_validate(finding(agent, run)),
             source_run_id=result["run_id"],
         )
-    read_trace, submit = operation(service, "get", "/traces/{trace_id}"), operation(service, "post", "/findings")
+    read_trace, submit = "get_trace", "create_finding"
     # The analysis Run's own credential reads only its selected traces.
     scripted_model.call(read_trace, {"trace_id": "c" * 32}, call_id="unselected")
     scripted_model.call(read_trace, {"trace_id": TRACE}, call_id="read-1")
     submitted = finding(agent, run)
     submitted["source_key"] = result["id"] + ":execution"
     # Invalid categories produce ordinary tool validation feedback; a corrected call can succeed.
-    scripted_model.call(submit, {"request_body": {**submitted, "category": "other"}}, call_id="bad-category")
-    scripted_model.call(submit, {"request_body": submitted}, call_id="submit-1")
+    scripted_model.call(submit, {**submitted, "category": "other"}, call_id="bad-category")
+    scripted_model.call(submit, submitted, call_id="submit-1")
     # Two distinct diagnoses citing one trace count as two findings and one cited trace.
-    scripted_model.call(
-        submit, {"request_body": {**submitted, "source_key": result["id"] + ":answer"}}, call_id="submit-2"
-    )
+    scripted_model.call(submit, {**submitted, "source_key": result["id"] + ":answer"}, call_id="submit-2")
     scripted_model.say("One unconfirmed issue reported.")
     async with runs_kit.platform_runtime(service, runtime) as served:
         await (await runs_kit.attempt(service, runtime=served))
@@ -315,8 +305,8 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
         last_request = scripted_model.requests.get_nowait()
     assert body["instructions"] in json.dumps(last_request["messages"])
     tools = {tool["function"]["name"]: tool["function"] for tool in last_request["tools"]}
-    operations = {tool.key: (tool.method, tool.path) for tool in PLATFORM_TOOLS}
-    assert {operations[name] for name in tools if name in operations} == preset.TOOLS
+    operations = {tool.key for tool in PLATFORM_TOOLS}
+    assert set(tools) & operations == preset.TOOLS
     assert all(f'"{category}"' in json.dumps(tools[submit]["parameters"]) for category in get_args(Category.__value__))
     results = {
         message["tool_call_id"]: message["content"] for message in last_request["messages"] if message["role"] == "tool"
@@ -329,7 +319,7 @@ async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(
     from a13n_service.runs.claim import claim
     from a13n_service.runs.platform_tokens import issue
 
-    from .mcp_support import call, client
+    from .mcp_support import client
 
     _, run = await target(service, scripted_model, runs_kit)
     service.app.state.runtime = replace(service.runtime, traces=Backend(service, run["id"]))
@@ -343,18 +333,29 @@ async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(
     # A Host that offered more tools than the Finding Agent selects would still meet these route rules.
     token = await issue(service.runtime, lease, frozenset({"execution"}))
     async with client(service, {"secret": token}) as http:
-        listed = await call(http, service, "GET", "/traces")
-        assert "an analysis reads its selected traces by ID" in listed["body"]["error"]["message"]
-        unselected = await call(http, service, "GET", "/traces/{trace_id}", trace_id="c" * 32)
-        assert "outside the analysis selection" in unselected["body"]["error"]["message"]
-        unselected_span = await call(
-            http, service, "GET", "/traces/{trace_id}/spans/{span_id}", trace_id="c" * 32, span_id="b" * 16
-        )
-        assert "outside the analysis selection" in unselected_span["body"]["error"]["message"]
-        selected = await call(
-            http, service, "GET", "/traces/{trace_id}/spans/{span_id}", trace_id=TRACE, span_id="b" * 16
-        )
-        assert selected["status"] == 200, selected
+
+        async def invoke(name, **arguments):
+            response = await http.post(
+                "/api/v1/business-tools/",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+            )
+            assert response.status_code == 200, response.text
+            return response.json()["result"]["structuredContent"]
+
+        listed = await invoke("list_traces")
+        assert "an analysis reads its selected traces by ID" in listed["error"]["message"]
+        unselected = await invoke("get_trace", trace_id="c" * 32)
+        assert "outside the analysis selection" in unselected["error"]["message"]
+        unselected_span = await invoke("get_trace_span", trace_id="c" * 32, span_id="b" * 16)
+        assert "outside the analysis selection" in unselected_span["error"]["message"]
+        selected = await invoke("get_trace_span", trace_id=TRACE, span_id="b" * 16)
+        assert selected["summary"]["trace_id"] == TRACE, selected
+
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
     assert status["read_trace_ids"] == [TRACE]
 
@@ -435,13 +436,11 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     read_status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
     assert set(read_status["read_trace_ids"]) == {TRACE, "b" * 32}
     for index, (agent, run, trace_id) in enumerate(((first, first_run, TRACE), (second, second_run, "b" * 32))):
-        scripted_model.call(
-            operation(service, "get", "/traces/{trace_id}"), {"trace_id": trace_id}, call_id=f"r{index}"
-        )
+        scripted_model.call("get_trace", {"trace_id": trace_id}, call_id=f"r{index}")
         submitted = finding(agent, run)
         submitted["evidence"][0]["trace_id"] = trace_id
         submitted["source_key"] = result["id"] + f":{index}"
-        scripted_model.call(operation(service, "post", "/findings"), {"request_body": submitted}, call_id=f"s{index}")
+        scripted_model.call("create_finding", submitted, call_id=f"s{index}")
     scripted_model.say("Two issues reported")
     async with runs_kit.platform_runtime(service, runtime) as served:
         await (await runs_kit.attempt(service, runtime=served))
@@ -508,8 +507,7 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
     assert created.status_code == 201, created.text
     composer = await service.client.post("/api/v1/agent-composer")
     assert composer.status_code == 200, composer.text
-    paths = service.app.openapi()["paths"]
-    read_finding = tool_name(paths["/api/v1/findings/{finding_id}"]["get"]["operationId"])
+    read_finding = "get_finding"
     scripted_model.call(read_finding, {"finding_id": created.json()["id"]}, call_id="read-finding")
     scripted_model.say("Review the suggestion before approving a change.")
     started = await runs_kit.start_thread(service, composer.json(), "Review " + created.json()["id"])
@@ -521,7 +519,7 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
     names = {tool["function"]["name"] for tool in request["tools"]}
     assert {
         read_finding,
-        tool_name(paths["/api/v1/agents/{agent_id}/revisions"]["post"]["operationId"]),
+        "update_agent_configuration",
         "view",
     } <= names
     assert finding(agent, run)["suggestion"] in str(request["messages"])
@@ -713,7 +711,7 @@ async def test_feedback_input_is_frozen_on_retry_and_scripted_diagnosis_uses_cor
     replay = await service.client.post("/api/v1/finding-analyses", json=request, headers=header)
     assert replay.status_code == 200 and replay.json()["id"] == first.json()["id"]
     assert await analysis_input(service, first.json()["run_id"]) == prompt
-    scripted_model.call(operation(service, "get", "/traces/{trace_id}"), {"trace_id": TRACE}, call_id="read")
+    scripted_model.call("get_trace", {"trace_id": TRACE}, call_id="read")
     scripted_model.say(
         "The previous completion diagnosis was disproven: successful recovery means no issue is established."
     )
@@ -878,7 +876,7 @@ async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_
     retried = await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)
     assert retried.status_code == 200
     assert await analysis_input(service, retried.json()["run_id"]) == prompt
-    scripted_model.call(operation(service, "get", "/traces/{trace_id}"), {"trace_id": TRACE}, call_id="read")
+    scripted_model.call("get_trace", {"trace_id": TRACE}, call_id="read")
     scripted_model.say(
         f"Equivalent evidence is already recorded in {row['id']}; it remains unreviewed. No new finding."
     )
@@ -903,7 +901,6 @@ async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_
 async def test_findings_mcp_reads_preserve_review_filters_history_and_workspace_confinement(
     service, scripted_model, runs_kit
 ):
-    from a13n_service.api_tools import tool_name
 
     from .mcp_support import call, client, key, rpc
 
