@@ -68,6 +68,8 @@ Agent creation displays name, optional description and avatar together without a
 
 Saving Agent configuration explains that the new version becomes the default for new work, while active work and approval continuations retain their accepted version. Save changes is the normal editing action; saved version identities and history remain inspectable.
 
+Schema-driven configuration arrays with defined object fields or scalar items expose individual controls with add/remove actions. Docker host directory mounts expose source, target and read-only fields for each mount. Item defaults and required fields follow the provider schema; explicit values and unrepresented properties survive edits. Arrays without an editable item schema retain validated JSON input. Service validation remains authoritative for host-path policy.
+
 Environment template editors expose an Environment variables key/value section for every built-in provider. Empty values are valid; blank, invalid or duplicate names block form submission. Values are identified as ordinary readable configuration, not credentials. Docker standard/desktop preset switches preserve these variables together with CPU, memory and mounts; read-only users cannot edit them.
 
 The Agent editor exposes a Context summary section under Advanced with a Summarize tool switch. Saving publishes the selection in the Agent Revision; read-only inspection shows its saved state. Disabling the tool leaves automatic compaction available. [Agent configuration](../a13n-service/04-resources.md#agents) owns the runtime defaults and reminder policy.

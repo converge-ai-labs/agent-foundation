@@ -118,37 +118,35 @@ export function ModelsPage() {
           }}
           filters={
             <>
-              <span className={styles.filters}>
-                <ChoiceField
-                  label={t("Provider")}
-                  variant="filter"
-                  value={providerId || "all"}
-                  onValueChange={(value) =>
-                    updateFilters({ provider_id: value === "all" ? "" : value })
-                  }
-                  options={[
-                    { value: "all", label: t("All providers") },
-                    ...(providers.data ?? []).map((provider) => ({
-                      value: provider.id,
-                      label: provider.name,
-                      icon: <ModelProviderIcon provider={provider} />,
-                    })),
-                  ]}
-                />
-                <ChoiceField
-                  label={t("Status")}
-                  variant="filter"
-                  value={status ?? "all"}
-                  onValueChange={(value) =>
-                    updateFilters({ status: value === "all" ? "" : value })
-                  }
-                  options={[
-                    { value: "all", label: t("All statuses") },
-                    { value: "enabled", label: t("Enabled") },
-                    { value: "disabled", label: t("Disabled") },
-                  ]}
-                />
-              </span>
+              <ChoiceField
+                label={t("Provider")}
+                variant="filter"
+                value={providerId || "all"}
+                onValueChange={(value) =>
+                  updateFilters({ provider_id: value === "all" ? "" : value })
+                }
+                options={[
+                  { value: "all", label: t("All providers") },
+                  ...(providers.data ?? []).map((provider) => ({
+                    value: provider.id,
+                    label: provider.name,
+                    icon: <ModelProviderIcon provider={provider} />,
+                  })),
+                ]}
+              />
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={status ?? "all"}
+                onValueChange={(value) =>
+                  updateFilters({ status: value === "all" ? "" : value })
+                }
+                options={[
+                  { value: "all", label: t("All statuses") },
+                  { value: "enabled", label: t("Enabled") },
+                  { value: "disabled", label: t("Disabled") },
+                ]}
+              />
               {hasFilters && (
                 <Button
                   type="button"

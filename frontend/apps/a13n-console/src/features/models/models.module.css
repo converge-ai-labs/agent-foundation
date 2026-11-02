@@ -25,17 +25,6 @@
 .listTable tbody tr:focus-within {
   background: var(--a13n-hover);
 }
-/* The filters flow: side by side when they fit, otherwise each takes a full row. */
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-.filters > * {
-  flex: 1 1 auto;
-}
 .providerCell {
   display: flex;
   align-items: center;

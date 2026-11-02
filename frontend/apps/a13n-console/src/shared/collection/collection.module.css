@@ -155,13 +155,6 @@ tr:focus-within .rowMenu,
   max-width: min(300px, 100%);
   min-width: 0;
 }
-.toolbarFilters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
 .toolbarTrailing {
   min-width: 0;
   max-width: 100%;
@@ -332,7 +325,6 @@ tr:focus-within .rowMenu,
 }
 @media (width < 768px) {
   .toolbar,
-  .toolbarFilters,
   .toolbarTrailing {
     gap: 6px;
   }
