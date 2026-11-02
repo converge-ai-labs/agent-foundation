@@ -112,6 +112,8 @@ it("formats counts and resolves known login states without translating provider 
 // and the remaining workbench workflows are tracked separately in #1248.
 const surfaces = [
   "app.tsx",
+  "sharing.tsx",
+  "shell/ui.tsx",
   "shell/startup.tsx",
   "setup/wizard.tsx",
   "setup/setup.tsx",

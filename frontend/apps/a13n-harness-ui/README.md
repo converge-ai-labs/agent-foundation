@@ -77,7 +77,9 @@ See [browser-server operation](../../../docs/a13n-harness-ui/webui.md) and [HTTP
 
 ## Display language
 
-Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. The Agent & Model panel also localizes Agent/Model selection, search, Thinking, Speed and Reasoning mode, including known control descriptions, default summaries and unavailable-selection guidance. Other workbench workflows remain in English. These are incremental deliveries under [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248), not complete application localization.
+Login, connection startup, guided setup, its model editor and provider-account connection controls, and setup/readiness support English and Simplified Chinese. The Agent & Model panel also localizes Agent/Model selection, search, Thinking, Speed and Reasoning mode, including known control descriptions, default summaries and unavailable-selection guidance. These are incremental deliveries under [#1248](https://github.com/converge-ai-labs/agent-foundation/issues/1248), not complete application localization.
+
+Sharing link management also supports both languages: the Share entry and dialog, chat/Project scope, permissions, expiry, copying, permission changes and revocation. Language changes retain selected options, an issued link and copy feedback, expanded grant management, unsaved permission edits and pending operations without replaying requests. Grant dates and counts follow the display language; authored Project names and raw server diagnostics remain unchanged. Guest-page localization remains separate work, and other workbench workflows remain in English.
 
 Choose **System**, **English**, or **简体中文** during login/setup or in General settings. The preference belongs to this viewer's browser, independently of Console. System scans browser languages in order: `en` variants select English, `zh` variants select Simplified Chinese, and no supported match selects English. Automatic resolution never saves a manual language choice. If browser storage is unavailable, a manual choice lasts for the current page session.
 
@@ -89,6 +91,7 @@ Run the focused catalog, preference and language-control checks from the reposit
 
 ```bash
 pnpm --dir frontend --filter a13n-harness-ui-webui test src/i18n src/conversations/composer-settings.test.tsx src/conversations/model-control-messages.test.ts
+pnpm --dir frontend --filter a13n-harness-ui-webui test src/sharing.test.tsx src/shell/connection.test.tsx
 ```
 
 These tests also run in the existing Harness UI frontend CI suite. Catalog checks cover missing/empty values, interpolation and locale-required plurals, with invalid fixtures. Literal translation calls in localized workflows, dynamic login-state labels and model-control descriptors have focused coverage. Agent/Model interaction checks preserve the open panel page, search input and selection, editor/undo identities, draft parameters and unresolved submission state while switching languages on desktop and mobile. Explicit false and inherited null remain distinct; changing display language neither applies selections nor replays requests. Application-wide untranslated-source detection and the remaining conversation/configuration/native-panel workflows remain follow-up work under #1248.
