@@ -27,8 +27,10 @@ from sqlalchemy.dialects.postgresql import insert
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.providers.browser.definition import BrowserProviderError
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.browsers import admission, lifecycle
+from a13n_service.runs.browsers.files import Files
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.browsers.tables import BrowserSelectionRow, BrowserTabRow
 from a13n_service.runs.calls import CallCheck, Refused
@@ -48,8 +50,10 @@ class Backend:
         self.runtime, self.lease, self.binding, self.check, self.stack = runtime, lease, binding, check, stack
         self.enabled = enabled
         self.native: CdpBrowserBackend | None = None
+        self.files: Files | None = None
         self.lock = asyncio.Lock()
         self.epoch: int | None = None
+        self.generation: int | None = None
         self.selected: str | None = None
         self.connection = AsyncExitStack()
         self.stack.push_async_callback(self._disconnect)
@@ -59,13 +63,16 @@ class Backend:
             self.native.retire()
         await self.connection.aclose()
         self.native = None
+        self.files = None
         self.epoch = None
 
     async def _connect(self, permit: admission.Permit) -> CdpBrowserBackend:
         selected = await lifecycle.ready_target(
             self.runtime, self.lease.workspace_id, self.binding.browser_id, configuration=permit.configuration
         )
-        if self.native is not None and not self.native.browser.connected:
+        if selected.generation != permit.generation:
+            raise BrowserError("Browser runtime changed. Observe again before acting.")
+        if self.native is not None and (not self.native.browser.connected or self.generation != permit.generation):
             await self._disconnect()
         if self.native is None:
             assert selected.state is not None
@@ -80,8 +87,18 @@ class Backend:
                             lifecycle.open_provider(self.runtime, selected.account)
                         )
                         browser = await provider.connect(selected.state)
+                        if self.runtime.registry.get("browser", selected.account.type).supports_files:
+                            self.files = Files(
+                                self.runtime,
+                                self.lease,
+                                self.binding.browser_id,
+                                permit.generation,
+                                provider,
+                                selected.state,
+                            )
                 connection.push_async_callback(browser.close)
                 self.native = CdpBrowserBackend(browser, fallback_selection=False)
+                self.generation = permit.generation
                 self.connection = connection.pop_all()
         return self.native
 
@@ -221,6 +238,7 @@ class Backend:
                     )
                 except Refused as error:
                     raise RunError(str(error), code="call_refused") from error
+                permit = await admission.prepare(self.runtime, self.lease, permit)
                 native = await self._connect(permit)
                 await self._sync(native, permit)
                 synced = True
@@ -244,7 +262,15 @@ class Backend:
             except BrowserError as error:
                 known = known or error.dispatch != "unknown"
                 raise
+            except BrowserProviderError as error:
+                known = known or error.certainty != "unknown"
+                raise BrowserError(
+                    f"Browser provider operation failed ({error.code}).",
+                    dispatch="not_dispatched" if known else "unknown",
+                ) from None
             except ServiceError as error:
+                # Asset authorization/publication failures have no unknown page operation.
+                known = known or tool == "files"
                 raise BrowserError(f"Browser unavailable ({error.code}).") from None
             except Exception as error:
                 if isinstance(error, RunError):
@@ -305,13 +331,20 @@ class Backend:
         return await self._call("dialog", lambda native: native.dialog(action, text=text))
 
     async def upload(self, target: str, paths: tuple[str, ...], *, revision: str) -> str:
-        async def unsupported(native: CdpBrowserBackend) -> str:
-            raise BrowserError("This Browser provider does not expose authorized file transfer.")
+        async def upload(native: CdpBrowserBackend) -> str:
+            if self.files is None:
+                raise BrowserError("This Browser provider does not expose authorized file transfer.")
+            return await self.files.upload(native, target, paths, revision=revision)
 
-        return await self._call("files", unsupported)
+        return await self._call("files", upload)
 
     async def downloads(self) -> str:
-        return await self._call("files", lambda native: native.downloads())
+        async def downloads(native: CdpBrowserBackend) -> str:
+            if self.files is None:
+                raise BrowserError("This Browser provider does not expose authorized file transfer.")
+            return await self.files.downloads(native)
+
+        return await self._call("files", downloads)
 
     async def wait_for_handback(self) -> None:
         raise BrowserError(admission.GUIDANCE)
@@ -333,6 +366,7 @@ async def open_backend(
                     tool_name="browser.prepare",
                     provider_id=permit.provider_id,
                 )
+                permit = await admission.prepare(runtime, lease, permit)
                 await lifecycle.ready_target(
                     runtime, lease.workspace_id, binding.browser_id, configuration=permit.configuration
                 )

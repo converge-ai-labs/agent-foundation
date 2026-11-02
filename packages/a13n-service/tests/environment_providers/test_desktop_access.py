@@ -171,6 +171,21 @@ async def test_private_runtime_rejects_symlinks_and_world_access(tmp_path):
         guest.private_directory(link)
 
 
+async def test_control_socket_communicates_under_long_private_root(tmp_path):
+    root = tmp_path / ("private-" + "x" * 120)
+    guest.private_directory(root)
+    address = root / "control.sock"
+    assert len(str(address).encode()) > 108
+    instance = guest.Supervisor(root, ":99", "/private/Xauthority", 6081, "websockify")
+    with guest.control_address(root) as endpoint:
+        async with await asyncio.start_unix_server(instance.connection, path=endpoint):
+            response = await guest.call(root, {"protocol_version": 1, "operation": "describe"})
+            assert response["result"]["generation"] == instance.generation
+            assert address.is_socket()
+            assert root.stat().st_mode & 0o777 == 0o700
+    assert not address.exists()
+
+
 async def test_wall_clock_expiry_handles_suspended_vm_clock(supervisor, monkeypatch):
     instance, _, _ = supervisor
     await grant(instance)
@@ -306,3 +321,13 @@ async def test_revoke_before_delayed_grant_cannot_resurrect_input(supervisor):
     with pytest.raises(guest.Refused, match="grant_not_active"):
         await grant(instance, "control_delayed", epoch=3)
     assert commands == []
+
+
+async def test_environment_history_capacity_refuses_new_grant_and_unknown_revoke(supervisor):
+    instance, _, _ = supervisor
+    instance.revocations.update({f"grant_{index:08d}": index + 1 for index in range(guest.MAX_HISTORY)})
+    with pytest.raises(guest.Refused, match="capacity_exceeded"):
+        await request(instance, "grant", id="grant_newest", mode="control", epoch=1, ttl_seconds=60)
+    with pytest.raises(guest.Refused, match="capacity_exceeded"):
+        await request(instance, "revoke", id="grant_unknown", epoch=1)
+    assert len(instance.revocations) == guest.MAX_HISTORY

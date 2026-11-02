@@ -104,7 +104,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer        | minimum=1; maximum=10000; default=128           |
 | `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | integer        | minimum=1024; maximum=16777216; default=2097152 |
 | `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
-| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; default=3600                         |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600       |
 | `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
 | `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
 | `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | integer        | minimum=1; maximum=1000; default=32             |
@@ -198,6 +198,16 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `environments.managed_count`      | `A13N_ENVIRONMENTS__MANAGED_COUNT`      | integer         | minimum=1; maximum=100000; default=100        |
 | `environments.docker_host`        | `A13N_ENVIRONMENTS__DOCKER_HOST`        | string or null  | minLength=1; maxLength=2048; default=null     |
 | `environments.docker_mount_roots` | `A13N_ENVIRONMENTS__DOCKER_MOUNT_ROOTS` | array of string | maxItems=64; default=[]                       |
+
+## `browsers`
+
+| Setting                      | Environment variable               | Type / choices | Constraints and default                       |
+| ---------------------------- | ---------------------------------- | -------------- | --------------------------------------------- |
+| `browsers.operation_seconds` | `A13N_BROWSERS__OPERATION_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=120 |
+| `browsers.root`              | `A13N_BROWSERS__ROOT`              | string or null | format="path"; default=null                   |
+| `browsers.native_enabled`    | `A13N_BROWSERS__NATIVE_ENABLED`    | boolean        | default=false                                 |
+| `browsers.native_chromium`   | `A13N_BROWSERS__NATIVE_CHROMIUM`   | string         | default="chromium"                            |
+| `browsers.docker_host`       | `A13N_BROWSERS__DOCKER_HOST`       | string or null | default=null                                  |
 
 ## `provisioning`
 

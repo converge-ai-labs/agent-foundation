@@ -2961,6 +2961,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "delete_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete After Seconds"
+          },
           "episode": {
             "title": "Episode",
             "type": "integer"
@@ -3037,6 +3048,17 @@
           "status": {
             "$ref": "#/components/schemas/BrowserStatus"
           },
+          "stop_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop After Seconds"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3064,6 +3086,8 @@
           "episode",
           "control_expires_at",
           "idle_seconds",
+          "stop_after_seconds",
+          "delete_after_seconds",
           "expires_at",
           "failure",
           "version",
@@ -3163,6 +3187,19 @@
       "BrowserCreate": {
         "additionalProperties": false,
         "properties": {
+          "delete_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 604800.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete After Seconds"
+          },
           "idle_seconds": {
             "anyOf": [
               {
@@ -3174,7 +3211,6 @@
                 "type": "null"
               }
             ],
-            "default": 1800,
             "title": "Idle Seconds"
           },
           "name": {
@@ -3200,6 +3236,20 @@
             },
             "title": "Recipe",
             "type": "object"
+          },
+          "stop_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 604800.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 1800,
+            "title": "Stop After Seconds"
           }
         },
         "required": [
@@ -3241,6 +3291,9 @@
           "reserved",
           "creating",
           "ready",
+          "stopping",
+          "stopped",
+          "starting",
           "deleting",
           "deleted",
           "lost"
@@ -18063,6 +18116,16 @@
             "title": "Attempts",
             "type": "integer"
           },
+          "browser_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrowserBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "cancel_requested_at": {
             "anyOf": [
               {
@@ -24505,6 +24568,48 @@
             "title": "Expires At",
             "type": "string"
           },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "protocol": {
+            "default": "iframe",
+            "enum": [
+              "iframe",
+              "vnc"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
           "url": {
             "title": "Url",
             "type": "string"
@@ -28327,6 +28432,94 @@
           "browsers"
         ],
         "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/browsers/{browser_id}/stop": {
+      "post": {
+        "operationId": "stop_browser",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "browser_id",
+            "required": true,
+            "schema": {
+              "title": "Browser Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Browser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Stop Browser",
+        "tags": [
+          "browsers"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/browsers/{browser_id}/takeover": {

@@ -328,9 +328,11 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str, lease:
                         if phase == "draining" and baseline is None:
                             row.human_baseline = sorted(pages)
                         deadline = row.control_expires_at
-                    granted = await provider.ensure_viewer(selected.state, grant_id, expires_at=deadline)
+                    granted = await provider.ensure_viewer(
+                        selected.state, grant_id, episode=episode, expires_at=deadline
+                    )
                 else:
-                    await provider.revoke_viewer(selected.state, grant_id)
+                    await provider.revoke_viewer(selected.state, grant_id, episode=episode)
                     if phase == "returning":
                         pages = await inventory(provider, selected.state)
     except Exception:
@@ -374,10 +376,14 @@ async def reconcile(runtime: Runtime, workspace_id: str, browser_id: str, lease:
                 runtime,
                 row,
                 "viewer",
-                Viewer(
-                    url=granted.url,
-                    expires_at=granted.expires_at,
-                    episode=episode,
+                Viewer.model_validate(
+                    {
+                        **granted.state,
+                        "url": granted.url,
+                        "expires_at": granted.expires_at,
+                        "episode": episode,
+                        "generation": generation,
+                    }
                 ).model_dump(mode="json"),
             )
             row.control = "human"

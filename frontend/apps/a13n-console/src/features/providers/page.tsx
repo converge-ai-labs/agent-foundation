@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { ConnectorProviders } from "../connectors/providers";
 import { EnvironmentProviders } from "../environments/providers";
+import { BrowserProviders } from "../browsers/providers";
 import { MemoryProviders } from "../memories/providers";
 import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
@@ -14,6 +15,7 @@ const components = {
   models: Providers,
   web: WebProviders,
   environments: EnvironmentProviders,
+  browsers: BrowserProviders,
   connectors: ConnectorProviders,
   memory: MemoryProviders,
 };

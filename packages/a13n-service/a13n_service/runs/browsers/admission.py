@@ -1,6 +1,6 @@
 """Browser-only durable admission. Unknown calls never become drained by lease expiry."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
@@ -90,6 +90,8 @@ async def admit(
                     )
                 )
         else:
+            if row.status == "stopping":
+                raise BrowserError("The browser is stopping. No call was dispatched.")
             selection = await session.get(BrowserSelectionRow, (row.id, lease.thread_id))
             selected_id = (
                 selection.target_id if selection is not None and selection.generation == row.generation else None
@@ -140,6 +142,35 @@ async def admit(
     if permit is None:
         raise BrowserHumanControl(GUIDANCE)
     return permit
+
+
+async def prepare(runtime: Runtime, lease: Lease, permit: Permit) -> Permit:
+    """Publish supplier work only after CallCheck succeeds, atomically with the permit's generation."""
+    async with transaction(runtime.storage) as session:
+        await lifecycle.lock_owners(session, (lease.thread_id,))
+        run, principal = await lock_owner(session, runtime, lease)
+        row = await lifecycle.find(session, lease.workspace_id, permit.browser_id, lock=True)
+        lifecycle.usable(row)
+        if row.generation != permit.generation:
+            raise BrowserError("Browser runtime changed. Observe again before acting.")
+        await lifecycle.authorize_use(
+            session,
+            principal,
+            row,
+            WorkspaceScope(lease.organization_id, lease.workspace_id),
+            authority=ExecutionAuthority.model_validate(run.authority),
+        )
+        operation = await session.get_one(BrowserOperationRow, permit.id, with_for_update=True)
+        if operation.settled_at is not None:
+            raise BrowserError("Browser operation is no longer admitted.")
+        await lifecycle.prepare_intent(session, row, operation_id=permit.id)
+        operation.generation = row.generation
+        return replace(
+            permit,
+            generation=row.generation,
+            epoch=row.observation_epoch,
+            selected_id=permit.selected_id if row.generation == permit.generation else None,
+        )
 
 
 async def settle(runtime: Runtime, permit: Permit) -> None:

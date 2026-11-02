@@ -250,7 +250,13 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
         str(path.relative_to(ROOT))
         for path in root.rglob("*.py")
         if (path.name.startswith("test_") or path.name.endswith("_test.py"))
-        and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
+        and path
+        not in {
+            root / "test_environments_envd.py",
+            root / "test_monitoring_collectors_live.py",
+            root / "test_browser_native_live.py",
+            root / "test_browser_selfhost_live.py",
+        }
         and root / "environment_providers" not in path.parents
     }
     assert set(targets) == expected
@@ -265,6 +271,20 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
     assert test["env"]["TEST_TARGETS"] == "${{ matrix.targets }}"
     require_execution = next(step for step in steps if step["name"] == "Require Service execution without skips")
     assert require_execution["if"] == test["if"]
+    native_browser = next(step for step in steps if step["name"] == "Test native Browser lifecycle and Service assets")
+    assert native_browser["if"] == "matrix.name == 'tests-1'"
+    assert "test_browser_native_live.py" in native_browser["run"]
+    assert "test_selfhost_service_asset_transfer[native]" in native_browser["run"]
+    assert "not report.findall('.//skipped')" in native_browser["run"]
+    docker_check = (ROOT / "Makefile").read_text().split("image-check-browser: sync", 1)[1].split(".PHONY:", 1)[0]
+    for node in (
+        "test_docker_profile_input_and_recovery",
+        "test_docker_critical_child_exit_ends_runtime",
+        "test_selfhost_service_asset_transfer[docker]",
+        "test_docker_scripted_model_browser_tools",
+    ):
+        assert node in docker_check
+    assert "not r.findall('.//skipped')" in docker_check
     providers = next(step for step in steps if step["name"] == "Test native Environment management drivers")
     assert providers["if"] == "matrix.name == 'tests-1'"
     assert "packages/a13n-service/tests/environment_providers" in providers["run"]

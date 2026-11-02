@@ -6,7 +6,7 @@ description: Attach an existing browser or reserve a managed one, then bind it t
 A browser resource shares a live browser across runs and threads. Choose `managed` for a provider-owned allocation or `external_cdp` to attach an existing browser. Service manages access, tab ownership and logical selection independently of [environments](environments.md).
 
 > [!IMPORTANT]
-> External CDP attachment works without a browser provider. The built-in distribution has no live managed-browser supplier or Console takeover interface. Managed allocation requires a deployment-registered provider; inspect `GET /api/v1/provider-types/browser`. Human control requires a compatible managed provider and an integrating application.
+> Docker is the recommended self-hosted provider. Native runs on Linux for operator debugging. Both retain a private browser profile across stop/start and support Console takeover. Configure the operator runtime below, then inspect `GET /api/v1/provider-types/browser` for available types. External CDP attachment needs no provider.
 
 ## Reserve and bind a browser
 
@@ -27,7 +27,49 @@ Use [authenticated HTTP requests](http.md) in one workspace. Browser creation, b
 
 Replace the example ID with the returned browser ID. Read the desired binding with `GET /api/v1/threads/{thread_id}/browser`; send JSON `null` to the PUT endpoint to detach it. Binding changes apply to future runs. An accepted run keeps its original binding. Child and forked threads require an explicit binding.
 
-The native tools cover observation, reading, navigation, actions, waits, tabs, dialogs, screenshots and download inspection. Uploads are unavailable until a provider exposes an authorized transfer boundary. Browser-host file paths are not paths in the run's mounted environments.
+The native tools cover observation, reading, navigation, actions, waits, tabs, dialogs, screenshots and files. With Docker or Native, `browser_files` uploads take `asset:<asset_id>` references in `paths`, not host paths. Assets must be readable within the run's workspace and frozen authority. Completed tracked downloads become workspace assets under run `write` authority; repeated inspection reuses the same publication. External CDP does not support file transfer. Browser filesystems are independent of mounted environments.
+
+## Configure self-hosted browsers
+
+Run Service and a local Docker Engine on one Linux host. Keep `browsers.root` in a persistent, private directory writable by the Service account. All control and worker processes that manage these browsers must use that same directory, Engine and host network. The directory retains exact allocation identities and terminal fences. Each Docker browser keeps its profile inside its original container filesystem; do not prune retained containers or replace them with newly created containers.
+
+```toml
+[browsers]
+root = "/var/lib/a13n/browsers"
+docker_host = "unix:///var/run/docker.sock"
+```
+
+Build the browser image from the source checkout:
+
+```sh
+make image-browser BROWSER_IMAGE=a13n-browser:local
+```
+
+Create a Docker browser provider with `type: "docker"` and an empty configuration to use `ghcr.io/converge-ai-labs/a13n-browser:latest` and `pull_policy: "always"`. For the local build above, set `configuration: {"image": "a13n-browser:local", "pull_policy": "never"}` instead. `if_missing` pulls only when absent. `always` pulls for each new container, not when restarting a retained browser; pull failures do not fall back to a cached image. Its recipe accepts `width` and `height`; an empty recipe uses the default desktop size. Image changes affect new allocations; retained browsers continue using their original container.
+
+A containerized Service needs the Engine socket, a persistent mount for `browsers.root`, and host networking. Browser endpoints are published only on the Engine host's loopback interface. A bridge-network Service container cannot reach them through its own loopback. The Browser container has its own filesystem and network namespace, but peers on the same Docker network can reach its CDP endpoint. Treat network membership as trusted. The Service account's Engine access is privileged operator authority; give it only to a trusted deployment. Remote Engines and multi-host scheduling are unsupported. Keep CDP and the guest viewer ports private; Console uses the authenticated Service WebSocket relay, including `wss` behind HTTPS. Reverse proxies must forward WebSocket upgrades.
+
+Browser page navigation is not restricted by Service's provider endpoint policy. Apply any required outbound network restrictions, including access to internal services and metadata endpoints, at the deployment network boundary for both Docker and Native browsers.
+
+Native requires Linux with operator-installed Chromium, `Xvfb`, `openbox`, `xauth`, `x11vnc` and `websockify` on PATH. Enable it explicitly:
+
+```toml
+[browsers]
+root = "/var/lib/a13n/browsers"
+native_enabled = true
+native_chromium = "/usr/bin/chromium"
+```
+
+Create a provider with `type: "native"` and empty configuration. Native executes as the Service account and is for local debugging, not tenant isolation. A Service exit can end its runtime; the next authorized start reuses its private profile only after proving the previous writer has stopped. Docker browsers survive Service-only exit. Either provider advances the browser generation after a runtime restart, invalidating old references and tab ownership. Restored tabs are never reassigned by URL or title.
+
+Service applies a cancellation budget to each claimed Browser lifecycle provider operation, configured by `browsers.operation_seconds` (default 120 seconds). This is not a hard response deadline: shielded cleanup and blocking provider I/O can delay completion after cancellation.
+
+## Use Console
+
+1. Open **Providers → Browser providers** and configure the available provider type.
+2. Open **Browsers** to create a managed browser or attach external CDP. Use its details to start, stop or release it and inspect retention and failure state.
+3. In a session, open the thread's **Browser** action, select the browser and choose tab access and preparation. Save before submitting the next run. The run details show its captured binding separately from the thread's desired binding.
+4. Choose **Take control**, wait for human control, then **Open viewer**. Use **Renew control** while you need more time and **Return control** when finished. Closing the viewer does not return control or stop the browser; the finite lease still expires.
 
 ## Attach an existing browser
 
@@ -82,19 +124,23 @@ Network failure reports `browser_connection_failed` without declaring the instan
 
 ## Choose preparation and retention
 
-| Choice                                                        | Behavior                                                                            |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `preparation: "first_use"`                                    | Default. Prepare on the first admitted browser call; external sources only connect. |
-| `preparation: "run_start"`                                    | Start preparation when execution begins.                                            |
-| `prepare: true` on creation, or `POST /browsers/{id}/prepare` | Prepare explicitly before agent use.                                                |
-| `idle_seconds: 1800`                                          | Managed default. Release after eligible idle time. Accepts 60–604800 seconds.       |
-| `idle_seconds: null`                                          | External default. Retain until explicit release or managed supplier expiry.         |
+| Choice                                                        | Behavior                                                                                 |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `preparation: "first_use"`                                    | Default. Prepare on the first admitted browser call; external sources only connect.      |
+| `preparation: "run_start"`                                    | Start preparation when execution begins.                                                 |
+| `prepare: true` on creation, or `POST /browsers/{id}/prepare` | Prepare explicitly before agent use.                                                     |
+| `stop_after_seconds: 1800`                                    | Docker/Native default. Stop the runtime after eligible idle time, retaining the profile. |
+| `delete_after_seconds: null`                                  | Docker/Native default. Keep the retained allocation until explicit release.              |
+| `idle_seconds: 1800`                                          | Legacy terminal idle release; remains the default for providers without stop support.    |
+| `idle_seconds: null`                                          | Legacy explicit-release retention and the external default.                              |
+
+Stop and delete policies independently measure time since last authorized use, accept 60–604800 seconds or null, and cannot be combined with legacy `idle_seconds`. Stopping does not reset the deletion clock. A due delete policy wins over stop. Use `POST /api/v1/browsers/{id}/stop` with a current browser `If-Match` and workspace `write` to stop explicitly. `stopped` retains the browser, binding and profile; the next authorized use or `prepare` starts a new generation. Active accepted, running or waiting borrowers, unsettled calls, human control and valid handback obligations prevent stop and idle deletion.
 
 Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation. After a managed create fails, preparation inspects the original identity. It retries creation only when the provider confirms the request was not dispatched. If it remains unresolved, explicitly release it for supplier-fenced cleanup, then reserve and bind a new browser.
 
 Active runs, unsettled browser calls, human control and valid pending handback notifications prevent idle release. Supplier expiry can still end the session. A `lost` or `deleted` browser does not automatically restart. Create and bind another browser when replacement is intended.
 
-Run completion and binding detachment leave the browser and its tabs alive. To release Service access, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Managed release terminates the supplier session without saving a resumable profile. External release leaves the existing browser alive. Explicit release can retire an automation-controlled identity after its borrowers and active claims end, even if an old call's outcome remains unknown. That history stays unknown; external actions may still be running. The retired identity cannot be reused. A desired binding to a lost or deleted browser blocks later runs until you explicitly detach it or bind another browser.
+Run completion and binding detachment leave the browser and its tabs alive. To release Service access, read the browser's current ETag and call `POST /api/v1/browsers/{id}/release` with `If-Match`. Service refuses release while active use makes it unsafe. Managed release terminally removes the owned runtime and profile. External release leaves the existing browser alive. Explicit release can retire an automation-controlled identity after its borrowers and active claims end, even if an old call's outcome remains unknown. That history stays unknown; external actions may still be running. The retired identity cannot be reused. A desired binding to a lost or deleted browser blocks later runs until you explicitly detach it or bind another browser.
 
 ## Choose tab access
 
@@ -104,11 +150,11 @@ Each thread selects a tab independently of native browser focus. If its selected
 
 ## Take over and return control
 
-For managed sources with viewer support, an integrating application implements this sequence with direct HTTP calls. Takeover, renewal, handback and viewer access are excluded from MCP discovery.
+Console provides this flow for managed sources with viewer support. Integrating applications use the same direct HTTP calls. Takeover, renewal, handback and viewer access are excluded from MCP discovery.
 
 1. Read the browser's current ETag and call `POST /api/v1/browsers/{id}/takeover` with `If-Match` and `{"thread_id": "<bound-thread-id>", "lease_seconds": 300}`. The control lease starts when Service closes the admission gate, including time spent draining.
 2. Read the browser until `control` becomes `human`. `draining` means Service has closed browser-tool admission and is waiting for previously admitted work to settle. Unknown completion is not treated as success after a timeout.
-3. As the controlling principal, call `POST /api/v1/browsers/{id}/viewer`. Treat the returned URL as a secret. Respect its expiry and the response's `no-store` policy.
+3. As the controlling principal, call `POST /api/v1/browsers/{id}/viewer`. Treat all returned viewer credentials as secrets and respect the response's `no-store` policy. `protocol: "iframe"` uses its supplier URL. `protocol: "vnc"` uses the same-origin WebSocket URL and VNC password; offer `binary` and `a13n.browser.<token>` subprotocols. The guest enforces expiry and revocation on existing input connections even while Service is offline.
 4. While the application considers the person active, send `POST /api/v1/browsers/{id}/renew` with the returned `generation`, `episode` and optional `lease_seconds`. Renew before `control_expires_at`, including while draining. No `If-Match` is needed for renewal. The same controller must retain browser and workspace `run` permission.
 5. Finish the human work. Read a fresh ETag and call `POST /api/v1/browsers/{id}/handback` with `If-Match`.
 6. Wait for `control: "automation"`. Service revokes viewer input, synchronizes exact tabs and invalidates old references before reopening tools.

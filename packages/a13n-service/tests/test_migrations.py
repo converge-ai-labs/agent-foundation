@@ -745,6 +745,13 @@ async def test_external_browser_migration_defaults_constraints_and_downgrade(ser
                 connection.execute(text("UPDATE browsers SET control='human' WHERE id=:id"), {"id": external["id"]})
     finally:
         engine.dispose()
+    # Exercise the external-CDP revision's guard, independently of retained-runtime policy.
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET stop_after_seconds=NULL, delete_after_seconds=NULL"))
+    finally:
+        engine.dispose()
     with pytest.raises(DBAPIError, match="Browser state exists"):
         with migration_connection(database, OSS) as config:
             command.downgrade(config, "a9acb6772400")
@@ -771,3 +778,62 @@ async def test_browser_control_due_migration_roundtrip_preserves_resource_stamp(
     finally:
         engine.dispose()
     check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_browser_retention_migration_preserves_legacy_and_refuses_lossy_rollback(service, runs_kit):
+    from .test_browsers import setup
+
+    _, browser = await setup(service, runs_kit)
+    database = service.runtime.settings.database
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        for fact in (
+            "stop_after_seconds=1800",
+            "delete_after_seconds=3600",
+            "runtime_id='runtime-test'",
+            "start_dispatched=true",
+            "status='stopped'",
+            "status='stopping'",
+            "status='starting'",
+        ):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE browsers SET status='reserved', runtime_id=NULL, start_dispatched=false, "
+                        "stop_after_seconds=NULL, delete_after_seconds=NULL"
+                    )
+                )
+                connection.execute(text(f"UPDATE browsers SET {fact}"))
+            with pytest.raises(DBAPIError, match="rollback_retention"):
+                with migration_connection(database, OSS) as config:
+                    command.downgrade(config, "29270d0290da")
+            assert rows(database, "SELECT version_num FROM alembic_version") == [("ed5de523fc26",)]
+        # Legacy rows retain the original idle_seconds meaning and gain no new idle policy on upgrade.
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE browsers SET status='reserved', runtime_id=NULL, start_dispatched=false, "
+                    "stop_after_seconds=NULL, delete_after_seconds=NULL, idle_seconds=90"
+                )
+            )
+        query = "SELECT id, status, idle_seconds, version FROM browsers"
+        before = rows(database, query)
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "29270d0290da")
+        assert rows(database, query) == before
+        upgrade(database, OSS)
+        assert rows(database, query) == before
+        assert rows(database, "SELECT stop_after_seconds, delete_after_seconds, start_dispatched FROM browsers") == [
+            (None, None, False)
+        ]
+        # Terminal history can be rolled back without reviving its private runtime.
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE browsers SET status='deleted', runtime_id='old', stop_after_seconds=1800"))
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "29270d0290da")
+        assert rows(database, "SELECT id, status FROM browsers") == [(browser["id"], "deleted")]
+        upgrade(database, OSS)
+        check(database, OSS)
+    finally:
+        engine.dispose()

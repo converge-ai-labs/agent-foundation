@@ -600,6 +600,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/browsers/{browser_id}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop Browser */
+    post: operations["stop_browser"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/browsers/{browser_id}/takeover": {
     parameters: {
       query?: never;
@@ -5719,6 +5736,8 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+      /** Delete After Seconds */
+      delete_after_seconds: number | null;
       /** Episode */
       episode: number;
       /** Expires At */
@@ -5743,6 +5762,8 @@ export interface components {
        */
       source: "managed" | "external_cdp";
       status: components["schemas"]["BrowserStatus"];
+      /** Stop After Seconds */
+      stop_after_seconds: number | null;
       /**
        * Updated At
        * Format: date-time
@@ -5793,10 +5814,9 @@ export interface components {
     };
     /** BrowserCreate */
     BrowserCreate: {
-      /**
-       * Idle Seconds
-       * @default 1800
-       */
+      /** Delete After Seconds */
+      delete_after_seconds?: number | null;
+      /** Idle Seconds */
       idle_seconds?: number | null;
       /** Name */
       name: string;
@@ -5811,6 +5831,11 @@ export interface components {
       recipe?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /**
+       * Stop After Seconds
+       * @default 1800
+       */
+      stop_after_seconds?: number | null;
     };
     /** BrowserPage */
     BrowserPage: {
@@ -5821,7 +5846,15 @@ export interface components {
     };
     /** @enum {string} */
     BrowserStatus:
-      "reserved" | "creating" | "ready" | "deleting" | "deleted" | "lost";
+      | "reserved"
+      | "creating"
+      | "ready"
+      | "stopping"
+      | "stopped"
+      | "starting"
+      | "deleting"
+      | "deleted"
+      | "lost";
     /** BuiltinSkill */
     BuiltinSkill: {
       /** Description */
@@ -10890,6 +10923,7 @@ export interface components {
       agent_revision_id: string;
       /** Attempts */
       attempts: number;
+      browser_binding?: components["schemas"]["BrowserBinding"] | null;
       /** Cancel Requested At */
       cancel_requested_at: string | null;
       /**
@@ -13054,6 +13088,18 @@ export interface components {
        * Format: date-time
        */
       expires_at: string;
+      /** Generation */
+      generation?: number | null;
+      /** Password */
+      password?: string | null;
+      /**
+       * Protocol
+       * @default iframe
+       * @enum {string}
+       */
+      protocol?: "iframe" | "vnc";
+      /** Token */
+      token?: string | null;
       /** Url */
       url: string;
     };
@@ -14448,6 +14494,35 @@ export interface operations {
         "application/json": components["schemas"]["RenewControl"];
       };
     };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Browser"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  stop_browser: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        browser_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {

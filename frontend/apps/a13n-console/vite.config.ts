@@ -15,6 +15,7 @@ export default defineConfig({
       "/api": {
         target: serviceUrl,
         changeOrigin: false,
+        ws: true,
       },
     },
   },
