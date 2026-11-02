@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
@@ -115,25 +115,16 @@ async def takeover(
         row.grant_dispatched = False
         row.guest_generation = row.viewer = row.failure = None
         row.claim_id = row.claim_until = row.due_at = None
-        await session.execute(
-            update(DesktopBlockedRow).where(DesktopBlockedRow.control_id == row.id).values(suppressed=True)
-        )
         audit(session, actor, environment, row, "takeover")
         control_id = row.id
     await reconcile(runtime, control_id)
     return await get(runtime, actor, workspace_id, environment_id)
 
 
-async def return_control(session: AsyncSession, row: DesktopControlRow) -> None:
+async def return_control(session: AsyncSession, runtime: Runtime, row: DesktopControlRow) -> None:
     if row.control == "draining" and not row.grant_dispatched:
         # The grant-intent transaction must validate phase and claim before dispatch.
-        row.control = "automation"
-        row.expires_at = row.viewer = row.grant_id = None
-        row.controller_id = row.controller_thread_id = None
-        row.claim_id = row.claim_until = row.due_at = None
-        await session.execute(
-            update(DesktopBlockedRow).where(DesktopBlockedRow.control_id == row.id).values(suppressed=True)
-        )
+        await reopen(session, runtime, row, await now(session))
     elif row.control != "automation":
         if row.control != "returning":
             row.due_at = None
@@ -147,7 +138,7 @@ async def handback(
     async with transaction(runtime.storage) as session:
         environment, row, _ = await find(session, runtime, actor, workspace_id, environment_id)
         require_match(if_match, row.id, row.version)
-        await return_control(session, row)
+        await return_control(session, runtime, row)
         audit(session, actor, environment, row, "handback")
         control_id = row.id
     await reconcile(runtime, control_id)
@@ -237,7 +228,7 @@ async def reopen(session: AsyncSession, runtime: Runtime, row: DesktopControlRow
     row.expires_at = row.viewer = row.grant_id = None
     row.controller_id = row.controller_thread_id = None
     row.grant_dispatched = False
-    row.due_at = row.failure = None
+    row.claim_id = row.claim_until = row.due_at = row.failure = None
     for registration in await session.scalars(
         select(DesktopBlockedRow).where(
             DesktopBlockedRow.control_id == row.id,
@@ -278,7 +269,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                 reason = "desktop_viewer_expired"
             if reason:
                 row.failure = reason
-                await return_control(session, row)
+                await return_control(session, runtime, row)
         if row.control == "automation" or (row.claim_until is not None and row.claim_until > current):
             return
         if row.due_at is not None and row.due_at > current:
@@ -292,7 +283,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                 raise conflict("environment", environment.id, "desktop_target_changed")
         except ServiceError:
             row.failure = "desktop_target_unavailable"
-            await return_control(session, row)
+            await return_control(session, runtime, row)
             row.due_at = current + timedelta(seconds=access.RENEW_SECONDS)
             return
         phase, generation, episode = row.control, row.generation, row.episode
@@ -326,7 +317,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                         or row.expires_at <= current
                         or not await controller_allowed(session, runtime, environment, row)
                     ):
-                        await return_control(session, row)
+                        await return_control(session, runtime, row)
                         return
                     deadline = row.expires_at
                     row.guest_generation = guest_generation
@@ -388,7 +379,7 @@ async def reconcile(runtime: Runtime, control_id: str) -> None:
                 failure = "desktop_control_unavailable"
             if failure is not None:
                 row.failure = failure
-                await return_control(session, row)
+                await return_control(session, runtime, row)
                 return
             assert granted is not None
             row.viewer = protect(runtime, environment, row, granted)

@@ -129,6 +129,47 @@ async def desktop(service, scripted_model, runs_kit, monkeypatch, request):
     return first, environment_id, actor, calls, grants, state
 
 
+@pytest.mark.parametrize("desktop", [[]], indirect=True)
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_mount_desktop_projection_uses_frozen_opt_in_without_computer_permissions(service, desktop, enabled):
+    first, environment_id, actor, calls, *_ = desktop
+    thread_id = first["run"]["thread_id"]
+    async with transaction(service.runtime.storage) as session:
+        environment = await session.get(EnvironmentRow, environment_id)
+        handle = Handle.model_validate(environment.handle)
+        environment.handle = handle.model_copy(
+            update={"recipe": {**handle.recipe, "desktop_assistance": enabled}}
+        ).model_dump(mode="json")
+    # The template still enables access. The instance's frozen recipe owns the projection.
+    path = f"{service.api}/threads/{thread_id}/environments"
+    listing = await service.client.get(path)
+    assert listing.status_code == 200, listing.text
+    [mount] = listing.json()["items"]
+    assert mount["desktop_enabled"] is enabled
+    assert mount["permission_ceiling"] == {"operations": []}
+    assert "desktop_enabled" not in first["run"]["environment_mounts"][0]
+    updated = await service.client.patch(
+        f"{path}/workspace",
+        json={"permission_ceiling": {"operations": []}},
+        headers={"if-match": listing.headers["etag"]},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["desktop_enabled"] is enabled
+    removed = await service.client.delete(f"{path}/workspace", headers={"if-match": updated.headers["etag"]})
+    assert removed.status_code == 204, removed.text
+    added = await service.client.post(
+        path,
+        json={"name": "workspace", "environment_id": environment_id, "permission_ceiling": {"operations": []}},
+        headers={"if-match": removed.headers["etag"]},
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["desktop_enabled"] is enabled
+    assert not calls
+    if enabled:
+        # Human access is independently authorized, even with no Agent Computer actions.
+        await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+
+
 async def begin(service, desktop):
     first, environment_id, actor, *_ = desktop
     initial = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
@@ -243,7 +284,7 @@ async def test_supervisor_restart_returns_control_after_verified_cleanup(
         grant_id = row.grant_id
         row.due_at = None
         if phase == "returning":
-            await control.return_control(session, row)
+            await control.return_control(session, service.runtime, row)
     await control.reconcile(service.runtime, human.id)
     if phase == "human":
         current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
@@ -589,13 +630,16 @@ async def returned_notice(service, desktop):
     return lease, mount, notice
 
 
-async def test_handback_delivers_once_to_actual_blocked_run_and_retake_invalidates_input(service, desktop, runs_kit):
+@pytest.mark.parametrize("retake_before_delivery", [False, True])
+async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, retake_before_delivery):
     from a13n_service.runs import inbox
     from a13n_service.runs.environments.desktop.delivery import handbacks
-    from a13n_service.runs.notices import StaleNotice, require_notice
+    from a13n_service.runs.notices import require_notice
     from a13n_service.runs.tables import InboxEntryRow, RunRow
 
     lease, mount, notice = await returned_notice(service, desktop)
+    if retake_before_delivery:
+        await begin(service, desktop)
     await handbacks(service.runtime)(notice)
     await handbacks(replace(service.runtime))(notice)
     entries = [item for item in await runs_kit.inbox(service, lease.thread_id) if item["kind"] == "desktop_handback"]
@@ -606,11 +650,33 @@ async def test_handback_delivers_once_to_actual_blocked_run_and_retake_invalidat
         assert entry.payload["mount"] == mount.model_dump(mode="json")
         assert inbox.steers_into(entry, run, run)
         await require_notice(session, service.runtime, entry)
-    await begin(service, desktop)
+    if not retake_before_delivery:
+        await begin(service, desktop)
     async with transaction(service.runtime.storage) as session:
         entry = await session.get_one(InboxEntryRow, entries[0]["id"])
-        with pytest.raises(StaleNotice):
-            await require_notice(session, service.runtime, entry)
+        await require_notice(session, service.runtime, entry)
+
+    # Receipt is an event, not current admission or a subscription to the new episode.
+    from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.context import project
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
+    from sqlalchemy import select
+
+    async with transaction(service.runtime.storage) as session:
+        environment = await session.get_one(EnvironmentRow, desktop[1])
+        state = Handle.model_validate(environment.handle).state
+        registrations = list(await session.scalars(select(DesktopBlockedRow)))
+        assert len(registrations) == 1
+        assert registrations[0].episode == entry.payload["episode"]
+    current = await project(service.runtime.storage, {mount.name: state})
+    assert current[0]["admission"] == "human_control"
+    assert current[0]["episode"] == entry.payload["episode"] + 1
+    assert await admission.register_handback(service.runtime, lease, mount.name, state)
+    async with transaction(service.runtime.storage) as session:
+        registrations = list(await session.scalars(select(DesktopBlockedRow).order_by(DesktopBlockedRow.episode)))
+        assert len(registrations) == 2
+        assert registrations[0].entry_id == entry.id and registrations[0].expires_at is not None
+        assert registrations[1].entry_id is None and registrations[1].expires_at is None
 
 
 @pytest.mark.parametrize("change", ["binding", "authority", "stop", "archive", "target", "expiry"])
@@ -1120,7 +1186,8 @@ async def test_start_loss_invalidates_original_native_target_idempotently(servic
         await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
 
 
-async def test_takeover_intent_blocks_calls_before_viewer_grant_and_can_be_cancelled(service, desktop, monkeypatch):
+@pytest.mark.parametrize("completion", ["handback", "expiry"])
+async def test_pending_takeover_completion_notifies_without_guest_dispatch(service, desktop, monkeypatch, completion):
     from unittest.mock import AsyncMock
 
     from a13n_harness.environment.computer import ComputerCall
@@ -1136,13 +1203,34 @@ async def test_takeover_intent_blocks_calls_before_viewer_grant_and_can_be_cance
     assert pending.control == "draining" and not desktop[4]
     with pytest.raises(EnvironmentError, match="human control"):
         await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
-    returned = await control.handback(
-        service.runtime, desktop[2], service.tenant.workspace_id, desktop[1], if_match=etag(pending.id, pending.version)
-    )
+    if completion == "handback":
+        await control.handback(
+            service.runtime,
+            desktop[2],
+            service.tenant.workspace_id,
+            desktop[1],
+            if_match=etag(pending.id, pending.version),
+        )
+    else:
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get_one(DesktopControlRow, pending.id)
+            row.expires_at = await now(session) - timedelta(seconds=1)
+        await control.reconcile(service.runtime, pending.id)
+    returned = await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
     assert returned.control == "automation" and not desktop[4]
+    from a13n_service.infra import outbox
+    from a13n_service.runs.environments.desktop.delivery import handbacks
+
+    (notice,) = await outbox.claim(
+        service.runtime.storage, "desktop_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    await handbacks(service.runtime)(notice)
     async with transaction(service.runtime.storage) as session:
         blocked = await session.scalar(select(DesktopBlockedRow))
-        assert blocked.suppressed and blocked.entry_id is None
+        assert not blocked.suppressed and blocked.entry_id is not None
+        assert blocked.expires_at is not None
+        row = await session.get_one(DesktopControlRow, pending.id)
+        assert row.claim_id is None and row.grant_id is None and row.failure is None
     await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
 
 

@@ -1,4 +1,5 @@
 {
+  "Frozen instance configuration enables human desktop access; not authorization or a health check.": "实例的冻结配置是否启用人工桌面访问；不代表授权或健康检查结果。",
   "Read-only projection of sealed desktop suspensions predating Computer-scoped control.": "仅用于读取 Computer 范围控制引入前已封存的桌面暂停记录。",
   "Get Desktop Control": "获取桌面控制状态",
   "Return Desktop Control": "归还桌面控制权",

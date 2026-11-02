@@ -86,6 +86,8 @@ A failed or timed-out build is deleted only after its private alias and build ow
 
 A thread's **desired mounts** are the environments later runs will use. `POST …/threads/{thread}/environments` adds one (`{name, environment_id, working_directory?, permission_ceiling?}`) and `DELETE …/threads/{thread}/environments/{name}` removes one; both need `run` and the thread `If-Match`, answer with the new thread ETag, and are audited as `thread_environment.create` and `.delete`. Adding needs an open thread. Replacing a mount is explicit: remove the name, then add it again. A duplicate name is `already_exists` (kind `mount`); an environment already mounted on the thread is `conflict` (`already_mounted`). A thread holds at most 32 desired mounts: a path that would add more is `conflict` (`mount_limit`, details `limit`), and a request naming more than 32 is `invalid_argument`. Acceptance's primary reservation below may add one beyond them, and a `shared` child adopts all of its parent run's frozen mounts. `GET` lists the mounts with the thread ETag.
 
+Mount representations include read-only `desktop_enabled`, derived from the instance's frozen `desktop` and `desktop_assistance` recipe settings. It is false before a recipe is frozen. This flag lets clients select human-desktop candidates independently of Agent Computer permissions and later template edits. It does not probe readiness or grant access; desktop operations retain their current authority and lifecycle checks. Mount creation/update inputs and frozen Run mounts contain no such projection.
+
 Every new use checks the instance under its row lock:
 
 - an external target of another principal is `forbidden`;

@@ -61,8 +61,7 @@ async def eligible(session: AsyncSession, runtime: Runtime, registration: Deskto
         or registration.expires_at is None
         or registration.expires_at <= current
         or row is None
-        or row.control != "automation"
-        or (row.generation, row.episode) != (registration.generation, registration.episode)
+        or row.generation != registration.generation
         or environment is None
         or identity.environment_key(environment) != row.target_key
         or origin is None

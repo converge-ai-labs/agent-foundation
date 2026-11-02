@@ -24,8 +24,8 @@ from a13n_service.runs.tool_executions.authority import lock_owner
 
 GUIDANCE = (
     "The desktop Computer channel is under human control. This call did not execute. "
-    "A handback notice is registered for this Thread if control returns with verified availability. "
-    "Cancellation before an input grant suppresses that notice. Continue unrelated work or finish the turn; "
+    "A one-time notice is registered for this Thread when this takeover ends. "
+    "Continue unrelated work or finish the turn; "
     "do not poll or retry. Shell, files, processes and other desktops remain available. "
     "After handback, observe afresh and make a new model decision before sending input."
 )

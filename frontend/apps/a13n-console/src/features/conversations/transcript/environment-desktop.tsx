@@ -56,21 +56,24 @@ function DesktopMounts({ threadId }: { threadId: string }) {
     refetchInterval: 3000,
   });
   const [selected, setSelected] = useState<string>();
+  const candidates = mounts.data?.filter((item) => item.desktop_enabled) ?? [];
   const mount =
-    mounts.data?.find((item) => item.name === selected) ?? mounts.data?.[0];
+    candidates.find((item) => item.name === selected) ?? candidates[0];
   return (
     <div className={styles.panel}>
       <ErrorNotice error={mounts.error} retry={() => void mounts.refetch()} />
       {mounts.isPending ? (
         <Loading variant="form" />
       ) : !mount ? (
-        <p>{t("No environments mounted.")}</p>
+        !mounts.isError && (
+          <p>{t("No desktop-enabled environments mounted.")}</p>
+        )
       ) : (
         <>
           <ChoiceField
             label={t("Environment mount")}
             value={mount.name}
-            options={mounts.data!.map((item) => ({
+            options={candidates.map((item) => ({
               value: item.name,
               label: item.name,
             }))}
@@ -134,7 +137,6 @@ export function EnvironmentDesktop({
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [connected, setConnected] = useState(false);
   const [opening, setOpening] = useState(false);
-  const openingRef = useRef(false);
   const controlIntent = useRef<{ generation: number; episode: number } | null>(
     null,
   );
@@ -170,7 +172,6 @@ export function EnvironmentDesktop({
   });
   function closeLocal() {
     epoch.current++;
-    openingRef.current = false;
     openingAuthority.current = null;
     controlIntent.current = null;
     setOpening(false);
@@ -192,9 +193,8 @@ export function EnvironmentDesktop({
   }
   async function openViewer(mode: Viewer["mode"]) {
     const initial = authority.current;
-    if (openingRef.current || !initial) return;
+    if (openingAuthority.current || !initial) return;
     openingAuthority.current = { control: initial, mode };
-    openingRef.current = true;
     setOpening(true);
     const ticket = epoch.current;
     try {
@@ -224,7 +224,6 @@ export function EnvironmentDesktop({
       if (alive.current && ticket === epoch.current) fail(cause);
     } finally {
       if (alive.current && ticket === epoch.current) {
-        openingRef.current = false;
         openingAuthority.current = null;
         setOpening(false);
       }
@@ -235,13 +234,7 @@ export function EnvironmentDesktop({
     alive.current = true;
     return () => {
       alive.current = false;
-      epoch.current++;
-      const instance = rfb.current;
-      rfb.current = null;
-      if (instance) {
-        instance.viewOnly = true;
-        instance.disconnect();
-      }
+      actions.current.close();
     };
   }, []);
 
@@ -277,7 +270,7 @@ export function EnvironmentDesktop({
   // Opening the panel starts observation. Only this panel's explicit Take control
   // intent may automatically upgrade a connection after authorization completes.
   useEffect(() => {
-    if (!control || busy || query.isError || error || openingRef.current)
+    if (!control || busy || query.isError || error || openingAuthority.current)
       return;
     const intent = controlIntent.current;
     const controlling =
@@ -375,10 +368,16 @@ export function EnvironmentDesktop({
       Math.max(0, deadline - Date.now()),
     );
     // Refresh the short viewer grant separately from the user's explicit control lease.
-    const refresh = setTimeout(
-      () => void actions.current.open(viewer.mode),
-      Math.max(1000, deadline - Date.now() - 15000),
-    );
+    // A grant capped by the human lease cannot gain time until explicit renewal.
+    const refresh =
+      viewer.mode === "control" &&
+      control?.expires_at &&
+      Date.parse(viewer.expires_at) >= Date.parse(control.expires_at)
+        ? undefined
+        : setTimeout(
+            () => void actions.current.open(viewer.mode),
+            Math.max(1000, deadline - Date.now() - 15000),
+          );
     return () => {
       clearTimeout(expiry);
       clearTimeout(refresh);

@@ -2640,6 +2640,7 @@
   "Input {{input}} tokens, output {{output}} tokens": "Input {{input}} tokens, output {{output}} tokens",
   "{{cached}} of {{input}} input tokens were cached": "{{cached}} of {{input}} input tokens were cached",
   "No environments mounted.": "No environments mounted.",
+  "No desktop-enabled environments mounted.": "No desktop-enabled environments mounted.",
   "No memories mounted.": "No memories mounted.",
   "Name this reusable configuration for your agents.": "Name this reusable configuration for your agents.",
   "Choose where new environment instances will run.": "Choose where new environment instances will run.",

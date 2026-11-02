@@ -215,11 +215,16 @@ async def content(
             if entry.kind == "browser_handback"
             else 'desktop on mount "' + EnvironmentMount.model_validate(entry.payload["mount"]).name + '"'
         )
+        hint = (
+            "Human control ended for " + target
+            if entry.kind == "browser_handback"
+            else "The takeover you registered for ended for "
+            + target
+            + ". Check current Computer admission; another takeover may already be active"
+        )
         return (
             TextContent(
-                "Human control ended for "
-                + target
-                + ". Observe afresh and make a new model decision before acting. No blocked action was replayed.",
+                hint + ". Observe afresh and make a new model decision before acting. No blocked action was replayed.",
                 metadata={"source_id": entry.id, "display": False},
             ),
         )

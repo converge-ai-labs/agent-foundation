@@ -8,8 +8,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import userEvent from "@testing-library/user-event";
 import type { Schema } from "../../../shared/api";
-import { EnvironmentDesktop } from "./environment-desktop";
+import { EnvironmentDesktop, ThreadDesktopPanel } from "./environment-desktop";
 
 const { get, post, viewers, t } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -22,6 +24,7 @@ const { get, post, viewers, t } = vi.hoisted(() => ({
 vi.mock("../../../auth/context", () => ({
   useClient: () => ({ workspace: () => ({ GET: get, POST: post }) }),
   revalidateSession: vi.fn(),
+  useAuth: () => ({ data: { user: { value: { id: "user" } } } }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws" } }),
@@ -78,7 +81,7 @@ function grant(mode = "control", episode = 1, ttl = 60000) {
     viewer_id: mode === "view" ? "dview_stable" : null,
   };
 }
-function start(initial = human) {
+function start(initial = human, strict = false) {
   get.mockResolvedValue(reply(initial));
   post.mockImplementation(async (_path, { body }) =>
     reply(grant(body.mode, body.episode)),
@@ -96,7 +99,8 @@ function start(initial = human) {
       />
     </QueryClientProvider>
   );
-  const result = render(wrap());
+  if (strict) cache.setQueryData(key, { value: initial, etag: '"control:3"' });
+  const result = render(strict ? <StrictMode>{wrap()}</StrictMode> : wrap());
   return {
     ...result,
     cache,
@@ -125,6 +129,89 @@ afterEach(() => {
   viewers.length = 0;
 });
 
+function panelMount(
+  name: string,
+  desktop_enabled: boolean,
+): Schema["MountView"] {
+  return {
+    name,
+    environment_id: name,
+    working_directory: null,
+    desktop_enabled,
+    permission_ceiling: {
+      operations: desktop_enabled ? [] : ["environment.computer.observe"],
+    },
+  };
+}
+
+function startPanel(items: Schema["MountView"][]) {
+  let current = items;
+  get.mockImplementation(async (path) =>
+    reply(path.includes("/threads/") ? { items: current } : automated),
+  );
+  post.mockImplementation(async (_path, { body }) =>
+    reply(grant(body.mode, body.episode)),
+  );
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <ThreadDesktopPanel threadId="thread" onClose={() => {}} />
+    </QueryClientProvider>,
+  );
+  return {
+    cache,
+    refresh: async (items: Schema["MountView"][]) => {
+      current = items;
+      await act(async () => {
+        await cache.invalidateQueries();
+      });
+    },
+  };
+}
+
+it("selects only desktop-enabled mounts independently of Agent permissions and falls back when removed", async () => {
+  const ordinary = panelMount("files", false);
+  const { refresh } = startPanel([
+    ordinary,
+    panelMount("desktop-a", true),
+    panelMount("desktop-b", true),
+  ]);
+  await observing();
+  expect(post.mock.calls[0][1].params.path.environment_id).toBe("desktop-a");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Environment mount" }));
+  expect(await screen.findByRole("option", { name: "desktop-b" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "files" })).toBeNull();
+  await user.click(screen.getByRole("option", { name: "desktop-b" }));
+  await waitFor(() => expect(viewers).toHaveLength(2));
+  expect(viewers[0].disconnect).toHaveBeenCalled();
+  expect(post.mock.calls[1][1].params.path.environment_id).toBe("desktop-b");
+  await refresh([ordinary, panelMount("desktop-a", true)]);
+  await waitFor(() => expect(viewers).toHaveLength(3));
+  expect(viewers[1].disconnect).toHaveBeenCalled();
+  expect(post.mock.calls[2][1].params.path.environment_id).toBe("desktop-a");
+  await refresh([ordinary]);
+  await screen.findByText("No desktop-enabled environments mounted.");
+  expect(viewers[2].disconnect).toHaveBeenCalled();
+  expect(screen.queryByRole("combobox")).toBeNull();
+});
+
+it("shows a mount query failure without misreporting an empty desktop list", async () => {
+  const { cache } = startPanel([]);
+  await screen.findByText("No desktop-enabled environments mounted.");
+  get.mockRejectedValue(new Error("Mount listing failed"));
+  await act(async () => {
+    await cache.invalidateQueries();
+  });
+  await screen.findByText("Mount listing failed");
+  expect(
+    screen.queryByText("No desktop-enabled environments mounted."),
+  ).toBeNull();
+  expect(post).not.toHaveBeenCalled();
+});
+
 it("opens read-only automatically and unmounting only disconnects locally", async () => {
   const { unmount } = start(automated);
   await observing();
@@ -137,6 +224,44 @@ it("opens read-only automatically and unmounting only disconnects locally", asyn
   unmount();
   expect(viewers[0].disconnect).toHaveBeenCalled();
   expect(post).toHaveBeenCalledTimes(1);
+});
+
+it("opens a viewer after StrictMode replays setup with cached authority", async () => {
+  start(automated, true);
+  await observing();
+  expect(post).toHaveBeenCalledTimes(2);
+  expect(
+    post.mock.calls.every(([, request]) => request.body.mode === "view"),
+  ).toBe(true);
+});
+
+it("does not refresh a control grant capped by the human lease", async () => {
+  const expires = new Date(Date.now() + 30000).toISOString();
+  const { cache } = start({ ...human, expires_at: expires });
+  await observing();
+  vi.useFakeTimers();
+  post.mockResolvedValueOnce(reply({ ...grant(), expires_at: expires }));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await act(async () => {});
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
+  const requests = post.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(20000);
+  });
+  expect(post).toHaveBeenCalledTimes(requests);
+  expect(viewers[1].viewOnly).toBe(false);
+  // Explicit lease renewal makes the short guest grant refreshable again.
+  const renewed = {
+    ...human,
+    expires_at: new Date(Date.now() + 60000).toISOString(),
+  };
+  get.mockResolvedValue(reply(renewed));
+  act(() => cache.setQueryData(key, { value: renewed, etag: '"control:4"' }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1001);
+  });
+  expect(post).toHaveBeenCalledTimes(requests + 1);
+  expect(viewers).toHaveLength(2);
 });
 
 it("takes control in one action, waits for authorization, renews and returns without Run commands", async () => {

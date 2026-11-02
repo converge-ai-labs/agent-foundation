@@ -29,7 +29,7 @@ class HandbackNotifications(AbstractCapability[AgentContext]):
                     self.computer_notify,
                     name="computer_notify",
                     description=(
-                        "Register this Thread for a notice when human control of a Computer mount ends. "
+                        "Register this Thread for one notice when the current Computer takeover ends. "
                         "Use when context reports human control, without making a blocked Computer call. "
                         "Registration is deduplicated with blocked calls. Continue other work or finish; do not poll. "
                         "If control has already returned, reports already_available without subscribing to future takeovers."
@@ -61,7 +61,7 @@ class HandbackNotifications(AbstractCapability[AgentContext]):
             "status": "registered" if registered else "already_available",
             "alias": alias,
             "hint": (
-                "Handback notice registered. Continue other work or finish; do not poll."
+                "One-time notice registered for this takeover. Continue other work or finish; do not poll."
                 if registered
                 else "Human control has ended. Observe afresh before deciding on Computer input."
             ),

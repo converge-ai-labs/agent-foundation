@@ -140,16 +140,16 @@ async def accepted_handback(service, connected, scripted_model, runs_kit):
 
 
 @pytest.mark.parametrize("retake_at", ["before_read", "before_commit"])
-async def test_obsolete_handback_is_discarded_across_checkpoint_recovery(
+async def test_handback_survives_retake_at_checkpoint_boundaries(
     service, connected, scripted_model, runs_kit, monkeypatch, retake_at
 ):
     from a13n_service.runs import checkpoints
     from a13n_service.runs.attempts import AttemptControl
-    from a13n_service.runs.claim import claim
     from a13n_service.runs.execute import execute
-    from a13n_service.runs.tables import InboxEntryRow, RunRow
+    from a13n_service.runs.tables import InboxEntryRow
 
     lease = await accepted_handback(service, connected, scripted_model, runs_kit)
+    scripted_model.say("The registered takeover ended, but a new takeover is active.")
     if retake_at == "before_read":
         await begin(service, connected)
     else:
@@ -167,22 +167,19 @@ async def test_obsolete_handback_is_discarded_across_checkpoint_recovery(
         monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)
-    assert run["status"] == "accepted", run.get("failure")
+    assert run["status"] == "completed", run.get("failure")
+    assert run["usage_at_seal"]["requests"] == 1
     async with transaction(service.runtime.storage) as session:
         registration = (await session.scalars(select(DesktopBlockedRow))).one()
         entry = await session.get_one(InboxEntryRow, registration.entry_id)
-        assert entry.status == "failed" and entry.failure["code"] == "desktop_notice_stale"
-    (recovered,) = await claim(service.runtime, worker_id="replacement", worker_build="test", limit=1)
-    assert recovered.run_id == lease.run_id
-    await execute(service.runtime, recovered, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
-    run = await runs_kit.get_run(service, lease.run_id)
-    assert run["status"] == "completed", run.get("failure")
-    assert run["usage_at_seal"]["requests"] == 0
+        assert entry.status == "consumed"
+        assert registration.episode == 1 and not registration.suppressed
+    request = await scripted_model.request()
+    messages = str(request["messages"])
+    assert "The takeover you registered for ended for desktop on mount" in messages
+    assert "Check current Computer admission" in messages
+    assert "human_control" in messages
     assert (await runs_kit.get_thread(service, lease.thread_id))["current_run_id"] is None
-    async with transaction(service.runtime.storage) as session:
-        pointer = checkpoints.require_compatible(await session.get_one(RunRow, lease.run_id))
-    state = await checkpoints.load_state(service.runtime.objects, pointer)
-    assert "Human control ended for desktop" not in str(state.harness.message_history)
 
 
 async def test_committed_handback_is_historical_and_retake_still_blocks_computer(
@@ -201,7 +198,7 @@ async def test_committed_handback_is_historical_and_retake_still_blocks_computer
     )
     try:
         request = await asyncio.wait_for(scripted_model.request(), 10)
-        assert "Human control ended for desktop on mount" in str(request["messages"])
+        assert "The takeover you registered for ended for desktop on mount" in str(request["messages"])
         async with transaction(service.runtime.storage) as session:
             registration = (await session.scalars(select(DesktopBlockedRow))).one()
             assert (await session.get_one(InboxEntryRow, registration.entry_id)).status == "consumed"
@@ -510,7 +507,10 @@ async def test_handback_reaches_live_child_without_resurrecting_settled_child(
             ]
             assert entry["status"] == "consumed" and entry["assigned_run_id"] == child.id
             requests = [await scripted_model.request() for _ in range(scripted_model.requests.qsize())]
-            assert any("Human control ended for desktop on mount" in str(item["messages"]) for item in requests)
+            assert any(
+                "The takeover you registered for ended for desktop on mount" in str(item["messages"])
+                for item in requests
+            )
         assert (await runs_kit.get_thread(service, child.thread_id))["current_run_id"] is None
         async with transaction(service.runtime.storage) as session:
             assert len(list(await session.scalars(select(RunRow).where(RunRow.thread_id == child.thread_id)))) == 1

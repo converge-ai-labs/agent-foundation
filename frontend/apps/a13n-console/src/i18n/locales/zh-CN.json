@@ -2771,6 +2771,7 @@
   "Input {{input}} tokens, output {{output}} tokens": "输入 {{input}} Token，输出 {{output}} Token",
   "{{cached}} of {{input}} input tokens were cached": "{{input}} 个输入 Token 中有 {{cached}} 个命中缓存",
   "No environments mounted.": "未挂载环境。",
+  "No desktop-enabled environments mounted.": "未挂载启用桌面访问的环境。",
   "No memories mounted.": "未挂载记忆。",
   "Name this reusable configuration for your agents.": "为 Agent 的可复用环境配置命名。",
   "Choose where new environment instances will run.": "选择新环境实例的运行位置。",

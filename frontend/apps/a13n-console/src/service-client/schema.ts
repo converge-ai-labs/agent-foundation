@@ -9330,6 +9330,11 @@ export interface components {
     };
     /** MountView */
     MountView: {
+      /**
+       * Desktop Enabled
+       * @description Frozen instance configuration enables human desktop access; not authorization or a health check.
+       */
+      desktop_enabled: boolean;
       /** Environment Id */
       environment_id: string;
       /** Name */

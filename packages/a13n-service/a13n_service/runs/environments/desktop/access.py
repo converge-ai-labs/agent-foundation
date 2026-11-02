@@ -41,7 +41,7 @@ async def target(
     if environment.status != "ready" or environment.provider_id is None or environment.handle is None:
         raise conflict("environment", environment.id, "desktop_not_ready")
     handle = Handle.model_validate(environment.handle)
-    if not handle.recipe.get("desktop") or not handle.recipe.get("desktop_assistance"):
+    if not handle.desktop_enabled:
         raise conflict("environment", environment.id, "desktop_access_not_enabled")
     if environment_key(environment) is None:
         raise conflict("environment", environment.id, "desktop_identity_unavailable")

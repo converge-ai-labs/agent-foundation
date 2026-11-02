@@ -13594,6 +13594,11 @@
       },
       "MountView": {
         "properties": {
+          "desktop_enabled": {
+            "description": "Frozen instance configuration enables human desktop access; not authorization or a health check.",
+            "title": "Desktop Enabled",
+            "type": "boolean"
+          },
           "environment_id": {
             "title": "Environment Id",
             "type": "string"
@@ -13653,6 +13658,7 @@
           }
         },
         "required": [
+          "desktop_enabled",
           "name",
           "environment_id",
           "working_directory"
