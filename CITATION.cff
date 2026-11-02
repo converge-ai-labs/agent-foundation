@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Agent Foundation"
+authors:
+  - family-names: "Ji"
+    given-names: "Zhongsheng"
+  - family-names: "Zhu"
+    given-names: "Hengman"
+  - family-names: "Chen"
+    given-names: "Yuxuan"
+  - family-names: "Zhao"
+    given-names: "Sichen"
+repository-code: "https://github.com/converge-ai-labs/agent-foundation"
+url: "https://a13n.dev"

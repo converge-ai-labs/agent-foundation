@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -38,6 +39,7 @@ export function BrowserPanel({
   threadId?: string;
   fullControl: boolean;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const [pending, setPending] = useState("");
@@ -210,10 +212,11 @@ export function BrowserPanel({
     return (
       <div className={styles.empty}>
         <Monitor size={28} />
-        <strong>Start a conversation first</strong>
+        <strong>{t("Start a conversation first")}</strong>
         <p>
-          Send a message to start this conversation. Your Agent can browse when
-          needed.
+          {t(
+            "Send a message to start this conversation. Your Agent can browse when needed.",
+          )}
         </p>
       </div>
     );
@@ -221,8 +224,8 @@ export function BrowserPanel({
     return (
       <div className={styles.empty}>
         <LockSimple size={28} />
-        <strong>Browser unavailable</strong>
-        <p>Use a Full Control conversation.</p>
+        <strong>{t("Browser unavailable")}</strong>
+        <p>{t("Use a Full Control conversation.")}</p>
       </div>
     );
   const ready = session?.status === "ready" && !!session.page_count;
@@ -242,20 +245,24 @@ export function BrowserPanel({
     seconds === null
       ? ""
       : seconds === 0
-        ? "Returning control…"
-        : `Auto handback in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+        ? t("Returning control…")
+        : t("Auto handback in {{time}}", {
+            time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
+          });
   const mac = session?.platform === "macos";
   const transfer = human && !mac && !controlToken;
   const handback = human && !transfer;
-  const controlLabel = mac
-    ? human
-      ? "Resume automation"
-      : "Pause automation"
-    : transfer
-      ? "Take control here"
-      : human
-        ? "Hand back to Agent"
-        : "Take control";
+  const controlLabel = t(
+    mac
+      ? human
+        ? "Resume automation"
+        : "Pause automation"
+      : transfer
+        ? "Take control here"
+        : human
+          ? "Hand back to Agent"
+          : "Take control",
+  );
   const canResize = !busy && !!controlToken && !!session?.resize_available;
   const viewport = session?.viewports?.find(
     (item) => item.preset === session.viewport,
@@ -268,10 +275,10 @@ export function BrowserPanel({
         variant={human ? "default" : "outline"}
         title={
           transfer
-            ? "Move control to this browser while keeping Agent tools paused"
+            ? t("Move control to this browser while keeping Agent tools paused")
             : human
-              ? "Resume browser tools in all conversations"
-              : "Pause browser tools in all conversations"
+              ? t("Resume browser tools in all conversations")
+              : t("Pause browser tools in all conversations")
         }
         disabled={busy}
         onClick={() => void command(handback ? "handback" : "take-control")}
@@ -289,20 +296,20 @@ export function BrowserPanel({
         )}
         {pending === "take-control"
           ? mac
-            ? "Pausing…"
-            : "Taking control…"
+            ? t("Pausing…")
+            : t("Taking control…")
           : pending === "handback"
-            ? "Handing back…"
+            ? t("Handing back…")
             : handback && !mac
-              ? "Hand back"
+              ? t("Hand back")
               : controlLabel}
       </Button>
       {transfer && (
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label="Hand back to Agent"
-          title="Resume browser tools in all conversations"
+          aria-label={t("Hand back to Agent")}
+          title={t("Resume browser tools in all conversations")}
           disabled={busy}
           onClick={() => void command("handback")}
         >
@@ -312,8 +319,8 @@ export function BrowserPanel({
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label="Reset browser"
-        title="Reset this conversation’s browser window"
+        aria-label={t("Reset browser")}
+        title={t("Reset this conversation’s browser window")}
         disabled={busy}
         onClick={() => void command("reset")}
       >
@@ -322,22 +329,22 @@ export function BrowserPanel({
       <Menu>
         <MenuTrigger
           render={<Button size="icon-sm" variant="ghost" />}
-          aria-label="Browser options"
-          title="Browser options"
+          aria-label={t("Browser options")}
+          title={t("Browser options")}
         >
           <DotsThree />
         </MenuTrigger>
         <MenuPopup align="end" className={styles.optionsMenu}>
           <MenuItem disabled={busy} onClick={() => void command("close")}>
             <X />
-            Close conversation tabs
+            {t("Close conversation tabs")}
           </MenuItem>
           <MenuSub>
             <MenuSubTrigger>
               <MagnifyingGlassPlus />
-              Zoom
+              {t("Zoom")}
               <span className={styles.menuValue}>
-                {scale === "fit" ? "Fit" : `${scale}%`}
+                {scale === "fit" ? t("Fit") : `${scale}%`}
               </span>
             </MenuSubTrigger>
             <MenuSubPopup>
@@ -345,7 +352,7 @@ export function BrowserPanel({
                 value={scale}
                 onValueChange={(value) => setScale(value as BrowserScale)}
               >
-                <MenuRadioItem value="fit">Fit to panel</MenuRadioItem>
+                <MenuRadioItem value="fit">{t("Fit to panel")}</MenuRadioItem>
                 {(["50", "75", "100", "125", "150", "200"] as const).map(
                   (value) => (
                     <MenuRadioItem key={value} value={value}>
@@ -361,15 +368,17 @@ export function BrowserPanel({
               disabled={!canResize}
               title={
                 canResize
-                  ? "Resize the page"
+                  ? t("Resize the page")
                   : !session.resize_available
-                    ? "Viewport resizing is unavailable on this Host"
-                    : "Take control to resize the page"
+                    ? t("Viewport resizing is unavailable on this Host")
+                    : t("Take control to resize the page")
               }
             >
               <Devices />
-              Viewport
-              <span className={styles.menuValue}>{viewport?.label}</span>
+              {t("Viewport")}
+              <span className={styles.menuValue}>
+                {viewport && t(viewport.label)}
+              </span>
             </MenuSubTrigger>
             <MenuSubPopup>
               <MenuRadioGroup
@@ -382,7 +391,7 @@ export function BrowserPanel({
               >
                 {(session.viewports ?? []).map((item) => (
                   <MenuRadioItem key={item.preset} value={item.preset}>
-                    {item.label} ({item.width} × {item.height})
+                    {t(item.label)} ({item.width} × {item.height})
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>
@@ -393,7 +402,7 @@ export function BrowserPanel({
     </>
   ) : null;
   return (
-    <section className={styles.panel} aria-label="Host browser">
+    <section className={styles.panel} aria-label={t("Host browser")}>
       {!needsHelp && (error || state.error || session?.error) && (
         <p className={styles.notice} role="alert">
           {error || state.error?.message || session?.error}
@@ -409,8 +418,12 @@ export function BrowserPanel({
           {session.platform === "macos" && (
             <p className={styles.notice}>
               {human
-                ? "Automation paused. Native Mac input does not renew the timer; resume here when finished."
-                : "Read-only window preview. Pause automation before operating this browser on the Mac."}
+                ? t(
+                    "Automation paused. Native Mac input does not renew the timer; resume here when finished.",
+                  )
+                : t(
+                    "Read-only window preview. Pause automation before operating this browser on the Mac.",
+                  )}
             </p>
           )}
           <Desktop
@@ -421,11 +434,11 @@ export function BrowserPanel({
             busy={busy}
             activity={
               pending === "take-control"
-                ? "Taking control…"
+                ? "take-control"
                 : pending === "handback"
-                  ? "Handing back…"
+                  ? "handback"
                   : busy
-                    ? "Updating browser…"
+                    ? "updating"
                     : ""
             }
             onReconnectControl={() => void command("take-control")}
@@ -437,19 +450,19 @@ export function BrowserPanel({
       ) : human && session?.session_id ? (
         <div className={styles.empty}>
           <Pause size={28} />
-          <strong>Browser automation paused</strong>
-          <p>Hand back to resume browser tools in all conversations.</p>
+          <strong>{t("Browser automation paused")}</strong>
+          <p>{t("Hand back to resume browser tools in all conversations.")}</p>
           <Button
-            aria-label={mac ? "Resume automation" : "Hand back to Agent"}
+            aria-label={mac ? t("Resume automation") : t("Hand back to Agent")}
             disabled={busy}
             onClick={() => void command("handback")}
           >
             {mac ? <Play /> : <HandArrowUp />}
             {pending === "handback"
-              ? "Handing back…"
+              ? t("Handing back…")
               : mac
-                ? "Resume automation"
-                : "Hand back"}
+                ? t("Resume automation")
+                : t("Hand back")}
           </Button>
         </div>
       ) : needsHelp ? (
@@ -462,7 +475,7 @@ export function BrowserPanel({
       ) : state.isError ? (
         <div className={styles.empty}>
           <Button variant="outline" onClick={() => void state.refetch()}>
-            Try again
+            {t("Try again")}
           </Button>
         </div>
       ) : (
@@ -470,20 +483,22 @@ export function BrowserPanel({
           <Monitor size={28} />
           <strong>
             {preparing
-              ? "Preparing browser…"
+              ? t("Preparing browser…")
               : disabled
-                ? "Browser disabled"
-                : "Ready when you need it"}
+                ? t("Browser disabled")
+                : t("Ready when you need it")}
           </strong>
           <p>
             {preparing
-              ? "Preparing the shared Host browser."
+              ? t("Preparing the shared Host browser.")
               : disabled
-                ? "Enable automatic browsing in browser settings."
-                : "Your Agent opens pages as needed. You can also open a window to sign in. Login sessions are shared across conversations."}
+                ? t("Enable automatic browsing in browser settings.")
+                : t(
+                    "Your Agent opens pages as needed. You can also open a window to sign in. Login sessions are shared across conversations.",
+                  )}
           </p>
           {disabled ? (
-            <a href="/settings/resources#browser">Browser settings</a>
+            <a href="/settings/resources#browser">{t("Browser settings")}</a>
           ) : (
             !preparing && (
               <Button
@@ -491,7 +506,8 @@ export function BrowserPanel({
                 disabled={!state.isSuccess}
                 onClick={() => void command("start")}
               >
-                <Monitor /> Open browser
+                <Monitor />
+                {t("Open browser")}
               </Button>
             )
           )}

@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n";
+import { modelControlMessage } from "./model-control-messages";
 import { speedLabel } from "./speed-label";
 import { Button } from "a13n-ui";
 import { Check } from "@phosphor-icons/react";
@@ -15,6 +17,7 @@ export function FastPicker({
   disabled?: boolean;
   onChange: (value: Schema<"SubmitRequest">["fast"]) => void;
 }) {
+  const { t } = useTranslation();
   const control = model?.fast;
   const active = value === true;
   const ultraActive = value === "ultrafast";
@@ -25,70 +28,82 @@ export function FastPicker({
     model?.route.startsWith("openai-codex:") ||
     ultraActive;
   return (
-    <section aria-label="Speed" className={styles.speedControl}>
+    <section aria-label={t("Speed")} className={styles.speedControl}>
       <Button
         variant="ghost"
         className={styles.choice}
-        aria-label="Use model speed"
-        title={speedLabel(control?.state)}
+        aria-label={t("Use model speed")}
+        title={modelControlMessage(speedLabel(control?.state), t)}
         aria-pressed={value == null}
         disabled={disabled}
         onClick={() => onChange(null)}
       >
-        <span>Model setting · {speedLabel(control?.state)}</span>
+        <span>
+          {t("Model setting · {{speed}}", {
+            speed: modelControlMessage(speedLabel(control?.state), t),
+          })}
+        </span>
         {value == null && <Check aria-hidden />}
       </Button>
       <Button
         variant="ghost"
         className={styles.choice}
-        aria-label="Standard mode"
+        aria-label={t("Standard mode")}
         aria-pressed={value === false}
         disabled={disabled || !control?.supported}
         onClick={() => onChange(false)}
       >
-        <span>Standard</span>
+        <span>{t("Standard")}</span>
         {value === false && <Check aria-hidden />}
       </Button>
       <Button
         variant="ghost"
         className={styles.choice}
-        aria-label="Fast mode"
+        aria-label={t("Fast mode")}
         title={
-          control?.reason ??
-          "Faster responses may cost more and depend on provider capacity."
+          control?.reason != null
+            ? modelControlMessage(control.reason, t)
+            : t(
+                "Faster responses may cost more and depend on provider capacity.",
+              )
         }
         aria-pressed={active}
         disabled={disabled || !control?.supported}
         onClick={() => onChange(true)}
       >
-        <span>Fast</span>
+        <span>{t("Fast")}</span>
         {active && <Check aria-hidden />}
       </Button>
       {showUltrafast && (
         <Button
           variant="ghost"
           className={styles.choice}
-          aria-label="Ultrafast mode"
+          aria-label={t("Ultrafast mode")}
           aria-pressed={ultraActive}
           title={
-            control?.ultrafast_reason ??
-            "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply."
+            control?.ultrafast_reason != null
+              ? modelControlMessage(control.ultrafast_reason, t)
+              : t(
+                  "Requires Pro $500 or an eligible Enterprise/Edu plan. Higher usage rates apply.",
+                )
           }
           disabled={disabled || !control?.ultrafast_supported}
           onClick={() => onChange("ultrafast")}
         >
-          <span>Ultrafast</span>
+          <span>{t("Ultrafast")}</span>
           {ultraActive && <Check aria-hidden />}
         </Button>
       )}
       {!control?.supported && (
         <p className={styles.hint}>
-          {control?.reason ?? "Speed controls are unavailable."}
+          {control?.reason != null
+            ? modelControlMessage(control.reason, t)
+            : t("Speed controls are unavailable.")}
         </p>
       )}
       {value != null && unavailable && (
         <p className={styles.hint}>
-          Unavailable selection — use the model setting.
+          {t("Unavailable selection — use the model setting.")}
         </p>
       )}
     </section>

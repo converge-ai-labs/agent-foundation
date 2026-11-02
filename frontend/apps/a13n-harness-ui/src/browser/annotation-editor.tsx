@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type Konva from "konva";
 import {
@@ -81,6 +82,7 @@ export default function AnnotationEditor({
   onClose: () => void;
   onCopied: () => void;
 }) {
+  const { t } = useTranslation();
   const bounds = { x: 0, y: 0, width: source.width, height: source.height };
   const [history, dispatch] = useReducer(historyReducer, {
     past: [],
@@ -380,16 +382,16 @@ export default function AnnotationEditor({
       >
         <header className={styles.header}>
           <div>
-            <DialogTitle>Annotate screenshot</DialogTitle>
+            <DialogTitle>{t("Annotate screenshot")}</DialogTitle>
             <DialogDescription className={styles.description}>
-              Copy, then paste into chat or another app.
+              {t("Copy, then paste into chat or another app.")}
             </DialogDescription>
           </div>
           <div className={styles.actions}>
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Download PNG"
+              aria-label={t("Download PNG")}
               disabled={saving || !!text || !!draft || !!cropDraft}
               onClick={() => save(false)}
             >
@@ -398,7 +400,7 @@ export default function AnnotationEditor({
             <Button
               size="icon"
               ref={copyButton}
-              aria-label="Copy PNG (Ctrl/⌘ Enter)"
+              aria-label={t("Copy PNG (Ctrl/⌘ Enter)")}
               disabled={!ready || saving || !!text || !!draft || !!cropDraft}
               onClick={() => save(true)}
             >
@@ -407,7 +409,7 @@ export default function AnnotationEditor({
             <Button
               size="icon"
               variant="ghost"
-              aria-label="Close annotation"
+              aria-label={t("Close annotation")}
               disabled={saving}
               onClick={requestClose}
             >
@@ -419,7 +421,7 @@ export default function AnnotationEditor({
           <div
             className={styles.toolbar}
             role="group"
-            aria-label="Annotation tools"
+            aria-label={t("Annotation tools")}
           >
             <div className={styles.tools}>
               {tools.map(({ tool: value, label, key, icon: Icon }) => (
@@ -427,7 +429,7 @@ export default function AnnotationEditor({
                   key={value}
                   size="icon"
                   variant={tool === value ? "secondary" : "ghost"}
-                  aria-label={`${label} (${key.toUpperCase()})`}
+                  aria-label={`${t(label)} (${key.toUpperCase()})`}
                   aria-pressed={tool === value}
                   disabled={saving || !!text}
                   onClick={() => selectTool(value)}
@@ -440,7 +442,7 @@ export default function AnnotationEditor({
               <Button
                 size="icon"
                 variant="ghost"
-                aria-label="Undo (Ctrl/⌘ Z)"
+                aria-label={t("Undo (Ctrl/⌘ Z)")}
                 disabled={!history.past.length || saving || !!text}
                 onClick={() => dispatch({ type: "undo" })}
               >
@@ -449,7 +451,7 @@ export default function AnnotationEditor({
               <Button
                 size="icon"
                 variant="ghost"
-                aria-label="Redo (Ctrl/⌘ Shift Z)"
+                aria-label={t("Redo (Ctrl/⌘ Shift Z)")}
                 disabled={!history.future.length || saving || !!text}
                 onClick={() => dispatch({ type: "redo" })}
               >
@@ -463,14 +465,14 @@ export default function AnnotationEditor({
                 <div
                   className={styles.colors}
                   role="group"
-                  aria-label="Annotation color"
+                  aria-label={t("Annotation color")}
                 >
                   {colors.map((item) => (
                     <button
                       key={item.value}
                       type="button"
-                      aria-label={item.label}
-                      title={item.label}
+                      aria-label={t(item.label)}
+                      title={t(item.label)}
                       aria-pressed={
                         (selectedMark?.color ?? color) === item.value
                       }
@@ -484,8 +486,8 @@ export default function AnnotationEditor({
                 <select
                   aria-label={
                     tool === "text" || selectedMark?.kind === "text"
-                      ? "Font size"
-                      : "Stroke width"
+                      ? t("Font size")
+                      : t("Stroke width")
                   }
                   value={
                     tool === "text" || selectedMark?.kind === "text"
@@ -518,16 +520,18 @@ export default function AnnotationEditor({
               <Button
                 size="icon"
                 variant="ghost"
-                aria-label="Restore full image"
+                aria-label={t("Restore full image")}
                 disabled={saving || !!text}
                 onClick={() => commit({ ...document, crop: bounds })}
               >
                 <SelectionAll />
               </Button>
             )}
-            {tool === "redact" && <span>Drag to cover private details.</span>}
+            {tool === "redact" && (
+              <span>{t("Drag to cover private details.")}</span>
+            )}
             {tool === "mosaic" && (
-              <span>For sensitive text, use opaque redaction.</span>
+              <span>{t("For sensitive text, use opaque redaction.")}</span>
             )}
             {selectedMark && (
               <>
@@ -535,7 +539,7 @@ export default function AnnotationEditor({
                   <Button
                     size="icon"
                     variant="ghost"
-                    aria-label="Edit text"
+                    aria-label={t("Edit text")}
                     disabled={saving || !!text}
                     onClick={() => setText(selectedMark)}
                   >
@@ -545,7 +549,7 @@ export default function AnnotationEditor({
                 <Button
                   size="icon"
                   variant="ghost"
-                  aria-label="Delete annotation"
+                  aria-label={t("Delete annotation")}
                   disabled={saving || !!text}
                   onClick={remove}
                 >
@@ -555,11 +559,11 @@ export default function AnnotationEditor({
             )}
             <div className={styles.spacer} />
             <select
-              aria-label="Preview zoom"
+              aria-label={t("Preview zoom")}
               value={zoom}
               onChange={(event) => setZoom(event.target.value)}
             >
-              <option value="fit">Fit</option>
+              <option value="fit">{t("Fit")}</option>
               <option value="0.5">50%</option>
               <option value="1">100%</option>
               <option value="2">200%</option>
@@ -614,15 +618,15 @@ export default function AnnotationEditor({
         <footer className={styles.footer}>
           <span role="status">
             {saving
-              ? "Exporting PNG…"
+              ? t("Exporting PNG…")
               : text
-                ? "Editing text · Ctrl/⌘ Enter to apply · Esc to cancel"
-                : message ||
+                ? t("Editing text · Ctrl/⌘ Enter to apply · Esc to cancel")
+                : (message && t(message)) ||
                   `${document.crop.width} × ${document.crop.height} px`}
           </span>
           {!!document.annotations.length && (
             <select
-              aria-label="Select annotation"
+              aria-label={t("Select annotation")}
               disabled={saving || !!text}
               value={selected ?? ""}
               onChange={(event) => {
@@ -631,12 +635,16 @@ export default function AnnotationEditor({
               }}
             >
               <option value="">
-                Annotations ({document.annotations.length})
+                {t("Annotations ({{count}})", {
+                  count: document.annotations.length,
+                })}
               </option>
               {document.annotations.map((mark, index) => (
                 <option key={mark.id} value={mark.id}>
                   {index + 1}.{" "}
-                  {mark.kind === "text" ? mark.text.slice(0, 24) : mark.kind}
+                  {mark.kind === "text"
+                    ? mark.text.slice(0, 24)
+                    : t(tools.find((item) => item.tool === mark.kind)!.label)}
                 </option>
               ))}
             </select>
@@ -645,16 +653,18 @@ export default function AnnotationEditor({
         <ModalFrame
           open={confirmClose}
           onOpenChange={setConfirmClose}
-          title="Discard annotations?"
-          description="Closing removes your local edits and undo history. Copy or download the PNG first if you want to keep it."
-          closeLabel="Close confirmation"
+          title={t("Discard annotations?")}
+          description={t(
+            "Closing removes your local edits and undo history. Copy or download the PNG first if you want to keep it.",
+          )}
+          closeLabel={t("Close confirmation")}
           footer={
             <>
               <Button variant="outline" onClick={() => setConfirmClose(false)}>
-                Keep editing
+                {t("Keep editing")}
               </Button>
               <Button variant="destructive" onClick={onClose}>
-                Discard
+                {t("Discard")}
               </Button>
             </>
           }
