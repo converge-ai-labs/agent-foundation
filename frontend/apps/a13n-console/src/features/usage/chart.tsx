@@ -102,14 +102,6 @@ export function UsageChart({
         </div>
       ) : (
         <>
-          <div className={styles.legend} aria-label={t("Chart legend")}>
-            {series.map((item, index) => (
-              <span key={item.key === null ? "others" : `series:${item.key}`}>
-                <i style={{ background: color(index) }} />
-                {seriesName(item)}
-              </span>
-            ))}
-          </div>
           <div className={styles.chartReadout} aria-live="polite">
             {selected ? (
               <>
