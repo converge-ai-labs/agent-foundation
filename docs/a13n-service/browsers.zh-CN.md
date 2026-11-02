@@ -27,7 +27,15 @@ description: 接入已有浏览器或预留托管浏览器，再绑定到原生 
 
 将示例 ID 替换为返回的浏览器 ID。通过 `GET /api/v1/threads/{thread_id}/browser` 读取期望绑定；向 PUT 端点发送 JSON `null` 可解除绑定。绑定变更对后续 run 生效，已接受的 run 保留原绑定。子 thread 和 fork 得到的 thread 需要显式绑定。
 
-原生工具支持观察、读取、导航、操作、等待、标签页、对话框、截图和文件。使用 Docker 或 Native 时，`browser_files` 上传的 `paths` 接受 `asset:<asset_id>` 引用，而非主机路径。Asset 必须在 run 的工作空间和冻结权限范围内可读。已完成且受跟踪的下载在 run 的 `write` 权限下发布为工作空间 asset，重复查看复用同一发布结果。外部 CDP 不支持文件传输。浏览器文件系统独立于挂载环境。
+原生工具支持观察、读取、导航、操作、等待、标签页、对话框、截图和文件。使用 Docker 或 Native 时，`browser_files` 上传的 `paths` 接受 `asset:<asset_id>` 引用，而非主机路径。Asset 必须在 run 的工作空间和冻结权限范围内可读。已完成且受跟踪的下载在 run 的 `write` 权限下发布为工作空间 asset，重复查看复用同一发布结果。外部 CDP、Browserbase 和 Kernel 不支持文件传输。浏览器文件系统独立于挂载环境。
+
+## 配置云浏览器
+
+创建 Browserbase provider 时，使用 `type: "browserbase"`、配置 `{"project_id": "..."}` 和凭证 `{"api_key": "..."}`。创建 Kernel provider 时，使用 `type: "kernel"`、配置 `{"organization_id": "...", "project_id": null}` 和相同格式的凭证。如果 Kernel 密钥限定于某个项目，将 `project_id` 设为该密钥的有效项目。Service 使用 Kernel 会话前会验证密钥的有效组织和项目是否与配置标识一致。配置 Service 出站策略，允许访问供应商 API 和安全浏览器端点。API 密钥和连接 URL 必须保密。
+
+Browserbase recipe 的 `timeout` 和 Kernel recipe 的 `timeout_seconds` 均以秒为单位，默认 300。Browserbase 将其作为供应商会话存续时间；Kernel 将其作为待机超时，连接中的客户端或 viewer 可延长会话。Kernel 还接受 `headless`，默认为 `true`。供应商超时独立于 Service 空闲保留策略。Service 的 `idle_seconds` 策略独立释放符合条件的空闲云浏览器，默认 1800 秒。云分配在释放或到期后不保留 profile。
+
+云浏览器支持通过 CDP 使用 agent 浏览器操作，以及显式释放。这两个集成不支持停止/启动、持久 profile、viewer 和接管，也不支持文件传输。如果 Kernel 创建请求结果未知，且 Service 未收到会话 ID，Service 无法安全地自动定位或释放该会话。请检查供应商账号并联系运维人员处置孤儿会话；在核实可能仍有活跃会话和费用之前，不要反复创建替代会话。
 
 ## 配置自托管浏览器
 
@@ -63,9 +71,9 @@ native_chromium = "/usr/bin/chromium"
 ## 使用 Console
 
 1. 打开 **Providers → Browser providers**，配置可用的 provider 类型。
-2. 打开 **Browsers**，创建托管浏览器或接入外部 CDP。在详情中启动、停止或释放，并查看保留策略和故障状态。
+2. 打开 **Browsers**，创建托管浏览器或接入外部 CDP。在详情中准备或释放浏览器，并查看保留策略和故障状态。启动和停止仅适用于支持这些操作的 provider。
 3. 在 session 中打开 thread 的 **Browser** 操作，选择浏览器、标签页范围和准备方式。在提交下一个 run 前保存。Run 详情单独显示其已捕获绑定，与 thread 的期望绑定区分。
-4. 选择 **Take control**，等待人工控制，再选择 **Open viewer**。需要更多时间时使用 **Renew control**，完成后使用 **Return control**。关闭 viewer 不会归还控制权或停止浏览器，有限租约仍会到期。
+4. 使用 Docker 或 Native 时，选择 **Take control**，等待人工控制，再选择 **Open viewer**。需要更多时间时使用 **Renew control**，完成后使用 **Return control**。关闭 viewer 不会归还控制权或停止浏览器，有限租约仍会到期。
 
 ## 接入已有浏览器
 
@@ -132,7 +140,7 @@ curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/browsers/$BROWSER_ID/release
 
 停止和删除策略分别从最后一次获准使用开始计时，接受 60–604800 秒或 null，不能与旧版 `idle_seconds` 同时设置。停止不会重置删除时钟。删除到期优先于停止。使用工作空间 `write` 权限和当前浏览器 `If-Match` 调用 `POST /api/v1/browsers/{id}/stop` 可显式停止。`stopped` 保留浏览器、绑定和 profile；下一次获准使用或 `prepare` 启动新 generation。已接受、运行中或等待中的借用 run、未结算调用、人工控制和有效归还义务都会阻止停止及空闲删除。
 
-准备与保留策略相互独立。读取浏览器资源的 `status`、`control`、`expires_at` 和 `failure`。`reserved` 表示尚无就绪的分配；`creating` 表示准备结果未确定；`ready` 表示已确认活跃会话。元数据读取不会触发分配，并发准备会收敛到同一分配。托管创建失败后，准备会检查原标识。只有供应商确认请求未分派时，才会重试创建。如果结果持续未确定，应显式释放以完成供应商清理隔离，再预留并绑定新浏览器。
+准备与保留策略相互独立。读取浏览器资源的 `status`、`control`、`expires_at` 和 `failure`。`reserved` 表示尚无就绪的分配；`creating` 表示准备结果未确定；`ready` 表示已确认活跃会话。元数据读取不会触发分配，并发准备会收敛到同一分配。托管创建失败后，准备会检查原标识。只有供应商确认请求未分派时，才会重试创建。如果结果持续未确定，释放需要先完成供应商清理隔离，然后才能预留并绑定新浏览器。Kernel 创建结果未知且未收到会话 ID 时，无法自动完成处置；请检查供应商账号并联系运维人员。
 
 活跃 run、尚未结算的浏览器调用、人工控制和有效的待处理归还通知会阻止空闲释放。供应商到期仍可能终止会话。`lost` 或 `deleted` 的浏览器不会自动重启。需要替换时，创建并绑定另一个浏览器。
 

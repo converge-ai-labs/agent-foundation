@@ -61,6 +61,28 @@ from .http_support import serve_http
 # Real collector interoperability owns explicit native/container prerequisites.
 # Opt in before collection so the ordinary Service suite retains its no-skips contract.
 collect_ignore = [] if os.environ.get("A13N_COLLECTOR_TEST") == "1" else ["test_monitoring_collectors_live.py"]
+# Cloud tests are selected before collection and never read credentials in ordinary runs.
+if not os.environ.get("A13N_CLOUD_BROWSER_TEST"):
+    collect_ignore.extend(["test_browser_cloud_live.py", "test_browser_cloud_adapter_live.py"])
+
+
+@pytest.fixture(scope="session")
+def cloud_browser_credentials() -> tuple[str, SecretStr]:
+    """Load only the selected provider's credential from this checkout, without changing the environment."""
+    from dotenv import dotenv_values
+
+    provider = os.environ.get("A13N_CLOUD_BROWSER_TEST")
+    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY"}
+    if provider not in keys:
+        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase or kernel to run cloud tests")
+    key = keys[provider]
+    value = os.environ.get(key)
+    if value is None:
+        value = dotenv_values(Path(__file__).resolve().parents[3] / ".env", interpolate=False).get(key)
+    if not value:
+        raise pytest.UsageError(f"Set {key} in the environment or this checkout's .env for cloud tests")
+    return provider, SecretStr(value)
+
 
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"

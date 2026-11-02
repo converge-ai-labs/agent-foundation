@@ -43,7 +43,7 @@ export const providerCategories = [
     emptyTitle: "No browser providers yet",
     icon: GlobeIcon,
     description: "Configure where your agents' browsers run.",
-    empty: "Add a provider, then create browsers with private profiles.",
+    empty: "Add a provider, then create browsers for your agents.",
   },
   {
     value: "connectors",

@@ -30,7 +30,11 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import {
+  FormActions,
+  SchemaFields,
+  withSchemaValues,
+} from "../../shared/forms";
 import { CopyableId } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers/manage-link";
@@ -67,9 +71,7 @@ export function BrowsersPage() {
   return (
     <Page
       title={t("Browsers")}
-      description={t(
-        "Private browser profiles that stay with your agents across runs.",
-      )}
+      description={t("Managed and external browsers for your agents.")}
       toolbar={
         <Toolbar
           search={search}
@@ -105,7 +107,7 @@ export function BrowsersPage() {
                     resourceId={item.id}
                     description={t(
                       item.source === "managed"
-                        ? "Private profile"
+                        ? "Managed browser"
                         : "External CDP",
                     )}
                   />
@@ -198,6 +200,7 @@ function CreateBrowserForm({
   const { workspace } = useWorkspace();
   const [name, setName] = useState("");
   const [providerId, setProviderId] = useState("");
+  const [recipe, setRecipe] = useState<Record<string, unknown>>({});
   const [stop, setStop] = useState("1800");
   const [remove, setRemove] = useState("");
   const providers = useQuery({
@@ -226,6 +229,14 @@ function CreateBrowserForm({
           body: {
             name,
             provider_id: providerId,
+            ...(definition?.browser_recipe_schema
+              ? {
+                  recipe: withSchemaValues(
+                    definition.browser_recipe_schema,
+                    recipe,
+                  ),
+                }
+              : {}),
             ...(definition?.supports_stop
               ? {
                   stop_after_seconds: stop === "" ? null : Number(stop),
@@ -263,7 +274,10 @@ function CreateBrowserForm({
       <ChoiceField
         label={t("Provider")}
         value={providerId}
-        onValueChange={(value) => setProviderId(String(value))}
+        onValueChange={(value) => {
+          setProviderId(String(value));
+          setRecipe({});
+        }}
         options={(providers.data ?? [])
           .filter((item) => item.enabled)
           .map((item) => ({ value: item.id, label: item.name }))}
@@ -272,6 +286,14 @@ function CreateBrowserForm({
         !providers.data?.some((item) => item.enabled) && (
           <ManageProvidersLink category="browsers" />
         )}
+      {definition?.browser_recipe_schema && (
+        <SchemaFields
+          key={providerId}
+          schema={definition.browser_recipe_schema}
+          value={recipe}
+          onChange={setRecipe}
+        />
+      )}
       {definition?.supports_stop && (
         <FormField
           label={t("Stop after idle (seconds)")}
@@ -293,7 +315,7 @@ function CreateBrowserForm({
         description={t(
           definition?.supports_stop
             ? "Deleting removes the profile. Blank keeps it until you delete it."
-            : "Deletes the browser and profile. Default: 30 minutes.",
+            : "Deletes the browser. Default: 30 minutes.",
         )}
       >
         <Input

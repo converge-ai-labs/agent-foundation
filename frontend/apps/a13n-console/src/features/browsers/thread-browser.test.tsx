@@ -24,6 +24,7 @@ let catalogFails: boolean;
 let refuse: boolean;
 let requests: Request[];
 let supportsStop: boolean;
+let recipeSchema: Record<string, unknown> | undefined;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -44,6 +45,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("./viewer", () => ({ BrowserViewer: () => <div>Mounted viewer</div> }));
 beforeEach(() => {
   supportsStop = true;
+  recipeSchema = undefined;
   verbs = ["read", "run", "write"];
   thread = fixtureThread({ version: 1 });
   session = fixtureSession();
@@ -81,7 +83,13 @@ beforeEach(() => {
       }
       if (path.endsWith("/provider-types/browser"))
         return Response.json({
-          items: [{ type: "fake", supports_stop: supportsStop }],
+          items: [
+            {
+              type: "fake",
+              supports_stop: supportsStop,
+              browser_recipe_schema: recipeSchema,
+            },
+          ],
         });
       if (path.endsWith("/browser-providers"))
         return Response.json({
@@ -369,3 +377,37 @@ it.each(["", "3600"])(
     });
   },
 );
+
+it("renders provider recipe defaults and submits edited values", async () => {
+  recipeSchema = {
+    type: "object",
+    properties: {
+      region: { type: "string", title: "Region", default: "us-west" },
+      timeout: { type: "integer", title: "Timeout seconds", default: 300 },
+    },
+  };
+  supportsStop = false;
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <CreateBrowser onCreated={() => {}} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Create browser" }));
+  await user.type(screen.getByLabelText("Name"), "Example");
+  await user.click(await screen.findByRole("combobox", { name: "Provider" }));
+  await user.click(await screen.findByRole("option", { name: "Fake" }));
+  expect((screen.getByLabelText("Region") as HTMLInputElement).value).toBe(
+    "us-west",
+  );
+  const timeout = screen.getByLabelText("Timeout seconds");
+  await user.clear(timeout);
+  await user.type(timeout, "120");
+  await user.click(screen.getByRole("button", { name: "Create browser" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(await requests[0].json()).toMatchObject({
+    recipe: { region: "us-west", timeout: 120 },
+  });
+});

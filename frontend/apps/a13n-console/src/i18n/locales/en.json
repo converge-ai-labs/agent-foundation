@@ -1,4 +1,7 @@
 {
+  "Managed and external browsers for your agents.": "Managed and external browsers for your agents.",
+  "Managed browser": "Managed browser",
+  "Deletes the browser. Default: 30 minutes.": "Deletes the browser. Default: 30 minutes.",
   "Close browser panel": "Close browser panel",
   "All browser tabs": "All browser tabs",
   "Browser": "Browser",

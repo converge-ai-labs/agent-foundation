@@ -27,7 +27,15 @@ Use [authenticated HTTP requests](http.md) in one workspace. Browser creation, b
 
 Replace the example ID with the returned browser ID. Read the desired binding with `GET /api/v1/threads/{thread_id}/browser`; send JSON `null` to the PUT endpoint to detach it. Binding changes apply to future runs. An accepted run keeps its original binding. Child and forked threads require an explicit binding.
 
-The native tools cover observation, reading, navigation, actions, waits, tabs, dialogs, screenshots and files. With Docker or Native, `browser_files` uploads take `asset:<asset_id>` references in `paths`, not host paths. Assets must be readable within the run's workspace and frozen authority. Completed tracked downloads become workspace assets under run `write` authority; repeated inspection reuses the same publication. External CDP does not support file transfer. Browser filesystems are independent of mounted environments.
+The native tools cover observation, reading, navigation, actions, waits, tabs, dialogs, screenshots and files. With Docker or Native, `browser_files` uploads take `asset:<asset_id>` references in `paths`, not host paths. Assets must be readable within the run's workspace and frozen authority. Completed tracked downloads become workspace assets under run `write` authority; repeated inspection reuses the same publication. External CDP, Browserbase and Kernel do not support file transfer. Browser filesystems are independent of mounted environments.
+
+## Configure cloud browsers
+
+Create a Browserbase provider with `type: "browserbase"`, configuration `{"project_id": "..."}` and credential `{"api_key": "..."}`. Create a Kernel provider with `type: "kernel"`, configuration `{"organization_id": "...", "project_id": null}` and the same credential shape. Set `project_id` to the Kernel key's effective project when it is project-scoped. Service verifies that the key's effective organization and project match the configured identity before using a Kernel session. Configure Service outbound policy to permit the supplier API and secure browser endpoint. Keep API keys and connection URLs private.
+
+Browserbase recipe `timeout` and Kernel recipe `timeout_seconds` are in seconds and default to 300. Browserbase applies a supplier session lifetime; Kernel uses a standby timeout, which a connected client or viewer can extend. Kernel also accepts `headless`, default `true`. Supplier timeouts are separate from Service idle retention. The Service `idle_seconds` policy independently releases an eligible idle cloud browser and defaults to 1800 seconds. A cloud allocation does not retain a profile across release or expiry.
+
+Cloud browsers support agent browser operations through CDP and explicit release. Stop/start, persistent profiles, viewer and takeover, and file transfer are not supported by these integrations. If a Kernel create request has an unknown outcome before Service receives its session ID, Service cannot safely identify or release that session automatically. Inspect the supplier account and contact the operator to resolve the orphan; do not repeatedly create replacements without accounting for possible active sessions and charges.
 
 ## Configure self-hosted browsers
 
@@ -67,9 +75,9 @@ Service applies a cancellation budget to each claimed Browser lifecycle provider
 ## Use Console
 
 1. Open **Providers → Browser providers** and configure the available provider type.
-2. Open **Browsers** to create a managed browser or attach external CDP. Use its details to start, stop or release it and inspect retention and failure state.
+2. Open **Browsers** to create a managed browser or attach external CDP. Use its details to prepare or release it and inspect retention and failure state. Start and stop are available only for providers that support them.
 3. In a session, open the thread's **Browser** action, select the browser and choose tab access and preparation. Save before submitting the next run. The run details show its captured binding separately from the thread's desired binding.
-4. Choose **Take control**, wait for human control, then **Open viewer**. Use **Renew control** while you need more time and **Return control** when finished. Closing the viewer does not return control or stop the browser; the finite lease still expires.
+4. For Docker or Native, choose **Take control**, wait for human control, then **Open viewer**. Use **Renew control** while you need more time and **Return control** when finished. Closing the viewer does not return control or stop the browser; the finite lease still expires.
 
 ## Attach an existing browser
 
@@ -136,7 +144,7 @@ Network failure reports `browser_connection_failed` without declaring the instan
 
 Stop and delete policies independently measure time since last authorized use, accept 60–604800 seconds or null, and cannot be combined with legacy `idle_seconds`. Stopping does not reset the deletion clock. A due delete policy wins over stop. Use `POST /api/v1/browsers/{id}/stop` with a current browser `If-Match` and workspace `write` to stop explicitly. `stopped` retains the browser, binding and profile; the next authorized use or `prepare` starts a new generation. Active accepted, running or waiting borrowers, unsettled calls, human control and valid handback obligations prevent stop and idle deletion.
 
-Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation. After a managed create fails, preparation inspects the original identity. It retries creation only when the provider confirms the request was not dispatched. If it remains unresolved, explicitly release it for supplier-fenced cleanup, then reserve and bind a new browser.
+Preparation and retention are independent. Read `status`, `control`, `expires_at` and `failure` from the browser resource. `reserved` means no live allocation is ready; `creating` means preparation is unresolved; `ready` confirms the live session. Metadata reads never allocate. Concurrent preparation converges on the same allocation. After a managed create fails, preparation inspects the original identity. It retries creation only when the provider confirms the request was not dispatched. If it remains unresolved, release requires supplier-fenced cleanup before reserving and binding a new browser. Kernel cannot automatically resolve an unknown create without the returned session ID; inspect the supplier account and involve the operator.
 
 Active runs, unsettled browser calls, human control and valid pending handback notifications prevent idle release. Supplier expiry can still end the session. A `lost` or `deleted` browser does not automatically restart. Create and bind another browser when replacement is intended.
 

@@ -10297,6 +10297,10 @@ export interface components {
     /** ProviderType */
     ProviderType: {
       authentication: components["schemas"]["Authentication"];
+      /** Browser Recipe Schema */
+      browser_recipe_schema?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       /** Catalog Providers */
       catalog_providers?: string[] | null;
       /** Configuration Schema */

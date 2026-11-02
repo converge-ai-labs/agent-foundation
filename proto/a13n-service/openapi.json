@@ -16319,6 +16319,20 @@
           "authentication": {
             "$ref": "#/components/schemas/Authentication"
           },
+          "browser_recipe_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Recipe Schema"
+          },
           "catalog_providers": {
             "anyOf": [
               {
