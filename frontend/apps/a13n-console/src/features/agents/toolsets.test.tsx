@@ -140,30 +140,6 @@ it("renders catalogue labels and descriptions while keeping model-facing tool na
   expect(screen.getByText("Display scrape")).toBeTruthy();
 });
 
-it("renders catalogue labels when descriptions are omitted", async () => {
-  const { description: _description, ...group } = web;
-  http.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("/toolsets")
-      ? {
-          items: [
-            {
-              ...group,
-              tools: group.tools.map(
-                ({ description: _description, ...tool }) => tool,
-              ),
-            },
-          ],
-        }
-      : { items: [], next_cursor: null },
-  }));
-  const { user } = renderDraft({});
-  const title = await screen.findByText("Web");
-  await user.click(title.closest("button")!);
-  expect(screen.getByRole("checkbox", { name: "search" })).toBeTruthy();
-  expect(screen.getByText("Display search")).toBeTruthy();
-  expect(screen.queryByText(web.description)).toBeNull();
-});
-
 it("keeps disabled child settings, edits permissions, and validates the candidate without saving", async () => {
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/toolsets")

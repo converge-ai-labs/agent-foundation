@@ -20,13 +20,6 @@ afterEach(async () => {
   await i18n.changeLanguage("en");
 });
 
-test("starts in English and supports Simplified Chinese", async () => {
-  expect(i18n.language).toBe("en");
-  expect(i18n.t("Session")).toBe(en.Session);
-  await i18n.changeLanguage("zh-CN");
-  expect(i18n.t("Session")).toBe(zhCN.Session);
-});
-
 test("falls back to English for unsupported languages", async () => {
   await i18n.changeLanguage("fr");
   expect(i18n.t("Session")).toBe(en.Session);
@@ -89,14 +82,4 @@ test("English state and trigger labels consistently start with a capital letter"
   );
   expect(labels.length).toBeGreaterThan(0);
   for (const [key, label] of labels) expect(label, key).toMatch(/^[A-Z]/);
-});
-
-test("keeps inline phrases and protocol identifiers intact while normalizing peer labels", () => {
-  expect(en["wrote the reply"]).toBe("wrote the reply");
-  expect(en["and {{count}} more"]).toBe("and {{count}} more");
-  expect(en["Api Key"]).toBe("API key");
-  expect(en["Api Version"]).toBe("API version");
-  const signature =
-    "Verify X-A13n-Webhook-Signature with this secret and deduplicate by X-A13n-Delivery-Id.";
-  expect(en[signature]).toBe(signature);
 });

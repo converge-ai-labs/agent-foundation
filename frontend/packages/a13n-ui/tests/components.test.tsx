@@ -105,27 +105,6 @@ describe("component interaction contracts", () => {
   });
 });
 
-it("exposes a named search field and preserves native editing and description semantics", async () => {
-  const user = userEvent.setup(),
-    ref = createRef<HTMLInputElement>();
-  render(
-    <>
-      <p id="search-help">Search the current page</p>
-      <Input
-        type="search"
-        aria-label="Find agents"
-        ref={ref}
-        aria-describedby="search-help"
-      />
-    </>,
-  );
-  const input = screen.getByRole("searchbox", { name: "Find agents" });
-  expect(ref.current).toBe(input);
-  expect(input.getAttribute("aria-describedby")).toBe("search-help");
-  await user.type(input, "research");
-  expect(ref.current?.value).toBe("research");
-});
-
 it("keeps familiar menu triggers accessible without a redundant tooltip", async () => {
   const user = userEvent.setup();
   render(

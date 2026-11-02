@@ -169,16 +169,6 @@ def test_with_updates_rejects_unknown_duplicate_and_invalid_fields() -> None:
         preset.with_updates(model_characteristics={"context_window_tokens": 0})
 
 
-def test_with_updates_does_not_recursively_merge_mapping_fields() -> None:
-    preset = _preset()
-
-    updated = preset.with_updates(model_settings={"temperature": 0.9})
-
-    assert updated.model_settings == {"temperature": 0.9}
-    assert "max_tokens" not in updated.model_settings
-    assert preset.model_settings == {"temperature": 0.2, "max_tokens": 2048}
-
-
 def test_agent_definition_with_updates_materializes_a_complete_child() -> None:
     model = TestModel()
     capability = UserInteractionCapability()

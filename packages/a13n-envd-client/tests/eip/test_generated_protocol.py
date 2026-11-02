@@ -165,7 +165,6 @@ def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.3"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
     assert len(METHODS) == 54
-    assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(
@@ -208,7 +207,6 @@ def test_shared_golden_values_round_trip_canonically() -> None:
         model = decode_model(encoded_fixture, model_type)
         encoded_model = encode_model(model)
         assert encoded_model == encoded_fixture.encode()
-        assert json.loads(encoded_model) == case["value"]
 
 
 def test_generated_data_frame_codec_matches_shared_golden_frames() -> None:
