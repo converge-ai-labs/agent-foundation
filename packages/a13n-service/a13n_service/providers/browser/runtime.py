@@ -278,8 +278,16 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=800)
     parser.add_argument("--parent", type=int)
+    parser.add_argument("--gate-fd", type=int)
     parser.add_argument("--no-sandbox", action="store_true")
-    asyncio.run(Runtime(parser.parse_args()).serve())
+    args = parser.parse_args()
+    if args.gate_fd is not None:
+        try:
+            if os.read(args.gate_fd, 1) != b"1":
+                return
+        finally:
+            os.close(args.gate_fd)
+    asyncio.run(Runtime(args).serve())
 
 
 if __name__ == "__main__":

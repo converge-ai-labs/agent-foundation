@@ -54,6 +54,29 @@ class Native(SelfHosted):
         path = allocation.root / "data" / "runtime.json"
         return json.loads(await blocking(path.read_text)) if await blocking(path.exists) else None
 
+    async def resolve_launch(self, allocation: Allocation, boot: str) -> None:
+        marker = allocation.record.get("launch_unresolved")
+        if marker is None or marker is False or allocation.record.get("boot") != boot:
+            return
+        if (
+            not isinstance(marker, dict)
+            or marker.get("version") != 1
+            or type(marker.get("pid")) is not int
+            or marker["pid"] <= 0
+            or not isinstance(marker.get("started"), str)
+            or not marker["started"]
+        ):
+            raise BrowserProviderError("native_writer_unconfirmed")
+        try:
+            started = await blocking(runtime.process_identity, marker["pid"])
+        except OSError as error:
+            raise BrowserProviderError("native_writer_unconfirmed") from error
+        if started == marker["started"]:
+            raise BrowserProviderError("native_writer_unconfirmed")
+        # An unrecorded gated child can only observe EOF after its launcher exits.
+        allocation.record.pop("launch_unresolved")
+        await allocation.save()
+
     async def observe(self, allocation: Allocation) -> LiveBrowser | None:
         if not await blocking((allocation.root / "data").is_dir):
             return None
@@ -62,8 +85,7 @@ class Native(SelfHosted):
         boot = (await blocking(Path("/proc/sys/kernel/random/boot_id").read_text)).strip()
         if allocation.record.get("boot") != boot:
             return LiveBrowser(state, status="stopped", runtime_id=state["runtime_id"])
-        if allocation.record.get("launch_unresolved"):
-            raise BrowserProviderError("native_writer_unconfirmed")
+        await self.resolve_launch(allocation, boot)
         pid = allocation.record.get("pid")
         if pid is not None and (info is None or info["pid"] != pid):
             if await blocking(runtime.group_alive, pid):
@@ -87,6 +109,7 @@ class Native(SelfHosted):
     async def launch(self, allocation: Allocation) -> LiveBrowser:
         info = await self.information(allocation)
         boot = (await blocking(Path("/proc/sys/kernel/random/boot_id").read_text)).strip()
+        await self.resolve_launch(allocation, boot)
         if allocation.record.get("boot") == boot:
             identities = {allocation.record.get("pid"), info["pid"] if info else None} - {None}
             for pid in identities:
@@ -116,42 +139,60 @@ class Native(SelfHosted):
             "--parent",
             str(os.getpid()),
         ]
-        allocation.record.update(boot=boot, launch_unresolved=True)
-        await allocation.save()
-        log = await blocking((allocation.root / "runtime.log").open, "ab")
 
         async def spawn_and_record():
+            launcher_started = await blocking(runtime.process_identity, os.getpid())
+            if launcher_started is None:
+                raise BrowserProviderError("native_writer_unconfirmed", certainty="not_dispatched")
+            marker = {"version": 1, "pid": os.getpid(), "started": launcher_started}
+            read_fd, write_fd = os.pipe()
+            process = None
             try:
-                # PDEATHSIG tracks the spawning thread: use the event-loop thread.
-                process = await asyncio.create_subprocess_exec(
-                    *command, start_new_session=True, stdin=asyncio.subprocess.DEVNULL, stdout=log, stderr=log
-                )
-            except Exception:
+                allocation.record.update(boot=boot, launch_unresolved=marker)
+                await allocation.save()
+                log = await blocking((allocation.root / "runtime.log").open, "ab")
+                try:
+                    # Only the gate read end is inherited; the event-loop thread spawns the child.
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        "--gate-fd",
+                        str(read_fd),
+                        pass_fds=(read_fd,),
+                        start_new_session=True,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=log,
+                        stderr=log,
+                    )
+                finally:
+                    await blocking(log.close)
+                os.close(read_fd)
+                read_fd = -1
+                started = await blocking(runtime.process_identity, process.pid)
+                if started is None:
+                    raise BrowserProviderError("native_writer_unconfirmed")
+                allocation.record.update(pid=process.pid, started=started)
                 allocation.record.pop("launch_unresolved")
                 await allocation.save()
+                os.write(write_fd, b"1")
+                return process
+            except Exception:
+                os.close(write_fd)
+                write_fd = -1
+                if process is not None:
+                    async with asyncio.timeout(_CLEANUP_TIMEOUT):
+                        await process.wait()
+                # Publication may have succeeded before raising. Re-read instead of
+                # replacing a durable child identity with the in-memory marker.
+                allocation.record = json.loads(await blocking((allocation.root / "allocation.json").read_text))
+                if allocation.record.get("launch_unresolved") == marker:
+                    allocation.record.pop("launch_unresolved")
+                    await allocation.save()
                 raise
             finally:
-                await blocking(log.close)
-            try:
-                allocation.record["pid"] = process.pid
-                allocation.record["started"] = await blocking(runtime.process_identity, process.pid)
-                allocation.record.pop("launch_unresolved")
-                await allocation.save()
-            except Exception:
-                # The durable unresolved marker fences the profile if cleanup cannot be confirmed.
-                allocation.record["launch_unresolved"] = True
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                async with asyncio.timeout(_CLEANUP_TIMEOUT):
-                    await process.wait()
-                    while await blocking(runtime.group_alive, process.pid):
-                        await asyncio.sleep(0.1)
-                allocation.record.pop("launch_unresolved")
-                await allocation.save()
-                raise
-            return process
+                if read_fd >= 0:
+                    os.close(read_fd)
+                if write_fd >= 0:
+                    os.close(write_fd)
 
         # Keep the allocation lock until the child identity is durable, even when
         # the caller uses raw Task.cancel rather than an AnyIO cancellation scope.
@@ -188,19 +229,21 @@ class Native(SelfHosted):
         boot = (await blocking(Path("/proc/sys/kernel/random/boot_id").read_text)).strip()
         if allocation.record.get("boot") != boot:
             return
-        if allocation.record.get("launch_unresolved"):
-            raise BrowserProviderError("native_writer_unconfirmed")
+        await self.resolve_launch(allocation, boot)
         pid, started = allocation.record.get("pid"), allocation.record.get("started")
-        if pid is None:
-            return
-        if await blocking(runtime.process_identity, pid) == started:
+        info = await self.information(allocation)
+        groups = {pid} - {None}
+        if info and info.get("boot") == boot:
+            groups.add(info["pid"])
+        if pid is not None and started is not None and await blocking(runtime.process_identity, pid) == started:
             try:
                 await blocking(os.kill, pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
         async with asyncio.timeout(30):
-            while await blocking(runtime.group_alive, pid):
-                await asyncio.sleep(0.1)
+            for group in groups:
+                while await blocking(runtime.group_alive, group):
+                    await asyncio.sleep(0.1)
 
     async def destroy(self, allocation: Allocation) -> None:
         await self.halt(allocation)

@@ -75,7 +75,16 @@ async def test_native_cancel_waits_for_spawn_identity_under_allocation_lock(tmp_
 
     async def paused_spawn(*args, **kwargs):
         nonlocal child
-        child = await original_spawn("/bin/sleep", "60", start_new_session=True)
+        import sys
+
+        child = await original_spawn(
+            sys.executable,
+            "-c",
+            "import os,sys,time; os.read(int(sys.argv[1]),1); time.sleep(60)",
+            str(kwargs["pass_fds"][0]),
+            pass_fds=kwargs["pass_fds"],
+            start_new_session=True,
+        )
         spawned.set()
         await proceed.wait()
         return child
@@ -134,7 +143,16 @@ async def test_native_start_spawn_and_record_failure(tmp_path, monkeypatch, fail
         await proceed.wait()
         if failure == "spawn":
             raise OSError("spawn failed")
-        child = await original_spawn("/bin/sleep", "60", start_new_session=True)
+        import sys
+
+        child = await original_spawn(
+            sys.executable,
+            "-c",
+            "import os,sys; os.read(int(sys.argv[1]),1)",
+            str(kwargs["pass_fds"][0]),
+            pass_fds=kwargs["pass_fds"],
+            start_new_session=True,
+        )
         return child
 
     async def save(allocation):
@@ -260,7 +278,7 @@ async def test_native_unconfirmed_cleanup_keeps_durable_fence(tmp_path, monkeypa
         assert child.returncode is None
         provider.observe = original_observe
         record = json.loads((tmp_path / "browser_uncertain/allocation.json").read_text())
-        assert record["launch_unresolved"] is True
+        assert record["launch_unresolved"]["version"] == 1
         with pytest.raises(BrowserProviderError, match="Browser provider operation failed") as error:
             await provider.inspect("browser_uncertain", None)
         assert error.value.code == "native_writer_unconfirmed"
