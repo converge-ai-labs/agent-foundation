@@ -1,15 +1,20 @@
 """computer scoped desktop control
 
-Revision ID: b805ded3d96d
-Revises: 29270d0290da
+Revision ID: 91abbf7b03c8
+Revises: ed5de523fc26
+
+Stop old control and worker replicas after revoking legacy grants and draining
+operations. The preflight locks legacy writers; destructive DDL takes exclusive
+locks, with no backfill. Transactional DDL rolls back on interruption. Downgrade
+restores the legacy schema only before Computer control or handback data exists.
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "b805ded3d96d"
-down_revision = "29270d0290da"
+revision = "91abbf7b03c8"
+down_revision = "ed5de523fc26"
 branch_labels = None
 depends_on = None
 
@@ -160,44 +165,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_desktop_readers")),
     )
-    op.create_table(
-        "computer_operations",
-        sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("control_id", sa.String(length=72), nullable=False),
-        sa.Column("environment_id", sa.String(length=72), nullable=False),
-        sa.Column("run_id", sa.String(length=72), nullable=False),
-        sa.Column("attempt_id", sa.String(length=72), nullable=False),
-        sa.Column("execution_id", sa.String(length=72), nullable=True),
-        sa.Column("generation", sa.Integer(), nullable=False),
-        sa.Column("episode", sa.Integer(), nullable=False),
-        sa.Column("action", sa.String(), nullable=False),
-        sa.Column("dispatched", sa.Boolean(), nullable=True),
-        sa.Column("effect", sa.String(), nullable=True),
-        sa.Column("cleanup_complete", sa.Boolean(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["attempt_id"], ["run_attempts.id"], name=op.f("fk_computer_operations_attempt_id_run_attempts")
-        ),
-        sa.ForeignKeyConstraint(
-            ["control_id"], ["desktop_controls.id"], name=op.f("fk_computer_operations_control_id_desktop_controls")
-        ),
-        sa.ForeignKeyConstraint(
-            ["environment_id"], ["environments.id"], name=op.f("fk_computer_operations_environment_id_environments")
-        ),
-        sa.ForeignKeyConstraint(
-            ["execution_id"], ["tool_executions.id"], name=op.f("fk_computer_operations_execution_id_tool_executions")
-        ),
-        sa.ForeignKeyConstraint(["run_id"], ["runs.id"], name=op.f("fk_computer_operations_run_id_runs")),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_computer_operations")),
-    )
-    op.create_index(
-        "ix_computer_operations_unsettled",
-        "computer_operations",
-        ["control_id"],
-        unique=False,
-        postgresql_where=sa.text("settled_at IS NULL"),
-    )
     op.drop_table("desktop_executions")
     op.drop_index(op.f("ix_desktop_viewers_assistance"), table_name="desktop_viewers")
     op.drop_table("desktop_viewers")
@@ -219,7 +186,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "LOCK TABLE desktop_controls, computer_operations, desktop_blocked_threads, desktop_readers, "
+        "LOCK TABLE desktop_controls, desktop_blocked_threads, desktop_readers, "
         "inbox_entries, runs, outbox IN SHARE ROW EXCLUSIVE MODE"
     )
     op.execute("""
@@ -386,12 +353,6 @@ def downgrade() -> None:
         sa.ForeignKeyConstraint(["run_id"], ["runs.id"], name=op.f("fk_desktop_executions_run_id_runs")),
         sa.PrimaryKeyConstraint("run_id", name=op.f("pk_desktop_executions")),
     )
-    op.drop_index(
-        "ix_computer_operations_unsettled",
-        table_name="computer_operations",
-        postgresql_where=sa.text("settled_at IS NULL"),
-    )
-    op.drop_table("computer_operations")
     op.drop_table("desktop_readers")
     op.drop_table("desktop_blocked_threads")
     op.drop_index(

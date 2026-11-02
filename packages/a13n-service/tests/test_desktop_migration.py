@@ -6,16 +6,17 @@ import pytest
 from a13n_service.distribution import OSS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 from .test_desktop_control import begin
 from .test_desktop_control import desktop as desktop
-from .test_migrations import rows
+from .test_migrations import OBJECTS, RULES, rows
 
 pytestmark = pytest.mark.anyio
-OLD_HEAD = "29270d0290da"
-NEW_HEAD = "9ded2d06bd00"
+OLD_HEAD = "ed5de523fc26"
+NEW_HEAD = "91abbf7b03c8"
 
 
 @pytest.fixture
@@ -196,38 +197,28 @@ async def test_downgrade_preserves_handback_history_after_control_pruning(databa
         engine.dispose()
 
 
-@pytest.mark.parametrize("settled", [False, True])
-async def test_admission_cutover_drops_operation_ledger_and_preserves_control(database, service, desktop, settled):
-    from a13n_service.runs.environments.desktop import control
+async def test_desktop_cutover_is_one_revision_from_main_and_roundtrips(empty_database):
+    with migration_connection(empty_database, OSS) as config:
+        scripts = ScriptDirectory.from_config(config)
+        assert scripts.get_heads() == [NEW_HEAD]
+        revision = scripts.get_revision(NEW_HEAD)
+        assert revision is not None
+        assert revision.down_revision == OLD_HEAD
+        command.upgrade(config, OLD_HEAD)
+    original_rules = rows(empty_database, RULES)
+    original_objects = rows(empty_database, OBJECTS)
 
-    from .test_desktop_control import admitted
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert rows(empty_database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
+    assert rows(
+        empty_database,
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'desktop_%' ORDER BY tablename",
+    ) == [("desktop_blocked_threads",), ("desktop_controls",), ("desktop_readers",)]
 
-    lease, mount, _ = await admitted(service, desktop)
-    current = await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, "b805ded3d96d")
-    engine = create_engine(database.url.get_secret_value())
-    try:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "INSERT INTO computer_operations "
-                    "(id, control_id, environment_id, run_id, attempt_id, generation, episode, action, settled_at) "
-                    "VALUES ('old-call', :control, :environment, :run, :attempt, 1, 0, 'environment.computer.click', "
-                    "CASE WHEN :settled THEN now() ELSE NULL END)"
-                ),
-                {
-                    "control": current.id,
-                    "environment": mount.environment_id,
-                    "run": lease.run_id,
-                    "attempt": lease.attempt_id,
-                    "settled": settled,
-                },
-            )
-        before = rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c")
-        upgrade(database, OSS)
-        assert rows(database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
-        assert rows(database, "SELECT to_jsonb(c)::text FROM desktop_controls c") == before
-        check(database, OSS)
-    finally:
-        engine.dispose()
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, OLD_HEAD)
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
