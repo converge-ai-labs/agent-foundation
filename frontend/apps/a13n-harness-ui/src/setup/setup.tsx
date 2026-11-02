@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect } from "react";
 import { Link } from "react-router";
@@ -17,6 +18,7 @@ export function Preflight({
   profile: "environment-native" | "environment-sandbox";
   projectPath?: string;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const preflight = useMutation({
     mutationFn: () =>
@@ -36,13 +38,15 @@ export function Preflight({
         loading={preflight.isPending}
         onClick={() => preflight.mutate()}
       >
-        Check environments
+        {t("Check environments")}
       </Button>
       <ErrorNotice error={preflight.error} />
       {preflight.data && (
         <div role="status" className={styles.notice}>
           <strong>
-            {preflight.data.ready ? "Environment ready" : "Action required"}
+            {preflight.data.ready
+              ? t("Environment ready")
+              : t("Action required")}
           </strong>
           <p>{preflight.data.message}</p>
           {preflight.data.instructions?.map((instruction) => (
@@ -55,8 +59,10 @@ export function Preflight({
 }
 
 export function SetupPage() {
+  const { t } = useTranslation();
   const setup = useSetup();
-  if (setup.isPending) return <p role="status">Discovering configuration…</p>;
+  if (setup.isPending)
+    return <p role="status">{t("Discovering configuration…")}</p>;
   if (setup.error)
     return (
       <ErrorNotice error={setup.error} retry={() => void setup.refetch()} />
@@ -73,73 +79,81 @@ export function SetupPage() {
   return (
     <>
       <PageHeader
-        title="Setup & readiness"
-        description="Check what you need to start chatting."
-        actions={<Button render={<Link to="/" />}>Open workspace</Button>}
+        title={t("Setup & readiness")}
+        description={t("Check what you need to start chatting.")}
+        actions={
+          <Button render={<Link to="/" />}>{t("Open workspace")}</Button>
+        }
       />
       {status?.diagnostic && (
         <div role="alert" className={styles.notice}>
           {status.diagnostic}
         </div>
       )}
-      <SettingsSection variant="grouped" title="Configuration">
+      <SettingsSection variant="grouped" title={t("Configuration")}>
         <SettingsRow
-          label="Default agent"
+          label={t("Default agent")}
           description={
             status?.needed
-              ? "Setup is incomplete. Choose a default agent or fix its configuration."
-              : (defaultAgent ?? "Not selected")
+              ? t(
+                  "Setup is incomplete. Choose a default agent or fix its configuration.",
+                )
+              : (defaultAgent ?? t("Not selected"))
           }
         >
           <Button variant="outline" size="sm" render={<Link to="/settings" />}>
-            Review defaults
+            {t("Review defaults")}
           </Button>
         </SettingsRow>
         <SettingsRow
-          label="Agent connections"
-          description="Fix an agent whose model or account is missing."
+          label={t("Agent connections")}
+          description={t("Fix an agent whose model or account is missing.")}
         >
           <Button
             variant="outline"
             size="sm"
             render={<Link to="/settings/agents" />}
           >
-            Fix connection
+            {t("Fix connection")}
           </Button>
         </SettingsRow>
         <SettingsRow
-          label="Configuration files"
-          description="Edit the configuration files behind these settings."
+          label={t("Configuration files")}
+          description={t("Edit the configuration files behind these settings.")}
         >
           <Button
             variant="outline"
             size="sm"
             render={<Link to="/settings/resources" />}
           >
-            Open configuration
+            {t("Open configuration")}
           </Button>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="grouped" title="Model accounts">
+      <SettingsSection variant="grouped" title={t("Model accounts")}>
         <SettingsRow
-          label="Accounts & API keys"
-          description="Accounts are shared on this server. Being signed in doesn't guarantee model access."
+          label={t("Accounts & API keys")}
+          description={t(
+            "Accounts are shared on this server. Being signed in doesn't guarantee model access.",
+          )}
         >
           <Button
             variant="outline"
             size="sm"
             render={<Link to="/settings/accounts" />}
           >
-            Manage accounts
+            {t("Manage accounts")}
           </Button>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="grouped" title="Execution environment">
+      <SettingsSection variant="grouped" title={t("Execution environment")}>
         <SettingsRow
-          label="Local runtime"
+          label={t("Local runtime")}
           description={
             status?.environment_profile === "environment-native"
-              ? "Full Control runs as your host account. It is not a sandbox."
+              ? t(
+                  "Full Control runs as your host account. It is not a sandbox.",
+                )
               : status?.environment_profile
           }
         >
@@ -148,19 +162,19 @@ export function SetupPage() {
             size="sm"
             render={<Link to="/settings/runtime" />}
           >
-            Open local runtime
+            {t("Open local runtime")}
           </Button>
         </SettingsRow>
         <SettingsRow
-          label="Execution defaults"
-          description="The environment new chats start in."
+          label={t("Execution defaults")}
+          description={t("The environment new chats start in.")}
         >
           <Button
             variant="outline"
             size="sm"
             render={<Link to="/settings/environments" />}
           >
-            Review execution
+            {t("Review execution")}
           </Button>
         </SettingsRow>
       </SettingsSection>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../i18n";
 import { ProviderAccount } from "./accounts";
 import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
@@ -64,8 +66,9 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await i18n.changeLanguage("en");
   vi.unstubAllGlobals();
 });
 
@@ -245,3 +248,40 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
   );
   await waitFor(() => expect(input).toHaveProperty("value", ""));
 });
+
+it.each(["browser", "manual_callback"] as const)(
+  "localizes real ChatGPT %s guidance and preserves the callback draft when switching language",
+  async (method) => {
+    login = {
+      ...login,
+      provider: "chatgpt",
+      method,
+      user_code: null,
+      message:
+        method === "browser"
+          ? "If the automatic callback cannot reach this Host, paste the complete callback URL from the browser address bar. Never share that URL."
+          : "After sign-in, paste the complete callback URL from the browser address bar, even if the loopback page cannot be reached. Never share that URL.",
+    };
+    await i18n.changeLanguage("zh-CN");
+    mount({
+      provider: "chatgpt",
+      label: "ChatGPT",
+      login_methods: ["browser", "manual_callback"],
+    });
+    const guidance = await screen.findByText(i18n.t(login.message!));
+    expect(guidance.textContent).toContain("切勿分享此 URL");
+    expect(screen.queryByText(login.message!)).toBeNull();
+    const input = screen.getByLabelText(i18n.t("Complete callback URL"));
+    fireEvent.change(input, {
+      target: { value: "http://127.0.0.1/callback?code=private-test" },
+    });
+    const requests = vi.mocked(fetch).mock.calls.length;
+    await act(() => i18n.changeLanguage("en"));
+    await screen.findByText(login.message!);
+    expect(input).toHaveProperty(
+      "value",
+      "http://127.0.0.1/callback?code=private-test",
+    );
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requests);
+  },
+);

@@ -77,7 +77,7 @@ Regions identify themselves through headings. Touch does not depend on hover; co
 
 Motion is brief, typically 100–200ms, respects reduced motion and preserves layout geometry. Product guides distinguish press and disclosure treatments; incidental width, padding and weight animation are not permitted.
 
-Load shared styles once and use `a13n-root` for base typography. Light is the default; document-level `dark` makes portals inherit the theme. Console owns its display-language choice; Harness remains English-only. Shared components receive application-owned strings.
+Load shared styles once and use `a13n-root` for base typography. Light is the default; document-level `dark` makes portals inherit the theme. Console and Harness WebUI each own their viewer-local display-language choice; their product contracts define localization coverage. Shared components receive application-owned strings.
 
 ## Documentation Pages
 
